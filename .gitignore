@@ -1,0 +1,33 @@
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+publish/
+TestResults/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+*.received.*
+
+# Local configuration and secrets — never commit
+appsettings.Development.json
+appsettings.Local.json
+*.env
+.env
+secrets.json
+
+# Runtime state
+plugins/
+*.db
+*.db-shm
+*.db-wal
+audit*.jsonl
+
+# Node (web/bops-ui, Phase 2)
+node_modules/
+dist/
+.angular/
