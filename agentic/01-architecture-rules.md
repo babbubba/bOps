@@ -241,6 +241,7 @@ comparison) remain expressible.
 public interface IToolRegistry
 {
     void Register(PackageId package, ITool tool);      // validates B3, stamps Package (A11)
+    Task RefreshCapabilitiesAsync(CancellationToken ct = default); // see note below
     IReadOnlyList<ToolManifest> GetAvailableManifests(); // filtered by platform + capabilities
     ITool? Resolve(string toolName);
     void SetEnabled(PackageId package, bool enabled);   // package enable/disable, no restart
@@ -253,7 +254,11 @@ public interface ICapabilityProbe
 ```
 
 Capability results are cached with a TTL, not resolved once at startup — a Docker daemon that
-starts later must become visible without restarting bOps.
+starts later must become visible without restarting bOps. `GetAvailableManifests()` stays
+synchronous (the planner calls it on every step), so the registry cannot probe capabilities
+inline; `RefreshCapabilitiesAsync` is the explicit, host-driven point where it does. The host
+calls it once at startup and, from the version that actually needs live discovery (Docker at
+V0.6), on a timer.
 
 ### B5 — Model contract
 

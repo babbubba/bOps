@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- RootNamespace is "Sys", not "System": nesting a namespace segment literally named
+         "System" breaks every unqualified System.* reference inside it (the compiler resolves
+         "System" to the enclosing namespace first). AssemblyName keeps the "System" spelling
+         because that is the package name used throughout agentic/ and the README. -->
+    <RootNamespace>bOps.Packages.Sys.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.System.Core</AssemblyName>
+    <Description>Shared manifests, result shapes, and output formatting for the system.* tools. Not itself a package — referenced by the Windows and Linux System packages so the tool shell is written once (agentic/01-architecture-rules.md, rule A8).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

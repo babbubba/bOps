@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Abstractions</RootNamespace>
+    <AssemblyName>bOps.Abstractions</AssemblyName>
+    <Description>The bOps plugin SDK: the single stable contract referenced by the runtime, first-party packages, and third-party packages alike. Zero dependencies.</Description>
+    <PackageId>bOps.Abstractions</PackageId>
+    <!-- agentic/06-decisions.md D-012: stays on 0.x until the V1.0 contract-stability milestone. -->
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

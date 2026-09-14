@@ -1,0 +1,29 @@
+using System.Collections.Concurrent;
+using bOps.Abstractions;
+
+namespace bOps.Runtime;
+
+/// <summary>
+/// Resolves an <see cref="IChatModel"/> by provider id among the registered provider packages —
+/// there is no hardcoded switch over provider names anywhere in the runtime
+/// (agentic/00-project-spec.md, principle 7).
+/// </summary>
+public sealed class ChatModelRegistry : IChatModelRegistry
+{
+    private readonly ConcurrentDictionary<string, IModelProviderPackage> _byProviderId = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc />
+    public void Register(PackageId package, IModelProviderPackage provider)
+    {
+        foreach (var providerId in provider.SupportedProviderIds)
+        {
+            _byProviderId[providerId] = provider;
+        }
+    }
+
+    /// <inheritdoc />
+    public IChatModel Create(ChatModelOptions options) =>
+        _byProviderId.TryGetValue(options.Provider, out var provider)
+            ? provider.Create(options)
+            : throw new ProviderNotSupportedException(options.Provider);
+}

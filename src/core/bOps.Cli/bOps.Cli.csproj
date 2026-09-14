@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.Cli</RootNamespace>
+    <AssemblyName>bops</AssemblyName>
+    <Description>The bOps CLI — `bops "&lt;goal&gt;"`. The primary interface (agentic/00-project-spec.md, principle 6).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- Phase 1 packages are project-referenced directly; dynamic loading arrives at V0.10
+         (agentic/06-decisions.md, D-003; agentic/01-architecture-rules.md §2). -->
+    <ProjectReference Include="..\..\packages\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.System.Linux\bOps.Packages.System.Linux.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenRouter\bOps.Packages.Providers.OpenRouter.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Ollama\bOps.Packages.Providers.Ollama.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.13.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.13.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

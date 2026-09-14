@@ -16,7 +16,7 @@ every project without exception.
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>recommended</AnalysisLevel>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
     <!-- Noise, not signal, on a greenfield codebase. Revisit at V0.3. -->
@@ -33,12 +33,12 @@ suppress `CS1591`: it is a published SDK, so every public member carries XML doc
 | | Now | From V0.3 |
 |---|---|---|
 | `Nullable`, `TreatWarningsAsErrors` | on | on |
-| `AnalysisLevel` | `recommended` | `all` |
+| `AnalysisLevel` | `latest-recommended` | `latest-all` |
 | Suppression list | as above | reviewed and shortened |
 
 `TreatWarningsAsErrors` is on from the first commit because on an empty repository each
 warning appears alone, as it is written, and costs seconds to fix. The expensive scenario —
-inheriting hundreds of warnings at once — cannot happen here. `AnalysisLevel=all` waits
+inheriting hundreds of warnings at once — cannot happen here. `AnalysisLevel=latest-all` waits
 because it is the setting that generates volume without proportional value early on.
 
 ### Suppressions must stay visible

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Providers.OpenAiCompatible</RootNamespace>
+    <AssemblyName>bOps.Packages.Providers.OpenAiCompatible</AssemblyName>
+    <Description>
+      The single IChatModel adapter shared by every OpenAI-compatible provider (OpenRouter,
+      Ollama, llama.cpp — and OpenAI/DeepSeek in Phase 2). A plain shared library, not itself a
+      package: it cannot live in bOps.Abstractions, which stays dependency-free, and must not
+      create a dependency between sibling provider packages (agentic/01-architecture-rules.md,
+      rule B6; agentic/07-plan-corrections.md).
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

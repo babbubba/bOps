@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Plain net10.0, not net10.0-windows: bOps.Cli references both the Windows and Linux
+         packages and selects one at runtime by OS, which a Windows-specific TFM would forbid
+         (a project on a plain TFM cannot reference one on a platform-specific TFM). Platform
+         intent is instead declared with [assembly: SupportedOSPlatform("windows")] below. -->
+    <RootNamespace>bOps.Packages.Sys.Windows</RootNamespace>
+    <AssemblyName>bOps.Packages.System.Windows</AssemblyName>
+    <Description>system.* and process.* tools for Windows.</Description>
+    <!-- Required by the source-generated LibraryImport marshalling of MemoryStatusEx by ref. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Sys.Linux</RootNamespace>
+    <AssemblyName>bOps.Packages.System.Linux</AssemblyName>
+    <Description>system.* and process.* tools for Linux, reading /proc directly.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
+  </ItemGroup>
+
+</Project>

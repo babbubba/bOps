@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Audit</RootNamespace>
+    <AssemblyName>bOps.Audit</AssemblyName>
+    <Description>Append-only structured audit log — agentic/03-security-rules.md, rule S9.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
