@@ -28,6 +28,12 @@ namespace bOps.Runtime;
 /// in V0.3. Verification runs directly, never through the model or the policy engine: it is
 /// runtime-mandated infrastructure the operator already accepted by approving the original call,
 /// not a new action being proposed (rule S4).
+///
+/// From V0.7, every step's outcome is persisted through <see cref="ITaskStore"/> as it happens,
+/// not only once the task reaches a terminal status — so a task interrupted mid-run (crash,
+/// restart, an operator's own cancellation) is never merely lost, only left
+/// <see cref="AgentTaskStatus.Running"/> for <see cref="ResumeAsync"/> to pick back up from its
+/// next unfinished step (ADR-0017).
 /// </summary>
 public sealed class AgentRunner(
     IChatModel model,
@@ -35,6 +41,7 @@ public sealed class AgentRunner(
     IPolicyEngine policyEngine,
     IApprovalProvider approvalProvider,
     IAuditSink audit,
+    ITaskStore taskStore,
     TimeProvider timeProvider,
     ILogger<AgentRunner> logger,
     AgentRunnerOptions options)
@@ -101,9 +108,6 @@ public sealed class AgentRunner(
         var plans = new List<AgentPlan>();
         var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         var totalTokens = 0;
-        string? lastPolicyDeniedTool = null;
-        var consecutivePolicyDenials = 0;
-        var replanCount = 0;
 
         using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
         taskActivity?.SetTag("bops.task_id", taskId);
@@ -119,7 +123,7 @@ public sealed class AgentRunner(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Task {TaskId}: planning failed", taskId);
-            return BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message);
+            return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
         }
 
         plans.Add(plan);
@@ -128,12 +132,71 @@ public sealed class AgentRunner(
 
         if (options.MaxTotalTokens is { } initialBudget && totalTokens > initialBudget)
         {
-            return Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans);
+            return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
         }
 
-        var plannedStepCursor = 0;
+        await taskStore.SaveAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
 
-        for (var stepIndex = 0; stepIndex < options.MaxSteps; stepIndex++)
+        return await ContinueAsync(taskId, actor, goal, createdAtUtc, steps, plans, history, plan, totalTokens,
+            plannedStepCursor: 0, replanCount: 0, startStepIndex: 0, ct);
+    }
+
+    /// <summary>
+    /// Resumes a task previously left <see cref="AgentTaskStatus.Running"/> — after a crash, a
+    /// restart, or an operator's own interruption — from its next unfinished step, rather than
+    /// starting the goal over (V0.7, ADR-0017). Rebuilds the in-memory conversation history from
+    /// <paramref name="task"/>'s persisted <see cref="TaskState.Steps"/> and continues with its
+    /// last recorded <see cref="AgentPlan"/> — this is the same loop <see cref="RunAsync"/> uses,
+    /// entered at a later step, not a separate implementation of it.
+    /// </summary>
+    /// <param name="task">A task state previously returned by <see cref="ITaskStore.LoadAsync"/>, typically still <see cref="AgentTaskStatus.Running"/>.</param>
+    /// <param name="actor">Who resumed this task, recorded on every audit event it produces from this point on.</param>
+    /// <param name="ct">Cancelled to abandon the resumed task; the returned state is never built for a genuinely cancelled run.</param>
+    public async Task<TaskState> ResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (task.Plans.Count == 0)
+        {
+            throw new InvalidOperationException($"Task {task.Id} has no recorded plan and cannot be resumed.");
+        }
+
+        var steps = new List<PlanStep>(task.Steps);
+        var plans = new List<AgentPlan>(task.Plans);
+        var plan = plans[^1];
+        var history = RebuildHistory(task.Goal, steps);
+        var plannedStepCursor = steps.Count(s => s.PlanRevision == plan.Revision);
+        var replanCount = plans.Count - 1;
+
+        using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
+        taskActivity?.SetTag("bops.task_id", task.Id);
+        taskActivity?.SetTag("bops.node", NodeId.Local.Value);
+        taskActivity?.SetTag("bops.resumed", true);
+        taskActivity?.SetTag("bops.plan_revision", plan.Revision);
+
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Task {TaskId}: resuming from step {StepIndex}", task.Id, steps.Count);
+        }
+
+        return await ContinueAsync(task.Id, actor, task.Goal, task.CreatedAtUtc, steps, plans, history, plan, totalTokens: 0,
+            plannedStepCursor, replanCount, startStepIndex: steps.Count, ct);
+    }
+
+    /// <summary>
+    /// The step loop shared by a fresh <see cref="RunAsync"/> (starting empty, at step 0) and a
+    /// <see cref="ResumeAsync"/> (starting from previously persisted state, at the next step
+    /// after the last one completed).
+    /// </summary>
+    private async Task<TaskState> ContinueAsync(
+        Guid taskId, ActorIdentity actor, string goal, DateTimeOffset createdAtUtc,
+        List<PlanStep> steps, List<AgentPlan> plans, List<ChatTurn> history, AgentPlan plan, int totalTokens,
+        int plannedStepCursor, int replanCount, int startStepIndex, CancellationToken ct)
+    {
+        string? lastPolicyDeniedTool = null;
+        var consecutivePolicyDenials = 0;
+
+        for (var stepIndex = startStepIndex; stepIndex < options.MaxSteps; stepIndex++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -157,7 +220,7 @@ public sealed class AgentRunner(
                 // own transport/parse errors must not be able to crash the loop either; this is
                 // a genuine dead end for the call either way, not something to retry forever.
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
-                return BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message);
+                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
             }
 
             totalTokens += UsageTokens(response);
@@ -166,7 +229,7 @@ public sealed class AgentRunner(
             {
                 steps.Add(new PlanStep(stepIndex, "Final response", null, null, response.TextResponse, plan.Revision));
                 BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
-                return Build(taskId, createdAtUtc, goal, AgentTaskStatus.Completed, steps, plans);
+                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Completed, steps, plans), ct);
             }
 
             // D-007: the contract allows several tool calls per model turn. V0.1 executes the
@@ -192,7 +255,7 @@ public sealed class AgentRunner(
                     logger.LogWarning(
                         "Task {TaskId} blocked: '{Tool}' was denied {Count} times in a row",
                         taskId, primaryCall.ToolName, consecutivePolicyDenials);
-                    return Build(taskId, createdAtUtc, goal, AgentTaskStatus.PolicyBlocked, steps, plans);
+                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.PolicyBlocked, steps, plans), ct);
                 }
             }
             else
@@ -214,7 +277,7 @@ public sealed class AgentRunner(
 
             if (options.MaxTotalTokens is { } budget && totalTokens > budget)
             {
-                return Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans);
+                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
             }
 
             // EVALUATE: rule C8. A step whose outcome the plan could not have anticipated — the
@@ -237,7 +300,7 @@ public sealed class AgentRunner(
                 if (replanCount >= options.MaxReplans)
                 {
                     logger.LogWarning("Task {TaskId}: replan limit ({MaxReplans}) reached", taskId, options.MaxReplans);
-                    return Build(taskId, createdAtUtc, goal, AgentTaskStatus.ReplanLimitReached, steps, plans);
+                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.ReplanLimitReached, steps, plans), ct);
                 }
 
                 try
@@ -249,7 +312,7 @@ public sealed class AgentRunner(
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", taskId, stepIndex);
-                    return BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message);
+                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
                 }
 
                 plans.Add(plan);
@@ -259,17 +322,53 @@ public sealed class AgentRunner(
 
                 if (options.MaxTotalTokens is { } replanBudget && totalTokens > replanBudget)
                 {
-                    return Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans);
+                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
                 }
             }
             else
             {
                 plannedStepCursor++;
             }
+
+            // V0.7 (ADR-0017): a crash between here and the next iteration must lose at most the
+            // step in flight, never every step already completed — this is what makes a task
+            // resumable rather than merely inspectable after the fact.
+            await taskStore.SaveAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
         }
 
         logger.LogWarning("Task {TaskId} reached the {MaxSteps}-step limit without completing", taskId, options.MaxSteps);
-        return Build(taskId, createdAtUtc, goal, AgentTaskStatus.MaxStepsReached, steps, plans);
+        return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.MaxStepsReached, steps, plans), ct);
+    }
+
+    /// <summary>Persists a task's terminal state and returns it — the one place every exit from <see cref="ContinueAsync"/> goes through.</summary>
+    private async Task<TaskState> FinishAsync(TaskState task, CancellationToken ct)
+    {
+        await taskStore.SaveAsync(task, ct);
+        return task;
+    }
+
+    /// <summary>
+    /// Reconstructs the model-facing conversation for a resumed task from its persisted
+    /// <see cref="PlanStep"/>s — the same shape <see cref="ContinueAsync"/> would have built the
+    /// first time: the goal, then each step's tool call and its wrapped observation. A step with
+    /// no <see cref="PlanStep.ToolCall"/> (a final response, or a model-protocol failure) never
+    /// belongs mid-history for a task still worth resuming, so it contributes nothing here.
+    /// </summary>
+    private static List<ChatTurn> RebuildHistory(string goal, IReadOnlyList<PlanStep> steps)
+    {
+        var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
+        foreach (var step in steps)
+        {
+            if (step.ToolCall is null)
+            {
+                continue;
+            }
+
+            history.Add(ChatTurn.FromAssistantToolCalls([step.ToolCall]));
+            history.Add(ChatTurn.FromToolResult(step.ToolCall.Id, WrapToolOutput(step.Observation ?? string.Empty)));
+        }
+
+        return history;
     }
 
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>

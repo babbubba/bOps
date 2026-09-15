@@ -1,178 +1,164 @@
-# Handoff — V0.6 (Docker package with conditional capability discovery) complete
+# Handoff — V0.7 (Persistent, resumable tasks) complete
 
-Written at the end of the session that implemented V0.6 on top of the completed V0.5
-Filesystem/Network/AppHost/CI work. Everything below is exact, not a summary — follow it
-literally to resume.
+Written at the end of the session that implemented V0.7 on top of the completed V0.6 Docker work.
+Everything below is exact, not a summary — follow it literally to resume.
 
 ## State right now
 
-**`dotnet build bOps.sln` builds clean end to end — 0 warnings, 0 errors** in both `Debug` and
-`Release` (verified with a full clean of every `bin`/`obj` and a from-scratch rebuild of both
-configurations). **`dotnet test bOps.sln`: 142 passing, 7 skipped, 0 failed** (both
-configurations, `--filter "Category!=LiveModel"` matching CI exactly) — same 7 pre-existing skips
-as the V0.5 handoff (6 Linux-only conformance tests, 1 symlink-privilege test). 24 projects in
-`bOps.sln` now, up from 23 at the end of V0.5.
+**`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** 30 projects now, up
+from 28 at the end of V0.6 (`bOps.Memory`, `bOps.Memory.Tests`).
 
-**This dev environment has a real, running Docker daemon (Docker Desktop 4.88.1, engine 29.7.2)**,
-unlike every prior package in this repository — the ten new `bOps.Packages.Docker.Tests` all ran
-for real against it, not just against a test double: they create a uniquely named (`bops-test-*`)
-`alpine:3.20` container, start it, stop it, restart it, inspect it, read its logs, and remove it —
-every step actually executed and its result actually asserted, verified clean (no leftover
-`bops-test-*` containers) after both the Debug and Release test runs. This is the first session
-where "integration tests against real targets" (agentic/04-testing-rules.md) could be honored for
-a daemon-backed package rather than only documented and skipped.
+**`dotnet test bOps.slnx --filter "Category!=LiveModel"`: every suite passes** — including the new
+`bOps.Memory.Tests` (5, against a real SQLite file, not a fake) and `bOps.Runtime.Tests` (now 72,
+up from 66: the persistence/resume behavior gets its own file,
+`AgentRunnerPersistenceTests.cs`). Same pre-existing skips as every prior handoff (Linux-only
+conformance tests, one symlink test).
 
-CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): DI wiring,
-config binding, tool registry construction, **and a real `docker.System.PingAsync()` capability
-probe against the live daemon** all succeed during `RefreshCapabilitiesAsync()` — the task then
-fails cleanly at the planning call's HTTP 401 (`ApiKey` empty, rule S6), exactly as every prior
-session's smoke test did.
+**⚠️ Security finding from this session, not yet resolved: `src/core/bOps.Cli/appsettings.json`'s
+real OpenRouter API key (`sk-or-v1-57af8...`) is committed to git history**, in commit `7ac2901`
+("Aggiorna configurazioni e struttura soluzione") — not made by any agent session on record. This
+violates rule S6 (`ApiKey` must always be `""` in the repo) and is worse than an uncommitted
+working-tree change: the key is recoverable from history even after the file is fixed forward. The
+operator needs to (1) revoke/rotate the key at OpenRouter now, (2) decide how to handle the
+history (rewrite, or accept it as burned and rely only on rotation), (3) move the real key to an
+environment variable or `dotnet user-secrets` going forward. No agent session should commit this
+file's `ModelProvider.ApiKey` field as anything but `""`.
 
 ## What this session did
 
-Implemented V0.6 per `agentic/00-project-spec.md`'s roadmap: **"Docker package with conditional
-capability discovery."**
+Implemented V0.7 per `agentic/00-project-spec.md`'s roadmap: **"Persistent, resumable tasks
+(SQLite)."** ADR-0017 (`docs/architecture/adr/0017-persistent-resumable-tasks.md`) records the
+design and the alternatives rejected (EF Core, an append-only file, an optional/nullable store).
 
-### `bOps.Packages.Docker` — eight tools, `Docker.DotNet` 3.125.15
+### `ITaskStore` (`bOps.Abstractions/Memory.cs`)
 
-No OS split (rule A8 does not require one when the transport already abstracts the difference —
-`Docker.DotNet` talks to the daemon over a named pipe on Windows or a Unix socket on Linux, picked
-by `DockerClientFactory`'s platform check). All under `PackageId("bops.packages.docker")`, all
-declaring `Requires: ["docker"]`:
+`SaveAsync(TaskState)`, `LoadAsync(Guid)`, `ListByStatusAsync(AgentTaskStatus)`. Dependency-free,
+node-local, same reasoning as `IAuditSink` living in `bOps.Abstractions` rather than in the
+project that implements it.
 
-- **`docker.containers`**, **`docker.images`**, **`docker.networks`**, **`docker.inspect`**,
-  **`docker.logs`** — `RiskLevel.Read`. `docker.inspect` reports id/name/image/status/running as
-  single-line JSON (`DockerInspectOutput`) — it is the verification target for the three tools
-  below, so its output needs to be read back reliably, same reasoning as V0.5's `fs.stat`.
-  `docker.logs` uses the `MultiplexedStream`/`ReadOutputToEndAsync` API (log output is
-  stdout/stderr-multiplexed by the daemon unless the container has a TTY) rather than reading the
-  raw stream, which would otherwise return frame-header bytes mixed into the text.
-- **`docker.start`**, **`docker.stop`**, **`docker.restart`** — `RiskLevel.Medium`
-  (`piano-bops.md` §11's own worked example), `IVerifiableTool`, verified via `docker.inspect` on
-  the same container (`ArgumentsFrom: ["container"]`). `start`/`restart`: `status == "running"`
-  afterwards → `Confirmed`; `stop`: anything *other than* `"running"` → `Confirmed`. Either way, an
-  inspect call that itself fails (denied, container renamed away, daemon hiccup) → `Inconclusive`,
-  never a guess.
+### `bOps.Memory` — the core's first real dependency beyond `Microsoft.Extensions.*`
 
-**Not built**: `docker.pause`/`unpause`, `docker.exec`, `docker.build`/`pull`/`push`, container
-creation/removal as agent-facing tools. None of these are named in V0.6's roadmap line or in
-`piano-bops.md`'s catalog for this package; the eight tools built are exactly that catalog.
+`SqliteTaskStore : ITaskStore`, one table (`tasks`: `id`, `status`, `updated_at_utc`,
+`state_json`), the whole `TaskState` serialized as a JSON column via a source-generated
+`MemoryJsonContext`, same pattern `bOps.Audit`'s `AuditJsonContext` already uses. No EF Core — a
+parameterized `INSERT ... ON CONFLICT DO UPDATE` and a JSON column are the entire feature. Added
+to `bOps.Architecture.Tests`' `CoreAssemblyMarkers` (rule A1): scanned for forbidden literals like
+every other core assembly.
 
-### Conditional capability discovery — the actual point of this version
+`Microsoft.Data.Sqlite` 10.0.8 still floors its transitive `SQLitePCLRaw.*` dependencies at
+2.1.11, which trips `NU1903` (a real, high-severity advisory, `GHSA-2m69-gcr7-jv3q`) as an error
+under this repo's warnings-as-errors. Fixed with a direct `PackageReference` to
+`SQLitePCLRaw.bundle_e_sqlite3` 3.0.3 in `bOps.Memory.csproj`, overriding the floor — documented
+inline in the `.csproj`, not yet added to `docs/architecture/suppressions.md` (it is a version
+override, not a suppressed analyzer rule, so it may not belong there verbatim — worth a second
+look next session).
 
-`DockerCapability.IsAvailableAsync` pings the daemon (`client.System.PingAsync()`); any exception
-(`DockerApiException`, `HttpRequestException`, `TimeoutException`, `IOException`) means
-unavailable, never a thrown error the caller must handle. `bOps.Cli/Program.cs` registers this
-check on the concrete `CachingCapabilityProbe` — resolved from DI by pattern-matching
-`ICapabilityProbe` (the interface has no `RegisterCheck`; only the concrete type does, by design —
-see `bOps.Runtime.CachingCapabilityProbe`, which has existed, fully generic and unused by anything
-until now, since V0.1) — **before** the existing `RefreshCapabilitiesAsync()` call. No change was
-needed to `bOps.Runtime`, `bOps.Abstractions`, or `ToolRegistry` at all: `IsVisible`'s capability
-check (`ToolRegistry.cs`) was already exactly what rule B4 describes, and this version is simply
-the first package that actually exercises it with a real, sometimes-absent daemon. This is the
-same shape V0.4 was for verification and V0.5 was for a real non-`Read` tool: the contract was
-already there; a real package now exercises it.
+### `AgentRunner` — persist-as-you-go, plus `ResumeAsync`
+
+`ITaskStore` is now a required constructor dependency (not optional/nullable — every host wires a
+real one, exactly like `IAuditSink`). The step loop (`RunAsync`'s body, extracted into a shared
+`ContinueAsync`) now:
+
+- saves the task as `AgentTaskStatus.Running` right after the initial plan, and again after every
+  step — so a crash between two steps loses at most the step in flight;
+- saves the final `TaskState` through every terminal return path, via one `FinishAsync` helper
+  every exit now funnels through instead of returning `Build(...)` directly.
+
+`ResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct)` is the new entry point:
+rebuilds the model-facing `history` from `task.Steps` (`RebuildHistory` — same
+`ChatTurn.FromAssistantToolCalls`/`FromToolResult` shape `ContinueAsync` would have produced the
+first time), takes `task.Plans[^1]` as the current plan, and continues the same loop from
+`task.Steps.Count` — not a second implementation of the agent loop, a second entry point into the
+one that already existed. Throws `InvalidOperationException` if the task has no recorded plan
+(cannot happen for a task `RunAsync` itself produced, since planning always runs first — this
+guards a caller handing back something malformed).
+
+### CLI: `bops resume <task-id>`
+
+The first real subcommand. `bops "<goal>"` is unchanged; `args[0] == "resume"` is checked first
+(`Program.cs`). `SqliteTaskStore` is constructed at `Memory:FilePath` (default `tasks.db`, same
+directory-config pattern as `Audit:FilePath`/`Policy:FilePath`). `bops resume <task-id>` for an
+id with nothing stored prints an error and exits 1 before ever touching the model provider.
+
+**Not run against a live model this session** (same appsettings.json constraint as every prior
+handoff — the file's `ApiKey` is `""` in the repo and must stay that way). The CLI's
+argument-parsing paths (`bops` with no args, `bops resume <not-a-guid>`, `bops resume
+<unknown-guid>` reaching the same "Missing 'ModelProvider' configuration section" failure every
+other CLI path reaches without a configured key) were smoke-tested directly; no `tasks.db` or
+`audit.jsonl` was created by these runs (verified via `git status` — both writes happen after the
+`ModelProvider` config check, which fails first).
 
 ### Tests
 
-`bOps.Packages.Docker.Tests`, ten tests: a comprehensive round-trip (`docker.containers` sees a
-freshly created container → `docker.inspect` reports it not running → `docker.start` + inspect
-confirms `Confirmed` → `docker.stop` + inspect confirms `Confirmed` → `docker.restart` + inspect
-confirms `Confirmed` → `docker.logs` succeeds), `docker.images`/`docker.networks` not throwing,
-`docker.inspect` failing cleanly for a container that never existed, the three verified tools'
-`EvaluateVerificationAsync` going `Inconclusive` when the inspect call itself fails (no daemon
-needed — a synthetic failed `ToolCallResult`), and two manifest-shape checks (all eight tools
-present and `Requires: ["docker"]`; the three action tools are `Medium` risk with
-`docker.inspect`-based `VerificationSpec`s and implement `IVerifiableTool`).
+`bOps.Memory.Tests` (real SQLite file, per-test temp path, `SqliteConnection.ClearAllPools()` in
+`Dispose` — Microsoft.Data.Sqlite pools connections by default, which keeps the file locked past
+`using var connection`'s own `Dispose`): round-trip, unknown id → `null`, a second save overwrites
+in place, `ListByStatusAsync` filters correctly, state survives reopening the store against the
+same file (proves durability, not just an in-process cache).
 
-**`DockerAvailableFactAttribute`** (mirrors `LinuxOnlyFactAttribute` from V0.1 and V0.5's
-`SymlinkCapableFactAttribute`): probes via the `docker` CLI (`docker version --format ...`,
-synchronous `Process.Start`/`WaitForExit`), not via `IDockerClientFactory` — a `FactAttribute`
-constructor cannot be `async`, and blocking on the async client call
-(`.GetAwaiter().GetResult()`) is exactly what `agentic/02-coding-standards.md`'s async rules
-forbid. Shelling out to a *diagnostic* CLI command from test infrastructure has nothing to do with
-rule S1 (no generic execution tool exposed to the *model*) — worth keeping distinct in your head if
-you touch this again. Skips visibly, never silently, wherever no daemon responds within 5s.
-
-**`TestContainer`** creates and removes a uniquely named (`bops-test-{guid}`) `alpine:3.20`
-container per test that needs one, deliberately *not* via xunit's `IAsyncLifetime` — that would run
-before a `[DockerAvailableFact]` skip is known to the runner, risking a Docker call from a test
-meant to be skipped entirely on a machine with no daemon. Every test that touches the daemon
-creates its own container inside its own body and disposes it there.
-
-### Rule A1 test updated
-
-`docker.images` and `docker.networks` (the two tool names not already present from V0.5's
-forward-looking list) added to `bOps.Architecture.Tests`' `ForbiddenTerms` — confirmed clean
-against `bOps.Runtime`/`Policy`/`Audit` (V0.6 touched none of those three assemblies at all; this
-was a completeness update, not a response to a real finding).
+`AgentRunnerPersistenceTests.cs` (`bOps.Runtime.Tests`): a step's `Running` snapshot is saved
+after every step and the terminal state once more at the end; a task cancelled mid-loop (via a
+`CancelAfterCallChatModel` test double that cancels a shared token deterministically after a
+chosen model call, rather than a timing-based `CancelAfter`) is left `Running` in the store with
+exactly its completed steps, never returned as a finished `TaskState`; `ResumeAsync` continues
+from the next step without repeating the persisted one, and the model's next request already
+carries the completed step as history; `ResumeAsync` on a task with no recorded plan throws.
 
 ## Design choices worth knowing before extending this further
 
-- **`DockerClientConfiguration` is disposed immediately after `CreateClient()`** (`using var
-  configuration = ...; return configuration.CreateClient();`) — CA1062/CA2000 flagged the
-  one-liner version. The returned `DockerClient` does not depend on the configuration object
-  staying alive (no credentials were supplied here; only an endpoint `Uri`), so this is safe, not
-  a workaround.
-- **`docker.logs` combines stdout and stderr into one string**, not two separate fields. Nothing
-  downstream (the model, the observation text) currently benefits from keeping them apart, and
-  `ToolCallResult.Output` is a single string by contract (rule A2) — splitting them would need a
-  formatting convention this version has no consumer for yet.
-- **The capability check lives in the package (`DockerCapability`), the registration call lives in
-  the host (`bOps.Cli/Program.cs`)** — not the other way around, and not inside `bOps.Runtime`.
-  `CachingCapabilityProbe.RegisterCheck` takes a bare `Func<CancellationToken, Task<bool>>`
-  precisely so the core never has to know what "docker" means (rule A1); only the composition root,
-  which is allowed to know package specifics (it already picks `WindowsSystemToolProvider` vs.
-  `LinuxSystemToolProvider` by name), wires the two together.
-- **Restarting a stopped container is not a no-op or an error** — Docker's own `restart` semantics
-  start it if it was already stopped, which is exactly what the round-trip test exercises
-  (`docker.stop` → `docker.restart` → running again) and exactly why `docker.restart`'s
-  verification predicate is identical to `docker.start`'s.
+- **`AgentRunner`'s constructor grew a required parameter.** Every test that builds one goes
+  through a single `CreateRunner` factory per test file — the fix for `AgentRunnerTests.cs` was
+  one line (add `ITaskStore? taskStore = null` defaulting to a new `InMemoryTaskStore`), not a
+  67-test rewrite.
+- **`InMemoryTaskStore` (`TestDoubles.cs`) also records every save, in order** (`.Saves`), used by
+  the persistence tests to assert *when* the runtime persists, not only that a final load
+  round-trips.
+- **A resumed task's rebuilt history is not byte-identical to the original run's in-memory
+  `history`** — it is reconstructed from `TaskState.Steps`, which never captured the raw
+  `ModelResponse`/token-usage objects (those were never part of the contract). `ResumeAsync`
+  starts `totalTokens` at 0 for its own new budget — a resumed run gets its own fresh
+  `MaxTotalTokens` allowance, deliberately, not a continuation of the original run's spent budget.
+  Correctness of *what already happened* is unaffected; only a resumed run's own token accounting
+  restarts.
+- **`ITaskStore` is required, never optional/nullable, on `AgentRunner`.** Considered and rejected
+  in ADR-0017 — a null-checked persistence path would be exactly the kind of
+  backwards-compatibility shim `agentic/02-coding-standards.md` forbids for a runtime that has no
+  other consumer to stay compatible with.
 
-## What V0.6 deliberately does NOT have yet
+## What V0.7 deliberately does NOT have yet
 
-- **No `docker.pause`/`unpause`, `docker.exec`, `docker.build`/`pull`/`push`.** Not named in this
-  version's roadmap line or in `piano-bops.md`'s catalog for this package.
-- **No `Service` package** (`service.list`/`status`/`start`/`stop`/`restart`) — not named in V0.5
-  or V0.6's roadmap lines at all. The next version that needs it should say so explicitly rather
-  than assume it slots in here because the shape is similar to Docker's.
-- **The Docker capability check is a plain ping, not the richer discovery `RefreshCapabilitiesAsync`
-  ultimately supports** (per-capability TTL is already there from V0.1's `CachingCapabilityProbe`;
-  nothing about *this* capability's check needed anything beyond it).
-- **No CI verification that `docker.*` actually passes on GitHub's runners.** `windows-latest` and
-  `ubuntu-latest` GitHub-hosted runners both ship Docker, but this was verified only against this
-  session's local Docker Desktop — `[DockerAvailableFact]` will skip cleanly rather than fail if a
-  future CI run finds no responsive daemon, but nobody has watched that actually happen on a real
-  runner yet.
-- **`bOps.AppHost` (V0.5) still has not been run** — carried forward again; still only
-  `dotnet build`-verified.
-- **No `bOps.Memory` project / SQLite** — V0.7, the next roadmap line, and genuinely next.
-- **No dynamic plugin loading** — V0.10. Still direct `ProjectReference`s, including this package.
+- **No `bops task list` / "show me what's resumable" CLI command.** `ITaskStore.ListByStatusAsync`
+  exists and is tested, but nothing in the CLI calls it yet — an operator resuming a task today
+  needs to already know its id (from the printed transcript, or the audit log). Worth a small
+  follow-up, not part of this version's roadmap line as stated.
+- **No automatic resume on startup.** A `Running` task left behind by a crash sits there until an
+  operator explicitly runs `bops resume <id>` — no "resume everything still Running" sweep.
+  Reasonable for a single-operator CLI; would need real thought (which task, whose approval) before
+  a multi-operator surface (V0.9's API) could do this unattended.
+- **No SQLite schema migration story.** One table, no version column. Fine for a 0.x SDK
+  (D-012) with a single shape so far; will need one before V1.0 if `TaskState`'s shape ever
+  changes in a way that breaks deserializing an old row.
+- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated to V0.7.
+- **No dynamic plugin loading** — V0.10, unrelated.
 - **No CLI command to run `AuditChainVerifier` on demand** — carried forward again, still small,
   still not done.
 
 ## Next steps
 
-V0.6 is genuinely done, and unusually well-verified for a first pass: the Docker package's full
-verified action lifecycle (start → verify → stop → verify → restart → verify) ran for real against
-a real daemon, not just against test doubles, in both Debug and Release. Conditional capability
-discovery — the actual point of this version — is now exercised by a real capability that is
-genuinely sometimes absent, closing the loop `ICapabilityProbe`/`RefreshCapabilitiesAsync` opened
-at V0.1 and left unused since.
+V0.7 is done: every task is durable as it runs, and `bops resume <task-id>` genuinely continues
+from the next unfinished step rather than restarting the goal, verified against a real SQLite file
+and a deterministic fake model, not just asserted.
 
-**V0.7 — "Persistent, resumable tasks (SQLite)" — has not been started.** Per the scope-discipline
-rule, the next session should begin by reading `agentic/00-project-spec.md`'s roadmap entry for
-V0.7 and re-reading `agentic/01-architecture-rules.md`'s `TaskState`/`PlanStep`/`AgentPlan` shapes
-(rule B9) before writing any code: V0.7 is the first version where `TaskState` needs to survive the
-process, which touches how `AgentRunner.RunAsync` currently builds and returns state entirely
-in-memory. Check `06-decisions.md` for whether persistence architecture was already decided (it
-was not named in the initial decision register read this session — read it again, don't assume).
-This is also the first version that needs a real `bOps.Memory` project to exist at all — currently
-there is none in `src/core/`, only named in the roadmap and in `00-project-spec.md`'s list of what
-the core consists of.
+**Before any further roadmap work**, resolve the security finding above — the committed API key.
+This blocks nothing about V0.7's own correctness, but it is a live credential in git history and
+should not wait for the next scheduled session.
 
-Two smaller, non-urgent items carried forward again from every prior handoff, still real, still
-judged out of scope for a session implementing code rather than backfilling documentation:
+**V0.8 — "Anthropic, OpenAI and DeepSeek provider packages" — has not been started.** Per the
+scope-discipline rule, the next session should begin by reading `agentic/00-project-spec.md`'s
+roadmap entry for V0.8 and `06-decisions.md` for any settled provider-package decisions before
+writing code. Phase 1 (the CLI roadmap) is now complete through V0.7; V0.8 opens Phase 2.
+
+Two smaller, non-urgent items carried forward again from every prior handoff:
 
 1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
    0002, 0005, 0006, 0011, 0012) are still unwritten.

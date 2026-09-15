@@ -39,6 +39,7 @@ public sealed class CoreNamesNoPackageTests
         { "bOps.Runtime", typeof(Runtime.AgentRunner) },
         { "bOps.Policy", typeof(Policy.PolicyEngine) },
         { "bOps.Audit", typeof(Audit.JsonLinesAuditSink) },
+        { "bOps.Memory", typeof(Memory.SqliteTaskStore) },
     };
 
     [Theory]

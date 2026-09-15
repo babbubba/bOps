@@ -56,6 +56,32 @@ internal sealed class RecordingAuditSink : IAuditSink
     }
 }
 
+/// <summary>
+/// An <see cref="ITaskStore"/> held entirely in memory, for tests that do not exercise real
+/// persistence directly — the real store is <c>SqliteTaskStore</c> (V0.7, ADR-0017), tested on
+/// its own in <c>bOps.Memory.Tests</c>. Also records every save, in order, so a test can assert
+/// exactly when the runtime persists (rule V0.7: after every step, and again at the end).
+/// </summary>
+internal sealed class InMemoryTaskStore : ITaskStore
+{
+    private readonly Dictionary<Guid, TaskState> _tasks = [];
+
+    public List<TaskState> Saves { get; } = [];
+
+    public Task SaveAsync(TaskState task, CancellationToken ct = default)
+    {
+        _tasks[task.Id] = task;
+        Saves.Add(task);
+        return Task.CompletedTask;
+    }
+
+    public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default) =>
+        Task.FromResult(_tasks.TryGetValue(taskId, out var task) ? task : null);
+
+    public Task<IReadOnlyList<TaskState>> ListByStatusAsync(AgentTaskStatus status, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TaskState>>(_tasks.Values.Where(t => t.Status == status).ToList());
+}
+
 /// <summary>A capability probe that reports every capability as available. Nothing under test needs a real probe.</summary>
 internal sealed class AlwaysAvailableCapabilityProbe : ICapabilityProbe
 {

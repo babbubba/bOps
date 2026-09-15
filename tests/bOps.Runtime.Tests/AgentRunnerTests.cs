@@ -20,9 +20,9 @@ public sealed class AgentRunnerTests
 
     private static AgentRunner CreateRunner(
         IChatModel model, IToolRegistry registry, IAuditSink audit, AgentRunnerOptions? options = null,
-        IPolicyEngine? policyEngine = null, IApprovalProvider? approvalProvider = null) =>
+        IPolicyEngine? policyEngine = null, IApprovalProvider? approvalProvider = null, ITaskStore? taskStore = null) =>
         new(model, registry, policyEngine ?? new DefaultTestPolicyEngine(), approvalProvider ?? new NeverCalledApprovalProvider(),
-            audit, TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
+            audit, taskStore ?? new InMemoryTaskStore(), TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
 
     private static ToolRegistry CreateRegistryWith(params ITool[] tools)
     {

@@ -1,6 +1,7 @@
 using bOps.Abstractions;
 using bOps.Audit;
 using bOps.Cli;
+using bOps.Memory;
 using bOps.Packages.Docker;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
@@ -18,13 +19,33 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
+const string UsageMessage = """Usage: bops "<goal>" | bops resume <task-id>""";
+
 if (args.Length == 0)
 {
-    await Console.Error.WriteLineAsync("""Usage: bops "<goal>" """);
+    await Console.Error.WriteLineAsync(UsageMessage);
     return 1;
 }
 
-var goal = string.Join(' ', args);
+// V0.7 (ADR-0017): "resume" is the CLI's first real subcommand — everything else is still read
+// as the goal, exactly as before, so `bops "<goal>"` keeps working unchanged.
+string? goal = null;
+Guid? resumeTaskId = null;
+
+if (string.Equals(args[0], "resume", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length != 2 || !Guid.TryParse(args[1], out var parsedTaskId))
+    {
+        await Console.Error.WriteLineAsync(UsageMessage);
+        return 1;
+    }
+
+    resumeTaskId = parsedTaskId;
+}
+else
+{
+    goal = string.Join(' ', args);
+}
 
 var builder = Host.CreateApplicationBuilder();
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
@@ -124,18 +145,40 @@ var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogg
 var policyEngine = await LoadPolicyEngineAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
 var approvalProvider = new ConsoleApprovalProvider();
 
+// V0.7 (ADR-0017): a plain SQLite file next to the audit log — every task is persisted as it
+// runs, so `bops resume <task-id>` can pick a `Running` task back up after a crash, a restart,
+// or an operator's own interruption.
+var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? "tasks.db");
+
 var runner = new AgentRunner(
     model,
     toolRegistry,
     policyEngine,
     approvalProvider,
     host.Services.GetRequiredService<IAuditSink>(),
+    taskStore,
     host.Services.GetRequiredService<TimeProvider>(),
     host.Services.GetRequiredService<ILogger<AgentRunner>>(),
     runnerOptions);
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
-var result = await runner.RunAsync(goal, actor);
+
+TaskState result;
+if (resumeTaskId is { } taskIdToResume)
+{
+    var existing = await taskStore.LoadAsync(taskIdToResume);
+    if (existing is null)
+    {
+        await Console.Error.WriteLineAsync($"No stored task with id '{taskIdToResume}'.");
+        return 1;
+    }
+
+    result = await runner.ResumeAsync(existing, actor);
+}
+else
+{
+    result = await runner.RunAsync(goal!, actor);
+}
 
 PrintTranscript(result);
 return result.Status == AgentTaskStatus.Completed ? 0 : 1;

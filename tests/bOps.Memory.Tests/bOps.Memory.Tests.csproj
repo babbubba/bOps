@@ -20,9 +20,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
-    <ProjectReference Include="..\..\src\core\bOps.Policy\bOps.Policy.csproj" />
-    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
   </ItemGroup>
 
