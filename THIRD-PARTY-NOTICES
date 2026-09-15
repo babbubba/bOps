@@ -7,8 +7,8 @@ terms must remain with that artifact.
 
 Inventory sources:
 
-- .NET: CycloneDX 1.7 solution SBOM at `artifacts/sbom/bops-dotnet-solution.cdx.json`, generated 2026-09-15T18:52:39Z
-  (142 unique NuGet components). This solution-wide inventory includes
+- .NET: CycloneDX 1.7 solution SBOM at `artifacts/sbom/bops-dotnet-solution.cdx.json`, generated 2026-09-15T19:40:22Z
+  (143 unique NuGet components). This solution-wide inventory includes
   runtime, build, development and test dependencies; inclusion does not by itself mean that a
   component ships in every bOps artifact.
 - Web UI: npm lockfile v3 at `web/bops-ui/package-lock.json`
@@ -101,7 +101,7 @@ Primary references:
 - Google.Protobuf@3.34.1
 - Polly.Core@8.6.6
 
-### MIT (102)
+### MIT (103)
 
 - Aspire.Dashboard.Sdk.win-x64@13.5.3
 - Aspire.Hosting@13.5.3
@@ -202,6 +202,7 @@ Primary references:
 - System.Diagnostics.PerformanceCounter@10.0.0
 - System.IO.Hashing@10.0.12
 - System.Security.Cryptography.ProtectedData@10.0.0
+- System.ServiceProcess.ServiceController@10.0.0
 - xunit.abstractions@2.0.3
 - YamlDotNet@16.3.0
 - YamlDotNet@18.1.0

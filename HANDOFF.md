@@ -1,141 +1,138 @@
-# Handoff — V0.10 done, uncommitted; hand off toward V0.11
+# Handoff — V0.11 tranche 1 done, uncommitted; hand off toward V0.11 tranche 2
 
-V0.10 (dynamic package loader, `piano-bops-v0.9.1-v2.0.md` §7) is implemented, tested end to end
-against a real compiled plugin, and the CLI actually runs it. **Nothing from this session is
-committed yet.** Working tree has the changes below plus one untracked file that is not mine —
-see "Do not touch" below before doing anything else.
+V0.11's first, read-only tranche (`piano-bops-v0.9.1-v2.0.md` §7, implementation note 2) is
+implemented, built, and tested end to end against real Windows APIs — this dev environment has no
+Linux host, so the Linux half is built and unit-tested for shape but not run for real here; it
+runs on CI's `ubuntu-latest`, a real VM with systemd as PID 1, not a container. **Nothing from this
+session is committed yet.**
 
-## What V0.10 delivers
+## What this tranche delivers
 
-- **ADR-0020** (`docs/architecture/adr/0020-plugin-loader-manifest-and-activation-boundary.md`) —
-  written before the code, as `agentic/05-workflow.md` requires for anything that changes how
-  packages are loaded/isolated/identified. Read it for the full design reasoning; this section is
-  the short version.
-- **`PluginManifest`/`PluginDependency`** in `bOps.Abstractions` (`src/core/bOps.Abstractions/Plugins.cs`)
-  — the `bops-plugin.json` shape, plus round-trip tests in `JsonRoundTripTests.cs`.
-  `bOps.Abstractions.csproj`'s `<Version>` bumped `0.1.0` → `0.10.0` — it had never moved since
-  V0.1, and V0.10 is the first thing that reads it for a real purpose (the host-compatibility
-  check below), so an honest number now matters.
-- **`bOps.PluginHost`** (new project, `src/core/bOps.PluginHost/`) — depends only on
-  `bOps.Abstractions` (rule A7's spirit):
-  - `PluginManifestValidator` — schema version, id shape (and the reserved `bops.` prefix, so a
-    plugin cannot claim a first-party package's identity — rule A11), version parsing,
-    host-compatibility, entry-assembly-exists, self-consistent `Dependencies`, defined
-    `MaxDeclaredRisk`. Fails loud, mirrors `PolicyConfigLoader`'s pattern.
-  - `PluginStore` — JSON-backed (`plugins.json`), every write atomic (temp file + rename), reads
-    fresh from disk every call. A corrupted store file throws rather than silently forgetting
-    installed plugins.
-  - `PluginLoadContext : AssemblyLoadContext` — one collectible context per plugin;
-    `bOps.Abstractions` is the one assembly it deliberately never loads a second copy of (falls
-    through to the host's default context).
-  - `RestrictedPackageServiceProvider` — the actual A10 container: `ILoggerFactory`,
-    `IHttpClientFactory`, `TimeProvider`, the plugin's own `IConfigurationSection`,
-    `ICapabilityProbe`. Nothing else resolves.
-  - `PluginManager` — `Install`/`List`/`Enable`/`Disable`/`Remove`/`LoadAllEnabled`, registering
-    directly into the *same* `IToolRegistry`/`IChatModelRegistry` the host already uses. `Install`
-    validates against a staging copy before moving anything into place (an interrupted or
-    rejected install leaves nothing behind). `Disable`/`Remove` actually unload the collectible
-    context (bounded `GC.Collect()`/`WaitForPendingFinalizers()` loop after `Unload()`), which
-    needed a real fix in `IToolRegistry` — see below.
-- **`IToolRegistry.Unregister(PackageId)`** (new method, `bOps.Abstractions`/`bOps.Runtime`) —
-  `SetEnabled` was deliberately built to *hide* a package's tools without releasing them (there's
-  a test that says so by name). That is fine for a package that is always in-process, but it means
-  nothing ever stops pinning a dynamically loaded plugin's assembly — its
-  `AssemblyLoadContext.Unload()` would request unload and then never actually complete, silently.
-  `Unregister` genuinely drops the registry's reference; `PluginManager.Disable` calls it, `SetEnabled`
-  is untouched and still used nowhere else. Three new `ToolRegistryTests` cover it.
-- **`samples/bops-sample-plugin/`** — a real, buildable, purely-demonstrative third-party-style
-  plugin (`Acme.SamplePlugin`, deliberately not in the `bOps.*` namespace). One Read-risk tool,
-  `sample.echo`. This is what every `bOps.PluginHost.Tests` integration test actually installs,
-  enables, calls, disables and removes — never a fake of the loader, mirroring "never mock the
-  operating system."
-- **CLI**: `bops plugin install|list|enable|disable|remove|validate` (`bOps.Cli/Program.cs`).
-  Plugin commands build their own lightweight host and never touch the goal-execution path's
-  composition (no model provider, no policy engine required just to run `bops plugin list`).
-  The main `bops "<goal>"` / `bops resume` path now also calls `PluginManager.LoadAllEnabled()`
-  before `RefreshCapabilitiesAsync`, so a plugin enabled in a previous invocation actually
-  activates on this one — a CLI process is one-shot, so persistence through the store, not an
-  in-memory flag, is what makes "enabled" durable across runs.
-- **`docs/plugins/getting-started.md`** — the walkthrough; doubles as the "template" the plan
-  asked for, pointing at the sample plugin as a copyable starting point rather than a separate
-  scaffolding tool.
-- **README.md** — architecture tree, roadmap table (V0.9.1 and V0.10 both marked done), Usage
-  section (real `bops plugin *` examples, removed the stale "not implemented yet" note), Extending
-  bOps section (the manifest example now matches the actually-implemented schema field-for-field,
-  it did not before), Status section.
-- **SBOM/THIRD-PARTY-NOTICES regenerated** — the plan's V0.10 license-impact note requires this
-  for new dependencies. Turned out to add zero new unique components (the two new
-  `Microsoft.Extensions.*.Abstractions` packages were already transitively present), so the only
-  diff is the regeneration timestamp — still regenerated for real, not just checked.
+Nine new Read-risk tools across four packages, plus a new package family:
+
+- **`bOps.Packages.System.{Core,Windows,Linux}`** — `system.swap`, `system.io`,
+  `process.inspect`, following the existing A8 shell pattern exactly (`SystemToolBases.cs`,
+  `SystemToolManifests.cs`, `Results.cs`, `SystemToolFormatting.cs` in `.Core`; OS-specific
+  collection in `.Windows`/`.Linux`).
+  - `system.swap`: Windows via `GlobalMemoryStatusEx`'s page-file fields (already-imported native
+    call, no new dependency) — deliberately not literal `pagefile.sys` usage; Linux via
+    `/proc/meminfo`'s `SwapTotal`/`SwapFree`.
+  - `system.io`: per-device read/write KB/s, sampled over 500ms like `system.cpu` already does.
+    Windows via the `PhysicalDisk` performance counter category (one instance per physical disk).
+    Linux by differencing two `/proc/diskstats` samples, restricted to whole-disk devices (a
+    device counts as one when `/sys/block/<name>` exists) so a single-partition disk isn't
+    double-counted between its disk and partition lines.
+  - `process.inspect`: single-PID JSON observation (`pid`, `exists`, `name`, `workingSetMb`,
+    `threadCount`, `startTimeUtc`), reporting a missing PID as `exists: false` the same way
+    `fs.stat` reports a missing path — a successful observation of a negative fact, not a
+    failure. Deliberately excludes command-line arguments (could leak another process's secrets
+    into model context).
+- **`bOps.Packages.Filesystem`** — `fs.search` (glob-by-name, recursive, every candidate's
+  resolved path checked against the read policy both before it's reported and before the search
+  descends into it — rule S11 — with a visited-set guard against symlink cycles) and `fs.hash`
+  (SHA-256 + size, single-line JSON, single algorithm by design).
+- **`bOps.Packages.Network`** — `network.port_check` (TCP connect attempt via `TcpClient`, closed/
+  refused/timed-out reported as a successful negative observation, not a failure) and
+  `network.route` (each active interface's directly connected subnet + default gateway via
+  `NetworkInterface`, **not** the full OS routing table — see the Scope boundaries section below).
+- **`bOps.Packages.Service.{Core,Windows,Linux}`** (new package family) — `service.list`,
+  `service.status`, status normalized to `"running"`/`"stopped"`/`"failed"`/`"unknown"` on both
+  platforms (rule A8: two OS packages producing the same tool must produce the same shape).
+  - **ADR-0021** (`docs/architecture/adr/0021-service-package-windows-linux-strategy.md`) —
+    written before this package's code, as `piano-bops-v0.9.1-v2.0.md` §7 note 8 and
+    `agentic/05-workflow.md`'s ADR trigger list both require. Windows: `ServiceController` (new
+    `System.ServiceProcess.ServiceController` NuGet dependency, MIT). Linux: a fixed,
+    non-composable `systemctl` invocation via `ProcessStartInfo.ArgumentList` (never a shell
+    string) — read the ADR for why this doesn't reopen rule S1, and why D-Bus was considered and
+    deferred rather than chosen.
+  - `service.status`'s JSON shape (`name`, `exists`, `status`, `description`) is deliberately
+    already the verification-target shape `piano-bops-v0.9.1-v2.0.md` §7 note 10 names for V0.11's
+    second tranche (`service.start`/`stop`/`restart` will verify against it) — designing it now,
+    while still Read-only, avoids a breaking change to it later.
+- **CLI wiring** (`bOps.Cli/Program.cs`) — the Service package registers exactly like the System
+  package does: OS-picked `IToolProvider`, `PackageId("bops.packages.service.{windows|linux}")`.
+  No policy.yaml entry needed (Read tools use the built-in default).
+- **README.md** — tool table, architecture tree, roadmap table, Status section all updated for
+  what's now actually registered, including the `network.route`/`fs.hash` scope notes.
+- **SBOM/THIRD-PARTY-NOTICES regenerated** — one new component,
+  `System.ServiceProcess.ServiceController@10.0.0` (MIT, auto-resolved by CycloneDX, no manual
+  override needed). 143 .NET components now (was 142).
 
 ## Verified for real, this session
 
-- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors** (full solution,
-  including the two new projects).
-- `dotnet test bOps.slnx --configuration Release --filter "Category!=LiveModel"`: **218 passed, 7
-  skipped (expected platform skips), 0 failed.** `bOps.PluginHost.Tests` alone: 37/37, including
-  the real end-to-end install→enable→call→disable→remove cycle against the compiled sample
-  plugin, and the collectible-`AssemblyLoadContext` unload actually releasing the file lock
-  (`Remove` deletes the still-referenced-looking folder and it works).
-- `npx ng test --watch=false --browsers=ChromeHeadless`: still 17/17 (untouched this session).
-- **Manually ran the actual `bops.exe`** (not just the test suite) end to end from a scratch
-  directory: `plugin install` → `list` (disabled) → `enable` → `list` (enabled) → `disable` →
-  `list` (disabled) → `remove` → `list` (empty) → `validate` on the original source. This is what
-  caught a real bug the unit tests missed: `PluginManager.Install` stored a *relative* install
-  path when `Plugins:RootPath` was the CLI's actual relative default (`"plugins"`), and
-  `AssemblyLoadContext.LoadFromAssemblyPath` requires an absolute one — `Enable` threw
-  `ArgumentException` for real. Fixed (`Path.GetFullPath` once, at `Install`) and covered by a
-  regression test (`Enable_WorksWithARelativePluginsRootDirectory`) before re-verifying manually.
+- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors**, full solution
+  including the three new Service projects and their two new test projects.
+- `dotnet test bOps.slnx --configuration Release --filter "Category!=LiveModel"`: **all 15 test
+  assemblies passed, 0 failures**, including:
+  - `bOps.Packages.System.Windows.Tests`: 11/11, including real `system.swap` (real
+    `GlobalMemoryStatusEx` page-file fields), real `system.io` (real `PhysicalDisk` performance
+    counters, sampled for real over 500ms), real `process.inspect` (this test process's own PID,
+    and a deliberately-implausible PID for the missing case).
+  - `bOps.Packages.Filesystem.Tests`: 32/33 (1 symlink-privilege skip, pre-existing), including
+    `fs.search` recursing a real temp directory tree, refusing to descend into a subdirectory the
+    read policy doesn't cover, and `fs.hash` against a known SHA-256 of `"hello world"`.
+  - `bOps.Packages.Network.Tests`: 10/10, including `network.port_check` against a real loopback
+    `TcpListener` (open) and a bind-then-release port (not reachable), and `network.route`
+    against this machine's real interfaces.
+  - `bOps.Packages.Service.Windows.Tests`: **4/4, against the real Windows Service Control
+    Manager** — `service.list` enumerating every real installed service, `service.status`
+    against the real `EventLog` service (exists) and a made-up name (does not).
+  - `bOps.Architecture.Tests`: still 4/4 — rule A1 (core never names a package) holds; nothing in
+    this tranche touches `bOps.Runtime`/`Policy`/`Memory`/`Audit`.
+  - `bOps.Packages.System.Linux.Tests` / `bOps.Packages.Service.Linux.Tests`: skip visibly (no
+    Linux host here), as they have since V0.5 — they run for real on CI's `ubuntu-latest`.
+- **Manually ran the real `bops.exe`** end to end with a real goal string (no API key configured,
+  so it fails at the expected point — a 401 from OpenRouter) specifically to confirm the new
+  Service registration in `Program.cs` doesn't throw during composition, the same class of bug
+  V0.10's equivalent manual check caught for the plugin loader's relative-path bug. It didn't;
+  the failure trace shows the run reaching `AgentRunner.CreatePlanAsync` normally.
 
 ## Scope boundaries — deliberate, not gaps to silently fill later
 
-- **`IModelProviderPackage` plugins can be installed and enabled, but not genuinely disabled.**
-  `IChatModelRegistry` has no unregister method — extending it wasn't needed for this version's
-  sample (a `IToolProvider`) and wasn't done. `PluginManager.Disable` detects this case and
-  **refuses** with a clear message rather than pretending to disable something it structurally
-  can't. Revisit if/when a real model-provider plugin is actually needed.
-- **`PackageTrustLevel` is still hardcoded `Official` everywhere**, dynamically loaded plugins
-  included — unchanged from V0.3. Nothing today reads `PolicyContext.Trust` (confirmed:
-  `PolicyEngine.Evaluate` never branches on it), so assigning any specific level to a plugin would
-  be cosmetic, not a real safety improvement. Real trust assignment belongs with V1.0's signing/
-  provenance work per the plan's own V1.0 section — ADR-0020 says this explicitly rather than
-  quietly doing nothing. What *does* constrain a newly installed plugin today: the existing
-  per-package ceiling in `policy.yaml`, keyed by the plugin's own id — an operator should set one
-  before enabling anything they don't fully trust.
-- **No remote install.** `Install`'s source is a local directory only, exactly as the plan's V0.10
-  note says ("local artifacts only"). No zip/archive support either — not asked for.
-- **No `docs/security/threat-model.md`.** Referenced by ADR-0020 as "due at V1.0," not written
-  here — this session didn't start it.
-
-## Do not touch — not mine
-
-`specifiche-pendenti.md` (repo root, untracked) is a **different, parallel session's** working
-document — feature requests from the user collected there for future consolidation, explicitly
-marked non-normative and explicitly waiting for this session's V0.10 work to be committed before
-it touches the repo itself. Do not commit it as part of this session's work, do not treat its
-contents as instructions or as an authoritative backlog. If it's still present next session, leave
-it exactly as found unless the user says otherwise.
+- **`network.route` reports each interface's directly connected subnet and default gateway, not
+  the full OS routing table.** The full table needs `GetIpForwardTable2` P/Invoke on Windows
+  (a large, union-typed struct with real marshaling risk this environment could not have verified
+  against a live Windows box the way the chosen implementation was) and `/proc/net/route` parsing
+  on Linux. The reduced scope answers the question most ops queries actually ask ("can this host
+  reach the internet from here?") using only already-proven `NetworkInterface` APIs. Documented in
+  the tool's own XML doc comment and in README's Scope note.
+- **`fs.hash` is SHA-256 only** — no algorithm parameter. Nothing in this tranche needs a second
+  algorithm; adding a parameter for a hypothetical future one would be exactly the kind of
+  unrequested flexibility `agentic/02-coding-standards.md` argues against.
+- **`process.inspect` never reports a process's command-line arguments.** Another process's argv
+  can contain secrets (an API key passed as a CLI flag, for instance); this tool reports identity
+  and resource usage only.
+- **The Linux `Service` package shells to `systemctl`, not D-Bus.** ADR-0021 records the full
+  reasoning; short version: `Tmds.DBus` + the systemd D-Bus interface surface is meaningfully more
+  new, unfamiliar marshaling code than this session could verify against a real bus (no Linux host
+  here), for a plain-text `--property=` parse that is easy to sanity-check by hand on any systemd
+  machine, including CI's own runner.
+- **This tranche adds no side-effecting tools.** `fs.move`, `service.start`/`stop`/`restart`, and
+  a controlled process-stop operation are V0.11's second tranche, explicitly gated by
+  `piano-bops-v0.9.1-v2.0.md` §7 on this tranche's read-only verifiers landing first — which they
+  now have.
 
 ## Exact next steps, in order
 
-1. Commit V0.10 in a few well-scoped commits (ADR, Abstractions contract, PluginHost core +
-   Unregister + sample plugin, CLI wiring, docs/README, SBOM regeneration) — `specifiche-
-   pendenti.md` excluded.
-2. Ask the user before pushing (standing rule, `agentic/05-workflow.md`: "Push... without being
-   asked" is something to never do). Do not add a `Co-Authored-By: Claude` trailer to any commit
-   — the user asked mid-session for that to stop, for this repo going forward.
-3. After pushing, confirm CI is green on GitHub's own runners the same way V0.9.1's push was
-   confirmed — do not assume a green local run means a green CI run; the last session's own
-   experience (three latent bugs the local machine never surfaced) is exactly why.
+1. Commit this tranche in a few well-scoped commits (System extensions, Filesystem extensions,
+   Network extensions, the new Service package family + ADR-0021 + CLI wiring, README/SBOM) — the
+   same granularity V0.10 committed at.
+2. Ask the user before pushing (standing rule, `agentic/05-workflow.md`). No `Co-Authored-By:
+   Claude` trailer — the user asked mid-session, in an earlier session on this repository, for
+   that to stop, for this repo going forward.
+3. After pushing, confirm CI is green on GitHub's own runners — this is specifically where the
+   Linux half of `system.swap`/`system.io`/`process.inspect` and the entire `Service.Linux`
+   package (including the real `systemctl show`/`list-units` subprocess calls against CI's real
+   systemd) gets its first real execution. Treat any Linux-only failure there as expected new
+   information, not a surprise — exactly the posture that caught three real bugs when V0.9.1's CI
+   was first fixed.
 
-## Next: V0.11 — completing the operational capabilities
+## Next: V0.11 tranche 2 — side-effecting operations
 
-Per the plan (§7), do not start this before V0.10's own verification (step 3 above) is actually
-done. When it's time: first tranche is read-only only (`system.swap`, `system.io`,
-`process.inspect`, `fs.search`, `fs.hash`, `network.port_check`, `network.route`,
-`service.list`/`service.status`, the last two needing a new `Service.{Core,Windows,Linux}` package
-family per rule A8) — the second tranche (`fs.move`, `service.start`/`stop`/`restart`, controlled
-process-stop) waits until those read-only verifiers exist and there is a resolved, unambiguous
-naming for graceful-stop vs. kill-forced process operations. `system.uptime` and a generic
-`process.start`/`system.environment` dump stay permanently out of scope — see README's "Never
-planned, on purpose."
+Per the plan (§7, implementation note 3): `fs.move`, a controlled process-stop operation, and
+`service.start`/`stop`/`restart`. All non-`Read`, so each needs a `VerificationSpec` and
+`IVerifiableTool` before it can even register (rule B3) — `fs.hash` (origin/destination/content
+identity) and `service.status`/`process.inspect` (observed state after the action) already exist
+as the verification targets this tranche was designed to hand off to, per the note above. Name and
+semantics for graceful-stop vs. kill-forced process operations need resolving *before* writing
+those two tools' manifests, per the plan's own explicit caution against ambiguous aliases here.
