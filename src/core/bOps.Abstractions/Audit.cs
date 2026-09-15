@@ -80,7 +80,13 @@ public sealed record ToolCallAuditEvent : AuditEvent
     /// <summary>How long the call took, measured by the runtime.</summary>
     public required TimeSpan Duration { get; init; }
 
-    /// <summary><c>null</c> only for a <see cref="RiskLevel.Read"/> tool, which has nothing to verify.</summary>
+    /// <summary>
+    /// <c>null</c> for a <see cref="RiskLevel.Read"/> tool, which has nothing to verify, and for
+    /// a non-<see cref="RiskLevel.Read"/> call that was never executed at all (denied by policy
+    /// or an operator, or rejected by argument validation) — there is nothing to check the effect
+    /// of. Set for every non-<see cref="RiskLevel.Read"/> call that was actually attempted,
+    /// whatever its <see cref="Outcome"/> (V0.4; agentic/03-security-rules.md, rule S4).
+    /// </summary>
     public VerificationStatus? Verification { get; init; }
 }
 

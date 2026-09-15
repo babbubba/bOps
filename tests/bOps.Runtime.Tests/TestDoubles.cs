@@ -116,9 +116,18 @@ internal sealed class HangingTool(string name = "test.hangs") : ITool
     }
 }
 
-/// <summary>A non-<see cref="RiskLevel.Read"/> tool with a valid <see cref="VerificationSpec"/>, for exercising the policy-absence guard (rule S3).</summary>
-internal sealed class FakeHighRiskTool(string name = "test.highrisk") : IVerifiableTool
+/// <summary>
+/// A non-<see cref="RiskLevel.Read"/> tool with a valid <see cref="VerificationSpec"/>, for
+/// exercising the policy-absence guard (rule S3) and, from V0.4, verification itself (rule S4).
+/// <see cref="EvaluateVerificationAsync"/> ignores whatever the verification tool call actually
+/// returned and always answers with <paramref name="verificationOutcome"/> — tests that care what
+/// <c>AgentRunner</c> does with the verification tool's own result use
+/// <see cref="InspectingVerifiableTool"/> instead.
+/// </summary>
+internal sealed class FakeHighRiskTool(string name = "test.highrisk", VerificationOutcome? verificationOutcome = null) : IVerifiableTool
 {
+    private readonly VerificationOutcome _verificationOutcome = verificationOutcome ?? new VerificationOutcome(VerificationStatus.Confirmed, null);
+
     public ToolManifest Manifest { get; } = new()
     {
         Name = name,
@@ -135,7 +144,58 @@ internal sealed class FakeHighRiskTool(string name = "test.highrisk") : IVerifia
 
     public Task<VerificationOutcome> EvaluateVerificationAsync(
         ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
-        Task.FromResult(new VerificationOutcome(VerificationStatus.Confirmed, null));
+        Task.FromResult(_verificationOutcome);
+}
+
+/// <summary>
+/// A non-<see cref="RiskLevel.Read"/> tool whose <see cref="EvaluateVerificationAsync"/> actually
+/// inspects the <see cref="ToolCallResult"/> the runtime got back from calling
+/// <see cref="VerificationSpec.VerifyToolName"/> — used to test how <c>AgentRunner</c> resolves
+/// and calls that tool, as opposed to <see cref="FakeHighRiskTool"/>, which ignores it.
+/// </summary>
+internal sealed class InspectingVerifiableTool(string name, string verifyToolName) : IVerifiableTool
+{
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = name,
+        Description = "A fake high-risk tool whose verification inspects the verification tool's own result.",
+        Risk = RiskLevel.High,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = [],
+        Verification = new VerificationSpec(verifyToolName, [], "Inspects the verification tool's result, for tests."),
+    };
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
+        Task.FromResult(ToolCallResult.Success("done"));
+
+    public Task<VerificationOutcome> EvaluateVerificationAsync(
+        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
+        Task.FromResult(verificationToolResult.Succeeded
+            ? new VerificationOutcome(VerificationStatus.Confirmed, null)
+            : new VerificationOutcome(VerificationStatus.Inconclusive, $"verification call did not succeed: {verificationToolResult.ErrorMessage}"));
+}
+
+/// <summary>A non-<see cref="RiskLevel.Read"/> tool whose <see cref="EvaluateVerificationAsync"/> always throws, to exercise rule C1 applied to verification.</summary>
+internal sealed class ThrowingVerificationTool(string name = "test.throwing-verification") : IVerifiableTool
+{
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = name,
+        Description = "A fake high-risk tool whose verification always throws.",
+        Risk = RiskLevel.High,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = [],
+        Verification = new VerificationSpec("test.read", [], "Always throws while evaluating, for tests."),
+    };
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
+        Task.FromResult(ToolCallResult.Success("done"));
+
+    public Task<VerificationOutcome> EvaluateVerificationAsync(
+        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
+        throw new InvalidOperationException("Simulated verification failure.");
 }
 
 /// <summary>A non-<see cref="RiskLevel.Read"/> tool with no <see cref="VerificationSpec"/>, which registration must reject (rule B3).</summary>

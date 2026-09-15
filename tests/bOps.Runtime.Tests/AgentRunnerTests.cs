@@ -402,6 +402,152 @@ public sealed class AgentRunnerTests
         Assert.DoesNotContain(audit.Events, e => e is ApprovalAuditEvent);
     }
 
+    // ---- V0.4: post-action verification (rule S4, principle 3) ----
+
+    [Fact]
+    public async Task RunAsync_RecordsConfirmedVerification_AndFeedsItBackAsAnObservation()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new FakeHighRiskTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Confirmed });
+        Assert.Contains(model.Requests[2].History, turn =>
+            turn.Content != null && turn.Content.Contains("Verification: Confirmed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_Replans_WhenVerificationIsRefuted()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1), // a refuted verification is a deviation (rule C8)
+            new ModelResponse("Trying something else.", [], true, null));
+        var tool = new FakeHighRiskTool(verificationOutcome: new VerificationOutcome(VerificationStatus.Refuted, "still stopped"));
+        var registry = CreateRegistryWith(tool);
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(2, result.Plans.Count);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Refuted });
+        Assert.Contains(model.Requests[2].History, turn =>
+            turn.Content != null && turn.Content.Contains("Verification: Refuted — still stopped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotReplan_WhenVerificationIsInconclusive()
+    {
+        // rule S4: Inconclusive is never treated as success, but it is not proof the plan's
+        // assumption was wrong either — it is real information handed to the model, which may
+        // well proceed without a whole new plan.
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Noted, moving on.", [], true, null));
+        var tool = new FakeHighRiskTool(verificationOutcome: new VerificationOutcome(VerificationStatus.Inconclusive, "cannot tell"));
+        var registry = CreateRegistryWith(tool);
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Single(result.Plans);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Inconclusive });
+    }
+
+    [Fact]
+    public async Task RunAsync_RecordsInconclusiveVerification_WhenTheVerificationToolItselfFails()
+    {
+        // agentic/04-testing-rules.md, "Verification": "a verification tool that itself fails."
+        var toolCall = new ModelToolCall("call-1", "test.inspecting", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new InspectingVerifiableTool("test.inspecting", "test.throws"), new ThrowingTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.inspecting", Verification: VerificationStatus.Inconclusive });
+    }
+
+    [Fact]
+    public async Task RunAsync_RecordsInconclusiveVerification_WhenTheVerificationToolIsNotRegistered()
+    {
+        // A package can legitimately declare a VerifyToolName that turns out not to be resolvable
+        // at runtime (disabled package, wrong platform) — the runtime must not crash, and cannot
+        // report Confirmed on the strength of nothing (rule S4).
+        var toolCall = new ModelToolCall("call-1", "test.inspecting", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new InspectingVerifiableTool("test.inspecting", "does.not.exist"));
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.inspecting", Verification: VerificationStatus.Inconclusive });
+    }
+
+    [Fact]
+    public async Task RunAsync_RecordsInconclusiveVerification_WhenEvaluatingVerificationThrows()
+    {
+        // Rule C1 applied to verification: a package's IVerifiableTool implementation is
+        // third-party code too and must not be able to crash the loop.
+        var toolCall = new ModelToolCall("call-1", "test.throwing-verification", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new ThrowingVerificationTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Automatic);
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.throwing-verification", Verification: VerificationStatus.Inconclusive });
+    }
+
+    [Fact]
+    public async Task RunAsync_NeverVerifies_AReadTool()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new FakeReadTool());
+        var audit = new RecordingAuditSink();
+
+        var result = await CreateRunner(model, registry, audit).RunAsync("check things", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        var toolCallEvent = Assert.Single(audit.Events.OfType<ToolCallAuditEvent>());
+        Assert.Null(toolCallEvent.Verification);
+    }
+
     // ---- V0.2: explicit planning and replanning (rule C8, ADR-0014) ----
 
     [Fact]

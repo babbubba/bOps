@@ -20,8 +20,14 @@ namespace bOps.Runtime;
 /// From V0.3, <see cref="IPolicyEngine"/> decides <see cref="PolicyMode"/> for every non-
 /// <see cref="RiskLevel.Read"/> tool, replacing V0.1/V0.2's hardcoded "no policy engine yet,
 /// refuse everything above Read" — the invariant does not loosen, it becomes real (rule S3). An
-/// <see cref="PolicyMode.Approval"/> decision goes to <see cref="IApprovalProvider"/>. There is
-/// still no post-action verification service — that is V0.4.
+/// <see cref="PolicyMode.Approval"/> decision goes to <see cref="IApprovalProvider"/>.
+///
+/// From V0.4, every executed non-<see cref="RiskLevel.Read"/> call is followed by a call to its
+/// declared <see cref="VerificationSpec"/>, evaluated through <see cref="IVerifiableTool"/> —
+/// principle 3 ("every side-effecting action is verified") becomes real the same way policy did
+/// in V0.3. Verification runs directly, never through the model or the policy engine: it is
+/// runtime-mandated infrastructure the operator already accepted by approving the original call,
+/// not a new action being proposed (rule S4).
 /// </summary>
 public sealed class AgentRunner(
     IChatModel model,
@@ -168,7 +174,7 @@ public sealed class AgentRunner(
             // safe default for an ops agent; parallel execution needs its own policy story.
             var primaryCall = response.ToolCalls[0];
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
-            var (step, observation, authorization) = await ExecuteStepAsync(taskId, stepIndex, actor, primaryCall, plan.Revision, ct);
+            var (step, observation, authorization, verification) = await ExecuteStepAsync(taskId, stepIndex, actor, primaryCall, plan.Revision, ct);
             steps.Add(step);
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
@@ -212,15 +218,19 @@ public sealed class AgentRunner(
             }
 
             // EVALUATE: rule C8. A step whose outcome the plan could not have anticipated — the
-            // tool doesn't exist, policy refused it, an operator rejected it, or it hung — means
-            // continuing to follow the same plan is not "the model working the problem," it is
-            // the model repeating a mistake with fresh words. A plain tool Failure is
-            // deliberately excluded: the model already sees that observation on its very next
-            // turn and routinely corrects course (a bad argument, say) without needing a whole
-            // new plan — replanning on every minor failure would make the loop replan-happy for
-            // no benefit.
+            // tool doesn't exist, policy refused it, an operator rejected it, it hung, or its
+            // declared effect was checked afterwards and refuted — means continuing to follow
+            // the same plan is not "the model working the problem," it is the model repeating a
+            // mistake with fresh words. A plain tool Failure is deliberately excluded: the model
+            // already sees that observation on its very next turn and routinely corrects course
+            // (a bad argument, say) without needing a whole new plan — replanning on every minor
+            // failure would make the loop replan-happy for no benefit. A verification that comes
+            // back Inconclusive is excluded for the same reason: it is real information handed to
+            // the model, not proof the plan's assumption was wrong (rule S4: Inconclusive is
+            // never success, but it is also not evidence of failure).
             var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected
-                || step.Result?.Outcome == ToolOutcome.Timeout;
+                || step.Result?.Outcome == ToolOutcome.Timeout
+                || verification == VerificationStatus.Refuted;
 
             if (deviated || planExhausted)
             {
@@ -388,7 +398,7 @@ public sealed class AgentRunner(
         return response;
     }
 
-    private async Task<(PlanStep Step, string Observation, AuthorizationKind Authorization)> ExecuteStepAsync(
+    private async Task<(PlanStep Step, string Observation, AuthorizationKind Authorization, VerificationStatus? Verification)> ExecuteStepAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, int planRevision, CancellationToken ct)
     {
         var tool = registry.Resolve(call.ToolName);
@@ -397,7 +407,7 @@ public sealed class AgentRunner(
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
                 $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct);
-            return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool);
+            return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool, null);
         }
 
         var manifest = tool.Manifest;
@@ -431,7 +441,7 @@ public sealed class AgentRunner(
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
                 AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct);
-            return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied);
+            return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied, null);
         }
 
         var authorization = AuthorizationKind.Automatic;
@@ -464,7 +474,7 @@ public sealed class AgentRunner(
                     AuthorizationKind.UserRejected,
                     $"Operator rejected '{call.ToolName}'" + (approval.Note is null ? "." : $": {approval.Note}"),
                     planRevision, ct);
-                return (rejected.Step, rejected.Observation, AuthorizationKind.UserRejected);
+                return (rejected.Step, rejected.Observation, AuthorizationKind.UserRejected, null);
             }
 
             authorization = AuthorizationKind.UserApproved;
@@ -472,9 +482,11 @@ public sealed class AgentRunner(
 
         if (ValidateArguments(manifest, call.Arguments) is { } validationError)
         {
+            // Never executed, so there is nothing for verification to check (rule S4 only
+            // requires verifying an action that was actually attempted).
             var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
-                authorization, TimeSpan.Zero, verification: null, planRevision, ct);
-            return (recorded.Step, recorded.Observation, authorization);
+                authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct);
+            return (recorded.Step, recorded.Observation, authorization, null);
         }
 
         using var toolActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.tool");
@@ -492,9 +504,102 @@ public sealed class AgentRunner(
             new KeyValuePair<string, object?>("bops.tool", manifest.Name),
             new KeyValuePair<string, object?>("bops.outcome", result.Outcome.ToString()));
 
+        // VERIFY: rule S4 / principle 3. Every non-Read tool that was actually executed gets
+        // verified, regardless of how the call ended — Success, Failure or Timeout — because a
+        // failed or timed-out call may still have partially happened (rule S7), and
+        // IVerifiableTool.EvaluateVerificationAsync checks the real effect against the original
+        // arguments, not against how the original call reported itself. Registration (rule B3)
+        // guarantees a non-Read tool implements IVerifiableTool and declares a VerificationSpec.
+        VerificationOutcome? verificationOutcome = manifest.Risk != RiskLevel.Read
+            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, ct)
+            : null;
+
+        if (verificationOutcome is not null)
+        {
+            toolActivity?.SetTag("bops.verification", verificationOutcome.Status.ToString());
+        }
+
         var executed = await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
-            authorization, stopwatch.Elapsed, verification: null, planRevision, ct);
-        return (executed.Step, executed.Observation, authorization);
+            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct);
+        return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="spec"/>'s declared verification for the call just executed. Bypasses
+    /// <see cref="IPolicyEngine"/> and <see cref="IApprovalProvider"/> entirely — this is
+    /// runtime-mandated infrastructure the operator already accepted by approving (or being
+    /// permitted to run) the original call, not a new action the model is proposing (principle 1
+    /// still holds: the model never sees or requests this call).
+    /// </summary>
+    private async Task<VerificationOutcome> EvaluateVerificationAsync(
+        IVerifiableTool tool, VerificationSpec spec, ModelToolCall call, CancellationToken ct)
+    {
+        using var verificationActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.verification");
+        verificationActivity?.SetTag("bops.tool", call.ToolName);
+        verificationActivity?.SetTag("bops.verification_tool", spec.VerifyToolName);
+
+        var verificationResult = await ExecuteVerificationToolAsync(spec, call.Arguments, ct);
+        verificationActivity?.SetTag("bops.verification_tool_outcome", verificationResult.Outcome.ToString());
+
+        VerificationOutcome outcome;
+        try
+        {
+            outcome = await tool.EvaluateVerificationAsync(call.Arguments, verificationResult, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Rule C1: a package's verification logic is third-party code too and must not be
+            // able to crash the loop. A verification that cannot even run has confirmed nothing
+            // (rule S4 — never default to Confirmed).
+            logger.LogError(ex, "Tool {Tool}: verification evaluation threw", call.ToolName);
+            outcome = new VerificationOutcome(VerificationStatus.Inconclusive, $"Verification threw: {ex.Message}");
+        }
+
+        verificationActivity?.SetTag("bops.verification", outcome.Status.ToString());
+        return outcome;
+    }
+
+    /// <summary>
+    /// Resolves and calls <see cref="VerificationSpec.VerifyToolName"/>, carrying over
+    /// <see cref="VerificationSpec.ArgumentsFrom"/> from the original call. A tool that does not
+    /// resolve, or a call that fails manifest validation (rule S2), becomes a
+    /// <see cref="ToolOutcome.Failure"/> result — handled exactly like the verification tool
+    /// itself failing (rule S4): <see cref="IVerifiableTool.EvaluateVerificationAsync"/> is the
+    /// one place that turns "could not verify" into <see cref="VerificationStatus.Inconclusive"/>.
+    /// </summary>
+    private async Task<ToolCallResult> ExecuteVerificationToolAsync(VerificationSpec spec, ToolArguments originalArguments, CancellationToken ct)
+    {
+        var verifyTool = registry.Resolve(spec.VerifyToolName);
+        if (verifyTool is null)
+        {
+            return ToolCallResult.Failure(
+                $"Verification tool '{spec.VerifyToolName}' is not registered, or not available on this platform.");
+        }
+
+        var verificationArguments = ExtractVerificationArguments(originalArguments, spec.ArgumentsFrom);
+        if (ValidateArguments(verifyTool.Manifest, verificationArguments) is { } validationError)
+        {
+            return ToolCallResult.Failure(
+                $"Could not build a valid call to verification tool '{spec.VerifyToolName}': {validationError}");
+        }
+
+        var verificationCall = new ModelToolCall("verification", spec.VerifyToolName, verificationArguments);
+        return await ExecuteWithTimeoutAsync(verifyTool, verificationCall, ct);
+    }
+
+    private static ToolArguments ExtractVerificationArguments(ToolArguments originalArguments, IReadOnlyList<string> argumentsFrom)
+    {
+        var original = originalArguments.ToJson();
+        var subset = new JsonObject();
+        foreach (var name in argumentsFrom)
+        {
+            if (original.TryGetPropertyValue(name, out var value))
+            {
+                subset[name] = value?.DeepClone();
+            }
+        }
+
+        return ToolArguments.FromJson(subset);
     }
 
     private async Task<ToolCallResult> ExecuteWithTimeoutAsync(ITool tool, ModelToolCall call, CancellationToken ct)
@@ -554,7 +659,7 @@ public sealed class AgentRunner(
     private async Task<(PlanStep Step, string Observation)> RecordAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, ToolManifest manifest,
         ToolCallResult result, AuthorizationKind authorization, TimeSpan duration, VerificationStatus? verification,
-        int planRevision, CancellationToken ct)
+        string? verificationDetail, int planRevision, CancellationToken ct)
     {
         var redacted = call.Arguments.Redact(manifest.Parameters.Where(p => p.Sensitive).Select(p => p.Name));
 
@@ -578,6 +683,15 @@ public sealed class AgentRunner(
         var observationText = result.Succeeded
             ? TruncateForHistory(result.Output)
             : $"ERROR: {result.ErrorMessage}";
+
+        // rule S4: a Refuted verification must reach the model as an explicit observation, not
+        // just as an audited field nobody downstream reads.
+        if (verification is { } status)
+        {
+            observationText = verificationDetail is null
+                ? $"{observationText}\nVerification: {status}."
+                : $"{observationText}\nVerification: {status} — {verificationDetail}";
+        }
 
         var step = new PlanStep(stepIndex, manifest.Name, call, result, observationText, planRevision);
         return (step, WrapToolOutput(observationText));
