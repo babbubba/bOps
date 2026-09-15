@@ -17,5 +17,6 @@ public sealed class FilesystemToolProvider(FilesystemPathPolicy pathPolicy) : IT
         new FsDeleteTool(pathPolicy),
         new FsSearchTool(pathPolicy),
         new FsHashTool(pathPolicy),
+        new FsMoveTool(pathPolicy),
     ];
 }

@@ -250,13 +250,109 @@ public sealed class FsToolsTests : IDisposable
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheSevenFsTools()
+    public void ToolProvider_ContributesExactlyTheEightFsTools()
     {
         var policy = new FilesystemPathPolicy([], []);
         var names = new FilesystemToolProvider(policy).GetTools().Select(t => t.Manifest.Name).ToList();
 
-        Assert.Equal(["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash"], names);
+        Assert.Equal(
+            ["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash", "fs.move"], names);
     }
+
+    [Fact]
+    public async Task FsMove_MovesTheFile_WhenWriteAllowedOnBothSides()
+    {
+        var source = Path.Combine(_root.FullName, "a.txt");
+        var destination = Path.Combine(_root.FullName, "b.txt");
+        await File.WriteAllTextAsync(source, "hello world");
+        var tool = new FsMoveTool(new FilesystemPathPolicy([], [Path.Combine(_root.FullName, "**")]));
+
+        var result = await tool.ExecuteAsync(Args(("source", source), ("destination", destination)));
+
+        Assert.True(result.Succeeded);
+        Assert.False(File.Exists(source));
+        Assert.Equal("hello world", await File.ReadAllTextAsync(destination));
+        var json = JsonNode.Parse(result.Output!)!;
+        Assert.Equal(
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+            json["hashHex"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task FsMove_Fails_WhenDestinationAlreadyExists()
+    {
+        var source = Path.Combine(_root.FullName, "a.txt");
+        var destination = Path.Combine(_root.FullName, "b.txt");
+        await File.WriteAllTextAsync(source, "source");
+        await File.WriteAllTextAsync(destination, "already here");
+        var tool = new FsMoveTool(new FilesystemPathPolicy([], [Path.Combine(_root.FullName, "**")]));
+
+        var result = await tool.ExecuteAsync(Args(("source", source), ("destination", destination)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.True(File.Exists(source));
+        Assert.Equal("already here", await File.ReadAllTextAsync(destination));
+    }
+
+    [Fact]
+    public async Task FsMove_Fails_WhenSourceMissing()
+    {
+        var source = Path.Combine(_root.FullName, "nope.txt");
+        var destination = Path.Combine(_root.FullName, "b.txt");
+        var tool = new FsMoveTool(new FilesystemPathPolicy([], [Path.Combine(_root.FullName, "**")]));
+
+        var result = await tool.ExecuteAsync(Args(("source", source), ("destination", destination)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+    }
+
+    [Fact]
+    public async Task FsMove_Fails_WhenDestinationWriteNotAllowed()
+    {
+        var source = Path.Combine(_root.FullName, "a.txt");
+        var destination = Path.Combine(_root.FullName, "b.txt");
+        await File.WriteAllTextAsync(source, "hello");
+        var tool = new FsMoveTool(new FilesystemPathPolicy([], [source]));
+
+        var result = await tool.ExecuteAsync(Args(("source", source), ("destination", destination)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.True(File.Exists(source));
+    }
+
+    [Fact]
+    public async Task FsMove_VerificationIsConfirmed_WhenFileExistsAtDestinationAfterwards()
+    {
+        var source = Path.Combine(_root.FullName, "a.txt");
+        var destination = Path.Combine(_root.FullName, "b.txt");
+        await File.WriteAllTextAsync(source, "hi");
+        var policy = new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], [Path.Combine(_root.FullName, "**")]);
+        var moveTool = new FsMoveTool(policy);
+        var statTool = new FsStatTool(policy);
+
+        await moveTool.ExecuteAsync(Args(("source", source), ("destination", destination)));
+        var statResult = await statTool.ExecuteAsync(Args(("path", destination)));
+        var outcome = await moveTool.EvaluateVerificationAsync(Args(("source", source), ("destination", destination)), statResult);
+
+        Assert.Equal(VerificationStatus.Confirmed, outcome.Status);
+    }
+
+    [Fact]
+    public async Task FsMove_VerificationIsRefuted_WhenStatReportsNoFileAtDestination()
+    {
+        var source = Path.Combine(_root.FullName, "a.txt");
+        var destination = Path.Combine(_root.FullName, "never-moved.txt");
+        var policy = new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], [Path.Combine(_root.FullName, "**")]);
+        var moveTool = new FsMoveTool(policy);
+        var statTool = new FsStatTool(policy);
+
+        // The move never actually ran here — fs.stat honestly reports nothing at the destination.
+        var statResult = await statTool.ExecuteAsync(Args(("path", destination)));
+        var outcome = await moveTool.EvaluateVerificationAsync(Args(("source", source), ("destination", destination)), statResult);
+
+        Assert.Equal(VerificationStatus.Refuted, outcome.Status);
+    }
+
 
     [Fact]
     public async Task FsSearch_FindsMatchingEntries_RecursivelyByName()
@@ -357,6 +453,7 @@ public sealed class FsToolsTests : IDisposable
     [Theory]
     [InlineData("fs.write")]
     [InlineData("fs.delete")]
+    [InlineData("fs.move")]
     public void NonReadTools_DeclareVerificationAgainstFsStat(string toolName)
     {
         var policy = new FilesystemPathPolicy([], []);
