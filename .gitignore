@@ -5,6 +5,9 @@ obj/
 artifacts/
 publish/
 TestResults/
+# SBOMs are generated from each final build/release artifact and uploaded by CI; snapshots are
+# deliberately not committed because a checked-in SBOM becomes stale as soon as restore changes.
+sbom/
 *.user
 *.suo
 *.userprefs
