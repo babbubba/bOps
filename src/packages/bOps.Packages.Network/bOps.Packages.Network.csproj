@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Network</RootNamespace>
+    <AssemblyName>bOps.Packages.Network</AssemblyName>
+    <Description>network.* tools: cross-platform via System.Net.NetworkInformation (agentic/01-architecture-rules.md, rule A8 does not require an OS split here — the BCL already abstracts the difference). Every tool is Read-risk; none has a side effect.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

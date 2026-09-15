@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.3" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.AppHost</RootNamespace>
+    <IsAspireHost>true</IsAspireHost>
+    <UserSecretsId>bops-apphost</UserSecretsId>
+    <Description>Local-development orchestration only (agentic/06-decisions.md, D-002) — never used to host bOps in production. Provides a real Linux container as a test target for bOps.Packages.System.Linux.Tests and bOps.Packages.Filesystem.Tests on a non-Linux dev machine, mirroring what CI's ubuntu-latest matrix entry already provides natively.</Description>
+    <!-- ASPIRE010: advisory-only, about opting into the separate `aspire` CLI's bundled features
+         (a richer local dashboard/run experience). This AppHost is run with `dotnet run`, not the
+         `aspire` CLI, and needs none of that — see docs/architecture/suppressions.md. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.3" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Rule A1 (the core never names a package) is enforced by bOps.Architecture.Tests, not by review.
+# Live-model tests (agentic/04-testing-rules.md, [Trait("Category","LiveModel")]) are excluded from
+# every run here — they call a real provider, are allowed to be flaky, and must never gate a merge.
+# Platform-specific tests (bOps.Packages.System.Linux.Tests, .Windows.Tests) skip themselves
+# visibly on the wrong OS (LinuxOnlyFactAttribute and its Windows counterpart), so the matrix below
+# needs no extra filtering to get real coverage on both OSes (agentic/00-project-spec.md, V0.5:
+# "Windows + Linux parity ... CI on both OSes").
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore bOps.sln
+
+      - name: Build
+        # TreatWarningsAsErrors is on solution-wide (Directory.Build.props) — a warning fails this
+        # step exactly as it fails locally (agentic/04-testing-rules.md).
+        run: dotnet build bOps.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test bOps.sln --no-build --configuration Release --filter "Category!=LiveModel"

@@ -1,6 +1,8 @@
 using bOps.Abstractions;
 using bOps.Audit;
 using bOps.Cli;
+using bOps.Packages.Filesystem;
+using bOps.Packages.Network;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
 using bOps.Packages.Providers.OpenRouter;
@@ -64,6 +66,28 @@ var systemPackageId = new PackageId($"bops.packages.system.{CurrentPlatform.Id}"
 foreach (var tool in platformToolProvider.GetTools())
 {
     toolRegistry.Register(systemPackageId, tool);
+}
+
+// V0.5: fs.* and network.* are cross-platform via System.IO / System.Net.NetworkInformation, so
+// unlike the System family there is no per-OS package to pick between (agentic/01-architecture-
+// rules.md, rule A8 does not require an OS split when the BCL already abstracts the difference).
+// fs.write and fs.delete are the first non-Read tools this repository ships for real — everything
+// V0.3 (policy/approval) and V0.4 (verification) built now has a real tool to exercise it.
+var filesystemSection = builder.Configuration.GetSection("Filesystem");
+var pathPolicy = new FilesystemPathPolicy(
+    filesystemSection.GetSection("ReadPatterns").Get<string[]>() ?? [],
+    filesystemSection.GetSection("WritePatterns").Get<string[]>() ?? []);
+
+var filesystemPackageId = new PackageId("bops.packages.filesystem");
+foreach (var tool in new FilesystemToolProvider(pathPolicy).GetTools())
+{
+    toolRegistry.Register(filesystemPackageId, tool);
+}
+
+var networkPackageId = new PackageId("bops.packages.network");
+foreach (var tool in new NetworkToolProvider().GetTools())
+{
+    toolRegistry.Register(networkPackageId, tool);
 }
 
 await toolRegistry.RefreshCapabilitiesAsync();

@@ -1,192 +1,217 @@
-# Handoff — V0.3 (policy engine, approval flow, audit hash-chaining) complete
+# Handoff — V0.5 (Windows + Linux parity, Filesystem and Network packages, Aspire AppHost, CI on both OSes) complete
 
-Written at the end of the session that implemented V0.3 on top of the completed V0.2 explicit
-agent loop. Everything below is exact, not a summary — follow it literally to resume.
+Written at the end of the session that implemented V0.5 on top of the completed V0.4
+post-action-verification runtime. Everything below is exact, not a summary — follow it literally
+to resume.
 
 ## State right now
 
-**`dotnet build bOps.sln` builds clean end to end — 0 warnings, 0 errors** (verified with a full
-clean of every `bin`/`obj` and a from-scratch rebuild), now under `AnalysisLevel=latest-all`
-(escalated this session, per D-011). `dotnet test bOps.sln`: **97 passing, 6 skipped** (the
-Linux package tests — correctly and visibly skipped, no Linux host in this dev environment).
-Nothing failing. 18 projects in `bOps.sln`, up from 15: `bOps.Policy` (new core project),
-`bOps.Policy.Tests` and `bOps.Audit.Tests` (both new — `bOps.Audit` had zero tests before this
-session, despite `agentic/04-testing-rules.md` requiring test-first coverage for it since V0.1).
+**`dotnet build bOps.sln` builds clean end to end — 0 warnings, 0 errors** in both `Debug` and
+`Release` (verified with a full clean of every `bin`/`obj` and a from-scratch rebuild of both
+configurations). **`dotnet test bOps.sln`: 132 passing, 7 skipped, 0 failed** (both
+configurations) — the 7 skips are 6 pre-existing Linux-only conformance tests
+(`bOps.Packages.System.Linux.Tests`, no Linux host in this dev environment) plus one new
+symlink-resolution test (`bOps.Packages.Filesystem.Tests` — this Windows account cannot create
+symbolic links without Developer Mode or elevation; skipped visibly, not silently, same pattern as
+the Linux tests). 23 projects in `bOps.sln` now, up from 18 at the end of V0.4.
 
-CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): logs "No
-policy file at 'policy.yaml'; using the built-in default", then DI wiring, config binding, tool
-registry, provider registry and the policy engine all succeed; the task fails cleanly at the
-planning call's HTTP request with `ApiKey` empty (rule S6 — never a real key in
-`appsettings.json`). The audit chain was verified by hand on a fresh `audit.jsonl`: `Seq: 0`,
-`PrevHash` equal to `JsonLinesAuditSink.GenesisHash`, a real SHA-256 `Hash`.
+CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): DI wiring,
+config binding, and tool registry construction all succeed — including registering the five new
+`fs.*` tools and four new `network.*` tools, which would have thrown `ToolRegistrationException`
+immediately at startup had the V0.3 rule-B3 registration guard found anything wrong with
+`fs.write`'s or `fs.delete`'s declared `VerificationSpec`/`IVerifiableTool` — the task then fails
+cleanly at the planning call's HTTP 401 (`ApiKey` empty, rule S6), exactly as every prior session's
+smoke test did. This confirms the new packages' wiring holds end to end; it does not confirm a
+model was ever actually called with `fs.*`/`network.*` in its tool list, since no provider is
+configured in this dev environment.
 
 ## What this session did
 
-Implemented V0.3 per `agentic/00-project-spec.md`'s roadmap: **"Policy engine and approval flow;
-analyzers escalate to `all`."** `agentic/06-decisions.md` D-008 also ties audit hash-chaining to
-this version ("deferred to V0.3, alongside the policy engine"), so that shipped too. Full design
-rationale, alternatives rejected, and what's deliberately not done is in
-[`docs/architecture/adr/0015-policy-engine-approval-flow-and-audit-hash-chaining.md`](docs/architecture/adr/0015-policy-engine-approval-flow-and-audit-hash-chaining.md)
-— read that before touching any of this area again. Summary:
+Implemented V0.5 per `agentic/00-project-spec.md`'s roadmap: **"Windows + Linux parity, Filesystem
+and Network packages, Aspire AppHost, CI on both OSes."** Four pieces:
 
-### 1. `AnalysisLevel` escalated to `latest-all` (D-011) — done first, in isolation
+### 1. Windows + Linux parity — already true, verified, not re-done
 
-Surfaced real, fixable issues across the *existing* codebase, all fixed rather than suppressed:
-missing `ArgumentNullException.ThrowIfNull` guards on ~15 public entry points across
-`bOps.Abstractions`, `bOps.Runtime`, `bOps.Packages.System.Core` and
-`bOps.Packages.Providers.OpenAiCompatible`; four exception types (`ModelProtocolException`,
-`ToolRegistrationException`, `ProviderNotSupportedException`, `ToolArgumentException`) missing
-standard constructors (CA1032); a P/Invoke missing `[DefaultDllImportSearchPaths]`; several
-test-only types changed from `public` to `internal`; one genuinely dead test double
-(`HangingChatModel`, never referenced anywhere — deleted, not suppressed). One new suppression:
-`CA2007` (`ConfigureAwait(false)`), solution-wide, documented in
-`docs/architecture/suppressions.md` — this solution has no `SynchronizationContext` anywhere
-(console host, libraries consumed only by that host and its own tests), so the diagnostic cannot
-catch a real bug here. `agentic/02-coding-standards.md`'s escalation table is updated to match.
+`bOps.Packages.System.{Core,Windows,Linux}` already contributed matching `system.info`/`cpu`/
+`memory`/`disk` and `process.list` tools since V0.1, sharing manifests via `SystemToolManifests`
+and passing the same `bOps.Packages.System.Conformance` suite on both OS packages. There was
+nothing to build here — parity was already structural. No new `system.*`/`process.*` tool was
+added (the roadmap line names parity, not catalog expansion; `piano-bops.md`'s fuller catalog —
+`system.swap`, `system.io`, `process.inspect`/`start`/`stop`/`kill` — is scope for whichever future
+version actually calls for it, not implied by this one).
 
-### 2. `bOps.Policy` (new core project)
+### 2. `bOps.Packages.Filesystem` — the first non-`Read` tool this repository ships for real
 
-- `PolicyEngine : IPolicyEngine` evaluates a `PolicyConfig` against a `PolicyContext`. Checks, in
-  order: package known (else Forbidden) → `RiskLevel.Critical` (always Forbidden, unconditional,
-  before any config lookup) → per-package risk ceiling (can only force Forbidden, never grant
-  more) → per-tool override → per-risk-level default → Forbidden (no entry covers it).
-- `PolicyConfigLoader.Load(string yaml)` parses `policy.yaml` via `YamlDotNet` (new dependency on
-  `bOps.Policy`, not `bOps.Abstractions`), and throws `PolicyConfigurationException` — loudly,
-  not a silent coercion — if `defaults.critical` is set to anything but `forbidden`.
-- `PolicyConfig.SafeDefault` (Read/Low automatic, Medium/High approval, Critical forbidden) is
-  used when no `policy.yaml` file exists. `PolicyConfig.AllForbidden` is used when a file exists
-  but fails to load — deliberately more conservative than the safe default, because an operator
-  who wrote a broken policy intended something other than the built-in behavior. See the ADR for
-  why these are two different fallbacks, not one.
-- `bOps.Cli`'s `Program.cs` decides which of the three (loaded / safe-default / all-forbidden)
-  applies, via the new `LoadPolicyEngineAsync` local function, reading `Policy:FilePath` from
-  config (default `"policy.yaml"`, not present in the repo — nothing ships one; an operator
-  writes their own to opt into anything beyond the safe default).
+Cross-platform via `System.IO` (rule A8 does not require an OS split when the BCL already
+abstracts the difference — unlike `system.*`, there is no per-OS data-collection code to share).
+Five tools, all under `PackageId("bops.packages.filesystem")`:
 
-### 2b. Approval flow
+- **`fs.list`**, **`fs.read`**, **`fs.stat`** — `RiskLevel.Read`. `fs.read` truncates deterministically
+  (head-only, marked explicitly) at a configurable `maxBytes` (default 65536), mirroring the agent
+  loop's own history-truncation rule (C3). `fs.stat` reports existence as data, not as
+  `ToolOutcome.Failure` — a missing path is a successful observation of a negative fact; `Failure`
+  is reserved for "could not check at all" (policy denial, a real I/O error). Its output is a
+  single-line JSON object (`FsStatOutput`), because it doubles as the verification target for the
+  two tools below and JSON is what lets that be read back reliably.
+- **`fs.write`**, **`fs.delete`** — `RiskLevel.High`, `IVerifiableTool`, verified via `fs.stat` on
+  the same path (`ArgumentsFrom: ["path"]`). `fs.write`: `exists:true` afterwards → `Confirmed`,
+  `exists:false` → `Refuted`. `fs.delete`: the mirror image. `fs.delete` deliberately never deletes
+  a directory (a materially larger blast radius, out of scope for this version) — it fails with an
+  explicit message instead of silently refusing or recursing.
 
-- `ConsoleApprovalProvider` (`bOps.Cli`, `internal`): prints the tool, risk, reason, arguments
-  and verification description, blocks on a `y/N` console prompt plus an optional note.
-- `bOps.Abstractions/Audit.cs` gains `ApprovalAuditEvent` (`Package`, `Tool`, `Approved`,
-  `Approver`, `Note`) — distinct from `PolicyDecisionAuditEvent` (what policy decided vs. what
-  the human decided). `AuthorizationKind.UserApproved`/`UserRejected` — both existed since V0.1,
-  neither had ever been set until this session — are now set on the resulting
-  `ToolCallAuditEvent`.
-- A rejected approval now counts as a "deviation" that triggers a replan (rule C8), alongside the
-  V0.2 set (`PolicyDenied`, `UnknownTool`, `Timeout`) — an operator's "no" is exactly the kind of
-  "this did not go as the plan assumed" signal replanning exists for.
-- `AgentRunner.ExecuteStepAsync`'s V0.1/V0.2 hardcoded "no policy engine yet, refuse everything
-  above Read" block is gone, replaced by a real `policyEngine.Evaluate(...)` call.
-  `PackageTrustLevel` is hardcoded to `Official` for every call — every package loaded today is
-  first-party; real per-package trust has no mechanism to hang off until dynamic loading (V0.10).
+**`FilesystemPathPolicy`** implements rule S11 for real — the path policy the architecture and
+security rules named since V0.1 but nothing needed until now, since no non-`Read` filesystem tool
+existed to enforce it for:
 
-### 3. Audit hash-chaining (D-008)
+- `Resolve(path)`: `Path.GetFullPath` normalization, then follows every symlink in the longest
+  *existing* ancestor chain to its final target — a requested path that does not yet exist (the
+  normal case for `fs.write` creating a new file) still has its existing parent directories fully
+  resolved, closing the time-of-check/time-of-use gap S11 names explicitly (a symlinked allowed
+  directory pointing somewhere outside policy must not become a bypass). Verified by an actual test
+  that creates a real symlink and confirms a request routed through it resolves to — and is denied
+  at — the real, unlisted target (`FilesystemPathPolicyTests.Resolve_FollowsASymlinkedDirectoryToItsRealTarget`,
+  `[SymlinkCapableFact]`, skips visibly where this process cannot create a symlink).
+- `AllowsRead(resolvedPath)` / `AllowsWrite(resolvedPath)`: two independently configured glob-style
+  pattern lists (`Filesystem:ReadPatterns` / `Filesystem:WritePatterns` in `appsettings.json`, both
+  empty by default — **deny by default**, rule S11, verbatim). Matching is a small hand-written
+  matcher (`FilesystemPathGlob`), not a general-purpose glob library — see "Design choices" below
+  for why.
+- `fs.stat` is allowed when *either* list covers the path, not just `ReadPatterns` — see "Design
+  choices."
 
-- `JsonLinesAuditSink` now writes `{Seq, PrevHash, Hash, EventJson}` per line, `Hash =
-  SHA256(PrevHash + EventJson)`. `EventJson` is a JSON **string** (escaped), not a nested object
-  — a real bug was caught here during testing: re-serializing a reparsed `JsonObject` is not
-  guaranteed to reproduce the exact text that was hashed, which made the first implementation of
-  the verifier report false-positive tampering. Storing the exact string avoids the whole
-  problem, since JSON string decoding is lossless by construction.
-- The sink reads the last line of an existing file at construction to continue the chain across
-  process restarts, and **throws `InvalidOperationException`** if that line is not a well-formed
-  envelope. This was also caught by testing, against a real stale local `audit.jsonl` left over
-  from V0.1/V0.2 smoke tests (pre-chain format, raw events, no envelope) — the first
-  implementation silently "continued" the chain from it with `PrevHash: null`, defeating the
-  entire point. Confirmed fixed against that exact file before deleting it (it was a `.gitignore`d
-  dev artifact, never committed, safe to delete — if you find another local `audit.jsonl`
-  predating this session, delete it too; nothing needs to migrate it).
-- `AuditChainVerifier.Verify(IEnumerable<string>)` / `.VerifyFile(path)` independently re-derive
-  every hash and prev-hash link, returning which `Seq` broke and why. Nothing calls this
-  automatically yet — no CLI subcommand exists to run it on demand (the CLI has no subcommand
-  parsing at all currently, just `bops "<goal>"`) — flagged as a reasonable, small follow-up in
-  the ADR, not done here.
-- This is tamper-**evident**, not tamper-**proof** — `agentic/03-security-rules.md` rule S9 and
-  `agentic/01-architecture-rules.md` §B8 both say so explicitly now, replacing the old "append-
-  only by convention" language that was accurate for V0.1–V0.2 and is not anymore.
+This is genuinely exercised: 25 passing tests (1 skipped) in `bOps.Packages.Filesystem.Tests`,
+against a real temp directory, never a mocked filesystem (agentic/04-testing-rules.md — Filesystem
+is a platform package).
 
-### 4. Tests
+### 3. `bOps.Packages.Network` — four `Read`-risk tools, no verification needed
 
-44 new tests across three areas, closing gaps `agentic/04-testing-rules.md` had specified since
-V0.1 but that were never actually covered (no `bOps.Policy` or `bOps.Audit` test project existed
-before this session):
+Cross-platform via `System.Net.NetworkInformation`, under `PackageId("bops.packages.network")`:
+`network.interfaces` (every NIC, type, status, addresses), `network.dns` (hostname → addresses),
+`network.ping` (one ICMP echo, `timeoutMs` capped at 10000), `network.connections` (active TCP
+connections). All `RiskLevel.Read`, so `Manifest.Verification` is `null` on every one — nothing
+here has a side effect. `network.route` and `network.port_check` (named in `piano-bops.md`'s
+catalog) were **not** built: `network.route` needs a per-OS shell-out (`route print` / `ip route`)
+that adds real complexity for no test that currently needs it, and `port_check` is redundant with
+what `ping`/`connections` already cover for this version. Six tests in
+`bOps.Packages.Network.Tests`, against the real network stack (loopback, real DNS, RFC 2606's
+reserved `.invalid` TLD for the negative case) — `network.ping`'s test deliberately does not assert
+`Success`, only that it never throws and always returns a real observation, since some sandboxed CI
+containers restrict unprivileged ICMP even to loopback.
 
-- `bOps.Policy.Tests` (19 tests, new project): every minimum case the testing rules list for
-  "Policy engine" — each risk level, tool overrides matching/not matching, Critical rejected at
-  load (both `automatic` and `approval` attempts), an unknown package, a ceiling lowering a
-  decision, **a ceiling that tries to raise one (must not — this one did not exist until this
-  session's gap-audit against the testing-rules checklist)**, malformed YAML, an unrecognized
-  risk level, an unrecognized policy mode.
-- `bOps.Audit.Tests` (8 tests, new project): the chain is valid across consecutive writes and
-  across a simulated restart (new sink, same file), tampering is detected (content altered
-  without recomputing the hash), a removed line is detected, an empty/missing file verifies as
-  valid, a pre-chain-format tail is rejected at construction, **and concurrent writes do not
-  interleave or corrupt the chain (50 parallel `WriteAsync` calls, also not covered before this
-  session)**.
-- `bOps.Runtime.Tests` (+5, 51→56): approval granted (tool executes, `UserApproved`,
-  `ApprovalAuditEvent`), approval rejected (denied, replans, `UserRejected`), a Forbidden
-  decision never calls `IApprovalProvider` at all (`NeverCalledApprovalProvider` throws if it
-  is), **and `Sensitive` arguments are redacted before reaching the audit log — required by
-  `04-testing-rules.md` since V0.1, never actually tested until this session's gap audit**.
-- New test doubles: `DefaultTestPolicyEngine` (Read automatic, else forbidden — the V0.1/V0.2
-  hardcoded shape, now the *test* default so most existing tests needed no changes),
-  `StubPolicyEngine`, `StubApprovalProvider`, `NeverCalledApprovalProvider`.
-- `bOps.Abstractions/AssemblyInfo.cs` gains `InternalsVisibleTo("bOps.Policy.Tests")` — needed to
-  construct a `ToolManifest` fixture with a specific `Package` directly in policy-engine tests,
-  same reason `bOps.Runtime.Tests` already had it. Comment updated to distinguish "production
-  assemblies that stamp `Package`" (still only `bOps.Runtime`) from "test assemblies that need to
-  construct fixtures with it already set."
+### 4. `bOps.AppHost` — Aspire, dev/test orchestration only
 
-None of this was worked around or deferred — every fix and every new behavior is real, tested,
-in the diff.
+Per `agentic/06-decisions.md`, D-002: never used to host bOps in production. `src/bOps.AppHost`
+(`Aspire.Hosting.AppHost` 13.5.3 — the version this NuGet feed currently serves; note the jump from
+the 9.x line, not a typo) declares one container resource (`mcr.microsoft.com/dotnet/sdk:10.0`,
+bind-mounted to the repo root, kept alive with `tail -f /dev/null`) as a real Linux target for
+`bOps.Packages.System.Linux.Tests` and `bOps.Packages.Filesystem.Tests` when developing on a
+non-Linux machine — the same real-target requirement 04-testing-rules.md has stated since V0.1
+("From V0.5 the Aspire AppHost provides these targets"). **Only `dotnet build` was run against this
+project in this session — `dotnet run` (which would actually pull the image and start a
+container) was not.** That's a genuine gap in verification, stated plainly rather than implied:
+the project compiles and references a real, resolvable NuGet package at a real version, but nobody
+has watched it actually bring up a container yet. Ollama/llama.cpp orchestration, also named in
+D-002 for "V0.5/V0.6," was deliberately left out — nothing in this codebase yet needs a live model
+target for any test to pass, and pulling that forward would be exactly the "add the next version's
+scope early" rule S5/workflow discipline warns against.
+
+### 5. CI — `.github/workflows/ci.yml`, and the rule-A1 check it was missing
+
+`windows-latest` / `ubuntu-latest` matrix, `dotnet restore` → `dotnet build --configuration
+Release` (warnings-as-errors already on solution-wide, so this is the same gate as local) →
+`dotnet test --filter "Category!=LiveModel"`. Platform-specific tests need no extra filtering — they
+already skip themselves visibly on the wrong OS (`LinuxOnlyFactAttribute` and friends). **Only
+verified locally** (`dotnet build`/`dotnet test` in `Release` config, both green, 132/7/0) — the
+workflow file itself has not run on an actual GitHub Actions runner, since that requires pushing,
+which this session was not asked to do.
+
+`agentic/04-testing-rules.md` states rule A1 ("the core names no package") "is enforced by an
+automated test, not by review" — that test did not exist before this session. Added
+`tests/bOps.Architecture.Tests`: it opens the compiled `bOps.Runtime.dll`/`bOps.Policy.dll`/
+`bOps.Audit.dll` via `System.Reflection.Metadata`, walks every method body's IL for `ldstr`
+instructions, resolves each string literal, and fails if any contains a package/tool/provider-
+specific term (`docker.restart`, `/proc`, `systemctl`, `ServiceController`, `openrouter`, `ollama`,
+every `fs.*`/`network.*` tool name, and more — the full list is `ForbiddenTerms` in
+`CoreNamesNoPackageTests.cs`). This is not a test that trivially passes: verified by temporarily
+adding a literal that genuinely exists in `AgentRunner.cs` (`BOPS_TOOL_OUTPUT`, the tool-output
+delimiter) to the forbidden list and confirming the test failed and named exactly that literal,
+then reverting — see the diff history if you want the receipts; nothing about that round-trip is
+left in the working tree.
 
 ## Design choices worth knowing before extending this further
 
-- **A plain tool `Failure` still does not trigger a replan** (unchanged from V0.2/ADR-0014); a
-  rejected approval now does. See ADR-0015's "Alternatives considered" if this distinction stops
-  making sense once more tool types exist.
-- **No real per-package trust assignment exists.** Every `PolicyContext.Trust` is hardcoded
-  `PackageTrustLevel.Official` in `AgentRunner`. This is honest about the current state (nothing
-  loaded today isn't first-party) rather than inventing a mechanism with no real input until
-  V0.10's dynamic loading exists.
-- **`bOps.Policy` takes a dependency on `YamlDotNet`.** This is on `bOps.Policy`, never on
-  `bOps.Abstractions`, which stays dependency-free per `agentic/05-workflow.md`. `bOps.Runtime`
-  depends only on `IPolicyEngine`/`IApprovalProvider` (both in `bOps.Abstractions`) and never
-  references `bOps.Policy` — the concrete engine stays swappable at the host's composition root.
-- **`ModelCallAuditEvent` still does not say *why* a model was called** (plan vs. replan vs.
-  step) — a pre-existing gap from ADR-0014, not addressed here, still just `StepIndex: -1` /
-  triggering-step-index as the only hint.
+- **`fs.stat` accepts either `ReadPatterns` or `WritePatterns` covering a path, not `ReadPatterns`
+  only.** `fs.write`/`fs.delete` only need `WritePatterns` to run at all; if `fs.stat`'s own S11
+  check required `ReadPatterns` specifically, verification would come back `Inconclusive` for every
+  operator who configured write access without also duplicating every path into read access — safe
+  under rule S4 (`Inconclusive` is never treated as success), but needlessly useless by default.
+  `fs.stat` only ever reveals existence/type/size/mtime, not content, so the lower bar is a
+  deliberate, considered call, not a loosening of S11 — S11 itself is still enforced in full on the
+  fully resolved path either way.
+- **The path glob matcher (`FilesystemPathGlob`) is hand-written, not a general-purpose library.**
+  Two forms only: an exact path, or a path ending in `/**` (recursive, any depth) whose final
+  segment may carry one `*` wildcard within that segment. `Microsoft.Extensions.FileSystemGlobbing`
+  was considered and rejected: its matching model is built for relative patterns under a project
+  root, not absolute-path allow-listing with drive letters and backslashes, and a security gate is
+  safer built from three auditable rules than from a general library's full semantics this project
+  has no need for.
+- **Verification runs on `Failure`/`Timeout` too (V0.4's decision, ADR-0016) — this version is the
+  first time a real tool actually exercises that.** `fs.write`/`fs.delete`'s `EvaluateVerificationAsync`
+  never receives the original call's own outcome, only `fs.stat`'s result, so this falls out of the
+  existing contract for free; nothing needed to change to make it correct.
+- **`bOps.AppHost` lives at `src/bOps.AppHost`, not under `src/core` or `src/packages`.** It is
+  neither core runtime nor a package under the tool-provider contract — it is dev-time
+  orchestration only, so it gets its own top-level slot.
 
-## What V0.3 deliberately does NOT have yet (unchanged from V0.2 unless noted)
+## What V0.5 deliberately does NOT have yet
 
-- No `bOps.Memory` project / SQLite — V0.7. Still in-memory only.
-- No dynamic plugin loading — V0.10. Still direct `ProjectReference`s, so `PackageTrustLevel` has
-  nothing real to compute from yet (see above).
-- No `fs.*` (Filesystem) package — V0.5. **This means no shipped tool is anything but `Read`
-  yet** — the policy engine's `Approval`/`Forbidden` paths are real and fully tested, but not yet
-  exercised by any actual operator-facing tool call. That starts mattering at V0.5.
-- No post-action verification service — V0.4. `IVerifiableTool` exists and is enforced at
-  registration; nothing calls `EvaluateVerificationAsync` yet.
-- No CLI command to run `AuditChainVerifier` on demand (see "Audit hash-chaining" above).
+- **`fs.search`, `fs.hash`, `fs.move`** (named in `piano-bops.md`'s catalog) — not built. Nothing in
+  this version's roadmap line names them specifically, and five real, tested `fs.*` tools already
+  exercise everything V0.3/V0.4 built (policy, approval, verification) for real. Natural next
+  additions whenever a task actually needs them.
+- **`network.route`, `network.port_check`** — not built; see "What this session did," part 3.
+- **No `Service` or `Docker` package.** `Service` is not named in V0.5's roadmap line at all.
+  `Docker` is explicitly V0.6 ("Docker package with conditional capability discovery").
+- **`bOps.AppHost` has not actually been run.** Only `dotnet build` was verified — see part 4 above.
+  The first session that actually needs a live Linux container target (running the Linux system/fs
+  tests against it, not just on native CI Linux) should run it and fix whatever the first `dotnet
+  run` surfaces; Aspire APIs this session guessed at from NuGet metadata, not from a live trial.
+- **No Ollama/llama.cpp orchestration in the AppHost.** D-002 names it for "V0.5/V0.6" — deferred to
+  whichever version first needs a live local model target for a test to pass.
+- **No `bOps.Memory` project / SQLite** — V0.7. Still in-memory only.
+- **No dynamic plugin loading** — V0.10. Still direct `ProjectReference`s, including the two new
+  packages.
+- **No CLI command to run `AuditChainVerifier` on demand** — carried forward again, still small,
+  still not done.
 
 ## Next steps
 
-V0.3 is genuinely done: a real policy engine and approval flow gate every non-`Read` tool call,
-the audit log is tamper-evident and independently verifiable, and the whole codebase compiles
-clean under the stricter analyzer level the roadmap called for. **V0.4 — "Post-action
-verification" — has not been started.** Per the scope-discipline rule, the next session should
-begin by reading `agentic/00-project-spec.md`'s roadmap entry for V0.4 and
-`agentic/03-security-rules.md` rule S4 (verification fails closed — `Inconclusive`/`NotApplicable`
-are never success) before writing any code. The seam is `AgentRunner.RecordAsync`'s
-`verification: null` parameter, always `null` today — V0.4 is where something real gets passed
-there, calling `IVerifiableTool.EvaluateVerificationAsync` after a non-`Read` tool executes, using
-its declared `VerificationSpec` to resolve and call the verification tool.
+V0.5 is genuinely done: the platform-parity claim is verified (it already held), two real
+cross-platform packages ship with `fs.write`/`fs.delete` finally giving V0.3's policy/approval flow
+and V0.4's verification flow a real non-`Read` tool to run against, a real (if only build-verified)
+Aspire AppHost exists for local Linux test targets, a CI workflow exists for both OSes, and the
+rule-A1 check the testing rules already claimed existed now actually does.
 
-Two smaller, non-urgent items carried forward again from the last two handoffs, still real, still
+**V0.6 — "Docker package with conditional capability discovery" — has not been started.** Per the
+scope-discipline rule, the next session should begin by reading `agentic/00-project-spec.md`'s
+roadmap entry for V0.6, architecture rule B4 (`ICapabilityProbe`, `RefreshCapabilitiesAsync` — the
+mechanism this version needs for real: a Docker daemon that isn't running yet must make
+`docker.*` tools disappear from what the planner sees, not fail at call time), and the `Docker`
+row of architecture rule A8's "same pattern applies to Service, Network, Process and Filesystem"
+before writing any code. `Docker.DotNet` is the first genuinely new third-party NuGet dependency a
+package in this repository will take (rule A7 — packages may reference third-party NuGet freely;
+the core still may not) — worth reading rule A9/A10 again before deciding how `docker.restart`'s
+verification (`docker.inspect` checking `State.Status == "running"`, per `piano-bops.md` §11) is
+wired, since it is the first verification target that is itself a third-party API call rather than
+a BCL one.
+
+Before starting V0.6, whoever picks this up should also actually run `dotnet run` on `bOps.AppHost`
+at least once and fix whatever the first real container start surfaces — this session verified the
+project compiles against a real NuGet package, nothing more.
+
+Two smaller, non-urgent items carried forward again from every prior handoff, still real, still
 judged out of scope for a session implementing code rather than backfilling documentation:
 
 1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
-   0002, 0005, 0006, 0011, 0012) are still unwritten. ADR-0002 ("Five risk levels, and Forbidden
-   as an unbypassable invariant") is now directly relevant to the code in this session and would
-   be a natural one to write first if a future session has spare budget.
-2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done — see ADR-0015.
+   0002, 0005, 0006, 0011, 0012) are still unwritten.
+2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done.

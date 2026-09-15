@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Filesystem</RootNamespace>
+    <AssemblyName>bOps.Packages.Filesystem</AssemblyName>
+    <Description>fs.* tools: cross-platform via System.IO (agentic/01-architecture-rules.md, rule A8 does not require an OS split here — the BCL already abstracts the difference). Enforces the path policy (agentic/03-security-rules.md, rule S11).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
