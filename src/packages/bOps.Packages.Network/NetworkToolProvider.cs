@@ -14,5 +14,7 @@ public sealed class NetworkToolProvider : IToolProvider
         new NetworkDnsTool(),
         new NetworkPingTool(),
         new NetworkConnectionsTool(),
+        new NetworkPortCheckTool(),
+        new NetworkRouteTool(),
     ];
 }

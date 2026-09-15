@@ -77,12 +77,63 @@ public sealed class NetworkToolsTests
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheFourNetworkTools_AllReadRisk()
+    public void ToolProvider_ContributesExactlyTheSixNetworkTools_AllReadRisk()
     {
         var tools = new NetworkToolProvider().GetTools().ToList();
 
-        Assert.Equal(["network.interfaces", "network.dns", "network.ping", "network.connections"], tools.Select(t => t.Manifest.Name));
+        Assert.Equal(
+            ["network.interfaces", "network.dns", "network.ping", "network.connections", "network.port_check", "network.route"],
+            tools.Select(t => t.Manifest.Name));
         Assert.All(tools, t => Assert.Equal(RiskLevel.Read, t.Manifest.Risk));
         Assert.All(tools, t => Assert.Null(t.Manifest.Verification));
+    }
+
+    [Fact]
+    public async Task PortCheck_ReportsOpen_ForALoopbackListener()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+
+        var result = await new NetworkPortCheckTool().ExecuteAsync(Args(("host", "127.0.0.1"), ("port", port)));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("is open", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PortCheck_ReportsNotReachable_ForAClosedLoopbackPort()
+    {
+        // Bind and immediately release a loopback port so it is very likely nothing else is
+        // listening on it when the check runs, without hardcoding a port that might be in use.
+        int closedPort;
+        using (var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0))
+        {
+            probe.Start();
+            closedPort = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        }
+
+        var result = await new NetworkPortCheckTool().ExecuteAsync(
+            Args(("host", "127.0.0.1"), ("port", closedPort), ("timeoutMs", 1000)));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("not reachable", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PortCheck_Fails_ForAnOutOfRangePort()
+    {
+        var result = await new NetworkPortCheckTool().ExecuteAsync(Args(("host", "127.0.0.1"), ("port", 70000)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Route_DoesNotThrow_AndReportsSomething()
+    {
+        var result = await new NetworkRouteTool().ExecuteAsync(ToolArguments.Empty);
+
+        Assert.True(result.Succeeded);
+        Assert.False(string.IsNullOrEmpty(result.Output));
     }
 }
