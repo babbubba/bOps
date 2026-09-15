@@ -423,6 +423,58 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value, result);
     }
 
+    // ---- Plugins.cs ----
+
+    [Fact]
+    public void PluginDependency_RoundTrips()
+    {
+        var value = new PluginDependency("Newtonsoft.Json", "13.0.3");
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void PluginManifest_RoundTrips()
+    {
+        var value = new PluginManifest(
+            SchemaVersion: 1,
+            Id: "acme.sample-plugin",
+            Publisher: "Acme",
+            Version: "1.0.0",
+            MinHostAbstractionsVersion: "0.10.0",
+            EntryAssembly: "AcmeSamplePlugin.dll",
+            EntryType: "Acme.SamplePlugin.SampleToolProvider",
+            DeclaredCapabilities: ["sample"],
+            Dependencies: [new PluginDependency("Newtonsoft.Json", "13.0.3")],
+            MaxDeclaredRisk: RiskLevel.Low);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.SchemaVersion, result!.SchemaVersion);
+        Assert.Equal(value.Id, result.Id);
+        Assert.Equal(value.Publisher, result.Publisher);
+        Assert.Equal(value.Version, result.Version);
+        Assert.Equal(value.MinHostAbstractionsVersion, result.MinHostAbstractionsVersion);
+        Assert.Equal(value.EntryAssembly, result.EntryAssembly);
+        Assert.Equal(value.EntryType, result.EntryType);
+        Assert.Equal(value.DeclaredCapabilities, result.DeclaredCapabilities);
+        Assert.Equal(value.Dependencies, result.Dependencies);
+        Assert.Equal(value.MaxDeclaredRisk, result.MaxDeclaredRisk);
+    }
+
+    [Fact]
+    public void PluginManifest_RoundTrips_WithNoDeclaredMaxRisk()
+    {
+        var value = new PluginManifest(1, "acme.sample-plugin", "Acme", "1.0.0", "0.10.0",
+            "AcmeSamplePlugin.dll", "Acme.SamplePlugin.SampleToolProvider", [], [], MaxDeclaredRisk: null);
+
+        var result = RoundTrip(value);
+
+        Assert.Null(result!.MaxDeclaredRisk);
+    }
+
     private static T? RoundTrip<T>(T value)
     {
         var json = JsonSerializer.Serialize(value, Options);
