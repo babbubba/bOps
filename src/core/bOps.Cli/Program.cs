@@ -16,21 +16,33 @@ using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
+using bOps.PluginHost;
 using bOps.Policy;
 using bOps.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
-const string UsageMessage = """Usage: bops "<goal>" | bops resume <task-id>""";
+const string UsageMessage = """
+    Usage: bops "<goal>" | bops resume <task-id> | bops plugin <install|list|enable|disable|remove|validate> ...
+    """;
 
 if (args.Length == 0)
 {
     await Console.Error.WriteLineAsync(UsageMessage);
     return 1;
+}
+
+// V0.10 (ADR-0020): "plugin" is its own command family, handled entirely separately — it needs
+// none of the goal-execution composition below (no model provider, no policy engine, no audit
+// sink), and none of that should have to be configured correctly just to run `bops plugin list`.
+if (string.Equals(args[0], "plugin", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunPluginCommandAsync(args[1..]);
 }
 
 // V0.7 (ADR-0017): "resume" is the CLI's first real subcommand — everything else is still read
@@ -139,9 +151,15 @@ foreach (var tool in new DockerToolProvider(dockerClientFactory).GetTools())
     toolRegistry.Register(dockerPackageId, tool);
 }
 
-await toolRegistry.RefreshCapabilitiesAsync();
-
 var chatModelRegistry = host.Services.GetRequiredService<IChatModelRegistry>();
+
+// V0.10 (ADR-0020): every plugin the operator has already enabled (via `bops plugin enable`)
+// activates on every run, exactly like a first-party package — there is no separate "plugin
+// mode." Before RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured too.
+var pluginManager = CreatePluginManager(builder.Configuration, host.Services, toolRegistry, chatModelRegistry);
+pluginManager.LoadAllEnabled();
+
+await toolRegistry.RefreshCapabilitiesAsync();
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), host.Services.GetRequiredService<OpenRouterProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.ollama"), host.Services.GetRequiredService<OllamaProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.llamacpp"), host.Services.GetRequiredService<LlamaCppProviderPackage>());
@@ -245,5 +263,113 @@ static async Task<IPolicyEngine> LoadPolicyEngineAsync(string filePath, ILogger 
     {
         logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
         return new PolicyEngine(PolicyConfig.AllForbidden);
+    }
+}
+
+// V0.10 (ADR-0020): builds the same restricted-container ingredients (rule A10) whichever path
+// constructs a PluginManager — the goal-execution composition above and the plugin command
+// below share this instead of assembling it twice, differently.
+static PluginManager CreatePluginManager(
+    IConfiguration configuration, IServiceProvider services, IToolRegistry toolRegistry, IChatModelRegistry chatModelRegistry) =>
+    new(
+        new PluginStore(configuration["Plugins:StorePath"] ?? "plugins.json"),
+        toolRegistry,
+        chatModelRegistry,
+        configuration["Plugins:RootPath"] ?? "plugins",
+        configuration,
+        services.GetRequiredService<ILoggerFactory>(),
+        services.GetRequiredService<IHttpClientFactory>(),
+        services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<ICapabilityProbe>());
+
+static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
+{
+    const string PluginUsageMessage = """
+        Usage: bops plugin install <directory>
+               bops plugin list
+               bops plugin enable <id>
+               bops plugin disable <id>
+               bops plugin remove <id>
+               bops plugin validate <directory>
+        """;
+
+    if (pluginArgs.Length == 0)
+    {
+        await Console.Error.WriteLineAsync(PluginUsageMessage);
+        return 1;
+    }
+
+    var pluginBuilder = Host.CreateApplicationBuilder();
+    pluginBuilder.Logging.AddSimpleConsole(options => options.SingleLine = true);
+    pluginBuilder.Services.AddHttpClient();
+    pluginBuilder.Services.AddSingleton(TimeProvider.System);
+    pluginBuilder.Services.AddSingleton<ICapabilityProbe>(services =>
+        new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
+    pluginBuilder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
+    pluginBuilder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
+
+    using var pluginHost = pluginBuilder.Build();
+
+    var manager = CreatePluginManager(
+        pluginBuilder.Configuration,
+        pluginHost.Services,
+        pluginHost.Services.GetRequiredService<IToolRegistry>(),
+        pluginHost.Services.GetRequiredService<IChatModelRegistry>());
+
+    var command = pluginArgs[0];
+    var rest = pluginArgs[1..];
+
+    try
+    {
+        switch (command.ToLowerInvariant())
+        {
+            case "install" when rest.Length == 1:
+                var installed = manager.Install(rest[0]);
+                Console.WriteLine($"Installed '{installed.Id}' v{installed.Manifest.Version} (disabled). Run 'bops plugin enable {installed.Id}' to activate it.");
+                return 0;
+
+            case "list":
+                foreach (var record in manager.List())
+                {
+                    Console.WriteLine($"{record.Id}\t{(record.Enabled ? "enabled" : "disabled")}\tv{record.Manifest.Version}\t{record.Manifest.Publisher}");
+                }
+
+                return 0;
+
+            case "enable" when rest.Length == 1:
+                manager.Enable(rest[0]);
+                Console.WriteLine($"Enabled '{rest[0]}'.");
+                return 0;
+
+            case "disable" when rest.Length == 1:
+                manager.Disable(rest[0]);
+                Console.WriteLine($"Disabled '{rest[0]}'.");
+                return 0;
+
+            case "remove" when rest.Length == 1:
+                manager.Remove(rest[0]);
+                Console.WriteLine($"Removed '{rest[0]}'.");
+                return 0;
+
+            case "validate" when rest.Length == 1:
+                var manifest = PluginManifestValidator.ReadManifest(rest[0]);
+                PluginManifestValidator.Validate(manifest, rest[0]);
+                Console.WriteLine($"'{rest[0]}' is a valid manifest for '{manifest.Id}' v{manifest.Version}.");
+                return 0;
+
+            default:
+                await Console.Error.WriteLineAsync(PluginUsageMessage);
+                return 1;
+        }
+    }
+    catch (PluginValidationException ex)
+    {
+        await Console.Error.WriteLineAsync($"Validation failed: {ex.Message}");
+        return 1;
+    }
+    catch (PluginOperationException ex)
+    {
+        await Console.Error.WriteLineAsync($"Operation failed: {ex.Message}");
+        return 1;
     }
 }

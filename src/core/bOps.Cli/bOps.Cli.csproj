@@ -11,10 +11,12 @@
     <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\bOps.Memory\bOps.Memory.csproj" />
+    <ProjectReference Include="..\bOps.PluginHost\bOps.PluginHost.csproj" />
     <ProjectReference Include="..\bOps.Policy\bOps.Policy.csproj" />
     <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
-    <!-- Phase 1 packages are project-referenced directly; dynamic loading arrives at V0.10
-         (agentic/06-decisions.md, D-003; agentic/01-architecture-rules.md §2). -->
+    <!-- First-party packages stay project-referenced directly, exactly as before V0.10 — dynamic
+         loading (ADR-0020) is for third-party plugins installed via `bops plugin *`, not a
+         replacement for how bOps's own packages are composed. -->
     <ProjectReference Include="..\..\packages\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.System.Linux\bOps.Packages.System.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Filesystem\bOps.Packages.Filesystem.csproj" />
