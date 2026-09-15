@@ -1,0 +1,15 @@
+bOps
+Copyright 2026 Fabio Cavallari
+
+This product includes software developed as part of the bOps project
+(https://github.com/babbubba/bOps), licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+"bOps" and "bSoft" are used as project and brand names by the copyright holder. As of this
+notice they are not registered trademarks; see docs/licensing.md for the current trademark
+position. This NOTICE file does not add restrictions beyond the Apache License, Version 2.0,
+and does not itself grant any trademark rights.
+
+This product may depend on third-party software components, each under its own license.
+See THIRD-PARTY-NOTICES (generated per release from the artifacts actually distributed) for
+the specific components, versions and license texts that apply to a given build.

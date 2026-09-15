@@ -10,8 +10,23 @@
     <AnalysisLevel>latest-all</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
-    <Authors>bOps contributors</Authors>
-    <Company>bOps</Company>
+    <!-- D-014 (agentic/06-decisions.md): the copyright holder is the individual Fabio Cavallari,
+         not the unregistered "bSoft" brand and not a "bOps contributors" collective — there is no
+         such legal entity. Company stays the project/brand name; Copyright and Authors are the
+         actual legal holder. -->
+    <Authors>Fabio Cavallari</Authors>
+    <Company>bSoft</Company>
+    <Copyright>Copyright 2026 Fabio Cavallari</Copyright>
+    <!-- Centralized NuGet package metadata (V0.9.1) — applies to every packable project; a
+         project-specific <Description> in its own .csproj still overrides this default. -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/babbubba/bOps</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/babbubba/bOps.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <!-- agentic/02-coding-standards.md — noise, not signal, on a greenfield codebase. Revisit at V0.3. -->
     <NoWarn>$(NoWarn);CA1303;CA1304;CA1305;CA1310;CA1848</NoWarn>
     <!-- CA2007 (ConfigureAwait(false)) is a library-authoring guideline for code that might run
@@ -36,4 +51,19 @@
     <!-- CA2007 no longer needs to be listed here — it is now suppressed solution-wide above. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
+
+  <!-- Executables (the CLI, the API host, the AppHost) are published, not packed as NuGet
+       libraries — only the SDK and the packages consumed as libraries are. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Exe'">
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- V0.9.1: SourceLink, and packing LICENSE/NOTICE into every package that is actually
+       packable, so `dotnet pack` output carries both without each .csproj repeating it. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="All" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)NOTICE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
 </Project>
