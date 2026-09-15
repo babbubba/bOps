@@ -70,4 +70,37 @@ public static class SystemToolManifests
             new ToolParameter("limit", ToolParameterType.Integer, "Maximum number of processes to return.", Required: false),
         ],
     };
+
+    /// <summary>The manifest for <c>system.swap</c> on the given platform.</summary>
+    public static ToolManifest Swap(string platform) => new()
+    {
+        Name = "system.swap",
+        Description = "Reports total and used swap (paging file) space, in megabytes.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = [],
+    };
+
+    /// <summary>The manifest for <c>system.io</c> on the given platform.</summary>
+    public static ToolManifest Io(string platform) => new()
+    {
+        Name = "system.io",
+        Description = "Reports disk I/O throughput (read and write, in KB/s) for every device, sampled over a short interval.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = [],
+    };
+
+    /// <summary>The manifest for <c>process.inspect</c> on the given platform.</summary>
+    public static ToolManifest ProcessInspect(string platform) => new()
+    {
+        Name = "process.inspect",
+        Description = "Reports whether a process with the given PID exists and, if so, its name, working set, thread count, and start time (UTC), as single-line JSON.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to inspect.")],
+    };
 }

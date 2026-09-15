@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using System.Text.Json.Nodes;
 
 namespace bOps.Packages.Sys.Core;
 
@@ -64,5 +65,44 @@ public static class SystemToolFormatting
         var lines = processes.Select(process => string.Create(CultureInfo.InvariantCulture,
             $"{process.Pid}\t{process.Name}\t{process.WorkingSetMb} MB"));
         return "PID\tName\tWorkingSet\n" + string.Join('\n', lines);
+    }
+
+    /// <summary>Formats a <see cref="SwapUsageResult"/>.</summary>
+    public static string Format(SwapUsageResult swap)
+    {
+        ArgumentNullException.ThrowIfNull(swap);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"Swap: {swap.UsedMb} MB used of {swap.TotalMb} MB total ({swap.UsedPercent:F1}%).");
+    }
+
+    /// <summary>Formats a list of <see cref="IoUsageResult"/>.</summary>
+    public static string Format(IReadOnlyList<IoUsageResult> io)
+    {
+        ArgumentNullException.ThrowIfNull(io);
+
+        if (io.Count == 0)
+        {
+            return "No disk devices found.";
+        }
+
+        var lines = io.Select(device => string.Create(CultureInfo.InvariantCulture,
+            $"{device.DeviceName}: read {device.ReadKbPerSec:F1} KB/s, write {device.WriteKbPerSec:F1} KB/s."));
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>Formats a <see cref="ProcessInspectResult"/> as single-line JSON (see the type's own remarks).</summary>
+    public static string Format(ProcessInspectResult process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        var json = new JsonObject
+        {
+            ["pid"] = process.Pid,
+            ["exists"] = process.Exists,
+            ["name"] = process.Name,
+            ["workingSetMb"] = process.WorkingSetMb,
+            ["threadCount"] = process.ThreadCount,
+            ["startTimeUtc"] = process.StartTimeUtc,
+        };
+        return json.ToJsonString();
     }
 }

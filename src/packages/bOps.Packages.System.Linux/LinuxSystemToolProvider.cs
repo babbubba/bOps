@@ -16,5 +16,8 @@ public sealed class LinuxSystemToolProvider : IToolProvider
         new LinuxMemoryUsageTool(),
         new LinuxDiskUsageTool(),
         new LinuxProcessListTool(),
+        new LinuxSwapUsageTool(),
+        new LinuxIoUsageTool(),
+        new LinuxProcessInspectTool(),
     ];
 }

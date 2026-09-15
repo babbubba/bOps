@@ -16,5 +16,8 @@ public sealed class WindowsSystemToolProvider : IToolProvider
         new WindowsMemoryUsageTool(),
         new WindowsDiskUsageTool(),
         new WindowsProcessListTool(),
+        new WindowsSwapUsageTool(),
+        new WindowsIoUsageTool(),
+        new WindowsProcessInspectTool(),
     ];
 }

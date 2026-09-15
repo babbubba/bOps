@@ -42,13 +42,29 @@ public sealed class LinuxSystemToolsTests
     public Task ProcessList_RespectsLimit() =>
         SystemToolConformance.AssertProcessListRespectsLimitAsync(new LinuxProcessListTool());
 
+    [LinuxOnlyFact]
+    public Task Swap_Conforms() =>
+        SystemToolConformance.AssertSwapUsageConformsAsync(new LinuxSwapUsageTool(), "linux");
+
+    [LinuxOnlyFact]
+    public Task Io_Conforms() =>
+        SystemToolConformance.AssertIoUsageConformsAsync(new LinuxIoUsageTool(), "linux");
+
+    [LinuxOnlyFact]
+    public Task ProcessInspect_Conforms() =>
+        SystemToolConformance.AssertProcessInspectConformsAsync(new LinuxProcessInspectTool(), "linux");
+
+    [LinuxOnlyFact]
+    public Task ProcessInspect_ReportsMissing_ForAnUnlikelyPid() =>
+        SystemToolConformance.AssertProcessInspectReportsMissingAsync(new LinuxProcessInspectTool());
+
     [Fact]
-    public void ToolProvider_ContributesExactlyTheFiveSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheEightSystemAndProcessTools()
     {
         var names = new LinuxSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
-            ["system.info", "system.cpu", "system.memory", "system.disk", "process.list"],
+            ["system.info", "system.cpu", "system.memory", "system.disk", "process.list", "system.swap", "system.io", "process.inspect"],
             names);
     }
 }

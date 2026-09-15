@@ -150,6 +150,92 @@ public static partial class SystemToolConformance
         Assert.Equal(2, lines.Length); // header + exactly one process
     }
 
+    /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.swap</c> output shape. Total may legitimately be 0 on a machine configured with no swap.</summary>
+    public static async Task AssertSwapUsageConformsAsync(ITool tool, string platform)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        AssertManifestIsWellFormed(tool.Manifest, platform, "system.swap");
+
+        var result = await tool.ExecuteAsync(ToolArguments.Empty);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var match = SwapOutputPattern().Match(result.Output ?? string.Empty);
+        Assert.True(match.Success, $"'{result.Output}' did not match the expected system.swap output shape.");
+
+        var used = long.Parse(match.Groups["used"].Value, CultureInfo.InvariantCulture);
+        var total = long.Parse(match.Groups["total"].Value, CultureInfo.InvariantCulture);
+
+        Assert.True(total >= 0, "Total swap must not be negative.");
+        Assert.True(used >= 0, "Used swap must not be negative.");
+        Assert.True(used <= total, "Used swap cannot exceed total swap.");
+    }
+
+    /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.io</c> output shape: every reported device has non-negative throughput.</summary>
+    public static async Task AssertIoUsageConformsAsync(ITool tool, string platform)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        AssertManifestIsWellFormed(tool.Manifest, platform, "system.io");
+
+        var result = await tool.ExecuteAsync(ToolArguments.Empty);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.NotNull(result.Output);
+
+        if (result.Output == "No disk devices found.")
+        {
+            // A sandboxed CI container can legitimately expose zero block devices; the shape
+            // check below has nothing to check in that case.
+            return;
+        }
+
+        var matches = IoOutputLinePattern().Matches(result.Output!);
+        Assert.NotEmpty(matches);
+
+        foreach (Match match in matches)
+        {
+            var read = double.Parse(match.Groups["read"].Value, CultureInfo.InvariantCulture);
+            var write = double.Parse(match.Groups["write"].Value, CultureInfo.InvariantCulture);
+            Assert.True(read >= 0, "Read throughput must not be negative.");
+            Assert.True(write >= 0, "Write throughput must not be negative.");
+        }
+    }
+
+    /// <summary>Runs <paramref name="tool"/> against the calling process's own PID and asserts its <c>process.inspect</c> output shape reports it as existing.</summary>
+    public static async Task AssertProcessInspectConformsAsync(ITool tool, string platform)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        AssertManifestIsWellFormed(tool.Manifest, platform, "process.inspect");
+        Assert.Contains(tool.Manifest.Parameters, p => p.Name == "pid" && p.Required);
+
+        var ownPid = Environment.ProcessId;
+        var result = await tool.ExecuteAsync(ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["pid"] = ownPid }));
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(result.Output!)!;
+        Assert.Equal(ownPid, json["pid"]!.GetValue<int>());
+        Assert.True(json["exists"]!.GetValue<bool>());
+        Assert.False(string.IsNullOrEmpty(json["name"]?.GetValue<string>()));
+    }
+
+    /// <summary>Runs <paramref name="tool"/> against a PID very unlikely to be running and asserts it reports a clean absence.</summary>
+    public static async Task AssertProcessInspectReportsMissingAsync(ITool tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        // Not a real guarantee, but the same pragmatic trick network.dns's tests use for
+        // "definitely not there": a PID this large is not a real running process on any
+        // machine this suite runs on.
+        const int veryUnlikelyPid = 2_000_000;
+        var result = await tool.ExecuteAsync(ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["pid"] = veryUnlikelyPid }));
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(result.Output!)!;
+        Assert.False(json["exists"]!.GetValue<bool>());
+    }
+
     [GeneratedRegex(@"^CPU usage: (?<percent>\d+(\.\d+)?)%$")]
     private static partial Regex CpuOutputPattern();
 
@@ -158,4 +244,10 @@ public static partial class SystemToolConformance
 
     [GeneratedRegex(@"^(?<name>.+): (?<used>\d+) MB used of (?<total>\d+) MB total, (?<free>\d+) MB free\.$", RegexOptions.Multiline)]
     private static partial Regex DiskOutputLinePattern();
+
+    [GeneratedRegex(@"^Swap: (?<used>\d+) MB used of (?<total>\d+) MB total \((?<percent>\d+(\.\d+)?)%\)\.$")]
+    private static partial Regex SwapOutputPattern();
+
+    [GeneratedRegex(@"^(?<name>.+): read (?<read>\d+(\.\d+)?) KB/s, write (?<write>\d+(\.\d+)?) KB/s\.$", RegexOptions.Multiline)]
+    private static partial Regex IoOutputLinePattern();
 }

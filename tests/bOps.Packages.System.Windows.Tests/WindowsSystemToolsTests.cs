@@ -38,13 +38,29 @@ public sealed class WindowsSystemToolsTests
     public Task ProcessList_RespectsLimit() =>
         SystemToolConformance.AssertProcessListRespectsLimitAsync(new WindowsProcessListTool());
 
+    [WindowsOnlyFact]
+    public Task Swap_Conforms() =>
+        SystemToolConformance.AssertSwapUsageConformsAsync(new WindowsSwapUsageTool(), "windows");
+
+    [WindowsOnlyFact]
+    public Task Io_Conforms() =>
+        SystemToolConformance.AssertIoUsageConformsAsync(new WindowsIoUsageTool(), "windows");
+
+    [WindowsOnlyFact]
+    public Task ProcessInspect_Conforms() =>
+        SystemToolConformance.AssertProcessInspectConformsAsync(new WindowsProcessInspectTool(), "windows");
+
+    [WindowsOnlyFact]
+    public Task ProcessInspect_ReportsMissing_ForAnUnlikelyPid() =>
+        SystemToolConformance.AssertProcessInspectReportsMissingAsync(new WindowsProcessInspectTool());
+
     [Fact]
-    public void ToolProvider_ContributesExactlyTheFiveSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheEightSystemAndProcessTools()
     {
         var names = new WindowsSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
-            ["system.info", "system.cpu", "system.memory", "system.disk", "process.list"],
+            ["system.info", "system.cpu", "system.memory", "system.disk", "process.list", "system.swap", "system.io", "process.inspect"],
             names);
     }
 }

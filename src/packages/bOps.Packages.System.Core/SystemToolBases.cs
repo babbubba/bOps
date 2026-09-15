@@ -84,3 +84,49 @@ public abstract class ProcessListToolBase(string platform) : ITool
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(limit, ct)));
     }
 }
+
+/// <summary>The tool shell for <c>system.swap</c>.</summary>
+public abstract class SwapUsageToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Swap(platform);
+
+    /// <summary>Collects total and used swap (paging file) space.</summary>
+    protected abstract Task<SwapUsageResult> CollectAsync(CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
+        ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
+}
+
+/// <summary>The tool shell for <c>system.io</c>.</summary>
+public abstract class IoUsageToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Io(platform);
+
+    /// <summary>Samples disk I/O throughput for every device over a short interval.</summary>
+    protected abstract Task<IReadOnlyList<IoUsageResult>> CollectAsync(CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
+        ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
+}
+
+/// <summary>The tool shell for <c>process.inspect</c>.</summary>
+public abstract class ProcessInspectToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.ProcessInspect(platform);
+
+    /// <summary>Inspects the single process identified by <paramref name="pid"/>.</summary>
+    protected abstract Task<ProcessInspectResult> CollectAsync(int pid, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var pid = arguments.GetRequired<int>("pid");
+        return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(pid, ct)));
+    }
+}
