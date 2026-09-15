@@ -69,11 +69,35 @@ public sealed class FilesystemPathPolicy(IReadOnlyList<string> readPatterns, IRe
     /// <summary>Whether the resolved path is covered by a configured write pattern.</summary>
     public bool AllowsWrite(string resolvedPath) => Matches(resolvedPath, writePatterns);
 
+    /// <summary>
+    /// Resolves every symlink along <paramref name="existingPath"/>, not only a symlink at the
+    /// leaf: <see cref="FileSystemInfo.ResolveLinkTarget(bool)"/> only follows a link when the
+    /// entry it is called on is itself one, so a symlinked ancestor directory (e.g. resolving
+    /// <c>allowed/link/data.txt</c> where <c>link</c>, not <c>data.txt</c>, is the symlink) would
+    /// otherwise pass through unresolved — exactly the gap rule S11 requires closing. Walks the
+    /// path one segment at a time from the root, substituting each ancestor's real target before
+    /// combining the next segment onto it, mirroring POSIX <c>realpath()</c>.
+    /// </summary>
     private static string ResolveLinkChain(string existingPath)
     {
-        FileSystemInfo info = Directory.Exists(existingPath) ? new DirectoryInfo(existingPath) : new FileInfo(existingPath);
+        var root = Path.GetPathRoot(existingPath) ?? string.Empty;
+        var segments = existingPath[root.Length..]
+            .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+
+        var resolved = root;
+        foreach (var segment in segments)
+        {
+            resolved = ResolveIfLink(Path.Combine(resolved, segment));
+        }
+
+        return resolved;
+    }
+
+    private static string ResolveIfLink(string path)
+    {
+        FileSystemInfo info = Directory.Exists(path) ? new DirectoryInfo(path) : new FileInfo(path);
         var finalTarget = info.ResolveLinkTarget(returnFinalTarget: true);
-        return finalTarget?.FullName ?? Path.GetFullPath(existingPath);
+        return finalTarget?.FullName ?? Path.GetFullPath(path);
     }
 
     private static bool Matches(string resolvedPath, IReadOnlyList<string> patterns) =>
