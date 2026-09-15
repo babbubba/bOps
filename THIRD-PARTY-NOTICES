@@ -7,7 +7,7 @@ terms must remain with that artifact.
 
 Inventory sources:
 
-- .NET: CycloneDX 1.7 solution SBOM at `artifacts/sbom/bops-dotnet-solution.cdx.json`, generated 2026-09-15T17:38:39Z
+- .NET: CycloneDX 1.7 solution SBOM at `artifacts/sbom/bops-dotnet-solution.cdx.json`, generated 2026-09-15T18:52:39Z
   (142 unique NuGet components). This solution-wide inventory includes
   runtime, build, development and test dependencies; inclusion does not by itself mean that a
   component ships in every bOps artifact.
