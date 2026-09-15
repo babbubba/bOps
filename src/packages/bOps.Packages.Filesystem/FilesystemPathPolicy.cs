@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 namespace bOps.Packages.Filesystem;
 
 /// <summary>Which of the two independently configured pattern lists a path is being checked against.</summary>

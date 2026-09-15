@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';

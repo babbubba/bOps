@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 import { Component, input } from '@angular/core';
 import { RiskLevel, RiskLevelName } from '../core/api/models';
 

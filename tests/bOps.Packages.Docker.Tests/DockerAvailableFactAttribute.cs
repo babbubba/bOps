@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 using System.Diagnostics;
 
 namespace bOps.Packages.Docker.Tests;

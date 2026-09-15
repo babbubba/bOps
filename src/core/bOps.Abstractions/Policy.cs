@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 namespace bOps.Abstractions;
 
 /// <summary>How a tool call is authorized. Tools at <see cref="RiskLevel.Critical"/> are always <see cref="Forbidden"/> — see agentic/03-security-rules.md, rule S3.</summary>

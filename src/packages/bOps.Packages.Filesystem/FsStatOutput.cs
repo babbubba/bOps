@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 using System.Text.Json.Nodes;
 
 namespace bOps.Packages.Filesystem;

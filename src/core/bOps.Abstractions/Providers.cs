@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 namespace bOps.Abstractions;
 
 /// <summary>Configuration for constructing an <see cref="IChatModel"/>, resolved to a concrete instance by provider id.</summary>

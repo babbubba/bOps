@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 namespace bOps.Packages.Sys.Core;
 
 /// <summary>Basic identification of the machine: OS, hostname, and how long it has been running.</summary>

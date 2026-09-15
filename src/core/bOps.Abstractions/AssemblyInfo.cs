@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 using System.Runtime.CompilerServices;
 
 // ToolManifest.Package (agentic/01-architecture-rules.md, rule A11) is stamped by the registry

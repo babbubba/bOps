@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Mirrors bOps.Api's JSON contract (ADR-0018) — these shapes are hand-written against the real
  * endpoints, not generated from an OpenAPI schema (deferred, see HANDOFF.md). Field names are

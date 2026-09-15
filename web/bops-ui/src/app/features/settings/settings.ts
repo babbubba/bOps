@@ -1,3 +1,6 @@
+// Copyright 2026 Fabio Cavallari
+// SPDX-License-Identifier: Apache-2.0
+
 import { Component, inject } from '@angular/core';
 import { ProvidersStore } from '../../state/providers.store';
 
