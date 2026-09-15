@@ -250,12 +250,108 @@ public sealed class FsToolsTests : IDisposable
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheFiveFsTools()
+    public void ToolProvider_ContributesExactlyTheSevenFsTools()
     {
         var policy = new FilesystemPathPolicy([], []);
         var names = new FilesystemToolProvider(policy).GetTools().Select(t => t.Manifest.Name).ToList();
 
-        Assert.Equal(["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete"], names);
+        Assert.Equal(["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash"], names);
+    }
+
+    [Fact]
+    public async Task FsSearch_FindsMatchingEntries_RecursivelyByName()
+    {
+        Directory.CreateDirectory(Path.Combine(_root.FullName, "sub"));
+        await File.WriteAllTextAsync(Path.Combine(_root.FullName, "a.log"), "1");
+        await File.WriteAllTextAsync(Path.Combine(_root.FullName, "sub", "b.log"), "2");
+        await File.WriteAllTextAsync(Path.Combine(_root.FullName, "sub", "c.txt"), "3");
+        var tool = new FsSearchTool(new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("namePattern", "*.log")));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("a.log", result.Output, StringComparison.Ordinal);
+        Assert.Contains("b.log", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("c.txt", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FsSearch_ReportsNoMatches_WhenNothingMatches()
+    {
+        var tool = new FsSearchTool(new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("namePattern", "*.missing")));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("(no matches)", result.Output);
+    }
+
+    [Fact]
+    public async Task FsSearch_DoesNotDescendInto_ASubdirectoryTheReadPolicyDoesNotCover()
+    {
+        var covered = Path.Combine(_root.FullName, "covered");
+        var uncovered = Path.Combine(_root.FullName, "uncovered");
+        Directory.CreateDirectory(covered);
+        Directory.CreateDirectory(uncovered);
+        await File.WriteAllTextAsync(Path.Combine(uncovered, "secret.log"), "s");
+        var tool = new FsSearchTool(new FilesystemPathPolicy([covered], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("namePattern", "*.log")));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+    }
+
+    [Fact]
+    public async Task FsSearch_Fails_WhenReadNotAllowed()
+    {
+        var tool = new FsSearchTool(new FilesystemPathPolicy([], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("namePattern", "*")));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.Contains("policy", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FsHash_ReturnsSha256_ForAFile()
+    {
+        var file = Path.Combine(_root.FullName, "a.txt");
+        await File.WriteAllTextAsync(file, "hello world");
+        var tool = new FsHashTool(new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", file)));
+
+        Assert.True(result.Succeeded);
+        var json = JsonNode.Parse(result.Output!)!;
+        Assert.Equal("SHA256", json["algorithm"]!.GetValue<string>());
+        Assert.Equal(
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+            json["hashHex"]!.GetValue<string>());
+        Assert.Equal(11, json["sizeBytes"]!.GetValue<long>());
+    }
+
+    [Fact]
+    public async Task FsHash_Fails_ForAMissingFile()
+    {
+        var missing = Path.Combine(_root.FullName, "nope.txt");
+        var tool = new FsHashTool(new FilesystemPathPolicy([Path.Combine(_root.FullName, "**")], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", missing)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+    }
+
+    [Fact]
+    public async Task FsHash_Fails_WhenReadNotAllowed()
+    {
+        var file = Path.Combine(_root.FullName, "a.txt");
+        await File.WriteAllTextAsync(file, "hi");
+        var tool = new FsHashTool(new FilesystemPathPolicy([], []));
+
+        var result = await tool.ExecuteAsync(Args(("path", file)));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.Contains("policy", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
