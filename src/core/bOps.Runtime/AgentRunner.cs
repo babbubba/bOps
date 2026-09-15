@@ -99,10 +99,17 @@ public sealed class AgentRunner(
     /// <summary>Runs one task to completion (or to a budget/step/replan limit) and returns its final state.</summary>
     /// <param name="goal">The operator's goal, in natural language.</param>
     /// <param name="actor">Who launched this task, recorded on every audit event it produces.</param>
+    /// <param name="taskId">
+    /// The id to assign this task; a fresh one is generated when omitted. Exists for a caller that
+    /// must hand the id to someone else before the task finishes — <c>bOps.Api</c> (V0.9,
+    /// ADR-0018) returns a task's id from <c>POST /api/agents/tasks</c> immediately, before the
+    /// detached background run has saved anything, so the id it hands back must be decided by the
+    /// caller, not discovered afterwards from whatever <see cref="ITaskStore"/> ends up holding.
+    /// </param>
     /// <param name="ct">Cancelled to abandon the task; the returned state is never built for a genuinely cancelled run — the cancellation propagates instead.</param>
-    public async Task<TaskState> RunAsync(string goal, ActorIdentity actor, CancellationToken ct = default)
+    public async Task<TaskState> RunAsync(string goal, ActorIdentity actor, Guid? taskId = null, CancellationToken ct = default)
     {
-        var taskId = Guid.NewGuid();
+        var resolvedTaskId = taskId ?? Guid.NewGuid();
         var createdAtUtc = timeProvider.GetUtcNow();
         var steps = new List<PlanStep>();
         var plans = new List<AgentPlan>();
@@ -110,20 +117,20 @@ public sealed class AgentRunner(
         var totalTokens = 0;
 
         using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
-        taskActivity?.SetTag("bops.task_id", taskId);
+        taskActivity?.SetTag("bops.task_id", resolvedTaskId);
         taskActivity?.SetTag("bops.node", NodeId.Local.Value);
 
         AgentPlan plan;
         try
         {
-            var (createdPlan, planTokens) = await CreatePlanAsync(taskId, actor, goal, ct);
+            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, ct);
             plan = createdPlan;
             totalTokens += planTokens;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Task {TaskId}: planning failed", taskId);
-            return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
+            logger.LogError(ex, "Task {TaskId}: planning failed", resolvedTaskId);
+            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
         }
 
         plans.Add(plan);
@@ -132,12 +139,12 @@ public sealed class AgentRunner(
 
         if (options.MaxTotalTokens is { } initialBudget && totalTokens > initialBudget)
         {
-            return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+            return await FinishAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
         }
 
-        await taskStore.SaveAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
+        await taskStore.SaveAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
 
-        return await ContinueAsync(taskId, actor, goal, createdAtUtc, steps, plans, history, plan, totalTokens,
+        return await ContinueAsync(resolvedTaskId, actor, goal, createdAtUtc, steps, plans, history, plan, totalTokens,
             plannedStepCursor: 0, replanCount: 0, startStepIndex: 0, ct);
     }
 

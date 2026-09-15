@@ -14,6 +14,7 @@
   </Folder>
   <Folder Name="/src/core/">
     <Project Path="src/core/bOps.Abstractions/bOps.Abstractions.csproj" />
+    <Project Path="src/core/bOps.Api/bOps.Api.csproj" />
     <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
     <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
     <Project Path="src/core/bOps.Memory/bOps.Memory.csproj" />
@@ -33,6 +34,7 @@
     <Project Path="src/packages/bOps.Packages.System.Windows/bOps.Packages.System.Windows.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/bOps.Api.Tests/bOps.Api.Tests.csproj" />
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
     <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />
     <Project Path="tests/bOps.Memory.Tests/bOps.Memory.Tests.csproj" />

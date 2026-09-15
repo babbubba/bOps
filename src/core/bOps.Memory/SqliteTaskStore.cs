@@ -10,6 +10,14 @@ namespace bOps.Memory;
 /// EF Core — there is exactly one aggregate with no relational queries beyond "by id" and "by
 /// status," so a parameterized upsert and a JSON column are the entire feature, not a simplified
 /// version of a larger one.
+///
+/// Every connection opens in WAL journal mode with a busy timeout (V0.9, ADR-0018): SQLite's
+/// default journal mode blocks a reader behind an in-progress writer and, with no busy timeout
+/// set, fails that read immediately with <c>SQLITE_BUSY</c> instead of waiting briefly. That was
+/// invisible while <c>bOps.Cli</c> was the only consumer — one process, one task, no concurrent
+/// access to the same file — but <c>bOps.Api</c> writes a task's <c>Running</c> snapshot from a
+/// detached background operation while an HTTP request can read the same task at the same moment,
+/// which is exactly the access pattern WAL mode plus a busy timeout exists to make safe.
 /// </summary>
 public sealed class SqliteTaskStore : ITaskStore
 {
@@ -37,6 +45,7 @@ public sealed class SqliteTaskStore : ITaskStore
 
         using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct).ConfigureAwait(false);
+        await SetBusyTimeoutAsync(connection, ct).ConfigureAwait(false);
 
         using var command = connection.CreateCommand();
         command.CommandText =
@@ -61,6 +70,7 @@ public sealed class SqliteTaskStore : ITaskStore
     {
         using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct).ConfigureAwait(false);
+        await SetBusyTimeoutAsync(connection, ct).ConfigureAwait(false);
 
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT state_json FROM tasks WHERE id = $id;";
@@ -75,6 +85,7 @@ public sealed class SqliteTaskStore : ITaskStore
     {
         using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct).ConfigureAwait(false);
+        await SetBusyTimeoutAsync(connection, ct).ConfigureAwait(false);
 
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT state_json FROM tasks WHERE status = $status ORDER BY updated_at_utc;";
@@ -98,6 +109,14 @@ public sealed class SqliteTaskStore : ITaskStore
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
+        // WAL is a durable, once-per-file setting (persisted in the database itself), so it only
+        // needs setting here — every later connection this store opens inherits it automatically.
+        using (var walCommand = connection.CreateCommand())
+        {
+            walCommand.CommandText = "PRAGMA journal_mode=WAL;";
+            walCommand.ExecuteNonQuery();
+        }
+
         using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -110,5 +129,16 @@ public sealed class SqliteTaskStore : ITaskStore
             CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks(status);
             """;
         command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Unlike WAL mode, <c>busy_timeout</c> is a per-connection setting — it must be set again on
+    /// every new <see cref="SqliteConnection"/> this store opens, immediately after opening it.
+    /// </summary>
+    private static async Task SetBusyTimeoutAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA busy_timeout=5000;";
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 }

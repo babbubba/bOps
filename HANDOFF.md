@@ -1,145 +1,173 @@
-# Handoff — V0.8 (Anthropic, OpenAI and DeepSeek provider packages) complete
+# Handoff — V0.9 (`bOps.Api`) complete; Angular UI deferred
 
-Written at the end of the session that implemented V0.8 on top of the completed V0.7 persistence
-work. Everything below is exact, not a summary — follow it literally to resume.
+Written at the end of the session that implemented V0.9's backend on top of the completed V0.8
+provider work. Everything below is exact, not a summary — follow it literally to resume.
+
+## Scope decision made this session — read before doing anything else
+
+V0.9 in the roadmap is "`bOps.Api` + Angular UI." The operator explicitly scoped this session to
+**`bOps.Api` only** — the Angular UI is deliberately deferred to its own session, not started, not
+scaffolded, nothing under `web/` exists. Two things were raised and resolved before writing any
+code, both worth restating so a future session doesn't reopen them without new information:
+
+1. **Whether multi-agent supervision or a remote-agent transport belong in V0.9.** They do not.
+   `agentic/00-project-spec.md` already lists both as explicitly out of scope until after V1.0;
+   the operator confirmed V0.9 stays within the existing roadmap's scope (a second client of the
+   same local, single-node runtime — principle 6) rather than opening a roadmap discussion to pull
+   either forward. If a future session is asked to build fleet/remote features, that is a real
+   roadmap change requiring an explicit decision and edits to `agentic/00-project-spec.md` and
+   `06-decisions.md` — not something to infer from a UI or API request.
+2. **How much of V0.9 to build in one session.** Full "API + entire Angular 21 + NgRx SignalStore
+   app" was judged too large for one reviewable pass. This session built `bOps.Api` to a genuinely
+   complete MVP surface (ADR-0018) with real test coverage; the Angular UI is next session's task,
+   explicitly, not an oversight.
 
 ## State right now
 
-**`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** 34 projects now, up
-from 30 at the end of V0.7 (`bOps.Packages.Providers.OpenAi`, `bOps.Packages.Providers.DeepSeek`,
-`bOps.Packages.Providers.Anthropic`, `bOps.Packages.Providers.Anthropic.Tests`).
+**`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** 38 projects now, up
+from 34 at the end of V0.8 (`bOps.Api`, `bOps.Api.Tests`).
 
 **`dotnet test bOps.slnx --filter "Category!=LiveModel"`: every suite passes**, including the new
-`bOps.Packages.Providers.Anthropic.Tests` (8 contract tests against a recorded/fake HTTP handler,
-no live call). Same pre-existing skips as every prior handoff.
+`bOps.Api.Tests` (8 end-to-end integration tests against a real, running `bOps.Api` host via
+`WebApplicationFactory<Program>` — a deterministic fake `IChatModel`, no live provider). Same
+pre-existing skips as every prior handoff.
 
-**⚠️ Security finding carried forward, still not resolved: the real OpenRouter API key in
-`src/core/bOps.Cli/appsettings.json` is committed to git history** (commit `7ac2901`). See the
-V0.7 handoff (preserved in git history at that commit) for full detail. No agent session should
-commit this file's `ModelProvider.ApiKey` as anything but `""`; this session did not touch it.
+**Manually smoke-tested against a live `dotnet run`** (not just `dotnet build`): started the real
+host on a bound port, `GET /api/tools` returned real tool manifests, `POST /api/agents/tasks`
+with an empty goal returned the expected `400`. Process and its stray `tasks.db` were cleaned up
+afterward — verified via `git status` that nothing was left behind.
+
+**⚠️ Security finding carried forward from V0.7, still not resolved: the real OpenRouter API key
+in `src/core/bOps.Cli/appsettings.json` is committed to git history** (commit `7ac2901`). This
+session's own `bOps.Api/appsettings.json` was written from scratch with `"ApiKey": ""`, per rule
+S6, and was never populated with anything else — not implicated in the existing finding, which
+remains open and unrelated to this session's work.
 
 ## What this session did
 
-Implemented V0.8 per `agentic/00-project-spec.md`'s roadmap: **"Anthropic, OpenAI and DeepSeek
-provider packages."** This is Phase 2's opening version — Phase 1 (the CLI roadmap, V0.1–V0.7) is
-now complete.
+Implemented V0.9's backend per the scope decision above: **`bOps.Api`, a second, non-privileged
+HTTP client of the same local runtime `bOps.Cli` already drives.** ADR-0018
+(`docs/architecture/adr/0018-bops-api-minimal-surface.md`) records the full design and the
+alternatives rejected — read it before extending this host.
 
-### OpenAI and DeepSeek — thin wrappers over the shared adapter (ADR-0005)
+### The endpoint surface
 
-`bOps.Packages.Providers.OpenAi` and `bOps.Packages.Providers.DeepSeek` are two-file packages,
-identical in shape to `OpenRouterProviderPackage`/`OllamaProviderPackage`/`LlamaCppProviderPackage`:
-`SupportedProviderIds`, and `Create` delegates straight to the existing
-`OpenAiCompatibleChatModel` — both providers speak the same OpenAI Chat Completions schema that
-adapter already handles, so there was nothing new to write beyond the package boundary itself
-(`PackageId`/`IModelProviderPackage` registration). No new logic, no new tests — same precedent as
-every other thin wrapper package, which is why none of those have dedicated test files either.
+`POST /api/agents/tasks`, `POST /api/agents/tasks/{id}/resume`, `GET /api/agents/tasks/{id}`,
+`GET /api/agents/tasks/{id}/events` (SSE), `GET /api/agents/tasks?status=`, `GET
+/api/approvals/pending`, `POST /api/approvals/{id}/respond`, `GET /api/tools`. Full behavior is in
+ADR-0018; the short version: a task **starts detached** (`202 Accepted` with its id immediately,
+never blocking the request on the task finishing), progress is **observed by polling
+`ITaskStore`** (V0.7's own persistence, not a new event-bus abstraction), and an approval **crosses
+the request boundary** via a new host-local `ApiApprovalProvider` — a `TaskCompletionSource`-backed
+queue completed by a *different* HTTP request than the one that raised it, exactly as
+`ConsoleApprovalProvider`'s own doc comment already anticipated back in V0.3.
 
-### Anthropic — the one native adapter (`bOps.Packages.Providers.Anthropic`)
+### A real bug this session's own testing caught and fixed: `AgentRunner.RunAsync`'s task id
 
-`AnthropicChatModel : IChatModel` talks to the Messages API directly (`POST {BaseUrl}/v1/messages`,
-`x-api-key` + `anthropic-version: 2023-06-01` headers) — real new translation logic, not a wrapper,
-because Anthropic's wire shape differs enough from OpenAI's that sharing `OpenAiCompatibleChatModel`
-would mean bending that adapter around a second protocol rather than writing a second adapter:
+`bOps.Cli` never needed to know a task's id before the task finished — it prints the id only in
+the final transcript. `bOps.Api` fundamentally does: `POST /api/agents/tasks` must return the id
+*before* the task has run at all, so a client can poll or open an SSE stream for it. The original
+V0.7 signature, `RunAsync(string goal, ActorIdentity actor, CancellationToken ct = default)`,
+generates its own `Guid.NewGuid()` internally with no way to inject one — so the id
+`AgentTaskLauncher` handed back to an HTTP client was never the id `AgentRunner` actually persisted
+under. This was caught by this session's own integration tests (every `GET` of a just-started
+task returned `404` forever — diagnosed by checking the fake model's own call count directly,
+which proved the task *was* running to completion, just under a different id than the client was
+ever told). Fixed by adding an optional `Guid? taskId = null` parameter (after `actor`, before
+`ct` — `CancellationToken` must stay last per CA1068) that `AgentTaskLauncher.Start` now passes
+through; `RunAsync`'s behavior for every existing caller (`bOps.Cli`, every `bOps.Runtime.Tests`
+test) is unchanged since the parameter defaults to generating a fresh id exactly as before.
 
-- **System prompt is a top-level `system` string**, never a message — `ModelRequest.History` never
-  carries a `ChatRole.System` turn in practice (the runtime keeps `SystemPrompt` and `History`
-  separate already), so `MapRole` throws if one ever did, rather than silently mis-translating it.
-- **Content is a tagged-union block array**, not a flat string: `text`, `tool_use` (native tool
-  calls — arguments arrive as a real JSON object, `input`, not a JSON-encoded string like OpenAI's
-  `arguments`), and `tool_result` (Anthropic has no `"tool"` role; a tool's result is a
-  `tool_result` block inside a `"user"` message).
-- **Consecutive same-role turns are merged into one message.** The Messages API rejects two
-  consecutive messages with the same role, but the runtime's own loop (rule D-007) can append
-  several consecutive `ChatRole.Tool` turns back to back — the executed call's result, then one
-  "not executed" turn per tool call the runtime did not run. `BuildMessages` merges these into a
-  single `"user"` message with multiple `tool_result` blocks; this is the one piece of translation
-  logic that has no OpenAI-adapter equivalent, because OpenAI's flat message list has no such
-  same-role-adjacency restriction.
-- **`max_tokens` is required on every Anthropic request; `ChatModelOptions` has no such field.**
-  `bOps.Abstractions` stays provider-detail-free by design — adding an Anthropic-specific field
-  there would need its own ADR for a single provider's requirement. Fixed at a constant
-  (`MaxTokens = 4096` in `AnthropicChatModel`), not configurable yet — flagged in code, not hidden.
-- **The `SupportsNativeToolCalling` fallback (plan §3.1.1) is implemented too**, mirroring
-  `OpenAiCompatibleChatModel`'s JSON-in-prompt strategy exactly (tool list embedded in the system
-  prompt as text, one retry on malformed JSON) — every other provider honors this option, so
-  Anthropic does too rather than silently ignoring a documented `ChatModelOptions` field.
+### A real bug this session's own testing caught and fixed: `SqliteTaskStore` had no busy timeout
+
+`bOps.Cli` was the only consumer of `ITaskStore` through V0.7 and V0.8 — one process, one task in
+flight, never two connections touching the same SQLite file at once. `bOps.Api` is the first
+consumer with genuine concurrent access: a detached background write (the task's own progress)
+and an HTTP-triggered read (a client polling `GET /api/agents/tasks/{id}`) can hit the same file
+at the same moment. SQLite's default journal mode blocks a reader behind an in-progress writer and,
+with no `busy_timeout` set, fails immediately with `SQLITE_BUSY` rather than waiting briefly — this
+surfaced during this session's own testing as requests to a just-started task intermittently
+failing. Fixed in `SqliteTaskStore`: every connection now sets `PRAGMA busy_timeout=5000;`
+immediately after opening, and the database itself is switched to `journal_mode=WAL` once (a
+durable, once-per-file setting) in `EnsureSchema`, which lets a reader and a writer coexist far
+more gracefully than the default rollback-journal mode. This is a `bOps.Memory` change, not a
+`bOps.Api`-only one — it benefits `bOps.Cli`'s own `bops resume` too, though `bOps.Cli` never hit
+the bug since it has no concurrent access pattern to trigger it.
 
 ### Tests
 
-`bOps.Packages.Providers.Anthropic.Tests` — 8 contract tests against a `StubHttpMessageHandler`
-(records every request, replays canned responses; agentic/04-testing-rules.md's "contract tests
-against recorded HTTP fixtures" for provider packages, no live call): a text-only response parses
-as final; the system prompt is sent separately from messages with the right auth headers and
-endpoint; a `tool_use` block parses into a `ModelToolCall` with real (not JSON-string) arguments;
-a `ToolManifest` translates into Anthropic's `input_schema` shape; consecutive `ChatRole.Tool`
-turns merge into one `user` message with multiple `tool_result` blocks (the one Anthropic-specific
-translation rule); the fallback path parses a JSON-in-text reply; a non-success HTTP status and a
-malformed response body both throw `ModelProtocolException`.
+`bOps.Api.Tests` (`WebApplicationFactory<Program>`, a real host per test via `TestAppFactory`,
+isolated temp directory per instance for its audit log/task store/policy file, `IChatModel` and
+`IPolicyEngine` substitutable before the first request): a missing `goal` returns `400`; a task
+started, polled, and observed completing through real HTTP; an unknown task id returns `404` from
+both `GET` and `resume`; a task seeded directly into `ITaskStore` as `Running` resumes to
+completion through the resume endpoint; a full approval round-trip — task blocks, `GET
+/api/approvals/pending` shows it (with the correct task id, recovered via `ApiApprovalProvider`'s
+`AsyncLocal<Guid?>`, not persisted state), a separate `POST .../respond` unblocks it, the task
+completes, the approval list empties; responding to an unknown approval id returns `404`; `GET
+/api/tools` returns the real registered manifests.
 
-**No live-model smoke test this session** — same `appsettings.json` constraint as every prior
-handoff (`ApiKey` stays `""` in the repo). `dotnet build` on `bOps.Cli` with the three new
-provider packages wired in was verified to compile and link cleanly; actually resolving
-`"Anthropic"`/`"OpenAI"`/`"DeepSeek"` through `ChatModelRegistry` at runtime was not exercised
-end-to-end (would need real credentials, out of scope for this session per the standing
-constraint).
+**No live-model smoke test** — same `appsettings.json` constraint as every prior handoff.
 
 ## Design choices worth knowing before extending this further
 
-- **OpenAI's `Provider` id is `"OpenAI"`, not `"OpenAi"`** — matches the casing convention the
-  roadmap line and `06-decisions.md`'s table already use elsewhere (`"OpenRouter"`, `"Ollama"`);
-  the C# type/namespace names use `OpenAi` (Pascal-cased two-letter acronym, the repo's existing
-  convention — see `OpenAiCompatibleChatModel` itself) — the two are deliberately different
-  strings for different purposes (wire-protocol id vs. .NET identifier), not an inconsistency.
-- **`bOps.Packages.Providers.Anthropic` does not depend on `bOps.Packages.Providers.OpenAiCompatible`**
-  at all — only on `bOps.Abstractions`, same dependency shape as the shared adapter package itself.
-  There was nothing to share; duplicating the small `BuildParameterSchema`/`MapJsonSchemaType`
-  helpers (~20 lines) was simpler and clearer than introducing a cross-package dependency or a
-  third shared-helpers package for two nearly-identical private methods.
-- **`ContentBlockDto` is one flat DTO for all three Anthropic content-block types** (`text`,
-  `tool_use`, `tool_result`), every field but `type` optional, rather than three separate records —
-  `System.Text.Json` source generation has no clean polymorphic-by-sibling-field support as simple
-  as this for a wire format this small.
+- **Every type in `bOps.Api` is `internal`** (CA1515 — this is an application, not a library),
+  including the `Program` marker class; `bOps.Api.Tests` sees them via a project-level
+  `InternalsVisibleTo`. This is new — no prior host in this repository needed it, since `bOps.Cli`
+  has never had an integration-test project driving it through its own composition root.
+- **`ApiApprovalProvider.CurrentTaskId` is a `static AsyncLocal<Guid?>`**, set by
+  `AgentTaskLauncher` for the duration of a task's `RunAsync`/`ResumeAsync` call and read inside
+  `RequestApprovalAsync`, which is nested many calls deep inside `AgentRunner` and has no task id
+  parameter to work with (the `IApprovalProvider` interface predates a multi-task host). This
+  avoids touching `IApprovalProvider`'s contract — a `bOps.Abstractions` change every other
+  provider (`ConsoleApprovalProvider`, tests) would also need to absorb — for something genuinely
+  local to how *this one host* recovers context it needs for its own UI, not part of what the
+  interface promises callers in general.
+- **A pending approval is host-process-local, not durable** (ADR-0018) — a restart mid-approval
+  loses that specific pending request, though the underlying task is unaffected and resumable.
+  Stated explicitly in the ADR, not a silent gap.
+- **No authentication in this version** (ADR-0018) — anyone who can reach `bOps.Api`'s port can
+  start and approve tasks. Real auth is explicitly deferred to V1.0's hardening line, where the
+  whole security posture gets designed together.
 
-## What V0.8 deliberately does NOT have yet
+## What V0.9 deliberately does NOT have yet
 
-- **No live-model smoke test against a real Anthropic/OpenAI/DeepSeek endpoint.** Blocked on the
-  same `appsettings.json` constraint as every prior handoff, unrelated to this version's own work.
-- **`AnthropicChatModel.MaxTokens` is a hardcoded constant**, not sourced from configuration. Would
-  need a `ChatModelOptions` change (its own ADR, since that type is in `bOps.Abstractions`) to make
-  configurable per-provider.
-- **No streaming.** Still deferred to Phase 2's `IStreamingChatModel : IChatModel` per D-007 —
-  unrelated to which providers exist, not started for any provider yet.
-- **No prompt caching, extended thinking, or other Anthropic-specific request options.** Not named
-  in this version's roadmap line; the adapter implements exactly the request/response shape the
-  existing `IChatModel` contract needs, nothing Anthropic-specific beyond that.
-- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated to V0.8.
+- **The Angular UI does not exist.** Nothing under a `web/` directory, no scaffold, no
+  `angular.json`. This is the explicit scope decision from the top of this document, not an
+  oversight — next session's task.
+- **No OpenAPI/Swagger generation.** Named in `piano-bops.md` for the eventual Angular client
+  (generated TypeScript client) but has no consumer yet; deferred to whichever session actually
+  builds the UI (ADR-0018).
+- **No `GET /api/providers`.** `IChatModelRegistry` has no enumeration method today (only
+  `Register`/`Create`) — adding one is a `bOps.Abstractions` change with no current caller.
+- **No authentication or authorization** — see above, explicitly deferred to V1.0.
+- **`GET /api/agents/tasks/{id}/events`'s 500ms poll interval is an unmeasured MVP default** —
+  ADR-0018 explicitly defers tuning it to a session with a real UI and real usage to measure
+  against.
+- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated to V0.9.
 - **No dynamic plugin loading** — V0.10, unrelated.
 - **No CLI command to run `AuditChainVerifier` on demand** — carried forward again, still small,
   still not done.
 
 ## Next steps
 
-V0.8 is done: OpenAI and DeepSeek are real, working provider packages (thin by construction, since
-the shared adapter already covers their wire protocol), and Anthropic is a genuinely new native
-adapter with its own translation logic and its own test coverage — verified against recorded HTTP
-fixtures, not just asserted to compile.
+`bOps.Api`'s MVP surface is done and genuinely tested end to end — not just "compiles," but a real
+host handling a real task through start → poll → complete, and a full approval round-trip through
+two separate HTTP requests, plus resume. Two real bugs this session's own tests caught (the task-id
+mismatch, the missing SQLite busy timeout) are fixed, not merely worked around.
 
-**Before any further roadmap work**, the committed API key finding from V0.7 is still open. See
-the state section above.
+**Before any further roadmap work**, the committed API key finding from V0.7 is still open —
+carried forward again.
 
-**V0.9 — "`bOps.Api` + Angular UI" — has not been started.** Per the scope-discipline rule, the
-next session should begin by reading `agentic/00-project-spec.md`'s roadmap entry for V0.9 and
-`06-decisions.md`/`01-architecture-rules.md` for anything already settled about the API/UI split
-before writing code. This is a substantially larger version than V0.1–V0.8 (a new host, a new
-client, likely new contract surface for exposing tasks/approvals over HTTP) — worth explicitly
-confirming scope with the operator before starting, per the standing "stop and ask" rule for
-anything that looks like it might pull in later-roadmap work.
+**Next: the Angular UI**, the deferred half of V0.9. Per the scope-discipline rule, that session
+should begin by reading `piano-bops.md` §17 (the only place the intended Angular structure —
+standalone components, `@ngrx/signals` SignalStore, `httpResource()`/`resource()` for cacheable
+GETs — is actually described) and this session's ADR-0018 for the exact endpoint contract it will
+consume, then confirm with the operator whether OpenAPI-generated-client tooling should be set up
+first or whether a hand-written client is acceptable for an initial pass.
 
 Two smaller, non-urgent items carried forward again from every prior handoff:
 
 1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
-   0002, 0005, 0006, 0011, 0012) are still unwritten. ADR-0005 in particular ("one shared
-   OpenAI-compatible adapter, with Anthropic as the only native adapter") is now the decision this
-   very version implements — still worth writing up formally, since three more provider packages
-   just leaned on it without its own record existing yet.
+   0002, 0005, 0006, 0011, 0012) are still unwritten.
 2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done.

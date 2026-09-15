@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Api</RootNamespace>
+    <AssemblyName>bOps.Api</AssemblyName>
+    <Description>The bOps HTTP API — a second, non-privileged client of the same local runtime the CLI drives (agentic/00-project-spec.md, principle 6; ADR-0018).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Every type here is internal (CA1515 — this is an application, not a library); the test
+         project needs the top-level Program marker and the endpoint/DTO types it exercises directly. -->
+    <InternalsVisibleTo Include="bOps.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\bOps.Memory\bOps.Memory.csproj" />
+    <ProjectReference Include="..\bOps.Policy\bOps.Policy.csproj" />
+    <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- Phase 1 packages are project-referenced directly; dynamic loading arrives at V0.10
+         (agentic/06-decisions.md, D-003; agentic/01-architecture-rules.md §2) — same as bOps.Cli. -->
+    <ProjectReference Include="..\..\packages\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.System.Linux\bOps.Packages.System.Linux.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Filesystem\bOps.Packages.Filesystem.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Network\bOps.Packages.Network.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenRouter\bOps.Packages.Providers.OpenRouter.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Ollama\bOps.Packages.Providers.Ollama.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenAi\bOps.Packages.Providers.OpenAi.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.DeepSeek\bOps.Packages.Providers.DeepSeek.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Anthropic\bOps.Packages.Providers.Anthropic.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.Http ships as part of the ASP.NET Core shared framework here, unlike
+         in bOps.Cli's Worker-SDK project — no explicit PackageReference needed or allowed. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

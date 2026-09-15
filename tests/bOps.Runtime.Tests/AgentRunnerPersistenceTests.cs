@@ -70,7 +70,7 @@ public sealed class AgentRunnerPersistenceTests
         // task is left durable up to its last completed step, never returned as a finished
         // TaskState (rule: "the returned state is never built for a genuinely cancelled run").
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => CreateRunner(model, registry, taskStore).RunAsync("check things", Actor, cts.Token));
+            () => CreateRunner(model, registry, taskStore).RunAsync("check things", Actor, ct: cts.Token));
 
         var running = await taskStore.ListByStatusAsync(AgentTaskStatus.Running);
         Assert.Single(running);
