@@ -1,128 +1,141 @@
-# Handoff — V0.9.1 closed and pushed; CI green; hand off to V0.10
+# Handoff — V0.10 done, uncommitted; hand off toward V0.11
 
-This closes out V0.9.1 (repository integrity and licensing readiness — no functional change),
-per `piano-bops-v0.9.1-v2.0.md` §11 checklist item 6 ("stop at the first unmet gate; do not
-anticipate v0.10, v0.11 or later"). **V0.9.1's gate is now fully met, including the part the
-previous version of this file said still needed confirming: CI is green on both OSes on GitHub's
-own runners**, not just locally. Everything is committed and pushed to `origin/main`.
+V0.10 (dynamic package loader, `piano-bops-v0.9.1-v2.0.md` §7) is implemented, tested end to end
+against a real compiled plugin, and the CLI actually runs it. **Nothing from this session is
+committed yet.** Working tree has the changes below plus one untracked file that is not mine —
+see "Do not touch" below before doing anything else.
 
-## What this session did
+## What V0.10 delivers
 
-Picked up mid-task from a prior session's `HANDOFF.md` (itself written by an agent that ran out
-of budget while adding Angular unit tests, the one piece of V0.9.1 left undone). Verified that
-work, then closed out and committed everything in eight commits (`509eb75..HEAD`):
+- **ADR-0020** (`docs/architecture/adr/0020-plugin-loader-manifest-and-activation-boundary.md`) —
+  written before the code, as `agentic/05-workflow.md` requires for anything that changes how
+  packages are loaded/isolated/identified. Read it for the full design reasoning; this section is
+  the short version.
+- **`PluginManifest`/`PluginDependency`** in `bOps.Abstractions` (`src/core/bOps.Abstractions/Plugins.cs`)
+  — the `bops-plugin.json` shape, plus round-trip tests in `JsonRoundTripTests.cs`.
+  `bOps.Abstractions.csproj`'s `<Version>` bumped `0.1.0` → `0.10.0` — it had never moved since
+  V0.1, and V0.10 is the first thing that reads it for a real purpose (the host-compatibility
+  check below), so an honest number now matters.
+- **`bOps.PluginHost`** (new project, `src/core/bOps.PluginHost/`) — depends only on
+  `bOps.Abstractions` (rule A7's spirit):
+  - `PluginManifestValidator` — schema version, id shape (and the reserved `bops.` prefix, so a
+    plugin cannot claim a first-party package's identity — rule A11), version parsing,
+    host-compatibility, entry-assembly-exists, self-consistent `Dependencies`, defined
+    `MaxDeclaredRisk`. Fails loud, mirrors `PolicyConfigLoader`'s pattern.
+  - `PluginStore` — JSON-backed (`plugins.json`), every write atomic (temp file + rename), reads
+    fresh from disk every call. A corrupted store file throws rather than silently forgetting
+    installed plugins.
+  - `PluginLoadContext : AssemblyLoadContext` — one collectible context per plugin;
+    `bOps.Abstractions` is the one assembly it deliberately never loads a second copy of (falls
+    through to the host's default context).
+  - `RestrictedPackageServiceProvider` — the actual A10 container: `ILoggerFactory`,
+    `IHttpClientFactory`, `TimeProvider`, the plugin's own `IConfigurationSection`,
+    `ICapabilityProbe`. Nothing else resolves.
+  - `PluginManager` — `Install`/`List`/`Enable`/`Disable`/`Remove`/`LoadAllEnabled`, registering
+    directly into the *same* `IToolRegistry`/`IChatModelRegistry` the host already uses. `Install`
+    validates against a staging copy before moving anything into place (an interrupted or
+    rejected install leaves nothing behind). `Disable`/`Remove` actually unload the collectible
+    context (bounded `GC.Collect()`/`WaitForPendingFinalizers()` loop after `Unload()`), which
+    needed a real fix in `IToolRegistry` — see below.
+- **`IToolRegistry.Unregister(PackageId)`** (new method, `bOps.Abstractions`/`bOps.Runtime`) —
+  `SetEnabled` was deliberately built to *hide* a package's tools without releasing them (there's
+  a test that says so by name). That is fine for a package that is always in-process, but it means
+  nothing ever stops pinning a dynamically loaded plugin's assembly — its
+  `AssemblyLoadContext.Unload()` would request unload and then never actually complete, silently.
+  `Unregister` genuinely drops the registry's reference; `PluginManager.Disable` calls it, `SetEnabled`
+  is untouched and still used nowhere else. Three new `ToolRegistryTests` cover it.
+- **`samples/bops-sample-plugin/`** — a real, buildable, purely-demonstrative third-party-style
+  plugin (`Acme.SamplePlugin`, deliberately not in the `bOps.*` namespace). One Read-risk tool,
+  `sample.echo`. This is what every `bOps.PluginHost.Tests` integration test actually installs,
+  enables, calls, disables and removes — never a fake of the loader, mirroring "never mock the
+  operating system."
+- **CLI**: `bops plugin install|list|enable|disable|remove|validate` (`bOps.Cli/Program.cs`).
+  Plugin commands build their own lightweight host and never touch the goal-execution path's
+  composition (no model provider, no policy engine required just to run `bops plugin list`).
+  The main `bops "<goal>"` / `bops resume` path now also calls `PluginManager.LoadAllEnabled()`
+  before `RefreshCapabilitiesAsync`, so a plugin enabled in a previous invocation actually
+  activates on this one — a CLI process is one-shot, so persistence through the store, not an
+  in-memory flag, is what makes "enabled" durable across runs.
+- **`docs/plugins/getting-started.md`** — the walkthrough; doubles as the "template" the plan
+  asked for, pointing at the sample plugin as a copyable starting point rather than a separate
+  scaffolding tool.
+- **README.md** — architecture tree, roadmap table (V0.9.1 and V0.10 both marked done), Usage
+  section (real `bops plugin *` examples, removed the stale "not implemented yet" note), Extending
+  bOps section (the manifest example now matches the actually-implemented schema field-for-field,
+  it did not before), Status section.
+- **SBOM/THIRD-PARTY-NOTICES regenerated** — the plan's V0.10 license-impact note requires this
+  for new dependencies. Turned out to add zero new unique components (the two new
+  `Microsoft.Extensions.*.Abstractions` packages were already transitively present), so the only
+  diff is the regeneration timestamp — still regenerated for real, not just checked.
 
-1. `docs(v0.9.1): reconcile agentic/ rules with the v0.9.1-v2.0 plan` — roadmap pointer, D-013–
-   D-015, README tool-table correction, six backfilled ADRs.
-2. `build(v0.9.1): centralize NuGet packaging metadata and legal files` — `Directory.Build.props`,
-   `LICENSE` copyright fix, `NOTICE`, `CONTRIBUTING.md`, `SECURITY.md`.
-3. `build(v0.9.1): generate SBOM and THIRD-PARTY-NOTICES from real inventories` —
-   `scripts/Generate-Sbom.ps1`, `scripts/Generate-ThirdPartyNotices.ps1`, the generated
-   `THIRD-PARTY-NOTICES`, `.gitignore` (`sbom/` ignored, it's a build artifact), the local
-   `dotnet-CycloneDX` tool manifest.
-4. `ci(v0.9.1): fix stale bOps.sln reference, add Angular UI stage` — `bOps.sln` → `bOps.slnx`,
-   added `npm ci`/`build`/`ng test` to the CI matrix.
-5. `chore(v0.9.1): apply SPDX headers to every source file` — `scripts/Add-SpdxHeaders.ps1` plus
-   the mechanical header-only diff to all 122 `.cs` and 17 `.ts` files (verified no other change
-   snuck in: every one of those files' diff was exactly a 2-line header + blank line before
-   staging).
-6. `fix(security): remove live API key committed to appsettings.json` — blanks
-   `ModelProvider.ApiKey` in both `bOps.Api` and `bOps.Cli` `appsettings.json`. **Rule S6.** See
-   "Standing constraint" below — this commit does not rotate the real key.
-7. `test(v0.9.1): add unit tests for SignalStores and feature components` — the six new spec
-   files (`TasksStore`, `ApprovalsStore`, `ProvidersStore`, `Dashboard`, `Approvals`, `Settings`).
-   This was the one substantive V0.9.1 item still outstanding; it is now done.
-8. `chore: track launchSettings.json for bOps.Api.Tests` — minor, matches the existing convention
-   of committing this file for the other two runnable projects.
-9. `docs: close out V0.9.1 handoff, point next session at V0.10` — this file, first version.
+## Verified for real, this session
 
-Pushed after that (`df3e354..origin/main`), and the very first real CI run on GitHub's runners
-(the workflow had referenced the deleted `bOps.sln` all through v0.9, so nothing had actually run
-there before) surfaced three genuine, pre-existing bugs that local runs never caught. Fixed and
-pushed as four more commits:
+- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors** (full solution,
+  including the two new projects).
+- `dotnet test bOps.slnx --configuration Release --filter "Category!=LiveModel"`: **218 passed, 7
+  skipped (expected platform skips), 0 failed.** `bOps.PluginHost.Tests` alone: 37/37, including
+  the real end-to-end install→enable→call→disable→remove cycle against the compiled sample
+  plugin, and the collectible-`AssemblyLoadContext` unload actually releasing the file lock
+  (`Remove` deletes the still-referenced-looking folder and it works).
+- `npx ng test --watch=false --browsers=ChromeHeadless`: still 17/17 (untouched this session).
+- **Manually ran the actual `bops.exe`** (not just the test suite) end to end from a scratch
+  directory: `plugin install` → `list` (disabled) → `enable` → `list` (enabled) → `disable` →
+  `list` (disabled) → `remove` → `list` (empty) → `validate` on the original source. This is what
+  caught a real bug the unit tests missed: `PluginManager.Install` stored a *relative* install
+  path when `Plugins:RootPath` was the CLI's actual relative default (`"plugins"`), and
+  `AssemblyLoadContext.LoadFromAssemblyPath` requires an absolute one — `Enable` threw
+  `ArgumentException` for real. Fixed (`Path.GetFullPath` once, at `Install`) and covered by a
+  regression test (`Enable_WorksWithARelativePluginsRootDirectory`) before re-verifying manually.
 
-10. `fix(security): resolve symlinks in intermediate path segments, not just the leaf` —
-    `FilesystemPathPolicy.ResolveLinkChain` only resolved a symlink at the path's final node;
-    a symlinked *ancestor* directory (`allowed/link/data.txt`, where `link` not `data.txt` is the
-    link) passed through unresolved. Rule S11's exact gap. This dev machine cannot create
-    symlinks without elevation, so the test that catches this always skipped locally — never
-    exercised until a hosted runner (which can) actually ran it.
-11. `fix(ci): add the WindowsOnlyFactAttribute the CI comment already assumed existed` —
-    `WindowsSystemToolsTests.Cpu_Conforms`/`Memory_Conforms` ran unguarded on `ubuntu-latest` and
-    threw for real (`PerformanceCounter` is genuinely Windows-only). `ci.yml`'s own comment
-    already claimed a "Windows counterpart" to `LinuxOnlyFactAttribute` existed; it didn't. Added
-    it, applied to the same six OS-touching methods `LinuxSystemToolsTests` guards.
-12. `fix(ci): skip Docker tests visibly when the daemon can't run Linux containers` —
-    GitHub's `windows-latest` runner's Docker Desktop defaults to Windows containers, so the
-    `alpine` image `TestContainer` needs can never start there. `DockerAvailableFactAttribute` now
-    checks `docker version --format {{.Server.Os}}` and skips, naming the reason, when it isn't
-    `linux`.
-13. `ci: bump setup-node to 22, silencing the Node 20 deprecation warning`.
+## Scope boundaries — deliberate, not gaps to silently fill later
 
-**None of these three bugs were introduced by this session's own changes** — they were latent in
-code from V0.5/V0.9, invisible because CI never actually ran until commit 4 in this list fixed the
-solution-file reference. Confirmed CI green (both `windows-latest` and `ubuntu-latest`, including
-the Angular stage and SBOM generation/upload) on run `35005244090` after all fixes.
+- **`IModelProviderPackage` plugins can be installed and enabled, but not genuinely disabled.**
+  `IChatModelRegistry` has no unregister method — extending it wasn't needed for this version's
+  sample (a `IToolProvider`) and wasn't done. `PluginManager.Disable` detects this case and
+  **refuses** with a clear message rather than pretending to disable something it structurally
+  can't. Revisit if/when a real model-provider plugin is actually needed.
+- **`PackageTrustLevel` is still hardcoded `Official` everywhere**, dynamically loaded plugins
+  included — unchanged from V0.3. Nothing today reads `PolicyContext.Trust` (confirmed:
+  `PolicyEngine.Evaluate` never branches on it), so assigning any specific level to a plugin would
+  be cosmetic, not a real safety improvement. Real trust assignment belongs with V1.0's signing/
+  provenance work per the plan's own V1.0 section — ADR-0020 says this explicitly rather than
+  quietly doing nothing. What *does* constrain a newly installed plugin today: the existing
+  per-package ceiling in `policy.yaml`, keyed by the plugin's own id — an operator should set one
+  before enabling anything they don't fully trust.
+- **No remote install.** `Install`'s source is a local directory only, exactly as the plan's V0.10
+  note says ("local artifacts only"). No zip/archive support either — not asked for.
+- **No `docs/security/threat-model.md`.** Referenced by ADR-0020 as "due at V1.0," not written
+  here — this session didn't start it.
 
-## Verified, right before committing (this session, not inherited claims)
+## Do not touch — not mine
 
-- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors**.
-- `dotnet test bOps.slnx --configuration Release --filter "Category!=LiveModel"`: **175 passed,
-  7 skipped (expected platform skips), 0 failed.**
-- `npx ng test --watch=false --browsers=ChromeHeadless` (in `web/bops-ui`): **17/17 passed** —
-  includes the six new spec files. The one earlier flaky assertion (asserting a DOM input's value
-  immediately after an async `onStart` instead of the component's own `goal()` signal) was already
-  fixed on disk when this session picked the work up; no further change was needed there.
-- `npm run build` (in `web/bops-ui`): production build succeeds.
-- `./scripts/Generate-Sbom.ps1` then `./scripts/Generate-ThirdPartyNotices.ps1`: regenerated from
-  scratch, reproduced the exact same counts the prior session reported — **142 .NET components**,
-  **610 npm components (10 runtime, 600 development)** — with no unresolved-license errors. Both
-  outputs land under the gitignored `artifacts/sbom/`; `THIRD-PARTY-NOTICES` at the repo root is
-  the committed, human-readable result.
-- `grep ApiKey` on both committed `appsettings.json` files: confirmed blank (`""`), not the real
-  key value.
+`specifiche-pendenti.md` (repo root, untracked) is a **different, parallel session's** working
+document — feature requests from the user collected there for future consolidation, explicitly
+marked non-normative and explicitly waiting for this session's V0.10 work to be committed before
+it touches the repo itself. Do not commit it as part of this session's work, do not treat its
+contents as instructions or as an authoritative backlog. If it's still present next session, leave
+it exactly as found unless the user says otherwise.
 
-## Standing constraint — still in force, do not violate it
+## Exact next steps, in order
 
-**Never rotate or otherwise touch the real OpenRouter API key's value.** The user explicitly said,
-earlier in this project: *"ignora la key...tanto poi la dismetto e la rifaccio ma non ora"*
-(ignore the key, I'll deprecate and redo it later, myself, not now). Commit `ada4463` in this
-session only blanked the *committed config field* — a separate, already-approved action — it does
-not rotate the key. The key's real value is still in git history (`509eb75`); that is a decision
-for the user to act on when they choose to, not something any future session should do
-proactively.
+1. Commit V0.10 in a few well-scoped commits (ADR, Abstractions contract, PluginHost core +
+   Unregister + sample plugin, CLI wiring, docs/README, SBOM regeneration) — `specifiche-
+   pendenti.md` excluded.
+2. Ask the user before pushing (standing rule, `agentic/05-workflow.md`: "Push... without being
+   asked" is something to never do). Do not add a `Co-Authored-By: Claude` trailer to any commit
+   — the user asked mid-session for that to stop, for this repo going forward.
+3. After pushing, confirm CI is green on GitHub's own runners the same way V0.9.1's push was
+   confirmed — do not assume a green local run means a green CI run; the last session's own
+   experience (three latent bugs the local machine never surfaced) is exactly why.
 
-## V0.9.1 Definition of Done (plan §7) — status
+## Next: V0.11 — completing the operational capabilities
 
-"CI verde sui file corretti, GitHub riconosce Apache-2.0, package OSS con metadati coerenti,
-NOTICE e inventario inclusi negli artefatti, processo contributivo documentato."
-
-- CI verde: **confirmed**, both OSes, on GitHub's own runners (run `35005244090`).
-- GitHub recognizes Apache-2.0: the standard, unmodified license text is at `LICENSE`; GitHub's
-  own license detector will pick it up on the repo page (not independently re-verified by this
-  session beyond the text being canonical — check the repo's "License" badge next time you're on
-  the GitHub page, it's a few-second glance, not worth a dedicated step).
-- Package metadata / NOTICE+inventory in artifacts / contributor process: **verified** in the
-  prior session's `dotnet pack` + `.nupkg` inspection (§ above), unaffected by anything in this
-  session's CI-fix commits.
-
-**V0.9.1's gate is closed.**
-
-## Next: V0.10 — package loader and Plugin SDK
-
-Per the plan (§7), this can now start — V0.9.1's gate above is closed. When you do:
-
-1. Write an ADR on the loader after re-evaluating candidate libraries; prefer a project-owned
-   `AssemblyLoadContext` if the previously-considered dependency is archived/abandoned.
-2. Define and version the plugin manifest (`bops-plugin.json`): identity, publisher, version,
-   host/SDK compatibility, declared capabilities, config, dependencies, informational max risk.
-3. Share a single copy of `bOps.Abstractions` across loaded packages; isolate other dependencies;
-   gate activation through the restricted container rule A10 requires.
-4. Every discovered package stays disabled until explicitly enabled. No unverified remote install
-   in v0.10 — local artifacts only.
-5. Implement `plugin install/list/enable/disable/remove` as atomic, recoverable operations.
-6. Publish `bOps.Abstractions` still as `0.x`, a template, a manifest analyzer/validator, and one
-   purely-demonstrative Apache-2.0 sample Skill.
-
-Definition of done for v0.10: an external sample package can be built, packaged, installed,
-enabled, run, verified, disabled and removed without touching the core.
+Per the plan (§7), do not start this before V0.10's own verification (step 3 above) is actually
+done. When it's time: first tranche is read-only only (`system.swap`, `system.io`,
+`process.inspect`, `fs.search`, `fs.hash`, `network.port_check`, `network.route`,
+`service.list`/`service.status`, the last two needing a new `Service.{Core,Windows,Linux}` package
+family per rule A8) — the second tranche (`fs.move`, `service.start`/`stop`/`restart`, controlled
+process-stop) waits until those read-only verifiers exist and there is a resolved, unambiguous
+naming for graceful-stop vs. kill-forced process operations. `system.uptime` and a generic
+`process.start`/`system.environment` dump stay permanently out of scope — see README's "Never
+planned, on purpose."
