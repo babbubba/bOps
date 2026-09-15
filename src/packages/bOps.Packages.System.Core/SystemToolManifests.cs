@@ -103,4 +103,28 @@ public static class SystemToolManifests
         Requires = [],
         Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to inspect.")],
     };
+
+    /// <summary>The manifest for <c>process.stop</c> on the given platform.</summary>
+    public static ToolManifest ProcessStop(string platform) => new()
+    {
+        Name = "process.stop",
+        Description = "Requests a process stop gracefully (a close/terminate request, not forced). May fail if no graceful-stop mechanism is available for this process on this platform — see process.kill for a forced stop.",
+        Risk = RiskLevel.Medium,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to stop.")],
+        Verification = new VerificationSpec("process.inspect", ["pid"], "Confirms the process no longer exists afterward."),
+    };
+
+    /// <summary>The manifest for <c>process.kill</c> on the given platform.</summary>
+    public static ToolManifest ProcessKill(string platform) => new()
+    {
+        Name = "process.kill",
+        Description = "Forcibly terminates a process immediately (SIGKILL on Linux, TerminateProcess on Windows). Prefer process.stop first when a graceful stop is possible.",
+        Risk = RiskLevel.High,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to terminate.")],
+        Verification = new VerificationSpec("process.inspect", ["pid"], "Confirms the process no longer exists afterward."),
+    };
 }

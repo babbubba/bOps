@@ -130,3 +130,76 @@ public abstract class ProcessInspectToolBase(string platform) : ITool
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(pid, ct)));
     }
 }
+
+/// <summary>
+/// The tool shell for <c>process.stop</c>: a graceful termination request, verified via
+/// <c>process.inspect</c> afterward — both platforms expect the same fact (the process is gone),
+/// so the verification evaluation is shared here rather than duplicated per OS.
+/// </summary>
+public abstract class ProcessStopToolBase(string platform) : IVerifiableTool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.ProcessStop(platform);
+
+    /// <summary>
+    /// Requests <paramref name="pid"/> stop gracefully. Returns <see cref="ToolOutcome.Failure"/>
+    /// if no graceful-stop mechanism is available for this process on this platform — this is an
+    /// honest platform limitation (Windows has no generic SIGTERM equivalent for a process without
+    /// a main window), not something to paper over by silently forcing a kill instead.
+    /// </summary>
+    protected abstract Task<ToolCallResult> RequestStopAsync(int pid, CancellationToken ct);
+
+    /// <inheritdoc />
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var pid = arguments.GetRequired<int>("pid");
+        return RequestStopAsync(pid, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<VerificationOutcome> EvaluateVerificationAsync(
+        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
+        EvaluateProcessAbsence(verificationToolResult, "stop");
+
+    internal static Task<VerificationOutcome> EvaluateProcessAbsence(ToolCallResult verificationToolResult, string actionVerb)
+    {
+        ArgumentNullException.ThrowIfNull(verificationToolResult);
+
+        if (!verificationToolResult.Succeeded)
+        {
+            return Task.FromResult(new VerificationOutcome(
+                VerificationStatus.Inconclusive, $"Could not confirm the {actionVerb}: {verificationToolResult.ErrorMessage}"));
+        }
+
+        return Task.FromResult(ProcessInspectOutput.TryReadExists(verificationToolResult.Output) switch
+        {
+            false => new VerificationOutcome(VerificationStatus.Confirmed, null),
+            true => new VerificationOutcome(VerificationStatus.Refuted, $"process.inspect reports the process still exists after the {actionVerb}."),
+            null => new VerificationOutcome(VerificationStatus.Inconclusive, "process.inspect's output could not be read."),
+        });
+    }
+}
+
+/// <summary>The tool shell for <c>process.kill</c>: forced termination, verified via <c>process.inspect</c> afterward.</summary>
+public abstract class ProcessKillToolBase(string platform) : IVerifiableTool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.ProcessKill(platform);
+
+    /// <summary>Forcibly terminates <paramref name="pid"/>.</summary>
+    protected abstract Task<ToolCallResult> KillAsync(int pid, CancellationToken ct);
+
+    /// <inheritdoc />
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var pid = arguments.GetRequired<int>("pid");
+        return KillAsync(pid, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<VerificationOutcome> EvaluateVerificationAsync(
+        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
+        ProcessStopToolBase.EvaluateProcessAbsence(verificationToolResult, "kill");
+}

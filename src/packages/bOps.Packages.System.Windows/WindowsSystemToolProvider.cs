@@ -19,5 +19,7 @@ public sealed class WindowsSystemToolProvider : IToolProvider
         new WindowsSwapUsageTool(),
         new WindowsIoUsageTool(),
         new WindowsProcessInspectTool(),
+        new WindowsProcessStopTool(),
+        new WindowsProcessKillTool(),
     ];
 }

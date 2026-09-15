@@ -19,5 +19,7 @@ public sealed class LinuxSystemToolProvider : IToolProvider
         new LinuxSwapUsageTool(),
         new LinuxIoUsageTool(),
         new LinuxProcessInspectTool(),
+        new LinuxProcessStopTool(),
+        new LinuxProcessKillTool(),
     ];
 }
