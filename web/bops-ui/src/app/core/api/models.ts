@@ -113,3 +113,17 @@ export interface PendingApproval {
   reason: string;
   requestedAtUtc: string;
 }
+
+/** The provider this host is actually configured to use — never carries the API key's value (ADR-0019), only whether one is present. */
+export interface ActiveProviderInfo {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  hasApiKey: boolean;
+}
+
+/** bOps.Api.ProvidersResponse (ADR-0019, GET /api/providers). */
+export interface ProvidersResponse {
+  registeredProviderIds: string[];
+  active: ActiveProviderInfo | null;
+}

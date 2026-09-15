@@ -13,3 +13,17 @@ internal sealed record TaskAcceptedResponse(Guid TaskId);
 /// pretending to a real identity it cannot verify.
 /// </summary>
 internal sealed record RespondToApprovalRequest(bool Approved, string? Note, string? Approver = null);
+
+/// <summary>
+/// Response of <c>GET /api/providers</c> (ADR-0019). <see cref="Active"/> is <c>null</c> if the
+/// host has no valid <c>ModelProvider</c> configuration section at all — distinct from a
+/// configured-but-keyless provider, which still reports with <see cref="ActiveProviderInfo.HasApiKey"/> false.
+/// </summary>
+internal sealed record ProvidersResponse(IReadOnlyList<string> RegisteredProviderIds, ActiveProviderInfo? Active);
+
+/// <summary>
+/// The provider this host is actually configured to use. Never carries the API key's value
+/// (ADR-0019) — only whether one is present, since this endpoint has no authentication (ADR-0018)
+/// and is reachable by anyone who can reach the host.
+/// </summary>
+internal sealed record ActiveProviderInfo(string Provider, string Model, string BaseUrl, bool HasApiKey);

@@ -32,4 +32,7 @@ public sealed class ChatModelRegistry : IChatModelRegistry
             ? provider.Create(options)
             : throw new ProviderNotSupportedException(options.Provider);
     }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> RegisteredProviderIds => [.. _byProviderId.Keys];
 }

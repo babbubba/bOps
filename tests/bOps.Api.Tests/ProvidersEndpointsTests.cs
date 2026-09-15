@@ -1,0 +1,38 @@
+using System.Net.Http.Json;
+
+namespace bOps.Api.Tests;
+
+/// <summary>Drives <c>GET /api/providers</c> (ADR-0019) against the real composition root.</summary>
+public sealed class ProvidersEndpointsTests
+{
+    [Fact]
+    public async Task GetProviders_ListsEveryRegisteredProviderPackage()
+    {
+        using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
+        using var client = factory.CreateClient();
+
+        var providers = await client.GetFromJsonAsync<ProvidersResponse>("/api/providers");
+
+        Assert.NotNull(providers);
+        Assert.Contains("OpenRouter", providers!.RegisteredProviderIds);
+        Assert.Contains("Anthropic", providers.RegisteredProviderIds);
+    }
+
+    [Fact]
+    public async Task GetProviders_ReportsTheConfiguredActiveProvider_WithoutTheApiKeyValue()
+    {
+        // src/core/bOps.Api/appsettings.json ships Provider=OpenRouter, Model=openrouter/free,
+        // ApiKey="" (V0.9: no live key is ever committed there) — this asserts against exactly
+        // that shape, not a substituted test value, since ModelProvider is not one of the
+        // settings TestAppFactory overrides for isolation.
+        using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
+        using var client = factory.CreateClient();
+
+        var providers = await client.GetFromJsonAsync<ProvidersResponse>("/api/providers");
+
+        Assert.NotNull(providers!.Active);
+        Assert.Equal("OpenRouter", providers.Active!.Provider);
+        Assert.Equal("openrouter/free", providers.Active.Model);
+        Assert.False(providers.Active.HasApiKey);
+    }
+}

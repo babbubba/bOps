@@ -5,6 +5,7 @@ import {
   AgentTaskStatus,
   AgentTaskStatusName,
   PendingApproval,
+  ProvidersResponse,
   TaskAcceptedResponse,
   TaskState,
   ToolManifest,
@@ -49,5 +50,9 @@ export class BOpsApiClient {
 
   listTools(): Promise<ToolManifest[]> {
     return firstValueFrom(this.http.get<ToolManifest[]>('/api/tools'));
+  }
+
+  getProviders(): Promise<ProvidersResponse> {
+    return firstValueFrom(this.http.get<ProvidersResponse>('/api/providers'));
   }
 }

@@ -1,21 +1,21 @@
-# Handoff — V0.9 complete: `bOps.Api` + Angular UI
+# Handoff — V0.9 complete: `bOps.Api` + Angular UI, including its originally-deferred Settings scope
 
-Written at the end of the session that implemented the Angular UI, the deferred half of V0.9,
-on top of the completed `bOps.Api` backend. Everything below is exact, not a summary — follow it
-literally to resume.
+Written at the end of the session that implemented the Angular UI, the deferred half of V0.9, and
+a follow-up session in the same day that closed out the "task-detail/settings deferred" question
+this file itself raised. Everything below is exact, not a summary — follow it literally to resume.
 
 ## State right now
 
 **`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** `dotnet test
-bOps.slnx --filter "Category!=LiveModel"`: every suite passes, including `bOps.Api.Tests` — now
-**10** tests (up from 8), the two new ones being regression tests for real bugs this session's
-manual UI testing caught (see below).
+bOps.slnx --filter "Category!=LiveModel"`: every suite passes — **`bOps.Api.Tests`** is now **12**
+tests (2 SSE regression tests from the first UI session, 2 new `GET /api/providers` tests from the
+Settings follow-up); **`bOps.Runtime.Tests`** gained 3 new tests for
+`ChatModelRegistry.RegisteredProviderIds`.
 
-**`web/bops-ui` (new, Angular 20 + `@ngrx/signals` + Tailwind CSS 4) builds and tests clean**:
-`ng build` succeeds, `ng test --watch=false` passes (2/2). Manually exercised against the real,
-running `bOps.Api` in the Browser pane — not just built — through several real cycles of "start a
-task → watch it fail (no API key, expected) → see the live transcript render," in both dark and
-light mode, at both desktop and mobile viewport widths.
+**`web/bops-ui` builds and tests clean**: `ng build` succeeds, `ng test --watch=false` passes
+(2/2 — still only the shell smoke test, see "does NOT have yet" below). Manually exercised against
+the real, running `bOps.Api` in the Browser pane for both the original dashboard/approvals pass and
+the new Settings page — in both dark and light mode, at both desktop and mobile viewport widths.
 
 **⚠️ Security finding carried forward from V0.7, still not resolved: the real OpenRouter API key
 in `src/core/bOps.Cli/appsettings.json` is committed to git history** (commit `7ac2901`). Neither
@@ -37,6 +37,48 @@ after two scoping conversations with the operator, both worth restating:
    experienced operators alike. Dark/light mode (OS-preference default, manual toggle, `localStorage`
    persistence) and the repo's real `logo.png` (not a placeholder) were both deliberate asks.
 
+### Follow-up: closing V0.9's Settings scope (same day, ADR-0019)
+
+This handoff's own "Next steps" asked, rather than assumed, whether to finish V0.9's deferred UI
+scope before V0.10. The operator answered three specific questions:
+
+- **`task-detail` as its own route**: **no** — the dashboard's inline panel already covers "watch
+  a task run"; not worth the extra route/maintenance surface. Confirmed as genuinely done, not
+  reopened.
+- **Settings scope**: **add `GET /api/providers`**, not just a read of the existing `GET
+  /api/tools`. This reverses part of ADR-0018 (which explicitly deferred a provider-listing
+  endpoint), so it got its own ADR — **ADR-0019** — rather than a silent implementation change,
+  per `agentic/05-workflow.md`'s rule that amending a prior ADR or altering a
+  `bOps.Abstractions` type needs one.
+- **API client**: **stays hand-written** — no OpenAPI pipeline introduced.
+
+**What ADR-0019 actually added**:
+- `IChatModelRegistry.RegisteredProviderIds` (`bOps.Abstractions`) — every provider id at least
+  one registered package supports, deduplicated. `ChatModelRegistry` implements it off the same
+  dictionary `Register` already populates. TDD: `tests/bOps.Runtime.Tests/ChatModelRegistryTests.cs`
+  written before the interface member existed.
+- `GET /api/providers` (`src/core/bOps.Api/ProvidersEndpoints.cs`) — returns
+  `registeredProviderIds` plus an `active` summary (`provider`, `model`, `baseUrl`, `hasApiKey`)
+  read from the same `ModelProvider` configuration section `Program.cs` already binds to build the
+  singleton `IChatModel`. **Never returns the API key's value** — `bOps.Api` still has no
+  authentication (ADR-0018), so anything reachable by any caller must not leak a live credential;
+  a `hasApiKey: false` is exactly what let the Settings page render "Missing" for the shipped
+  `appsettings.json` (`ApiKey: ""`) without exposing anything sensitive. Tests:
+  `tests/bOps.Api.Tests/ProvidersEndpointsTests.cs`.
+- `web/bops-ui/src/app/state/providers.store.ts` (`ProvidersStore`) — unlike `TasksStore`/
+  `ApprovalsStore`, this **loads once on init and does not poll**: host-level provider
+  configuration is not live state that changes while the app is open.
+- `web/bops-ui/src/app/features/settings/` (`Settings` component + template) — two cards: the
+  active provider's configuration (with the API-key presence badge) and every registered provider
+  id, the active one visually marked. Routed at `/settings`, added to the sidebar nav in
+  `app.html`/`app.routes.ts`. Read-only — no control to switch the active provider at runtime
+  exists yet (ADR-0019 explicitly scoped that out; see "does NOT have yet" below).
+
+Verified live in the Browser pane against the real backend at both desktop and mobile widths: the
+Settings page correctly showed all six registered providers (`OpenAI`, `Anthropic`, `LlamaCpp`,
+`Ollama`, `OpenRouter`, `DeepSeek`), `OpenRouter` marked active, and an orange "Missing" API-key
+badge matching the shipped empty `ApiKey` in `appsettings.json`.
+
 ### Structure (`web/bops-ui/src/app/`)
 
 ```
@@ -48,14 +90,16 @@ core/
 state/
   tasks.store.ts           — SignalStore: running tasks, selected task (live via SSE), start/resume/select
   approvals.store.ts       — SignalStore: pending approvals (2s poll — no SSE stream exists for these), approve/reject, tool→risk lookup
+  providers.store.ts       — SignalStore: registered/active LLM provider (load-once, no poll — host config, not live state)
 features/
   dashboard/               — start-task form, running-task list, inline live task-detail timeline
   approvals/                — pending-approval cards with risk badge, note field, approve/reject
+  settings/                 — active-provider card (with API-key presence badge) + registered-provider list
 shared/
   risk-badge.ts, status-badge.ts — small presentational components, color-coded from CSS custom properties in styles.css
 ```
 
-Routing: `/dashboard` (default) and `/approvals`, both lazy-loaded (`loadComponent`). `app.html` is
+Routing: `/dashboard` (default), `/approvals` and `/settings`, all lazy-loaded (`loadComponent`). `app.html` is
 the shell: a sidebar on desktop that collapses to a top row on narrow viewports (plain Tailwind
 responsive classes, no separate mobile component), the real logo (cropped to just the icon glyph
 via a fixed-size `overflow: hidden` container — the source PNG has the full "bOps" wordmark
@@ -130,9 +174,14 @@ to record.
 
 ## What this session deliberately does NOT have yet
 
-- **No `task-detail` route or `settings`/`ProvidersStore`** — explicit MVP scope decision, not an
-  oversight. The dashboard's inline task-detail panel covers the "watch a task run" need for now.
-- **No OpenAPI-generated client.** Hand-written, deliberately, this pass.
+- **No `task-detail` route.** Confirmed, not just deferred — the operator explicitly chose to keep
+  only the dashboard's inline panel rather than add a dedicated route (see the ADR-0019 follow-up
+  above). This is now a closed decision, not an open item to revisit.
+- **No way to change the active provider from Settings.** `GET /api/providers` (ADR-0019) is
+  read-only; switching `ModelProvider` at runtime would need a new write endpoint plus a decision
+  about where that configuration is persisted (file? database?) — explicitly out of scope for this
+  pass, flagged in ADR-0019's alternatives-considered section.
+- **No OpenAPI-generated client.** Hand-written, deliberately, reconfirmed this session too.
 - **No unit tests for the SignalStores or feature components** — only the pre-existing `App`
   smoke test (updated for the new shell) and the .NET-side `bOps.Api.Tests`. Verified by hand
   against a real running backend instead; worth adding real component/store tests before this UI
@@ -146,9 +195,10 @@ to record.
 
 ## Next steps
 
-**V0.9 is now genuinely complete** — both halves, backend and UI, built, tested, and manually
-verified working together against a real (if unauthenticated, by design) `bOps.Api` instance.
-Phase 2 has begun.
+**V0.9 is now genuinely, fully complete** — backend, UI, and the Settings follow-up all built,
+tested, and manually verified against a real (if unauthenticated, by design) `bOps.Api` instance.
+There is no more "should we finish V0.9 first" question left to ask; the next session should go
+straight to V0.10 scoping.
 
 **Before any further roadmap work**, the committed API key finding from V0.7 is still open —
 carried forward yet again; it has now survived three full roadmap versions unresolved.
@@ -156,15 +206,15 @@ carried forward yet again; it has now survived three full roadmap versions unres
 **V0.10 — "Dynamic package loading, `bops plugin install`, published plugin SDK" — has not been
 started.** Per the scope-discipline rule, the next session should begin by reading
 `agentic/00-project-spec.md`'s roadmap entry for V0.10 and `06-decisions.md` (D-003, which already
-settled *why* dynamic loading over Native AOT, but not yet *how*) before writing code. This is
-also a good point to circle back to the two "task-detail"/"settings" UI features deferred above,
-and to the OpenAPI-client question, if the operator would rather finish out V0.9's originally
-envisioned UI scope before moving on to V0.10 — worth asking rather than assuming either way.
+settled *why* dynamic loading over Native AOT, but not yet *how*) before writing code.
 
 Three smaller, non-urgent items carried forward again from every prior handoff:
 
 1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
    0002, 0005, 0006, 0011, 0012) are still unwritten.
 2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done.
-3. No unit tests for the new Angular SignalStores/components (see above) — real gap now, not
-   hypothetical, given what manual testing alone already caught this session.
+3. No unit tests for the Angular SignalStores/feature components (`TasksStore`, `ApprovalsStore`,
+   `ProvidersStore`, `Dashboard`, `Approvals`, `Settings`) — real gap, not hypothetical, given what
+   manual testing alone already caught in the first UI session (two genuine backend bugs, see
+   `docs/architecture/adr/0018-bops-api-minimal-surface.md`'s history and the SSE fixes in
+   `src/core/bOps.Api/AgentsEndpoints.cs`).

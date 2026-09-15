@@ -152,6 +152,7 @@ chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), a
 app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
 app.MapToolsEndpoints();
+app.MapProvidersEndpoints();
 
 await app.RunAsync();
 

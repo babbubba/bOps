@@ -77,6 +77,13 @@ public interface IChatModelRegistry
     /// <param name="options">The provider and model to resolve.</param>
     /// <exception cref="ProviderNotSupportedException">No registered package declares <see cref="ChatModelOptions.Provider"/>.</exception>
     IChatModel Create(ChatModelOptions options);
+
+    /// <summary>
+    /// Every provider id at least one registered package supports, deduplicated — an
+    /// operator-facing "what could I configure" listing (ADR-0019), distinct from resolving one
+    /// specific provider via <see cref="Create"/>.
+    /// </summary>
+    IReadOnlyList<string> RegisteredProviderIds { get; }
 }
 
 /// <summary>Thrown when <see cref="ChatModelOptions.Provider"/> matches no registered provider package.</summary>
