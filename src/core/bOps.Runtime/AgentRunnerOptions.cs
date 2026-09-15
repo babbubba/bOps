@@ -27,4 +27,11 @@ public sealed record AgentRunnerOptions
     /// limit is imposed until an operator configures one.
     /// </summary>
     public int? MaxTotalTokens { get; init; }
+
+    /// <summary>
+    /// How many times the task may replan before ending as <c>ReplanLimitReached</c> instead of
+    /// continuing to retry (agentic/01-architecture-rules.md, rule C8) — the same anti-runaway
+    /// guard-rail rule C5 already requires for steps, applied to plan revisions.
+    /// </summary>
+    public int MaxReplans { get; init; } = 3;
 }

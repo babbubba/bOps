@@ -281,7 +281,8 @@ public sealed class JsonRoundTripTests
             "system.cpu",
             new ModelToolCall("call-1", "system.cpu", ToolArguments.Empty),
             ToolCallResult.Success("42% CPU"),
-            "42% CPU");
+            "42% CPU",
+            PlanRevision: 0);
 
         var result = RoundTrip(value);
 
@@ -290,6 +291,7 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.ToolCall!.ToolName, result.ToolCall!.ToolName);
         Assert.Equal(value.Result, result.Result);
         Assert.Equal(value.Observation, result.Observation);
+        Assert.Equal(value.PlanRevision, result.PlanRevision);
     }
 
     [Fact]
@@ -300,7 +302,8 @@ public sealed class JsonRoundTripTests
             SampleNode,
             "check cpu usage",
             AgentTaskStatus.Completed,
-            [new PlanStep(0, "Final response", null, null, "All good.")],
+            [new PlanStep(0, "Final response", null, null, "All good.", PlanRevision: 0)],
+            [new AgentPlan(0, "Check CPU usage and report it.", [new PlannedStep(0, "Read CPU usage", "system.cpu")])],
             DateTimeOffset.UtcNow);
 
         var result = RoundTrip(value);
@@ -310,7 +313,37 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Goal, result.Goal);
         Assert.Equal(value.Status, result.Status);
         Assert.Single(result.Steps);
+        Assert.Equal(0, result.Steps[0].PlanRevision);
+        Assert.Single(result.Plans);
+        Assert.Equal(value.Plans[0].Rationale, result.Plans[0].Rationale);
+        Assert.Single(result.Plans[0].Steps);
+        Assert.Equal(value.Plans[0].Steps[0].Description, result.Plans[0].Steps[0].Description);
         Assert.Equal(value.CreatedAtUtc, result.CreatedAtUtc);
+    }
+
+    // ---- Planning.cs ----
+
+    [Fact]
+    public void PlannedStep_RoundTrips()
+    {
+        var value = new PlannedStep(0, "Read CPU usage", "system.cpu");
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void AgentPlan_RoundTrips()
+    {
+        var value = new AgentPlan(1, "Reconsidering after a timeout.", [new PlannedStep(0, "Retry with a longer timeout", "system.cpu")]);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.Revision, result!.Revision);
+        Assert.Equal(value.Rationale, result.Rationale);
+        Assert.Equal(value.Steps.Count, result.Steps.Count);
+        Assert.Equal(value.Steps[0], result.Steps[0]);
     }
 
     // ---- Identity.cs ----

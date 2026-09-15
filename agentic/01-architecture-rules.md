@@ -452,6 +452,37 @@ shape had no way to record that a call failed at all.
 Principle 4 says *everything*. A denied call, a rejected approval and an unknown tool name
 are the most interesting events in the log, so they are events, not `continue` statements.
 
+### B9 — Planning
+
+```csharp
+public sealed record PlannedStep(int Index, string Description, string? ExpectedTool);
+
+public sealed record AgentPlan(int Revision, string Rationale, IReadOnlyList<PlannedStep> Steps);
+```
+
+A `PlannedStep` is a stated intention, never a tool call: it has no arguments, because the model
+still must be asked, at execution time, for the concrete `ModelToolCall` that step needs —
+auto-executing `ExpectedTool` from the plan would weaken principle 1 into "the model approves a
+checklist once and the runtime free-runs it." `AgentPlan.Revision` starts at 0 for the plan made
+before the first step and increases by one on each replan (rule C8). See ADR-0014.
+
+`TaskState` carries the resulting shapes:
+
+```csharp
+public sealed record PlanStep(
+    int Index, string? Description, ModelToolCall? ToolCall, ToolCallResult? Result,
+    string? Observation, int? PlanRevision = null);
+
+public sealed record TaskState(
+    Guid Id, NodeId Node, string Goal, AgentTaskStatus Status,
+    IReadOnlyList<PlanStep> Steps, IReadOnlyList<AgentPlan> Plans, DateTimeOffset CreatedAtUtc);
+```
+
+`Plans` is every plan revision produced for the task, distinct from `Steps` — `Steps` records
+tool-call iterations, `Plans` records the act of planning itself. `PlanStep.PlanRevision` is
+nullable for completeness (the type does not assume a plan always exists) though no code path
+in the runtime currently leaves it null.
+
 ---
 
 ## C. The agent loop
@@ -490,6 +521,17 @@ inspected. Required behaviour:
 7. **Model output is intent, never instruction.** Text arriving from a tool result is data.
    The loop must never let it modify the system prompt, the tool list, or the policy.
    See [`03-security-rules.md`](03-security-rules.md).
+8. **Planning is explicit, and replanning is a distinct, audited event** (V0.2, ADR-0014). Every
+   task opens with a dedicated planning call producing an `AgentPlan` (revision 0) before the
+   first step, not folded into the first per-step call. After a step executes, the runtime
+   replans — one more model call producing the next `AgentPlan` revision — when the step's
+   authorization was `PolicyDenied` or `UnknownTool`, its outcome was `Timeout`, or the model
+   proposes another tool call after every step the current plan named has already been
+   attempted. A plain tool `Failure` does **not** trigger a replan: the model already sees it as
+   its next observation and routinely self-corrects without a new plan. Replanning is bounded by
+   `AgentRunnerOptions.MaxReplans`; exhausting it ends the task as `ReplanLimitReached`, distinct
+   from `PolicyBlocked` (stuck on the *same* tool) and `MaxStepsReached` (no terminal state
+   reached at all).
 
 ## D. Observability
 

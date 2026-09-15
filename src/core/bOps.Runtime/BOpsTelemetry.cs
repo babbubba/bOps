@@ -31,4 +31,8 @@ public static class BOpsTelemetry
     /// <summary>Duration of one tool execution, in milliseconds, tagged by tool name and outcome.</summary>
     public static Histogram<double> ToolDurationMs { get; } =
         Meter.CreateHistogram<double>("bops.tool.duration_ms", unit: "ms", description: "Duration of one tool execution.");
+
+    /// <summary>How many times a task's plan was revised — a step deviated from what the plan expected, or the model continued past every step the plan named (rule C8).</summary>
+    public static Counter<long> ReplansTotal { get; } =
+        Meter.CreateCounter<long>("bops.replans_total", description: "How many times a task's plan was revised.");
 }
