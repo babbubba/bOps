@@ -7,13 +7,20 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisLevel>latest-all</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
     <Authors>bOps contributors</Authors>
     <Company>bOps</Company>
     <!-- agentic/02-coding-standards.md — noise, not signal, on a greenfield codebase. Revisit at V0.3. -->
     <NoWarn>$(NoWarn);CA1303;CA1304;CA1305;CA1310;CA1848</NoWarn>
+    <!-- CA2007 (ConfigureAwait(false)) is a library-authoring guideline for code that might run
+         under a capturing SynchronizationContext (WinForms, WPF, classic ASP.NET). bOps is a
+         console host and a set of libraries consumed only by that host and its own tests — there
+         is no such context anywhere in this solution, so the diagnostic is pure noise, not signal
+         (docs/architecture/suppressions.md). This is a solution-wide default, not a per-project
+         exception, so it is suppressed here rather than being added project by project. -->
+    <NoWarn>$(NoWarn);CA2007</NoWarn>
   </PropertyGroup>
 
   <!-- bOps.Abstractions is the published SDK: every public member is documented, so CS1591 is not suppressed. -->
@@ -26,6 +33,7 @@
 
   <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests')) or $(MSBuildProjectName.EndsWith('Conformance'))">
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CA1707;CA2007</NoWarn>
+    <!-- CA2007 no longer needs to be listed here — it is now suppressed solution-wide above. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 </Project>

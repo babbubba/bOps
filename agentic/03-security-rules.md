@@ -124,8 +124,13 @@ call. Principle 4 says *whatever the outcome*, and the denied calls are the ones
 investigator actually wants.
 
 The audit sink is append-only and its file is created with restrictive permissions. Rotation
-never rewrites history. Hash-chaining is a V0.3 addition (D-008) and its absence must not be
-described as tamper-proof in the meantime — "append-only by convention" is the honest phrase.
+never rewrites history. Hash-chaining (D-008, V0.3, ADR-0015) is implemented in
+`JsonLinesAuditSink` — each line's hash covers the previous line's hash and its own event JSON,
+checkable independently with `AuditChainVerifier`. This makes the log tamper-*evident*: altering,
+removing, or reordering a historical line is detectable. It is not tamper-*proof* — nothing stops
+someone with write access to the file from rewriting it from a point forward and recomputing
+every hash after it. "Tamper-evident, not tamper-proof" is the honest phrase now; "append-only by
+convention" was the honest phrase for V0.1–V0.2, before the chain existed.
 
 ## S10 — Least privilege for the host process
 

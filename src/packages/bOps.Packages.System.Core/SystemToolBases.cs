@@ -75,6 +75,8 @@ public abstract class ProcessListToolBase(string platform) : ITool
     /// <inheritdoc />
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(arguments);
+
         var limit = arguments.TryGet<int>("limit", out var requested) ? requested : DefaultLimit;
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(limit, ct)));
     }

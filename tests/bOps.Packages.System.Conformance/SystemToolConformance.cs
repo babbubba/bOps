@@ -18,6 +18,8 @@ public static partial class SystemToolConformance
     /// <summary>Checks that a manifest is well-formed for the given platform and tool name, and that a <c>system.*</c> tool is <see cref="RiskLevel.Read"/> with no verification to declare.</summary>
     public static void AssertManifestIsWellFormed(ToolManifest manifest, string expectedPlatform, string expectedName)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
+
         Assert.Equal(expectedName, manifest.Name);
         Assert.False(string.IsNullOrWhiteSpace(manifest.Description));
         Assert.Equal(RiskLevel.Read, manifest.Risk);
@@ -28,6 +30,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.info</c> output shape.</summary>
     public static async Task AssertSystemInfoConformsAsync(ITool tool, string platform)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         AssertManifestIsWellFormed(tool.Manifest, platform, "system.info");
 
         var result = await tool.ExecuteAsync(ToolArguments.Empty);
@@ -42,6 +46,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.cpu</c> output shape: a single percentage within 0–100.</summary>
     public static async Task AssertCpuUsageConformsAsync(ITool tool, string platform)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         AssertManifestIsWellFormed(tool.Manifest, platform, "system.cpu");
 
         var result = await tool.ExecuteAsync(ToolArguments.Empty);
@@ -57,6 +63,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.memory</c> output shape: total, used and available are self-consistent.</summary>
     public static async Task AssertMemoryUsageConformsAsync(ITool tool, string platform)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         AssertManifestIsWellFormed(tool.Manifest, platform, "system.memory");
 
         var result = await tool.ExecuteAsync(ToolArguments.Empty);
@@ -78,6 +86,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.disk</c> output shape: every reported volume has consistent totals.</summary>
     public static async Task AssertDiskUsageConformsAsync(ITool tool, string platform)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         AssertManifestIsWellFormed(tool.Manifest, platform, "system.disk");
 
         var result = await tool.ExecuteAsync(ToolArguments.Empty);
@@ -103,6 +113,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>process.list</c> output shape: a header row, then well-formed PID/name/working-set rows.</summary>
     public static async Task AssertProcessListConformsAsync(ITool tool, string platform)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         AssertManifestIsWellFormed(tool.Manifest, platform, "process.list");
         Assert.Contains(tool.Manifest.Parameters, p => p.Name == "limit" && !p.Required);
 
@@ -126,6 +138,8 @@ public static partial class SystemToolConformance
     /// <summary>Runs <paramref name="tool"/> respecting a <c>limit</c> argument and asserts <c>process.list</c> honors it.</summary>
     public static async Task AssertProcessListRespectsLimitAsync(ITool tool)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         var result = await tool.ExecuteAsync(ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["limit"] = 1 }));
 
         Assert.True(result.Succeeded, result.ErrorMessage);

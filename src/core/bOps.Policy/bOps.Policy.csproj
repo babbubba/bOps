@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Policy</RootNamespace>
+    <AssemblyName>bOps.Policy</AssemblyName>
+    <Description>The policy engine: decides Automatic/Approval/Forbidden for a tool call from policy.yaml — agentic/03-security-rules.md, rule S3.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
+</Project>

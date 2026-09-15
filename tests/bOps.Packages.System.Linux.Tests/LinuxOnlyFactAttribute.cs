@@ -9,7 +9,7 @@ namespace bOps.Packages.System.Linux.Tests;
 /// they cannot run"). There is no Linux host in this dev environment; these tests run wherever
 /// one exists (a container, CI's ubuntu-latest matrix from V0.5, or the Aspire AppHost).
 /// </summary>
-public sealed class LinuxOnlyFactAttribute : FactAttribute
+internal sealed class LinuxOnlyFactAttribute : FactAttribute
 {
     public LinuxOnlyFactAttribute()
     {

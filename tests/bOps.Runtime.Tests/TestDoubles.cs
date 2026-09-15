@@ -2,8 +2,48 @@ using bOps.Abstractions;
 
 namespace bOps.Runtime.Tests;
 
+/// <summary>
+/// The default policy engine for tests that do not exercise policy/approval directly (rule S3):
+/// Read is automatic, everything else is forbidden — the same fail-closed shape V0.1/V0.2 had
+/// hardcoded before a real <see cref="IPolicyEngine"/> existed.
+/// </summary>
+internal sealed class DefaultTestPolicyEngine : IPolicyEngine
+{
+    public PolicyDecision Evaluate(PolicyContext context) =>
+        context.Manifest.Risk == RiskLevel.Read
+            ? new PolicyDecision(PolicyMode.Automatic, "test default: Read is automatic")
+            : new PolicyDecision(PolicyMode.Forbidden, "test default: non-Read is forbidden");
+}
+
+/// <summary>An <see cref="IPolicyEngine"/> that always returns the same decision, for tests exercising a specific mode.</summary>
+internal sealed class StubPolicyEngine(PolicyMode mode, string reason = "test stub") : IPolicyEngine
+{
+    public PolicyDecision Evaluate(PolicyContext context) => new(mode, reason);
+}
+
+/// <summary>An <see cref="IApprovalProvider"/> that always returns the same decision, for tests exercising a specific approval outcome.</summary>
+internal sealed class StubApprovalProvider(bool approved, string? note = null) : IApprovalProvider
+{
+    public ActorIdentity? LastApprover { get; set; }
+
+    public Task<ApprovalDecision> RequestApprovalAsync(
+        ToolManifest manifest, ToolArguments arguments, VerificationSpec? verification, string reason, CancellationToken ct = default)
+    {
+        var approver = LastApprover ?? ActorIdentity.FromOperatingSystemUser("test-approver");
+        return Task.FromResult(new ApprovalDecision(approved, approver, note));
+    }
+}
+
+/// <summary>An <see cref="IApprovalProvider"/> that fails the test if it is ever called — for tests asserting approval is never requested.</summary>
+internal sealed class NeverCalledApprovalProvider : IApprovalProvider
+{
+    public Task<ApprovalDecision> RequestApprovalAsync(
+        ToolManifest manifest, ToolArguments arguments, VerificationSpec? verification, string reason, CancellationToken ct = default) =>
+        throw new InvalidOperationException("Approval was not expected in this test.");
+}
+
 /// <summary>Collects every audit event written to it, in order, for assertion.</summary>
-public sealed class RecordingAuditSink : IAuditSink
+internal sealed class RecordingAuditSink : IAuditSink
 {
     private readonly List<AuditEvent> _events = [];
 
@@ -17,13 +57,13 @@ public sealed class RecordingAuditSink : IAuditSink
 }
 
 /// <summary>A capability probe that reports every capability as available. Nothing under test needs a real probe.</summary>
-public sealed class AlwaysAvailableCapabilityProbe : ICapabilityProbe
+internal sealed class AlwaysAvailableCapabilityProbe : ICapabilityProbe
 {
     public Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default) => Task.FromResult(true);
 }
 
 /// <summary>A minimal, always-succeeding <see cref="RiskLevel.Read"/> tool for exercising the happy path.</summary>
-public sealed class FakeReadTool(string name = "test.read", string output = "ok") : ITool
+internal sealed class FakeReadTool(string name = "test.read", string output = "ok", IReadOnlyList<ToolParameter>? parameters = null) : ITool
 {
     public ToolManifest Manifest { get; } = new()
     {
@@ -32,7 +72,7 @@ public sealed class FakeReadTool(string name = "test.read", string output = "ok"
         Risk = RiskLevel.Read,
         Platforms = [CurrentPlatform.Id],
         Requires = [],
-        Parameters = [],
+        Parameters = parameters ?? [],
     };
 
     public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
@@ -40,7 +80,7 @@ public sealed class FakeReadTool(string name = "test.read", string output = "ok"
 }
 
 /// <summary>A tool whose <see cref="ExecuteAsync"/> always throws, to exercise rule C1 (nothing thrown escapes an iteration).</summary>
-public sealed class ThrowingTool(string name = "test.throws") : ITool
+internal sealed class ThrowingTool(string name = "test.throws") : ITool
 {
     public ToolManifest Manifest { get; } = new()
     {
@@ -57,7 +97,7 @@ public sealed class ThrowingTool(string name = "test.throws") : ITool
 }
 
 /// <summary>A tool that never completes, to exercise rule S7 (every action runs under a timeout).</summary>
-public sealed class HangingTool(string name = "test.hangs") : ITool
+internal sealed class HangingTool(string name = "test.hangs") : ITool
 {
     public ToolManifest Manifest { get; } = new()
     {
@@ -77,7 +117,7 @@ public sealed class HangingTool(string name = "test.hangs") : ITool
 }
 
 /// <summary>A non-<see cref="RiskLevel.Read"/> tool with a valid <see cref="VerificationSpec"/>, for exercising the policy-absence guard (rule S3).</summary>
-public sealed class FakeHighRiskTool(string name = "test.highrisk") : IVerifiableTool
+internal sealed class FakeHighRiskTool(string name = "test.highrisk") : IVerifiableTool
 {
     public ToolManifest Manifest { get; } = new()
     {
@@ -99,7 +139,7 @@ public sealed class FakeHighRiskTool(string name = "test.highrisk") : IVerifiabl
 }
 
 /// <summary>A non-<see cref="RiskLevel.Read"/> tool with no <see cref="VerificationSpec"/>, which registration must reject (rule B3).</summary>
-public sealed class UnverifiedHighRiskTool(string name = "test.unverified") : ITool
+internal sealed class UnverifiedHighRiskTool(string name = "test.unverified") : ITool
 {
     public ToolManifest Manifest { get; } = new()
     {
@@ -119,7 +159,7 @@ public sealed class UnverifiedHighRiskTool(string name = "test.unverified") : IT
 /// A non-<see cref="RiskLevel.Read"/> tool that declares a <see cref="VerificationSpec"/> but does
 /// not implement <see cref="IVerifiableTool"/>, which registration must also reject (rule B3).
 /// </summary>
-public sealed class DeclaredButNotVerifiableTool(string name = "test.declared-not-verifiable") : ITool
+internal sealed class DeclaredButNotVerifiableTool(string name = "test.declared-not-verifiable") : ITool
 {
     public ToolManifest Manifest { get; } = new()
     {

@@ -18,6 +18,8 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     /// <inheritdoc />
     public void Register(PackageId package, ITool tool)
     {
+        ArgumentNullException.ThrowIfNull(tool);
+
         var manifest = tool.Manifest;
 
         if (manifest.Risk != RiskLevel.Read)

@@ -19,6 +19,7 @@ internal static partial class NativeMethods
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
 }

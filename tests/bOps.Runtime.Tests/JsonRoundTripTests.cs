@@ -180,6 +180,32 @@ public sealed class JsonRoundTripTests
         Assert.Equal(((PolicyDecisionAuditEvent)value).Reason, typed.Reason);
     }
 
+    [Fact]
+    public void ApprovalAuditEvent_RoundTrips_AsItsBaseType()
+    {
+        AuditEvent value = new ApprovalAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Node = SampleNode,
+            TaskId = Guid.NewGuid(),
+            StepIndex = 3,
+            Actor = SampleActor,
+            Package = SamplePackage,
+            Tool = "service.restart",
+            Approved = true,
+            Approver = new ActorIdentity("os-user", "bob", "Bob"),
+            Note = "confirmed with the on-call.",
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var result = JsonSerializer.Deserialize<AuditEvent>(json, Options);
+
+        var typed = Assert.IsType<ApprovalAuditEvent>(result);
+        Assert.Equal(((ApprovalAuditEvent)value).Approved, typed.Approved);
+        Assert.Equal(((ApprovalAuditEvent)value).Approver, typed.Approver);
+        Assert.Equal(((ApprovalAuditEvent)value).Note, typed.Note);
+    }
+
     // ---- Model.cs ----
 
     [Fact]

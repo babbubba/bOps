@@ -22,10 +22,14 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
     public ChatModelDescriptor Descriptor { get; } = new(options.Provider, options.Model);
 
     /// <inheritdoc />
-    public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) =>
-        options.SupportsNativeToolCalling
+    public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return options.SupportsNativeToolCalling
             ? CompleteNativeAsync(request, ct)
             : CompleteWithFallbackAsync(request, ct);
+    }
 
     private async Task<ModelResponse> CompleteNativeAsync(ModelRequest request, CancellationToken ct)
     {

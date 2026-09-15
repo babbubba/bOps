@@ -15,6 +15,8 @@ public sealed class ChatModelRegistry : IChatModelRegistry
     /// <inheritdoc />
     public void Register(PackageId package, IModelProviderPackage provider)
     {
+        ArgumentNullException.ThrowIfNull(provider);
+
         foreach (var providerId in provider.SupportedProviderIds)
         {
             _byProviderId[providerId] = provider;
@@ -22,8 +24,12 @@ public sealed class ChatModelRegistry : IChatModelRegistry
     }
 
     /// <inheritdoc />
-    public IChatModel Create(ChatModelOptions options) =>
-        _byProviderId.TryGetValue(options.Provider, out var provider)
+    public IChatModel Create(ChatModelOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return _byProviderId.TryGetValue(options.Provider, out var provider)
             ? provider.Create(options)
             : throw new ProviderNotSupportedException(options.Provider);
+    }
 }

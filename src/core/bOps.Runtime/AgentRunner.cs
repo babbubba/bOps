@@ -17,15 +17,17 @@ namespace bOps.Runtime;
 /// into the per-step call implicitly, which made "the model changed its mind" indistinguishable
 /// from "the model is still following its own plan."
 ///
-/// V0.1 has no policy engine and no verification service — those are V0.3 and V0.4. Every tool
-/// registered so far is <see cref="RiskLevel.Read"/>, so nothing here needs to ask permission.
-/// The one guard that does exist runs anyway: a non-<c>Read</c> tool is refused outright, with a
-/// reason, rather than executed automatically — the system fails closed (rule S3) from the first
-/// commit, before the component that will eventually decide such cases even exists.
+/// From V0.3, <see cref="IPolicyEngine"/> decides <see cref="PolicyMode"/> for every non-
+/// <see cref="RiskLevel.Read"/> tool, replacing V0.1/V0.2's hardcoded "no policy engine yet,
+/// refuse everything above Read" — the invariant does not loosen, it becomes real (rule S3). An
+/// <see cref="PolicyMode.Approval"/> decision goes to <see cref="IApprovalProvider"/>. There is
+/// still no post-action verification service — that is V0.4.
 /// </summary>
 public sealed class AgentRunner(
     IChatModel model,
     IToolRegistry registry,
+    IPolicyEngine policyEngine,
+    IApprovalProvider approvalProvider,
     IAuditSink audit,
     TimeProvider timeProvider,
     ILogger<AgentRunner> logger,
@@ -34,7 +36,7 @@ public sealed class AgentRunner(
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
 
-    private static readonly string SystemPrompt =
+    private const string SystemPrompt =
         $"""
         You are bOps, an operations agent. You cannot act directly: you may only propose a tool
         call, and a separate runtime decides whether and how to execute it.
@@ -210,13 +212,14 @@ public sealed class AgentRunner(
             }
 
             // EVALUATE: rule C8. A step whose outcome the plan could not have anticipated — the
-            // tool doesn't exist, policy refused it, or it hung — means continuing to follow the
-            // same plan is not "the model working the problem," it is the model repeating a
-            // mistake with fresh words. A plain tool Failure is deliberately excluded: the model
-            // already sees that observation on its very next turn and routinely corrects course
-            // (a bad argument, say) without needing a whole new plan — replanning on every minor
-            // failure would make the loop replan-happy for no benefit.
-            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool
+            // tool doesn't exist, policy refused it, an operator rejected it, or it hung — means
+            // continuing to follow the same plan is not "the model working the problem," it is
+            // the model repeating a mistake with fresh words. A plain tool Failure is
+            // deliberately excluded: the model already sees that observation on its very next
+            // turn and routinely corrects course (a bad argument, say) without needing a whole
+            // new plan — replanning on every minor failure would make the loop replan-happy for
+            // no benefit.
+            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected
                 || step.Result?.Outcome == ToolOutcome.Timeout;
 
             if (deviated || planExhausted)
@@ -399,29 +402,86 @@ public sealed class AgentRunner(
 
         var manifest = tool.Manifest;
 
-        // Rule S3 — policy fails closed. No policy engine exists yet (it arrives in V0.3), so
-        // nothing above Read executes automatically. This is the invariant, not a placeholder:
-        // when the policy engine is introduced it replaces this check, it does not loosen it.
-        if (manifest.Risk != RiskLevel.Read)
+        // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
+        // package loaded today is first-party, shipped in this repository, and there is no real
+        // per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003).
+        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, PackageTrustLevel.Official, manifest, call.Arguments, actor);
+        var policyDecision = policyEngine.Evaluate(policyContext);
+
+        if (policyDecision.Mode != PolicyMode.Automatic)
+        {
+            // Rule S3: "a Forbidden decision is always audited as a PolicyDecisionAuditEvent" —
+            // applied to Approval too, since an investigator asking "what did policy decide, and
+            // why" should not have to reconstruct it from whatever happened next.
+            await audit.WriteAsync(new PolicyDecisionAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = manifest.Package,
+                Tool = manifest.Name,
+                Mode = policyDecision.Mode,
+                Reason = policyDecision.Reason,
+            }, ct);
+        }
+
+        if (policyDecision.Mode == PolicyMode.Forbidden)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
-                AuthorizationKind.PolicyDenied,
-                $"'{call.ToolName}' was not executed: no policy engine is wired yet (introduced in V0.3) — " +
-                "only Read-risk tools execute automatically until then.", planRevision, ct);
+                AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct);
             return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied);
+        }
+
+        var authorization = AuthorizationKind.Automatic;
+
+        if (policyDecision.Mode == PolicyMode.Approval)
+        {
+            var approval = await approvalProvider.RequestApprovalAsync(
+                manifest, call.Arguments, manifest.Verification, policyDecision.Reason, ct);
+
+            // ADR-0015: distinct from the PolicyDecisionAuditEvent above — that records what
+            // policy decided (approval is required, and why); this records what the human
+            // decided, and by whom, which policy cannot know in advance.
+            await audit.WriteAsync(new ApprovalAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = manifest.Package,
+                Tool = manifest.Name,
+                Approved = approval.Approved,
+                Approver = approval.Actor,
+                Note = approval.Note,
+            }, ct);
+
+            if (!approval.Approved)
+            {
+                var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
+                    AuthorizationKind.UserRejected,
+                    $"Operator rejected '{call.ToolName}'" + (approval.Note is null ? "." : $": {approval.Note}"),
+                    planRevision, ct);
+                return (rejected.Step, rejected.Observation, AuthorizationKind.UserRejected);
+            }
+
+            authorization = AuthorizationKind.UserApproved;
         }
 
         if (ValidateArguments(manifest, call.Arguments) is { } validationError)
         {
             var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
-                AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, planRevision, ct);
-            return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic);
+                authorization, TimeSpan.Zero, verification: null, planRevision, ct);
+            return (recorded.Step, recorded.Observation, authorization);
         }
 
         using var toolActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.tool");
         toolActivity?.SetTag("bops.tool", manifest.Name);
         toolActivity?.SetTag("bops.package", manifest.Package.Value);
         toolActivity?.SetTag("bops.risk", manifest.Risk.ToString());
+        toolActivity?.SetTag("bops.policy_mode", policyDecision.Mode.ToString());
 
         var stopwatch = Stopwatch.StartNew();
         var result = await ExecuteWithTimeoutAsync(tool, call, ct);
@@ -433,8 +493,8 @@ public sealed class AgentRunner(
             new KeyValuePair<string, object?>("bops.outcome", result.Outcome.ToString()));
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
-            AuthorizationKind.Automatic, stopwatch.Elapsed, verification: null, planRevision, ct);
-        return (executed.Step, executed.Observation, AuthorizationKind.Automatic);
+            authorization, stopwatch.Elapsed, verification: null, planRevision, ct);
+        return (executed.Step, executed.Observation, authorization);
     }
 
     private async Task<ToolCallResult> ExecuteWithTimeoutAsync(ITool tool, ModelToolCall call, CancellationToken ct)
@@ -483,25 +543,10 @@ public sealed class AgentRunner(
             Verification = null,
         }, ct);
 
-        if (authorization == AuthorizationKind.PolicyDenied)
-        {
-            // Rule S3: a Forbidden decision is always audited as its own PolicyDecisionAuditEvent,
-            // distinct from the ToolCallAuditEvent above — an investigator asking "what did policy
-            // decide" should not have to reconstruct it from a tool-call record.
-            await audit.WriteAsync(new PolicyDecisionAuditEvent
-            {
-                TimestampUtc = timeProvider.GetUtcNow(),
-                Node = NodeId.Local,
-                TaskId = taskId,
-                StepIndex = stepIndex,
-                Actor = actor,
-                Package = package,
-                Tool = call.ToolName,
-                Mode = PolicyMode.Forbidden,
-                Reason = message,
-            }, ct);
-        }
-
+        // Rule S3: a Forbidden decision is audited as its own PolicyDecisionAuditEvent too,
+        // distinct from the ToolCallAuditEvent above — written by the caller in ExecuteStepAsync,
+        // before this method runs, alongside the Approval case (which also needs one but is not
+        // a rejection at the policy stage) — so both paths share one write site instead of two.
         var step = new PlanStep(stepIndex, "Denied", call, ToolCallResult.Failure(message), message, planRevision);
         return (step, WrapToolOutput(message));
     }

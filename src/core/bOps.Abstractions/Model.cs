@@ -206,6 +206,11 @@ public interface IChatModel
 /// </summary>
 public sealed class ModelProtocolException : Exception
 {
+    /// <summary>Creates a model protocol exception with no message. Prefer the overload that takes one — CA1032 requires this constructor to exist, not that it be used.</summary>
+    public ModelProtocolException()
+    {
+    }
+
     /// <summary>Creates a model protocol exception.</summary>
     public ModelProtocolException(string message)
         : base(message)

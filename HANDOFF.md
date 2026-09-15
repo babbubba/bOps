@@ -1,118 +1,192 @@
-# Handoff — V0.2 (explicit agent loop with replanning) complete
+# Handoff — V0.3 (policy engine, approval flow, audit hash-chaining) complete
 
-Written at the end of the session that implemented V0.2 on top of the completed V0.1 scaffolding.
-Everything below is exact, not a summary — follow it literally to resume.
+Written at the end of the session that implemented V0.3 on top of the completed V0.2 explicit
+agent loop. Everything below is exact, not a summary — follow it literally to resume.
 
 ## State right now
 
 **`dotnet build bOps.sln` builds clean end to end — 0 warnings, 0 errors** (verified with a full
-clean of every `bin`/`obj` and a from-scratch rebuild). `dotnet test bOps.sln`: **59 passing, 6
-skipped** (the Linux package tests, correctly and visibly skipped — no Linux host exists in this
-dev environment; see the previous handoff's note, still accurate). Nothing failing.
+clean of every `bin`/`obj` and a from-scratch rebuild), now under `AnalysisLevel=latest-all`
+(escalated this session, per D-011). `dotnet test bOps.sln`: **97 passing, 6 skipped** (the
+Linux package tests — correctly and visibly skipped, no Linux host in this dev environment).
+Nothing failing. 18 projects in `bOps.sln`, up from 15: `bOps.Policy` (new core project),
+`bOps.Policy.Tests` and `bOps.Audit.Tests` (both new — `bOps.Audit` had zero tests before this
+session, despite `agentic/04-testing-rules.md` requiring test-first coverage for it since V0.1).
 
-CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): DI wiring,
-config binding, tool registry and provider registry all succeed; the task now opens with a
-planning call, which fails cleanly at the HTTP call with `ApiKey` empty (rule S6 — never put a
-real key in `appsettings.json`), audited as a `ModelCallAuditEvent` with `Outcome: Failure` and
-`StepIndex: -1`, and the task ends as `Failed` with a readable error — no crash, no change from
-V0.1's behavior here except that the failure now happens during planning instead of step 0.
+CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): logs "No
+policy file at 'policy.yaml'; using the built-in default", then DI wiring, config binding, tool
+registry, provider registry and the policy engine all succeed; the task fails cleanly at the
+planning call's HTTP request with `ApiKey` empty (rule S6 — never a real key in
+`appsettings.json`). The audit chain was verified by hand on a fresh `audit.jsonl`: `Seq: 0`,
+`PrevHash` equal to `JsonLinesAuditSink.GenesisHash`, a real SHA-256 `Hash`.
 
 ## What this session did
 
-Implemented V0.2 per `agentic/00-project-spec.md`'s roadmap: **"Explicit agent loop with
-replanning."** Full design rationale is in
-[`docs/architecture/adr/0014-explicit-planning-and-replanning.md`](docs/architecture/adr/0014-explicit-planning-and-replanning.md)
-— read that before touching this area again. Summary:
+Implemented V0.3 per `agentic/00-project-spec.md`'s roadmap: **"Policy engine and approval flow;
+analyzers escalate to `all`."** `agentic/06-decisions.md` D-008 also ties audit hash-chaining to
+this version ("deferred to V0.3, alongside the policy engine"), so that shipped too. Full design
+rationale, alternatives rejected, and what's deliberately not done is in
+[`docs/architecture/adr/0015-policy-engine-approval-flow-and-audit-hash-chaining.md`](docs/architecture/adr/0015-policy-engine-approval-flow-and-audit-hash-chaining.md)
+— read that before touching any of this area again. Summary:
 
-- **New contract types** (`bOps.Abstractions/Planning.cs`): `PlannedStep` (a stated intention —
-  description + optional expected tool, no arguments) and `AgentPlan` (a revision number, a
-  rationale, and a list of `PlannedStep`s).
-- **`TaskState` gains `Plans`** (every plan revision produced, distinct from `Steps`, which is
-  tool-call iterations, not planning). **`PlanStep` gains `PlanRevision`** (nullable, defaults to
-  `null`, but no code path leaves it null in practice).
-- **`AgentTaskStatus` gains `ReplanLimitReached`** — distinct from `PolicyBlocked` (stuck on the
-  same tool) and `MaxStepsReached` (no terminal state reached at all).
-- **`AgentRunnerOptions` gains `MaxReplans`** (default 3).
-- **`AgentRunner.RunAsync`** now opens every task with `CreatePlanAsync` — a dedicated,
-  non-tool-calling model call producing `AgentPlan` revision 0, with one bounded retry on a
-  malformed reply (same pattern as the existing JSON-schema tool-call fallback). Every per-step
-  call includes the current plan's remaining steps in its system prompt. After a step executes,
-  `RunAsync` calls `ReplanAsync` — one more model call producing the next plan revision — when
-  the step's authorization was `PolicyDenied`/`UnknownTool`, its outcome was `Timeout`, or the
-  model proposed a tool call after every step the current (non-empty) plan named had already
-  been attempted. **A plain tool `Failure` does not trigger a replan** — see the ADR for why.
-  `CallModelAsync` was refactored to take a prebuilt `ModelRequest` so planning, replanning and
-  step calls all share the one audited call path (rule S9).
-- **Telemetry**: `BOpsTelemetry.ReplansTotal` (a counter) and `bops.plan_revision` span tags on
-  both the task and step activities.
-- **Tests**: every existing `AgentRunnerTests` scenario was updated for the new leading planning
-  call (and, where the scenario now triggers a replan, one more canned response for it) — this
-  was expected, real churn from changing the loop's shape, not test fragility. Six new tests
-  cover the V0.2 behavior itself: the initial plan is recorded, a malformed plan degrades
-  gracefully after one retry, a retry that succeeds is recovered, replanning triggers on plan
-  exhaustion, replanning triggers on an unknown tool, and `ReplanLimitReached` is reached when
-  replanning keeps being needed. Two new JSON round-trip tests cover `PlannedStep`/`AgentPlan`
-  (rule A2), and `TaskState`/`PlanStep`'s existing round-trip tests were extended to cover
-  `Plans`/`PlanRevision`. Total: 44 → 51 tests in `bOps.Runtime.Tests`.
-- **`agentic/01-architecture-rules.md`** gained §B9 (the `PlannedStep`/`AgentPlan`/`TaskState`
-  contract shapes) and rule C8 (the replan-trigger conditions and the bound), matching the ADR.
+### 1. `AnalysisLevel` escalated to `latest-all` (D-011) — done first, in isolation
+
+Surfaced real, fixable issues across the *existing* codebase, all fixed rather than suppressed:
+missing `ArgumentNullException.ThrowIfNull` guards on ~15 public entry points across
+`bOps.Abstractions`, `bOps.Runtime`, `bOps.Packages.System.Core` and
+`bOps.Packages.Providers.OpenAiCompatible`; four exception types (`ModelProtocolException`,
+`ToolRegistrationException`, `ProviderNotSupportedException`, `ToolArgumentException`) missing
+standard constructors (CA1032); a P/Invoke missing `[DefaultDllImportSearchPaths]`; several
+test-only types changed from `public` to `internal`; one genuinely dead test double
+(`HangingChatModel`, never referenced anywhere — deleted, not suppressed). One new suppression:
+`CA2007` (`ConfigureAwait(false)`), solution-wide, documented in
+`docs/architecture/suppressions.md` — this solution has no `SynchronizationContext` anywhere
+(console host, libraries consumed only by that host and its own tests), so the diagnostic cannot
+catch a real bug here. `agentic/02-coding-standards.md`'s escalation table is updated to match.
+
+### 2. `bOps.Policy` (new core project)
+
+- `PolicyEngine : IPolicyEngine` evaluates a `PolicyConfig` against a `PolicyContext`. Checks, in
+  order: package known (else Forbidden) → `RiskLevel.Critical` (always Forbidden, unconditional,
+  before any config lookup) → per-package risk ceiling (can only force Forbidden, never grant
+  more) → per-tool override → per-risk-level default → Forbidden (no entry covers it).
+- `PolicyConfigLoader.Load(string yaml)` parses `policy.yaml` via `YamlDotNet` (new dependency on
+  `bOps.Policy`, not `bOps.Abstractions`), and throws `PolicyConfigurationException` — loudly,
+  not a silent coercion — if `defaults.critical` is set to anything but `forbidden`.
+- `PolicyConfig.SafeDefault` (Read/Low automatic, Medium/High approval, Critical forbidden) is
+  used when no `policy.yaml` file exists. `PolicyConfig.AllForbidden` is used when a file exists
+  but fails to load — deliberately more conservative than the safe default, because an operator
+  who wrote a broken policy intended something other than the built-in behavior. See the ADR for
+  why these are two different fallbacks, not one.
+- `bOps.Cli`'s `Program.cs` decides which of the three (loaded / safe-default / all-forbidden)
+  applies, via the new `LoadPolicyEngineAsync` local function, reading `Policy:FilePath` from
+  config (default `"policy.yaml"`, not present in the repo — nothing ships one; an operator
+  writes their own to opt into anything beyond the safe default).
+
+### 2b. Approval flow
+
+- `ConsoleApprovalProvider` (`bOps.Cli`, `internal`): prints the tool, risk, reason, arguments
+  and verification description, blocks on a `y/N` console prompt plus an optional note.
+- `bOps.Abstractions/Audit.cs` gains `ApprovalAuditEvent` (`Package`, `Tool`, `Approved`,
+  `Approver`, `Note`) — distinct from `PolicyDecisionAuditEvent` (what policy decided vs. what
+  the human decided). `AuthorizationKind.UserApproved`/`UserRejected` — both existed since V0.1,
+  neither had ever been set until this session — are now set on the resulting
+  `ToolCallAuditEvent`.
+- A rejected approval now counts as a "deviation" that triggers a replan (rule C8), alongside the
+  V0.2 set (`PolicyDenied`, `UnknownTool`, `Timeout`) — an operator's "no" is exactly the kind of
+  "this did not go as the plan assumed" signal replanning exists for.
+- `AgentRunner.ExecuteStepAsync`'s V0.1/V0.2 hardcoded "no policy engine yet, refuse everything
+  above Read" block is gone, replaced by a real `policyEngine.Evaluate(...)` call.
+  `PackageTrustLevel` is hardcoded to `Official` for every call — every package loaded today is
+  first-party; real per-package trust has no mechanism to hang off until dynamic loading (V0.10).
+
+### 3. Audit hash-chaining (D-008)
+
+- `JsonLinesAuditSink` now writes `{Seq, PrevHash, Hash, EventJson}` per line, `Hash =
+  SHA256(PrevHash + EventJson)`. `EventJson` is a JSON **string** (escaped), not a nested object
+  — a real bug was caught here during testing: re-serializing a reparsed `JsonObject` is not
+  guaranteed to reproduce the exact text that was hashed, which made the first implementation of
+  the verifier report false-positive tampering. Storing the exact string avoids the whole
+  problem, since JSON string decoding is lossless by construction.
+- The sink reads the last line of an existing file at construction to continue the chain across
+  process restarts, and **throws `InvalidOperationException`** if that line is not a well-formed
+  envelope. This was also caught by testing, against a real stale local `audit.jsonl` left over
+  from V0.1/V0.2 smoke tests (pre-chain format, raw events, no envelope) — the first
+  implementation silently "continued" the chain from it with `PrevHash: null`, defeating the
+  entire point. Confirmed fixed against that exact file before deleting it (it was a `.gitignore`d
+  dev artifact, never committed, safe to delete — if you find another local `audit.jsonl`
+  predating this session, delete it too; nothing needs to migrate it).
+- `AuditChainVerifier.Verify(IEnumerable<string>)` / `.VerifyFile(path)` independently re-derive
+  every hash and prev-hash link, returning which `Seq` broke and why. Nothing calls this
+  automatically yet — no CLI subcommand exists to run it on demand (the CLI has no subcommand
+  parsing at all currently, just `bops "<goal>"`) — flagged as a reasonable, small follow-up in
+  the ADR, not done here.
+- This is tamper-**evident**, not tamper-**proof** — `agentic/03-security-rules.md` rule S9 and
+  `agentic/01-architecture-rules.md` §B8 both say so explicitly now, replacing the old "append-
+  only by convention" language that was accurate for V0.1–V0.2 and is not anymore.
+
+### 4. Tests
+
+44 new tests across three areas, closing gaps `agentic/04-testing-rules.md` had specified since
+V0.1 but that were never actually covered (no `bOps.Policy` or `bOps.Audit` test project existed
+before this session):
+
+- `bOps.Policy.Tests` (19 tests, new project): every minimum case the testing rules list for
+  "Policy engine" — each risk level, tool overrides matching/not matching, Critical rejected at
+  load (both `automatic` and `approval` attempts), an unknown package, a ceiling lowering a
+  decision, **a ceiling that tries to raise one (must not — this one did not exist until this
+  session's gap-audit against the testing-rules checklist)**, malformed YAML, an unrecognized
+  risk level, an unrecognized policy mode.
+- `bOps.Audit.Tests` (8 tests, new project): the chain is valid across consecutive writes and
+  across a simulated restart (new sink, same file), tampering is detected (content altered
+  without recomputing the hash), a removed line is detected, an empty/missing file verifies as
+  valid, a pre-chain-format tail is rejected at construction, **and concurrent writes do not
+  interleave or corrupt the chain (50 parallel `WriteAsync` calls, also not covered before this
+  session)**.
+- `bOps.Runtime.Tests` (+5, 51→56): approval granted (tool executes, `UserApproved`,
+  `ApprovalAuditEvent`), approval rejected (denied, replans, `UserRejected`), a Forbidden
+  decision never calls `IApprovalProvider` at all (`NeverCalledApprovalProvider` throws if it
+  is), **and `Sensitive` arguments are redacted before reaching the audit log — required by
+  `04-testing-rules.md` since V0.1, never actually tested until this session's gap audit**.
+- New test doubles: `DefaultTestPolicyEngine` (Read automatic, else forbidden — the V0.1/V0.2
+  hardcoded shape, now the *test* default so most existing tests needed no changes),
+  `StubPolicyEngine`, `StubApprovalProvider`, `NeverCalledApprovalProvider`.
+- `bOps.Abstractions/AssemblyInfo.cs` gains `InternalsVisibleTo("bOps.Policy.Tests")` — needed to
+  construct a `ToolManifest` fixture with a specific `Package` directly in policy-engine tests,
+  same reason `bOps.Runtime.Tests` already had it. Comment updated to distinguish "production
+  assemblies that stamp `Package`" (still only `bOps.Runtime`) from "test assemblies that need to
+  construct fixtures with it already set."
 
 None of this was worked around or deferred — every fix and every new behavior is real, tested,
 in the diff.
 
 ## Design choices worth knowing before extending this further
 
-- **Planning and replanning stayed inside `AgentRunner`, not a new `AgentPlanner` class or
-  project.** The roadmap asked for planning to become an *explicit phase*, not for planning and
-  execution to become physically separate components — that would be scope creep per
-  `agentic/05-workflow.md`'s scope-discipline rule. `CreatePlanAsync`/`ReplanAsync` are private
-  methods, as explicit and independently testable as the rest of the loop.
-  `agentic/01-architecture-rules.md` §C's note ("`AgentRunner`, not `AgentPlanner`... planning
-  and execution are not yet separated") is still accurate and was left as-is, not corrected —
-  that split is not what happened here.
-- **The model contract (`IChatModel`, `ModelRequest`, `ModelResponse`) is completely
-  untouched.** Planning and replanning are just more calls to the existing
-  `CompleteAsync(ModelRequest, ...)`, with a different prompt and a different way of interpreting
-  the response. No provider package (`OpenAiCompatibleChatModel` included) needed to change.
-  This was a deliberate choice over adding a `Plan` field to `ModelResponse` — see the ADR's
-  "Alternatives considered" for the reasoning, which also explains why this could not have been
-  meaningfully end-to-end tested against a real provider in this environment anyway (no real API
-  key is or should be configured here, per rule S6 — `FakeChatModel` is the only thing that
-  exercises this code today).
-- **`ModelCallAuditEvent` does not say *why* a model was called** (plan vs. replan vs. step) —
-  only `StepIndex` hints at it (`-1` for the initial plan, the triggering step's index for a
-  replan). This is a real, known gap, deliberately deferred rather than fixed as a side effect
-  here (see the ADR's last "alternative considered"). If it becomes a real operational pain,
-  fixing it needs an ADR (it touches `bOps.Abstractions`).
+- **A plain tool `Failure` still does not trigger a replan** (unchanged from V0.2/ADR-0014); a
+  rejected approval now does. See ADR-0015's "Alternatives considered" if this distinction stops
+  making sense once more tool types exist.
+- **No real per-package trust assignment exists.** Every `PolicyContext.Trust` is hardcoded
+  `PackageTrustLevel.Official` in `AgentRunner`. This is honest about the current state (nothing
+  loaded today isn't first-party) rather than inventing a mechanism with no real input until
+  V0.10's dynamic loading exists.
+- **`bOps.Policy` takes a dependency on `YamlDotNet`.** This is on `bOps.Policy`, never on
+  `bOps.Abstractions`, which stays dependency-free per `agentic/05-workflow.md`. `bOps.Runtime`
+  depends only on `IPolicyEngine`/`IApprovalProvider` (both in `bOps.Abstractions`) and never
+  references `bOps.Policy` — the concrete engine stays swappable at the host's composition root.
+- **`ModelCallAuditEvent` still does not say *why* a model was called** (plan vs. replan vs.
+  step) — a pre-existing gap from ADR-0014, not addressed here, still just `StepIndex: -1` /
+  triggering-step-index as the only hint.
 
-## What V0.2 deliberately does NOT have yet (unchanged from V0.1, still correct)
+## What V0.3 deliberately does NOT have yet (unchanged from V0.2 unless noted)
 
-- No `bOps.Policy` project — V0.3. `AgentRunner` still fails closed on any non-`Read` tool.
-- No `bOps.Memory` project / SQLite — V0.7. Plans and steps are still in-memory only, one
-  `AgentRunner.RunAsync` call at a time.
-- No dynamic plugin loading — V0.10.
-- No `fs.*` (Filesystem) package — V0.5.
+- No `bOps.Memory` project / SQLite — V0.7. Still in-memory only.
+- No dynamic plugin loading — V0.10. Still direct `ProjectReference`s, so `PackageTrustLevel` has
+  nothing real to compute from yet (see above).
+- No `fs.*` (Filesystem) package — V0.5. **This means no shipped tool is anything but `Read`
+  yet** — the policy engine's `Approval`/`Forbidden` paths are real and fully tested, but not yet
+  exercised by any actual operator-facing tool call. That starts mattering at V0.5.
 - No post-action verification service — V0.4. `IVerifiableTool` exists and is enforced at
-  registration, but nothing calls `EvaluateVerificationAsync` yet.
+  registration; nothing calls `EvaluateVerificationAsync` yet.
+- No CLI command to run `AuditChainVerifier` on demand (see "Audit hash-chaining" above).
 
 ## Next steps
 
-V0.2 is genuinely done: the loop has an explicit, inspectable, bounded PLAN/REPLAN phase: full
-solution build clean, 59 tests passing, the CLI smoke-tested end to end, and the architecture
-docs updated to match the code (ADR-0014, `agentic/01-architecture-rules.md` §B9/§C8). **V0.3 —
-"Policy engine and approval flow; analyzers escalate to `all`" — has not been started.** Per the
-scope-discipline rule, the next session should begin by reading `agentic/00-project-spec.md`'s
-roadmap entry for V0.3, `agentic/03-security-rules.md` (the policy-related rules, especially S3
-and the `Critical`-is-always-forbidden invariant), and `agentic/06-decisions.md` D-011 (the
-`AnalysisLevel` escalation this version also calls for), before writing any code. Two things to
-watch for going in:
+V0.3 is genuinely done: a real policy engine and approval flow gate every non-`Read` tool call,
+the audit log is tamper-evident and independently verifiable, and the whole codebase compiles
+clean under the stricter analyzer level the roadmap called for. **V0.4 — "Post-action
+verification" — has not been started.** Per the scope-discipline rule, the next session should
+begin by reading `agentic/00-project-spec.md`'s roadmap entry for V0.4 and
+`agentic/03-security-rules.md` rule S4 (verification fails closed — `Inconclusive`/`NotApplicable`
+are never success) before writing any code. The seam is `AgentRunner.RecordAsync`'s
+`verification: null` parameter, always `null` today — V0.4 is where something real gets passed
+there, calling `IVerifiableTool.EvaluateVerificationAsync` after a non-`Read` tool executes, using
+its declared `VerificationSpec` to resolve and call the verification tool.
 
-1. `AgentRunner.ExecuteStepAsync`'s current "no policy engine exists yet, refuse everything above
-   `Read`" block (rule S3) is the exact seam where `IPolicyEngine.Evaluate(...)` needs to be
-   wired in — replacing the hardcoded refusal, not loosening it.
-2. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
-   0002, 0005, 0006, 0011, 0012) are still unwritten — flagged again from the last handoff,
-   still a real but non-urgent documentation gap, still judged out of scope for a session that
-   is implementing code, not backfilling retroactive ADRs. Worth doing opportunistically if a
-   V0.3 session has spare budget, since 0002 ("Five risk levels, and `Forbidden` as an
-   unbypassable invariant") is directly relevant to the policy engine it's about to build.
+Two smaller, non-urgent items carried forward again from the last two handoffs, still real, still
+judged out of scope for a session implementing code rather than backfilling documentation:
+
+1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
+   0002, 0005, 0006, 0011, 0012) are still unwritten. ADR-0002 ("Five risk levels, and Forbidden
+   as an unbypassable invariant") is now directly relevant to the code in this session and would
+   be a natural one to write first if a future session has spare budget.
+2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done — see ADR-0015.

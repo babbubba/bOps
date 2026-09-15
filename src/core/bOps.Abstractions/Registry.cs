@@ -57,9 +57,35 @@ public interface ICapabilityProbe
 /// Thrown when a tool cannot be registered: a non-<see cref="RiskLevel.Read"/> tool without a
 /// declared verification, a duplicate name, or a manifest that fails basic validation.
 /// </summary>
-public sealed class ToolRegistrationException(string toolName, string reason)
-    : Exception($"Cannot register tool '{toolName}': {reason}")
+public sealed class ToolRegistrationException : Exception
 {
+    /// <summary>Creates a tool registration exception for the given tool and reason.</summary>
+    public ToolRegistrationException(string toolName, string reason)
+        : base($"Cannot register tool '{toolName}': {reason}")
+    {
+        ToolName = toolName;
+    }
+
+    /// <summary>Creates a tool registration exception with no message. Prefer the overload that takes a tool name and reason — CA1032 requires this constructor to exist, not that it be used.</summary>
+    public ToolRegistrationException()
+    {
+        ToolName = string.Empty;
+    }
+
+    /// <summary>Creates a tool registration exception with a plain message.</summary>
+    public ToolRegistrationException(string message)
+        : base(message)
+    {
+        ToolName = string.Empty;
+    }
+
+    /// <summary>Creates a tool registration exception wrapping an underlying failure.</summary>
+    public ToolRegistrationException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ToolName = string.Empty;
+    }
+
     /// <summary>The name of the tool that could not be registered.</summary>
-    public string ToolName { get; } = toolName;
+    public string ToolName { get; }
 }

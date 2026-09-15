@@ -7,7 +7,7 @@ namespace bOps.Runtime.Tests;
 /// loop can be tested deterministically without a live model (agentic/04-testing-rules.md,
 /// "Making the planner deterministic").
 /// </summary>
-public sealed class FakeChatModel(params ModelResponse[] responses) : IChatModel
+internal sealed class FakeChatModel(params ModelResponse[] responses) : IChatModel
 {
     private int _callCount;
 
@@ -32,22 +32,10 @@ public sealed class FakeChatModel(params ModelResponse[] responses) : IChatModel
 }
 
 /// <summary>An <see cref="IChatModel"/> that always throws, for exercising provider-failure paths.</summary>
-public sealed class ThrowingChatModel(Exception exception) : IChatModel
+internal sealed class ThrowingChatModel(Exception exception) : IChatModel
 {
     public ChatModelDescriptor Descriptor { get; } = new("fake", "fake-model");
 
     public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) =>
         throw exception;
-}
-
-/// <summary>An <see cref="IChatModel"/> that never returns, for exercising a hung provider call.</summary>
-public sealed class HangingChatModel : IChatModel
-{
-    public ChatModelDescriptor Descriptor { get; } = new("fake", "fake-model");
-
-    public async Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
-    {
-        await Task.Delay(Timeout.Infinite, ct);
-        throw new InvalidOperationException("Unreachable.");
-    }
 }

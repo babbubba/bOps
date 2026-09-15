@@ -387,6 +387,20 @@ The package identity and trust level are inputs, because the per-package risk ce
 (§5.3 of the plan) cannot be applied without them. The approval carries the actor, because
 an audit log that cannot say *who approved* is not an audit log.
 
+**`bOps.Policy`** (V0.3, ADR-0015) is the concrete implementation: `PolicyEngine : IPolicyEngine`
+evaluates a `PolicyConfig` (loaded from `policy.yaml` by `PolicyConfigLoader`, via `YamlDotNet` —
+a dependency on `bOps.Policy`, never on `bOps.Abstractions`). It depends only on
+`bOps.Abstractions` (rule A7); `bOps.Runtime` depends only on `IPolicyEngine`/`IApprovalProvider`
+and never references `bOps.Policy` directly, so the concrete engine stays swappable at the host's
+composition root. `ConsoleApprovalProvider` (`bOps.Cli`) is the first `IApprovalProvider` — a
+blocking console prompt, because the CLI is the primary interface (principle 6); a future host
+implements its own without `AgentRunner` or `PolicyEngine` changing.
+
+`PackageTrustLevel` is passed by `AgentRunner` as `Official` for every call in V0.3 — every
+package loaded today is first-party, shipped in this repository, and there is no real
+per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003). This is a
+known, accepted simplification, not an oversight.
+
 ### B8 — Audit
 
 ```csharp
@@ -432,6 +446,15 @@ public sealed record PolicyDecisionAuditEvent : AuditEvent
     public required string Reason { get; init; }
 }
 
+public sealed record ApprovalAuditEvent : AuditEvent   // V0.3, ADR-0015
+{
+    public required PackageId Package { get; init; }
+    public required string Tool { get; init; }
+    public required bool Approved { get; init; }
+    public required ActorIdentity Approver { get; init; }
+    public string? Note { get; init; }
+}
+
 public interface IAuditSink
 {
     Task WriteAsync(AuditEvent evt, CancellationToken ct = default);
@@ -449,8 +472,23 @@ never registered.
 must still be audited, per rule S9, exactly like a denied or timed-out tool call — the original
 shape had no way to record that a call failed at all.
 
+`ApprovalAuditEvent` (V0.3, ADR-0015) is distinct from `PolicyDecisionAuditEvent`:
+`PolicyDecisionAuditEvent` records what policy decided (`Approval` is required, and why);
+`ApprovalAuditEvent` records what the human actually decided, and by whom (`Approver`, which is
+not always the task's launching `Actor` on the base type — not today, in the CLI, but once
+remote approval exists). `AuthorizationKind.UserApproved`/`UserRejected` on the following
+`ToolCallAuditEvent` record which one happened, exactly like `PolicyDenied`/`UnknownTool` already
+did for the other rejection paths.
+
 Principle 4 says *everything*. A denied call, a rejected approval and an unknown tool name
 are the most interesting events in the log, so they are events, not `continue` statements.
+
+**Hash-chaining** (V0.3, ADR-0015; D-008) is implemented in `bOps.Audit`'s `JsonLinesAuditSink`,
+not in this contract: `IAuditSink` itself is unchanged, because tamper evidence is a storage
+detail a given sink either provides or does not, not something every implementation must agree
+on the shape of. Each line is `{Seq, PrevHash, Hash, EventJson}`, `Hash = SHA256(PrevHash +
+EventJson)`; `AuditChainVerifier` re-derives and checks it independently. This is
+tamper-*evident*, not tamper-*proof* — see rule S9.
 
 ### B9 — Planning
 

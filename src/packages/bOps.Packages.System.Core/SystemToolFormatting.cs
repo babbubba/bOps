@@ -11,22 +11,33 @@ namespace bOps.Packages.Sys.Core;
 public static class SystemToolFormatting
 {
     /// <summary>Formats a <see cref="SystemInfoResult"/>.</summary>
-    public static string Format(SystemInfoResult info) =>
-        string.Create(CultureInfo.InvariantCulture,
+    public static string Format(SystemInfoResult info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        return string.Create(CultureInfo.InvariantCulture,
             $"OS: {info.OsDescription}\nHost: {info.HostName}\nUptime: {info.Uptime.Days}d {info.Uptime.Hours}h {info.Uptime.Minutes}m");
+    }
 
     /// <summary>Formats a <see cref="CpuUsageResult"/>.</summary>
-    public static string Format(CpuUsageResult cpu) =>
-        string.Create(CultureInfo.InvariantCulture, $"CPU usage: {cpu.Percent:F1}%");
+    public static string Format(CpuUsageResult cpu)
+    {
+        ArgumentNullException.ThrowIfNull(cpu);
+        return string.Create(CultureInfo.InvariantCulture, $"CPU usage: {cpu.Percent:F1}%");
+    }
 
     /// <summary>Formats a <see cref="MemoryUsageResult"/>.</summary>
-    public static string Format(MemoryUsageResult memory) =>
-        string.Create(CultureInfo.InvariantCulture,
+    public static string Format(MemoryUsageResult memory)
+    {
+        ArgumentNullException.ThrowIfNull(memory);
+        return string.Create(CultureInfo.InvariantCulture,
             $"Memory: {memory.TotalMb - memory.AvailableMb} MB used of {memory.TotalMb} MB total ({memory.UsedPercent:F1}%), {memory.AvailableMb} MB available.");
+    }
 
     /// <summary>Formats a list of <see cref="DiskUsageResult"/>.</summary>
     public static string Format(IReadOnlyList<DiskUsageResult> disks)
     {
+        ArgumentNullException.ThrowIfNull(disks);
+
         if (disks.Count == 0)
         {
             return "No ready volumes found.";
@@ -40,6 +51,8 @@ public static class SystemToolFormatting
     /// <summary>Formats a list of <see cref="ProcessSummary"/>.</summary>
     public static string Format(IReadOnlyList<ProcessSummary> processes)
     {
+        ArgumentNullException.ThrowIfNull(processes);
+
         if (processes.Count == 0)
         {
             return "No processes found.";

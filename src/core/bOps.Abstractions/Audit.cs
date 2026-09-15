@@ -32,6 +32,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(ToolCallAuditEvent), "toolCall")]
 [JsonDerivedType(typeof(ModelCallAuditEvent), "modelCall")]
 [JsonDerivedType(typeof(PolicyDecisionAuditEvent), "policyDecision")]
+[JsonDerivedType(typeof(ApprovalAuditEvent), "approval")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -130,6 +131,34 @@ public sealed record PolicyDecisionAuditEvent : AuditEvent
 
     /// <summary>Why this mode was decided.</summary>
     public required string Reason { get; init; }
+}
+
+/// <summary>
+/// An operator approved or rejected a call policy placed in <see cref="PolicyMode.Approval"/>
+/// (V0.3, ADR-0015). Distinct from <see cref="PolicyDecisionAuditEvent"/> — that records what
+/// policy decided (that approval is required and why); this records what the human decided, and
+/// by whom, which policy cannot know in advance. <see cref="AuditEvent.Actor"/> on the base type
+/// is the actor who launched the task; <see cref="Approver"/> is who actually approved or
+/// rejected the call, which is not always the same identity once remote approval exists (it is
+/// today, in the CLI) — an audit log that cannot say who approved is not an audit log
+/// (agentic/01-architecture-rules.md, rule B7).
+/// </summary>
+public sealed record ApprovalAuditEvent : AuditEvent
+{
+    /// <summary>The package that contributed the tool.</summary>
+    public required PackageId Package { get; init; }
+
+    /// <summary>The tool's name.</summary>
+    public required string Tool { get; init; }
+
+    /// <summary>Whether the call was approved.</summary>
+    public required bool Approved { get; init; }
+
+    /// <summary>Who actually approved or rejected the call.</summary>
+    public required ActorIdentity Approver { get; init; }
+
+    /// <summary>An optional note from the approver.</summary>
+    public string? Note { get; init; }
 }
 
 /// <summary>

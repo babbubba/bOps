@@ -16,11 +16,15 @@ every project without exception.
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisLevel>latest-all</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
     <!-- Noise, not signal, on a greenfield codebase. Revisit at V0.3. -->
     <NoWarn>$(NoWarn);CA1303;CA1304;CA1305;CA1310;CA1848</NoWarn>
+    <!-- CA2007 (ConfigureAwait(false)) is a library-authoring guideline for code that might run
+         under a capturing SynchronizationContext. bOps has no such context anywhere in the
+         solution — see docs/architecture/suppressions.md. -->
+    <NoWarn>$(NoWarn);CA2007</NoWarn>
   </PropertyGroup>
 </Project>
 ```
@@ -30,16 +34,28 @@ suppress `CS1591`: it is a published SDK, so every public member carries XML doc
 
 ### Escalation schedule
 
-| | Now | From V0.3 |
+| | Through V0.2 | From V0.3 (current) |
 |---|---|---|
 | `Nullable`, `TreatWarningsAsErrors` | on | on |
 | `AnalysisLevel` | `latest-recommended` | `latest-all` |
-| Suppression list | as above | reviewed and shortened |
+| Suppression list | `CA1303;CA1304;CA1305;CA1310;CA1848` | the same list, **plus `CA2007`** — see below |
 
 `TreatWarningsAsErrors` is on from the first commit because on an empty repository each
 warning appears alone, as it is written, and costs seconds to fix. The expensive scenario —
-inheriting hundreds of warnings at once — cannot happen here. `AnalysisLevel=latest-all` waits
-because it is the setting that generates volume without proportional value early on.
+inheriting hundreds of warnings at once — cannot happen here. `AnalysisLevel=latest-all` waited
+until V0.3 because it is the setting that generates volume without proportional value early on.
+
+Escalating to `latest-all` surfaced real, fixable issues (missing `ArgumentNullException.ThrowIfNull`
+guards on public entry points across `bOps.Abstractions`, `bOps.Runtime` and the `System.Core`/
+`OpenAiCompatible` packages; missing standard exception constructors per CA1032; a P/Invoke
+missing `[DefaultDllImportSearchPaths]`; test-only types that could be `internal`; one genuinely
+dead test double) — all fixed, not suppressed. The one new suppression, `CA2007`, was a
+deliberate exception rather than "reviewed and shortened" as this table originally predicted:
+`ConfigureAwait(false)` protects against deadlocking a capturing `SynchronizationContext`
+(WinForms, WPF, classic ASP.NET), and nothing in this solution ever runs under one — a console
+host and libraries consumed only by that host and its own tests. Suppressing 66 call sites of a
+diagnostic that cannot fire a real bug here is the documented exception the suppression policy
+below expects, not a shortcut.
 
 ### Suppressions must stay visible
 

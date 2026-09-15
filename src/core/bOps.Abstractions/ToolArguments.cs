@@ -84,6 +84,8 @@ public sealed class ToolArguments
     /// </summary>
     public JsonObject Redact(IEnumerable<string> parameterNames)
     {
+        ArgumentNullException.ThrowIfNull(parameterNames);
+
         var clone = ToJson();
         foreach (var name in parameterNames)
         {
@@ -102,10 +104,37 @@ public sealed class ToolArguments
 /// invariant — argument validation against the <see cref="ToolManifest"/> should have already
 /// rejected the call before a tool ever ran — not a condition a tool is expected to recover from.
 /// </summary>
-public sealed class ToolArgumentException(string argumentName, string message) : Exception(message)
+public sealed class ToolArgumentException : Exception
 {
+    /// <summary>Creates a tool argument exception for the given argument.</summary>
+    public ToolArgumentException(string argumentName, string message)
+        : base(message)
+    {
+        ArgumentName = argumentName;
+    }
+
+    /// <summary>Creates a tool argument exception with no message. Prefer the overload that takes an argument name — CA1032 requires this constructor to exist, not that it be used.</summary>
+    public ToolArgumentException()
+    {
+        ArgumentName = string.Empty;
+    }
+
+    /// <summary>Creates a tool argument exception with a plain message.</summary>
+    public ToolArgumentException(string message)
+        : base(message)
+    {
+        ArgumentName = string.Empty;
+    }
+
+    /// <summary>Creates a tool argument exception wrapping an underlying failure.</summary>
+    public ToolArgumentException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ArgumentName = string.Empty;
+    }
+
     /// <summary>The name of the argument that was missing or malformed.</summary>
-    public string ArgumentName { get; } = argumentName;
+    public string ArgumentName { get; }
 }
 
 /// <summary>
@@ -122,6 +151,9 @@ public sealed class ToolArgumentsJsonConverter : JsonConverter<ToolArguments>
         JsonNode.Parse(ref reader) is JsonObject json ? ToolArguments.FromJson(json) : ToolArguments.Empty;
 
     /// <inheritdoc />
-    public override void Write(Utf8JsonWriter writer, ToolArguments value, JsonSerializerOptions options) =>
+    public override void Write(Utf8JsonWriter writer, ToolArguments value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(value);
         value.ToJson().WriteTo(writer);
+    }
 }

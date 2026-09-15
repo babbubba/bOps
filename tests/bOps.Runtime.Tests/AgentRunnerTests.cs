@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -18,8 +19,10 @@ public sealed class AgentRunnerTests
     private static readonly ActorIdentity Actor = ActorIdentity.FromOperatingSystemUser("test-user");
 
     private static AgentRunner CreateRunner(
-        IChatModel model, IToolRegistry registry, IAuditSink audit, AgentRunnerOptions? options = null) =>
-        new(model, registry, audit, TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
+        IChatModel model, IToolRegistry registry, IAuditSink audit, AgentRunnerOptions? options = null,
+        IPolicyEngine? policyEngine = null, IApprovalProvider? approvalProvider = null) =>
+        new(model, registry, policyEngine ?? new DefaultTestPolicyEngine(), approvalProvider ?? new NeverCalledApprovalProvider(),
+            audit, TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
 
     private static ToolRegistry CreateRegistryWith(params ITool[] tools)
     {
@@ -278,6 +281,28 @@ public sealed class AgentRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_RedactsSensitiveArguments_BeforeTheyReachTheAuditLog()
+    {
+        // agentic/04-testing-rules.md, "Audit": a Sensitive argument is redacted before reaching
+        // the sink (agentic/03-security-rules.md, rule S6).
+        var parameters = new[] { new ToolParameter("password", ToolParameterType.String, "A secret.", Sensitive: true) };
+        var tool = new FakeReadTool(parameters: parameters);
+        var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.FromJson(new JsonObject { ["password"] = "hunter2" }));
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(tool);
+        var audit = new RecordingAuditSink();
+
+        var result = await CreateRunner(model, registry, audit).RunAsync("do the sensitive thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        var toolCallEvent = Assert.Single(audit.Events.OfType<ToolCallAuditEvent>());
+        Assert.DoesNotContain("hunter2", toolCallEvent.Arguments.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsync_EndsAsBudgetExceeded_WhenTheTokenBudgetIsExceeded()
     {
         var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
@@ -294,6 +319,87 @@ public sealed class AgentRunnerTests
 
         Assert.Equal(AgentTaskStatus.BudgetExceeded, result.Status);
         Assert.Single(result.Steps);
+    }
+
+    // ---- V0.3: policy engine and approval flow (rule S3, ADR-0015) ----
+
+    [Fact]
+    public async Task RunAsync_ExecutesTheTool_WhenApprovalIsGranted()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(new FakeHighRiskTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Approval, "requires approval for test");
+        var approval = new StubApprovalProvider(approved: true, note: "looks fine");
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy, approvalProvider: approval)
+            .RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is PolicyDecisionAuditEvent { Mode: PolicyMode.Approval });
+        Assert.Contains(audit.Events, e => e is ApprovalAuditEvent { Approved: true, Note: "looks fine" });
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Outcome: ToolOutcome.Success,
+            Authorization: AuthorizationKind.UserApproved,
+            Tool: "test.highrisk",
+        });
+    }
+
+    [Fact]
+    public async Task RunAsync_DeniesTheTool_WhenApprovalIsRejected_AndReplans()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Understood, not executing.", [], true, null));
+        var registry = CreateRegistryWith(new FakeHighRiskTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Approval, "requires approval for test");
+        var approval = new StubApprovalProvider(approved: false, note: "too risky right now");
+
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy, approvalProvider: approval)
+            .RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(2, result.Plans.Count); // the rejection triggered a replan
+        Assert.Contains(audit.Events, e => e is ApprovalAuditEvent { Approved: false, Note: "too risky right now" });
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Outcome: ToolOutcome.Denied,
+            Authorization: AuthorizationKind.UserRejected,
+            Tool: "test.highrisk",
+        });
+        // Policy said Approval, not Forbidden — a rejected approval must not be misreported as a policy denial.
+        Assert.DoesNotContain(audit.Events, e => e is PolicyDecisionAuditEvent { Mode: PolicyMode.Forbidden });
+    }
+
+    [Fact]
+    public async Task RunAsync_NeverRequestsApproval_WhenPolicyForbidsOutright()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Understood, not executing.", [], true, null));
+        var registry = CreateRegistryWith(new FakeHighRiskTool());
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine(PolicyMode.Forbidden, "forbidden for test");
+
+        // NeverCalledApprovalProvider (the CreateRunner default) throws if approval is ever
+        // requested — proving a Forbidden decision short-circuits before reaching it.
+        var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is PolicyDecisionAuditEvent { Mode: PolicyMode.Forbidden });
+        Assert.DoesNotContain(audit.Events, e => e is ApprovalAuditEvent);
     }
 
     // ---- V0.2: explicit planning and replanning (rule C8, ADR-0014) ----

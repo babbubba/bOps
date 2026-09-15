@@ -55,8 +55,11 @@ public sealed class NodeIdJsonConverter : JsonConverter<NodeId>
         new(reader.GetString() ?? string.Empty);
 
     /// <inheritdoc />
-    public override void Write(Utf8JsonWriter writer, NodeId value, JsonSerializerOptions options) =>
+    public override void Write(Utf8JsonWriter writer, NodeId value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
         writer.WriteStringValue(value.Value);
+    }
 }
 
 /// <summary>Converts <see cref="PackageId"/> to and from a bare JSON string. Public so source-generated <see cref="JsonSerializerContext"/> types in other assemblies can reference it.</summary>
@@ -67,6 +70,9 @@ public sealed class PackageIdJsonConverter : JsonConverter<PackageId>
         new(reader.GetString() ?? string.Empty);
 
     /// <inheritdoc />
-    public override void Write(Utf8JsonWriter writer, PackageId value, JsonSerializerOptions options) =>
+    public override void Write(Utf8JsonWriter writer, PackageId value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
         writer.WriteStringValue(value.Value);
+    }
 }

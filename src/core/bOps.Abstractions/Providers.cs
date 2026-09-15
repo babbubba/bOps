@@ -13,7 +13,13 @@ public sealed record ChatModelOptions
     /// to the JSON-schema-in-prompt strategy described in the plan (§3.1.1), because the model
     /// or provider's native tool-calling is unreliable.
     /// </param>
+#pragma warning disable CA1054 // BaseUrl stays a string: this record binds directly from configuration
+                               // (Microsoft.Extensions.Configuration.Get<ChatModelOptions>()), where every value
+                               // arrives as a string; Uri conversion belongs at the provider adapter, where the
+                               // HttpClient is actually constructed and a malformed URL is already surfaced
+                               // (docs/architecture/suppressions.md).
     public ChatModelOptions(string Provider, string BaseUrl, string? ApiKey, string Model, bool SupportsNativeToolCalling = true)
+#pragma warning restore CA1054
     {
         this.Provider = Provider;
         this.BaseUrl = BaseUrl;
@@ -26,7 +32,9 @@ public sealed record ChatModelOptions
     public string Provider { get; init; }
 
     /// <summary>The base URL of the provider's OpenAI-compatible (or native) endpoint.</summary>
+#pragma warning disable CA1056 // see the constructor's CA1054 suppression above — same reasoning.
     public string BaseUrl { get; init; }
+#pragma warning restore CA1056
 
     /// <summary><c>null</c> for local providers such as Ollama or llama.cpp.</summary>
     public string? ApiKey { get; init; }
@@ -72,10 +80,29 @@ public interface IChatModelRegistry
 }
 
 /// <summary>Thrown when <see cref="ChatModelOptions.Provider"/> matches no registered provider package.</summary>
-public sealed class ProviderNotSupportedException(string providerId)
-    : Exception($"Provider '{providerId}' is not recognized — no provider package registered declares it. " +
-                "Verify the package is installed and enabled.")
+public sealed class ProviderNotSupportedException : Exception
 {
+    /// <summary>Creates a provider-not-supported exception for the given provider id.</summary>
+    public ProviderNotSupportedException(string providerId)
+        : base($"Provider '{providerId}' is not recognized — no provider package registered declares it. " +
+               "Verify the package is installed and enabled.")
+    {
+        ProviderId = providerId;
+    }
+
+    /// <summary>Creates a provider-not-supported exception with no message. Prefer the overload that takes a provider id — CA1032 requires this constructor to exist, not that it be used.</summary>
+    public ProviderNotSupportedException()
+    {
+        ProviderId = string.Empty;
+    }
+
+    /// <summary>Creates a provider-not-supported exception wrapping an underlying failure.</summary>
+    public ProviderNotSupportedException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ProviderId = string.Empty;
+    }
+
     /// <summary>The provider id that could not be resolved.</summary>
-    public string ProviderId { get; } = providerId;
+    public string ProviderId { get; }
 }

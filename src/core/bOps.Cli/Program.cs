@@ -1,10 +1,12 @@
 using bOps.Abstractions;
 using bOps.Audit;
+using bOps.Cli;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
 using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
+using bOps.Policy;
 using bOps.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +17,7 @@ using OpenTelemetry.Trace;
 
 if (args.Length == 0)
 {
-    Console.Error.WriteLine("""Usage: bops "<goal>" """);
+    await Console.Error.WriteLineAsync("""Usage: bops "<goal>" """);
     return 1;
 }
 
@@ -77,9 +79,15 @@ var modelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatMod
 var model = chatModelRegistry.Create(modelOptions);
 var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
 
+var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Policy");
+var policyEngine = await LoadPolicyEngineAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
+var approvalProvider = new ConsoleApprovalProvider();
+
 var runner = new AgentRunner(
     model,
     toolRegistry,
+    policyEngine,
+    approvalProvider,
     host.Services.GetRequiredService<IAuditSink>(),
     host.Services.GetRequiredService<TimeProvider>(),
     host.Services.GetRequiredService<ILogger<AgentRunner>>(),
@@ -101,5 +109,43 @@ static void PrintTranscript(TaskState task)
         {
             Console.WriteLine(step.Observation);
         }
+    }
+}
+
+// Rule S3: a missing policy.yaml is not the same as a broken one. No file at all is a normal,
+// unconfigured starting point — the built-in safe default applies. A file that exists but fails
+// to load means the operator tried to configure something and got it wrong; falling back to the
+// safe default there could silently be *more* permissive than what they thought they had
+// configured, so everything above Read is forbidden instead, until the file is fixed.
+static async Task<IPolicyEngine> LoadPolicyEngineAsync(string filePath, ILogger logger)
+{
+    if (!File.Exists(filePath))
+    {
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "No policy file at '{Path}'; using the built-in default (Read/Low automatic, Medium/High approval, Critical forbidden).",
+                filePath);
+        }
+
+        return new PolicyEngine(PolicyConfig.SafeDefault);
+    }
+
+    try
+    {
+        var yaml = await File.ReadAllTextAsync(filePath);
+        var config = PolicyConfigLoader.Load(yaml);
+
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Loaded policy from '{Path}'.", filePath);
+        }
+
+        return new PolicyEngine(config);
+    }
+    catch (PolicyConfigurationException ex)
+    {
+        logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
+        return new PolicyEngine(PolicyConfig.AllForbidden);
     }
 }
