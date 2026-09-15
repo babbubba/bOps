@@ -14,27 +14,27 @@ namespace bOps.Packages.System.Windows.Tests;
 [Trait("Platform", "Windows")]
 public sealed class WindowsSystemToolsTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public Task SystemInfo_Conforms() =>
         SystemToolConformance.AssertSystemInfoConformsAsync(new WindowsSystemInfoTool(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task Cpu_Conforms() =>
         SystemToolConformance.AssertCpuUsageConformsAsync(new WindowsCpuUsageTool(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task Memory_Conforms() =>
         SystemToolConformance.AssertMemoryUsageConformsAsync(new WindowsMemoryUsageTool(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task Disk_Conforms() =>
         SystemToolConformance.AssertDiskUsageConformsAsync(new WindowsDiskUsageTool(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task ProcessList_Conforms() =>
         SystemToolConformance.AssertProcessListConformsAsync(new WindowsProcessListTool(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task ProcessList_RespectsLimit() =>
         SystemToolConformance.AssertProcessListRespectsLimitAsync(new WindowsProcessListTool());
 
