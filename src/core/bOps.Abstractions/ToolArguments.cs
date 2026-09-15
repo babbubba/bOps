@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace bOps.Abstractions;
 
@@ -10,6 +11,7 @@ namespace bOps.Abstractions;
 /// comes back as a <see cref="JsonElement"/> after a round trip, which silently breaks replay
 /// and audit. See agentic/07-plan-corrections.md.
 /// </summary>
+[JsonConverter(typeof(ToolArgumentsJsonConverter))]
 public sealed class ToolArguments
 {
     private readonly JsonObject _values;
@@ -104,4 +106,22 @@ public sealed class ToolArgumentException(string argumentName, string message) :
 {
     /// <summary>The name of the argument that was missing or malformed.</summary>
     public string ArgumentName { get; } = argumentName;
+}
+
+/// <summary>
+/// Converts <see cref="ToolArguments"/> to and from a plain JSON object. Without this,
+/// <see cref="ToolArguments"/> — which exposes no public settable state, by design — serializes
+/// as <c>{}</c> whenever it appears inside a record such as <see cref="ModelToolCall"/> or
+/// <see cref="ToolCallRequest"/>, silently discarding every argument (rule A2). Public so
+/// source-generated <see cref="JsonSerializerContext"/> types in other assemblies can reference it.
+/// </summary>
+public sealed class ToolArgumentsJsonConverter : JsonConverter<ToolArguments>
+{
+    /// <inheritdoc />
+    public override ToolArguments Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        JsonNode.Parse(ref reader) is JsonObject json ? ToolArguments.FromJson(json) : ToolArguments.Empty;
+
+    /// <inheritdoc />
+    public override void Write(Utf8JsonWriter writer, ToolArguments value, JsonSerializerOptions options) =>
+        value.ToJson().WriteTo(writer);
 }

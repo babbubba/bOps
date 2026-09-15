@@ -86,6 +86,21 @@ producing `system.cpu` must produce the *same shape*. Formatting therefore lives
 
 The same pattern applies to `Service`, `Network`, `Process` and `Filesystem`.
 
+**C# namespace is `bOps.Packages.Sys.*`, not `bOps.Packages.System.*`.** A namespace segment
+literally named `System` breaks every unqualified `System.*` reference inside it (the compiler
+resolves `System.Console` etc. against the enclosing namespace first, ahead of the global
+`System` namespace). Project and assembly names keep the `bOps.Packages.System.*` spelling above
+— it matches this document and the README — but the `RootNamespace` MSBuild property and every
+`namespace` declaration in code use `bOps.Packages.Sys.*` instead. This applies to every package
+in the `System.*` family, present and future.
+
+`bOps.Packages.System.Windows` targets plain `net10.0`, not `net10.0-windows`: `bOps.Cli` (also
+plain `net10.0`, cross-platform) references both the Windows and Linux packages and picks one at
+runtime by OS, and a project on a plain TFM cannot reference one on a platform-specific TFM.
+Platform intent is instead declared with `[assembly: SupportedOSPlatform("windows")]`. A test
+project that only ever calls the Windows package (`bOps.Packages.System.Windows.Tests`) is free
+to target `net10.0-windows` itself, since it has no such cross-platform reference to make.
+
 ### A9 — Packages never resolve services from other packages
 
 There is no mechanism for package A to consume a service contributed by package B, and none
@@ -384,22 +399,28 @@ public abstract record AuditEvent
     public required ActorIdentity Actor { get; init; }
 }
 
+public enum AuthorizationKind { Automatic, UserApproved, UserRejected, PolicyDenied, UnknownTool }
+
 public sealed record ToolCallAuditEvent : AuditEvent
 {
     public required PackageId Package { get; init; }
     public required string Tool { get; init; }
     public required JsonObject Arguments { get; init; }   // already redacted (B2, Sensitive)
     public required RiskLevel Risk { get; init; }
-    public required string Authorization { get; init; }   // automatic | user-approved | user-rejected | policy-denied
+    public required AuthorizationKind Authorization { get; init; }
     public required ToolOutcome Outcome { get; init; }
     public required TimeSpan Duration { get; init; }
     public VerificationStatus? Verification { get; init; }
 }
 
+public enum ModelCallOutcome { Success, Failure }   // ADR-0013
+
 public sealed record ModelCallAuditEvent : AuditEvent
 {
     public required string Provider { get; init; }
     public required string Model { get; init; }
+    public required ModelCallOutcome Outcome { get; init; }   // ADR-0013
+    public string? ErrorMessage { get; init; }                // ADR-0013 — set when Outcome is Failure
     public ModelUsage? Usage { get; init; }
 }
 
@@ -417,6 +438,17 @@ public interface IAuditSink
 }
 ```
 
+`AuthorizationKind` has a fifth value, `UnknownTool`, beyond the four principle 4 originally
+named — for auditing a tool-call attempt that never resolved to any registered tool (a model
+hallucinating a tool name). It is recorded with `PackageId.Unknown`, a static value added to
+`PackageId` for exactly this case: there is no real package to blame for a name the runtime
+never registered.
+
+`ModelCallAuditEvent` gained `Outcome` and `ErrorMessage` in ADR-0013
+(`docs/architecture/adr/0013-model-call-audit-outcome.md`): a call to an `IChatModel` that throws
+must still be audited, per rule S9, exactly like a denied or timed-out tool call — the original
+shape had no way to record that a call failed at all.
+
 Principle 4 says *everything*. A denied call, a rejected approval and an unknown tool name
 are the most interesting events in the log, so they are events, not `continue` statements.
 
@@ -424,13 +456,21 @@ are the most interesting events in the log, so they are events, not `continue` s
 
 ## C. The agent loop
 
-`bOps.Runtime/AgentPlanner.cs` owns the loop. It is deliberately explicit: every state
-transition is a method that can be logged, tested and inspected. Required behaviour:
+`bOps.Runtime/AgentRunner.cs` owns the loop (named `AgentRunner`, not `AgentPlanner` as in
+earlier drafts of this document — planning and execution are not yet separated in V0.1). It is
+deliberately explicit: every state transition is a method that can be logged, tested and
+inspected. Required behaviour:
 
 1. **Nothing thrown escapes an iteration.** An unknown tool name, a tool that throws, a
    provider that returns malformed JSON — each becomes an *observation* fed back to the model,
    never an exception that kills the task. The model replanning around its own mistake is the
-   system working, not failing.
+   system working, not failing. `ModelProtocolException` (`bOps.Abstractions`) is thrown by an
+   `IChatModel` adapter when a provider's response cannot become a valid `ModelResponse` — bad
+   JSON, a schema mismatch, an unreachable endpoint, a non-success HTTP status, or (in the
+   JSON-schema-fallback strategy, plan §3.1.1) a model that will not comply even after one retry.
+   The loop catches it, and — as defense in depth for this same rule — catches any other
+   exception from the model call too (ADR-0013), so a provider package's own bug cannot crash
+   the loop either; either way the step ends the task as `Failed` rather than escaping.
 2. **Every `ExecuteAsync` runs under its own timeout** from a linked `CancellationTokenSource`.
    The default is per-tool and configurable; a timeout is `ToolOutcome.Timeout`, distinct from
    failure, and it is audited.

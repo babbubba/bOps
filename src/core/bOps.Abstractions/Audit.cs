@@ -83,6 +83,20 @@ public sealed record ToolCallAuditEvent : AuditEvent
     public VerificationStatus? Verification { get; init; }
 }
 
+/// <summary>
+/// How a call to an LLM provider ended (agentic/architecture/adr/0013). A model call can fail —
+/// unreachable provider, a non-success HTTP status, a response that cannot be parsed — and rule
+/// S9 requires that failure to be audited exactly like a successful call, not silently dropped.
+/// </summary>
+public enum ModelCallOutcome
+{
+    /// <summary>The provider returned a usable response.</summary>
+    Success,
+
+    /// <summary>The call could not be completed. See the audited event's <see cref="ModelCallAuditEvent.ErrorMessage"/>.</summary>
+    Failure,
+}
+
 /// <summary>A call was made to an LLM provider. Distinct from a tool call — see plan §5.3.</summary>
 public sealed record ModelCallAuditEvent : AuditEvent
 {
@@ -91,6 +105,12 @@ public sealed record ModelCallAuditEvent : AuditEvent
 
     /// <summary>The specific model that served this call.</summary>
     public required string Model { get; init; }
+
+    /// <summary>Whether the call succeeded. See ADR-0013.</summary>
+    public required ModelCallOutcome Outcome { get; init; }
+
+    /// <summary>Present when <see cref="Outcome"/> is <see cref="ModelCallOutcome.Failure"/>.</summary>
+    public string? ErrorMessage { get; init; }
 
     /// <summary>Token and cost accounting, when the provider reports it.</summary>
     public ModelUsage? Usage { get; init; }

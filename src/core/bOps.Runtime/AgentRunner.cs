@@ -53,6 +53,8 @@ public sealed class AgentRunner(
         var steps = new List<PlanStep>();
         var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         var totalTokens = 0;
+        string? lastPolicyDeniedTool = null;
+        var consecutivePolicyDenials = 0;
 
         using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
         taskActivity?.SetTag("bops.task_id", taskId);
@@ -72,12 +74,13 @@ public sealed class AgentRunner(
             {
                 response = await CallModelAsync(taskId, stepIndex, actor, history, ct);
             }
-            catch (ModelProtocolException ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Rule C1: nothing thrown escapes an iteration — but a provider that cannot
-                // produce a parseable response twice in a row is a genuine dead end for this
-                // call, not something to retry forever. Fail the step explicitly (plan §3.1.1).
-                logger.LogError(ex, "Task {TaskId} step {StepIndex}: model response could not be parsed", taskId, stepIndex);
+                // Rule C1: nothing thrown escapes an iteration. Broader than just
+                // ModelProtocolException (ADR-0013) — a provider package that fails to wrap its
+                // own transport/parse errors must not be able to crash the loop either; this is
+                // a genuine dead end for the call either way, not something to retry forever.
+                logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
                 steps.Add(new PlanStep(stepIndex, "Model protocol failure", null, null, ex.Message));
                 return Build(taskId, createdAtUtc, goal, AgentTaskStatus.Failed, steps);
             }
@@ -95,8 +98,32 @@ public sealed class AgentRunner(
             // first and reports the rest back as not executed — sequential execution is the
             // safe default for an ops agent; parallel execution needs its own policy story.
             var primaryCall = response.ToolCalls[0];
-            var (step, observation) = await ExecuteStepAsync(taskId, stepIndex, actor, primaryCall, ct);
+            var (step, observation, authorization) = await ExecuteStepAsync(taskId, stepIndex, actor, primaryCall, ct);
             steps.Add(step);
+
+            // Rule C4: without this, a model that keeps proposing the same forbidden tool would
+            // retry it until MaxSteps — a Forbidden decision must be a dead end, not a suggestion
+            // the model can simply repeat.
+            if (authorization == AuthorizationKind.PolicyDenied)
+            {
+                consecutivePolicyDenials = string.Equals(lastPolicyDeniedTool, primaryCall.ToolName, StringComparison.Ordinal)
+                    ? consecutivePolicyDenials + 1
+                    : 1;
+                lastPolicyDeniedTool = primaryCall.ToolName;
+
+                if (consecutivePolicyDenials >= options.MaxConsecutivePolicyDenials)
+                {
+                    logger.LogWarning(
+                        "Task {TaskId} blocked: '{Tool}' was denied {Count} times in a row",
+                        taskId, primaryCall.ToolName, consecutivePolicyDenials);
+                    return Build(taskId, createdAtUtc, goal, AgentTaskStatus.PolicyBlocked, steps);
+                }
+            }
+            else
+            {
+                lastPolicyDeniedTool = null;
+                consecutivePolicyDenials = 0;
+            }
 
             history.Add(ChatTurn.FromAssistantToolCalls([primaryCall]));
             history.Add(ChatTurn.FromToolResult(primaryCall.Id, observation));
@@ -122,7 +149,32 @@ public sealed class AgentRunner(
     private async Task<ModelResponse> CallModelAsync(Guid taskId, int stepIndex, ActorIdentity actor, List<ChatTurn> history, CancellationToken ct)
     {
         var request = new ModelRequest(SystemPrompt, history, registry.GetAvailableManifests());
-        var response = await model.CompleteAsync(request, ct);
+
+        ModelResponse response;
+        try
+        {
+            response = await model.CompleteAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Rule S9 / principle 4: a failed model call is still a model call, audited whatever
+            // the outcome — exactly like a denied or timed-out tool call (ADR-0013). Without
+            // this, a task that fails here leaves no trace at all in the audit log.
+            await audit.WriteAsync(new ModelCallAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Provider = model.Descriptor.ProviderId,
+                Model = model.Descriptor.ModelId,
+                Outcome = ModelCallOutcome.Failure,
+                ErrorMessage = ex.Message,
+                Usage = null,
+            }, ct);
+            throw;
+        }
 
         await audit.WriteAsync(new ModelCallAuditEvent
         {
@@ -133,21 +185,24 @@ public sealed class AgentRunner(
             Actor = actor,
             Provider = model.Descriptor.ProviderId,
             Model = model.Descriptor.ModelId,
+            Outcome = ModelCallOutcome.Success,
+            ErrorMessage = null,
             Usage = response.Usage,
         }, ct);
 
         return response;
     }
 
-    private async Task<(PlanStep Step, string Observation)> ExecuteStepAsync(
+    private async Task<(PlanStep Step, string Observation, AuthorizationKind Authorization)> ExecuteStepAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, CancellationToken ct)
     {
         var tool = registry.Resolve(call.ToolName);
         if (tool is null)
         {
-            return await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
+            var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
                 $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", ct);
+            return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool);
         }
 
         var manifest = tool.Manifest;
@@ -157,16 +212,18 @@ public sealed class AgentRunner(
         // when the policy engine is introduced it replaces this check, it does not loosen it.
         if (manifest.Risk != RiskLevel.Read)
         {
-            return await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
+            var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
                 AuthorizationKind.PolicyDenied,
                 $"'{call.ToolName}' was not executed: no policy engine is wired yet (introduced in V0.3) — " +
                 "only Read-risk tools execute automatically until then.", ct);
+            return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied);
         }
 
         if (ValidateArguments(manifest, call.Arguments) is { } validationError)
         {
-            return await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
+            var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
                 AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, ct);
+            return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic);
         }
 
         using var toolActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.tool");
@@ -183,8 +240,9 @@ public sealed class AgentRunner(
             new KeyValuePair<string, object?>("bops.tool", manifest.Name),
             new KeyValuePair<string, object?>("bops.outcome", result.Outcome.ToString()));
 
-        return await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
+        var executed = await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
             AuthorizationKind.Automatic, stopwatch.Elapsed, verification: null, ct);
+        return (executed.Step, executed.Observation, AuthorizationKind.Automatic);
     }
 
     private async Task<ToolCallResult> ExecuteWithTimeoutAsync(ITool tool, ModelToolCall call, CancellationToken ct)
@@ -232,6 +290,25 @@ public sealed class AgentRunner(
             Duration = TimeSpan.Zero,
             Verification = null,
         }, ct);
+
+        if (authorization == AuthorizationKind.PolicyDenied)
+        {
+            // Rule S3: a Forbidden decision is always audited as its own PolicyDecisionAuditEvent,
+            // distinct from the ToolCallAuditEvent above — an investigator asking "what did policy
+            // decide" should not have to reconstruct it from a tool-call record.
+            await audit.WriteAsync(new PolicyDecisionAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = package,
+                Tool = call.ToolName,
+                Mode = PolicyMode.Forbidden,
+                Reason = message,
+            }, ct);
+        }
 
         var step = new PlanStep(stepIndex, "Denied", call, ToolCallResult.Failure(message), message);
         return (step, WrapToolOutput(message));

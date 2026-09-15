@@ -6,9 +6,12 @@ using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Runtime;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 if (args.Length == 0)
 {
@@ -46,9 +49,14 @@ var toolRegistry = host.Services.GetRequiredService<IToolRegistry>();
 
 // Rule A8: each OS package contributes its own complete tools; the registry's platform filter
 // (not this code) is what actually decides visibility — this just picks which package to load.
-IToolProvider platformToolProvider = CurrentPlatform.Id == "windows"
+// OperatingSystem.IsWindows()/IsLinux() (not CurrentPlatform.Id) because the platform-compat
+// analyzer (CA1416) only recognizes these specific guards for a [SupportedOSPlatform] type.
+IToolProvider platformToolProvider = OperatingSystem.IsWindows()
     ? new WindowsSystemToolProvider()
-    : new LinuxSystemToolProvider();
+    : OperatingSystem.IsLinux()
+        ? new LinuxSystemToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
 
 var systemPackageId = new PackageId($"bops.packages.system.{CurrentPlatform.Id}");
 foreach (var tool in platformToolProvider.GetTools())

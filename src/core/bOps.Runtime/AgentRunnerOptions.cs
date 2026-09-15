@@ -16,6 +16,12 @@ public sealed record AgentRunnerOptions
     public int MaxObservationCharacters { get; init; } = 4000;
 
     /// <summary>
+    /// How many consecutive policy denials of the *same* tool end the task as <c>PolicyBlocked</c>
+    /// (rule C4) instead of letting the model retry a forbidden tool until <see cref="MaxSteps"/>.
+    /// </summary>
+    public int MaxConsecutivePolicyDenials { get; init; } = 2;
+
+    /// <summary>
     /// An optional total token budget across the whole task. <c>null</c> (the V0.1 default)
     /// means unbounded — the mechanism exists from V0.1 per rule C5, even though no default
     /// limit is imposed until an operator configures one.

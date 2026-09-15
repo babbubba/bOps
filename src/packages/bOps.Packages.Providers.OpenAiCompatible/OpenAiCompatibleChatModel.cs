@@ -89,18 +89,38 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
         }
 
-        using var httpResponse = await httpClient.SendAsync(httpRequest, ct);
-        httpResponse.EnsureSuccessStatusCode();
-
+        HttpResponseMessage httpResponse;
         try
         {
-            var body = await httpResponse.Content.ReadFromJsonAsync(OpenAiJsonContext.Default.ChatCompletionResponse, ct);
-            return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+            httpResponse = await httpClient.SendAsync(httpRequest, ct);
         }
-        catch (JsonException ex)
+        catch (HttpRequestException ex)
         {
-            throw new ModelProtocolException(
-                $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+            // A provider that cannot be reached is the same kind of dead end as one that replies
+            // with garbage — rule C1 requires it become an observation, never an exception that
+            // escapes the agent loop, so it is reported the same way as a malformed response.
+            throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
+        }
+
+        using (httpResponse)
+        {
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                throw new ModelProtocolException(
+                    $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
+                    $"({httpResponse.StatusCode}) for the chat completion request.");
+            }
+
+            try
+            {
+                var body = await httpResponse.Content.ReadFromJsonAsync(OpenAiJsonContext.Default.ChatCompletionResponse, ct);
+                return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+            }
+            catch (JsonException ex)
+            {
+                throw new ModelProtocolException(
+                    $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+            }
         }
     }
 

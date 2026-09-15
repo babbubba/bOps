@@ -1,179 +1,176 @@
-# Handoff — V0.1 scaffolding in progress
+# Handoff — V0.1 scaffolding complete
 
-Written because the previous session ran out of budget mid-task. Everything below is exact,
-not a summary — follow it literally to resume without guessing.
+Written at the end of the session that unblocked the build and finished V0.1 per the previous
+handoff's plan. Everything below is exact, not a summary — follow it literally to resume.
 
 ## State right now
 
-Committed at `bd56ef5` (on top of `0c90459` which added the README/agentic/LICENSE). Nothing
-uncommitted. Last command run, and its exact output, is under "The one blocker" below.
+**`bOps.sln` exists at the repo root and `dotnet build bOps.sln` builds clean end to end — 0
+warnings, 0 errors** (verified with a full clean of every `bin`/`obj` and a from-scratch
+rebuild, not just an incremental one). All 15 projects are in the solution: every `src/`
+project from the previous session, plus four new ones under `tests/`.
 
-**Builds clean**, individually verified with `dotnet build <path>.csproj`:
-- `src/core/bOps.Abstractions`
-- `src/core/bOps.Audit`
-- `src/core/bOps.Runtime`
-- `src/packages/bOps.Packages.System.Core`
-- `src/packages/bOps.Packages.System.Windows`
-- `src/packages/bOps.Packages.System.Linux`
-- `src/packages/bOps.Packages.Providers.OpenAiCompatible`
-- `src/packages/bOps.Packages.Providers.OpenRouter`
-- `src/packages/bOps.Packages.Providers.Ollama`
-- `src/packages/bOps.Packages.Providers.LlamaCpp`
+`dotnet test bOps.sln` results:
 
-**Does not build yet**: `src/core/bOps.Cli` — see below.
+- **`bOps.Runtime.Tests`** — 44 tests, all passing. Covers `ToolRegistry.Register` (rule B3:
+  accept/reject on verification), `AgentRunner` (unknown tool, throwing tool, timing-out tool,
+  the fail-closed policy-absence guard, repeated-policy-denial → `PolicyBlocked`, MaxSteps,
+  budget exceeded, multi-tool-call-per-turn, model-call failure of both a known and an unknown
+  exception type), and a JSON round-trip test for every contract record in `Tools.cs`,
+  `Audit.cs`, `Model.cs`, `Policy.cs`, `TaskState.cs`, `Identity.cs`, `Providers.cs`.
+- **`bOps.Packages.System.Windows.Tests`** — 7 tests, all passing, run against the real Windows
+  host (this machine) via the shared conformance suite. Never mocked, per
+  `agentic/04-testing-rules.md`.
+- **`bOps.Packages.System.Linux.Tests`** — 7 tests; 1 passes (a manifest-shape check that
+  touches no `/proc`), 6 **skip visibly** with `[LinuxOnlyFact]` (a custom `FactAttribute` that
+  sets `Skip` when not on Linux). There is no Linux host in this dev environment. This project
+  compiles clean and is ready to run for real the moment one exists (a container, CI's
+  `ubuntu-latest` matrix from V0.5, or the Aspire AppHost). **Do not delete or "fix" the skips —
+  they are the correct, visible behavior the testing rules require, not a gap.**
+- **`bOps.Packages.System.Conformance`** — not itself a test project; a shared assertion
+  library (`SystemToolConformance`) referenced by both `.Tests` projects above, asserting
+  structure and invariants (percentages in 0–100, memory self-consistency, manifest shape) —
+  never exact values, per `agentic/04-testing-rules.md`.
 
-**No `.sln` file exists yet.** Every build so far has been per-project
-(`dotnet build src/core/bOps.Abstractions/bOps.Abstractions.csproj`). Creating
-`bOps.sln` and adding every project to it is still to do — do it once bOps.Cli builds, with:
+CLI smoke test (`cd src/core/bOps.Cli && dotnet run -- "how is this machine doing?"`): DI wiring,
+config binding, tool registry (5 `system.*`/`process.list` tools for the current OS), and
+provider registry all succeed; the task fails cleanly at the HTTP call with `ApiKey` empty (rule
+S6 — no real key is or should ever be in `appsettings.json`), and — after this session's audit
+fix below — that failure now produces a `modelCall` audit event with `Outcome: Failure`, not
+silence.
 
-```bash
-dotnet new sln -n bOps
-dotnet sln bOps.sln add (find src tests -name "*.csproj")
-```
+## What this session did, in order
 
-(adjust the `find` for the shell in use — Bash tool is Git Bash/POSIX on this machine).
+### 1. Fixed the NU1902 blocker
 
-## The one blocker
+Bumped `OpenTelemetry.Extensions.Hosting` and `OpenTelemetry.Exporter.OpenTelemetryProtocol` from
+`1.13.1` to `1.18.0` in `src/core/bOps.Cli/bOps.Cli.csproj` — a patched version existed, so no
+suppression was needed (`docs/architecture/suppressions.md` was not touched). The version bump
+surfaced three unrelated, pre-existing compile errors that restore had been masking:
 
-`dotnet build src/core/bOps.Cli/bOps.Cli.csproj` fails restore with:
+- `Program.cs` was missing `using OpenTelemetry.Trace;`, `using OpenTelemetry.Metrics;`, and
+  `using Microsoft.Extensions.Configuration;` (`AddOtlpExporter`, `IConfigurationSection.Get<T>`).
+- The OS-provider selection (`CurrentPlatform.Id == "windows" ? new WindowsSystemToolProvider() :
+  ...`) tripped `CA1416` (platform-compat analyzer): the analyzer only recognizes
+  `OperatingSystem.IsWindows()`/`IsLinux()` as a guard for a `[SupportedOSPlatform("windows")]`
+  type, not an arbitrary string comparison. Rewrote the selection in `Program.cs` to guard with
+  `OperatingSystem.IsWindows()` / `IsLinux()` directly.
 
-```
-error NU1902: Il pacchetto 'OpenTelemetry.Api' 1.13.1 presenta una vulnerabilità nota di gravità
-moderata, https://github.com/advisories/GHSA-g94r-2vxg-569j
-error NU1902: ... 'OpenTelemetry.Exporter.OpenTelemetryProtocol' 1.13.1 ... GHSA-4625-4j76-fww9
-error NU1902: ... 'OpenTelemetry.Exporter.OpenTelemetryProtocol' 1.13.1 ... GHSA-mr8r-92fq-pj8p
-error NU1902: ... 'OpenTelemetry.Exporter.OpenTelemetryProtocol' 1.13.1 ... GHSA-q834-8qmm-v933
-```
+### 2. Found and fixed two real rule-C1/S9 violations while smoke-testing
 
-This is NuGet's built-in audit (`NuGetAudit`), which the SDK treats as an error by default when
-warnings are errors (`TreatWarningsAsErrors=true` in `Directory.Build.props`). The packages
-referenced in `src/core/bOps.Cli/bOps.Cli.csproj` are:
+The task instructions said a bug reaching all the way to the HTTP call was expected and fine to
+leave (no `ApiKey`); what was **not** fine, and what the smoke test caught, is what happened
+*after* that HTTP call failed:
 
-```xml
-<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.13.1" />
-<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.13.1" />
-```
+- **An `HttpRequestException`/non-success HTTP status from `OpenAiCompatibleChatModel.SendAsync`
+  crashed the whole CLI process with an unhandled exception.** Rule C1 ("nothing thrown escapes
+  an iteration") is explicit that a provider failure must become an observation, not a crash.
+  Fixed in `src/packages/bOps.Packages.Providers.OpenAiCompatible/OpenAiCompatibleChatModel.cs`:
+  `SendAsync` now wraps both "could not reach the provider" and "provider replied with a
+  non-success status" in `ModelProtocolException`, exactly like it already did for a malformed
+  response body.
+- **Even after that fix, `AgentRunner.RunAsync` only caught `ModelProtocolException`
+  specifically around the model call** — any other exception from a provider package (a bug in
+  a *different* `IChatModel` implementation, not necessarily `OpenAiCompatibleChatModel`) would
+  still have escaped and crashed the loop. Broadened the catch to `catch (Exception ex) when (ex
+  is not OperationCanceledException)` in both `RunAsync` and `CallModelAsync` — defense in depth
+  for rule C1, not a replacement for provider packages doing their own wrapping.
+- **A failed model call produced *zero* audit events.** `CallModelAsync` only wrote a
+  `ModelCallAuditEvent` *after* a successful `model.CompleteAsync()`; a task that fails at step 0
+  left no trace at all in the audit log, violating rule S9 ("every model call" is audited,
+  whatever the outcome). Fixing this required changing the shape of `ModelCallAuditEvent` in
+  `bOps.Abstractions` (added `ModelCallOutcome { Success, Failure }` and an `ErrorMessage`
+  field), which `agentic/05-workflow.md` requires an ADR for — see
+  `docs/architecture/adr/0013-model-call-audit-outcome.md`. Both the failure and success paths
+  now audit unconditionally.
+- **`ToolArguments` had no `JsonConverter`.** It has no public settable state by design (it's
+  backed by a private `JsonObject`), so any record carrying it — `ModelToolCall`,
+  `ToolCallRequest`, `PolicyContext` — silently serialized its `Arguments` as `{}` under plain
+  `System.Text.Json` reflection-based serialization, discarding every argument. This is exactly
+  the class of defect architecture rule A2's round-trip-test requirement exists to catch, and the
+  new `JsonRoundTripTests.ModelToolCall_RoundTrips` / `ToolCallRequest_RoundTrips` caught it on
+  the first run. Fixed with a `ToolArgumentsJsonConverter` (mirroring the existing
+  `NodeIdJsonConverter`/`PackageIdJsonConverter` pattern) and `[JsonConverter(...)]` on
+  `ToolArguments` itself, in `bOps.Abstractions/ToolArguments.cs`.
 
-### Fix it (pick one, in order of preference)
+None of this was worked around or deferred — each is a real fix, tested, in the diff.
 
-1. **Bump to a patched version.** Check
-   `https://www.nuget.org/packages/OpenTelemetry.Exporter.OpenTelemetryProtocol` and
-   `https://www.nuget.org/packages/OpenTelemetry.Extensions.Hosting` for a version past the
-   advisories above (likely a 1.13.x point release or 1.14+). Update both `Version=` attributes
-   in `bOps.Cli.csproj` (keep them on the same version — they're meant to move together) and
-   rebuild. **This is the correct fix if a patched version exists** — do this first, don't skip
-   to option 2.
-2. **If no patched version exists yet**, suppress specifically and record it:
-   - Add `<NoWarn>$(NoWarn);NU1902</NoWarn>` to `src/core/bOps.Cli/bOps.Cli.csproj`'s own
-     `PropertyGroup` (not the shared root list in `Directory.Build.props` —
-     `agentic/02-coding-standards.md` forbids adding to the shared list to unblock a task).
-   - Add a row to `docs/architecture/suppressions.md` for `NU1902`, scope
-     `bOps.Cli.csproj`, reason (which advisories, why they don't apply — e.g. "OTLP exporter
-     used only for local dev telemetry, not exposed to untrusted input"), and "remove when a
-     patched version ships."
+### 3. Implemented rule C4 (repeated policy denial → `PolicyBlocked`), which did not exist yet
 
-Do not touch `Directory.Build.props`'s shared `NoWarn` list for this — it's project-specific.
+`agentic/01-architecture-rules.md` §C4 and `agentic/04-testing-rules.md`'s agent-loop minimum
+test list both require it ("N consecutive denials of the same tool (default 2) end the task as
+`PolicyBlocked`"), but `AgentRunner` had no such tracking — a model that kept proposing the same
+forbidden tool would have retried it until `MaxSteps`. Added `AgentRunnerOptions.
+MaxConsecutivePolicyDenials` (default 2) and consecutive-denial tracking in `RunAsync`, keyed on
+tool name and `AuthorizationKind.PolicyDenied` specifically (not `UnknownTool`, which is a
+different failure mode with its own audit path). Also discovered while implementing this: rule
+S3's "a Forbidden decision is always audited as a `PolicyDecisionAuditEvent`" was not happening —
+`RejectAsync` only wrote a `ToolCallAuditEvent`. Fixed: it now writes both, for the
+`PolicyDenied` case.
 
-## What to do right after the blocker is fixed
+### 4. Created the four missing test projects and wrote all tests from HANDOFF.md section 4
 
-1. `dotnet build src/core/bOps.Cli/bOps.Cli.csproj` — confirm clean.
-2. Smoke-test the CLI once it builds:
-   ```bash
-   cd src/core/bOps.Cli
-   dotnet run -- "how is this machine doing?"
-   ```
-   Expect it to fail at the HTTP call (no real `ApiKey` is configured in
-   `appsettings.json` — it's intentionally empty per agentic rule S6) but everything up to
-   that point — config binding, DI wiring, tool registry populated with 5 `system.*`/
-   `process.list` tools for the current OS, `IChatModelRegistry` resolving `"OpenRouter"` — must
-   succeed. If DI resolution throws before the HTTP call, that's a real bug to fix, not
-   something to work around.
-3. Create `bOps.sln` (see command above) and verify `dotnet build bOps.sln` builds everything
-   including the CLI.
-4. **Write tests.** Nothing under `tests/` exists yet, despite the directories being created
-   (`tests/bOps.Runtime.Tests`, `tests/bOps.Packages.System.Conformance`,
-   `tests/bOps.Packages.System.Windows.Tests`, `tests/bOps.Packages.System.Linux.Tests` are
-   empty folders with no `.csproj`). Per `agentic/04-testing-rules.md`, this is a real gap, not
-   a nice-to-have:
-   - `bOps.Runtime.Tests` — test-first is the rule for the core (rule D-010), and this project
-     has zero coverage right now. Priority order for tests to write, matching the minimum case
-     list in `agentic/04-testing-rules.md`: `ToolRegistry.Register` rejecting a non-Read tool
-     without `VerificationSpec`/`IVerifiableTool`; `AgentRunner` handling an unknown tool name,
-     a tool that throws, a tool that times out, `MaxSteps` reached, and — importantly — the
-     already-implemented "no policy engine yet → non-Read tools are refused" guard in
-     `AgentRunner.ExecuteStepAsync`.
-   - `bOps.Packages.System.Conformance` — described in `04-testing-rules.md` but not yet
-     created as a real shared assertion library. Needs to exist before the Windows/Linux test
-     projects can reference it meaningfully.
-   - `bOps.Packages.System.Windows.Tests` / `.Linux.Tests` — integration tests against the
-     real OS (never mocked, per the same doc). The Linux one only runs in CI/WSL/a Linux box;
-     the Windows one runs here.
-   - Every new contract type in `bOps.Abstractions` needs a JSON round-trip test (rule A2) —
-     none exist yet either. This is straightforward and mechanical: one test per record type in
-     `Tools.cs`, `Audit.cs`, `Model.cs`, `Policy.cs`, `TaskState.cs`, serialize then deserialize,
-     assert equality.
-5. Only after the above: continue down the V0.1 roadmap item, or move to V0.2 per
-   `agentic/00-project-spec.md`'s roadmap table, if the user directs that.
+In priority order, as specified. See "State right now" above for counts. Test doubles
+(`FakeChatModel`, `ThrowingChatModel`, `HangingChatModel`, `RecordingAuditSink`,
+`AlwaysAvailableCapabilityProbe`, `FakeReadTool`/`ThrowingTool`/`HangingTool`/
+`FakeHighRiskTool`/`UnverifiedHighRiskTool`/`DeclaredButNotVerifiableTool`) live in
+`tests/bOps.Runtime.Tests/` — `FakeChatModel` is the "replays a recorded sequence of
+`ModelResponse` values" double `agentic/04-testing-rules.md` calls for; it did not exist before
+this session either.
 
-## Design decisions made this session that aren't yet reflected in `agentic/`
+`bOps.Packages.System.Windows.Tests` targets `net10.0-windows` (not plain `net10.0`) — unlike
+`bOps.Packages.System.Windows` itself, this test project only ever calls the Windows package and
+only ever runs on a Windows host, so it can declare the platform directly and let `CA1416`
+verify every call site instead of suppressing it.
 
-These were necessary, small, technical corrections discovered while actually writing the code.
-They are consistent with the spirit of the already-written rules but are not yet written into
-`agentic/01-architecture-rules.md` itself. If picking this up cold, know these are deliberate,
-not accidents — but consider folding them into the docs as a small follow-up:
+### 5. Folded HANDOFF.md's "design decisions" items 1, 4, 5 into `agentic/01-architecture-rules.md`
 
-1. **C# namespace is `bOps.Packages.Sys.*`, not `bOps.Packages.System.*`.** A namespace segment
-   literally named `System` breaks every unqualified `System.*` reference inside it (the
-   compiler resolves `System.Console` etc. against the enclosing namespace first). Project/
-   assembly names keep the `bOps.Packages.System.*` spelling (matches `agentic/` and the
-   README); only the `RootNamespace` MSBuild property and the `namespace` declarations in code
-   differ. See the comment in `src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj`.
-2. **`bOps.Packages.System.Windows` targets plain `net10.0`, not `net10.0-windows`.**
-   `bOps.Cli` (plain `net10.0`, cross-platform) references both the Windows and Linux System
-   packages and picks one at runtime by OS — a project on a plain TFM cannot reference one on a
-   platform-specific TFM, so `net10.0-windows` would have made that reference graph illegal.
-   Platform intent is instead declared with `[assembly: SupportedOSPlatform("windows")]` in
-   `src/packages/bOps.Packages.System.Windows/AssemblyInfo.cs`.
-3. **`IToolRegistry` gained `Task RefreshCapabilitiesAsync(CancellationToken ct = default)`**,
-   not present in the first draft of `agentic/01-architecture-rules.md` §B4. `GetAvailableManifests()`
-   must stay synchronous (the planner calls it every step) but capability probing is
-   inherently async, so there has to be an explicit, host-driven refresh point. **This one is
-   already written into `agentic/01-architecture-rules.md`** (search for
-   "RefreshCapabilitiesAsync") — the other two above are not yet.
-4. **`AuthorizationKind` gained a fifth value, `UnknownTool`**, and `PackageId` gained a
-   static `PackageId.Unknown`, for auditing a tool-call attempt that never resolved to any
-   registered tool (a model hallucinating a tool name). Not yet mentioned in
-   `agentic/01-architecture-rules.md`'s `AuditEvent` section (§B8) — it lists only
-   `Automatic | UserApproved | UserRejected | PolicyDenied`.
-5. **`ModelProtocolException`** (in `bOps.Abstractions/Model.cs`) is a new exception type not
-   in the original architecture doc, thrown by `OpenAiCompatibleChatModel` when the
-   JSON-schema-fallback strategy (plan §3.1.1) fails to parse valid output after one retry, and
-   caught by `AgentRunner.RunAsync` to end the task as `AgentTaskStatus.Failed` rather than
-   crashing — satisfying rule C1 ("nothing thrown escapes an iteration") for this specific,
-   real failure mode that the original architecture doc didn't anticipate.
+- Item 1 (`bOps.Packages.Sys.*` namespace vs. `bOps.Packages.System.*` project name) — added to
+  §A8.
+- Item 2 (Windows package plain `net10.0` TFM) — mentioned briefly in the same place in §A8, per
+  the task's "if there's a natural place" instruction.
+- Item 4 (`AuthorizationKind.UnknownTool`, `PackageId.Unknown`) — added to §B8, with the enum
+  now spelled out (it was previously just a code comment: `// automatic | user-approved | ...`).
+- Item 5 (`ModelProtocolException`) — added to §C1, along with this session's broadened
+  exception handling (ADR-0013).
+- Also fixed in passing: §C referred to the loop living in `AgentPlanner.cs`; the actual file is
+  `AgentRunner.cs` (there is no separate planner in V0.1 — planning and execution are not yet
+  split). Corrected the filename reference.
+- Item 3 (`RefreshCapabilitiesAsync`) was already documented — untouched.
 
-None of these need a decision from the user — they're implementation necessities consistent
-with rules already agreed (D-006 through D-012). Fold them into `agentic/01-architecture-rules.md`
-as a quick edit when convenient, so the doc matches the code exactly.
+## New deviation discovered this session, not yet elsewhere
 
-## What V0.1 deliberately does NOT have yet (by design, not oversight)
+**No ADRs exist for ADR-0001 through ADR-0012**, despite `agentic/05-workflow.md` listing them
+under "The first ADRs to exist, per the plan and the decisions taken" as if they should already
+be written (0001, 0002, 0005, 0006, 0011, 0012 are named explicitly; 0003/0004/0007–0010 are
+implied by the numbering gap). Only `docs/architecture/adr/0013-model-call-audit-outcome.md`
+exists, written this session for the specific audit-schema change described above. Backfilling
+the other six is a real gap but is a documentation-only exercise with no code impact and no
+urgency (the decisions themselves are already fully recorded, with rationale, in
+`agentic/06-decisions.md` and `agentic/07-plan-corrections.md`) — it was judged out of scope for
+this session, which was about finishing V0.1's code and tests, not writing retroactive ADRs. Flag
+it to the user; do not silently start writing six ADRs as a side effect of an unrelated task.
+
+## What V0.1 deliberately does NOT have yet (unchanged from the previous handoff, still correct)
 
 - No `bOps.Policy` project. `AgentRunner` refuses (fails closed) any tool whose risk is above
-  `Read`, with an audited `PolicyDenied` reason — see `agentic/01-architecture-rules.md`
-  rule S3 and the comment in `AgentRunner.ExecuteStepAsync`. This is correct for V0.1: every
-  tool shipped so far (`system.info/cpu/memory/disk`, `process.list`) is `Read`.
+  `Read`, with an audited `PolicyDenied` reason, and now also terminates the task as
+  `PolicyBlocked` after repeated denials of the same tool (rule C4, added this session).
 - No `bOps.Memory` project / SQLite. `TaskState` and `PlanStep` exist as in-memory-only shapes
-  inside one `AgentRunner.RunAsync` call; nothing persists across process runs. Arrives at V0.7.
-- No dynamic plugin loading. Every package above is a direct `ProjectReference` from
-  `bOps.Cli.csproj`. Arrives at V0.10 (`agentic/06-decisions.md`, D-003).
-- `fs.*` (Filesystem package) does not exist — deferred to V0.5 per the roadmap table in
-  `agentic/00-project-spec.md`. Don't add filesystem tools while still on V0.1.
+  inside one `AgentRunner.RunAsync` call. Arrives at V0.7.
+- No dynamic plugin loading. Every package is a direct `ProjectReference`. Arrives at V0.10.
+- No `fs.*` (Filesystem) package. Deferred to V0.5.
 
-## Reference: files this session created or touched
+## Next steps
 
-Everything under `src/`, plus `Directory.Build.props`, `.editorconfig`, `global.json`,
-`docs/architecture/suppressions.md`, and two small edits to
-`agentic/01-architecture-rules.md` and `agentic/02-coding-standards.md` (the
-`RefreshCapabilitiesAsync` addition and the `AnalysisLevel` value fix — `recommended` isn't a
-valid MSBuild value on this SDK; it must be `latest-recommended` / `latest-all`). All of it is
-in commit `bd56ef5`. Nothing else in the repo was touched.
+V0.1 is genuinely solid: clean full-solution build, real test coverage at the discipline
+`agentic/04-testing-rules.md` requires for each layer, and every rule violation the smoke test
+and the round-trip tests turned up was fixed rather than deferred. This session's budget went
+entirely into getting V0.1 right rather than starting V0.2 ("Explicit agent loop with
+replanning" per `agentic/00-project-spec.md`'s roadmap table) — per the scope-discipline rule in
+`agentic/05-workflow.md`, starting a real architectural change (splitting planning from
+execution) with whatever budget happened to be left over would have meant leaving it
+half-done, which the task instructions explicitly said to avoid. **V0.2 has not been started.**
+The next session should begin there, reading `agentic/00-project-spec.md`'s roadmap table and
+`agentic/07-plan-corrections.md` for what "replanning" is meant to fix relative to the original
+plan, before writing any code.
