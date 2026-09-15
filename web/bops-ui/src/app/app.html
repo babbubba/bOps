@@ -1,0 +1,52 @@
+<div class="flex min-h-screen flex-col bg-bg text-text md:flex-row">
+  <aside class="flex shrink-0 flex-col border-b border-default bg-surface md:w-56 md:border-b-0 md:border-r">
+    <div class="flex items-center gap-2 px-4 py-4">
+      <div class="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-[#0b0f19]">
+        <img src="logo.png" alt="" class="h-[90px] w-[90px] -translate-y-[14px] object-cover" />
+      </div>
+      <span class="text-base font-semibold">bOps</span>
+    </div>
+
+    <nav class="flex flex-1 flex-row gap-1 px-2 pb-2 md:flex-col md:pb-4">
+      <a
+        routerLink="/dashboard"
+        routerLinkActive="bg-accent/10 text-accent"
+        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+      >
+        Dashboard
+      </a>
+      <a
+        routerLink="/approvals"
+        routerLinkActive="bg-accent/10 text-accent"
+        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+      >
+        Approvals
+        @if (approvals.pending().length > 0) {
+          <span class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-risk-high px-1.5 text-xs font-semibold text-white">
+            {{ approvals.pending().length }}
+          </span>
+        }
+      </a>
+    </nav>
+
+    <div class="border-t border-default p-2">
+      <button
+        type="button"
+        (click)="toggleTheme()"
+        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+      >
+        @if (theme.theme() === 'dark') {
+          <span>☀️</span>
+          <span>Light mode</span>
+        } @else {
+          <span>🌙</span>
+          <span>Dark mode</span>
+        }
+      </button>
+    </div>
+  </aside>
+
+  <main class="min-w-0 flex-1 overflow-y-auto">
+    <router-outlet />
+  </main>
+</div>

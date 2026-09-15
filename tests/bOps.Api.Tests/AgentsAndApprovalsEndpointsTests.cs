@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using bOps.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -43,6 +44,112 @@ public sealed class AgentsAndApprovalsEndpointsTests
 
         Assert.Equal(AgentTaskStatus.Completed, finalTask.Status);
         Assert.Contains(finalTask.Steps, s => s.Observation == "all done");
+    }
+
+    [Fact]
+    public async Task TaskEvents_ToleratesOpeningTheStream_BeforeTheBackgroundRunHasSavedAnything()
+    {
+        // Regression test for a real race this session's own manual UI testing caught: POST
+        // returns 202 (with the task id) the instant it starts the detached background run
+        // (ADR-0018) — well before that run has saved its first Running snapshot. A client that
+        // immediately opens GET .../events for that same id (exactly what the Angular dashboard
+        // does) can and did observe "task not found" on the very first read, permanently, because
+        // the endpoint originally gave up after a single null ITaskStore.LoadAsync. This opens the
+        // stream with NO pre-poll at all, unlike every other test here.
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(QueueChatModel.PlanResponse(), QueueChatModel.Final("all done")),
+        };
+        using var client = factory.CreateClient();
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("do the thing"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"/api/agents/tasks/{started!.TaskId}/events", UriKind.Relative));
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        string? eventName = null;
+        string? dataLine = null;
+        while (!timeoutCts.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(timeoutCts.Token);
+            if (line is null)
+            {
+                break;
+            }
+
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                eventName = line["event: ".Length..];
+            }
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                dataLine = line["data: ".Length..];
+                break;
+            }
+        }
+
+        Assert.Equal("snapshot", eventName);
+        Assert.NotNull(dataLine);
+        using var json = JsonDocument.Parse(dataLine);
+        Assert.Equal(started.TaskId, json.RootElement.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task TaskEvents_StreamsCamelCaseJsonSnapshots_LikeEveryOtherEndpoint()
+    {
+        // Regression test: a bare JsonSerializer.Serialize(task) in the SSE write loop used the
+        // BCL's PascalCase default, silently disagreeing with Results.Ok(...)'s ASP.NET Core Web
+        // defaults (camelCase) used by every other endpoint here — caught by hand-testing the
+        // real Angular UI against this host, not by any earlier automated test, since none of the
+        // earlier tests read the SSE stream's raw bytes, only the plain GET/POST JSON responses.
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(QueueChatModel.PlanResponse(), QueueChatModel.Final("all done")),
+        };
+        using var client = factory.CreateClient();
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("do the thing"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+
+        // Wait for the task to actually exist in the store before opening the stream — otherwise
+        // this can race the detached background run and observe the "task not found" SSE event
+        // instead of a real snapshot (unrelated to what this test is regression-guarding).
+        await PollUntilAsync(() => client.GetFromJsonAsync<TaskState>($"/api/agents/tasks/{started!.TaskId}"), t => t is not null);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"/api/agents/tasks/{started!.TaskId}/events", UriKind.Relative));
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        string? dataLine = null;
+        while (!timeoutCts.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(timeoutCts.Token);
+            if (line is null)
+            {
+                break;
+            }
+
+            if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                dataLine = line["data: ".Length..];
+                break;
+            }
+        }
+
+        Assert.NotNull(dataLine);
+        using var json = JsonDocument.Parse(dataLine);
+        Assert.True(json.RootElement.TryGetProperty("id", out _), "expected camelCase 'id'");
+        Assert.True(json.RootElement.TryGetProperty("goal", out _), "expected camelCase 'goal'");
+        Assert.False(json.RootElement.TryGetProperty("Id", out _), "PascalCase 'Id' would mean the regression is back");
     }
 
     [Fact]

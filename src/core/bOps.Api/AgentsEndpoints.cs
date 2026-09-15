@@ -10,6 +10,25 @@ internal static class AgentsEndpoints
     /// <summary>How often <c>GET /api/agents/tasks/{id}/events</c> re-reads <see cref="ITaskStore"/> to check for a new step. A fixed MVP interval — ADR-0018 explicitly defers tuning this to a session with a real UI to measure against.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>
+    /// How long this endpoint tolerates a task not existing yet before it gives up and reports it
+    /// as genuinely not found. <c>POST /api/agents/tasks</c> returns <c>202</c> the instant it has
+    /// generated an id — before the detached background run has saved anything (ADR-0018) — so a
+    /// client that immediately opens the event stream for that id can legitimately race the very
+    /// first <see cref="ITaskStore.SaveAsync"/>. Bailing on the first null read (as this endpoint
+    /// did originally) turns that ordinary race into a permanent "not found" the client can never
+    /// recover from without a fresh retry of its own.
+    /// </summary>
+    private static readonly TimeSpan NotFoundGracePeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The exact defaults ASP.NET Core's Minimal API JSON output uses (camelCase property names,
+    /// case-insensitive reads) — <c>Results.Ok(task)</c> elsewhere in this file gets these
+    /// automatically from the framework; this hand-rolled SSE write loop bypasses that pipeline
+    /// entirely, so it must apply them explicitly or silently disagree with every other endpoint.
+    /// </summary>
+    private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
+
     internal static void MapAgentsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/agents/tasks");
@@ -70,12 +89,19 @@ internal static class AgentsEndpoints
 
         var ct = http.RequestAborted;
         var lastStepCount = -1;
+        var firstSeenAtUtc = DateTimeOffset.UtcNow;
 
         while (!ct.IsCancellationRequested)
         {
             var task = await store.LoadAsync(id, ct);
             if (task is null)
             {
+                if (DateTimeOffset.UtcNow - firstSeenAtUtc < NotFoundGracePeriod)
+                {
+                    await Task.Delay(PollInterval, ct);
+                    continue;
+                }
+
                 await WriteEventAsync(response, "error", """{"message":"task not found"}""", ct);
                 return;
             }
@@ -83,7 +109,7 @@ internal static class AgentsEndpoints
             if (task.Steps.Count != lastStepCount)
             {
                 lastStepCount = task.Steps.Count;
-                await WriteEventAsync(response, "snapshot", JsonSerializer.Serialize(task), ct);
+                await WriteEventAsync(response, "snapshot", JsonSerializer.Serialize(task, SseJsonOptions), ct);
             }
 
             if (task.Status != AgentTaskStatus.Running)

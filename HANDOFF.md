@@ -1,173 +1,170 @@
-# Handoff — V0.9 (`bOps.Api`) complete; Angular UI deferred
+# Handoff — V0.9 complete: `bOps.Api` + Angular UI
 
-Written at the end of the session that implemented V0.9's backend on top of the completed V0.8
-provider work. Everything below is exact, not a summary — follow it literally to resume.
-
-## Scope decision made this session — read before doing anything else
-
-V0.9 in the roadmap is "`bOps.Api` + Angular UI." The operator explicitly scoped this session to
-**`bOps.Api` only** — the Angular UI is deliberately deferred to its own session, not started, not
-scaffolded, nothing under `web/` exists. Two things were raised and resolved before writing any
-code, both worth restating so a future session doesn't reopen them without new information:
-
-1. **Whether multi-agent supervision or a remote-agent transport belong in V0.9.** They do not.
-   `agentic/00-project-spec.md` already lists both as explicitly out of scope until after V1.0;
-   the operator confirmed V0.9 stays within the existing roadmap's scope (a second client of the
-   same local, single-node runtime — principle 6) rather than opening a roadmap discussion to pull
-   either forward. If a future session is asked to build fleet/remote features, that is a real
-   roadmap change requiring an explicit decision and edits to `agentic/00-project-spec.md` and
-   `06-decisions.md` — not something to infer from a UI or API request.
-2. **How much of V0.9 to build in one session.** Full "API + entire Angular 21 + NgRx SignalStore
-   app" was judged too large for one reviewable pass. This session built `bOps.Api` to a genuinely
-   complete MVP surface (ADR-0018) with real test coverage; the Angular UI is next session's task,
-   explicitly, not an oversight.
+Written at the end of the session that implemented the Angular UI, the deferred half of V0.9,
+on top of the completed `bOps.Api` backend. Everything below is exact, not a summary — follow it
+literally to resume.
 
 ## State right now
 
-**`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** 38 projects now, up
-from 34 at the end of V0.8 (`bOps.Api`, `bOps.Api.Tests`).
+**`dotnet build bOps.slnx` builds clean end to end — 0 warnings, 0 errors.** `dotnet test
+bOps.slnx --filter "Category!=LiveModel"`: every suite passes, including `bOps.Api.Tests` — now
+**10** tests (up from 8), the two new ones being regression tests for real bugs this session's
+manual UI testing caught (see below).
 
-**`dotnet test bOps.slnx --filter "Category!=LiveModel"`: every suite passes**, including the new
-`bOps.Api.Tests` (8 end-to-end integration tests against a real, running `bOps.Api` host via
-`WebApplicationFactory<Program>` — a deterministic fake `IChatModel`, no live provider). Same
-pre-existing skips as every prior handoff.
-
-**Manually smoke-tested against a live `dotnet run`** (not just `dotnet build`): started the real
-host on a bound port, `GET /api/tools` returned real tool manifests, `POST /api/agents/tasks`
-with an empty goal returned the expected `400`. Process and its stray `tasks.db` were cleaned up
-afterward — verified via `git status` that nothing was left behind.
+**`web/bops-ui` (new, Angular 20 + `@ngrx/signals` + Tailwind CSS 4) builds and tests clean**:
+`ng build` succeeds, `ng test --watch=false` passes (2/2). Manually exercised against the real,
+running `bOps.Api` in the Browser pane — not just built — through several real cycles of "start a
+task → watch it fail (no API key, expected) → see the live transcript render," in both dark and
+light mode, at both desktop and mobile viewport widths.
 
 **⚠️ Security finding carried forward from V0.7, still not resolved: the real OpenRouter API key
-in `src/core/bOps.Cli/appsettings.json` is committed to git history** (commit `7ac2901`). This
-session's own `bOps.Api/appsettings.json` was written from scratch with `"ApiKey": ""`, per rule
-S6, and was never populated with anything else — not implicated in the existing finding, which
-remains open and unrelated to this session's work.
+in `src/core/bOps.Cli/appsettings.json` is committed to git history** (commit `7ac2901`). Neither
+`bOps.Api/appsettings.json` (V0.9, `ApiKey: ""`) nor anything in `web/bops-ui` touches this file.
 
 ## What this session did
 
-Implemented V0.9's backend per the scope decision above: **`bOps.Api`, a second, non-privileged
-HTTP client of the same local runtime `bOps.Cli` already drives.** ADR-0018
-(`docs/architecture/adr/0018-bops-api-minimal-surface.md`) records the full design and the
-alternatives rejected — read it before extending this host.
+Built the Angular UI — the half of V0.9 explicitly deferred in the previous session's handoff —
+after two scoping conversations with the operator, both worth restating:
 
-### The endpoint surface
+1. **Client generation and feature scope**: hand-written TypeScript client against `bOps.Api`'s
+   real endpoints (no OpenAPI pipeline this pass — deferred, `piano-bops.md` §16.4/§17.4 describe
+   the eventual generated-client approach for whenever that session happens); MVP feature scope is
+   **dashboard + approvals** only (the two SignalStores most directly tied to the backend,
+   `piano-bops.md` §17.3) — `task-detail` as its own route and `settings`/`ProvidersStore` are
+   deferred, though the dashboard ended up including an inline task-detail panel (see below).
+2. **Style**: Tailwind CSS, minimal and functional — an internal ops panel, not a consumer
+   product — but explicitly asked to be *both* good-looking and practical for sysadmins and less
+   experienced operators alike. Dark/light mode (OS-preference default, manual toggle, `localStorage`
+   persistence) and the repo's real `logo.png` (not a placeholder) were both deliberate asks.
 
-`POST /api/agents/tasks`, `POST /api/agents/tasks/{id}/resume`, `GET /api/agents/tasks/{id}`,
-`GET /api/agents/tasks/{id}/events` (SSE), `GET /api/agents/tasks?status=`, `GET
-/api/approvals/pending`, `POST /api/approvals/{id}/respond`, `GET /api/tools`. Full behavior is in
-ADR-0018; the short version: a task **starts detached** (`202 Accepted` with its id immediately,
-never blocking the request on the task finishing), progress is **observed by polling
-`ITaskStore`** (V0.7's own persistence, not a new event-bus abstraction), and an approval **crosses
-the request boundary** via a new host-local `ApiApprovalProvider` — a `TaskCompletionSource`-backed
-queue completed by a *different* HTTP request than the one that raised it, exactly as
-`ConsoleApprovalProvider`'s own doc comment already anticipated back in V0.3.
+### Structure (`web/bops-ui/src/app/`)
 
-### A real bug this session's own testing caught and fixed: `AgentRunner.RunAsync`'s task id
+```
+core/
+  api/bops-api-client.ts   — hand-written HttpClient wrapper, one method per bOps.Api endpoint
+  api/models.ts            — TS interfaces mirroring bOps.Api's JSON exactly (camelCase; enums as their wire ints, not TS enums)
+  streaming/task-events.ts — wraps EventSource for GET /api/agents/tasks/{id}/events
+  theme.ts                 — dark/light toggle, localStorage-backed, OS-preference fallback
+state/
+  tasks.store.ts           — SignalStore: running tasks, selected task (live via SSE), start/resume/select
+  approvals.store.ts       — SignalStore: pending approvals (2s poll — no SSE stream exists for these), approve/reject, tool→risk lookup
+features/
+  dashboard/               — start-task form, running-task list, inline live task-detail timeline
+  approvals/                — pending-approval cards with risk badge, note field, approve/reject
+shared/
+  risk-badge.ts, status-badge.ts — small presentational components, color-coded from CSS custom properties in styles.css
+```
 
-`bOps.Cli` never needed to know a task's id before the task finished — it prints the id only in
-the final transcript. `bOps.Api` fundamentally does: `POST /api/agents/tasks` must return the id
-*before* the task has run at all, so a client can poll or open an SSE stream for it. The original
-V0.7 signature, `RunAsync(string goal, ActorIdentity actor, CancellationToken ct = default)`,
-generates its own `Guid.NewGuid()` internally with no way to inject one — so the id
-`AgentTaskLauncher` handed back to an HTTP client was never the id `AgentRunner` actually persisted
-under. This was caught by this session's own integration tests (every `GET` of a just-started
-task returned `404` forever — diagnosed by checking the fake model's own call count directly,
-which proved the task *was* running to completion, just under a different id than the client was
-ever told). Fixed by adding an optional `Guid? taskId = null` parameter (after `actor`, before
-`ct` — `CancellationToken` must stay last per CA1068) that `AgentTaskLauncher.Start` now passes
-through; `RunAsync`'s behavior for every existing caller (`bOps.Cli`, every `bOps.Runtime.Tests`
-test) is unchanged since the parameter defaults to generating a fresh id exactly as before.
+Routing: `/dashboard` (default) and `/approvals`, both lazy-loaded (`loadComponent`). `app.html` is
+the shell: a sidebar on desktop that collapses to a top row on narrow viewports (plain Tailwind
+responsive classes, no separate mobile component), the real logo (cropped to just the icon glyph
+via a fixed-size `overflow: hidden` container — the source PNG has the full "bOps" wordmark
+below it), nav links, and the theme toggle.
 
-### A real bug this session's own testing caught and fixed: `SqliteTaskStore` had no busy timeout
+### Two real bugs this session's manual browser testing caught in `bOps.Api` — both fixed, both now regression-tested
 
-`bOps.Cli` was the only consumer of `ITaskStore` through V0.7 and V0.8 — one process, one task in
-flight, never two connections touching the same SQLite file at once. `bOps.Api` is the first
-consumer with genuine concurrent access: a detached background write (the task's own progress)
-and an HTTP-triggered read (a client polling `GET /api/agents/tasks/{id}`) can hit the same file
-at the same moment. SQLite's default journal mode blocks a reader behind an in-progress writer and,
-with no `busy_timeout` set, fails immediately with `SQLITE_BUSY` rather than waiting briefly — this
-surfaced during this session's own testing as requests to a just-started task intermittently
-failing. Fixed in `SqliteTaskStore`: every connection now sets `PRAGMA busy_timeout=5000;`
-immediately after opening, and the database itself is switched to `journal_mode=WAL` once (a
-durable, once-per-file setting) in `EnsureSchema`, which lets a reader and a writer coexist far
-more gracefully than the default rollback-journal mode. This is a `bOps.Memory` change, not a
-`bOps.Api`-only one — it benefits `bOps.Cli`'s own `bops resume` too, though `bOps.Cli` never hit
-the bug since it has no concurrent access pattern to trigger it.
+Neither was caught by any of the 8 `bOps.Api.Tests` written in the previous session, because none
+of them read the SSE stream's raw bytes — every earlier test asserted on plain GET/POST JSON only.
 
-### Tests
+1. **The SSE endpoint serialized with PascalCase, silently disagreeing with every other endpoint.**
+   `StreamTaskEventsAsync` called a bare `JsonSerializer.Serialize(task)` — the BCL default
+   (`Id`, `Goal`, `Status`, ...) — while `Results.Ok(task)` elsewhere in the same file gets
+   ASP.NET Core's Web defaults (camelCase) automatically. The Angular client's TS interfaces are
+   all camelCase (matching the real REST responses, verified by curl before writing them), so
+   every field read off an SSE snapshot came back `undefined` — the task detail panel rendered
+   with an empty goal, empty id, and a `TypeError` on `task.steps.length` inside an `@if` block, on
+   a tight loop as the polling/refresh cycles kept re-triggering it. Fixed: `AgentsEndpoints.cs`
+   now serializes SSE payloads with `new JsonSerializerOptions(JsonSerializerDefaults.Web)`
+   explicitly. Regression test: `TaskEvents_StreamsCamelCaseJsonSnapshots_LikeEveryOtherEndpoint`.
+2. **`GET .../events` gave up permanently on the first read if the task didn't exist yet.**
+   `POST /api/agents/tasks` returns `202` the instant it has generated an id (ADR-0018) — before
+   the detached background run has saved anything. The dashboard opens the SSE stream for that id
+   immediately on receiving the `202`, which can and did race the first `ITaskStore.SaveAsync`:
+   the very first `LoadAsync` inside the SSE loop returned `null`, and the endpoint's original
+   logic treated any `null` as permanently "not found," writing an `error` event and closing —
+   with no way for that specific connection to ever recover. The browser's `EventSource` then
+   auto-reconnected (since the client only calls `.close()` itself on a real snapshot, never
+   having received one) — repeatedly, forever, hitting the same losing race every time, which is
+   what produced the hundreds of `TIME_WAIT` connections and console errors observed while
+   debugging this. Fixed: the endpoint now tolerates up to a 5-second grace period of `null` reads
+   before declaring a task genuinely not found. Regression test:
+   `TaskEvents_ToleratesOpeningTheStream_BeforeTheBackgroundRunHasSavedAnything` — opens the stream
+   with **no** pre-poll at all, unlike every other test in the file, specifically to reproduce the
+   race deterministically.
 
-`bOps.Api.Tests` (`WebApplicationFactory<Program>`, a real host per test via `TestAppFactory`,
-isolated temp directory per instance for its audit log/task store/policy file, `IChatModel` and
-`IPolicyEngine` substitutable before the first request): a missing `goal` returns `400`; a task
-started, polled, and observed completing through real HTTP; an unknown task id returns `404` from
-both `GET` and `resume`; a task seeded directly into `ITaskStore` as `Running` resumes to
-completion through the resume endpoint; a full approval round-trip — task blocks, `GET
-/api/approvals/pending` shows it (with the correct task id, recovered via `ApiApprovalProvider`'s
-`AsyncLocal<Guid?>`, not persisted state), a separate `POST .../respond` unblocks it, the task
-completes, the approval list empties; responding to an unknown approval id returns `404`; `GET
-/api/tools` returns the real registered manifests.
+Both fixes live in `src/core/bOps.Api/AgentsEndpoints.cs`; no ADR update needed — these are
+implementation bugs against ADR-0018's already-decided design, not new decisions with alternatives
+to record.
 
-**No live-model smoke test** — same `appsettings.json` constraint as every prior handoff.
+### Client-side detail worth knowing
+
+- **`watchTaskEvents` closes its own `EventSource` on the first terminal-status snapshot**,
+  specifically so the browser's default auto-reconnect never engages once a task is actually done —
+  this is what makes bug #2 above so damaging when it fires: a stream that never gets an *actual*
+  snapshot never reaches the code path that would have stopped it from reconnecting.
+- **`ApprovalsStore` loads `GET /api/tools` once at startup to build a tool→risk lookup**, because
+  `PendingApproval` (bOps.Api's DTO) carries no risk field, and an operator deciding approve/reject
+  benefits from seeing it. Best-effort: a failed load just means no risk badge, not a broken queue.
+- **`TasksStore` and `ApprovalsStore` are both `providedIn: 'root'`, each running its own polling
+  loop from the moment the app boots** (3s for the running-task list, 2s for pending approvals) —
+  simple, works for an MVP with one operator per browser tab; would need real thought (backoff,
+  visibility-based pausing) before this UI is left open unattended for long stretches.
 
 ## Design choices worth knowing before extending this further
 
-- **Every type in `bOps.Api` is `internal`** (CA1515 — this is an application, not a library),
-  including the `Program` marker class; `bOps.Api.Tests` sees them via a project-level
-  `InternalsVisibleTo`. This is new — no prior host in this repository needed it, since `bOps.Cli`
-  has never had an integration-test project driving it through its own composition root.
-- **`ApiApprovalProvider.CurrentTaskId` is a `static AsyncLocal<Guid?>`**, set by
-  `AgentTaskLauncher` for the duration of a task's `RunAsync`/`ResumeAsync` call and read inside
-  `RequestApprovalAsync`, which is nested many calls deep inside `AgentRunner` and has no task id
-  parameter to work with (the `IApprovalProvider` interface predates a multi-task host). This
-  avoids touching `IApprovalProvider`'s contract — a `bOps.Abstractions` change every other
-  provider (`ConsoleApprovalProvider`, tests) would also need to absorb — for something genuinely
-  local to how *this one host* recovers context it needs for its own UI, not part of what the
-  interface promises callers in general.
-- **A pending approval is host-process-local, not durable** (ADR-0018) — a restart mid-approval
-  loses that specific pending request, though the underlying task is unaffected and resumable.
-  Stated explicitly in the ADR, not a silent gap.
-- **No authentication in this version** (ADR-0018) — anyone who can reach `bOps.Api`'s port can
-  start and approve tasks. Real auth is explicitly deferred to V1.0's hardening line, where the
-  whole security posture gets designed together.
+- **`web/bops-ui` targets Angular 20, not literally "Angular 21"** as `piano-bops.md` names — 21
+  is not GA; 20 is the latest version compatible with this environment's Node (`v20.20.2`; Angular
+  22 requires Node ≥22). Everything `piano-bops.md` §17 describes (standalone components, Signals,
+  `@ngrx/signals`) is present in 20 — revisit the exact version only if it actually matters later,
+  not preemptively.
+- **`.claude/launch.json` and `web/bops-ui/proxy.conf.json`** wire `ng serve` (port 4200) to proxy
+  `/api/*` to `bOps.Api` on `http://localhost:5080` (a new `Properties/launchSettings.json` gives
+  `bOps.Api` that stable port — it had none before this session, defaulting to Kestrel's own pick).
+  No CORS configured anywhere — the proxy makes it unnecessary for local dev; a real deployment
+  topology (same-origin static hosting vs. separate origins) is undecided, deferred alongside auth.
+- **Browser-tool coordinate clicks were unreliable while verifying this UI** (viewport-scaling
+  mismatches specific to this session's tooling) — every check that mattered was ultimately done
+  by calling the component's own methods directly via `window.ng.getComponent(el)` from
+  `javascript_tool`, which exercises the exact same code path a real click would (the click handler
+  bodies, not a simulation of them). Worth knowing if a future session hits the same friction.
 
-## What V0.9 deliberately does NOT have yet
+## What this session deliberately does NOT have yet
 
-- **The Angular UI does not exist.** Nothing under a `web/` directory, no scaffold, no
-  `angular.json`. This is the explicit scope decision from the top of this document, not an
-  oversight — next session's task.
-- **No OpenAPI/Swagger generation.** Named in `piano-bops.md` for the eventual Angular client
-  (generated TypeScript client) but has no consumer yet; deferred to whichever session actually
-  builds the UI (ADR-0018).
-- **No `GET /api/providers`.** `IChatModelRegistry` has no enumeration method today (only
-  `Register`/`Create`) — adding one is a `bOps.Abstractions` change with no current caller.
-- **No authentication or authorization** — see above, explicitly deferred to V1.0.
-- **`GET /api/agents/tasks/{id}/events`'s 500ms poll interval is an unmeasured MVP default** —
-  ADR-0018 explicitly defers tuning it to a session with a real UI and real usage to measure
-  against.
-- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated to V0.9.
+- **No `task-detail` route or `settings`/`ProvidersStore`** — explicit MVP scope decision, not an
+  oversight. The dashboard's inline task-detail panel covers the "watch a task run" need for now.
+- **No OpenAPI-generated client.** Hand-written, deliberately, this pass.
+- **No unit tests for the SignalStores or feature components** — only the pre-existing `App`
+  smoke test (updated for the new shell) and the .NET-side `bOps.Api.Tests`. Verified by hand
+  against a real running backend instead; worth adding real component/store tests before this UI
+  grows much further, especially now that it has caught two real backend bugs no earlier .NET test
+  did — a UI-level test suite would likely catch the *next* one earlier still.
+- **No authentication** — same standing gap as `bOps.Api` itself (ADR-0018), unrelated to this
+  session.
+- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated.
 - **No dynamic plugin loading** — V0.10, unrelated.
-- **No CLI command to run `AuditChainVerifier` on demand** — carried forward again, still small,
-  still not done.
+- **No CLI command to run `AuditChainVerifier` on demand** — carried forward again.
 
 ## Next steps
 
-`bOps.Api`'s MVP surface is done and genuinely tested end to end — not just "compiles," but a real
-host handling a real task through start → poll → complete, and a full approval round-trip through
-two separate HTTP requests, plus resume. Two real bugs this session's own tests caught (the task-id
-mismatch, the missing SQLite busy timeout) are fixed, not merely worked around.
+**V0.9 is now genuinely complete** — both halves, backend and UI, built, tested, and manually
+verified working together against a real (if unauthenticated, by design) `bOps.Api` instance.
+Phase 2 has begun.
 
 **Before any further roadmap work**, the committed API key finding from V0.7 is still open —
-carried forward again.
+carried forward yet again; it has now survived three full roadmap versions unresolved.
 
-**Next: the Angular UI**, the deferred half of V0.9. Per the scope-discipline rule, that session
-should begin by reading `piano-bops.md` §17 (the only place the intended Angular structure —
-standalone components, `@ngrx/signals` SignalStore, `httpResource()`/`resource()` for cacheable
-GETs — is actually described) and this session's ADR-0018 for the exact endpoint contract it will
-consume, then confirm with the operator whether OpenAPI-generated-client tooling should be set up
-first or whether a hand-written client is acceptable for an initial pass.
+**V0.10 — "Dynamic package loading, `bops plugin install`, published plugin SDK" — has not been
+started.** Per the scope-discipline rule, the next session should begin by reading
+`agentic/00-project-spec.md`'s roadmap entry for V0.10 and `06-decisions.md` (D-003, which already
+settled *why* dynamic loading over Native AOT, but not yet *how*) before writing code. This is
+also a good point to circle back to the two "task-detail"/"settings" UI features deferred above,
+and to the OpenAPI-client question, if the operator would rather finish out V0.9's originally
+envisioned UI scope before moving on to V0.10 — worth asking rather than assuming either way.
 
-Two smaller, non-urgent items carried forward again from every prior handoff:
+Three smaller, non-urgent items carried forward again from every prior handoff:
 
 1. The six pre-existing ADRs `agentic/05-workflow.md` lists as "the first ADRs to exist" (0001,
    0002, 0005, 0006, 0011, 0012) are still unwritten.
 2. No CLI subcommand runs `AuditChainVerifier`. Small, real, not done.
+3. No unit tests for the new Angular SignalStores/components (see above) — real gap now, not
+   hypothetical, given what manual testing alone already caught this session.

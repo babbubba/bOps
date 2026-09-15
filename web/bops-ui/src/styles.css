@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+/* Maps the CSS custom properties below onto Tailwind utility classes, e.g. bg-surface,
+   text-muted, border-default, bg-risk-high, text-status-completed — so components style
+   themselves with plain utilities instead of arbitrary-value CSS-variable syntax everywhere. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-default: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-risk-read: var(--risk-read);
+  --color-risk-low: var(--risk-low);
+  --color-risk-medium: var(--risk-medium);
+  --color-risk-high: var(--risk-high);
+  --color-risk-critical: var(--risk-critical);
+
+  --color-status-running: var(--status-running);
+  --color-status-completed: var(--status-completed);
+  --color-status-failed: var(--status-failed);
+  --color-status-blocked: var(--status-blocked);
+  --color-status-neutral: var(--status-neutral);
+}
+
+/* Design tokens (bOps dashboard) — a light palette on :root, overridden for dark mode either by
+   the OS preference or by the .dark class the theme toggle applies (see core/theme). */
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-contrast: #ffffff;
+
+  --risk-read: #64748b;
+  --risk-low: #2563eb;
+  --risk-medium: #d97706;
+  --risk-high: #ea580c;
+  --risk-critical: #dc2626;
+
+  --status-running: #2563eb;
+  --status-completed: #16a34a;
+  --status-failed: #dc2626;
+  --status-blocked: #d97706;
+  --status-neutral: #64748b;
+}
+
+.dark {
+  --bg: #0b1220;
+  --surface: #111827;
+  --surface-raised: #1a2333;
+  --border: #263145;
+  --text: #e5e9f0;
+  --text-muted: #93a1b7;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-contrast: #0b1220;
+
+  --risk-read: #93a1b7;
+  --risk-low: #60a5fa;
+  --risk-medium: #f59e0b;
+  --risk-high: #fb923c;
+  --risk-critical: #f87171;
+
+  --status-running: #60a5fa;
+  --status-completed: #4ade80;
+  --status-failed: #f87171;
+  --status-blocked: #f59e0b;
+  --status-neutral: #93a1b7;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--border);
+}

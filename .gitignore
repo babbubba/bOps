@@ -31,3 +31,6 @@ audit*.jsonl
 node_modules/
 dist/
 .angular/
+
+# Claude Code local session config — personal, never shared
+.claude/settings.local.json

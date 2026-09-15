@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bops-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start", "--prefix", "web/bops-ui"],
+      "port": 4200
+    }
+  ]
+}

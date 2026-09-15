@@ -1,0 +1,61 @@
+<div class="mx-auto flex max-w-3xl flex-col gap-6 p-4 md:p-8">
+  <header>
+    <h1 class="text-2xl font-semibold">Approvals</h1>
+    <p class="text-sm text-muted">Actions waiting for a human decision before they run.</p>
+  </header>
+
+  @if (approvals.error()) {
+    <p class="text-sm text-risk-critical">{{ approvals.error() }}</p>
+  }
+
+  @if (approvals.loading() && approvals.pending().length === 0) {
+    <p class="text-sm text-muted">Loading…</p>
+  } @else if (approvals.pending().length === 0) {
+    <div class="rounded-xl border border-default bg-surface p-8 text-center text-sm text-muted shadow-sm">
+      Nothing waiting on you right now.
+    </div>
+  } @else {
+    <ul class="flex flex-col gap-4">
+      @for (req of approvals.pending(); track req.id) {
+        <li class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <code class="rounded bg-bg px-2 py-1 text-sm font-semibold">{{ req.tool }}</code>
+              @if (riskFor(req.tool); as risk) {
+                <bops-risk-badge [risk]="risk" />
+              }
+            </div>
+            <span class="text-xs text-muted">{{ formatTime(req.requestedAtUtc) }}</span>
+          </div>
+
+          <p class="mt-2 text-sm">{{ req.reason }}</p>
+
+          <input
+            type="text"
+            placeholder="Optional note"
+            [ngModel]="noteFor(req.id)"
+            (ngModelChange)="setNote(req.id, $event)"
+            class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+          />
+
+          <div class="mt-3 flex gap-2">
+            <button
+              type="button"
+              (click)="approve(req.id)"
+              class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              (click)="reject(req.id)"
+              class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg"
+            >
+              Reject
+            </button>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>
