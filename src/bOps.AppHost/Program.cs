@@ -17,4 +17,20 @@ builder.AddContainer("linux-test-target", "mcr.microsoft.com/dotnet/sdk")
     .WithEntrypoint("tail")
     .WithArgs("-f", "/dev/null");
 
+// V0.9 (D-002 explicitly names "from V0.9, the API and UI"): one `dotnet run` starts both
+// bOps.Api and the Angular dev server together, instead of two separate shells. Both ports are
+// pinned to match web/bops-ui/proxy.conf.json (which hardcodes http://localhost:5080 for /api)
+// and .claude/launch.json (which expects the UI on 4200) — this does not replace either of those,
+// it is simply a third way to start the same two processes.
+var api = builder.AddProject<Projects.bOps_Api>("bops-api")
+    .WithHttpEndpoint(port: 5080, name: "http");
+
+// isProxied: false — `ng serve` always binds 4200 itself and does not read the PORT env var
+// Aspire's proxy would otherwise inject; with proxying on, DCP tries to own port 4200 for its own
+// listener and `ng serve` then fails to bind the same port ("Port 4200 is already in use"),
+// confirmed by actually running this AppHost, not assumed.
+builder.AddJavaScriptApp("bops-ui", "../../web/bops-ui", "start")
+    .WithHttpEndpoint(port: 4200, isProxied: false)
+    .WaitFor(api);
+
 builder.Build().Run();

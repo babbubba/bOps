@@ -79,6 +79,54 @@ Settings page correctly showed all six registered providers (`OpenAI`, `Anthropi
 `Ollama`, `OpenRouter`, `DeepSeek`), `OpenRouter` marked active, and an orange "Missing" API-key
 badge matching the shipped empty `ApiKey` in `appsettings.json`.
 
+### Second follow-up, same day: `bOps.AppHost` now starts `bOps.Api` + the Angular UI
+
+The operator asked to run the API and UI through Aspire instead of two separate shells. D-002
+already named this explicitly ("from V0.9, the API and UI"), so this needed no new ADR — it is the
+AppHost catching up to a decision already on record, not a new one.
+
+`src/bOps.AppHost/Program.cs` now has, alongside the existing `linux-test-target` container:
+
+```csharp
+var api = builder.AddProject<Projects.bOps_Api>("bops-api")
+    .WithHttpEndpoint(port: 5080, name: "http");
+
+builder.AddJavaScriptApp("bops-ui", "../../web/bops-ui", "start")
+    .WithHttpEndpoint(port: 4200, isProxied: false)
+    .WaitFor(api);
+```
+
+`AddJavaScriptApp` comes from the new `Aspire.Hosting.JavaScript` 13.5.3 package (the current
+successor to the older `Aspire.Hosting.NodeJs`, matching the AppHost's own Aspire SDK version) —
+it runs an `npm run <scriptName>` in the given directory, `npm install` first by default
+(`WithNpm`'s default), which is exactly `web/bops-ui`'s existing `start` script (`ng serve`).
+`bOps.AppHost.csproj` also gained a `ProjectReference` to `bOps.Api.csproj`, which is what makes
+`Projects.bOps_Api` exist (Aspire's source generator emits one such type per referenced project).
+
+**Both ports are pinned to match the existing non-Aspire workflow exactly** — `5080` for the API
+(matching `bOps.Api/Properties/launchSettings.json` and `web/bops-ui/proxy.conf.json`) and `4200`
+for the UI (matching `.claude/launch.json`). This is additive, not a replacement: `dotnet run
+--project src/core/bOps.Api` + `npm run start --prefix web/bops-ui` in two shells still works
+exactly as before; `dotnet run --project src/bOps.AppHost` is now a third, single-command way to
+start the same two processes together, with Aspire's dashboard for logs/telemetry.
+
+**`isProxied: false` on the UI's endpoint is load-bearing, not cosmetic** — found by actually
+running this, not by reading docs. With Aspire's default proxying (`isProxied: true`), DCP itself
+tries to own port 4200 for its front-end proxy and expects the underlying process to bind a
+*different* port that Aspire injects (typically via a `PORT` env var); `ng serve` does not read
+that env var and always binds 4200 directly, so proxied mode failed outright with "Port 4200 is
+already in use" — confirmed in `resource-executable-*.log` under the DCP temp session directory
+when this was first tried without `isProxied: false`. Also tried and rejected: passing both `port:
+4200` and `targetPort: 4200` explicitly — DCP refuses that combination outright for a non-container
+resource ("Non-container resources cannot be proxied when both TargetPort and Port are specified
+with the same value").
+
+Verified by actually running `dotnet run --project src/bOps.AppHost`: both `bops-api` and
+`bops-ui` came up, `curl http://localhost:5080/api/providers` and a live Browser-pane load of
+`http://localhost:4200/settings` both worked exactly as they do outside Aspire — the UI's Settings
+page rendered against the API's real response, proxied through `ng serve`'s own dev-server proxy
+exactly as it does when started manually.
+
 ### Structure (`web/bops-ui/src/app/`)
 
 ```
@@ -189,7 +237,11 @@ to record.
   did — a UI-level test suite would likely catch the *next* one earlier still.
 - **No authentication** — same standing gap as `bOps.Api` itself (ADR-0018), unrelated to this
   session.
-- **`bOps.AppHost` still has not been run this session** — carried forward, unrelated.
+- **`bOps.AppHost` now orchestrates `bOps.Api` + the Angular UI** (see the follow-up section
+  above) — no longer "not run," this carried-forward item is closed. The `linux-test-target`
+  container inside it still has not been exercised this session (unrelated to this change; that
+  container is only relevant to `bOps.Packages.System.Linux.Tests`/`bOps.Packages.Filesystem.Tests`
+  on a non-Linux dev machine).
 - **No dynamic plugin loading** — V0.10, unrelated.
 - **No CLI command to run `AuditChainVerifier` on demand** — carried forward again.
 
