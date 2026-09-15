@@ -23,6 +23,9 @@
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenRouter\bOps.Packages.Providers.OpenRouter.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Ollama\bOps.Packages.Providers.Ollama.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenAi\bOps.Packages.Providers.OpenAi.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.DeepSeek\bOps.Packages.Providers.DeepSeek.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Anthropic\bOps.Packages.Providers.Anthropic.csproj" />
   </ItemGroup>
 
   <ItemGroup>

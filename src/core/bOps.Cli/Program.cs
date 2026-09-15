@@ -5,8 +5,11 @@ using bOps.Memory;
 using bOps.Packages.Docker;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
+using bOps.Packages.Providers.Anthropic;
+using bOps.Packages.Providers.DeepSeek;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
+using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
@@ -64,6 +67,11 @@ builder.Services.AddSingleton<IAuditSink>(
 builder.Services.AddSingleton<OpenRouterProviderPackage>();
 builder.Services.AddSingleton<OllamaProviderPackage>();
 builder.Services.AddSingleton<LlamaCppProviderPackage>();
+// V0.8: OpenAI and DeepSeek reuse the shared OpenAI-compatible adapter (ADR-0005); Anthropic is
+// the one native adapter.
+builder.Services.AddSingleton<OpenAiProviderPackage>();
+builder.Services.AddSingleton<DeepSeekProviderPackage>();
+builder.Services.AddSingleton<AnthropicProviderPackage>();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
@@ -134,6 +142,9 @@ var chatModelRegistry = host.Services.GetRequiredService<IChatModelRegistry>();
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), host.Services.GetRequiredService<OpenRouterProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.ollama"), host.Services.GetRequiredService<OllamaProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.llamacpp"), host.Services.GetRequiredService<LlamaCppProviderPackage>());
+chatModelRegistry.Register(new PackageId("bops.packages.providers.openai"), host.Services.GetRequiredService<OpenAiProviderPackage>());
+chatModelRegistry.Register(new PackageId("bops.packages.providers.deepseek"), host.Services.GetRequiredService<DeepSeekProviderPackage>());
+chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), host.Services.GetRequiredService<AnthropicProviderPackage>());
 
 var modelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
     ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");

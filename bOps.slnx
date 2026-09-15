@@ -21,8 +21,11 @@
     <Project Path="src/core/bOps.Runtime/bOps.Runtime.csproj" />
   </Folder>
   <Folder Name="/src/packages/">
+    <Project Path="src/packages/bOps.Packages.Providers.Anthropic/bOps.Packages.Providers.Anthropic.csproj" />
+    <Project Path="src/packages/bOps.Packages.Providers.DeepSeek/bOps.Packages.Providers.DeepSeek.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.LlamaCpp/bOps.Packages.Providers.LlamaCpp.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.Ollama/bOps.Packages.Providers.Ollama.csproj" />
+    <Project Path="src/packages/bOps.Packages.Providers.OpenAi/bOps.Packages.Providers.OpenAi.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.OpenAiCompatible/bOps.Packages.Providers.OpenAiCompatible.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.OpenRouter/bOps.Packages.Providers.OpenRouter.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj" />
@@ -36,6 +39,7 @@
     <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Providers.Anthropic.Tests/bOps.Packages.Providers.Anthropic.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Conformance/bOps.Packages.System.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />
