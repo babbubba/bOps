@@ -1,9 +1,10 @@
-# Handoff — V0.9.1 closed, hand off to V0.10
+# Handoff — V0.9.1 closed and pushed; CI green; hand off to V0.10
 
 This closes out V0.9.1 (repository integrity and licensing readiness — no functional change),
 per `piano-bops-v0.9.1-v2.0.md` §11 checklist item 6 ("stop at the first unmet gate; do not
-anticipate v0.10, v0.11 or later"). V0.9.1's own gate is now met. **Everything is committed.
-Nothing has been pushed yet** — that needs the user's own go-ahead in chat before it happens.
+anticipate v0.10, v0.11 or later"). **V0.9.1's gate is now fully met, including the part the
+previous version of this file said still needed confirming: CI is green on both OSes on GitHub's
+own runners**, not just locally. Everything is committed and pushed to `origin/main`.
 
 ## What this session did
 
@@ -33,6 +34,35 @@ work, then closed out and committed everything in eight commits (`509eb75..HEAD`
    This was the one substantive V0.9.1 item still outstanding; it is now done.
 8. `chore: track launchSettings.json for bOps.Api.Tests` — minor, matches the existing convention
    of committing this file for the other two runnable projects.
+9. `docs: close out V0.9.1 handoff, point next session at V0.10` — this file, first version.
+
+Pushed after that (`df3e354..origin/main`), and the very first real CI run on GitHub's runners
+(the workflow had referenced the deleted `bOps.sln` all through v0.9, so nothing had actually run
+there before) surfaced three genuine, pre-existing bugs that local runs never caught. Fixed and
+pushed as four more commits:
+
+10. `fix(security): resolve symlinks in intermediate path segments, not just the leaf` —
+    `FilesystemPathPolicy.ResolveLinkChain` only resolved a symlink at the path's final node;
+    a symlinked *ancestor* directory (`allowed/link/data.txt`, where `link` not `data.txt` is the
+    link) passed through unresolved. Rule S11's exact gap. This dev machine cannot create
+    symlinks without elevation, so the test that catches this always skipped locally — never
+    exercised until a hosted runner (which can) actually ran it.
+11. `fix(ci): add the WindowsOnlyFactAttribute the CI comment already assumed existed` —
+    `WindowsSystemToolsTests.Cpu_Conforms`/`Memory_Conforms` ran unguarded on `ubuntu-latest` and
+    threw for real (`PerformanceCounter` is genuinely Windows-only). `ci.yml`'s own comment
+    already claimed a "Windows counterpart" to `LinuxOnlyFactAttribute` existed; it didn't. Added
+    it, applied to the same six OS-touching methods `LinuxSystemToolsTests` guards.
+12. `fix(ci): skip Docker tests visibly when the daemon can't run Linux containers` —
+    GitHub's `windows-latest` runner's Docker Desktop defaults to Windows containers, so the
+    `alpine` image `TestContainer` needs can never start there. `DockerAvailableFactAttribute` now
+    checks `docker version --format {{.Server.Os}}` and skips, naming the reason, when it isn't
+    `linux`.
+13. `ci: bump setup-node to 22, silencing the Node 20 deprecation warning`.
+
+**None of these three bugs were introduced by this session's own changes** — they were latent in
+code from V0.5/V0.9, invisible because CI never actually ran until commit 4 in this list fixed the
+solution-file reference. Confirmed CI green (both `windows-latest` and `ubuntu-latest`, including
+the Angular stage and SBOM generation/upload) on run `35005244090` after all fixes.
 
 ## Verified, right before committing (this session, not inherited claims)
 
@@ -62,25 +92,25 @@ not rotate the key. The key's real value is still in git history (`509eb75`); th
 for the user to act on when they choose to, not something any future session should do
 proactively.
 
-## What is not done — do not start it before confirming with the user
+## V0.9.1 Definition of Done (plan §7) — status
 
-- **Nothing has been pushed.** `git log --oneline` on `main` is 8 commits ahead of `origin/main`
-  (last pushed: `509eb75`). Pushing a private repo's `main` still counts as an action affecting
-  shared state — get an explicit go-ahead in chat first, don't push proactively.
-- **CI has not actually run** the corrected `bOps.slnx` reference or the new Angular stage on
-  GitHub's runners yet — that only happens once this pushes. Watch the first run for anything the
-  local machine's disk/toolchain masked (e.g. a clean-checkout `npm ci` on a runner with no
-  pre-warmed cache).
-- V0.9.1's Definition of Done per the plan (§7): "CI verde sui file corretti, GitHub riconosce
-  Apache-2.0, package OSS con metadati coerenti, NOTICE e inventario inclusi negli artefatti,
-  processo contributivo documentato." Everything except the first two (which require an actual
-  push and GitHub's own license detection) is verified locally. Confirm the CI run is green after
-  pushing before calling V0.9.1's gate fully closed.
+"CI verde sui file corretti, GitHub riconosce Apache-2.0, package OSS con metadati coerenti,
+NOTICE e inventario inclusi negli artefatti, processo contributivo documentato."
+
+- CI verde: **confirmed**, both OSes, on GitHub's own runners (run `35005244090`).
+- GitHub recognizes Apache-2.0: the standard, unmodified license text is at `LICENSE`; GitHub's
+  own license detector will pick it up on the repo page (not independently re-verified by this
+  session beyond the text being canonical — check the repo's "License" badge next time you're on
+  the GitHub page, it's a few-second glance, not worth a dedicated step).
+- Package metadata / NOTICE+inventory in artifacts / contributor process: **verified** in the
+  prior session's `dotnet pack` + `.nupkg` inspection (§ above), unaffected by anything in this
+  session's CI-fix commits.
+
+**V0.9.1's gate is closed.**
 
 ## Next: V0.10 — package loader and Plugin SDK
 
-Per the plan (§7), **do not start this before V0.9.1's CI-green gate above is actually confirmed
-on GitHub.** When it's time:
+Per the plan (§7), this can now start — V0.9.1's gate above is closed. When you do:
 
 1. Write an ADR on the loader after re-evaluating candidate libraries; prefer a project-owned
    `AssemblyLoadContext` if the previously-considered dependency is archived/abandoned.
