@@ -1,0 +1,128 @@
+# Writing your first bOps plugin
+
+This walks through what [`samples/bops-sample-plugin/`](../../samples/bops-sample-plugin/)
+already is: a real, buildable, purely-demonstrative plugin. Copy it as a starting point rather
+than writing a manifest from scratch. See ADR-0020 for why the loader works the way it does.
+
+## What a plugin is
+
+One or more .NET assemblies that reference only the published `bOps.Abstractions` NuGet package
+— never `bOps.Runtime`, `bOps.Policy`, or any other core project (rule A7's spirit extends to
+plugins, even though they are not shipped from this repository). An entry type implements
+exactly one of:
+
+- `IToolProvider` — contributes one or more `ITool`s, each with its own `ToolManifest`.
+- `IModelProviderPackage` — contributes an `IChatModel` factory for one or more provider ids.
+
+Alongside the built assemblies, a `bops-plugin.json` manifest:
+
+```json
+{
+  "SchemaVersion": 1,
+  "Id": "acme.sample-plugin",
+  "Publisher": "Acme",
+  "Version": "1.0.0",
+  "MinHostAbstractionsVersion": "0.10.0",
+  "EntryAssembly": "Acme.SamplePlugin.dll",
+  "EntryType": "Acme.SamplePlugin.SampleToolProvider",
+  "DeclaredCapabilities": ["sample.echo"],
+  "Dependencies": [],
+  "MaxDeclaredRisk": "Read"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `SchemaVersion` | The manifest format version. Currently must be `1`. |
+| `Id` | Your plugin's identifier: lowercase, dot- or hyphen-separated (`acme.sample-plugin`). The `bops.` prefix is reserved for first-party packages — a manifest claiming it is rejected. |
+| `Publisher` | Who publishes this. Informational. |
+| `Version` | Your plugin's own version. |
+| `MinHostAbstractionsVersion` | The lowest `bOps.Abstractions` version you built against. Installation is rejected if the running host is older. |
+| `EntryAssembly` | Your main assembly's file name, relative to the plugin's own folder. |
+| `EntryType` | The fully qualified type name the loader activates. |
+| `DeclaredCapabilities` | What you claim the plugin may register, shown to an operator before they enable it. Informational — never checked against what you actually register. |
+| `Dependencies` | Your own third-party NuGet dependencies, for license inventory. Informational — the loader resolves real dependencies from your plugin's own folder regardless of what you list here. |
+| `MaxDeclaredRisk` | The highest `RiskLevel` any of your tools may declare. Informational — the operator's own `policy.yaml` package ceiling is what is actually enforced (rule S3). |
+
+## Writing the tool
+
+```csharp
+using bOps.Abstractions;
+
+namespace Acme.SamplePlugin;
+
+public sealed class SampleEchoTool : ITool
+{
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = "sample.echo",
+        Description = "Echoes the given message back, uppercased.",
+        Risk = RiskLevel.Read,
+        Platforms = ["windows", "linux"],
+        Requires = [],
+        Parameters = [new ToolParameter("message", ToolParameterType.String, "The text to echo back.")],
+    };
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        var message = arguments.GetRequired<string>("message");
+        return Task.FromResult(ToolCallResult.Success(message.ToUpperInvariant()));
+    }
+}
+```
+
+A tool that throws is a bug in the tool (agentic/02-coding-standards.md's error model) — return
+`ToolCallResult.Failure(...)` for anything an operator could reasonably expect to go wrong.
+
+If your tool's risk is anything other than `Read`, it **must** also declare a
+`VerificationSpec` and implement `IVerifiableTool`, or the registry rejects it at enable time —
+this is enforced structurally, not by convention (rule B3).
+
+## Writing the entry type
+
+```csharp
+using bOps.Abstractions;
+
+namespace Acme.SamplePlugin;
+
+public sealed class SampleToolProvider : IToolProvider
+{
+    public IEnumerable<ITool> GetTools() => [new SampleEchoTool()];
+}
+```
+
+The loader constructs this via `ActivatorUtilities`, against a container exposing *only*
+`ILoggerFactory`, `IHttpClientFactory`, `TimeProvider`, your own `IConfigurationSection`
+(bound from the host's `Plugins:<your-id>` configuration section) and `ICapabilityProbe`
+(rule A10). Ask for anything else in your constructor and activation fails — that list changes
+only by an ADR to this project, not by adding a dependency to your plugin.
+
+## Packaging and installing it locally
+
+Build your plugin (`dotnet build -c Release`), then point the CLI at the output directory
+containing your assemblies and `bops-plugin.json`:
+
+```bash
+bops plugin validate ./bin/Release/net10.0/    # sanity-check the manifest first
+bops plugin install ./bin/Release/net10.0/     # copies it under the plugins root, disabled
+bops plugin list                               # confirm it is there
+bops plugin enable acme.sample-plugin          # activates it now, and on every future run
+```
+
+There is no remote install and no auto-enable: a discovered plugin stays disabled until you
+enable it explicitly (rule S8), and only a local directory is a valid install source in V0.10.
+
+```bash
+bops plugin disable acme.sample-plugin   # unload it; its files stay on disk
+bops plugin remove acme.sample-plugin    # disable (if enabled) and delete it
+```
+
+## What isolation actually means here
+
+`AssemblyLoadContext` isolation gives your plugin its own dependency resolution — it can bring
+its own version of a NuGet package without colliding with the host's — but it is **not** a
+security sandbox (rule S8). Your plugin runs with the host process's own privileges. Installing
+a plugin is equivalent to installing software with those privileges; there is no code signing or
+provenance check in V0.10. The one thing genuinely shared is `bOps.Abstractions` itself: your
+plugin never gets its own, second, incompatible copy of the contract types it talks to the host
+through.

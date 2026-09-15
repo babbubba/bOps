@@ -67,18 +67,22 @@ Each iteration passes through the same gates:
 src/
 ├── core/
 │   ├── bOps.Abstractions/   # The contract / plugin SDK — zero dependencies
-│   ├── bOps.Runtime/        # Agent loop, registries, plugin loader
+│   ├── bOps.Runtime/        # Agent loop, registries
+│   ├── bOps.PluginHost/     # Dynamic package loader (V0.10, ADR-0020): manifest, isolated
+│   │                        # AssemblyLoadContext, install/enable/disable/remove
 │   ├── bOps.Policy/         # Risk model, policy engine, approval flow
 │   ├── bOps.Memory/         # Task state and conversation context (SQLite)
 │   ├── bOps.Audit/          # Append-only structured audit log
 │   ├── bOps.Cli/            # `bops "..."` — the primary interface
 │   ├── bOps.Api/            # Minimal API backing the web UI
 │   └── bOps.Worker/         # Windows Service / systemd unit — not built yet
-└── packages/                # First-party packages — same contract as third-party ones
-    ├── bOps.Packages.System.{Core,Windows,Linux}
-    ├── bOps.Packages.{Filesystem,Network,Docker}.*
-    ├── bOps.Packages.Service.*      # planned, V0.11 — does not exist yet
-    └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, OpenAI, DeepSeek, Anthropic
+├── packages/                # First-party packages — same contract as third-party ones
+│   ├── bOps.Packages.System.{Core,Windows,Linux}
+│   ├── bOps.Packages.{Filesystem,Network,Docker}.*
+│   ├── bOps.Packages.Service.*      # planned, V0.11 — does not exist yet
+│   └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, OpenAI, DeepSeek, Anthropic
+└── samples/
+    └── bops-sample-plugin/  # A real, purely-demonstrative third-party plugin — see docs/plugins/
 ```
 
 The core is deliberately small: loop, registries, policy, memory, audit, contract.
@@ -141,14 +145,22 @@ bops "delete this temp file"        # fs.delete is High-risk — requires approv
 bops resume <task-id>          # resume a persisted task (V0.7, SQLite-backed) from where it left off
 ```
 
-`bops diagnose` and `bops plugin list` are **not implemented yet** — the plugin loader (and the
-`plugin` subcommand family) arrives at V0.10; do not treat either as available today.
+```bash
+bops plugin install <directory>   # install a local plugin build — disabled until you enable it
+bops plugin list                  # every installed plugin, enabled or not
+bops plugin enable <id>           # activate now, and on every future run, until disabled
+bops plugin disable <id>          # unload it; its files stay on disk
+bops plugin remove <id>           # disable (if enabled) and delete it
+bops plugin validate <directory>  # check a bops-plugin.json without installing anything
+```
+
+`bops diagnose` is **not implemented** — there is no such subcommand, planned or otherwise.
 
 ## Roadmap
 
-**V0.1 through V0.9 are done** — runtime, planning/replanning, policy/approval, verification,
-Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, and
-`bOps.Api` + the Angular UI.
+**V0.1 through V0.10 are done** — runtime, planning/replanning, policy/approval, verification,
+Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` +
+the Angular UI, repository/licensing readiness, and the dynamic plugin loader.
 
 | | |
 |---|---|
@@ -161,43 +173,52 @@ Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers
 | `V0.7` | Persistent, resumable tasks (SQLite) |
 | `V0.8` | Anthropic, OpenAI and DeepSeek provider packages |
 | `V0.9` | `bOps.Api` + Angular UI: live agent activity, approvals, settings |
+| `V0.9.1` | Repository integrity and licensing readiness — SPDX headers, SBOM, NOTICE, CI fixed |
+| `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 
-**From V0.9.1 on**, the full backlog — repository/licensing readiness, the dynamic plugin
-loader, the remaining operational capabilities, V1.0 hardening, and the open-core commercial
-roadmap beyond it (Skills/Evidence, multi-agent, entitlement, a private Control Plane and
-Portal, and commercial DBA Skills) — lives in
+**From V0.11 on**, the remaining backlog — the rest of the operational capabilities, V1.0
+hardening, and the open-core commercial roadmap beyond it (Skills/Evidence, multi-agent,
+entitlement, a private Control Plane and Portal, and commercial DBA Skills) — lives in
 [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
 forever, for anyone, including commercial use — see [Licensing](#license) below and
 [`docs/licensing.md`](docs/licensing.md).
 
 ## Extending bOps
 
-A package is one or more .NET assemblies referencing only `bOps.Abstractions`,
-implementing `IToolProvider` and/or `IModelProviderPackage`, plus a `bops-plugin.json`
-manifest declaring what it contributes.
+A plugin is one or more .NET assemblies referencing only the published `bOps.Abstractions`
+package, with an entry type implementing `IToolProvider` or `IModelProviderPackage`, plus a
+`bops-plugin.json` manifest naming it. [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/)
+is a real, working one — build it, then `bops plugin install`/`enable` it, as a starting point:
 
 ```json
 {
-  "id": "bops-plugin-sqlserver",
-  "displayName": "SQL Server DBA Toolkit",
-  "publisher": "AcmeCorp",
-  "version": "1.2.0",
-  "minHostAbstractionsVersion": "1.0.0",
-  "maxDeclaredRisk": "High",
-  "requires": ["sqlserver"],
-  "contributes": { "tools": ["sqlserver.wait_stats", "…"], "modelProviders": [] }
+  "SchemaVersion": 1,
+  "Id": "acme.sample-plugin",
+  "Publisher": "Acme",
+  "Version": "1.0.0",
+  "MinHostAbstractionsVersion": "0.10.0",
+  "EntryAssembly": "Acme.SamplePlugin.dll",
+  "EntryType": "Acme.SamplePlugin.SampleToolProvider",
+  "DeclaredCapabilities": ["sample.echo"],
+  "Dependencies": [],
+  "MaxDeclaredRisk": "Read"
 }
 ```
 
-Packages are never trusted at their word: the policy engine applies a per-package risk
-ceiling independent of what the manifest declares, packages are opt-in rather than
-auto-discovered, and every call they make flows through the same audit pipeline.
+Packages are never trusted at their word: `DeclaredCapabilities`, `Dependencies` and
+`MaxDeclaredRisk` are informational only, shown to the operator before they enable a plugin —
+the policy engine's own per-package risk ceiling in `policy.yaml` is what is actually enforced.
+A plugin is loaded in an isolated, collectible `AssemblyLoadContext` sharing a single copy of
+`bOps.Abstractions` with the host (ADR-0020) and stays disabled until an operator enables it
+explicitly — auto-discovery is never silent. See [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md)
+for the full walkthrough, and rule S8: this isolation is dependency isolation, not a security
+sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-Pre-alpha. The architecture is settled and documented; V0.1 through V0.9 are built and tested;
-V0.9.1 onward is repository/licensing readiness, then the plugin loader and remaining
-capabilities. Not yet suitable for production use.
+Pre-alpha. The architecture is settled and documented; V0.1 through V0.10 are built and tested,
+including a real dynamic plugin loader. V0.11 onward is the remaining operational capabilities,
+then V1.0 hardening. Not yet suitable for production use.
 
 ## Documentation
 
@@ -210,7 +231,7 @@ capabilities. Not yet suitable for production use.
 | [`piano-bops.md`](piano-bops.md) | Original development plan through V0.9 (Italian). Historical — see [corrections](agentic/07-plan-corrections.md) |
 | [`docs/architecture/`](docs/architecture/) | Architecture decision records |
 | [`docs/security/`](docs/security/) | Risk model, default policies, threat model |
-| [`docs/plugins/`](docs/plugins/) | Write your first bOps package |
+| [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md) | Write your first bOps plugin |
 
 ## License
 

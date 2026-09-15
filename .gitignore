@@ -23,8 +23,8 @@ appsettings.Local.json
 .env
 secrets.json
 
-# Runtime state
-plugins/
+# Runtime state (root-anchored: docs/plugins/ is documentation, not the install directory)
+/plugins/
 *.db
 *.db-shm
 *.db-wal
