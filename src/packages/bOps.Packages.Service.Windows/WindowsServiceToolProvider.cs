@@ -13,5 +13,8 @@ public sealed class WindowsServiceToolProvider : IToolProvider
     [
         new WindowsServiceListTool(),
         new WindowsServiceStatusTool(),
+        new WindowsServiceStartTool(),
+        new WindowsServiceStopTool(),
+        new WindowsServiceRestartTool(),
     ];
 }

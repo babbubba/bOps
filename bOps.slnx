@@ -58,5 +58,6 @@
     <Project Path="tests/bOps.PluginHost.Tests/bOps.PluginHost.Tests.csproj" />
     <Project Path="tests/bOps.Policy.Tests/bOps.Policy.Tests.csproj" />
     <Project Path="tests/bOps.Runtime.Tests/bOps.Runtime.Tests.csproj" />
+    <Project Path="tests/bOps.TestFixtures.WindowsService/bOps.TestFixtures.WindowsService.csproj" />
   </Folder>
 </Solution>

@@ -32,10 +32,10 @@ public sealed class WindowsServiceToolsTests
             new WindowsServiceStatusTool(), "windows", "bops-this-service-definitely-does-not-exist");
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheTwoServiceTools()
+    public void ToolProvider_ContributesExactlyTheFiveServiceTools()
     {
         var names = new WindowsServiceToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
-        Assert.Equal(["service.list", "service.status"], names);
+        Assert.Equal(["service.list", "service.status", "service.start", "service.stop", "service.restart"], names);
     }
 }

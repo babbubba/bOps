@@ -26,6 +26,8 @@
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Service.Windows\bOps.Packages.Service.Windows.csproj" />
     <ProjectReference Include="..\bOps.Packages.Service.Conformance\bOps.Packages.Service.Conformance.csproj" />
+    <!-- The real, throwaway Windows Service used only by ServiceActionToolsTests, below. -->
+    <ProjectReference Include="..\bOps.TestFixtures.WindowsService\bOps.TestFixtures.WindowsService.csproj" />
   </ItemGroup>
 
 </Project>

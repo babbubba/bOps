@@ -1,20 +1,19 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text.RegularExpressions;
 using bOps.Packages.Service.Core;
 
 namespace bOps.Packages.Service.Linux;
 
 /// <summary>Collects <c>service.status</c> data on Linux via <c>systemctl show --property=</c> (ADR-0021).</summary>
-public sealed partial class LinuxServiceStatusTool() : ServiceStatusToolBase("linux")
+public sealed class LinuxServiceStatusTool() : ServiceStatusToolBase("linux")
 {
     protected override async Task<ServiceStatusResult> CollectAsync(string name, CancellationToken ct)
     {
         // A name that cannot possibly be a systemd unit is reported as "not found" without ever
         // invoking systemctl — the same fact an operator asking about a typo'd name would get
         // either way (ADR-0021).
-        if (!UnitNamePattern().IsMatch(name))
+        if (!ServiceUnitName.IsPlausible(name))
         {
             return new ServiceStatusResult(name, Exists: false, "unknown", null);
         }
@@ -59,11 +58,4 @@ public sealed partial class LinuxServiceStatusTool() : ServiceStatusToolBase("li
 
         return result;
     }
-
-    // A conservative systemd unit-name character set (letters, digits, and : _ . - @), with an
-    // optional .service suffix that systemctl itself would otherwise append — validated before
-    // ever reaching a subprocess (ADR-0021), on top of ArgumentList already making shell
-    // injection structurally impossible.
-    [GeneratedRegex(@"^[A-Za-z0-9:_.@-]+$")]
-    private static partial Regex UnitNamePattern();
 }
