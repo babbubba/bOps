@@ -193,3 +193,96 @@ the V1.0 milestone.
 
 **Reason.** The plan promises rigorous semantic versioning while the contract is still being
 discovered. Promising stability the project cannot keep is worse than declaring instability.
+
+---
+
+### D-013 — Open core: `bOps` stays Apache-2.0 public; commercial work lives in a separate private repository
+
+**Decision.** Decided 2026-09-15, alongside `piano-bops-v0.9.1-v2.0.md` (that plan is the primary
+source for what this funds; this entry is the durable record of the decision itself). The public
+`bOps` repository — core, SDK, generic packages, first-party LLM providers, the local UI, and a
+purely-demonstrative sample Skill — stays Apache-2.0, forever, for anyone, including commercial
+use, per D-004. Everything commercially sensitive — official Skills, their knowledge/playbook
+content, the Control Plane, the Portal, and commercial entitlement logic — is built in a single
+private monorepo, `bOps.Commercial`, never in this repository. Full detail:
+[`docs/licensing.md`](../docs/licensing.md).
+
+**Reason.** The package model (principle 7) already made bOps's commercial story "sell Skills and
+services on top," not "sell the core." Open-core makes that explicit and durable: nothing about
+adopting bOps commits an operator to a vendor relationship for the parts that matter most to
+them (the runtime, the safety model, the audit trail), while the actual differentiated,
+expensive-to-build value — vertical DBA knowledge, multi-tenant governance, an enterprise
+portal — has a place to live that isn't Apache-2.0.
+
+**Rejected.** *Everything in one repository, commercial code gated by a license check* —
+license checks on visible source are not a real boundary (rule S8's point about in-process trust
+applies to the whole repo, not just plugins), and it would put every operator one `git log` away
+from proprietary knowledge whether or not they paid for it. *Fully closed-source core* — would
+have meant no third-party package ecosystem, no trust from operators who need to read what they
+run against production, and no way to build a community around the free tier. *A single
+multi-license repository with path-based licensing (e.g., a `commercial/` folder under a
+different SPDX identifier)* — GitHub's license detection and most compliance tooling assume one
+license per repository; splitting by directory invites exactly the "did this leak into the OSS
+tree" mistake the two-repository boundary exists to make structurally hard.
+
+**Consequences.** The public repository's CI, contribution process and this project's own
+`agentic/` rules apply only to the OSS side; `bOps.Commercial` will have its own, likely stricter,
+rules once it exists. `bOps.Commercial` may depend on packages published from `bOps`; it must
+never fork or duplicate a public contract internally — a boundary change needed by private code
+is designed and published in the OSS repository first, generically, before the private repository
+consumes it. The Control Plane (in `bOps.Commercial`, once it exists at V1.4) may send a node
+only typed objectives/plans/capabilities — never raw commands — and the node re-checks policy,
+approval and entitlement locally regardless of what the Control Plane says; a remote decision
+never substitutes for a local one. See rule A1 alongside this: the core still never names a
+concrete package, and that now extends to never assuming a *commercial* package's identity
+either.
+
+---
+
+### D-014 — Copyright holder is Fabio Cavallari; `bSoft` is an unregistered brand, not a legal entity
+
+**Decision.** The copyright holder recorded in `LICENSE`, `NOTICE`, and every source header added
+under V0.9.1 is the individual **Fabio Cavallari**, not a company. `bSoft` is used only as a
+project/commercial brand name; it is not a legal entity, must never be written as the copyright
+holder, and — since it is not currently a registered trademark — must never be shown with the ®
+symbol. Trademark clearance and any registration decision are explicitly deferred, not assumed.
+
+**Reason.** The initial materials named `bSoft` informally; getting the *legal* copyright holder
+right from the first published header avoids a mechanical rewrite of every file's notice later,
+and avoids implying trademark protection that does not exist yet.
+
+**Rejected.** *Attributing copyright to `bSoft`* — not a legal person or entity able to hold
+copyright under the facts as given. *Using ® now* — false, and reversible reputational and legal
+exposure for no benefit before an actual registration exists.
+
+**Consequences.** `docs/licensing.md` and `NOTICE` are the durable explanation; source headers
+just say `Copyright 2026 Fabio Cavallari`. If `bSoft` (or `bOps`) is later registered as a
+trademark, that is a new fact recorded in its own update to `docs/licensing.md`, not a silent
+edit to this entry.
+
+---
+
+### D-015 — Contributor License Agreement, not DCO-only, for the public repository
+
+**Decision.** External contributions to the public `bOps` repository require a signed CLA before
+merge (individual, plus a corporate path when the contributor's employer holds the rights) — not
+only a Developer Certificate of Origin `Signed-off-by` line. The CLA's actual legal text is not
+written by this project's engineering process; it must be drafted or reviewed by IP/software
+counsel before it is binding, per `piano-bops-v0.9.1-v2.0.md` §9. The outbound license for
+whatever is merged stays Apache-2.0 regardless — a CLA changes the relationship between a
+contributor and the maintainer, never the license everyone downstream receives.
+
+**Reason.** A CLA (rather than DCO alone) gives the project a clear, explicit basis to use
+accepted contributions in the commercial offerings described in D-013 without a separate
+negotiation per contribution, while a DCO alone only attests provenance and says nothing about
+that.
+
+**Rejected.** *DCO only* — attests the contributor had the right to submit the code, but creates
+genuine ambiguity about whether a contribution can be relied on inside `bOps.Commercial`'s
+consumption of public packages. *Copyright assignment* — stronger than needed, and a harder ask
+of contributors than the project's stated goal (permissive reuse rights, not ownership transfer)
+requires.
+
+**Consequences.** No external contribution merges until the CLA process is actually operational
+and verifiable (a real signing flow, not just a written policy) — `CONTRIBUTING.md` documents the
+intended process; it is not itself the binding agreement.

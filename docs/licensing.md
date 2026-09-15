@@ -202,6 +202,43 @@ Prima di ogni rilascio devono essere generati dagli artefatti effettivi:
 - `THIRD-PARTY-NOTICES` pertinente all'artefatto distribuito;
 - verifica di incompatibilità, copyleft inatteso o dipendenza senza licenza identificabile.
 
+Gli SBOM generati non vengono versionati nel repository: descrivono un restore e un insieme di
+artefatti precisi e diventerebbero obsoleti senza che il diff sorgente lo renda evidente. Script,
+configurazione e `THIRD-PARTY-NOTICES` restano invece versionati. Le directory `sbom/` e
+`artifacts/` sono ignorate da Git.
+
+La CI genera su Linux due documenti CycloneDX tramite `./scripts/Generate-Sbom.ps1`: un inventario
+della soluzione .NET e l'inventario runtime della UI ricavato dall'albero delle dipendenze
+installato da `npm ci`. Per la UI lo script genera prima l'inventario npm completo e conserva poi
+soltanto i componenti installati che il lockfile non classifica come `dev`: questa verifica evita
+la perdita di dipendenze runtime Angular che npm 10 tratta anche come peer dependency quando viene
+usato direttamente `npm sbom --omit dev`. La CI pubblica i due documenti come artifact della
+workflow con conservazione di 30 giorni. Questi documenti dimostrano lo stato del build del
+repository, ma non sostituiscono gli SBOM di release.
+
+Quando esisterà una workflow di rilascio, essa dovrà generare uno SBOM distinto da ogni artefatto
+finale distribuito — package NuGet, CLI/API pubblicate e bundle UI — dopo il restore e il packaging,
+e allegarlo alla release insieme al suo digest. Gli SBOM di release devono avere la stessa durata
+degli artefatti cui si riferiscono e non la retention temporanea delle normali workflow CI.
+
+Lo snapshot human-readable v0.9.1 si rigenera dopo restore .NET e `npm ci` con:
+
+```powershell
+./scripts/Generate-Sbom.ps1
+./scripts/Generate-ThirdPartyNotices.ps1
+```
+
+Il secondo comando usa `artifacts/sbom/bops-dotnet-solution.cdx.json` e
+`web/bops-ui/package-lock.json`, fallendo se trova una licenza non risolta. Lo snapshot distingue
+inoltre le dipendenze npm runtime da quelle di sviluppo.
+
+La verifica v0.9.1 ha identificato `Json.More.Net`, `JsonPatch.Net` e `JsonPointer.Net` nel solo
+grafo dell'AppHost Aspire di sviluppo. I relativi binari NuGet includono un Open Source
+Maintenance Fee Agreement oltre alla licenza MIT dei sorgenti. Non devono essere descritti o
+ridistribuiti come semplici binari MIT senza verificare l'accordo incluso e lo scenario d'uso
+commerciale; il dettaglio e le versioni esatte sono registrati in
+[`THIRD-PARTY-NOTICES`](../THIRD-PARTY-NOTICES).
+
 La rilevazione preliminare delle dipendenze dirette correnti mostra principalmente MIT,
 Apache-2.0 e 0BSD. Non è una verifica legale completa e non sostituisce l'inventario transitivo o
 l'ispezione dei binari realmente distribuiti.

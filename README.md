@@ -72,12 +72,13 @@ src/
 │   ├── bOps.Memory/         # Task state and conversation context (SQLite)
 │   ├── bOps.Audit/          # Append-only structured audit log
 │   ├── bOps.Cli/            # `bops "..."` — the primary interface
-│   ├── bOps.Api/            # Minimal API backing the web UI (Phase 2)
-│   └── bOps.Worker/         # Windows Service / systemd unit
+│   ├── bOps.Api/            # Minimal API backing the web UI
+│   └── bOps.Worker/         # Windows Service / systemd unit — not built yet
 └── packages/                # First-party packages — same contract as third-party ones
     ├── bOps.Packages.System.{Core,Windows,Linux}
-    ├── bOps.Packages.{Filesystem,Network,Docker,Service}.*
-    └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, …
+    ├── bOps.Packages.{Filesystem,Network,Docker}.*
+    ├── bOps.Packages.Service.*      # planned, V0.11 — does not exist yet
+    └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, OpenAI, DeepSeek, Anthropic
 ```
 
 The core is deliberately small: loop, registries, policy, memory, audit, contract.
@@ -90,14 +91,27 @@ platform means writing a package — never changing the core.
 
 ## Tools
 
+Registered today — this table tracks what actually loads, not what is planned; see the note
+below it for what's coming and, deliberately, what never will.
+
 | Package | Tools |
 |---|---|
-| **System** | `system.info` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` `system.uptime` `system.environment` |
-| **Process** | `process.list` `process.inspect` `process.start` `process.stop` `process.kill` |
-| **Filesystem** | `fs.list` `fs.stat` `fs.search` `fs.read` `fs.hash` `fs.move` `fs.delete` |
-| **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
-| **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` |
+| **System** | `system.info` `system.cpu` `system.memory` `system.disk` |
+| **Process** | `process.list` |
+| **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` |
+| **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
+
+**Planned, not yet registered — arriving at V0.11** (see
+[`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md) §7): `system.swap`, `system.io`,
+`process.inspect`, `fs.search`, `fs.hash`, `fs.move`, `network.port_check`, `network.route`, and
+a new `Service` package (`service.list`, `service.status`, then — after their read-only
+counterparts land — `service.start`/`stop`/`restart` and controlled process-stop operations).
+
+**Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
+for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
+to the model), and a generic `process.start` (equivalent to a generic execution tool — see rule
+S1). None of these are gaps; they're explicit non-goals.
 
 ## LLM providers
 
@@ -119,19 +133,22 @@ package, without touching bOps.
 ```bash
 bops "this server is slow, find the problem"
 bops "check every Docker container and tell me if something is wrong"
-bops "find files larger than 5GB not accessed in 90 days"
-bops "clean up what you found"      # fs.search (Read) → fs.delete (High, requires approval)
+bops "list the files under this directory and tell me what's taking up the most space"
+bops "delete this temp file"        # fs.delete is High-risk — requires approval before it runs
 ```
 
 ```bash
-bops diagnose                  # capability + provider health check
-bops task resume <id>          # resume an interrupted task
-bops plugin list               # installed packages, trust level, what they contribute
+bops resume <task-id>          # resume a persisted task (V0.7, SQLite-backed) from where it left off
 ```
+
+`bops diagnose` and `bops plugin list` are **not implemented yet** — the plugin loader (and the
+`plugin` subcommand family) arrives at V0.10; do not treat either as available today.
 
 ## Roadmap
 
-**Phase 1 — CLI**
+**V0.1 through V0.9 are done** — runtime, planning/replanning, policy/approval, verification,
+Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, and
+`bOps.Api` + the Angular UI.
 
 | | |
 |---|---|
@@ -142,18 +159,16 @@ bops plugin list               # installed packages, trust level, what they cont
 | `V0.5` | Windows + Linux parity, Filesystem and Network packages, CI on both OSes |
 | `V0.6` | Docker package with conditional capability discovery |
 | `V0.7` | Persistent, resumable tasks (SQLite) |
-
-**Phase 2 — Web UI and provider expansion**
-
-| | |
-|---|---|
 | `V0.8` | Anthropic, OpenAI and DeepSeek provider packages |
 | `V0.9` | `bOps.Api` + Angular UI: live agent activity, approvals, settings |
-| `V0.10` | Dynamic package loading, `bops plugin install`, published plugin SDK |
-| `V1.0` | Threat model, package signing and trust levels, secrets management, hardening |
 
-Explicitly **not** on the early roadmap: multi-agent supervision and vector-store
-semantic memory. Both are post-1.0 extensions, not foundations.
+**From V0.9.1 on**, the full backlog — repository/licensing readiness, the dynamic plugin
+loader, the remaining operational capabilities, V1.0 hardening, and the open-core commercial
+roadmap beyond it (Skills/Evidence, multi-agent, entitlement, a private Control Plane and
+Portal, and commercial DBA Skills) — lives in
+[`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
+forever, for anyone, including commercial use — see [Licensing](#license) below and
+[`docs/licensing.md`](docs/licensing.md).
 
 ## Extending bOps
 
@@ -180,8 +195,9 @@ auto-discovered, and every call they make flows through the same audit pipeline.
 
 ## Status
 
-Pre-alpha. The architecture is settled and documented; the implementation is being
-built version by version against the roadmap above. Not yet suitable for production use.
+Pre-alpha. The architecture is settled and documented; V0.1 through V0.9 are built and tested;
+V0.9.1 onward is repository/licensing readiness, then the plugin loader and remaining
+capabilities. Not yet suitable for production use.
 
 ## Documentation
 
@@ -189,12 +205,20 @@ built version by version against the roadmap above. Not yet suitable for product
 |---|---|
 | [`agentic/`](agentic/) | Binding specification and rules — the authoritative source |
 | [`agentic/06-decisions.md`](agentic/06-decisions.md) | Decision register: what was chosen, what was rejected, why |
-| [`piano-bops.md`](piano-bops.md) | Original development plan (Italian). Historical — see [corrections](agentic/07-plan-corrections.md) |
+| [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md) | The active backlog from V0.9.1 onward — versions, gates, scope, open-core boundary |
+| [`docs/licensing.md`](docs/licensing.md) | What Apache-2.0 does and doesn't grant, the open-core repository split, CLA policy |
+| [`piano-bops.md`](piano-bops.md) | Original development plan through V0.9 (Italian). Historical — see [corrections](agentic/07-plan-corrections.md) |
 | [`docs/architecture/`](docs/architecture/) | Architecture decision records |
 | [`docs/security/`](docs/security/) | Risk model, default policies, threat model |
 | [`docs/plugins/`](docs/plugins/) | Write your first bOps package |
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). Packages are separately licensed: bOps does not require
-third-party packages to be open source.
+Apache-2.0 — see [LICENSE](LICENSE), always and for everyone, including commercial use.
+Packages are separately licensed: bOps does not require third-party packages to be open
+source. `bOps` follows an **open-core** model: the core, SDK, first-party packages and this
+local UI stay Apache-2.0 in this public repository; official commercial Skills, a Control
+Plane and an enterprise Portal live in a separate private repository and are never merged
+here. See [`docs/licensing.md`](docs/licensing.md) for the full policy, including what
+Apache-2.0 does not grant (no trademark rights — `bOps`/`bSoft` are not registered marks) and
+how third-party packages and contributions (via CLA) are handled.

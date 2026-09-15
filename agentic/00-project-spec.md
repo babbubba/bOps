@@ -61,7 +61,9 @@ Recorded in full, with rationale, in [`06-decisions.md`](06-decisions.md). Summa
 
 ## Roadmap and scope discipline
 
-**Phase 1 — CLI**
+**V0.1 through V0.9 are concluded** (verified: clean build, tests passing, manual verification
+per each version's handoff). They are never reopened or renumbered; a gap found later is a new,
+separately-versioned task, never a retroactive reopening of a closed milestone.
 
 | | |
 |---|---|
@@ -72,28 +74,43 @@ Recorded in full, with rationale, in [`06-decisions.md`](06-decisions.md). Summa
 | `V0.5` | Windows + Linux parity, Filesystem and Network packages, Aspire AppHost, CI on both OSes |
 | `V0.6` | Docker package with conditional capability discovery |
 | `V0.7` | Persistent, resumable tasks (SQLite) |
-
-**Phase 2 — Web UI and provider expansion**
-
-| | |
-|---|---|
 | `V0.8` | Anthropic, OpenAI and DeepSeek provider packages |
-| `V0.9` | `bOps.Api` + Angular UI |
-| `V0.10` | Dynamic package loading, `bops plugin install`, published plugin SDK |
-| `V1.0` | Threat model, package signing and trust levels, secrets management, hardening |
+| `V0.9` | `bOps.Api` + Angular UI, including Settings/provider discovery, Aspire-orchestrated |
+
+**From V0.9.1 onward, the authoritative backlog is
+[`piano-bops-v0.9.1-v2.0.md`](../piano-bops-v0.9.1-v2.0.md)** — approved 2026-09-15, superseding
+this file as the source of *what's next* (this file remains authoritative for *the rules*: where
+this file and that plan disagree, this file, the accepted ADRs and
+[`06-decisions.md`](06-decisions.md) win, exactly as that plan's own §1 says of itself). It
+covers, in order: `V0.9.1` (repository integrity and licensing readiness — no functional
+change), `V0.10` (dynamic package loader and plugin SDK), `V0.11` (completing the operational
+capabilities the historical plan and README had promised but never registered), `V1.0`
+(security hardening, a frozen `bOps.Abstractions` 1.0 surface), then the commercial-layer
+versions `V1.1`–`V2.0` (Skill/Capability/Evidence contracts, multi-agent, entitlement, a private
+Control Plane and Portal, and commercial DBA Skills for PostgreSQL and SQL Server) — all of
+which stay behind the open-core boundary in [`06-decisions.md`](06-decisions.md)'s new entries:
+the public `bOps` repository never contains commercial Skills, knowledge, entitlement logic,
+Control Plane or Portal code.
 
 **The rule for agents:** build the current version, not the next one. Do not add the policy
 engine while implementing V0.2, do not add a plugin loader while implementing V0.5. The
-*contract* must accommodate later versions — the *implementation* must not anticipate them.
+*contract* must accommodate later versions — the *implementation* must not anticipate them. The
+new plan states this identically for everything past V0.9 (its own §11 checklist: "stop at the
+first unmet gate; do not pull v0.10, v0.11, or later versions forward").
 
 If a task seems to require something from a later version, that is a signal to stop and ask,
 not to pull the work forward.
 
-## Explicitly out of scope until after V1.0
+## Explicitly out of scope, permanently or until a stated gate
 
-- Multi-agent supervision. A supervisor is "just" an `IAgentPlanner` that calls other
-  planners; if the core is right, it costs almost nothing later. Building it early costs
-  everything.
-- Vector stores and semantic memory over past tasks.
-- Remote execution transport (the *contract* accommodates it from V0.1; the transport does not exist).
-- macOS platform packages.
+- Multi-agent supervision until V1.2, with privilege isolation designed in from the start — see
+  `piano-bops-v0.9.1-v2.0.md` §7, V1.2.
+- Vector stores and semantic memory over past tasks — not scheduled.
+- Remote execution transport (the *contract* accommodates it from V0.1; the transport arrives at
+  V1.4, node-initiated only, never an inbound admin path — see the same plan's V1.4).
+- macOS platform packages — possible later as a package (rule A8), never scheduled.
+- A generic execution tool, arbitrary SQL from the model, an unfiltered environment-variable
+  dump, or a generic `process.start` — **never**, at any version. See rule S1 and
+  `piano-bops-v0.9.1-v2.0.md` §10.
+- `system.uptime` as a separate tool — `system.info` already reports uptime; a second tool for
+  the same data is never added.
