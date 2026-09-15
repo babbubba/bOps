@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Plain net10.0, not net10.0-windows: bOps.Cli references both the Windows and Linux
+         Service packages and picks one at runtime by OS, mirroring bOps.Packages.System.Windows
+         (see that project's own comment). Platform intent is instead declared with
+         [assembly: SupportedOSPlatform("windows")] below. -->
+    <AssemblyName>bOps.Packages.Service.Windows</AssemblyName>
+    <Description>service.* tools for Windows, via System.ServiceProcess.ServiceController (ADR-0021).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Service.Core\bOps.Packages.Service.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

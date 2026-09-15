@@ -14,6 +14,8 @@ using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
 using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
+using bOps.Packages.Service.Linux;
+using bOps.Packages.Service.Windows;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.PluginHost;
@@ -133,6 +135,21 @@ var networkPackageId = new PackageId("bops.packages.network");
 foreach (var tool in new NetworkToolProvider().GetTools())
 {
     toolRegistry.Register(networkPackageId, tool);
+}
+
+// V0.11 (ADR-0021): mirrors the System family's own OS split above — Windows via
+// ServiceController, Linux via a fixed, non-composable systemctl invocation.
+IToolProvider serviceToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsServiceToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxServiceToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
+
+var servicePackageId = new PackageId($"bops.packages.service.{CurrentPlatform.Id}");
+foreach (var tool in serviceToolProvider.GetTools())
+{
+    toolRegistry.Register(servicePackageId, tool);
 }
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check

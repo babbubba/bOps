@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>bOps.Packages.Service.Linux</AssemblyName>
+    <Description>service.* tools for Linux, shelling to systemctl with a fixed, non-composable argument list (ADR-0021).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Service.Core\bOps.Packages.Service.Core.csproj" />
+  </ItemGroup>
+
+</Project>

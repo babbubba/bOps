@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Unlike bOps.Packages.System.Core, "Service" is not a BCL root namespace, so no Sys.*-style
+         rename is needed here (agentic/01-architecture-rules.md, rule A8). -->
+    <AssemblyName>bOps.Packages.Service.Core</AssemblyName>
+    <Description>Shared manifests, result shapes, and output formatting for the service.* tools. Not itself a package — referenced by the Windows and Linux Service packages so the tool shell is written once (agentic/01-architecture-rules.md, rule A8).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

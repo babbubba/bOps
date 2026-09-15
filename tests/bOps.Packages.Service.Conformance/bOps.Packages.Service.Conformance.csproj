@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Service.Conformance</RootNamespace>
+    <Description>
+      Shared assertions any service.* implementation must satisfy, regardless of OS (mirrors
+      bOps.Packages.System.Conformance). Referenced by bOps.Packages.Service.Windows.Tests and
+      bOps.Packages.Service.Linux.Tests, each of which runs it against its own tools.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.assert" Version="2.9.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Service.Core\bOps.Packages.Service.Core.csproj" />
+  </ItemGroup>
+
+</Project>

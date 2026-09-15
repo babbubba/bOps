@@ -33,6 +33,9 @@
     <Project Path="src/packages/bOps.Packages.Providers.OpenAi/bOps.Packages.Providers.OpenAi.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.OpenAiCompatible/bOps.Packages.Providers.OpenAiCompatible.csproj" />
     <Project Path="src/packages/bOps.Packages.Providers.OpenRouter/bOps.Packages.Providers.OpenRouter.csproj" />
+    <Project Path="src/packages/bOps.Packages.Service.Core/bOps.Packages.Service.Core.csproj" />
+    <Project Path="src/packages/bOps.Packages.Service.Linux/bOps.Packages.Service.Linux.csproj" />
+    <Project Path="src/packages/bOps.Packages.Service.Windows/bOps.Packages.Service.Windows.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Linux/bOps.Packages.System.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Windows/bOps.Packages.System.Windows.csproj" />
@@ -46,6 +49,9 @@
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Providers.Anthropic.Tests/bOps.Packages.Providers.Anthropic.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Service.Conformance/bOps.Packages.Service.Conformance.csproj" />
+    <Project Path="tests/bOps.Packages.Service.Linux.Tests/bOps.Packages.Service.Linux.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Service.Windows.Tests/bOps.Packages.Service.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Conformance/bOps.Packages.System.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />

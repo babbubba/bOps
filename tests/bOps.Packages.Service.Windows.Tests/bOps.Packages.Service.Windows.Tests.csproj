@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Unlike bOps.Packages.Service.Windows itself (plain net10.0, so bOps.Cli can reference both
+         OS packages side by side), this test project only ever calls the Windows package and only
+         ever runs on windows-latest, so it can declare the platform directly and let CA1416 verify
+         every call site instead of suppressing it — mirrors bOps.Packages.System.Windows.Tests. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Service.Windows\bOps.Packages.Service.Windows.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Service.Conformance\bOps.Packages.Service.Conformance.csproj" />
+  </ItemGroup>
+
+</Project>
