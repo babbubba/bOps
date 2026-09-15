@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Docker</RootNamespace>
+    <AssemblyName>bOps.Packages.Docker</AssemblyName>
+    <Description>docker.* tools via Docker.DotNet, which talks to the daemon over the same named pipe (Windows) or Unix socket (Linux) on both OSes — no OS split needed here either (agentic/01-architecture-rules.md, rule A8). Every non-Read tool is verified via docker.inspect (agentic/06-decisions.md, D-006). Gated end to end by the "docker" capability (rule B4) so an absent daemon makes docker.* disappear from what the planner sees, not fail at call time.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
+  </ItemGroup>
+
+</Project>

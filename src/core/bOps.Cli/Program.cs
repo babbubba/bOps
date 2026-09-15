@@ -1,6 +1,7 @@
 using bOps.Abstractions;
 using bOps.Audit;
 using bOps.Cli;
+using bOps.Packages.Docker;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
 using bOps.Packages.Providers.LlamaCpp;
@@ -88,6 +89,22 @@ var networkPackageId = new PackageId("bops.packages.network");
 foreach (var tool in new NetworkToolProvider().GetTools())
 {
     toolRegistry.Register(networkPackageId, tool);
+}
+
+// V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check
+// here, before the first RefreshCapabilitiesAsync, is what makes an absent daemon remove every
+// docker.* tool from what the planner sees instead of failing only once one is called. The
+// registry itself never learns the word "docker" (rule A1); only this composition root does.
+var dockerClientFactory = new DockerClientFactory(builder.Configuration["Docker:Endpoint"]);
+if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe cachingCapabilityProbe)
+{
+    cachingCapabilityProbe.RegisterCheck(DockerCapability.Name, ct => DockerCapability.IsAvailableAsync(dockerClientFactory, ct));
+}
+
+var dockerPackageId = new PackageId("bops.packages.docker");
+foreach (var tool in new DockerToolProvider(dockerClientFactory).GetTools())
+{
+    toolRegistry.Register(dockerPackageId, tool);
 }
 
 await toolRegistry.RefreshCapabilitiesAsync();

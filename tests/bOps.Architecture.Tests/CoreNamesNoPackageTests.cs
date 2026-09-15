@@ -19,13 +19,14 @@ public sealed class CoreNamesNoPackageTests
 {
     /// <summary>
     /// Terms rule A1 names explicitly as examples of what the core must never contain, plus the
-    /// concrete package/provider/OS identifiers this repository actually ships as of V0.5. Not
+    /// concrete package/provider/OS identifiers this repository actually ships as of V0.6. Not
     /// exhaustive by construction — a new package's own identifier should be added here when it
     /// ships — but every entry here is a real one this codebase would otherwise be able to leak.
     /// </summary>
     private static readonly string[] ForbiddenTerms =
     [
-        "docker.restart", "docker.stop", "docker.start", "docker.logs", "docker.inspect", "docker.containers",
+        "docker.restart", "docker.stop", "docker.start", "docker.logs", "docker.inspect",
+        "docker.containers", "docker.images", "docker.networks",
         "service.status", "service.restart", "service.start", "service.stop",
         "/proc", "/sys", "systemctl", "servicecontroller", "performancecounter",
         "openrouter", "ollama", "llamacpp", "llama.cpp", "anthropic", "deepseek",
