@@ -78,7 +78,7 @@ src/
 │   └── bOps.Worker/         # Windows Service / systemd unit — not built yet
 ├── packages/                # First-party packages — same contract as third-party ones
 │   ├── bOps.Packages.System.{Core,Windows,Linux}
-│   ├── bOps.Packages.Service.{Core,Windows,Linux}   # V0.11 tranche 1, ADR-0021
+│   ├── bOps.Packages.Service.{Core,Windows,Linux}   # V0.11, ADR-0021
 │   ├── bOps.Packages.{Filesystem,Network,Docker}.*
 │   └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, OpenAI, DeepSeek, Anthropic
 └── samples/
@@ -101,28 +101,39 @@ below it for what's coming and, deliberately, what never will.
 | Package | Tools |
 |---|---|
 | **System** | `system.info` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
-| **Process** | `process.list` `process.inspect` |
-| **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` |
+| **Process** | `process.list` `process.inspect` `process.stop` `process.kill` |
+| **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
-| **Service** | `service.list` `service.status` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
+| **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 
-**Planned, not yet registered — the rest of V0.11** (see
-[`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md) §7): `fs.move`,
-`service.start`/`stop`/`restart`, and a controlled process-stop operation — the second tranche,
-gated on the read-only verifiers above landing first (they now have) and on a resolved,
-unambiguous naming for graceful-stop vs. kill-forced process operations.
+V0.11 is now fully registered — every capability `piano-bops-v0.9.1-v2.0.md` §7 named for this
+version is a real, tested tool.
 
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
 to the model), and a generic `process.start` (equivalent to a generic execution tool — see rule
 S1). None of these are gaps; they're explicit non-goals.
 
-**Scope note:** `network.route` reports each active interface's directly connected subnet and
-default gateway — genuinely useful for "can this host reach the internet from here?" — not the
-full OS routing table (every destination-specific static route), which would need
-`GetIpForwardTable2` on Windows and `/proc/net/route` parsing on Linux for a shape few ops
-questions actually need. `fs.hash` is SHA-256 only, single algorithm, by design.
+**Scope notes:**
+
+- `network.route` reports each active interface's directly connected subnet and default
+  gateway — genuinely useful for "can this host reach the internet from here?" — not the full OS
+  routing table (every destination-specific static route), which would need `GetIpForwardTable2`
+  on Windows and `/proc/net/route` parsing on Linux for a shape few ops questions actually need.
+- `fs.hash` is SHA-256 only, single algorithm, by design.
+- `fs.move` never overwrites an existing destination — a deliberate refusal, not a limitation; a
+  deliberate overwrite is a separate `fs.delete` then `fs.move`.
+- `process.stop` on Windows can only close a process that has a main window
+  (`CloseMainWindow()`) — Windows has no generic SIGTERM equivalent for an arbitrary process, and
+  this tool reports that honestly as a failure rather than silently escalating to a forced kill.
+  On Linux, `process.stop` sends a real `SIGTERM`, which always applies. `process.kill` (forced,
+  `TerminateProcess`/`SIGKILL`) works identically on both platforms.
+- `service.start`/`stop`/`restart` on Linux are exercised for real in CI against `systemctl`
+  (via the same code path `service.list`/`status` already prove works); the full elevated
+  create→start→stop→delete lifecycle is exercised for real only on Windows CI, which runs
+  administrator-elevated by default — the equivalent on Linux would need root or a polkit rule
+  this project does not control, so it is a documented gap (`HANDOFF.md`), not a silent one.
 
 ## LLM providers
 
@@ -165,10 +176,10 @@ bops plugin validate <directory>  # check a bops-plugin.json without installing 
 
 ## Roadmap
 
-**V0.1 through V0.10 are done** — runtime, planning/replanning, policy/approval, verification,
+**V0.1 through V0.11 are done** — runtime, planning/replanning, policy/approval, verification,
 Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` +
-the Angular UI, repository/licensing readiness, and the dynamic plugin loader. **V0.11's first
-(read-only) tranche is done too** — see below.
+the Angular UI, repository/licensing readiness, the dynamic plugin loader, and now the full
+operational capability set: every read-only and side-effecting tool the plan named for V0.11.
 
 | | |
 |---|---|
@@ -183,12 +194,11 @@ the Angular UI, repository/licensing readiness, and the dynamic plugin loader. *
 | `V0.9` | `bOps.Api` + Angular UI: live agent activity, approvals, settings |
 | `V0.9.1` | Repository integrity and licensing readiness — SPDX headers, SBOM, NOTICE, CI fixed |
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
-| `V0.11` (tranche 1) | Read-only capabilities complete: `system.swap`/`io`, `process.inspect`, `fs.search`/`hash`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`, ADR-0021) |
+| `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 
-**V0.11's second tranche** — `fs.move`, `service.start`/`stop`/`restart`, and a controlled
-process-stop operation — is the immediate next work. **From there on**, the remaining backlog — V1.0
-hardening, and the open-core commercial roadmap beyond it (Skills/Evidence, multi-agent,
-entitlement, a private Control Plane and Portal, and commercial DBA Skills) — lives in
+**From here, the remaining backlog** — V1.0 hardening, and the open-core commercial roadmap
+beyond it (Skills/Evidence, multi-agent, entitlement, a private Control Plane and Portal, and
+commercial DBA Skills) — lives in
 [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
 forever, for anyone, including commercial use — see [Licensing](#license) below and
 [`docs/licensing.md`](docs/licensing.md).
@@ -226,10 +236,9 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-Pre-alpha. The architecture is settled and documented; V0.1 through V0.10 are built and tested,
-including a real dynamic plugin loader, and V0.11's read-only tranche (System/Filesystem/Network
-extensions plus the new Service package) is built and tested too. V0.11's second, side-effecting
-tranche is next, then V1.0 hardening. Not yet suitable for production use.
+Pre-alpha. The architecture is settled and documented; V0.1 through V0.11 are built and tested,
+including a real dynamic plugin loader and the full operational capability set (read-only and
+side-effecting). V1.0 hardening is next. Not yet suitable for production use.
 
 ## Documentation
 
