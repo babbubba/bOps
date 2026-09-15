@@ -1,0 +1,43 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/packages/">
+    <Project Path="src/packages/bOps.Packages.Docker/bOps.Packages.Docker.csproj" />
+    <Project Path="src/packages/bOps.Packages.Filesystem/bOps.Packages.Filesystem.csproj" />
+    <Project Path="src/packages/bOps.Packages.Network/bOps.Packages.Network.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/bOps.AppHost/bOps.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/src/core/">
+    <Project Path="src/core/bOps.Abstractions/bOps.Abstractions.csproj" />
+    <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
+    <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
+    <Project Path="src/core/bOps.Policy/bOps.Policy.csproj" />
+    <Project Path="src/core/bOps.Runtime/bOps.Runtime.csproj" />
+  </Folder>
+  <Folder Name="/src/packages/">
+    <Project Path="src/packages/bOps.Packages.Providers.LlamaCpp/bOps.Packages.Providers.LlamaCpp.csproj" />
+    <Project Path="src/packages/bOps.Packages.Providers.Ollama/bOps.Packages.Providers.Ollama.csproj" />
+    <Project Path="src/packages/bOps.Packages.Providers.OpenAiCompatible/bOps.Packages.Providers.OpenAiCompatible.csproj" />
+    <Project Path="src/packages/bOps.Packages.Providers.OpenRouter/bOps.Packages.Providers.OpenRouter.csproj" />
+    <Project Path="src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj" />
+    <Project Path="src/packages/bOps.Packages.System.Linux/bOps.Packages.System.Linux.csproj" />
+    <Project Path="src/packages/bOps.Packages.System.Windows/bOps.Packages.System.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
+    <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.System.Conformance/bOps.Packages.System.Conformance.csproj" />
+    <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />
+    <Project Path="tests/bOps.Policy.Tests/bOps.Policy.Tests.csproj" />
+    <Project Path="tests/bOps.Runtime.Tests/bOps.Runtime.Tests.csproj" />
+  </Folder>
+</Solution>

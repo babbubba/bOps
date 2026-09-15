@@ -1,4 +1,4 @@
-var builder = DistributedApplication.CreateBuilder(args);
+IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
 
 // V0.5 (agentic/06-decisions.md, D-002): this AppHost orchestrates dependencies and test targets
 // for local development ONLY — bOps itself is never containerized for its real work (a container
