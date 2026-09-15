@@ -1,0 +1,12 @@
+{
+  "SchemaVersion": 1,
+  "Id": "acme.sample-plugin",
+  "Publisher": "Acme",
+  "Version": "1.0.0",
+  "MinHostAbstractionsVersion": "0.10.0",
+  "EntryAssembly": "Acme.SamplePlugin.dll",
+  "EntryType": "Acme.SamplePlugin.SampleToolProvider",
+  "DeclaredCapabilities": ["sample.echo"],
+  "Dependencies": [],
+  "MaxDeclaredRisk": "Read"
+}

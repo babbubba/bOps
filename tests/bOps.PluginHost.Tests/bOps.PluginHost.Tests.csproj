@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.PluginHost\bOps.PluginHost.csproj" />
+    <!-- Test-only: exercises PluginManager against the REAL IToolRegistry/IChatModelRegistry
+         implementations rather than a hand-rolled fake of them, the same "prefer the real
+         collaborator" reasoning as never mocking the OS. bOps.PluginHost itself never
+         references bOps.Runtime (it depends only on bOps.Abstractions, rule A7's spirit). -->
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- Referenced only so this test project's build output directory always has a real, current
+         compiled plugin to install/enable/disable/remove — never a fake or a mock of the loader
+         (agentic/04-testing-rules.md's "never mock the operating system", applied the same way
+         here). A real third-party plugin is never a ProjectReference from the host. -->
+    <ProjectReference Include="..\..\samples\bops-sample-plugin\Acme.SamplePlugin.csproj" />
+  </ItemGroup>
+
+</Project>

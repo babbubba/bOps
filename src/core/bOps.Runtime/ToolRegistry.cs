@@ -83,6 +83,20 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     /// <inheritdoc />
     public void SetEnabled(PackageId package, bool enabled) => _packageEnabled[package.Value] = enabled;
 
+    /// <inheritdoc />
+    public void Unregister(PackageId package)
+    {
+        foreach (var (name, registered) in _tools)
+        {
+            if (registered.Package == package)
+            {
+                _tools.TryRemove(name, out _);
+            }
+        }
+
+        _packageEnabled.TryRemove(package.Value, out _);
+    }
+
     private bool IsVisible(RegisteredTool registered)
     {
         var manifest = registered.Tool.Manifest;

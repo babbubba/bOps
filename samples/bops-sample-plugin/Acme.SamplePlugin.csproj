@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Acme.SamplePlugin</RootNamespace>
+    <AssemblyName>Acme.SamplePlugin</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- Stands in for a real third party's own separate repository, referencing only the
+         published bOps.Abstractions contract — this is why it does not use the bOps.* namespace
+         (docs/plugins/getting-started.md, ADR-0020). "Acme" is a placeholder publisher, not a
+         real one. It still inherits Directory.Build.props like everything else under this
+         repository's root (an artifact of building it in-tree for the test suite below to load
+         a real compiled plugin), so Authors/Company/Copyright are overridden here to what a
+         real external publisher's own project would actually declare. -->
+    <Authors>Acme</Authors>
+    <Company>Acme</Company>
+    <Copyright>Copyright 2026 Acme</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A real third-party plugin references the published NuGet package instead of this
+         ProjectReference; this repository builds it in-tree only so bOps.PluginHost.Tests can
+         install/enable/disable/remove a REAL compiled plugin end to end (never fake the loader,
+         mirroring agentic/04-testing-rules.md's "never mock the operating system"). -->
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="bops-plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

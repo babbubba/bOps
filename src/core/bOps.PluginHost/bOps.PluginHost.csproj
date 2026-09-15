@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.PluginHost</RootNamespace>
+    <AssemblyName>bOps.PluginHost</AssemblyName>
+    <Description>The dynamic package loader: manifest validation, isolated AssemblyLoadContext activation, install/list/enable/disable/remove — agentic/00-project-spec.md, V0.10; ADR-0020.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

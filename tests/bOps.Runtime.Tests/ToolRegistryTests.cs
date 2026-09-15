@@ -112,6 +112,45 @@ public sealed class ToolRegistryTests
         Assert.Null(registry.Resolve("test.read"));
     }
 
+    [Fact]
+    public void Unregister_RemovesTheToolEntirely_UnlikeSetEnabled()
+    {
+        var registry = CreateRegistry();
+        var package = new PackageId("test.package");
+        registry.Register(package, new FakeReadTool());
+
+        registry.Unregister(package);
+
+        Assert.Null(registry.Resolve("test.read"));
+        Assert.DoesNotContain(registry.GetAvailableManifests(), m => m.Name == "test.read");
+    }
+
+    [Fact]
+    public void Unregister_ThenReRegisteringTheSameToolName_Succeeds()
+    {
+        var registry = CreateRegistry();
+        var package = new PackageId("test.package");
+        registry.Register(package, new FakeReadTool());
+        registry.Unregister(package);
+
+        registry.Register(package, new FakeReadTool());
+
+        Assert.NotNull(registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void Unregister_OnlyAffectsToolsFromThatPackage()
+    {
+        var registry = CreateRegistry();
+        registry.Register(new PackageId("package.a"), new FakeReadTool());
+        registry.Register(new PackageId("package.b"), new FakeHighRiskTool());
+
+        registry.Unregister(new PackageId("package.a"));
+
+        Assert.Null(registry.Resolve("test.read"));
+        Assert.NotNull(registry.Resolve("test.highrisk"));
+    }
+
     private sealed class ManifestOverrideTool(ToolManifest manifest) : ITool
     {
         public ToolManifest Manifest { get; } = manifest;

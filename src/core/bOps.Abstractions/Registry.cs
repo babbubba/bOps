@@ -41,6 +41,16 @@ public interface IToolRegistry
     /// <param name="package">The package whose tools to enable or disable.</param>
     /// <param name="enabled">Whether the package's tools should be visible and callable.</param>
     void SetEnabled(PackageId package, bool enabled);
+
+    /// <summary>
+    /// Permanently removes every tool contributed by a package, unlike <see cref="SetEnabled"/>
+    /// which only hides them. A dynamically loaded package (V0.10, ADR-0020) needs this on
+    /// disable or remove: while any reference to its tools remains, nothing releases the
+    /// isolated <see cref="System.Runtime.Loader.AssemblyLoadContext"/> that loaded them, and a
+    /// later re-enable of the same id would otherwise collide with a still-registered name.
+    /// </summary>
+    /// <param name="package">The package whose tools to remove entirely.</param>
+    void Unregister(PackageId package);
 }
 
 /// <summary>

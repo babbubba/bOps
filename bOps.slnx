@@ -9,6 +9,9 @@
     <Project Path="src/packages/bOps.Packages.Filesystem/bOps.Packages.Filesystem.csproj" />
     <Project Path="src/packages/bOps.Packages.Network/bOps.Packages.Network.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/bops-sample-plugin/Acme.SamplePlugin.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/bOps.AppHost/bOps.AppHost.csproj" />
   </Folder>
@@ -18,6 +21,7 @@
     <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
     <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
     <Project Path="src/core/bOps.Memory/bOps.Memory.csproj" />
+    <Project Path="src/core/bOps.PluginHost/bOps.PluginHost.csproj" />
     <Project Path="src/core/bOps.Policy/bOps.Policy.csproj" />
     <Project Path="src/core/bOps.Runtime/bOps.Runtime.csproj" />
   </Folder>
@@ -45,6 +49,7 @@
     <Project Path="tests/bOps.Packages.System.Conformance/bOps.Packages.System.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />
+    <Project Path="tests/bOps.PluginHost.Tests/bOps.PluginHost.Tests.csproj" />
     <Project Path="tests/bOps.Policy.Tests/bOps.Policy.Tests.csproj" />
     <Project Path="tests/bOps.Runtime.Tests/bOps.Runtime.Tests.csproj" />
   </Folder>
