@@ -350,6 +350,89 @@ public sealed class AgentRunner(
         return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.MaxStepsReached, steps, plans), ct);
     }
 
+    /// <summary>
+    /// Executes an already-built, already-typed <see cref="ExecutionPlan"/> — the artifact a
+    /// Skill's Capability produces, distinct from the natural-language <see cref="AgentPlan"/>
+    /// the model-driven loop above uses (ADR-0023, ADR-0024). Every step still goes through
+    /// <see cref="ExecuteStepAsync"/> exactly as a model-proposed tool call would: its own policy
+    /// evaluation, its own possible approval, its own verification, its own audit trail. An
+    /// <see cref="ExecutionPlanApproval"/> does not bypass any of that — it only gates whether
+    /// this plan, as a whole, was ever agreed to run at all.
+    /// </summary>
+    /// <param name="taskId">Correlates every audit event this run produces, exactly like <see cref="RunAsync"/>'s <c>taskId</c>.</param>
+    /// <param name="actor">Who is asking this plan to run.</param>
+    /// <param name="plan">The plan to execute. Never mutated.</param>
+    /// <param name="approval">
+    /// The approval this plan was granted, if its <see cref="CapabilityManifest.Risk"/> required
+    /// one. <c>null</c> is valid for a plan that needed none. When supplied, its
+    /// <see cref="ExecutionPlanApproval.PlanHash"/> must match <see cref="ExecutionPlanHasher.ComputeHash"/>
+    /// for <paramref name="plan"/> exactly, or execution refuses to start (ADR-0023: a plan that
+    /// no longer matches its approval is, by construction, unapproved).
+    /// </param>
+    /// <param name="ct">Cancelled to abandon the run.</param>
+    public async Task<SkillReport> ExecuteExecutionPlanAsync(
+        Guid taskId, ActorIdentity actor, ExecutionPlan plan, ExecutionPlanApproval? approval, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        if (approval is not null)
+        {
+            var actualHash = ExecutionPlanHasher.ComputeHash(plan);
+            if (!string.Equals(approval.PlanHash, actualHash, StringComparison.Ordinal))
+            {
+                var refusal = new Evidence(
+                    Guid.NewGuid().ToString(),
+                    EvidenceKind.ExecutedAction,
+                    "Execution refused: the approval's plan hash does not match this plan's current content.",
+                    null,
+                    "bops.runtime",
+                    timeProvider.GetUtcNow());
+                return new SkillReport([refusal], [], plan);
+            }
+        }
+
+        var evidence = new List<Evidence>();
+
+        foreach (var planStep in plan.Steps.OrderBy(s => s.Index))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var call = new ModelToolCall($"plan-step-{planStep.Index}", planStep.ToolName, planStep.Arguments);
+            var (step, _, authorization, verification) = await ExecuteStepAsync(taskId, planStep.Index, actor, call, planRevision: -1, ct);
+
+            evidence.Add(new Evidence(
+                Guid.NewGuid().ToString(),
+                EvidenceKind.ExecutedAction,
+                planStep.Description ?? $"Executed '{planStep.ToolName}'.",
+                step.Observation,
+                planStep.ToolName,
+                timeProvider.GetUtcNow()));
+
+            if (verification is { } verificationStatus)
+            {
+                evidence.Add(new Evidence(
+                    Guid.NewGuid().ToString(),
+                    EvidenceKind.Verification,
+                    $"Verification of '{planStep.ToolName}': {verificationStatus}.",
+                    step.Observation,
+                    planStep.ToolName,
+                    timeProvider.GetUtcNow()));
+            }
+
+            // Rule A5 / ADR-0024: a plan is not a checklist of independent actions — a denial or
+            // an unresolved tool means whatever comes next in the plan likely assumed this step
+            // succeeded, so this stops here rather than attempting the rest anyway.
+            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected)
+            {
+                break;
+            }
+        }
+
+        // Findings are domain interpretation only a Skill's own logic can make (ADR-0023) — this
+        // method produces the Evidence a Skill would build Findings from, never Findings itself.
+        return new SkillReport(evidence, [], plan);
+    }
+
     /// <summary>Persists a task's terminal state and returns it — the one place every exit from <see cref="ContinueAsync"/> goes through.</summary>
     private async Task<TaskState> FinishAsync(TaskState task, CancellationToken ct)
     {

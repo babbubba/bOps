@@ -37,8 +37,31 @@ public enum PackageTrustLevel
 }
 
 /// <summary>
+/// The scale of a policy decision's potential effect (ADR-0023) — a magnitude, never a literal
+/// count or a named resource (rule A1: the core names no concrete target).
+/// </summary>
+#pragma warning disable CA1720 // "Single" is exactly the right name for one target, the same way ToolParameterType's own members are; see docs/architecture/suppressions.md.
+public enum BlastRadius
+{
+    /// <summary>Affects one target.</summary>
+    Single,
+
+    /// <summary>Affects a bounded, named-in-advance set of targets.</summary>
+    Multiple,
+
+    /// <summary>Affects an entire fleet or environment.</summary>
+    Fleet,
+}
+#pragma warning restore CA1720
+
+/// <summary>
 /// Everything a policy engine needs to decide a call: which node and package it runs on, how
 /// much that package is trusted, what the tool declares, the arguments, and who is asking.
+/// <see cref="SkillId"/>, <see cref="CapabilityName"/>, <see cref="Target"/>,
+/// <see cref="Environment"/> and <see cref="BlastRadius"/> are optional, Skill-call-only context
+/// added in ADR-0023 — the plain tool-call path (<c>AgentRunner.ExecuteStepAsync</c>) supplies
+/// none of them and they default to absent. <see cref="RiskLevel.Critical"/> stays unconditionally
+/// <see cref="PolicyMode.Forbidden"/> regardless of any of these fields (rule S3).
 /// </summary>
 public sealed record PolicyContext
 {
@@ -76,6 +99,21 @@ public sealed record PolicyContext
 
     /// <summary>Who is asking for this call to run.</summary>
     public ActorIdentity Actor { get; init; }
+
+    /// <summary>The Skill this call is part of, when it is one (ADR-0023). <c>null</c> for a plain tool call.</summary>
+    public string? SkillId { get; init; }
+
+    /// <summary>The <see cref="CapabilityManifest.Name"/> this call realizes a step of, when it is one (ADR-0023). <c>null</c> for a plain tool call.</summary>
+    public string? CapabilityName { get; init; }
+
+    /// <summary>A generic identifier for what this call would affect — never a literal resource name assumed by the core (rule A1). <c>null</c> when not applicable.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>A generic environment label (e.g. "production", "staging") — never a value the core interprets itself. <c>null</c> when not applicable.</summary>
+    public string? Environment { get; init; }
+
+    /// <summary>The scale of this call's potential effect, when known.</summary>
+    public BlastRadius? BlastRadius { get; init; }
 }
 
 /// <summary>A policy engine's decision for one call. <see cref="Reason"/> is always audited — a denial without a reason is not useful to anyone investigating it.</summary>
