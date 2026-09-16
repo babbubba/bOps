@@ -86,50 +86,67 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
     private async Task<ChatCompletionResponse> SendAsync(ChatCompletionRequest payload, CancellationToken ct)
     {
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            Content = JsonContent.Create(payload, OpenAiJsonContext.Default.ChatCompletionRequest),
-        };
-
-        if (!string.IsNullOrEmpty(options.ApiKey))
-        {
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
-        }
-
-        HttpResponseMessage httpResponse;
-        try
-        {
-            httpResponse = await httpClient.SendAsync(httpRequest, ct);
-        }
-        catch (HttpRequestException ex)
-        {
-            // A provider that cannot be reached is the same kind of dead end as one that replies
-            // with garbage — rule C1 requires it become an observation, never an exception that
-            // escapes the agent loop, so it is reported the same way as a malformed response.
-            throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
-        }
-
-        using (httpResponse)
-        {
-            if (!httpResponse.IsSuccessStatusCode)
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
             {
-                throw new ModelProtocolException(
-                    $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                    $"({httpResponse.StatusCode}) for the chat completion request.");
+                Content = JsonContent.Create(payload, OpenAiJsonContext.Default.ChatCompletionRequest),
+            };
+            if (!string.IsNullOrEmpty(options.ResolvedApiKey))
+            {
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ResolvedApiKey);
             }
 
+            HttpResponseMessage httpResponse;
             try
             {
-                var body = await httpResponse.Content.ReadFromJsonAsync(OpenAiJsonContext.Default.ChatCompletionResponse, ct);
-                return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                httpResponse = await httpClient.SendAsync(httpRequest, ct);
             }
-            catch (JsonException ex)
+            catch (HttpRequestException) when (attempt < 2)
             {
-                throw new ModelProtocolException(
-                    $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+                continue;
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
+            }
+
+            using (httpResponse)
+            {
+                if (IsTransient(httpResponse.StatusCode) && attempt < 2)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+                    continue;
+                }
+
+                if (!httpResponse.IsSuccessStatusCode)
+                {
+                    throw new ModelProtocolException(
+                        $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
+                        $"({httpResponse.StatusCode}) for the chat completion request.");
+                }
+
+                try
+                {
+                    var body = await httpResponse.Content.ReadFromJsonAsync(OpenAiJsonContext.Default.ChatCompletionResponse, ct);
+                    return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                }
+                catch (JsonException ex)
+                {
+                    throw new ModelProtocolException(
+                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                }
             }
         }
+
+        throw new ModelProtocolException($"Provider '{options.Provider}' exhausted its bounded transient retry budget.");
     }
+
+    private static bool IsTransient(System.Net.HttpStatusCode statusCode) =>
+        statusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or
+            System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or
+            System.Net.HttpStatusCode.GatewayTimeout;
 
     private static List<ChatMessageDto> BuildMessages(ModelRequest request)
     {

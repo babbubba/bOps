@@ -16,7 +16,10 @@ namespace bOps.Packages.Providers.Anthropic.Tests;
 public sealed class AnthropicChatModelTests
 {
     private static ChatModelOptions Options(bool nativeToolCalling = true) =>
-        new("Anthropic", "https://api.anthropic.com", "test-key", "claude-test", nativeToolCalling);
+        new("Anthropic", "https://api.anthropic.com", new SecretReference("environment", "TEST_KEY"), "claude-test", nativeToolCalling)
+        {
+            ResolvedApiKey = "test-key",
+        };
 
 #pragma warning disable CA2000 // The handler/HttpClient pair's lifetime is the test method's —
                                // nothing here holds a real OS handle worth an explicit Dispose,
@@ -62,6 +65,22 @@ public sealed class AnthropicChatModelTests
         Assert.Equal("test-key", request.Headers.GetValues("x-api-key").Single());
         Assert.Equal("2023-06-01", request.Headers.GetValues("anthropic-version").Single());
         Assert.EndsWith("/v1/messages", request.RequestUri!.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_RetriesOnlyTransientHttpFailures_WithinABoundedBudget()
+    {
+        var (model, handler) = CreateModel(
+        [
+            (HttpStatusCode.ServiceUnavailable, "temporarily unavailable"),
+            (HttpStatusCode.OK, """{"content":[{"type":"text","text":"recovered"}]}"""),
+        ]);
+
+        var response = await model.CompleteAsync(
+            new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], []));
+
+        Assert.Equal("recovered", response.TextResponse);
+        Assert.Equal(2, handler.Requests.Count);
     }
 
     [Fact]

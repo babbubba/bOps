@@ -109,50 +109,68 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
     private async Task<MessagesResponse> SendAsync(MessagesRequest payload, CancellationToken ct)
     {
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/v1/messages")
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            Content = JsonContent.Create(payload, AnthropicJsonContext.Default.MessagesRequest),
-        };
-
-        httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
-        if (!string.IsNullOrEmpty(options.ApiKey))
-        {
-            httpRequest.Headers.Add("x-api-key", options.ApiKey);
-        }
-
-        HttpResponseMessage httpResponse;
-        try
-        {
-            httpResponse = await httpClient.SendAsync(httpRequest, ct);
-        }
-        catch (HttpRequestException ex)
-        {
-            // Rule C1: a provider that cannot be reached is the same kind of dead end as one that
-            // replies with garbage — never an exception that escapes the agent loop.
-            throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
-        }
-
-        using (httpResponse)
-        {
-            if (!httpResponse.IsSuccessStatusCode)
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/v1/messages")
             {
-                throw new ModelProtocolException(
-                    $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                    $"({httpResponse.StatusCode}) for the messages request.");
+                Content = JsonContent.Create(payload, AnthropicJsonContext.Default.MessagesRequest),
+            };
+            httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
+            if (!string.IsNullOrEmpty(options.ResolvedApiKey))
+            {
+                httpRequest.Headers.Add("x-api-key", options.ResolvedApiKey);
             }
 
+            HttpResponseMessage httpResponse;
             try
             {
-                var body = await httpResponse.Content.ReadFromJsonAsync(AnthropicJsonContext.Default.MessagesResponse, ct);
-                return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                httpResponse = await httpClient.SendAsync(httpRequest, ct);
             }
-            catch (JsonException ex)
+            catch (HttpRequestException) when (attempt < 2)
             {
-                throw new ModelProtocolException(
-                    $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+                continue;
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
+            }
+
+            using (httpResponse)
+            {
+                if (IsTransient(httpResponse.StatusCode) && attempt < 2)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
+                    continue;
+                }
+
+                if (!httpResponse.IsSuccessStatusCode)
+                {
+                    throw new ModelProtocolException(
+                        $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
+                        $"({httpResponse.StatusCode}) for the messages request.");
+                }
+
+                try
+                {
+                    var body = await httpResponse.Content.ReadFromJsonAsync(AnthropicJsonContext.Default.MessagesResponse, ct);
+                    return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                }
+                catch (JsonException ex)
+                {
+                    throw new ModelProtocolException(
+                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                }
             }
         }
+
+        throw new ModelProtocolException($"Provider '{options.Provider}' exhausted its bounded transient retry budget.");
     }
+
+    private static bool IsTransient(System.Net.HttpStatusCode statusCode) =>
+        statusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or
+            System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or
+            System.Net.HttpStatusCode.GatewayTimeout;
 
     /// <summary>
     /// Maps <paramref name="history"/> into Anthropic messages, merging consecutive turns that map
