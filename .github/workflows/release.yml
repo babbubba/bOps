@@ -1,0 +1,94 @@
+name: Release candidate
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  build-release-candidate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore bOps.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build bOps.slnx --no-restore --configuration Release -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test bOps.slnx --no-build --configuration Release --filter "Category!=LiveModel"
+
+      - name: Publish twice
+        shell: pwsh
+        run: |
+          dotnet publish src/core/bOps.Cli/bOps.Cli.csproj --no-restore --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:ContinuousIntegrationBuild=true -p:PublishTrimmed=false --output artifacts/publish-1
+          dotnet publish src/core/bOps.Cli/bOps.Cli.csproj --no-restore --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:ContinuousIntegrationBuild=true -p:PublishTrimmed=false --output artifacts/publish-2
+
+      - name: Verify reproducibility
+        shell: pwsh
+        run: ./scripts/Compare-ReproducibleTrees.ps1 -FirstDirectory artifacts/publish-1 -SecondDirectory artifacts/publish-2
+
+      - name: Pack SDK
+        run: dotnet pack src/core/bOps.Abstractions/bOps.Abstractions.csproj --configuration Release --no-build --output artifacts/packages -p:ContinuousIntegrationBuild=true
+
+      - name: Restore .NET tools
+        run: dotnet tool restore
+
+      - name: Generate SBOM
+        shell: pwsh
+        run: ./scripts/Generate-Sbom.ps1
+
+      - name: Create deterministic runtime archive and checksums
+        shell: pwsh
+        run: |
+          ./scripts/New-ReproducibleZip.ps1 -SourceDirectory artifacts/publish-1 -DestinationFile artifacts/bops-${{ matrix.rid }}.zip
+          $releaseFiles = @(
+            Get-Item artifacts/bops-${{ matrix.rid }}.zip
+            Get-ChildItem artifacts/packages -File
+            Get-ChildItem artifacts/sbom -File
+          )
+          $artifactRoot = (Resolve-Path artifacts).Path
+          $releaseFiles | Sort-Object FullName | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $relative = [System.IO.Path]::GetRelativePath($artifactRoot, $_.FullName).Replace('\', '/')
+            "$hash *$relative" | Add-Content -LiteralPath artifacts/SHA256SUMS-${{ matrix.rid }}.txt
+          }
+
+      - name: Attest release artifacts
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            artifacts/bops-${{ matrix.rid }}.zip
+            artifacts/packages/*.nupkg
+            artifacts/SHA256SUMS-${{ matrix.rid }}.txt
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: bops-${{ matrix.rid }}
+          path: |
+            artifacts/bops-${{ matrix.rid }}.zip
+            artifacts/packages/*
+            artifacts/sbom/*.json
+            artifacts/SHA256SUMS-${{ matrix.rid }}.txt
+          if-no-files-found: error

@@ -17,6 +17,13 @@ on:
 # needs no extra filtering to get real coverage on both OSes (agentic/00-project-spec.md, V0.5:
 # "Windows + Linux parity ... CI on both OSes").
 jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+
   build-and-test:
     strategy:
       fail-fast: false

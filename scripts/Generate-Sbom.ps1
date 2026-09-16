@@ -5,7 +5,7 @@
 param(
     [string]$OutputDirectory = "artifacts/sbom",
     [string]$Configuration = "Release",
-    [string]$Version = "0.9.1"
+    [string]$Version = "1.0.0"
 )
 
 Set-StrictMode -Version Latest

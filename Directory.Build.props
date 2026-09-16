@@ -10,6 +10,7 @@
     <AnalysisLevel>latest-all</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- D-014 (agentic/06-decisions.md): the copyright holder is the individual Fabio Cavallari,
          not the unregistered "bSoft" brand and not a "bOps contributors" collective — there is no
          such legal entity. Company stays the project/brand name; Copyright and Authors are the
