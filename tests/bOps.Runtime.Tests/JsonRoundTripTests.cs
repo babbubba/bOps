@@ -414,13 +414,35 @@ public sealed class JsonRoundTripTests
     // ---- Providers.cs ----
 
     [Fact]
-    public void ChatModelOptions_RoundTrips()
+    public void SecretReference_RoundTrips_WithoutASecretValue()
     {
-        var value = new ChatModelOptions("OpenRouter", "https://openrouter.ai/api/v1", "sk-test", "anthropic/claude-sonnet-4.5", SupportsNativeToolCalling: false);
+        var value = new SecretReference("environment", "BOPS_OPENAI_API_KEY");
 
         var result = RoundTrip(value);
 
         Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void ChatModelOptions_RoundTrips()
+    {
+        var value = new ChatModelOptions("OpenRouter", "https://openrouter.ai/api/v1",
+            new SecretReference("environment", "BOPS_MODEL_API_KEY"), "anthropic/claude-sonnet-4.5",
+            SupportsNativeToolCalling: false)
+        {
+            ResolvedApiKey = "must-not-round-trip",
+        };
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.Provider, result!.Provider);
+        Assert.Equal(value.BaseUrl, result.BaseUrl);
+        Assert.Equal(value.ApiKeySecret, result.ApiKeySecret);
+        Assert.Equal(value.Model, result.Model);
+        Assert.Equal(value.SupportsNativeToolCalling, result.SupportsNativeToolCalling);
+        Assert.Null(result.ResolvedApiKey);
+        Assert.DoesNotContain("must-not-round-trip", JsonSerializer.Serialize(value, Options), StringComparison.Ordinal);
+        Assert.DoesNotContain("must-not-round-trip", value.ToString(), StringComparison.Ordinal);
     }
 
     // ---- Plugins.cs ----

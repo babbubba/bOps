@@ -5,11 +5,13 @@
     <AssemblyName>bOps.Abstractions</AssemblyName>
     <Description>The bOps plugin SDK: the single stable contract referenced by the runtime, first-party packages, and third-party packages alike. Zero dependencies.</Description>
     <PackageId>bOps.Abstractions</PackageId>
-    <!-- agentic/06-decisions.md D-012: stays on 0.x until the V1.0 contract-stability milestone.
-         Bumped at each version that actually changes the public contract, not on every commit —
-         V0.10 (ADR-0020) is the first to bump it since V0.1, because it is also the first thing
-         that reads this number for real: PluginManifestValidator's host-compatibility check. -->
-    <Version>0.10.0</Version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- ADR-0022: V1.0 freezes the public SDK surface; SemVer is binding from this version. -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
