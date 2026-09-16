@@ -25,6 +25,7 @@ namespace bOps.Memory;
 public sealed class SqliteTaskStore : ITaskStore
 {
     private readonly string _connectionString;
+    private readonly string _filePath;
 
     /// <summary>Opens (creating if needed) a SQLite-backed task store at <paramref name="filePath"/>.</summary>
     public SqliteTaskStore(string filePath)
@@ -37,7 +38,8 @@ public sealed class SqliteTaskStore : ITaskStore
             Directory.CreateDirectory(directory);
         }
 
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = filePath }.ToString();
+        _filePath = Path.GetFullPath(filePath);
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _filePath }.ToString();
         EnsureSchema();
     }
 
@@ -132,6 +134,11 @@ public sealed class SqliteTaskStore : ITaskStore
             CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks(status);
             """;
         command.ExecuteNonQuery();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(_filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 
     /// <summary>

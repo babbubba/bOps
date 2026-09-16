@@ -57,6 +57,21 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     }
 
     [Fact]
+    public void Constructor_RestrictsTheAuditFileToTheCurrentUnixUser()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var sink = new JsonLinesAuditSink(_filePath);
+
+        Assert.Equal(
+            UnixFileMode.UserRead | UnixFileMode.UserWrite,
+            File.GetUnixFileMode(_filePath));
+    }
+
+    [Fact]
     public async Task WriteAsync_ContinuesTheChain_AcrossSinkInstances()
     {
         using (var first = new JsonLinesAuditSink(_filePath))

@@ -49,6 +49,16 @@ public sealed class JsonLinesAuditSink : IAuditSink, IDisposable
             Directory.CreateDirectory(directory);
         }
 
+        if (!File.Exists(filePath))
+        {
+            using var stream = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
         (_lastHash, _nextSequence) = ReadChainTail(filePath);
     }
 
