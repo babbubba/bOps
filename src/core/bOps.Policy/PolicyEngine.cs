@@ -48,6 +48,44 @@ public sealed class PolicyEngine(PolicyConfig config) : IPolicyEngine
                 $"'{manifest.Name}' is {manifest.Risk}-risk, which exceeds the configured ceiling ({ceiling}) for its package.");
         }
 
+        var hasSkillContext = context.SkillId is not null
+            || context.CapabilityName is not null
+            || context.Target is not null
+            || context.Environment is not null
+            || context.BlastRadius is not null;
+        if (hasSkillContext)
+        {
+            if (string.IsNullOrWhiteSpace(context.SkillId)
+                || string.IsNullOrWhiteSpace(context.CapabilityName)
+                || string.IsNullOrWhiteSpace(context.Target)
+                || string.IsNullOrWhiteSpace(context.Environment)
+                || context.BlastRadius is null)
+            {
+                return new PolicyDecision(PolicyMode.Forbidden,
+                    "Skill-originated calls require complete Skill, Capability, target, environment and blast-radius context.");
+            }
+
+            var matches = config.SkillRules.Where(rule =>
+                    string.Equals(rule.SkillId, context.SkillId, StringComparison.Ordinal)
+                    && string.Equals(rule.CapabilityName, context.CapabilityName, StringComparison.Ordinal)
+                    && string.Equals(rule.Target, context.Target, StringComparison.Ordinal)
+                    && string.Equals(rule.Environment, context.Environment, StringComparison.Ordinal)
+                    && rule.BlastRadius == context.BlastRadius)
+                .ToArray();
+
+            if (matches.Length != 1)
+            {
+                return new PolicyDecision(PolicyMode.Forbidden,
+                    matches.Length == 0
+                        ? "No exact contextual policy rule covers this Skill call; failing closed."
+                        : "Multiple contextual policy rules cover this Skill call; failing closed.");
+            }
+
+            return new PolicyDecision(matches[0].Mode,
+                $"policy.yaml configures Skill '{context.SkillId}' Capability '{context.CapabilityName}' " +
+                $"for target '{context.Target}' in environment '{context.Environment}' as {matches[0].Mode}.");
+        }
+
         if (config.ToolOverrides.TryGetValue(manifest.Name, out var toolMode))
         {
             return new PolicyDecision(toolMode, $"policy.yaml configures '{manifest.Name}' explicitly as {toolMode}.");

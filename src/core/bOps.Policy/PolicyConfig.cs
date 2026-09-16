@@ -20,11 +20,13 @@ public sealed class PolicyConfig
     public PolicyConfig(
         IReadOnlyDictionary<RiskLevel, PolicyMode> defaults,
         IReadOnlyDictionary<string, PolicyMode> toolOverrides,
-        IReadOnlyDictionary<string, RiskLevel> packageCeilings)
+        IReadOnlyDictionary<string, RiskLevel> packageCeilings,
+        IReadOnlyList<SkillPolicyRule>? skillRules = null)
     {
         Defaults = defaults;
         ToolOverrides = toolOverrides;
         PackageCeilings = packageCeilings;
+        SkillRules = skillRules ?? [];
     }
 
     /// <summary>The mode to use for a risk level with no more specific entry.</summary>
@@ -35,6 +37,9 @@ public sealed class PolicyConfig
 
     /// <summary>The highest risk level a package's tools may reach, regardless of what the tool/risk-default decision says.</summary>
     public IReadOnlyDictionary<string, RiskLevel> PackageCeilings { get; }
+
+    /// <summary>Exact contextual authorization rules for Skill-originated tool calls.</summary>
+    public IReadOnlyList<SkillPolicyRule> SkillRules { get; }
 
     /// <summary>
     /// The built-in policy used when no <c>policy.yaml</c> file exists at all: Read/Low run
@@ -54,7 +59,8 @@ public sealed class PolicyConfig
             [RiskLevel.Critical] = PolicyMode.Forbidden,
         },
         toolOverrides: new Dictionary<string, PolicyMode>(StringComparer.Ordinal),
-        packageCeilings: new Dictionary<string, RiskLevel>(StringComparer.Ordinal));
+        packageCeilings: new Dictionary<string, RiskLevel>(StringComparer.Ordinal),
+        skillRules: []);
 
     /// <summary>
     /// Used when a <c>policy.yaml</c> file exists but failed to load (malformed YAML, or it
@@ -75,5 +81,15 @@ public sealed class PolicyConfig
             [RiskLevel.Critical] = PolicyMode.Forbidden,
         },
         toolOverrides: new Dictionary<string, PolicyMode>(StringComparer.Ordinal),
-        packageCeilings: new Dictionary<string, RiskLevel>(StringComparer.Ordinal));
+        packageCeilings: new Dictionary<string, RiskLevel>(StringComparer.Ordinal),
+        skillRules: []);
 }
+
+/// <summary>One exact-match contextual rule for Skill-originated tool calls (ADR-0025).</summary>
+public sealed record SkillPolicyRule(
+    string SkillId,
+    string CapabilityName,
+    string Target,
+    string Environment,
+    BlastRadius BlastRadius,
+    PolicyMode Mode);

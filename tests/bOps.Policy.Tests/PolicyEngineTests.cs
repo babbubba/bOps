@@ -168,4 +168,51 @@ public sealed class PolicyEngineTests
             Assert.Equal(PolicyMode.Forbidden, engine.Evaluate(Context(Manifest("t", risk))).Mode);
         }
     }
+
+    [Fact]
+    public void Evaluate_UsesAnExactContextualSkillRule()
+    {
+        var config = new PolicyConfig(
+            new Dictionary<RiskLevel, PolicyMode> { [RiskLevel.Read] = PolicyMode.Forbidden },
+            new Dictionary<string, PolicyMode>(),
+            new Dictionary<string, RiskLevel>(),
+            [new SkillPolicyRule("sample.skill", "sample.inspect", "local", "test", BlastRadius.Single, PolicyMode.Automatic)]);
+        var context = Context(Manifest("sample.read", RiskLevel.Read)) with
+        {
+            SkillId = "sample.skill",
+            CapabilityName = "sample.inspect",
+            Target = "local",
+            Environment = "test",
+            BlastRadius = BlastRadius.Single,
+        };
+
+        var decision = new PolicyEngine(config).Evaluate(context);
+
+        Assert.Equal(PolicyMode.Automatic, decision.Mode);
+    }
+
+    [Fact]
+    public void Evaluate_FailsClosed_ForMissingOrUnmatchedSkillContext()
+    {
+        var config = new PolicyConfig(
+            PolicyConfig.SafeDefault.Defaults,
+            PolicyConfig.SafeDefault.ToolOverrides,
+            PolicyConfig.SafeDefault.PackageCeilings,
+            [new SkillPolicyRule("sample.skill", "sample.inspect", "local", "test", BlastRadius.Single, PolicyMode.Automatic)]);
+        var engine = new PolicyEngine(config);
+        var incomplete = Context(Manifest("sample.read", RiskLevel.Read)) with
+        {
+            SkillId = "sample.skill",
+            CapabilityName = "sample.inspect",
+        };
+        var unmatched = incomplete with
+        {
+            Target = "other",
+            Environment = "test",
+            BlastRadius = BlastRadius.Single,
+        };
+
+        Assert.Equal(PolicyMode.Forbidden, engine.Evaluate(incomplete).Mode);
+        Assert.Equal(PolicyMode.Forbidden, engine.Evaluate(unmatched).Mode);
+    }
 }

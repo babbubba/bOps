@@ -112,4 +112,57 @@ public sealed class PolicyConfigLoaderTests
 
         Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(yaml));
     }
+
+    [Fact]
+    public void Load_ParsesExactSkillRules()
+    {
+        var yaml = """
+            skills:
+              - skill: sample.skill
+                capability: sample.remediate
+                target: local
+                environment: test
+                blastRadius: single
+                mode: approval
+            """;
+
+        var config = PolicyConfigLoader.Load(yaml);
+
+        var rule = Assert.Single(config.SkillRules);
+        Assert.Equal("sample.skill", rule.SkillId);
+        Assert.Equal("sample.remediate", rule.CapabilityName);
+        Assert.Equal("local", rule.Target);
+        Assert.Equal("test", rule.Environment);
+        Assert.Equal(BlastRadius.Single, rule.BlastRadius);
+        Assert.Equal(PolicyMode.Approval, rule.Mode);
+    }
+
+    [Fact]
+    public void Load_RejectsIncompleteOrDuplicateSkillRules()
+    {
+        var incomplete = """
+            skills:
+              - skill: sample.skill
+                capability: sample.remediate
+                mode: automatic
+            """;
+        var duplicate = """
+            skills:
+              - skill: sample.skill
+                capability: sample.remediate
+                target: local
+                environment: test
+                blastRadius: single
+                mode: automatic
+              - skill: sample.skill
+                capability: sample.remediate
+                target: local
+                environment: test
+                blastRadius: single
+                mode: approval
+            """;
+
+        Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(incomplete));
+        Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(duplicate));
+    }
 }

@@ -112,7 +112,44 @@ public static class PolicyConfigLoader
             }
         }
 
-        return new PolicyConfig(defaults, toolOverrides, packageCeilings);
+        var skillRules = new List<SkillPolicyRule>();
+        var skillRuleKeys = new HashSet<string>(StringComparer.Ordinal);
+        if (document.Skills is not null)
+        {
+            foreach (var rule in document.Skills)
+            {
+                var skill = rule.GetValueOrDefault("skill");
+                var capability = rule.GetValueOrDefault("capability");
+                var target = rule.GetValueOrDefault("target");
+                var environment = rule.GetValueOrDefault("environment");
+                var blastRadiusText = rule.GetValueOrDefault("blastRadius");
+                var modeText = rule.GetValueOrDefault("mode");
+                if (string.IsNullOrWhiteSpace(skill)
+                    || string.IsNullOrWhiteSpace(capability)
+                    || string.IsNullOrWhiteSpace(target)
+                    || string.IsNullOrWhiteSpace(environment)
+                    || string.IsNullOrWhiteSpace(blastRadiusText)
+                    || string.IsNullOrWhiteSpace(modeText))
+                {
+                    throw new PolicyConfigurationException(
+                        "Every skills entry requires skill, capability, target, environment, blastRadius and mode.");
+                }
+
+                var blastRadius = ParseEnum<BlastRadius>(blastRadiusText, "skills", skill);
+                var mode = ParseEnum<PolicyMode>(modeText, "skills", skill);
+                var key = string.Join("\u001f", skill, capability, target, environment, blastRadius);
+                if (!skillRuleKeys.Add(key))
+                {
+                    throw new PolicyConfigurationException(
+                        $"policy.yaml contains more than one exact rule for Skill '{skill}' Capability '{capability}'.");
+                }
+
+                skillRules.Add(new SkillPolicyRule(
+                    skill, capability, target, environment, blastRadius, mode));
+            }
+        }
+
+        return new PolicyConfig(defaults, toolOverrides, packageCeilings, skillRules);
     }
 
     private static T ParseEnum<T>(string value, string section, string key) where T : struct, Enum =>
@@ -126,5 +163,6 @@ public static class PolicyConfigLoader
         public Dictionary<string, string>? Defaults { get; set; }
         public Dictionary<string, string>? Tools { get; set; }
         public Dictionary<string, string>? Packages { get; set; }
+        public List<Dictionary<string, string>>? Skills { get; set; }
     }
 }
