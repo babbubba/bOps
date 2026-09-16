@@ -36,6 +36,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(ModelCallAuditEvent), "modelCall")]
 [JsonDerivedType(typeof(PolicyDecisionAuditEvent), "policyDecision")]
 [JsonDerivedType(typeof(ApprovalAuditEvent), "approval")]
+[JsonDerivedType(typeof(SkillRunAuditEvent), "skillRun")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -91,6 +92,27 @@ public sealed record ToolCallAuditEvent : AuditEvent
     /// whatever its <see cref="Outcome"/> (V0.4; agentic/03-security-rules.md, rule S4).
     /// </summary>
     public VerificationStatus? Verification { get; init; }
+
+    /// <summary>The Skill run that originated this call, when applicable.</summary>
+    public Guid? SkillRunId { get; init; }
+
+    /// <summary>The originating Skill, when applicable.</summary>
+    public string? SkillId { get; init; }
+
+    /// <summary>The originating Capability, when applicable.</summary>
+    public string? CapabilityName { get; init; }
+
+    /// <summary>The contextual target, when applicable.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>The contextual environment, when applicable.</summary>
+    public string? Environment { get; init; }
+
+    /// <summary>The contextual blast radius, when applicable.</summary>
+    public BlastRadius? BlastRadius { get; init; }
+
+    /// <summary>The immutable plan hash during execution, absent during evidence gathering.</summary>
+    public string? PlanHash { get; init; }
 }
 
 /// <summary>
@@ -140,6 +162,24 @@ public sealed record PolicyDecisionAuditEvent : AuditEvent
 
     /// <summary>Why this mode was decided.</summary>
     public required string Reason { get; init; }
+
+    /// <summary>The Skill run that originated this decision, when applicable.</summary>
+    public Guid? SkillRunId { get; init; }
+
+    /// <summary>The originating Skill, when applicable.</summary>
+    public string? SkillId { get; init; }
+
+    /// <summary>The originating Capability, when applicable.</summary>
+    public string? CapabilityName { get; init; }
+
+    /// <summary>The contextual target, when applicable.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>The contextual environment, when applicable.</summary>
+    public string? Environment { get; init; }
+
+    /// <summary>The contextual blast radius, when applicable.</summary>
+    public BlastRadius? BlastRadius { get; init; }
 }
 
 /// <summary>
@@ -168,6 +208,78 @@ public sealed record ApprovalAuditEvent : AuditEvent
 
     /// <summary>An optional note from the approver.</summary>
     public string? Note { get; init; }
+
+    /// <summary>The Skill run that originated this approval, when applicable.</summary>
+    public Guid? SkillRunId { get; init; }
+
+    /// <summary>The originating Skill, when applicable.</summary>
+    public string? SkillId { get; init; }
+
+    /// <summary>The originating Capability, when applicable.</summary>
+    public string? CapabilityName { get; init; }
+}
+
+/// <summary>The phase represented by a <see cref="SkillRunAuditEvent"/>.</summary>
+public enum SkillRunStage
+{
+    /// <summary>The activated provider was resolved for use.</summary>
+    ProviderResolved,
+
+    /// <summary>Evidence gathering and plan preparation ended.</summary>
+    Preparation,
+
+    /// <summary>Execution of the prepared immutable plan ended.</summary>
+    Execution,
+}
+
+/// <summary>The audited outcome of one Skill run phase.</summary>
+public enum SkillRunOutcome
+{
+    /// <summary>The phase completed successfully.</summary>
+    Success,
+
+    /// <summary>The phase failed validation or package execution.</summary>
+    Failure,
+
+    /// <summary>The phase exceeded its declared timeout.</summary>
+    Timeout,
+
+    /// <summary>The phase was refused before executing its plan.</summary>
+    Refused,
+}
+
+/// <summary>Correlates Skill provider resolution, preparation and execution without recording evidence data.</summary>
+public sealed record SkillRunAuditEvent : AuditEvent
+{
+    /// <summary>The terminal, non-resumable V1.1 Skill run.</summary>
+    public required Guid RunId { get; init; }
+
+    /// <summary>The host-assigned package identity.</summary>
+    public required PackageId Package { get; init; }
+
+    /// <summary>The activated Skill identity.</summary>
+    public required string SkillId { get; init; }
+
+    /// <summary>The selected Capability identity.</summary>
+    public required string CapabilityName { get; init; }
+
+    /// <summary>The audited run phase.</summary>
+    public required SkillRunStage Stage { get; init; }
+
+    /// <summary>How this phase ended.</summary>
+    public required SkillRunOutcome Outcome { get; init; }
+
+    /// <summary>The immutable plan hash, once a plan exists.</summary>
+    public string? PlanHash { get; init; }
+
+    /// <summary>Number of evidence records in the report at this phase.</summary>
+    public int EvidenceCount { get; init; }
+
+    /// <summary>Number of findings in the report at this phase.</summary>
+    public int FindingCount { get; init; }
+
+    /// <summary>A bounded failure explanation, absent on success.</summary>
+    public string? ErrorMessage { get; init; }
 }
 
 /// <summary>

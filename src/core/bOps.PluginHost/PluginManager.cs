@@ -19,6 +19,7 @@ namespace bOps.PluginHost;
 public sealed class PluginManager(
     PluginStore store,
     IToolRegistry toolRegistry,
+    ISkillRegistry skillRegistry,
     IChatModelRegistry chatModelRegistry,
     string pluginsRootDirectory,
     IConfiguration configuration,
@@ -163,6 +164,7 @@ public sealed class PluginManager(
         }
 
         toolRegistry.Unregister(new PackageId(id));
+        skillRegistry.Unregister(new PackageId(id));
         _activatedKinds.Remove(id);
 
         if (_loadContexts.Remove(id, out var context))
@@ -236,20 +238,65 @@ public sealed class PluginManager(
 
         var packageId = new PackageId(record.Id);
         var isToolProvider = instance is IToolProvider;
+        var isSkillProvider = instance is ISkillProvider;
         var isModelProvider = instance is IModelProviderPackage;
 
-        if (isToolProvider && isModelProvider)
+        if (isModelProvider && (isToolProvider || isSkillProvider))
         {
             loadContext.Unload();
             throw new PluginOperationException(
-                $"Entry type '{manifest.EntryType}' implements both {nameof(IToolProvider)} and {nameof(IModelProviderPackage)}; a plugin must implement exactly one.");
+                $"Entry type '{manifest.EntryType}' combines a model provider with tool/Skill roles; a plugin must not mix those trust surfaces.");
         }
 
-        if (isToolProvider)
+        if (isSkillProvider)
         {
-            foreach (var tool in ((IToolProvider)instance).GetTools())
+            var provider = (ISkillProvider)instance;
+            var capabilities = provider.GetCapabilities().ToArray();
+            var tools = provider.GetTools().ToArray();
+            var snapshot = new SnapshotSkillProvider(provider.SkillId, capabilities, tools);
+            var declared = manifest.DeclaredCapabilities.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+            var actual = capabilities.Select(capability => capability.Manifest.Name)
+                .OrderBy(value => value, StringComparer.Ordinal).ToArray();
+            if (!declared.SequenceEqual(actual, StringComparer.Ordinal))
             {
-                toolRegistry.Register(packageId, current.Trust, tool);
+                loadContext.Unload();
+                throw new PluginOperationException(
+                    $"Plugin '{record.Id}' declared Capabilities do not exactly match the activated Skill provider.");
+            }
+
+            try
+            {
+                foreach (var tool in tools)
+                {
+                    toolRegistry.Register(packageId, current.Trust, tool);
+                }
+
+                skillRegistry.Register(packageId, current.Trust, snapshot);
+            }
+            catch
+            {
+                toolRegistry.Unregister(packageId);
+                skillRegistry.Unregister(packageId);
+                loadContext.Unload();
+                throw;
+            }
+
+            _activatedKinds[record.Id] = PluginKind.SkillProvider;
+        }
+        else if (isToolProvider)
+        {
+            try
+            {
+                foreach (var tool in ((IToolProvider)instance).GetTools())
+                {
+                    toolRegistry.Register(packageId, current.Trust, tool);
+                }
+            }
+            catch
+            {
+                toolRegistry.Unregister(packageId);
+                loadContext.Unload();
+                throw;
             }
 
             _activatedKinds[record.Id] = PluginKind.ToolProvider;
@@ -311,6 +358,17 @@ public sealed class PluginManager(
     private enum PluginKind
     {
         ToolProvider,
+        SkillProvider,
         ModelProvider,
+    }
+
+    private sealed class SnapshotSkillProvider(
+        string skillId,
+        IReadOnlyList<ICapability> capabilities,
+        IReadOnlyList<ITool> tools) : ISkillProvider
+    {
+        public string SkillId { get; } = skillId;
+        public IReadOnlyList<ICapability> GetCapabilities() => capabilities;
+        public IEnumerable<ITool> GetTools() => tools;
     }
 }

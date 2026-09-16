@@ -8,7 +8,12 @@ namespace Acme.SamplePlugin;
 /// exposing only the A10 list — this constructor takes nothing, so it works unchanged whether
 /// that list ever grows.
 /// </summary>
-public sealed class SampleToolProvider : IToolProvider
+public sealed class SampleToolProvider(TimeProvider timeProvider) : ISkillProvider
 {
-    public IEnumerable<ITool> GetTools() => [new SampleEchoTool()];
+    public string SkillId => "sample.echo-marker-skill";
+
+    public IReadOnlyList<ICapability> GetCapabilities() => [new SampleEchoMarkerCapability(timeProvider)];
+
+    public IEnumerable<ITool> GetTools() =>
+        [new SampleEchoTool(), new SampleMarkerStatusTool(), new SampleMarkerCreateTool()];
 }

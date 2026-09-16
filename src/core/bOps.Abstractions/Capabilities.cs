@@ -84,6 +84,7 @@ public sealed record CapabilityManifest
     public string? RollbackDescription { get; init; }
 
     /// <summary>The package that contributed this capability — stamped by the host, never self-claimed (rule A11), exactly like <see cref="ToolManifest.Package"/>.</summary>
+    [System.Text.Json.Serialization.JsonInclude]
     public PackageId Package { get; internal set; }
 }
 
@@ -173,3 +174,30 @@ public sealed record SkillDescriptor(
     PackageId Package,
     PackageTrustLevel Trust,
     IReadOnlyList<CapabilityManifest> Capabilities);
+
+/// <summary>How preparation of a terminal V1.1 Skill run ended.</summary>
+public enum SkillPreparationStatus
+{
+    /// <summary>Evidence, findings and an optional plan were prepared successfully.</summary>
+    Prepared,
+
+    /// <summary>Deterministic Skill code failed or returned an invalid report.</summary>
+    Failed,
+
+    /// <summary>The Capability exceeded its declared preparation timeout.</summary>
+    Timeout,
+}
+
+/// <summary>
+/// The serializable result of preparing one Skill run. It is intentionally not persisted by the
+/// runtime in V1.1 and has no resume token (ADR-0025).
+/// </summary>
+public sealed record PreparedSkillRun(
+    Guid RunId,
+    string SkillId,
+    string CapabilityName,
+    CapabilityRequest Request,
+    SkillPreparationStatus Status,
+    SkillReport Report,
+    string? PlanHash,
+    string? ErrorMessage);

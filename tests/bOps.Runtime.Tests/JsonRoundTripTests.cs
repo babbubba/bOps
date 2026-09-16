@@ -642,6 +642,54 @@ public sealed class JsonRoundTripTests
         Assert.Equal("sample.inspect", Assert.Single(result.Capabilities).Name);
     }
 
+    [Fact]
+    public void PreparedSkillRun_RoundTrips()
+    {
+        var request = new CapabilityRequest(ToolArguments.Empty, "local", "test", BlastRadius.Single);
+        var report = new SkillReport(
+            [new Evidence("e-1", EvidenceKind.Fact, "Observed.", "ok", "sample.read", DateTimeOffset.UnixEpoch)],
+            [new Finding("f-1", "Healthy.", ["e-1"])],
+            null);
+        var value = new PreparedSkillRun(
+            Guid.NewGuid(), "sample.skill", "sample.inspect", request,
+            SkillPreparationStatus.Prepared, report, null, null);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.RunId, result!.RunId);
+        Assert.Equal(value.SkillId, result.SkillId);
+        Assert.Equal(value.Status, result.Status);
+        Assert.Equal("e-1", Assert.Single(result.Report.Evidence).Id);
+    }
+
+    [Fact]
+    public void SkillRunAuditEvent_RoundTripsPolymorphically()
+    {
+        AuditEvent value = new SkillRunAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UnixEpoch,
+            Node = SampleNode,
+            TaskId = Guid.NewGuid(),
+            StepIndex = -1,
+            Actor = SampleActor,
+            RunId = Guid.NewGuid(),
+            Package = SamplePackage,
+            SkillId = "sample.skill",
+            CapabilityName = "sample.inspect",
+            Stage = SkillRunStage.Preparation,
+            Outcome = SkillRunOutcome.Success,
+            PlanHash = "abc",
+            EvidenceCount = 1,
+            FindingCount = 1,
+        };
+
+        var result = RoundTrip(value);
+
+        var skillEvent = Assert.IsType<SkillRunAuditEvent>(result);
+        Assert.Equal("sample.skill", skillEvent.SkillId);
+        Assert.Equal("abc", skillEvent.PlanHash);
+    }
+
     // ---- Policy.cs (ADR-0023 additions) ----
 
     [Fact]

@@ -81,6 +81,7 @@ builder.Services.AddSingleton<ISecretProvider, EnvironmentSecretProvider>();
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
 builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
+builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
 builder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
 builder.Services.AddSingleton<IAuditSink>(
     _ => new JsonLinesAuditSink(builder.Configuration["Audit:FilePath"] ?? "audit.jsonl"));
@@ -175,6 +176,7 @@ foreach (var tool in new DockerToolProvider(dockerClientFactory).GetTools())
 }
 
 var chatModelRegistry = host.Services.GetRequiredService<IChatModelRegistry>();
+var skillRegistry = host.Services.GetRequiredService<ISkillRegistry>();
 
 // V0.10 (ADR-0020): every plugin the operator has already enabled (via `bops plugin enable`)
 // activates on every run, exactly like a first-party package — there is no separate "plugin
@@ -225,7 +227,8 @@ var runner = new AgentRunner(
     taskStore,
     host.Services.GetRequiredService<TimeProvider>(),
     host.Services.GetRequiredService<ILogger<AgentRunner>>(),
-    runnerOptions);
+    runnerOptions,
+    skillRegistry);
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 
@@ -308,6 +311,7 @@ static PluginManager CreatePluginManager(
     new(
         new PluginStore(configuration["Plugins:StorePath"] ?? "plugins.json"),
         toolRegistry,
+        services.GetRequiredService<ISkillRegistry>(),
         chatModelRegistry,
         configuration["Plugins:RootPath"] ?? "plugins",
         configuration,
@@ -341,6 +345,7 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
     pluginBuilder.Services.AddSingleton<ICapabilityProbe>(services =>
         new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
     pluginBuilder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
+    pluginBuilder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
     pluginBuilder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
 
     using var pluginHost = pluginBuilder.Build();

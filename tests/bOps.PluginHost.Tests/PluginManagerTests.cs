@@ -6,6 +6,7 @@ using bOps.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,6 +23,7 @@ public sealed class PluginManagerTests : IDisposable
 {
     private readonly DirectoryInfo _workDir = Directory.CreateTempSubdirectory("bops-plugin-manager-");
     private readonly ToolRegistry _toolRegistry = new(new AlwaysAvailableCapabilityProbe());
+    private readonly SkillRegistry _skillRegistry = new();
     private readonly ChatModelRegistry _chatModelRegistry = new();
     private readonly RSA _publisherKey = RSA.Create(2048);
 
@@ -70,6 +72,7 @@ public sealed class PluginManagerTests : IDisposable
         new(
             new PluginStore(StorePath),
             _toolRegistry,
+            _skillRegistry,
             _chatModelRegistry,
             PluginsRoot,
             Configuration(),
@@ -159,6 +162,25 @@ public sealed class PluginManagerTests : IDisposable
     }
 
     [Fact]
+    public void Enable_RejectsDeclaredCapabilitiesThatDoNotMatchTheSkillProvider()
+    {
+        var manager = CreateManager();
+        var source = StageSamplePluginSource(sign: false);
+        var manifestPath = Path.Combine(source, "bops-plugin.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        manifest["DeclaredCapabilities"] = new JsonArray("sample.not-real");
+        File.WriteAllText(manifestPath, manifest.ToJsonString());
+        PluginPackageSignature.Sign(source, "Acme", "test-key", _publisherKey.ExportPkcs8PrivateKeyPem());
+        manager.Install(source);
+
+        var exception = Assert.Throws<PluginOperationException>(() => manager.Enable("acme.sample-plugin"));
+
+        Assert.Contains("do not exactly match", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(_skillRegistry.Resolve("sample.echo-marker-skill", "sample.echo-marker"));
+        Assert.Null(_toolRegistry.Resolve("sample.echo"));
+    }
+
+    [Fact]
     public void Install_RejectsAPackageModifiedAfterSigning_AndLeavesNoInstalledDirectory()
     {
         var manager = CreateManager();
@@ -194,6 +216,59 @@ public sealed class PluginManagerTests : IDisposable
         Assert.True(result.Succeeded);
         Assert.Equal("HELLO", result.Output);
         Assert.True(manager.List().Single().Enabled);
+        Assert.NotNull(_skillRegistry.Resolve("sample.echo-marker-skill", "sample.echo-marker"));
+    }
+
+    [Fact]
+    public async Task EnabledRealPlugin_PreparesApprovesExecutesAndVerifiesItsSkill()
+    {
+        var manager = CreateManager();
+        manager.Install(StageSamplePluginSource());
+        manager.Enable("acme.sample-plugin");
+        var markerName = $"test-{Guid.NewGuid():N}";
+        var markerPath = Path.Combine(Path.GetTempPath(), "bops-sample-skill", $"{markerName}.marker");
+        var audit = new RecordingAuditSink();
+        var runner = new AgentRunner(
+            new UnusedChatModel(), _toolRegistry, new AutomaticPolicyEngine(), new UnexpectedApprovalProvider(),
+            audit, new EmptyTaskStore(), TimeProvider.System, NullLogger<AgentRunner>.Instance,
+            new AgentRunnerOptions(), _skillRegistry);
+        var taskId = Guid.NewGuid();
+        var request = new CapabilityRequest(
+            ToolArguments.FromJson(new JsonObject
+            {
+                ["message"] = "hello skill",
+                ["markerName"] = markerName,
+            }),
+            "local", "test", BlastRadius.Single);
+
+        try
+        {
+            var prepared = await runner.PrepareSkillAsync(
+                taskId, ActorIdentity.FromOperatingSystemUser("sample-user"),
+                "sample.echo-marker-skill", "sample.echo-marker", request);
+            var approval = new ExecutionPlanApproval(
+                prepared.PlanHash!,
+                new ApprovalDecision(true, ActorIdentity.FromOperatingSystemUser("sample-approver"), null));
+
+            var report = await runner.ExecutePreparedSkillAsync(
+                taskId, ActorIdentity.FromOperatingSystemUser("sample-user"), prepared, approval);
+
+            Assert.Equal(SkillPreparationStatus.Prepared, prepared.Status);
+            Assert.Single(report.Findings);
+            Assert.Contains(report.Evidence, evidence => evidence.Kind == EvidenceKind.Fact && evidence.Data == "HELLO SKILL");
+            Assert.Contains(report.Evidence, evidence => evidence.Kind == EvidenceKind.Verification
+                && evidence.Description.Contains("Confirmed", StringComparison.Ordinal));
+            Assert.True(File.Exists(markerPath));
+            Assert.Contains(audit.Events, evt => evt is SkillRunAuditEvent
+            {
+                Stage: SkillRunStage.Execution,
+                Outcome: SkillRunOutcome.Success,
+            });
+        }
+        finally
+        {
+            File.Delete(markerPath);
+        }
     }
 
     [Fact]
@@ -216,6 +291,7 @@ public sealed class PluginManagerTests : IDisposable
         manager.Disable("acme.sample-plugin");
 
         Assert.Null(_toolRegistry.Resolve("sample.echo"));
+        Assert.Null(_skillRegistry.Resolve("sample.echo-marker-skill", "sample.echo-marker"));
         Assert.False(manager.List().Single().Enabled);
     }
 
@@ -243,14 +319,16 @@ public sealed class PluginManagerTests : IDisposable
         // Simulates a new host process: fresh registries, a PluginManager that has never called
         // Enable itself, reading the same on-disk store.
         var freshToolRegistry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+        var freshSkillRegistry = new SkillRegistry();
         var nextProcessManager = new PluginManager(
-            new PluginStore(StorePath), freshToolRegistry, new ChatModelRegistry(), PluginsRoot,
+            new PluginStore(StorePath), freshToolRegistry, freshSkillRegistry, new ChatModelRegistry(), PluginsRoot,
             Configuration(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
             TimeProvider.System, new AlwaysAvailableCapabilityProbe());
 
         nextProcessManager.LoadAllEnabled();
 
         Assert.NotNull(freshToolRegistry.Resolve("sample.echo"));
+        Assert.NotNull(freshSkillRegistry.Resolve("sample.echo-marker-skill", "sample.echo-marker"));
     }
 
     [Fact]
@@ -264,7 +342,7 @@ public sealed class PluginManagerTests : IDisposable
         try
         {
             var manager = new PluginManager(
-                new PluginStore(StorePath), _toolRegistry, _chatModelRegistry, "plugins",
+                new PluginStore(StorePath), _toolRegistry, _skillRegistry, _chatModelRegistry, "plugins",
                 Configuration(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
                 TimeProvider.System, new AlwaysAvailableCapabilityProbe());
 
@@ -311,5 +389,49 @@ public sealed class PluginManagerTests : IDisposable
     private sealed class FakeHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class AutomaticPolicyEngine : IPolicyEngine
+    {
+        public PolicyDecision Evaluate(PolicyContext context) =>
+            new(PolicyMode.Automatic, "sample end-to-end test");
+    }
+
+    private sealed class UnexpectedApprovalProvider : IApprovalProvider
+    {
+        public Task<ApprovalDecision> RequestApprovalAsync(
+            ToolManifest manifest,
+            ToolArguments arguments,
+            VerificationSpec? verification,
+            string reason,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Per-step approval was not expected.");
+    }
+
+    private sealed class RecordingAuditSink : IAuditSink
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task WriteAsync(AuditEvent evt, CancellationToken ct = default)
+        {
+            Events.Add(evt);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class EmptyTaskStore : ITaskStore
+    {
+        public Task SaveAsync(TaskState task, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default) => Task.FromResult<TaskState?>(null);
+        public Task<IReadOnlyList<TaskState>> ListByStatusAsync(AgentTaskStatus status, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<TaskState>>([]);
+    }
+
+    private sealed class UnusedChatModel : IChatModel
+    {
+        public ChatModelDescriptor Descriptor { get; } = new("unused", "unused");
+
+        public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) =>
+            throw new InvalidOperationException("The model is not used by Skill execution.");
     }
 }

@@ -3,10 +3,10 @@
   "Id": "acme.sample-plugin",
   "Publisher": "Acme",
   "Version": "1.0.0",
-  "MinHostAbstractionsVersion": "0.10.0",
+  "MinHostAbstractionsVersion": "1.1.0",
   "EntryAssembly": "Acme.SamplePlugin.dll",
   "EntryType": "Acme.SamplePlugin.SampleToolProvider",
-  "DeclaredCapabilities": ["sample.echo"],
+  "DeclaredCapabilities": ["sample.echo-marker"],
   "Dependencies": [],
-  "MaxDeclaredRisk": "Read"
+  "MaxDeclaredRisk": "Low"
 }

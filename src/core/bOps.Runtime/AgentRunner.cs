@@ -47,7 +47,8 @@ public sealed class AgentRunner(
     ITaskStore taskStore,
     TimeProvider timeProvider,
     ILogger<AgentRunner> logger,
-    AgentRunnerOptions options)
+    AgentRunnerOptions options,
+    ISkillRegistry? skillRegistry = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -372,18 +373,30 @@ public sealed class AgentRunner(
     /// <param name="ct">Cancelled to abandon the run.</param>
     public async Task<SkillReport> ExecuteExecutionPlanAsync(
         Guid taskId, ActorIdentity actor, ExecutionPlan plan, ExecutionPlanApproval? approval, CancellationToken ct = default)
+        => await ExecuteExecutionPlanCoreAsync(taskId, actor, plan, approval, skillScope: null, ct);
+
+    private async Task<SkillReport> ExecuteExecutionPlanCoreAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        ExecutionPlan plan,
+        ExecutionPlanApproval? approval,
+        SkillExecutionScope? skillScope,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
         if (approval is not null)
         {
             var actualHash = ExecutionPlanHasher.ComputeHash(plan);
-            if (!string.Equals(approval.PlanHash, actualHash, StringComparison.Ordinal))
+            if (!approval.Decision.Approved
+                || !string.Equals(approval.PlanHash, actualHash, StringComparison.Ordinal))
             {
                 var refusal = new Evidence(
                     Guid.NewGuid().ToString(),
                     EvidenceKind.ExecutedAction,
-                    "Execution refused: the approval's plan hash does not match this plan's current content.",
+                    approval.Decision.Approved
+                        ? "Execution refused: the approval's plan hash does not match this plan's current content."
+                        : "Execution refused: the plan approval was rejected.",
                     null,
                     "bops.runtime",
                     timeProvider.GetUtcNow());
@@ -398,7 +411,8 @@ public sealed class AgentRunner(
             ct.ThrowIfCancellationRequested();
 
             var call = new ModelToolCall($"plan-step-{planStep.Index}", planStep.ToolName, planStep.Arguments);
-            var (step, _, authorization, verification) = await ExecuteStepAsync(taskId, planStep.Index, actor, call, planRevision: -1, ct);
+            var (step, _, authorization, verification) = await ExecuteStepAsync(
+                taskId, planStep.Index, actor, call, planRevision: -1, ct, skillScope);
 
             evidence.Add(new Evidence(
                 Guid.NewGuid().ToString(),
@@ -432,6 +446,405 @@ public sealed class AgentRunner(
         // method produces the Evidence a Skill would build Findings from, never Findings itself.
         return new SkillReport(evidence, [], plan);
     }
+
+    /// <summary>
+    /// Resolves one activated Capability and prepares evidence, findings and an immutable plan.
+    /// The returned V1.1 run is terminal and has no resume token (ADR-0025).
+    /// </summary>
+    public async Task<PreparedSkillRun> PrepareSkillAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        string skillId,
+        string capabilityName,
+        CapabilityRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(skillId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(capabilityName);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var runId = Guid.NewGuid();
+        var emptyReport = new SkillReport([], [], null);
+        if (skillRegistry is null)
+        {
+            return await FailedPreparationAsync(
+                taskId, actor, runId, PackageId.Unknown, skillId, capabilityName, request,
+                "This host has no Skill registry configured.", emptyReport, ct);
+        }
+
+        var capability = skillRegistry.Resolve(skillId, capabilityName);
+        var package = skillRegistry.GetPackage(skillId);
+        if (capability is null || package == PackageId.Unknown)
+        {
+            return await FailedPreparationAsync(
+                taskId, actor, runId, package, skillId, capabilityName, request,
+                $"Skill '{skillId}' Capability '{capabilityName}' is not activated.", emptyReport, ct);
+        }
+
+        await WriteSkillAuditAsync(
+            taskId, actor, runId, package, skillId, capabilityName,
+            SkillRunStage.ProviderResolved, SkillRunOutcome.Success, null, emptyReport, null, ct);
+
+        if (request.DryRun && !capability.Manifest.SupportsDryRun)
+        {
+            return await FailedPreparationAsync(
+                taskId, actor, runId, package, skillId, capabilityName, request,
+                $"Capability '{capabilityName}' does not support dry-run preparation.", emptyReport, ct);
+        }
+
+        var scope = new SkillExecutionScope(
+            runId, skillId, capabilityName, request.Target, request.Environment, request.BlastRadius, PlanHash: null);
+        using var invoker = new RestrictedToolInvoker(
+            (toolName, arguments, sequence, token) =>
+                InvokeEvidenceToolAsync(taskId, actor, package, scope, toolName, arguments, sequence, token));
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(capability.Manifest.Timeout);
+
+        SkillReport report;
+        try
+        {
+            report = await capability.PrepareAsync(request, invoker, timeoutCts.Token)
+                ?? throw new InvalidOperationException("The Capability returned a null SkillReport.");
+            ValidatePreparedReport(capability.Manifest, report);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            var message = $"Capability '{capabilityName}' exceeded its preparation timeout of {capability.Manifest.Timeout}.";
+            await WriteSkillAuditAsync(
+                taskId, actor, runId, package, skillId, capabilityName,
+                SkillRunStage.Preparation, SkillRunOutcome.Timeout, null, emptyReport, message, ct);
+            return new PreparedSkillRun(
+                runId, skillId, capabilityName, request, SkillPreparationStatus.Timeout,
+                emptyReport, null, message);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Skill {SkillId} Capability {CapabilityName} failed during preparation", skillId, capabilityName);
+            return await FailedPreparationAsync(
+                taskId, actor, runId, package, skillId, capabilityName, request,
+                $"Capability preparation failed: {TruncateForHistory(ex.Message)}", emptyReport, ct);
+        }
+
+        var planHash = report.Plan is null ? null : ExecutionPlanHasher.ComputeHash(report.Plan);
+        await WriteSkillAuditAsync(
+            taskId, actor, runId, package, skillId, capabilityName,
+            SkillRunStage.Preparation, SkillRunOutcome.Success, planHash, report, null, ct);
+        return new PreparedSkillRun(
+            runId, skillId, capabilityName, request, SkillPreparationStatus.Prepared,
+            report, planHash, null);
+    }
+
+    /// <summary>
+    /// Executes a previously prepared Skill plan after revalidation. Non-Read Capabilities require
+    /// an affirmative approval bound to the exact plan hash; per-step policy remains mandatory.
+    /// </summary>
+    public async Task<SkillReport> ExecutePreparedSkillAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        PreparedSkillRun prepared,
+        ExecutionPlanApproval? approval,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(prepared);
+
+        if (skillRegistry is null)
+        {
+            return prepared.Report;
+        }
+
+        var capability = skillRegistry.Resolve(prepared.SkillId, prepared.CapabilityName);
+        var package = skillRegistry.GetPackage(prepared.SkillId);
+        var manifest = capability?.Manifest;
+        var refusal = ValidateExecutionRequest(prepared, manifest, approval);
+        if (refusal is not null)
+        {
+            await WriteSkillAuditAsync(
+                taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
+                SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
+                prepared.Report, refusal, ct);
+            return prepared.Report;
+        }
+
+        try
+        {
+            ValidatePreparedReport(manifest!, prepared.Report);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            await WriteSkillAuditAsync(
+                taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
+                SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
+                prepared.Report, ex.Message, ct);
+            return prepared.Report;
+        }
+        if (prepared.Report.Plan is null || prepared.Request.DryRun)
+        {
+            await WriteSkillAuditAsync(
+                taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
+                SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash,
+                prepared.Report, null, ct);
+            return prepared.Report;
+        }
+
+        var scope = new SkillExecutionScope(
+            prepared.RunId,
+            prepared.SkillId,
+            prepared.CapabilityName,
+            prepared.Request.Target,
+            prepared.Request.Environment,
+            prepared.Request.BlastRadius,
+            prepared.PlanHash);
+        var executed = await ExecuteExecutionPlanCoreAsync(
+            taskId, actor, prepared.Report.Plan, approval, scope, ct);
+        var merged = new SkillReport(
+            [.. prepared.Report.Evidence, .. executed.Evidence],
+            prepared.Report.Findings,
+            prepared.Report.Plan);
+
+        await WriteSkillAuditAsync(
+            taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
+            SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash, merged, null, ct);
+        return merged;
+    }
+
+    private async Task<PreparedSkillRun> FailedPreparationAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        Guid runId,
+        PackageId package,
+        string skillId,
+        string capabilityName,
+        CapabilityRequest request,
+        string message,
+        SkillReport report,
+        CancellationToken ct)
+    {
+        await WriteSkillAuditAsync(
+            taskId, actor, runId, package, skillId, capabilityName,
+            SkillRunStage.Preparation, SkillRunOutcome.Failure, null, report, message, ct);
+        return new PreparedSkillRun(
+            runId, skillId, capabilityName, request, SkillPreparationStatus.Failed,
+            report, null, message);
+    }
+
+    private async Task<ToolCallResult> InvokeEvidenceToolAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        PackageId package,
+        SkillExecutionScope scope,
+        string toolName,
+        ToolArguments arguments,
+        int sequence,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
+        ArgumentNullException.ThrowIfNull(arguments);
+
+        var tool = registry.Resolve(toolName);
+        string? rejection = null;
+        if (tool is null)
+        {
+            rejection = $"Evidence tool '{toolName}' is not permitted because it is missing, disabled or unavailable.";
+        }
+        else if (tool.Manifest.Package != package)
+        {
+            rejection = $"Evidence tool '{toolName}' is not permitted because it belongs to another package.";
+        }
+        else if (tool.Manifest.Risk != RiskLevel.Read)
+        {
+            rejection = $"Evidence tool '{toolName}' is not permitted because evidence invocation is Read-only.";
+        }
+
+        var stepIndex = -(sequence + 1);
+        if (rejection is not null)
+        {
+            var rejectedPackage = tool?.Manifest.Package ?? PackageId.Unknown;
+            var rejectedRisk = tool?.Manifest.Risk ?? RiskLevel.Read;
+            await audit.WriteAsync(new PolicyDecisionAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = rejectedPackage,
+                Tool = toolName,
+                Mode = PolicyMode.Forbidden,
+                Reason = rejection,
+                SkillRunId = scope.RunId,
+                SkillId = scope.SkillId,
+                CapabilityName = scope.CapabilityName,
+                Target = scope.Target,
+                Environment = scope.Environment,
+                BlastRadius = scope.BlastRadius,
+            }, ct);
+            var call = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
+            await RejectAsync(
+                taskId, stepIndex, actor, call, rejectedPackage, rejectedRisk,
+                AuthorizationKind.PolicyDenied, rejection, planRevision: -1, ct, scope);
+            return new ToolCallResult(ToolOutcome.Denied, null, rejection);
+        }
+
+        var evidenceCall = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
+        var (step, _, authorization, _) = await ExecuteStepAsync(
+            taskId, stepIndex, actor, evidenceCall, planRevision: -1, ct, scope);
+        if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.UnknownTool)
+        {
+            return new ToolCallResult(ToolOutcome.Denied, null, step.Result?.ErrorMessage ?? "Evidence invocation was denied.");
+        }
+
+        var result = step.Result ?? ToolCallResult.Failure("Evidence invocation produced no result.");
+        return result with
+        {
+            Output = TruncateForHistory(result.Output),
+            ErrorMessage = result.ErrorMessage is null ? null : TruncateForHistory(result.ErrorMessage),
+        };
+    }
+
+    private void ValidatePreparedReport(CapabilityManifest manifest, SkillReport report)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(report);
+
+        var evidenceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var evidence in report.Evidence)
+        {
+            if (string.IsNullOrWhiteSpace(evidence.Id) || !evidenceIds.Add(evidence.Id))
+            {
+                throw new InvalidOperationException("A prepared Skill report contains a blank or duplicate Evidence id.");
+            }
+        }
+
+        var findingIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var finding in report.Findings)
+        {
+            if (string.IsNullOrWhiteSpace(finding.Id) || !findingIds.Add(finding.Id))
+            {
+                throw new InvalidOperationException("A prepared Skill report contains a blank or duplicate Finding id.");
+            }
+
+            if (finding.EvidenceIds.Any(id => !evidenceIds.Contains(id)))
+            {
+                throw new InvalidOperationException(
+                    $"Finding '{finding.Id}' references unknown Evidence that is not present in the prepared report.");
+            }
+        }
+
+        if (report.Plan is null)
+        {
+            return;
+        }
+
+        if (!string.Equals(report.Plan.CapabilityName, manifest.Name, StringComparison.Ordinal)
+            || !string.Equals(report.Plan.CapabilityVersion, manifest.Version, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The prepared plan does not match the selected Capability identity and version.");
+        }
+
+        foreach (var step in report.Plan.Steps)
+        {
+            var tool = registry.Resolve(step.ToolName)
+                ?? throw new InvalidOperationException($"Plan tool '{step.ToolName}' is not available.");
+            if (tool.Manifest.Risk > manifest.Risk)
+            {
+                throw new InvalidOperationException(
+                    $"Plan tool '{step.ToolName}' exceeds the Capability's declared risk ceiling.");
+            }
+        }
+    }
+
+    private string? ValidateExecutionRequest(
+        PreparedSkillRun prepared,
+        CapabilityManifest? manifest,
+        ExecutionPlanApproval? approval)
+    {
+        if (prepared.Status != SkillPreparationStatus.Prepared)
+        {
+            return "Only a successfully prepared Skill run can execute.";
+        }
+
+        if (manifest is null)
+        {
+            return "The prepared Skill or Capability is no longer activated.";
+        }
+
+        if (prepared.Report.Plan is null || prepared.Request.DryRun)
+        {
+            return null;
+        }
+
+        var actualHash = ExecutionPlanHasher.ComputeHash(prepared.Report.Plan);
+        if (!string.Equals(prepared.PlanHash, actualHash, StringComparison.Ordinal))
+        {
+            return "The prepared report's plan no longer matches its recorded hash.";
+        }
+
+        foreach (var step in prepared.Report.Plan.Steps)
+        {
+            var tool = registry.Resolve(step.ToolName);
+            if (tool is null)
+            {
+                return $"Plan tool '{step.ToolName}' is no longer available.";
+            }
+
+            if (tool.Manifest.Risk > manifest.Risk)
+            {
+                return $"Plan tool '{step.ToolName}' exceeds the Capability's declared risk ceiling.";
+            }
+        }
+
+        if (manifest.Risk != RiskLevel.Read
+            && (approval is null
+                || !approval.Decision.Approved
+                || !string.Equals(approval.PlanHash, actualHash, StringComparison.Ordinal)))
+        {
+            return "A non-Read Capability requires an affirmative approval bound to the exact plan hash.";
+        }
+
+        if (approval is not null
+            && (!approval.Decision.Approved
+                || !string.Equals(approval.PlanHash, actualHash, StringComparison.Ordinal)))
+        {
+            return "The supplied approval is rejected or does not match the exact plan hash.";
+        }
+
+        return null;
+    }
+
+    private Task WriteSkillAuditAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        Guid runId,
+        PackageId package,
+        string skillId,
+        string capabilityName,
+        SkillRunStage stage,
+        SkillRunOutcome outcome,
+        string? planHash,
+        SkillReport report,
+        string? errorMessage,
+        CancellationToken ct) =>
+        audit.WriteAsync(new SkillRunAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = taskId,
+            StepIndex = -1,
+            Actor = actor,
+            RunId = runId,
+            Package = package,
+            SkillId = skillId,
+            CapabilityName = capabilityName,
+            Stage = stage,
+            Outcome = outcome,
+            PlanHash = planHash,
+            EvidenceCount = report.Evidence.Count,
+            FindingCount = report.Findings.Count,
+            ErrorMessage = errorMessage is null ? null : TruncateForHistory(errorMessage),
+        }, ct);
 
     /// <summary>Persists a task's terminal state and returns it — the one place every exit from <see cref="ContinueAsync"/> goes through.</summary>
     private async Task<TaskState> FinishAsync(TaskState task, CancellationToken ct)
@@ -591,14 +1004,20 @@ public sealed class AgentRunner(
     }
 
     private async Task<(PlanStep Step, string Observation, AuthorizationKind Authorization, VerificationStatus? Verification)> ExecuteStepAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, int planRevision, CancellationToken ct)
+        Guid taskId,
+        int stepIndex,
+        ActorIdentity actor,
+        ModelToolCall call,
+        int planRevision,
+        CancellationToken ct,
+        SkillExecutionScope? skillScope = null)
     {
         var tool = registry.Resolve(call.ToolName);
         if (tool is null)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
-                $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct);
+                $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct, skillScope);
             return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool, null);
         }
 
@@ -607,7 +1026,14 @@ public sealed class AgentRunner(
         // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
         // package loaded today is first-party, shipped in this repository, and there is no real
         // per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003).
-        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, registry.GetTrust(manifest.Package), manifest, call.Arguments, actor);
+        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, registry.GetTrust(manifest.Package), manifest, call.Arguments, actor)
+        {
+            SkillId = skillScope?.SkillId,
+            CapabilityName = skillScope?.CapabilityName,
+            Target = skillScope?.Target,
+            Environment = skillScope?.Environment,
+            BlastRadius = skillScope?.BlastRadius,
+        };
         var policyDecision = policyEngine.Evaluate(policyContext);
 
         if (policyDecision.Mode != PolicyMode.Automatic)
@@ -626,13 +1052,19 @@ public sealed class AgentRunner(
                 Tool = manifest.Name,
                 Mode = policyDecision.Mode,
                 Reason = policyDecision.Reason,
+                SkillRunId = skillScope?.RunId,
+                SkillId = skillScope?.SkillId,
+                CapabilityName = skillScope?.CapabilityName,
+                Target = skillScope?.Target,
+                Environment = skillScope?.Environment,
+                BlastRadius = skillScope?.BlastRadius,
             }, ct);
         }
 
         if (policyDecision.Mode == PolicyMode.Forbidden)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
-                AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct);
+                AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct, skillScope);
             return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied, null);
         }
 
@@ -658,6 +1090,9 @@ public sealed class AgentRunner(
                 Approved = approval.Approved,
                 Approver = approval.Actor,
                 Note = approval.Note,
+                SkillRunId = skillScope?.RunId,
+                SkillId = skillScope?.SkillId,
+                CapabilityName = skillScope?.CapabilityName,
             }, ct);
 
             if (!approval.Approved)
@@ -665,7 +1100,7 @@ public sealed class AgentRunner(
                 var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
                     AuthorizationKind.UserRejected,
                     $"Operator rejected '{call.ToolName}'" + (approval.Note is null ? "." : $": {approval.Note}"),
-                    planRevision, ct);
+                    planRevision, ct, skillScope);
                 return (rejected.Step, rejected.Observation, AuthorizationKind.UserRejected, null);
             }
 
@@ -677,7 +1112,7 @@ public sealed class AgentRunner(
             // Never executed, so there is nothing for verification to check (rule S4 only
             // requires verifying an action that was actually attempted).
             var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
-                authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct);
+                authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
             return (recorded.Step, recorded.Observation, authorization, null);
         }
 
@@ -712,7 +1147,7 @@ public sealed class AgentRunner(
         }
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
-            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct);
+            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope);
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
     }
 
@@ -821,7 +1256,11 @@ public sealed class AgentRunner(
 
     private async Task<(PlanStep Step, string Observation)> RejectAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, PackageId package, RiskLevel risk,
-        AuthorizationKind authorization, string message, int planRevision, CancellationToken ct)
+        AuthorizationKind authorization,
+        string message,
+        int planRevision,
+        CancellationToken ct,
+        SkillExecutionScope? skillScope = null)
     {
         await audit.WriteAsync(new ToolCallAuditEvent
         {
@@ -838,6 +1277,13 @@ public sealed class AgentRunner(
             Outcome = ToolOutcome.Denied,
             Duration = TimeSpan.Zero,
             Verification = null,
+            SkillRunId = skillScope?.RunId,
+            SkillId = skillScope?.SkillId,
+            CapabilityName = skillScope?.CapabilityName,
+            Target = skillScope?.Target,
+            Environment = skillScope?.Environment,
+            BlastRadius = skillScope?.BlastRadius,
+            PlanHash = skillScope?.PlanHash,
         }, ct);
 
         // Rule S3: a Forbidden decision is audited as its own PolicyDecisionAuditEvent too,
@@ -851,7 +1297,10 @@ public sealed class AgentRunner(
     private async Task<(PlanStep Step, string Observation)> RecordAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, ToolManifest manifest,
         ToolCallResult result, AuthorizationKind authorization, TimeSpan duration, VerificationStatus? verification,
-        string? verificationDetail, int planRevision, CancellationToken ct)
+        string? verificationDetail,
+        int planRevision,
+        CancellationToken ct,
+        SkillExecutionScope? skillScope = null)
     {
         var redacted = call.Arguments.Redact(manifest.Parameters.Where(p => p.Sensitive).Select(p => p.Name));
 
@@ -870,6 +1319,13 @@ public sealed class AgentRunner(
             Outcome = result.Outcome,
             Duration = duration,
             Verification = verification,
+            SkillRunId = skillScope?.RunId,
+            SkillId = skillScope?.SkillId,
+            CapabilityName = skillScope?.CapabilityName,
+            Target = skillScope?.Target,
+            Environment = skillScope?.Environment,
+            BlastRadius = skillScope?.BlastRadius,
+            PlanHash = skillScope?.PlanHash,
         }, ct);
 
         var observationText = result.Succeeded
@@ -1032,4 +1488,43 @@ public sealed class AgentRunner(
     private static TaskState Build(
         Guid taskId, DateTimeOffset createdAtUtc, string goal, AgentTaskStatus status, List<PlanStep> steps, List<AgentPlan> plans) =>
         new(taskId, NodeId.Local, goal, status, steps, plans, createdAtUtc);
+
+    private sealed record SkillExecutionScope(
+        Guid RunId,
+        string SkillId,
+        string CapabilityName,
+        string Target,
+        string Environment,
+        BlastRadius BlastRadius,
+        string? PlanHash);
+
+    private delegate Task<ToolCallResult> EvidenceInvocation(
+        string toolName,
+        ToolArguments arguments,
+        int sequence,
+        CancellationToken ct);
+
+    private sealed class RestrictedToolInvoker(EvidenceInvocation invocation) : IToolInvoker, IDisposable
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private int _sequence;
+
+        public async Task<ToolCallResult> InvokeAsync(
+            string toolName,
+            ToolArguments arguments,
+            CancellationToken ct = default)
+        {
+            await _gate.WaitAsync(ct);
+            try
+            {
+                return await invocation(toolName, arguments, _sequence++, ct);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public void Dispose() => _gate.Dispose();
+    }
 }

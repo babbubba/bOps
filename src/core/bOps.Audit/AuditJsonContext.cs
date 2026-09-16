@@ -12,5 +12,6 @@ namespace bOps.Audit;
 [JsonSerializable(typeof(ModelCallAuditEvent))]
 [JsonSerializable(typeof(PolicyDecisionAuditEvent))]
 [JsonSerializable(typeof(ApprovalAuditEvent))]
+[JsonSerializable(typeof(SkillRunAuditEvent))]
 [JsonSerializable(typeof(AuditChainEnvelope))]
 internal sealed partial class AuditJsonContext : JsonSerializerContext;

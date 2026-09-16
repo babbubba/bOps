@@ -60,6 +60,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
 builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
+builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
 builder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
 builder.Services.AddSingleton<IAuditSink>(
     _ => new JsonLinesAuditSink(builder.Configuration["Audit:FilePath"] ?? "audit.jsonl"));
@@ -114,7 +115,8 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<ITaskStore>(),
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<AgentRunner>>(),
-        runnerOptions);
+        runnerOptions,
+        sp.GetRequiredService<ISkillRegistry>());
 });
 builder.Services.AddSingleton<AgentTaskLauncher>();
 builder.Services.AddSingleton(
