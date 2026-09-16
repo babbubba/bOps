@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Security.Claims;
 using bOps.Abstractions;
 
 namespace bOps.Api;
@@ -36,18 +37,33 @@ internal static class AgentsEndpoints
     {
         var group = app.MapGroup("/api/agents/tasks");
 
-        group.MapPost("/", (StartTaskRequest request, AgentTaskLauncher launcher) =>
+        group.MapPost("/", async (StartTaskRequest request, AgentTaskLauncher launcher, TaskIdempotencyStore idempotency,
+            ClaimsPrincipal principal, HttpContext http) =>
         {
             if (string.IsNullOrWhiteSpace(request.Goal))
             {
                 return Results.BadRequest(new { message = "'goal' is required." });
             }
 
-            var taskId = launcher.Start(request.Goal, ApiActor());
-            return Results.Accepted($"/api/agents/tasks/{taskId}", new TaskAcceptedResponse(taskId));
-        });
+            var actor = ApiActor(principal);
+            Guid? taskId;
+            try
+            {
+                taskId = await idempotency.GetOrStartAsync(actor.Id, http.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                    () => launcher.TryStartAsync(request.Goal, actor, http.RequestAborted));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
 
-        group.MapPost("/{id:guid}/resume", async (Guid id, ITaskStore store, AgentTaskLauncher launcher) =>
+            return taskId is null
+                ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+                : Results.Accepted($"/api/agents/tasks/{taskId}", new TaskAcceptedResponse(taskId.Value));
+        }).RequireAuthorization(ApiAuthorization.OperatorPolicy);
+
+        group.MapPost("/{id:guid}/resume", async (Guid id, ITaskStore store, AgentTaskLauncher launcher,
+            ClaimsPrincipal principal, HttpContext http) =>
         {
             var existing = await store.LoadAsync(id);
             if (existing is null)
@@ -55,15 +71,25 @@ internal static class AgentsEndpoints
                 return Results.NotFound(new { message = $"No stored task with id '{id}'." });
             }
 
-            launcher.Resume(existing, ApiActor());
+            if (!await launcher.TryResumeAsync(existing, ApiActor(principal), http.RequestAborted))
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+
             return Results.Accepted($"/api/agents/tasks/{id}", new TaskAcceptedResponse(id));
-        });
+        }).RequireAuthorization(ApiAuthorization.OperatorPolicy);
+
+        group.MapDelete("/{id:guid}", (Guid id, AgentTaskLauncher launcher) =>
+            launcher.Cancel(id)
+                ? Results.Accepted($"/api/agents/tasks/{id}")
+                : Results.NotFound(new { message = $"Task '{id}' is not running in this host." }))
+            .RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
         group.MapGet("/{id:guid}", async (Guid id, ITaskStore store) =>
         {
             var task = await store.LoadAsync(id);
             return task is null ? Results.NotFound(new { message = $"No stored task with id '{id}'." }) : Results.Ok(task);
-        });
+        }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
         group.MapGet("/", async (string? status, ITaskStore store) =>
         {
@@ -73,9 +99,10 @@ internal static class AgentsEndpoints
             }
 
             return Results.Ok(await store.ListByStatusAsync(parsed));
-        });
+        }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
-        group.MapGet("/{id:guid}/events", StreamTaskEventsAsync);
+        group.MapGet("/{id:guid}/events", StreamTaskEventsAsync)
+            .RequireAuthorization(ApiAuthorization.ViewerPolicy);
     }
 
     /// <summary>
@@ -135,12 +162,11 @@ internal static class AgentsEndpoints
         await response.Body.FlushAsync(ct);
     }
 
-    /// <summary>
-    /// The actor identity recorded for every call this host makes — <c>"api-user"</c> is exactly
-    /// the kind <see cref="ActorIdentity"/>'s own doc comment already reserves for once
-    /// <c>bOps.Api</c> exists. There is no real per-request identity yet (ADR-0018: no
-    /// authentication in this version), so every request shares the same placeholder id rather
-    /// than fabricating a distinct one.
-    /// </summary>
-    internal static ActorIdentity ApiActor() => new("api-user", "anonymous", null);
+    internal static ActorIdentity ApiActor(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        var id = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new InvalidOperationException("An authenticated API principal has no name identifier.");
+        return new ActorIdentity("api-user", id, principal.Identity?.Name);
+    }
 }

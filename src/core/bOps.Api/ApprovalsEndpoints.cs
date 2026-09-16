@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using System.Security.Claims;
 
 namespace bOps.Api;
 
@@ -12,15 +13,16 @@ internal static class ApprovalsEndpoints
     {
         var group = app.MapGroup("/api/approvals");
 
-        group.MapGet("/pending", (ApiApprovalProvider approvals) => Results.Ok(approvals.ListPending()));
+        group.MapGet("/pending", (ApiApprovalProvider approvals) => Results.Ok(approvals.ListPending()))
+            .RequireAuthorization(ApiAuthorization.ApproverPolicy);
 
-        group.MapPost("/{approvalId}/respond", (string approvalId, RespondToApprovalRequest request, ApiApprovalProvider approvals) =>
+        group.MapPost("/{approvalId}/respond", (string approvalId, RespondToApprovalRequest request, ApiApprovalProvider approvals, ClaimsPrincipal principal) =>
         {
-            var approver = new ActorIdentity("api-user", string.IsNullOrWhiteSpace(request.Approver) ? "anonymous" : request.Approver, null);
+            var approver = AgentsEndpoints.ApiActor(principal);
             var resolved = approvals.TryRespond(approvalId, request.Approved, request.Note, approver);
             return resolved
                 ? Results.NoContent()
                 : Results.NotFound(new { message = $"No pending approval with id '{approvalId}'." });
-        });
+        }).RequireAuthorization(ApiAuthorization.ApproverPolicy);
     }
 }

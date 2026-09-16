@@ -9,5 +9,6 @@ namespace bOps.Api;
 internal static class ToolsEndpoints
 {
     internal static void MapToolsEndpoints(this WebApplication app) =>
-        app.MapGet("/api/tools", (IToolRegistry registry) => Results.Ok(registry.GetAvailableManifests()));
+        app.MapGet("/api/tools", (IToolRegistry registry) => Results.Ok(registry.GetAvailableManifests()))
+            .RequireAuthorization(ApiAuthorization.ViewerPolicy);
 }

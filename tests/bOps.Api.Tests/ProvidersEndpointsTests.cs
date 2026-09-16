@@ -25,7 +25,7 @@ public sealed class ProvidersEndpointsTests
     public async Task GetProviders_ReportsTheConfiguredActiveProvider_WithoutTheApiKeyValue()
     {
         // src/core/bOps.Api/appsettings.json ships Provider=OpenRouter, Model=openrouter/free,
-        // ApiKey="" (V0.9: no live key is ever committed there) — this asserts against exactly
+        // ApiKeySecret points at an unset test-process environment variable — this asserts against exactly
         // that shape, not a substituted test value, since ModelProvider is not one of the
         // settings TestAppFactory overrides for isolation.
         using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };

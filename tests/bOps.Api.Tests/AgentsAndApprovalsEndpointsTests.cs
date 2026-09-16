@@ -20,6 +20,32 @@ public sealed class AgentsAndApprovalsEndpointsTests
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(15);
 
     [Fact]
+    public async Task Api_RejectsAnonymousRequests()
+    {
+        using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
+        using var client = factory.CreateAnonymousClient();
+
+        var response = await client.GetAsync(new Uri("/api/tools", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Viewer_CannotStartTasks()
+    {
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(),
+            Roles = ["viewer"],
+        };
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("forbidden mutation"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task StartTask_Returns400_WhenGoalIsMissing()
     {
         using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
@@ -47,6 +73,71 @@ public sealed class AgentsAndApprovalsEndpointsTests
 
         Assert.Equal(AgentTaskStatus.Completed, finalTask.Status);
         Assert.Contains(finalTask.Steps, s => s.Observation == "all done");
+    }
+
+    [Fact]
+    public async Task StartTask_ReusesTheTaskId_ForTheSameActorAndIdempotencyKey()
+    {
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(QueueChatModel.PlanResponse(), QueueChatModel.Final("done")),
+        };
+        using var client = factory.CreateClient();
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Post, "/api/agents/tasks")
+        {
+            Content = JsonContent.Create(new StartTaskRequest("do this once")),
+        };
+        firstRequest.Headers.Add("Idempotency-Key", "one-logical-start");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Post, "/api/agents/tasks")
+        {
+            Content = JsonContent.Create(new StartTaskRequest("do this once")),
+        };
+        secondRequest.Headers.Add("Idempotency-Key", "one-logical-start");
+
+        var first = await client.SendAsync(firstRequest);
+        var second = await client.SendAsync(secondRequest);
+        var firstBody = await first.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        var secondBody = await second.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, second.StatusCode);
+        Assert.Equal(firstBody!.TaskId, secondBody!.TaskId);
+    }
+
+    [Fact]
+    public async Task CancelTask_StopsTheRun_AndPersistsCancelledState()
+    {
+        using var factory = new TestAppFactory { ChatModel = new BlockingChatModel() };
+        using var client = factory.CreateClient();
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("wait forever"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        var cancelled = await client.DeleteAsync(new Uri($"/api/agents/tasks/{started!.TaskId}", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.Accepted, cancelled.StatusCode);
+        var final = await PollUntilTerminalAsync(client, started.TaskId);
+        Assert.Equal(AgentTaskStatus.Cancelled, final.Status);
+    }
+
+    [Fact]
+    public async Task StartTask_RejectsWorkBeyondTheConfiguredConcurrencyLimit()
+    {
+        using var factory = new TestAppFactory { ChatModel = new BlockingChatModel() };
+        using var client = factory.CreateClient();
+
+        var first = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("first"));
+        var second = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("second"));
+        var third = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("third"));
+
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, second.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, third.StatusCode);
+
+        var firstTask = await first.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        var secondTask = await second.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        await client.DeleteAsync(new Uri($"/api/agents/tasks/{firstTask!.TaskId}", UriKind.Relative));
+        await client.DeleteAsync(new Uri($"/api/agents/tasks/{secondTask!.TaskId}", UriKind.Relative));
     }
 
     [Fact]
@@ -238,6 +329,10 @@ public sealed class AgentsAndApprovalsEndpointsTests
 
         var stillPending = await client.GetFromJsonAsync<List<PendingApproval>>("/api/approvals/pending");
         Assert.Empty(stillPending!);
+
+        var audit = await File.ReadAllTextAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
+        Assert.Contains("test-user", audit, StringComparison.Ordinal);
+        Assert.DoesNotContain("anonymous", audit, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,5 +394,16 @@ public sealed class AgentsAndApprovalsEndpointsTests
             timeoutCts.Token.ThrowIfCancellationRequested();
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeoutCts.Token);
         }
+    }
+}
+
+internal sealed class BlockingChatModel : IChatModel
+{
+    public ChatModelDescriptor Descriptor { get; } = new("test", "blocking");
+
+    public async Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        throw new InvalidOperationException("The blocking test model should only complete through cancellation.");
     }
 }

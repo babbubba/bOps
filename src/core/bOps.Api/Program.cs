@@ -18,15 +18,45 @@ using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Policy;
 using bOps.Runtime;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ISecretProvider, EnvironmentSecretProvider>();
+builder.Services.Configure<ApiAuthenticationOptions>(builder.Configuration.GetSection("Authentication"));
+builder.Services
+    .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ApiAuthorization.ViewerPolicy, policy => policy.RequireRole(ApiAuthorization.ViewerRole));
+    options.AddPolicy(ApiAuthorization.OperatorPolicy, policy => policy.RequireRole(ApiAuthorization.OperatorRole));
+    options.AddPolicy(ApiAuthorization.ApproverPolicy, policy => policy.RequireRole(ApiAuthorization.ApproverRole));
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = 120,
+                TokensPerPeriod = 60,
+                ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+});
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
 builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
@@ -66,8 +96,9 @@ builder.Services.AddSingleton<IPolicyEngine>(sp =>
 // configuration section or a live provider.
 builder.Services.AddSingleton<IChatModel>(sp =>
 {
-    var modelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
+    var configured = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
         ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");
+    var modelOptions = ResolveModelSecret(configured, sp.GetRequiredService<ISecretProvider>());
     return sp.GetRequiredService<IChatModelRegistry>().Create(modelOptions);
 });
 
@@ -86,12 +117,19 @@ builder.Services.AddSingleton(sp =>
         runnerOptions);
 });
 builder.Services.AddSingleton<AgentTaskLauncher>();
+builder.Services.AddSingleton(
+    builder.Configuration.GetSection("Api:Tasks").Get<AgentTaskLauncherOptions>() ?? new AgentTaskLauncherOptions());
+builder.Services.AddSingleton<TaskIdempotencyStore>();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
     .WithMetrics(metrics => metrics.AddMeter(BOpsTelemetry.MeterName).AddOtlpExporter());
 
 var app = builder.Build();
+
+app.UseAuthentication();
+app.UseRateLimiter();
+app.UseAuthorization();
 
 var toolRegistry = app.Services.GetRequiredService<IToolRegistry>();
 
@@ -156,6 +194,7 @@ app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
 app.MapToolsEndpoints();
 app.MapProvidersEndpoints();
+app.MapIdentityEndpoints();
 
 await app.RunAsync();
 
@@ -195,6 +234,12 @@ static IPolicyEngine LoadPolicyEngine(string filePath, ILogger logger)
         return new PolicyEngine(PolicyConfig.AllForbidden);
     }
 }
+
+static ChatModelOptions ResolveModelSecret(ChatModelOptions configured, ISecretProvider secretProvider) =>
+    new(configured.Provider, configured.BaseUrl, configured.ApiKeySecret, configured.Model, configured.SupportsNativeToolCalling)
+    {
+        ResolvedApiKey = configured.ApiKeySecret is null ? null : secretProvider.GetSecret(configured.ApiKeySecret),
+    };
 
 /// <summary>Marker partial class so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/> can target this top-level-statements entry point. Internal, like every other type in this application (CA1515) — visible to the test project via <c>InternalsVisibleTo</c>.</summary>
 internal partial class Program;

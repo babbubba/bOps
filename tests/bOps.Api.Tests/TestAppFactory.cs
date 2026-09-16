@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net.Http.Headers;
 
 namespace bOps.Api.Tests;
 
@@ -19,11 +20,16 @@ namespace bOps.Api.Tests;
 /// </summary>
 internal sealed class TestAppFactory : WebApplicationFactory<Program>
 {
+    private const string TestApiKey = "test-api-key";
+    private readonly string _secretVariableName = $"BOPS_TEST_API_KEY_{Guid.NewGuid():N}";
+
     public string TempDirectory { get; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
 
     public IChatModel? ChatModel { get; set; }
 
     public IPolicyEngine? PolicyEngine { get; set; }
+
+    public IReadOnlyList<string> Roles { get; init; } = ["viewer", "operator", "approver"];
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -31,12 +37,20 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            Environment.SetEnvironmentVariable(_secretVariableName, TestApiKey);
+            var settings = new Dictionary<string, string?>
             {
                 ["Audit:FilePath"] = Path.Combine(TempDirectory, "audit.jsonl"),
                 ["Memory:FilePath"] = Path.Combine(TempDirectory, "tasks.db"),
                 ["Policy:FilePath"] = Path.Combine(TempDirectory, "policy.yaml"),
-            });
+                ["Authentication:ApiKeys:0:Id"] = "test-user",
+                ["Authentication:ApiKeys:0:DisplayName"] = "Test User",
+                ["Authentication:ApiKeys:0:Secret:Provider"] = "environment",
+                ["Authentication:ApiKeys:0:Secret:Name"] = _secretVariableName,
+                ["Authentication:ApiKeys:0:Roles"] = string.Join(',', Roles),
+            };
+
+            config.AddInMemoryCollection(settings);
         });
 
         builder.ConfigureServices(services =>
@@ -53,12 +67,22 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         });
     }
 
+    public new HttpClient CreateClient()
+    {
+        var client = base.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
+        return client;
+    }
+
+    public HttpClient CreateAnonymousClient() => base.CreateClient();
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
 
         if (disposing && Directory.Exists(TempDirectory))
         {
+            Environment.SetEnvironmentVariable(_secretVariableName, null);
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try
             {
