@@ -5,6 +5,7 @@ import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { ActiveProviderInfo } from '../core/api/models';
+import { AuthService } from '../core/auth/auth.service';
 
 interface ProvidersState {
   registeredProviderIds: string[];
@@ -42,9 +43,9 @@ export const ProvidersStore = signalStore(
       }
     },
   })),
-  withHooks((store) => ({
+  withHooks((store, auth = inject(AuthService)) => ({
     onInit() {
-      store.refresh();
+      if (auth.authenticated()) void store.refresh();
     },
   })),
 );

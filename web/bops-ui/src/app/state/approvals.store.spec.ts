@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { discardPeriodicTasks, fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { AuthService } from '../core/auth/auth.service';
 import { PendingApproval, ToolManifest } from '../core/api/models';
 import { ApprovalsStore } from './approvals.store';
 
@@ -39,7 +41,11 @@ describe('ApprovalsStore', () => {
     api.respondToApproval.and.resolveTo();
 
     TestBed.configureTestingModule({
-      providers: [ApprovalsStore, { provide: BOpsApiClient, useValue: api }],
+      providers: [
+        ApprovalsStore,
+        { provide: BOpsApiClient, useValue: api },
+        { provide: AuthService, useValue: { authenticated: signal(true) } },
+      ],
     });
   });
 

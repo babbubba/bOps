@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { AuthService } from '../core/auth/auth.service';
 import { ProvidersStore } from './providers.store';
 
 describe('ProvidersStore', () => {
@@ -13,7 +15,11 @@ describe('ProvidersStore', () => {
     api.getProviders.and.resolveTo({ registeredProviderIds: [], active: null });
 
     TestBed.configureTestingModule({
-      providers: [ProvidersStore, { provide: BOpsApiClient, useValue: api }],
+      providers: [
+        ProvidersStore,
+        { provide: BOpsApiClient, useValue: api },
+        { provide: AuthService, useValue: { authenticated: signal(true) } },
+      ],
     });
   });
 

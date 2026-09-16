@@ -5,6 +5,7 @@ import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { PendingApproval, RiskLevel } from '../core/api/models';
+import { AuthService } from '../core/auth/auth.service';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -59,15 +60,19 @@ export const ApprovalsStore = signalStore(
       patchState(store, { pending: store.pending().filter((a) => a.id !== id) });
     },
   })),
-  withHooks((store) => {
+  withHooks((store, auth = inject(AuthService)) => {
     let intervalId: ReturnType<typeof setInterval> | undefined;
 
     return {
       onInit() {
-        patchState(store, { loading: true });
-        store.refresh();
-        store.loadToolRisk();
-        intervalId = setInterval(() => store.refresh(), POLL_INTERVAL_MS);
+        if (auth.authenticated()) {
+          patchState(store, { loading: true });
+          void store.refresh();
+          void store.loadToolRisk();
+        }
+        intervalId = setInterval(() => {
+          if (auth.authenticated()) void store.refresh();
+        }, POLL_INTERVAL_MS);
       },
       onDestroy() {
         clearInterval(intervalId);

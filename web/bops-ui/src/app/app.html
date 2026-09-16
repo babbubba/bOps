@@ -1,3 +1,6 @@
+@if (!auth.authenticated()) {
+  <bops-login />
+} @else {
 <div class="flex min-h-screen flex-col bg-bg text-text md:flex-row">
   <aside class="flex shrink-0 flex-col border-b border-default bg-surface md:w-56 md:border-b-0 md:border-r">
     <div class="flex items-center gap-2 px-4 py-4">
@@ -37,6 +40,14 @@
     </nav>
 
     <div class="border-t border-default p-2">
+      <div class="px-3 py-2 text-xs text-muted">{{ auth.identity()?.displayName }}</div>
+      <button
+        type="button"
+        (click)="auth.signOut()"
+        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+      >
+        Sign out
+      </button>
       <button
         type="button"
         (click)="toggleTheme()"
@@ -57,3 +68,4 @@
     <router-outlet />
   </main>
 </div>
+}

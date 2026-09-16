@@ -4,29 +4,38 @@
 import { TaskState, TaskStatusRunning } from '../api/models';
 
 /**
- * Opens the SSE stream bOps.Api serves at GET /api/agents/tasks/{id}/events (ADR-0018): a
- * TaskState snapshot every time the step count changes, until the task reaches a terminal status.
- * Closes the EventSource itself once a terminal snapshot arrives — native EventSource otherwise
- * auto-reconnects on the server closing the connection, which would just re-open the same
- * already-finished stream.
+ * Authenticated task watching. Native EventSource cannot attach the bearer header and putting a
+ * credential in the URL would leak it, so the local UI polls the authenticated typed API client.
+ * The server's SSE endpoint remains available to clients that can set request headers.
  */
-export function watchTaskEvents(taskId: string, onSnapshot: (task: TaskState) => void, onError?: () => void): () => void {
-  const source = new EventSource(`/api/agents/tasks/${taskId}/events`);
+export function watchTaskEvents(
+  taskId: string,
+  getTask: (taskId: string) => Promise<TaskState>,
+  onSnapshot: (task: TaskState) => void,
+  onError?: () => void,
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  source.addEventListener('snapshot', (event: MessageEvent<string>) => {
-    const task = JSON.parse(event.data) as TaskState;
-    onSnapshot(task);
-    if (task.status !== TaskStatusRunning) {
-      source.close();
+  const poll = async (): Promise<void> => {
+    try {
+      const task = await getTask(taskId);
+      if (stopped) return;
+      onSnapshot(task);
+      if (task.status !== TaskStatusRunning) {
+        stopped = true;
+        return;
+      }
+      timer = setTimeout(() => void poll(), 500);
+    } catch {
+      if (!stopped) onError?.();
+      stopped = true;
     }
-  });
+  };
 
-  source.addEventListener('error', () => {
-    // A real stream-level error (task not found, network drop) — never treated as a terminal
-    // task status; the caller decides whether to fall back to a plain GET.
-    onError?.();
-    source.close();
-  });
-
-  return () => source.close();
+  void poll();
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }

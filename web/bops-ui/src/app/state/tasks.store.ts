@@ -6,6 +6,7 @@ import { patchState, signalStore, withHooks, withMethods, withState } from '@ngr
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { TaskState, TaskStatusRunning } from '../core/api/models';
 import { watchTaskEvents } from '../core/streaming/task-events';
+import { AuthService } from '../core/auth/auth.service';
 
 interface TasksState {
   tasks: TaskState[];
@@ -44,6 +45,7 @@ export const TasksStore = signalStore(
       stopWatching?.();
       stopWatching = watchTaskEvents(
         taskId,
+        (id) => api.getTask(id),
         (task) => patchState(store, { selectedTask: task }),
         () => patchState(store, { error: 'Lost the live connection to this task.' }),
       );
@@ -102,16 +104,18 @@ export const TasksStore = signalStore(
       },
     };
   }),
-  withHooks((store) => {
+  withHooks((store, auth = inject(AuthService)) => {
     let intervalId: ReturnType<typeof setInterval> | undefined;
 
     return {
       onInit() {
-        store.refresh();
+        if (auth.authenticated()) void store.refresh();
         // A light poll for the Running-task list itself (which tasks exist), independent of the
         // SSE stream (which only ever covers the one currently selected task) — catches a task
         // someone else started, or one that just left the list by completing.
-        intervalId = setInterval(() => store.refresh(), 3000);
+        intervalId = setInterval(() => {
+          if (auth.authenticated()) void store.refresh();
+        }, 3000);
       },
       onDestroy() {
         clearInterval(intervalId);
