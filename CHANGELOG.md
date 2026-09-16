@@ -25,6 +25,8 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 - API composition tests no longer inherit a developer's model-provider secret from the host
   environment.
+- The AppHost dependency lock now includes the centrally configured SourceLink dependency, so the
+  release workflow can restore the complete solution in locked mode.
 
 ## [1.0.0-rc.1] - 2026-09-16
 
