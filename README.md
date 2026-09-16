@@ -7,7 +7,7 @@
 **An open-source agent runtime for safely operating Windows and Linux machines
 through declarative tools, policies, planning and verification.**
 
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
+[![Status](https://img.shields.io/badge/status-v1.0%20release%20candidate-orange)](#status)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-informational)](#)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -164,22 +164,31 @@ bops resume <task-id>          # resume a persisted task (V0.7, SQLite-backed) f
 ```
 
 ```bash
+bops audit verify [audit-file]   # verify the complete append-only audit hash chain
+
 bops plugin install <directory>   # install a local plugin build — disabled until you enable it
 bops plugin list                  # every installed plugin, enabled or not
 bops plugin enable <id>           # activate now, and on every future run, until disabled
 bops plugin disable <id>          # unload it; its files stay on disk
 bops plugin remove <id>           # disable (if enabled) and delete it
 bops plugin validate <directory>  # check a bops-plugin.json without installing anything
+bops plugin sign <directory> <publisher> <key-id> <private-key.pem>
 ```
 
 `bops diagnose` is **not implemented** — there is no such subcommand, planned or otherwise.
 
+Provider credentials are references, not committed values. Set `BOPS_MODEL_API_KEY` in the
+runtime environment for the default provider. The API additionally requires `BOPS_API_KEY` and
+accepts it only as `Authorization: Bearer <key>`; query-string credentials are never supported.
+The local UI keeps the key in memory and loses it on refresh by design. Bind the API to loopback,
+or put TLS and an authenticated reverse proxy in front of it.
+
 ## Roadmap
 
-**V0.1 through V0.11 are done** — runtime, planning/replanning, policy/approval, verification,
+**V0.1 through V1.0 are implemented** — runtime, planning/replanning, policy/approval, verification,
 Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` +
-the Angular UI, repository/licensing readiness, the dynamic plugin loader, and now the full
-operational capability set: every read-only and side-effecting tool the plan named for V0.11.
+the Angular UI, the dynamic plugin loader, the full V0.11 operational capability set, and the
+V1.0 security/release hardening described below.
 
 | | |
 |---|---|
@@ -195,9 +204,10 @@ operational capability set: every read-only and side-effecting tool the plan nam
 | `V0.9.1` | Repository integrity and licensing readiness — SPDX headers, SBOM, NOTICE, CI fixed |
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
+| `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
 
-**From here, the remaining backlog** — V1.0 hardening, and the open-core commercial roadmap
-beyond it (Skills/Evidence, multi-agent, entitlement, a private Control Plane and Portal, and
+**From here, the remaining backlog** — the open-core commercial roadmap (Skills/Evidence,
+multi-agent, entitlement, a private Control Plane and Portal, and
 commercial DBA Skills) — lives in
 [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
 forever, for anyone, including commercial use — see [Licensing](#license) below and
@@ -216,7 +226,7 @@ is a real, working one — build it, then `bops plugin install`/`enable` it, as 
   "Id": "acme.sample-plugin",
   "Publisher": "Acme",
   "Version": "1.0.0",
-  "MinHostAbstractionsVersion": "0.10.0",
+  "MinHostAbstractionsVersion": "1.0.0",
   "EntryAssembly": "Acme.SamplePlugin.dll",
   "EntryType": "Acme.SamplePlugin.SampleToolProvider",
   "DeclaredCapabilities": ["sample.echo"],
@@ -230,15 +240,18 @@ Packages are never trusted at their word: `DeclaredCapabilities`, `Dependencies`
 the policy engine's own per-package risk ceiling in `policy.yaml` is what is actually enforced.
 A plugin is loaded in an isolated, collectible `AssemblyLoadContext` sharing a single copy of
 `bOps.Abstractions` with the host (ADR-0020) and stays disabled until an operator enables it
-explicitly — auto-discovery is never silent. See [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md)
+explicitly. V1.0 also requires a detached RSA-PSS/SHA-256 signature whose publisher key and trust
+level appear in the operator-owned `publisher-trust.json`; unsigned or unknown-key packages may
+be inspected but cannot be enabled. See [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md)
 for the full walkthrough, and rule S8: this isolation is dependency isolation, not a security
 sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-Pre-alpha. The architecture is settled and documented; V0.1 through V0.11 are built and tested,
-including a real dynamic plugin loader and the full operational capability set (read-only and
-side-effecting). V1.0 hardening is next. Not yet suitable for production use.
+V1.0 release candidate. The stable SDK and security hardening are implemented and validated
+locally on Windows. The release workflow repeats locked restore, build, tests, deterministic
+publish/package comparison, SBOM, checksums and artifact attestation on Windows and Linux. The
+cross-platform CI run is the remaining release gate; this is not yet a production endorsement.
 
 ## Documentation
 

@@ -22,7 +22,7 @@ Alongside the built assemblies, a `bops-plugin.json` manifest:
   "Id": "acme.sample-plugin",
   "Publisher": "Acme",
   "Version": "1.0.0",
-  "MinHostAbstractionsVersion": "0.10.0",
+  "MinHostAbstractionsVersion": "1.0.0",
   "EntryAssembly": "Acme.SamplePlugin.dll",
   "EntryType": "Acme.SamplePlugin.SampleToolProvider",
   "DeclaredCapabilities": ["sample.echo"],
@@ -97,20 +97,48 @@ The loader constructs this via `ActivatorUtilities`, against a container exposin
 (rule A10). Ask for anything else in your constructor and activation fails — that list changes
 only by an ADR to this project, not by adding a dependency to your plugin.
 
-## Packaging and installing it locally
+## Signing, trusting and installing it locally
 
 Build your plugin (`dotnet build -c Release`), then point the CLI at the output directory
-containing your assemblies and `bops-plugin.json`:
+containing your assemblies and `bops-plugin.json`. V1.0 uses a detached RSA-PSS/SHA-256
+signature over a deterministic inventory of every package file. Generate and protect a publisher
+key using your normal PKI process; this OpenSSL example is suitable for local development only:
 
 ```bash
-bops plugin validate ./bin/Release/net10.0/    # sanity-check the manifest first
-bops plugin install ./bin/Release/net10.0/     # copies it under the plugins root, disabled
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out acme-private.pem
+openssl pkey -in acme-private.pem -pubout -out acme-public.pem
+bops plugin sign ./bin/Release/net10.0/ Acme acme-2026 acme-private.pem
+```
+
+The operator—not the package—assigns trust. Add the public key to the configured
+`Plugins:TrustStorePath` (by default `publisher-trust.json` beside the process working directory):
+
+```json
+[
+  {
+    "publisher": "Acme",
+    "keyId": "acme-2026",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+    "trust": "Verified"
+  }
+]
+```
+
+The `publisher` must exactly match both `bops-plugin.json` and the signature envelope. The key id
+selects a specific rotation of that publisher's key. Then validate and install:
+
+```bash
+bops plugin validate ./bin/Release/net10.0/    # validates manifest, digest, signature and local trust
+bops plugin install ./bin/Release/net10.0/     # re-verifies staged bytes and installs disabled
 bops plugin list                               # confirm it is there
-bops plugin enable acme.sample-plugin          # activates it now, and on every future run
+bops plugin enable acme.sample-plugin          # re-verifies installed bytes, then activates
 ```
 
 There is no remote install and no auto-enable: a discovered plugin stays disabled until you
-enable it explicitly (rule S8), and only a local directory is a valid install source in V0.10.
+enable it explicitly (rule S8), and only a local directory is a valid install source. An unsigned
+package or one signed by an unknown key can still be installed for inspection, but enablement
+fails closed. Modification after signing or installation invalidates its digest and blocks
+activation.
 
 ```bash
 bops plugin disable acme.sample-plugin   # unload it; its files stay on disk
@@ -122,7 +150,8 @@ bops plugin remove acme.sample-plugin    # disable (if enabled) and delete it
 `AssemblyLoadContext` isolation gives your plugin its own dependency resolution — it can bring
 its own version of a NuGet package without colliding with the host's — but it is **not** a
 security sandbox (rule S8). Your plugin runs with the host process's own privileges. Installing
-a plugin is equivalent to installing software with those privileges; there is no code signing or
-provenance check in V0.10. The one thing genuinely shared is `bOps.Abstractions` itself: your
+a plugin is equivalent to installing software with those privileges. V1.0 signatures establish
+publisher-key provenance and byte integrity; they do not review, constrain or sandbox the code.
+The one thing genuinely shared is `bOps.Abstractions` itself: your
 plugin never gets its own, second, incompatible copy of the contract types it talks to the host
 through.

@@ -1,152 +1,139 @@
-# Handoff — V0.11 complete (both tranches), uncommitted; hand off toward V1.0
+# Handoff — V1.0 complete, uncommitted at session start; committed by this session
 
-V0.11 (`piano-bops-v0.9.1-v2.0.md` §7) is fully implemented: every read-only capability from
-tranche 1 (committed and pushed in the previous session, CI-confirmed green) and every
-side-effecting capability from tranche 2 (`fs.move`, `process.stop`/`kill`,
-`service.start`/`stop`/`restart`). **Nothing from this session is committed yet.**
+V1.0 (`piano-bops-v0.9.1-v2.0.md`'s gate after V0.11 — "publishable as a reliable base for
+commercial extensions") is fully implemented: `bOps.Abstractions` is frozen at `1.0.0`, the API
+and plugin loader no longer rely on informal local trust, and release artifacts are reproducible
+and attested. **This session found the implementation already done in the working tree** (left
+by a prior agent run that was interrupted mid-session) and spent its own time verifying it for
+real, closing out documentation, and committing it in scoped commits — not re-implementing it.
 
-## What tranche 2 delivers
+## What V1.0 delivers
 
-- **`fs.move`** (`bOps.Packages.Filesystem/FsMoveTool.cs`) — `RiskLevel.High`. Never overwrites an
-  existing destination. **Important design note**: the plan's own requirement that this tool
-  "verifies content identity" is satisfied *inside* `ExecuteAsync` — the source's SHA-256 is
-  hashed before the move and the destination's immediately after, and a mismatch is reported as
-  `ToolOutcome.Failure` — **not** by the separate, deferred `VerificationSpec` step. This is a
-  genuine architectural finding, not a shortcut: `IVerifiableTool.EvaluateVerificationAsync`
-  receives only the *original call's arguments* and the *separately executed verification tool's*
-  result (`bOps.Runtime.AgentRunner.EvaluateVerificationAsync`) — never the tool's own prior
-  `ToolCallResult`. By the time a deferred verification call could run, the source is already
-  gone, so a historical pre-move hash cannot be threaded into it without changing
-  `IVerifiableTool`'s shape, which would need its own ADR (`agentic/05-workflow.md`'s trigger
-  list: "alters a type in `bOps.Abstractions`"). Verifying inside the move is strictly *stronger*
-  than a deferred check could be (no time-of-check/time-of-use gap), so nothing real is lost —
-  see the type's own doc comment for the full reasoning. The declared `VerificationSpec` still
-  exists and still confirms the externally-observable half: a file now exists at the destination
-  (via `fs.stat`, exactly like `fs.write`'s own verification).
-- **`process.stop` / `process.kill`** (new tools in `bOps.Packages.System.{Core,Windows,Linux}`,
-  per the plan's own note that Process stays inside the System family rather than becoming its
-  own package). `process.stop` is `RiskLevel.Medium` (a graceful request); `process.kill` is
-  `RiskLevel.High` (forced). Both verify via `process.inspect` — the shared
-  `ProcessStopToolBase.EvaluateProcessAbsence` interprets `exists: false` as `Confirmed`, reusing
-  the JSON shape tranche 1 deliberately designed for exactly this.
-  - **Windows** `process.stop`: `Process.CloseMainWindow()` — the only generic Win32
-    "please close" mechanism, and it only works for a process with a message loop and a main
-    window. A console or service process has neither, and this is reported as an honest
-    `ToolOutcome.Failure`, not silently escalated to a forced kill: **Windows has no generic
-    SIGTERM equivalent for an arbitrary process.** `process.kill` uses `Process.Kill()`
-    (`TerminateProcess`), which works universally.
-  - **Linux** `process.stop`: a direct `kill(pid, SIGTERM)` libc call via `LibraryImport` — a
-    single P/Invoke, not a subprocess, so (unlike `bOps.Packages.Service.Linux`'s `systemctl`
-    shell-out) there is no process-spawning surface to reason about at all. `process.kill` uses
-    `Process.Kill()`, which sends `SIGKILL` on Unix — the same portable BCL call as Windows, no
-    OS-specific implementation needed for `process.kill` itself.
-- **`service.start` / `service.stop` / `service.restart`** (`bOps.Packages.Service.{Core,Windows,Linux}`)
-  — all `RiskLevel.Medium`, matching `docker.start`/`stop`/`restart`'s precedent and the plan's
-  own explicit "`service.restart` as the first `MEDIUM` tool" note. All verify via
-  `service.status`, checking for `"running"` (start/restart) or `"stopped"` (stop) — the shared
-  `ServiceStartToolBase.EvaluateExpectedStatus` interprets the result.
-  - **Windows**: `ServiceController.Start()`/`Stop()`. `Restart` has no native SCM equivalent
-    (unlike `systemctl restart`), so it stops (tolerating "already stopped" or "cannot stop"),
-    waits up to 15s for `Stopped` via `WaitForStatus`, then starts regardless of whether the wait
-    timed out — a service genuinely stuck mid-stop is exactly what the separate, deferred
-    `service.status` verification exists to catch.
-  - **Linux**: fixed `systemctl start`/`stop`/`restart <name>` invocations (ADR-0021's pattern,
-    unchanged) — `systemctl restart` sequences stop-then-start inside systemd itself, so no manual
-    choreography is needed there. A shared `ServiceUnitName.IsPlausible` guard (extracted from
-    tranche 1's inline regex, now used by five tools) rejects an implausible name before ever
-    spawning `systemctl`.
+- **Secret references** (`bOps.Abstractions/Secrets.cs`) — `SecretReference` (provider id +
+  opaque name, never a value) and `ISecretProvider`, resolved only at the host boundary.
+  `ChatModelOptions.ApiKeySecret` replaces the old raw `ApiKey` string; `ResolvedApiKey` is
+  populated once, at the last responsible moment, and is provably excluded from JSON
+  serialization and from `ToString()` (`JsonRoundTripTests.ChatModelOptions_RoundTrips` asserts
+  the resolved value never appears in either). `EnvironmentSecretProvider`
+  (`bOps.Runtime/EnvironmentSecretProvider.cs`) is the one host-side implementation shipped.
+- **Host-assigned package trust** (`Registry.cs`, `ToolRegistry.cs`, `AgentRunner.cs`) —
+  `IToolRegistry.Register` gained a `PackageTrustLevel` overload and a `GetTrust` accessor;
+  `AgentRunner`'s policy evaluation now reads the registry's real trust instead of the
+  V0.3-era hardcoded `PackageTrustLevel.Official` for every package. This is what makes plugin
+  signature verification (below) actually load-bearing instead of decorative.
+- **API authentication and authorization** (`bOps.Api/ApiAuthenticationOptions.cs`,
+  `ApiAuthorization.cs`, `ApiKeyAuthenticationHandler.cs`, `IdentityEndpoints.cs`) — bearer
+  API-key auth with `viewer`/`operator`/`approver` roles read from configuration as one atomic,
+  comma-separated scalar per key (see the merge-semantics bug below). Anonymous access is
+  rejected; approval-endpoint actor identity comes only from the authenticated principal, never
+  from a client-supplied field.
+- **Bounded, idempotent task execution** (`AgentTaskLauncher.cs`, `AgentTaskLauncherOptions.cs`,
+  `TaskIdempotencyStore.cs`) — rate limiting, a configurable max-concurrent-tasks bound,
+  actor-scoped idempotent start, and observable cancellation.
+- **Plugin provenance** (`bOps.PluginHost/PluginPackageSignature.cs`, `PluginProvenance.cs`,
+  `PluginPublisherTrustStore.cs`, `PluginSecurityJsonContext.cs`) — a detached RSA-PSS/SHA-256
+  signature over a deterministic inventory of the full package directory, a local
+  publisher/key-id trust store, install-time provenance recording, and a re-verification of the
+  actual bytes before every activation. Unsigned, unknown-key, invalidly-signed or
+  tampered-after-signing packages stay disabled or are rejected outright — this is a fail-closed
+  policy, not a default-allow with logging.
+- **Operator-facing audit verification and file permission hardening**
+  (`bOps.Audit/JsonLinesAuditSink.cs`, `bOps.Memory/SqliteTaskStore.cs`) — `bops audit verify`
+  is now a real CLI command; the audit log and the SQLite task store both get `0600`-equivalent
+  permissions on Unix via `File.SetUnixFileMode` (a no-op on Windows, which has no portable
+  POSIX-mode primitive — ACL hardening there is out of scope for V1.0, recorded honestly in the
+  threat model rather than glossed over).
+- **CLI wiring** (`bOps.Cli/Program.cs`) — `bops plugin sign`, `bops plugin validate` (now
+  reporting provenance), and `bops audit verify`.
+- **Angular UI authentication** (`web/bops-ui/src/app/core/auth/`, `features/login/`) — the
+  credential lives in memory only, an `HttpInterceptor` attaches it to every request, and task
+  status uses authenticated polling instead of an unauthenticated `EventSource` (native
+  `EventSource` cannot carry a bearer header — the authenticated SSE endpoint stays available for
+  header-capable clients, per ADR-0022).
+- **Release pipeline** (`.github/workflows/release.yml`, `scripts/Compare-ReproducibleTrees.ps1`,
+  `scripts/New-ReproducibleZip.ps1`) — tag-triggered, `dotnet restore --locked-mode`, publishes
+  the CLI twice per RID and diffs the trees to prove determinism, packs the SDK, generates SBOMs,
+  produces a deterministic zip + `SHA256SUMS`, and attests every artifact via `actions/attest`.
+  `Directory.Build.props` now sets `RestorePackagesWithLockFile`, and every project has a
+  committed `packages.lock.json`.
+- **ADR-0022** (`docs/architecture/adr/0022-bops-abstractions-1.0-security-boundaries.md`) and
+  the **V1.0 threat model** (`docs/security/threat-model.md`) record the decisions above and their
+  explicitly-scoped limits — most importantly that in-process plugins remain trusted code:
+  signatures prove byte provenance, not sandboxing, and nothing in this release changes that.
+
+## A real regression this session found and fixed
+
+The gate run surfaced a genuine authorization bug, not a flaky test: a key configured with only
+the `viewer` role could still start a task. Root cause was ASP.NET configuration's array-merge
+semantics — overriding a lower-priority source's `Roles` array element-by-element left that
+source's `operator`/`approver` entries in place instead of replacing them, so a "reduced"
+privilege set silently kept its old, broader one. Fixed by making the roles configuration key a
+single comma-separated scalar (`"viewer,operator,approver"`) instead of an array, which
+configuration sources can only replace atomically, never merge. The authorization test that
+caught this is now permanent regression coverage.
 
 ## Verified for real, this session
 
-- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors**, full solution
-  including the new `bOps.TestFixtures.WindowsService` project (below).
-- `dotnet test bOps.slnx --configuration Release --filter "Category!=LiveModel"`: **all 15 test
-  assemblies passed, 0 failures**, including:
-  - `fs.move` against a real temp directory: successful move + hash verification, refusal to
-    overwrite an existing destination, refusal when either side's write policy denies it,
-    `Confirmed`/`Refuted` verification against real `fs.stat` calls.
-  - `process.stop`/`process.kill` against **real, test-owned child processes this process itself
-    spawns and always cleans up** — a windowless `cmd.exe` (Windows' honest "no main window"
-    failure path) and a real windowed `mshta.exe about:blank` process (`CloseMainWindow()`
-    succeeding for real) on Windows; `sleep 300` on Linux (written for CI — no Linux host here).
-  - `service.start`/`stop`/`restart` against a **real, freshly-installed, uniquely-named Windows
-    Service** (`bOpsTestService.exe`, below) on Windows — see the elevation note below for the
-    one thing not verified in *this* dev session.
-  - `bOps.Architecture.Tests`: still 4/4 — rule A1 holds; nothing in this tranche touches
-    `bOps.Runtime`/`Policy`/`Memory`/`Audit`.
-- **Manually ran the real `bops.exe`** end to end with a real goal string (no API key configured,
-  so it fails at the expected 401) specifically to confirm the CLI's composition root still wires
-  up cleanly with every new tool registered — it does; the failure trace shows the run reaching
-  `AgentRunner.CreatePlanAsync` normally, same as tranche 1's equivalent check.
+- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors**, full solution.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`:
+  **all 15 test assemblies green, 0 failures.** Skips are the expected, visible ones —
+  Linux-only tests on this Windows dev box, the five `[RequiresElevationFact]` Windows service
+  tests (this session's process is not elevated, same constraint as V0.11), one symlink test
+  skipped for its own documented platform reason, two Docker tests skipped because this host's
+  Docker daemon cannot run Linux containers.
+- `npm run build` (Angular production build): succeeds, no errors.
+- `npx ng test --watch=false --browsers=ChromeHeadless`: **17 of 17 green.**
+- `bOps.Architecture.Tests`: 4/4 — rule A1 still holds after every V1.0 change.
+- Read every `appsettings.json` diff and the plugin/`SecretReference` code paths directly to
+  confirm no literal secret value was committed anywhere; `specifiche-pendenti.md` (the user's
+  pre-existing untracked file, outside this plan's scope) has no diff and was never staged.
 
-## New: `bOps.TestFixtures.WindowsService`
+## Left for CI, not verified locally — same trust model as every prior version
 
-A new, minimal project (`tests/bOps.TestFixtures.WindowsService/`) — a do-nothing Windows Service
-(`Microsoft.Extensions.Hosting.WindowsServices` + a no-op `BackgroundService`) built only so
-`bOps.Packages.Service.Windows.Tests` has a **real, throwaway** service to install
-(`sc.exe create`), start/stop/restart via the actual tools under test, and delete
-(`sc.exe delete`) — every test creates and deletes its *own* uniquely-named instance
-(`ThrowawayWindowsService.cs`), never a shared or real system service. This is the same "own
-throwaway resource" discipline `FsToolsTests` already uses for its temp directory, applied to a
-resource type (a Windows Service) that has no simpler equivalent.
-
-**This needed a real design decision, and it is the one thing this session could not verify
-directly**: creating/deleting a Windows Service requires an elevated (Administrator) process.
-This dev environment's own session confirmed it is **not** elevated
-(`WindowsIdentity`/`WindowsPrincipal.IsInRole(Administrator)` returns `false`, and the
-`Administrators` group even shows as "deny-only" in this token — self-elevation is not possible
-here at all). A new `RequiresElevationFactAttribute` (mirrors `WindowsOnlyFactAttribute`'s
-"skip visibly, never silently" pattern) skips these five tests here and lets them run for real
-only where the process actually is elevated — which GitHub Actions' `windows-latest` runner's job
-process is, by default, per well-established public precedent (this is exactly why V0.10 and
-tranche 1's own manual CLI smoke tests, and the Linux-only tests throughout this project, all
-follow the same trust model: written and reasoned through carefully, verified for real on CI where
-this dev environment cannot verify them itself).
+- **The five `[RequiresElevationFact]` Windows service-lifecycle tests** and **Linux
+  `process.stop`/`kill`'s real execution** — unchanged from V0.11's own note; this dev session is
+  still not elevated and still has no Linux host.
+- **`release.yml` itself was not executed.** It is written and reasoned through (dependency
+  ordering, `--locked-mode` restore, double-publish-and-diff for reproducibility, SBOM/checksum/
+  attestation), but nothing in this session pushed a `v*` tag or ran it via `workflow_dispatch`.
+  Its first real execution — including whether `dotnet publish`'s output is actually
+  byte-reproducible across two runs on GitHub's own runners — is a genuinely open question until
+  it runs there. This is the single biggest unverified claim in this handoff; flagging it
+  explicitly rather than asserting reproducibility works.
+- **The `dependency-review` job added to `ci.yml`** only runs on `pull_request` events, so it has
+  never executed against this branch (`main`, direct pushes only) either.
 
 ## Scope boundaries — deliberate, not gaps to silently fill later
 
-- **`service.start`/`stop`/`restart`'s Linux implementation has no real lifecycle test.**
-  `.github/workflows/ci.yml`'s `Test` step runs as the default unprivileged `runner` user, not
-  root — creating a system-scope systemd unit and actually starting/stopping it needs root or a
-  polkit rule this project does not control, and this dev environment has no Linux host to verify
-  a workaround against either. `LinuxServiceActionToolsTests` therefore covers manifest/wiring
-  correctness (risk levels, verification declarations, the implausible-name guard) for real, but
-  not a genuine create→start→stop→delete cycle — unlike the Windows equivalent, which does get
-  that full real cycle via CI's elevated runner. The three tools share `SystemctlInvoker`, already
-  proven for real by `service.list`/`service.status`'s own CI-verified tests, so the gap is
-  specifically "the full lifecycle, elevated," not "systemctl invocation at all."
-- **`fs.move`'s "content identity" verification lives in `ExecuteAsync`, not in
-  `EvaluateVerificationAsync`.** Explained in detail above and in the tool's own doc comment —
-  this is the direct, load-bearing consequence of a real constraint in
-  `IVerifiableTool`'s current shape, surfaced and reasoned through rather than worked around
-  silently, per `agentic/05-workflow.md`'s "if a rule blocks you" guidance.
-- **`process.stop` on Windows cannot reach a process without a main window.** This is a genuine
-  Windows platform limitation (no generic SIGTERM equivalent), not a bug — `process.kill` is the
-  documented escalation path, and the tool says so in its own failure message.
-- **No change to `bOps.Abstractions`, `bOps.Runtime`, `bOps.Policy`, `bOps.Memory` or
-  `bOps.Audit`** — every new capability is a package, exactly as A1 requires; `bOps.Architecture.Tests`
-  confirms it mechanically.
+- **In-process plugins remain trusted code.** Signatures prove a publisher's bytes were not
+  modified after signing; they are not a sandbox, and ADR-0022 says so explicitly to prevent this
+  from being misread later as "plugins are now safe to run untrusted."
+- **`ISecretProvider` is host infrastructure, not exposed to the restricted plugin activation
+  container.** A package receives only the single resolved credential for its own configured
+  model, never a general secret-resolution capability. A broader, scoped resolver is future work,
+  not a V1.0 gap.
+- **Windows gets no file-permission hardening equivalent to Unix's `0600`.** There is no portable
+  POSIX-mode primitive on Windows; an ACL-based equivalent was judged out of scope for V1.0 and is
+  recorded as residual risk in the threat model, not silently skipped.
+- **In-flight approvals are not restored across a restart, by design (ADR-0022).** A resumed task
+  requests a fresh approval from a currently authenticated approver rather than replaying a
+  point-in-time human decision as a reusable capability.
+- **No V1.1 Skill/Capability or remote Node–Control Plane contract was introduced.** Everything
+  above is local-only, exactly as the plan requires at this gate.
 
 ## Exact next steps, in order
 
-1. Commit tranche 2 in well-scoped commits (Filesystem's `fs.move`; System's `process.stop`/`kill`;
-   Service's `start`/`stop`/`restart` + the new Windows test-service fixture; README/SBOM) —
-   mirroring tranche 1's and V0.10's granularity.
-2. Ask the user before pushing (standing rule, `agentic/05-workflow.md`). No `Co-Authored-By:
-   Claude` trailer.
-3. After pushing, confirm CI is green on GitHub's own runners — this is specifically where
-   `process.stop`/`kill`'s Linux half and `service.start`/`stop`/`restart`'s **full elevated
-   Windows lifecycle** get their first real execution. A failure in the five
-   `RequiresElevationFact`-gated Windows tests would mean the "windows-latest runs elevated"
-   assumption above was wrong for this specific job — treat that as new information to act on,
-   not a surprise to explain away.
+1. Ask the user before pushing (standing rule, `agentic/05-workflow.md`). No `Co-Authored-By:
+   Claude` trailer — carried forward from this project's own standing correction.
+2. After pushing, confirm CI is green on both `ubuntu-latest` and `windows-latest`.
+3. Once satisfied with the ordinary CI run, consider pushing a `v1.0.0-rc.1` tag (or running
+   `release.yml` via `workflow_dispatch`) to get the release pipeline's **first real execution** —
+   this is the one part of V1.0 that is written but genuinely unproven, per the note above. This
+   is a new decision for the user to make explicitly, not something to do automatically.
 
-## Next: V1.0 — security hardening and a stable public contract
+## Next: V1.1 and beyond
 
-V0.11 was the last version before V1.0 in `piano-bops-v0.9.1-v2.0.md`'s roadmap. V1.0's own goal
-(per the plan) is making the runtime and SDK "publishable as a reliable base for commercial
-extensions" — freezing `bOps.Abstractions`'s 1.0 surface (rule A12/D-012), `docs/security/threat-
-model.md` (referenced but not yet written — ADR-0020 and ADR-0021 both point at it), and whatever
-hardening the plan's own V1.0 section specifies. Per the project's own scope-discipline rule
-(`agentic/05-workflow.md`), starting V1.0 work is a new decision for the user to make explicitly,
-not something to begin automatically just because V0.11 closed out clean.
+V1.0 was the last gate before `piano-bops-v0.9.1-v2.0.md`'s V1.1 (Skill/Capability/evidence
+contracts and the immutable execution plan). Per this project's own scope-discipline rule, that is
+a new decision for the user to make explicitly, not something to begin automatically because V1.0
+closed out clean.
