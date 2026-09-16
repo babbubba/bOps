@@ -497,6 +497,176 @@ public sealed class JsonRoundTripTests
         Assert.Null(result!.MaxDeclaredRisk);
     }
 
+    // ---- Evidence.cs ----
+
+    [Fact]
+    public void Evidence_RoundTrips()
+    {
+        var value = new Evidence("evidence-1", EvidenceKind.Fact, "Table bloat ratio.", "42%", "postgres.list_bloated_tables", DateTimeOffset.UtcNow);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void Finding_RoundTrips()
+    {
+        var value = new Finding("finding-1", "Bloat detected.", ["evidence-1", "evidence-2"], RiskLevel.Medium);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.Id, result!.Id);
+        Assert.Equal(value.Summary, result.Summary);
+        Assert.Equal(value.EvidenceIds, result.EvidenceIds);
+        Assert.Equal(value.Severity, result.Severity);
+    }
+
+    [Fact]
+    public void SkillReport_RoundTrips()
+    {
+        var value = new SkillReport(
+            [new Evidence("evidence-1", EvidenceKind.Fact, "CPU usage.", "42%", "system.cpu", DateTimeOffset.UtcNow)],
+            [new Finding("finding-1", "High CPU.", ["evidence-1"], RiskLevel.Low)],
+            Plan: null);
+
+        var result = RoundTrip(value);
+
+        Assert.Single(result!.Evidence);
+        Assert.Single(result.Findings);
+        Assert.Null(result.Plan);
+    }
+
+    // ---- ExecutionPlan.cs ----
+
+    [Fact]
+    public void ExecutionPlanStep_RoundTrips()
+    {
+        var value = new ExecutionPlanStep(0, "system.cpu", ToolArguments.FromJson(new JsonObject { ["limit"] = 5 }), "Read CPU usage.");
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.Index, result!.Index);
+        Assert.Equal(value.ToolName, result.ToolName);
+        Assert.Equal(value.Arguments.ToJson().ToJsonString(), result.Arguments.ToJson().ToJsonString());
+        Assert.Equal(value.Description, result.Description);
+    }
+
+    [Fact]
+    public void ExecutionPlan_RoundTrips()
+    {
+        var value = new ExecutionPlan("system.diagnose", "1.0.0", "Check CPU usage.",
+            [new ExecutionPlanStep(0, "system.cpu", ToolArguments.Empty, null)]);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.CapabilityName, result!.CapabilityName);
+        Assert.Equal(value.CapabilityVersion, result.CapabilityVersion);
+        Assert.Equal(value.Rationale, result.Rationale);
+        Assert.Single(result.Steps);
+        Assert.Equal(value.Steps[0].ToolName, result.Steps[0].ToolName);
+    }
+
+    [Fact]
+    public void ExecutionPlanApproval_RoundTrips()
+    {
+        var value = new ExecutionPlanApproval("abc123", new ApprovalDecision(true, SampleActor, "Looks fine."));
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+    }
+
+    // ---- Capabilities.cs ----
+
+    [Fact]
+    public void CapabilityManifest_RoundTrips()
+    {
+        var value = new CapabilityManifest(
+            "postgres.diagnose_bloat", "1.0.0", "Diagnoses table bloat.", RiskLevel.Read,
+            RequiredPermissions: ["db.read"],
+            InputSchema: [new ToolParameter("schema", ToolParameterType.String, "Schema name.")],
+            OutputSchema: [new ToolParameter("bloatRatio", ToolParameterType.Number, "Bloat ratio.")],
+            Timeout: TimeSpan.FromMinutes(5),
+            SupportsDryRun: true,
+            Verification: new VerificationSpec("postgres.list_bloated_tables", ["schema"], "Confirms the bloat figures."),
+            RollbackDescription: null)
+        {
+            Package = SamplePackage,
+        };
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.Name, result!.Name);
+        Assert.Equal(value.Version, result.Version);
+        Assert.Equal(value.Description, result.Description);
+        Assert.Equal(value.Risk, result.Risk);
+        Assert.Equal(value.RequiredPermissions, result.RequiredPermissions);
+        Assert.Equal(value.InputSchema.Count, result.InputSchema.Count);
+        Assert.Equal(value.OutputSchema.Count, result.OutputSchema.Count);
+        Assert.Equal(value.Timeout, result.Timeout);
+        Assert.Equal(value.SupportsDryRun, result.SupportsDryRun);
+        Assert.Equal(value.Verification!.VerifyToolName, result.Verification!.VerifyToolName);
+        Assert.Equal(value.Package, result.Package);
+    }
+
+    // ---- Policy.cs (ADR-0023 additions) ----
+
+    [Fact]
+    public void PolicyContext_RoundTrips_WithSkillFieldsAbsent()
+    {
+        var manifest = new ToolManifest
+        {
+            Name = "system.cpu",
+            Description = "Reads CPU usage.",
+            Risk = RiskLevel.Read,
+            Platforms = ["windows"],
+            Requires = [],
+            Parameters = [],
+        };
+        var value = new PolicyContext(SampleNode, SamplePackage, PackageTrustLevel.Official, manifest, ToolArguments.Empty, SampleActor);
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var result = JsonSerializer.Deserialize<PolicyContext>(json, Options);
+
+        Assert.Null(result!.SkillId);
+        Assert.Null(result.CapabilityName);
+        Assert.Null(result.Target);
+        Assert.Null(result.Environment);
+        Assert.Null(result.BlastRadius);
+    }
+
+    [Fact]
+    public void PolicyContext_RoundTrips_WithSkillFieldsPresent()
+    {
+        var manifest = new ToolManifest
+        {
+            Name = "postgres.list_bloated_tables",
+            Description = "Lists bloated tables.",
+            Risk = RiskLevel.Read,
+            Platforms = ["windows", "linux"],
+            Requires = [],
+            Parameters = [],
+        };
+        var value = new PolicyContext(SampleNode, SamplePackage, PackageTrustLevel.Community, manifest, ToolArguments.Empty, SampleActor)
+        {
+            SkillId = "postgres-dba",
+            CapabilityName = "postgres.diagnose_bloat",
+            Target = "db-primary",
+            Environment = "production",
+            BlastRadius = BlastRadius.Single,
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var result = JsonSerializer.Deserialize<PolicyContext>(json, Options);
+
+        Assert.Equal(value.SkillId, result!.SkillId);
+        Assert.Equal(value.CapabilityName, result.CapabilityName);
+        Assert.Equal(value.Target, result.Target);
+        Assert.Equal(value.Environment, result.Environment);
+        Assert.Equal(value.BlastRadius, result.BlastRadius);
+    }
+
     private static T? RoundTrip<T>(T value)
     {
         var json = JsonSerializer.Serialize(value, Options);

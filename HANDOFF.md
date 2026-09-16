@@ -1,139 +1,109 @@
-# Handoff — V1.0 complete, uncommitted at session start; committed by this session
+# Handoff — V1.1 started: Evidence/Finding/ExecutionPlan contracts (ADR-0023), phase 1 of the milestone
 
-V1.0 (`piano-bops-v0.9.1-v2.0.md`'s gate after V0.11 — "publishable as a reliable base for
-commercial extensions") is fully implemented: `bOps.Abstractions` is frozen at `1.0.0`, the API
-and plugin loader no longer rely on informal local trust, and release artifacts are reproducible
-and attested. **This session found the implementation already done in the working tree** (left
-by a prior agent run that was interrupted mid-session) and spent its own time verifying it for
-real, closing out documentation, and committing it in scoped commits — not re-implementing it.
+V1.0 is complete, committed, and pushed to `origin/main` (verified: CI green on both
+`ubuntu-latest` and `windows-latest` after the push). This session began V1.1
+(`piano-bops-v0.9.1-v2.0.md` §7 — "Skill/Capability SDK, Evidence e piano immutabile") at the
+operator's explicit go-ahead, after pulling forward 95 commits done by a prior agent run
+(V0.9.1 → V0.10 → V1.0) that this session had not seen locally until it fetched them.
 
-## What V1.0 delivers
+**This session delivers only the first slice of V1.1 — the immutable data contracts and their
+tests — not the whole milestone.** V1.1's own Definition of Done (a working sample Skill,
+end-to-end) is explicitly **not** claimed here. See "What remains," below, before starting the
+next increment.
 
-- **Secret references** (`bOps.Abstractions/Secrets.cs`) — `SecretReference` (provider id +
-  opaque name, never a value) and `ISecretProvider`, resolved only at the host boundary.
-  `ChatModelOptions.ApiKeySecret` replaces the old raw `ApiKey` string; `ResolvedApiKey` is
-  populated once, at the last responsible moment, and is provably excluded from JSON
-  serialization and from `ToString()` (`JsonRoundTripTests.ChatModelOptions_RoundTrips` asserts
-  the resolved value never appears in either). `EnvironmentSecretProvider`
-  (`bOps.Runtime/EnvironmentSecretProvider.cs`) is the one host-side implementation shipped.
-- **Host-assigned package trust** (`Registry.cs`, `ToolRegistry.cs`, `AgentRunner.cs`) —
-  `IToolRegistry.Register` gained a `PackageTrustLevel` overload and a `GetTrust` accessor;
-  `AgentRunner`'s policy evaluation now reads the registry's real trust instead of the
-  V0.3-era hardcoded `PackageTrustLevel.Official` for every package. This is what makes plugin
-  signature verification (below) actually load-bearing instead of decorative.
-- **API authentication and authorization** (`bOps.Api/ApiAuthenticationOptions.cs`,
-  `ApiAuthorization.cs`, `ApiKeyAuthenticationHandler.cs`, `IdentityEndpoints.cs`) — bearer
-  API-key auth with `viewer`/`operator`/`approver` roles read from configuration as one atomic,
-  comma-separated scalar per key (see the merge-semantics bug below). Anonymous access is
-  rejected; approval-endpoint actor identity comes only from the authenticated principal, never
-  from a client-supplied field.
-- **Bounded, idempotent task execution** (`AgentTaskLauncher.cs`, `AgentTaskLauncherOptions.cs`,
-  `TaskIdempotencyStore.cs`) — rate limiting, a configurable max-concurrent-tasks bound,
-  actor-scoped idempotent start, and observable cancellation.
-- **Plugin provenance** (`bOps.PluginHost/PluginPackageSignature.cs`, `PluginProvenance.cs`,
-  `PluginPublisherTrustStore.cs`, `PluginSecurityJsonContext.cs`) — a detached RSA-PSS/SHA-256
-  signature over a deterministic inventory of the full package directory, a local
-  publisher/key-id trust store, install-time provenance recording, and a re-verification of the
-  actual bytes before every activation. Unsigned, unknown-key, invalidly-signed or
-  tampered-after-signing packages stay disabled or are rejected outright — this is a fail-closed
-  policy, not a default-allow with logging.
-- **Operator-facing audit verification and file permission hardening**
-  (`bOps.Audit/JsonLinesAuditSink.cs`, `bOps.Memory/SqliteTaskStore.cs`) — `bops audit verify`
-  is now a real CLI command; the audit log and the SQLite task store both get `0600`-equivalent
-  permissions on Unix via `File.SetUnixFileMode` (a no-op on Windows, which has no portable
-  POSIX-mode primitive — ACL hardening there is out of scope for V1.0, recorded honestly in the
-  threat model rather than glossed over).
-- **CLI wiring** (`bOps.Cli/Program.cs`) — `bops plugin sign`, `bops plugin validate` (now
-  reporting provenance), and `bops audit verify`.
-- **Angular UI authentication** (`web/bops-ui/src/app/core/auth/`, `features/login/`) — the
-  credential lives in memory only, an `HttpInterceptor` attaches it to every request, and task
-  status uses authenticated polling instead of an unauthenticated `EventSource` (native
-  `EventSource` cannot carry a bearer header — the authenticated SSE endpoint stays available for
-  header-capable clients, per ADR-0022).
-- **Release pipeline** (`.github/workflows/release.yml`, `scripts/Compare-ReproducibleTrees.ps1`,
-  `scripts/New-ReproducibleZip.ps1`) — tag-triggered, `dotnet restore --locked-mode`, publishes
-  the CLI twice per RID and diffs the trees to prove determinism, packs the SDK, generates SBOMs,
-  produces a deterministic zip + `SHA256SUMS`, and attests every artifact via `actions/attest`.
-  `Directory.Build.props` now sets `RestorePackagesWithLockFile`, and every project has a
-  committed `packages.lock.json`.
-- **ADR-0022** (`docs/architecture/adr/0022-bops-abstractions-1.0-security-boundaries.md`) and
-  the **V1.0 threat model** (`docs/security/threat-model.md`) record the decisions above and their
-  explicitly-scoped limits — most importantly that in-process plugins remain trusted code:
-  signatures prove byte provenance, not sandboxing, and nothing in this release changes that.
+## What this session delivers
 
-## A real regression this session found and fixed
+**ADR-0023** (`docs/architecture/adr/0023-skill-capability-evidence-execution-plan.md`) —
+required before any code, per the plan's own ADR table. Settles:
 
-The gate run surfaced a genuine authorization bug, not a flaky test: a key configured with only
-the `viewer` role could still start a task. Root cause was ASP.NET configuration's array-merge
-semantics — overriding a lower-priority source's `Roles` array element-by-element left that
-source's `operator`/`approver` entries in place instead of replacing them, so a "reduced"
-privilege set silently kept its old, broader one. Fixed by making the roles configuration key a
-single comma-separated scalar (`"viewer,operator,approver"`) instead of an array, which
-configuration sources can only replace atomically, never merge. The authorization test that
-caught this is now permanent regression coverage.
+- **Vocabulary**: Package / Tool / Capability / Skill / Agent, and how each relates to the
+  existing V0.1–V1.0 contract. A Capability is not a bigger Tool; it is realized by an
+  `ExecutionPlan` of ordinary, already-governed Tool calls. A Skill's capability-selection logic
+  is deterministic package code, **not a second LLM call** — this is the decision that keeps
+  principle 1 ("the LLM never touches the machine") intact without inventing a parallel version
+  of it.
+- **Evidence/Finding** (`bOps.Abstractions/Evidence.cs`): `EvidenceKind` (Fact/Inference/
+  Recommendation/ExecutedAction/Verification), `Evidence`, `Finding` (constructor throws on empty
+  `EvidenceIds` — a claim with no cited evidence is structurally impossible, not just
+  discouraged), `SkillReport` (assembled only from recorded Evidence/Findings, no free-text field
+  — the structural half of "never let the model invent proof").
+- **`ExecutionPlan`** (`bOps.Abstractions/ExecutionPlan.cs`): immutable, typed, versioned;
+  `ExecutionPlanHasher.ComputeHash` over a **canonicalized** JSON form (`CanonicalJson.Sort`
+  recursively sorts every object's keys before hashing) so the hash never depends on property
+  declaration order or on how a `ToolArguments` object happened to be built — proven by a test
+  that builds the same arguments with keys inserted in two different orders and asserts equal
+  hashes. `ExecutionPlanApproval` binds a decision to a specific hash; a plan that no longer
+  matches its approval's hash is, by construction, unapproved — no separate invalidation logic
+  needed.
+- **`CapabilityManifest`** (`bOps.Abstractions/Capabilities.cs`): the declarative shape only
+  (identity, version, risk, required permissions, typed input/output reusing `ToolParameter`,
+  timeout, dry-run support, verification, rollback description). **No `ICapability`/
+  `ISkillProvider` execution interface yet** — deliberately deferred; see below.
+- **`PolicyContext` extension** (`bOps.Abstractions/Policy.cs`): five new optional `init`-only
+  properties (`SkillId`, `CapabilityName`, `Target`, `Environment`, `BlastRadius` — a new
+  `enum { Single, Multiple, Fleet }`, a magnitude never a literal count, rule A1). The existing
+  positional constructor and its one call site (`AgentRunner.ExecuteStepAsync`) are untouched;
+  every existing tool-call path leaves these fields `null`. `bOps.Policy`'s actual rule
+  evaluation over these fields is **not implemented** — the shape exists, the semantics do not
+  yet.
+
+**Tests** (TDD, per `agentic/04-testing-rules.md` — core component, no exceptions):
+- `tests/bOps.Runtime.Tests/EvidenceTests.cs` — `Finding` rejects empty evidence, accepts one.
+- `tests/bOps.Runtime.Tests/ExecutionPlanTests.cs` — rejects empty/non-contiguous/duplicate step
+  indices; hash is deterministic for identical content; hash differs when an argument or the
+  rationale changes; **hash is insensitive to JSON property insertion order** (the canonicalization
+  proof); `ExecutionPlanApproval` binds a hash to a decision.
+- `tests/bOps.Runtime.Tests/JsonRoundTripTests.cs` — one round-trip test per new record
+  (`Evidence`, `Finding`, `SkillReport`, `ExecutionPlanStep`, `ExecutionPlan`,
+  `ExecutionPlanApproval`, `CapabilityManifest`) plus two for `PolicyContext` (fields absent,
+  fields present), matching rule A2 and this file's existing hand-listed pattern.
+- One new suppression recorded in `docs/architecture/suppressions.md` (`CA1720` on
+  `BlastRadius.Single`, same justification already on record for `ToolParameterType`).
 
 ## Verified for real, this session
 
-- `dotnet build bOps.slnx --configuration Release`: **0 warnings, 0 errors**, full solution.
-- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`:
-  **all 15 test assemblies green, 0 failures.** Skips are the expected, visible ones —
-  Linux-only tests on this Windows dev box, the five `[RequiresElevationFact]` Windows service
-  tests (this session's process is not elevated, same constraint as V0.11), one symlink test
-  skipped for its own documented platform reason, two Docker tests skipped because this host's
-  Docker daemon cannot run Linux containers.
-- `npm run build` (Angular production build): succeeds, no errors.
-- `npx ng test --watch=false --browsers=ChromeHeadless`: **17 of 17 green.**
-- `bOps.Architecture.Tests`: 4/4 — rule A1 still holds after every V1.0 change.
-- Read every `appsettings.json` diff and the plugin/`SecretReference` code paths directly to
-  confirm no literal secret value was committed anywhere; `specifiche-pendenti.md` (the user's
-  pre-existing untracked file, outside this plan's scope) has no diff and was never staged.
+- `dotnet build bOps.slnx`: **0 warnings, 0 errors**, full solution (one transient NuGet/CLR
+  restore crash on the first attempt, unrelated to any code here — a clean retry built fine).
+- `dotnet test bOps.slnx --filter "Category!=LiveModel"`: **every assembly green** except one
+  **pre-existing, unrelated** failure —
+  `WindowsProcessActionToolsTests.ProcessStop_Succeeds_ForAProcessWithAMainWindow`
+  (`bOps.Packages.System.Windows.Tests`, "No process with id N is running") — a real-process
+  timing flake in a package this session never touched; reproduced twice in isolation, unrelated
+  to ADR-0023. Not fixed here; flagged, not silently ignored.
+- `bOps.Runtime.Tests`: 100/100 green, including the 20 new tests above.
+- `git status` confirmed clean staging before commit: no stray build artifact
+  (`tasks.db`/`audit.jsonl`), and `src/core/bOps.Cli/appsettings.json` untouched — the standing
+  security constraint carried since V0.7.
 
-## Left for CI, not verified locally — same trust model as every prior version
+## What remains — real gaps, not silently dropped (see ADR-0023, "Deferred to a follow-up ADR")
 
-- **The five `[RequiresElevationFact]` Windows service-lifecycle tests** and **Linux
-  `process.stop`/`kill`'s real execution** — unchanged from V0.11's own note; this dev session is
-  still not elevated and still has no Linux host.
-- **`release.yml` itself was not executed.** It is written and reasoned through (dependency
-  ordering, `--locked-mode` restore, double-publish-and-diff for reproducibility, SBOM/checksum/
-  attestation), but nothing in this session pushed a `v*` tag or ran it via `workflow_dispatch`.
-  Its first real execution — including whether `dotnet publish`'s output is actually
-  byte-reproducible across two runs on GitHub's own runners — is a genuinely open question until
-  it runs there. This is the single biggest unverified claim in this handoff; flagging it
-  explicitly rather than asserting reproducibility works.
-- **The `dependency-review` job added to `ci.yml`** only runs on `pull_request` events, so it has
-  never executed against this branch (`main`, direct pushes only) either.
+In the order a follow-up session should tackle them:
 
-## Scope boundaries — deliberate, not gaps to silently fill later
+1. **`ICapability`/`ISkillProvider` execution interfaces.** Not designed yet — deliberately, per
+   ADR-0023: committing to an execution contract before a real runner has exercised it risks
+   getting it wrong on a surface frozen at `1.0.0` (ADR-0022). This needs its own ADR once a
+   concrete runner design exists, not a retrofit onto this one (an accepted ADR is never edited
+   to change its meaning, agentic/05-workflow.md).
+2. **Runtime orchestration.** Nothing in `AgentRunner` changes yet. Walking an `ExecutionPlan`'s
+   steps through the *existing* policy/approval/verification/audit pipeline — each
+   `ExecutionPlanStep` executing exactly like any other tool call, never through a shortcut — is
+   the next real piece of work, and the one most likely to surface a design gap in what this
+   session built (exactly like V0.9's UI session found two real `bOps.Api` bugs no earlier test
+   caught).
+3. **`bOps.Policy` rule evaluation** over `SkillId`/`CapabilityName`/`Target`/`Environment`/
+   `BlastRadius` — real policy-semantics design (a YAML schema change), not implemented.
+4. **A sample Skill, end-to-end.** V1.1's actual Definition of Done. Blocked on 1–3 above.
 
-- **In-process plugins remain trusted code.** Signatures prove a publisher's bytes were not
-  modified after signing; they are not a sandbox, and ADR-0022 says so explicitly to prevent this
-  from being misread later as "plugins are now safe to run untrusted."
-- **`ISecretProvider` is host infrastructure, not exposed to the restricted plugin activation
-  container.** A package receives only the single resolved credential for its own configured
-  model, never a general secret-resolution capability. A broader, scoped resolver is future work,
-  not a V1.0 gap.
-- **Windows gets no file-permission hardening equivalent to Unix's `0600`.** There is no portable
-  POSIX-mode primitive on Windows; an ACL-based equivalent was judged out of scope for V1.0 and is
-  recorded as residual risk in the threat model, not silently skipped.
-- **In-flight approvals are not restored across a restart, by design (ADR-0022).** A resumed task
-  requests a fresh approval from a currently authenticated approver rather than replaying a
-  point-in-time human decision as a reusable capability.
-- **No V1.1 Skill/Capability or remote Node–Control Plane contract was introduced.** Everything
-  above is local-only, exactly as the plan requires at this gate.
+**Do not start V1.2** (multi-agent) before V1.1's own Definition of Done is met — per the plan's
+own checklist ("stop at the first unmet gate"), and per this project's standing scope-discipline
+rule.
 
-## Exact next steps, in order
+## Carried forward, unrelated to this session
 
-1. Ask the user before pushing (standing rule, `agentic/05-workflow.md`). No `Co-Authored-By:
-   Claude` trailer — carried forward from this project's own standing correction.
-2. After pushing, confirm CI is green on both `ubuntu-latest` and `windows-latest`.
-3. Once satisfied with the ordinary CI run, consider pushing a `v1.0.0-rc.1` tag (or running
-   `release.yml` via `workflow_dispatch`) to get the release pipeline's **first real execution** —
-   this is the one part of V1.0 that is written but genuinely unproven, per the note above. This
-   is a new decision for the user to make explicitly, not something to do automatically.
-
-## Next: V1.1 and beyond
-
-V1.0 was the last gate before `piano-bops-v0.9.1-v2.0.md`'s V1.1 (Skill/Capability/evidence
-contracts and the immutable execution plan). Per this project's own scope-discipline rule, that is
-a new decision for the user to make explicitly, not something to begin automatically because V1.0
-closed out clean.
+- The release pipeline (`release.yml`) still has not had its first real execution — still an open
+  decision for the operator (tag `v1.0.0-rc.1` or `workflow_dispatch`), not something to do
+  automatically.
+- Everything V1.0's own handoff already listed as a deliberate scope boundary (in-process plugins
+  remain trusted code; no Windows file-permission hardening equivalent to Unix's `0600`; no V1.1
+  Skill/Capability contract *was* introduced there — it now partially is, here) stays as recorded
+  in ADR-0022 and the V1.0 threat model.
