@@ -1,15 +1,18 @@
-# Handoff — V1.1 started: Evidence/Finding/ExecutionPlan contracts (ADR-0023), phase 1 of the milestone
+# Handoff — V1.1 in progress: contracts (ADR-0023) + ExecutionPlan orchestration (ADR-0024)
 
 V1.0 is complete, committed, and pushed to `origin/main` (verified: CI green on both
 `ubuntu-latest` and `windows-latest` after the push). This session began V1.1
 (`piano-bops-v0.9.1-v2.0.md` §7 — "Skill/Capability SDK, Evidence e piano immutabile") at the
 operator's explicit go-ahead, after pulling forward 95 commits done by a prior agent run
-(V0.9.1 → V0.10 → V1.0) that this session had not seen locally until it fetched them.
+(V0.9.1 → V0.10 → V1.0) that this session had not seen locally until it fetched them. It then
+continued through a second increment in the same session — real `ExecutionPlan` orchestration —
+after the operator said to push the first increment and keep going.
 
-**This session delivers only the first slice of V1.1 — the immutable data contracts and their
-tests — not the whole milestone.** V1.1's own Definition of Done (a working sample Skill,
-end-to-end) is explicitly **not** claimed here. See "What remains," below, before starting the
-next increment.
+**This session delivers two of V1.1's pieces — the immutable data contracts, and the runtime
+orchestration that executes them — not the whole milestone.** V1.1's own Definition of Done (a
+working sample Skill, end-to-end) is explicitly **not** claimed here; it is still blocked on
+`ICapability`/`ISkillProvider`, which this session deliberately did not build. See "What
+remains," below, before starting the next increment.
 
 ## What this session delivers
 
@@ -60,39 +63,80 @@ required before any code, per the plan's own ADR table. Settles:
 - One new suppression recorded in `docs/architecture/suppressions.md` (`CA1720` on
   `BlastRadius.Single`, same justification already on record for `ToolParameterType`).
 
+### Second increment: `ExecutionPlan` orchestration (ADR-0024)
+
+**ADR-0024** (`docs/architecture/adr/0024-execution-plan-orchestration.md`) — required before
+this code, since it changes `AgentRunner`'s public surface. Decision, in short: reuse the
+existing private `ExecuteStepAsync` for every `ExecutionPlanStep` — the one place a tool call is
+authorized and audited (rule A5) — rather than writing a second implementation of
+policy/approval/verification/audit in a new "Skill runner" component.
+
+- **`AgentRunner.ExecuteExecutionPlanAsync(taskId, actor, plan, approval, ct)`** (new public
+  method, `src/core/bOps.Runtime/AgentRunner.cs`): checks `approval`'s hash against
+  `ExecutionPlanHasher.ComputeHash(plan)` before anything runs (a mismatch produces a single
+  refusal `Evidence` entry and executes nothing); then walks `plan.Steps` in `Index` order,
+  converting each to a `ModelToolCall` and running it through the *unmodified*
+  `ExecuteStepAsync` — same `IPolicyEngine.Evaluate`, same possible `IApprovalProvider` call, same
+  verification, same audit events a model-proposed tool call would produce. **Capability-level
+  approval does not replace per-step policy** — a step still needing its own approval still gets
+  one; an `ExecutionPlanApproval` only gates whether the plan runs at all, not each of its steps
+  (ADR-0024's central decision: collapsing the two would have let one operator glance at a plan's
+  rationale silently pre-authorize a `Critical`-adjacent step inside it).
+- Each step's outcome becomes one `EvidenceKind.ExecutedAction` entry (plus a
+  `EvidenceKind.Verification` one when the step was verified). A denied/rejected/unknown-tool
+  step stops the plan — later steps are never attempted, mirroring `ContinueAsync`'s own
+  `deviated` check.
+- `SkillReport.Findings` is always empty from this method — turning Evidence into Findings is
+  domain interpretation only a Skill's own logic can do, and no Skill exists yet (next item).
+- **No `ITaskStore` persistence for a plan run** — a deliberate, recorded gap (ADR-0024): an
+  `ExecutionPlan` is bounded and pre-computed, unlike the model-driven loop `RunAsync` persists
+  after every step; what "resuming" a partially-run plan would even mean is its own design
+  question, not attempted here.
+- **Tests**: `tests/bOps.Runtime.Tests/ExecutionPlanOrchestrationTests.cs` — executes every step
+  and records evidence; records verification evidence for a non-`Read` step; writes the same
+  `ToolCallAuditEvent`s an ordinary tool call would; stops at the first denied step without
+  running later ones; refuses when the approval's hash does not match the plan; runs when it does.
+  `AgentRunner`'s existing 76 tests (`RunAsync`/`ResumeAsync`/`ContinueAsync`) are untouched and
+  still pass — this method adds, it does not modify.
+
 ## Verified for real, this session
 
-- `dotnet build bOps.slnx`: **0 warnings, 0 errors**, full solution (one transient NuGet/CLR
-  restore crash on the first attempt, unrelated to any code here — a clean retry built fine).
+- `dotnet build bOps.slnx`: **0 warnings, 0 errors**, full solution, after both increments (one
+  transient NuGet/CLR restore crash on the very first attempt, unrelated to any code here — a
+  clean retry built fine).
 - `dotnet test bOps.slnx --filter "Category!=LiveModel"`: **every assembly green** except one
   **pre-existing, unrelated** failure —
   `WindowsProcessActionToolsTests.ProcessStop_Succeeds_ForAProcessWithAMainWindow`
   (`bOps.Packages.System.Windows.Tests`, "No process with id N is running") — a real-process
-  timing flake in a package this session never touched; reproduced twice in isolation, unrelated
-  to ADR-0023. Not fixed here; flagged, not silently ignored.
-- `bOps.Runtime.Tests`: 100/100 green, including the 20 new tests above.
-- `git status` confirmed clean staging before commit: no stray build artifact
+  timing flake in a package this session never touched; reproduced twice in isolation. Not fixed
+  here; flagged, not silently ignored.
+- `bOps.Runtime.Tests`: **106/106 green** (100 after increment one, 106 after increment two).
+- `git status` confirmed clean staging before each of the two commits: no stray build artifact
   (`tasks.db`/`audit.jsonl`), and `src/core/bOps.Cli/appsettings.json` untouched — the standing
   security constraint carried since V0.7.
+- Pushed to `origin/main` after increment one; CI queued at the time this file was last edited —
+  confirm it went green before building further on top.
 
-## What remains — real gaps, not silently dropped (see ADR-0023, "Deferred to a follow-up ADR")
+## What remains — real gaps, not silently dropped (see ADR-0023 and ADR-0024's "Deferred"/"Still deferred" sections)
 
 In the order a follow-up session should tackle them:
 
-1. **`ICapability`/`ISkillProvider` execution interfaces.** Not designed yet — deliberately, per
-   ADR-0023: committing to an execution contract before a real runner has exercised it risks
-   getting it wrong on a surface frozen at `1.0.0` (ADR-0022). This needs its own ADR once a
-   concrete runner design exists, not a retrofit onto this one (an accepted ADR is never edited
-   to change its meaning, agentic/05-workflow.md).
-2. **Runtime orchestration.** Nothing in `AgentRunner` changes yet. Walking an `ExecutionPlan`'s
-   steps through the *existing* policy/approval/verification/audit pipeline — each
-   `ExecutionPlanStep` executing exactly like any other tool call, never through a shortcut — is
-   the next real piece of work, and the one most likely to surface a design gap in what this
-   session built (exactly like V0.9's UI session found two real `bOps.Api` bugs no earlier test
-   caught).
-3. **`bOps.Policy` rule evaluation** over `SkillId`/`CapabilityName`/`Target`/`Environment`/
-   `BlastRadius` — real policy-semantics design (a YAML schema change), not implemented.
-4. **A sample Skill, end-to-end.** V1.1's actual Definition of Done. Blocked on 1–3 above.
+1. **`ICapability`/`ISkillProvider` execution interfaces, plus `IToolInvoker`** (rule A10's
+   already-named, still-never-implemented host service: read-only tools of the same package
+   only). A Skill needs `IToolInvoker` to gather diagnostic evidence *before* it can decide what
+   `ExecutionPlan` to build — this is real new infrastructure, not a small addition, and is what
+   everything below is blocked on. Needs its own ADR once designed (an accepted ADR is never
+   edited to change its meaning, agentic/05-workflow.md) — do not retrofit ADR-0023 or ADR-0024.
+2. **Consolidating capability-level and per-step approval**, if an operator being asked twice for
+   the same effective risk turns out to matter in practice — deliberately not attempted in
+   ADR-0024, to avoid weakening rule A5 without a validated design for doing so safely.
+3. **Persistence/resumability of a Skill run** — deliberately out of ADR-0024's scope; see its
+   "Decision" section for why this is harder than it looks (steps 1–3 already having side effects
+   when step 4 needs to resume).
+4. **`bOps.Policy` rule evaluation** over `SkillId`/`CapabilityName`/`Target`/`Environment`/
+   `BlastRadius` — real policy-semantics design (a YAML schema change), not implemented; the
+   `PolicyContext` fields exist, `PolicyEngine` does not yet read them.
+5. **A sample Skill, end-to-end.** V1.1's actual Definition of Done. Blocked on 1 above.
 
 **Do not start V1.2** (multi-agent) before V1.1's own Definition of Done is met — per the plan's
 own checklist ("stop at the first unmet gate"), and per this project's standing scope-discipline
