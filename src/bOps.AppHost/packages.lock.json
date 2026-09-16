@@ -92,17 +92,6 @@
         "resolved": "13.5.3",
         "contentHash": "3fXcjcpWyyXYQg4nxYYHr06IqUxII3AAYbHouYTOytAQFz5ZwBlYkJBLepI5a3cHGC9XMP/xztHTV0OW35bYuQ=="
       },
-      "Microsoft.SourceLink.GitHub": {
-        "type": "Direct",
-        "requested": "[10.0.401, )",
-        "resolved": "10.0.401",
-        "contentHash": "LGmlwgP1Cx37JEWzyjS0o1/+xs/s/e3E2TBSuogI5ePA/9L0pfIfeYX0k5in7Bfcw8Nn2y2sG9jXxydTjiR2Fg==",
-        "dependencies": {
-          "Microsoft.Build.Tasks.Git": "10.0.401",
-          "Microsoft.SourceLink.Common": "10.0.401",
-          "System.IO.Hashing": "10.0.12"
-        }
-      },
       "Aspire.Hosting": {
         "type": "Transitive",
         "resolved": "13.5.3",
@@ -270,14 +259,6 @@
         "type": "Transitive",
         "resolved": "2.5.302",
         "contentHash": "PTHQHbMJzx1VtUUCpnvPavD7o5X9s2dAJ4uQHAP2kBCwJKICpPTZq0qxzbB4/6iJJiIxem8zlxyfldGAx1SjSQ=="
-      },
-      "Microsoft.Build.Tasks.Git": {
-        "type": "Transitive",
-        "resolved": "10.0.401",
-        "contentHash": "ZYctNuT10V9IYyCFydy63DXx0ggZQuynuzQOdLvW62dPgzjIz7f0ISEP75RGiq1jFQh8p6TmGSqxeQZQ87LCig==",
-        "dependencies": {
-          "System.IO.Hashing": "10.0.12"
-        }
       },
       "Microsoft.Extensions.AI.Abstractions": {
         "type": "Transitive",
@@ -605,11 +586,6 @@
         "resolved": "18.4.0",
         "contentHash": "iQWOKi3L5QStmWqDjDubcr1KlTDy88qBTe88I0etlUUo1l0zSNebGJXl1Xetyl+ACA+ujP3YUtxo3Nz54JPriw=="
       },
-      "Microsoft.SourceLink.Common": {
-        "type": "Transitive",
-        "resolved": "10.0.401",
-        "contentHash": "u3rLxIwi/9MqDFaWGE/QQgLR1NBEzLOW2lv5+9OrZPDBYIAmFdYSWCWrR1ufpXWOqFn+x02TgKropl/oDuHmgA=="
-      },
       "Microsoft.VisualStudio.Threading.Only": {
         "type": "Transitive",
         "resolved": "17.14.15",
@@ -745,8 +721,8 @@
       },
       "System.IO.Hashing": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "jDix4bBMYnpZdSPcnY+KDV6ik3SRMzpMKby/bZl/XUwIiflwRNAFZ0oOl61R/pSaveIJ8t1gs2BUlrGsPs/bcg=="
+        "resolved": "10.0.8",
+        "contentHash": "+dJsbPJ3FyUbTZNplFj0RCKePFizmv6ewDV46JE9q/IVH4c3xTCftHfHelLsAKf0jryIPqgMb5GpS0x7TAY3mg=="
       },
       "YamlDotNet": {
         "type": "Transitive",
