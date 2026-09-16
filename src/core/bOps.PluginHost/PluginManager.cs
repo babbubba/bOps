@@ -62,12 +62,24 @@ public sealed class PluginManager(
         Directory.CreateDirectory(absolutePluginsRoot);
         var stagingPath = Path.Combine(absolutePluginsRoot, $".staging-{Guid.NewGuid():N}");
         var finalPath = Path.Combine(absolutePluginsRoot, manifest.Id);
+        var trustStore = new PluginPublisherTrustStore(
+            configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json");
+        PluginProvenance provenance;
 
         try
         {
             CopyDirectory(sourceDirectory, stagingPath);
             // Re-validate against the staged copy — the copy that will actually be loaded from.
+            var stagedManifest = PluginManifestValidator.ReadManifest(stagingPath);
+            if (!string.Equals(stagedManifest.Id, manifest.Id, StringComparison.Ordinal))
+            {
+                throw new PluginValidationException(
+                    "The plugin manifest changed while its package was being staged; retry from a stable source directory.");
+            }
+
+            manifest = stagedManifest;
             PluginManifestValidator.Validate(manifest, stagingPath);
+            provenance = PluginPackageSignature.Verify(stagingPath, manifest, trustStore);
 
             if (Directory.Exists(finalPath))
             {
@@ -86,7 +98,7 @@ public sealed class PluginManager(
             throw;
         }
 
-        var record = new PluginRecord(manifest.Id, finalPath, manifest, Enabled: false, timeProvider.GetUtcNow());
+        var record = new PluginRecord(manifest.Id, finalPath, manifest, Enabled: false, timeProvider.GetUtcNow(), provenance);
         store.Add(record);
         return record;
     }
@@ -112,6 +124,12 @@ public sealed class PluginManager(
         if (record.Enabled)
         {
             throw new PluginOperationException($"Plugin '{id}' is already enabled.");
+        }
+
+        if (record.Provenance is not { Verified: true } provenance || provenance.Trust == PackageTrustLevel.Unverified)
+        {
+            throw new PluginOperationException(
+                $"Plugin '{id}' cannot be enabled because its installed bytes do not have a signature from a locally trusted publisher key.");
         }
 
         Activate(record);
@@ -170,8 +188,30 @@ public sealed class PluginManager(
 
     private void Activate(PluginRecord record)
     {
-        var manifest = record.Manifest;
+        if (record.Provenance is not { Verified: true } provenance || provenance.Trust == PackageTrustLevel.Unverified)
+        {
+            throw new PluginOperationException(
+                $"Plugin '{record.Id}' cannot be activated because its installed bytes do not have verified trusted provenance.");
+        }
+
+        var manifest = PluginManifestValidator.ReadManifest(record.InstallPath);
+        if (!string.Equals(manifest.Id, record.Id, StringComparison.Ordinal))
+        {
+            throw new PluginOperationException(
+                $"Plugin store id '{record.Id}' does not match the signed installed manifest id '{manifest.Id}'.");
+        }
+
         PluginManifestValidator.Validate(manifest, record.InstallPath);
+        var current = PluginPackageSignature.Verify(
+            record.InstallPath,
+            manifest,
+            new PluginPublisherTrustStore(configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json"));
+        if (!current.Verified || current.Trust == PackageTrustLevel.Unverified ||
+            !string.Equals(current.PackageDigestSha256, provenance.PackageDigestSha256, StringComparison.Ordinal))
+        {
+            throw new PluginOperationException(
+                $"Plugin '{record.Id}' no longer matches the package bytes whose provenance was recorded at install time.");
+        }
 
         var mainAssemblyPath = Path.Combine(record.InstallPath, manifest.EntryAssembly);
         var loadContext = new PluginLoadContext(mainAssemblyPath);
@@ -209,7 +249,7 @@ public sealed class PluginManager(
         {
             foreach (var tool in ((IToolProvider)instance).GetTools())
             {
-                toolRegistry.Register(packageId, tool);
+                toolRegistry.Register(packageId, current.Trust, tool);
             }
 
             _activatedKinds[record.Id] = PluginKind.ToolProvider;

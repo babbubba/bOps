@@ -14,9 +14,11 @@ namespace bOps.PluginHost;
 /// <param name="Manifest">The manifest snapshot as validated at install time.</param>
 /// <param name="Enabled">Whether this plugin's tools are currently loaded and registered.</param>
 /// <param name="InstalledAtUtc">When this plugin was installed.</param>
+/// <param name="Provenance">Verification result for the exact installed bytes; <c>null</c> only for a pre-V1.0 store entry.</param>
 public sealed record PluginRecord(
     string Id,
     string InstallPath,
     PluginManifest Manifest,
     bool Enabled,
-    DateTimeOffset InstalledAtUtc);
+    DateTimeOffset InstalledAtUtc,
+    PluginProvenance? Provenance = null);

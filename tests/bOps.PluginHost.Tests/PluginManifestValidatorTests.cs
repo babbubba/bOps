@@ -125,6 +125,34 @@ public sealed class PluginManifestValidatorTests : IDisposable
         Assert.Contains("entry assembly", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("../outside.dll")]
+    [InlineData("subdirectory/plugin.dll")]
+    [InlineData("C:\\outside.dll")]
+    public void Validate_RejectsEntryAssemblyPathTraversal(string entryAssembly)
+    {
+        var manifest = ValidManifest() with { EntryAssembly = entryAssembly };
+
+        var exception = Assert.Throws<PluginValidationException>(() =>
+            PluginManifestValidator.Validate(manifest, _pluginDir.FullName, HostVersion));
+
+        Assert.Contains("file name", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReadManifest_FuzzCorpus_FailsClosedWithoutEscapingValidationExceptions()
+    {
+        for (var sample = 0; sample < 100; sample++)
+        {
+            var bytes = Enumerable.Range(0, sample + 1)
+                .Select(index => (byte)((index * 31 + sample * 17 + 128) % 256))
+                .ToArray();
+            File.WriteAllBytes(Path.Combine(_pluginDir.FullName, "bops-plugin.json"), bytes);
+
+            Assert.Throws<PluginValidationException>(() => PluginManifestValidator.ReadManifest(_pluginDir.FullName));
+        }
+    }
+
     [Fact]
     public void Validate_RejectsAnEmptyEntryType()
     {

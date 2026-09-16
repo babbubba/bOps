@@ -15,6 +15,7 @@ namespace bOps.PluginHost;
 /// </summary>
 public static partial class PluginManifestValidator
 {
+    private const long MaxManifestBytes = 1024 * 1024;
     /// <summary>The only manifest schema version this loader currently understands.</summary>
     public const int SupportedSchemaVersion = 1;
 
@@ -80,6 +81,14 @@ public static partial class PluginManifestValidator
             throw new PluginValidationException("Manifest EntryAssembly must not be empty.");
         }
 
+        if (Path.IsPathRooted(manifest.EntryAssembly) ||
+            manifest.EntryAssembly.Contains('/') ||
+            manifest.EntryAssembly.Contains('\\') ||
+            !string.Equals(Path.GetFileName(manifest.EntryAssembly), manifest.EntryAssembly, StringComparison.Ordinal))
+        {
+            throw new PluginValidationException("Manifest EntryAssembly must be a file name inside the plugin directory, not a path.");
+        }
+
         var entryAssemblyPath = Path.Combine(pluginDirectory, manifest.EntryAssembly);
         if (!File.Exists(entryAssemblyPath))
         {
@@ -89,6 +98,11 @@ public static partial class PluginManifestValidator
         if (string.IsNullOrWhiteSpace(manifest.EntryType))
         {
             throw new PluginValidationException("Manifest entry type must not be empty.");
+        }
+
+        if (manifest.DeclaredCapabilities is null || manifest.Dependencies is null)
+        {
+            throw new PluginValidationException("Manifest capability and dependency collections must not be null.");
         }
 
         var declaredVersionsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -124,6 +138,11 @@ public static partial class PluginManifestValidator
         if (!File.Exists(manifestPath))
         {
             throw new PluginValidationException($"No bops-plugin.json found under '{directory}'.");
+        }
+
+        if (new FileInfo(manifestPath).Length > MaxManifestBytes)
+        {
+            throw new PluginValidationException($"'{manifestPath}' exceeds the {MaxManifestBytes}-byte manifest limit.");
         }
 
         try

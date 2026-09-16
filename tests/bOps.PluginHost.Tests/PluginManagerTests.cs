@@ -6,6 +6,9 @@ using bOps.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace bOps.PluginHost.Tests;
 
@@ -20,9 +23,20 @@ public sealed class PluginManagerTests : IDisposable
     private readonly DirectoryInfo _workDir = Directory.CreateTempSubdirectory("bops-plugin-manager-");
     private readonly ToolRegistry _toolRegistry = new(new AlwaysAvailableCapabilityProbe());
     private readonly ChatModelRegistry _chatModelRegistry = new();
+    private readonly RSA _publisherKey = RSA.Create(2048);
+
+    public PluginManagerTests()
+    {
+        var trust = new[]
+        {
+            new PluginPublisherTrust("Acme", "test-key", _publisherKey.ExportSubjectPublicKeyInfoPem(), PackageTrustLevel.Community),
+        };
+        File.WriteAllText(TrustStorePath, JsonSerializer.Serialize(trust));
+    }
 
     public void Dispose()
     {
+        _publisherKey.Dispose();
         // A test that enables a plugin but never disables/removes it leaves that plugin's
         // assembly loaded (correctly — an enabled plugin's files staying locked while loaded is
         // the same real constraint production Remove() has to work around, not a test bug), so
@@ -43,6 +57,14 @@ public sealed class PluginManagerTests : IDisposable
 
     private string PluginsRoot => Path.Combine(_workDir.FullName, "plugins");
     private string StorePath => Path.Combine(_workDir.FullName, "plugins.json");
+    private string TrustStorePath => Path.Combine(_workDir.FullName, "publisher-trust.json");
+
+    private IConfiguration Configuration() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Plugins:TrustStorePath"] = TrustStorePath,
+        })
+        .Build();
 
     private PluginManager CreateManager() =>
         new(
@@ -50,7 +72,7 @@ public sealed class PluginManagerTests : IDisposable
             _toolRegistry,
             _chatModelRegistry,
             PluginsRoot,
-            new ConfigurationBuilder().Build(),
+            Configuration(),
             NullLoggerFactory.Instance,
             new FakeHttpClientFactory(),
             TimeProvider.System,
@@ -61,12 +83,17 @@ public sealed class PluginManagerTests : IDisposable
     /// folder — into a fresh directory, so <see cref="PluginManager.Install"/> sees exactly what
     /// a real plugin distribution would contain.
     /// </summary>
-    private static string StageSamplePluginSource()
+    private string StageSamplePluginSource(bool sign = true)
     {
         var source = Directory.CreateTempSubdirectory("bops-sample-plugin-source-").FullName;
         foreach (var fileName in new[] { "Acme.SamplePlugin.dll", "bops-plugin.json" })
         {
             File.Copy(Path.Combine(AppContext.BaseDirectory, fileName), Path.Combine(source, fileName));
+        }
+
+        if (sign)
+        {
+            PluginPackageSignature.Sign(source, "Acme", "test-key", _publisherKey.ExportPkcs8PrivateKeyPem());
         }
 
         return source;
@@ -81,8 +108,67 @@ public sealed class PluginManagerTests : IDisposable
 
         Assert.Equal("acme.sample-plugin", record.Id);
         Assert.False(record.Enabled);
+        Assert.True(record.Provenance!.Verified);
+        Assert.Equal(PackageTrustLevel.Community, record.Provenance.Trust);
         Assert.Single(manager.List());
         Assert.True(File.Exists(Path.Combine(record.InstallPath, "Acme.SamplePlugin.dll")));
+    }
+
+    [Fact]
+    public void Enable_RejectsAnUnsignedPlugin()
+    {
+        var manager = CreateManager();
+        manager.Install(StageSamplePluginSource(sign: false));
+
+        var exception = Assert.Throws<PluginOperationException>(() => manager.Enable("acme.sample-plugin"));
+
+        Assert.Contains("trusted publisher", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(manager.List().Single().Enabled);
+    }
+
+    [Fact]
+    public void Enable_RejectsAPublisherWhoseTrustWasRevokedAfterInstall()
+    {
+        var manager = CreateManager();
+        manager.Install(StageSamplePluginSource());
+        var revoked = new[]
+        {
+            new PluginPublisherTrust("Acme", "test-key", _publisherKey.ExportSubjectPublicKeyInfoPem(), PackageTrustLevel.Unverified),
+        };
+        File.WriteAllText(TrustStorePath, JsonSerializer.Serialize(revoked));
+
+        Assert.Throws<PluginOperationException>(() => manager.Enable("acme.sample-plugin"));
+
+        Assert.Null(_toolRegistry.Resolve("sample.echo"));
+        Assert.False(manager.List().Single().Enabled);
+    }
+
+    [Fact]
+    public void Enable_RejectsAStoreIdentityThatDoesNotMatchTheSignedInstalledManifest()
+    {
+        var manager = CreateManager();
+        manager.Install(StageSamplePluginSource());
+        var store = JsonNode.Parse(File.ReadAllText(StorePath))!.AsArray();
+        store[0]!["Id"] = "evil.relabelled-plugin";
+        File.WriteAllText(StorePath, store.ToJsonString());
+
+        var exception = Assert.Throws<PluginOperationException>(() => manager.Enable("evil.relabelled-plugin"));
+
+        Assert.Contains("signed installed manifest", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(_toolRegistry.Resolve("sample.echo"));
+    }
+
+    [Fact]
+    public void Install_RejectsAPackageModifiedAfterSigning_AndLeavesNoInstalledDirectory()
+    {
+        var manager = CreateManager();
+        var source = StageSamplePluginSource();
+        File.AppendAllText(Path.Combine(source, "Acme.SamplePlugin.dll"), "tampered");
+
+        Assert.Throws<PluginValidationException>(() => manager.Install(source));
+
+        Assert.Empty(manager.List());
+        Assert.False(Directory.Exists(PluginsRoot) && Directory.EnumerateFileSystemEntries(PluginsRoot).Any());
     }
 
     [Fact]
@@ -159,7 +245,7 @@ public sealed class PluginManagerTests : IDisposable
         var freshToolRegistry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var nextProcessManager = new PluginManager(
             new PluginStore(StorePath), freshToolRegistry, new ChatModelRegistry(), PluginsRoot,
-            new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
+            Configuration(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
             TimeProvider.System, new AlwaysAvailableCapabilityProbe());
 
         nextProcessManager.LoadAllEnabled();
@@ -179,7 +265,7 @@ public sealed class PluginManagerTests : IDisposable
         {
             var manager = new PluginManager(
                 new PluginStore(StorePath), _toolRegistry, _chatModelRegistry, "plugins",
-                new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
+                Configuration(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
                 TimeProvider.System, new AlwaysAvailableCapabilityProbe());
 
             manager.Install(StageSamplePluginSource());

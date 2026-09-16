@@ -92,5 +92,9 @@ public sealed class PluginStore(string storeFilePath)
         var tempPath = $"{storeFilePath}.tmp-{Guid.NewGuid():N}";
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, storeFilePath, overwrite: true);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(storeFilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 }

@@ -43,6 +43,21 @@ public sealed class PluginStoreTests : IDisposable
     }
 
     [Fact]
+    public void Add_RestrictsStorePermissions_OnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        new PluginStore(StorePath).Add(SampleRecord());
+
+        Assert.Equal(
+            UnixFileMode.UserRead | UnixFileMode.UserWrite,
+            File.GetUnixFileMode(StorePath));
+    }
+
+    [Fact]
     public void Add_RejectsADuplicateId()
     {
         var store = new PluginStore(StorePath);
