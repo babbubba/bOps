@@ -610,6 +610,38 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Package, result.Package);
     }
 
+    [Fact]
+    public void CapabilityRequest_RoundTrips()
+    {
+        var value = new CapabilityRequest(
+            ToolArguments.FromJson(new JsonObject { ["name"] = "sample" }),
+            "node-1", "test", BlastRadius.Single, DryRun: true);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal("sample", result!.Input.GetRequired<string>("name"));
+        Assert.Equal(value.Target, result.Target);
+        Assert.Equal(value.Environment, result.Environment);
+        Assert.Equal(value.BlastRadius, result.BlastRadius);
+        Assert.True(result.DryRun);
+    }
+
+    [Fact]
+    public void SkillDescriptor_RoundTrips()
+    {
+        var capability = new CapabilityManifest(
+            "sample.inspect", "1.0.0", "Inspects a sample.", RiskLevel.Read,
+            [], [], [], TimeSpan.FromSeconds(5), SupportsDryRun: true);
+        var value = new SkillDescriptor("sample.skill", SamplePackage, PackageTrustLevel.Verified, [capability]);
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.SkillId, result!.SkillId);
+        Assert.Equal(value.Package, result.Package);
+        Assert.Equal(value.Trust, result.Trust);
+        Assert.Equal("sample.inspect", Assert.Single(result.Capabilities).Name);
+    }
+
     // ---- Policy.cs (ADR-0023 additions) ----
 
     [Fact]

@@ -75,6 +75,50 @@ public interface ICapabilityProbe
     Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default);
 }
 
+/// <summary>Node-scoped discovery and resolution for activated Skill providers (ADR-0025).</summary>
+public interface ISkillRegistry
+{
+    /// <summary>Registers an official first-party provider.</summary>
+    void Register(PackageId package, ISkillProvider provider);
+
+    /// <summary>Registers a provider with host-established trust.</summary>
+    void Register(PackageId package, PackageTrustLevel trust, ISkillProvider provider);
+
+    /// <summary>Returns activated Skills in deterministic ordinal order.</summary>
+    IReadOnlyList<SkillDescriptor> GetAvailableSkills();
+
+    /// <summary>Resolves one Capability within one activated Skill, or <c>null</c>.</summary>
+    ICapability? Resolve(string skillId, string capabilityName);
+
+    /// <summary>Returns the host-assigned package for a Skill, or <see cref="PackageId.Unknown"/>.</summary>
+    PackageId GetPackage(string skillId);
+
+    /// <summary>Returns host-established trust for a Skill, or <see cref="PackageTrustLevel.Unverified"/>.</summary>
+    PackageTrustLevel GetTrust(string skillId);
+
+    /// <summary>Removes every Skill contributed by a package before its load context is released.</summary>
+    void Unregister(PackageId package);
+}
+
+/// <summary>Thrown when an activated Skill provider violates registry invariants.</summary>
+public sealed class SkillRegistrationException : Exception
+{
+    /// <summary>Creates a registration exception.</summary>
+    public SkillRegistrationException(string message) : base(message)
+    {
+    }
+
+    /// <summary>Creates a registration exception with no message.</summary>
+    public SkillRegistrationException()
+    {
+    }
+
+    /// <summary>Creates a registration exception wrapping an underlying provider failure.</summary>
+    public SkillRegistrationException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
+}
+
 /// <summary>
 /// Thrown when a tool cannot be registered: a non-<see cref="RiskLevel.Read"/> tool without a
 /// declared verification, a duplicate name, or a manifest that fails basic validation.
