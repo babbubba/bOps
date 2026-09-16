@@ -8,7 +8,7 @@ principle 7 and `agentic/01-architecture-rules.md` rule A8, in force since V0.1.
 
 ## Context
 
-`piano-bops.md` §2/§11 placed `LinuxSystemProvider` — an `ISystemProvider` — inside a package
+The archived original plan §2/§11 placed `LinuxSystemProvider` — an `ISystemProvider` — inside a package
 literally named `bOps.Packages.Service.Linux`, with a `service.*` package also expected to exist
 separately. Following that layout would have meant the core needing to know about
 `ISystemProvider` as a distinct extension point from `IToolProvider`, and would have made adding

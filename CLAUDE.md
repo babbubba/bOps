@@ -17,10 +17,12 @@ The binding rules live in [`agentic/`](agentic/). They are not suggestions.
 | [`agentic/04-testing-rules.md`](agentic/04-testing-rules.md) | TDD on the core, real targets for packages |
 | [`agentic/05-workflow.md`](agentic/05-workflow.md) | Commits, ADRs, definition of done |
 | [`agentic/06-decisions.md`](agentic/06-decisions.md) | Settled questions — check before proposing alternatives |
-| [`agentic/07-plan-corrections.md`](agentic/07-plan-corrections.md) | Where `piano-bops.md` is wrong |
+| [`agentic/07-plan-corrections.md`](agentic/07-plan-corrections.md) | Historical-plan corrections retained for provenance |
+| [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md) | Single active roadmap, milestone gates and task routing |
 
-`piano-bops.md` is a historical plan, not a specification. It contains known defects, all
-catalogued in `07-plan-corrections.md`. Never implement from it directly.
+Everything under `agentic/obsolete/` is a historical archive, not a specification. Coding agents
+must ignore it unless an active task explicitly requests historical research. Never implement from
+an archived plan, specification or task.
 
 ## The rules most often broken
 

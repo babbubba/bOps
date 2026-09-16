@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-Continues V1.1 (`piano-bops-v0.9.1-v2.0.md` §7) from ADR-0023, which deliberately deferred two
+Continues V1.1 under the consolidated roadmap from ADR-0023, which deliberately deferred two
 things: the runtime orchestration that actually runs an `ExecutionPlan`, and the
 `ICapability`/`ISkillProvider` execution interfaces. This ADR picks up the first. It
 deliberately still does not pick up the second — see "Still deferred," below — because nothing

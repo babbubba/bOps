@@ -287,7 +287,8 @@ contratto di lavoro o accordo con un collaboratore commerciale.
 
 ## 11. File e metadati attesi
 
-Il gate v0.9.1 del [piano evolutivo](../piano-bops-v0.9.1-v2.0.md) deve portare a questa struttura:
+Il [piano consolidato](../agentic/_plans/2026-09-16-consolidated-roadmap.md) mantiene questa
+separazione e aggiunge un repository privato di coordinamento:
 
 ```text
 bOps pubblico
@@ -305,7 +306,15 @@ bOps.Commercial privato
 ├─ THIRD-PARTY-NOTICES
 ├─ SBOM
 └─ sorgenti proprietari       copyright + SPDX-License-Identifier: LicenseRef-bOps-Commercial
+
+`bOps.Workspace` privato
+├─ submodule bOps             commit pubblico verificato
+├─ submodule bOps.Commercial  commit privato autorizzato
+└─ bootstrap/agentic          coordinamento, nessuna copia dei sorgenti prodotto
 ```
+
+Il root di coordinamento non unifica le licenze e non modifica la proprietà dei due repository:
+contiene soltanto riferimenti immutabili ai commit e automazione di bootstrap/validazione.
 
 Il file `NOTICE` non deve essere usato per aggiungere divieti che modifichino Apache-2.0. La guida
 ASF sull'applicazione della licenza raccomanda `LICENSE`, `NOTICE` e intestazioni coerenti:

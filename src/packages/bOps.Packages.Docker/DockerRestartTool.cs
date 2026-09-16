@@ -8,7 +8,7 @@ using Docker.DotNet.Models;
 namespace bOps.Packages.Docker;
 
 /// <summary>
-/// Restarts a container. <see cref="RiskLevel.Medium"/> (piano-bops.md §11's own worked
+/// Restarts a container. <see cref="RiskLevel.Medium"/> (archived original plan §11's worked
 /// verification example). Verified via <c>docker.inspect</c>, same predicate as
 /// <see cref="DockerStartTool"/>: a restarted container should be <c>"running"</c> afterwards.
 /// </summary>

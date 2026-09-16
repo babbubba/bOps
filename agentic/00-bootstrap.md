@@ -7,9 +7,10 @@ documents; it does not duplicate or supersede their rules.
 
 bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
 policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
-decides and executes. The current development milestone is V1.1, the generic Skill/Capability
-SDK, Evidence model and immutable execution plan. V1.2 multi-agent work is not in scope until the
-V1.1 gate closes.
+decides and executes. The current development milestone is V1.1. Its next implementation batch is
+V1.1-A, completion of the generic Skill/Capability SDK. The remaining ordered V1.1 batches and all
+later gates are defined only by the consolidated roadmap. V1.2 multi-agent work is not in scope
+until the complete V1.1-H gate closes.
 
 ## Required read order
 
@@ -21,12 +22,12 @@ Before changing project state, read:
 4. `agentic/03-security-rules.md`.
 5. The subject-specific files in this directory.
 6. `agentic/06-decisions.md` before proposing an architectural alternative.
-7. The active plan and task files under `agentic/_plans/` and `agentic/_tasks/`.
+7. `agentic/_plans/2026-09-16-consolidated-roadmap.md` and only the selected active task under
+   `agentic/_tasks/`.
 8. `HANDOFF.md` and the relevant accepted ADRs.
 
-`piano-bops-v0.9.1-v2.0.md` is the authoritative backlog from V0.9.1 onward. The older
-`piano-bops.md` is historical and must be interpreted only through
-`agentic/07-plan-corrections.md`.
+Never include `agentic/obsolete/` in routine discovery or bootstrap. It contains superseded inputs
+and snapshots with no authority.
 
 ## Stack and architecture
 
@@ -77,6 +78,5 @@ requires its tag, release workflow, reproducible artifacts, SBOMs, checksums and
 - Namespaces use `bOps.*`; tools use lowercase dotted names.
 - One top-level type per file; no `Helper`, `Manager`, `Util` or `Common` dumping grounds.
 - Do not create temporary copies, backup files, placeholder documents or unused scaffolding.
-- Treat `specifiche-pendenti.md` as a non-normative working document. Preserve unrelated local
-  edits and never use it as roadmap authority.
-
+- Treat everything under `agentic/obsolete/` as historical and non-normative. Do not read it unless
+  the active task explicitly requests historical research.

@@ -7,7 +7,7 @@ These documents are **normative**. An agent working on this repository starts wi
 the task touches their subject.
 
 They are written in English because they are parsed alongside the code, and the codebase —
-identifiers, comments, commit messages, ADRs — is English. `piano-bops.md` remains in Italian.
+identifiers, comments, commit messages and ADRs — is English.
 
 ## Files
 
@@ -21,22 +21,27 @@ identifiers, comments, commit messages, ADRs — is English. `piano-bops.md` rem
 | [`04-testing-rules.md`](04-testing-rules.md) | Writing tests, or any code that needs them (all of it). |
 | [`05-workflow.md`](05-workflow.md) | Committing, opening a PR, deciding whether an ADR is required. |
 | [`06-decisions.md`](06-decisions.md) | Before proposing an architectural alternative. Settled questions live here. |
-| [`07-plan-corrections.md`](07-plan-corrections.md) | Whenever `piano-bops.md` seems to say something these documents contradict. |
+| [`07-plan-corrections.md`](07-plan-corrections.md) | Historical corrections retained for provenance; not active scope. |
+| [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md) | The single active roadmap, status, sequencing and gates. |
+| [`_tasks/README.md`](_tasks/README.md) | Executable task index; select only the first dependency-ready task. |
 
 ## Precedence
 
-When sources conflict, the later entry wins:
+When active sources conflict, the later entry wins:
 
-1. `piano-bops.md` — the original development plan. Rich in context and rationale, but it
-   predates the decisions in `06-decisions.md` and contains the defects listed in
-   `07-plan-corrections.md`. **Never treat it as a specification.**
-2. These documents.
+1. The active consolidated roadmap and task file establish scope and execution detail.
+2. These normative documents override a plan or task.
 3. `docs/architecture/adr/` — an accepted ADR supersedes everything above it on its subject.
+
+`obsolete/` is outside this precedence chain. It contains migrated history only and must be ignored
+unless an active task explicitly requests historical research.
 
 ## Rules for agents about these rules
 
 - **Never silently deviate.** If a rule blocks the task, stop and say which rule and why.
   Do not work around it and mention it afterwards.
+- **Never bootstrap from `obsolete/`.** Archived plans, specifications and tasks cannot authorize
+  work or reopen a completed milestone.
 - **Never edit these files as part of a feature task.** Changing a rule is its own change,
   with its own justification.
 - **Never re-open a settled decision** without new information. `06-decisions.md` records

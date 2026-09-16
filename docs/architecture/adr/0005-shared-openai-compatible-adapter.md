@@ -8,7 +8,7 @@ extended at V0.8 (Anthropic's native adapter, plus OpenAI and DeepSeek joining t
 
 ## Context
 
-`piano-bops.md` §3.1 already observed that OpenRouter, Ollama and llama.cpp all speak the same
+The archived original plan §3.1 already observed that OpenRouter, Ollama and llama.cpp all speak the same
 OpenAI Chat Completions wire format, but its own layout put a shared implementation
 (`OpenAiCompatibleChatModel`) somewhere it structurally could not live: not in
 `bOps.Abstractions` (which must stay dependency-free and provider-agnostic), and not duplicated
@@ -22,7 +22,7 @@ Messages API is not Chat-Completions-shaped at all — no shared adapter could h
 `bOps.Packages.Providers.OpenAiCompatible` is a plain shared library (rule A8's pattern, applied
 to providers instead of operating systems): `OpenAiCompatibleChatModel` implements `IChatModel`
 once, including the JSON-schema-in-prompt fallback strategy for providers/models without
-reliable native tool-calling (`piano-bops.md` §3.1.1). `bOps.Packages.Providers.OpenRouter`,
+reliable native tool-calling (archived original plan §3.1.1). `bOps.Packages.Providers.OpenRouter`,
 `.Ollama`, `.LlamaCpp`, `.OpenAi` and `.DeepSeek` are each a thin `IModelProviderPackage`
 (~15–20 lines) that constructs it with that provider's base URL and defaults. `bOps.Packages.
 Providers.Anthropic` implements `IChatModel` natively against the Messages API instead of

@@ -9,7 +9,7 @@ changing the decision or the code.
 
 ## Context
 
-`piano-bops.md`'s original risk model used `Critical` as "always forbidden" descriptively, but
+The archived original plan's risk model used `Critical` as "always forbidden" descriptively, but
 left the invariant enforceable only by convention: nothing stopped a future `policy.yaml` (or a
 future maintainer) from configuring `Critical` as `approval` or even `automatic`, and nothing in
 the reference implementation validated against that (`agentic/07-plan-corrections.md`, security
@@ -50,5 +50,5 @@ implemented fully at V0.3, `docs/architecture/adr/0015-policy-engine-approval-fl
 A tool's risk is legible to an operator before they ever run bOps (it's in the manifest, and
 `ToolManifest.Verification` for anything above `Read`). No tool shipped through V0.9 declares
 `Critical` — the first ones that might (irreversible filesystem or database operations) are
-scoped for V1.6/V1.8 under `piano-bops-v0.9.1-v2.0.md`, and this invariant is exactly what makes
+scoped for V1.6/V1.8 under the consolidated roadmap, and this invariant is exactly what makes
 those versions safe to build without revisiting this decision.

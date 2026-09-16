@@ -61,9 +61,10 @@ Recorded in full, with rationale, in [`06-decisions.md`](06-decisions.md). Summa
 
 ## Roadmap and scope discipline
 
-**V0.1 through V0.9 are concluded** (verified: clean build, tests passing, manual verification
-per each version's handoff). They are never reopened or renumbered; a gap found later is a new,
-separately-versioned task, never a retroactive reopening of a closed milestone.
+**V0.1 through V0.11 are concluded and V1.0 implementation is complete.** They are never reopened
+or renumbered; a gap found later is a new task in the current milestone, never a retroactive
+reopening of a closed milestone. V1.0 still has an independent formal release gate because its
+release-candidate workflow has not run from a tag.
 
 | | |
 |---|---|
@@ -76,41 +77,36 @@ separately-versioned task, never a retroactive reopening of a closed milestone.
 | `V0.7` | Persistent, resumable tasks (SQLite) |
 | `V0.8` | Anthropic, OpenAI and DeepSeek provider packages |
 | `V0.9` | `bOps.Api` + Angular UI, including Settings/provider discovery, Aspire-orchestrated |
+| `V0.9.1` | Repository integrity, licensing and contribution readiness |
+| `V0.10` | Dynamic plugin loader, trust boundary and plugin SDK |
+| `V0.11` | Completed operational capability set and cross-platform Service packages |
+| `V1.0` | Stable public SDK and security hardening; formal tagged release remains open |
 
-**From V0.9.1 onward, the authoritative backlog is
-[`piano-bops-v0.9.1-v2.0.md`](../piano-bops-v0.9.1-v2.0.md)** — approved 2026-09-15, superseding
-this file as the source of *what's next* (this file remains authoritative for *the rules*: where
-this file and that plan disagree, this file, the accepted ADRs and
-[`06-decisions.md`](06-decisions.md) win, exactly as that plan's own §1 says of itself). It
-covers, in order: `V0.9.1` (repository integrity and licensing readiness — no functional
-change), `V0.10` (dynamic package loader and plugin SDK), `V0.11` (completing the operational
-capabilities the historical plan and README had promised but never registered), `V1.0`
-(security hardening, a frozen `bOps.Abstractions` 1.0 surface), then the commercial-layer
-versions `V1.1`–`V2.0` (Skill/Capability/Evidence contracts, multi-agent, entitlement, a private
-Control Plane and Portal, and commercial DBA Skills for PostgreSQL and SQL Server) — all of
-which stay behind the open-core boundary in [`06-decisions.md`](06-decisions.md)'s new entries:
-the public `bOps` repository never contains commercial Skills, knowledge, entitlement logic,
-Control Plane or Portal code.
+**The authoritative backlog and actual status are in
+[`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md).** This
+file remains authoritative for product rules. V1.1 is the current milestone and closes the Skill
+SDK plus the accepted system inventory, filesystem inventory/deletion, Web, plugin catalog and
+secure Settings batches before V1.2 begins. V1.2–V2.0 retain multi-agent, entitlement, private
+Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core boundary.
+The public `bOps` repository never contains commercial Skills, knowledge, entitlement providers,
+Control Plane or Portal source.
 
 **The rule for agents:** build the current version, not the next one. Do not add the policy
 engine while implementing V0.2, do not add a plugin loader while implementing V0.5. The
-*contract* must accommodate later versions — the *implementation* must not anticipate them. The
-new plan states this identically for everything past V0.9 (its own §11 checklist: "stop at the
-first unmet gate; do not pull v0.10, v0.11, or later versions forward").
+*contract* must accommodate later versions — the *implementation* must not anticipate them. Stop at
+the first unmet gate in the consolidated roadmap.
 
 If a task seems to require something from a later version, that is a signal to stop and ask,
 not to pull the work forward.
 
 ## Explicitly out of scope, permanently or until a stated gate
 
-- Multi-agent supervision until V1.2, with privilege isolation designed in from the start — see
-  `piano-bops-v0.9.1-v2.0.md` §7, V1.2.
+- Multi-agent supervision until V1.2, with privilege isolation designed in from the start.
 - Vector stores and semantic memory over past tasks — not scheduled.
 - Remote execution transport (the *contract* accommodates it from V0.1; the transport arrives at
-  V1.4, node-initiated only, never an inbound admin path — see the same plan's V1.4).
+  V1.4, node-initiated only, never an inbound admin path).
 - macOS platform packages — possible later as a package (rule A8), never scheduled.
 - A generic execution tool, arbitrary SQL from the model, an unfiltered environment-variable
-  dump, or a generic `process.start` — **never**, at any version. See rule S1 and
-  `piano-bops-v0.9.1-v2.0.md` §10.
+  dump, or a generic `process.start` — **never**, at any version. See rule S1.
 - `system.uptime` as a separate tool — `system.info` already reports uptime; a second tool for
   the same data is never added.

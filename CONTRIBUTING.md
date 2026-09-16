@@ -13,8 +13,9 @@ request.
 2. Check [`agentic/06-decisions.md`](agentic/06-decisions.md) — a settled question is not
    re-opened by a new PR without new information; propose a change via an ADR that supersedes
    the existing decision, not a silent diff.
-3. Check the active backlog, [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md), for which
-   version a change belongs to. A PR that anticipates a later version than the one currently
+3. Check the [consolidated roadmap](agentic/_plans/2026-09-16-consolidated-roadmap.md) and the
+   dependency-ready task under `agentic/_tasks/` for which version a change belongs to. A PR that
+   anticipates a later version than the one currently
    being built will be asked to wait, not merged early (`agentic/05-workflow.md`, scope
    discipline).
 4. If your change touches `bOps.Runtime`, `bOps.Policy`, `bOps.Audit` or `bOps.Memory`, write the

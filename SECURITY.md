@@ -56,6 +56,6 @@ that restate these will be closed as expected behavior, documented in
   file can rewrite it from a point forward and recompute every hash after it. Do not report "the
   audit log can be edited by an attacker with local write access" as a new finding; it is a
   documented limitation (rule S9).
-- `bOps.Api` has no authentication yet (as of `V0.9`) — this is a tracked, known gap, not a
-  vulnerability to report; authentication is scoped for `V1.0`
-  (`piano-bops-v0.9.1-v2.0.md` §7).
+- `bOps.Api` authentication and role authorization are present from V1.0. Authentication bypass,
+  principal/role confusion, credential leakage and authorization failures remain reportable security
+  issues; do not rely on the local UI as a security boundary.

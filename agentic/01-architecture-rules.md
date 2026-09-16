@@ -1,7 +1,8 @@
 # 01 — Architecture rules
 
-Invariants first, then the authoritative contract. Where this file and `piano-bops.md`
-disagree, this file wins; the reasons are in [`07-plan-corrections.md`](07-plan-corrections.md).
+Invariants first, then the authoritative contract. Where this file and any roadmap or task
+disagree, this file wins. Historical-plan reasons remain in
+[`07-plan-corrections.md`](07-plan-corrections.md).
 
 ---
 

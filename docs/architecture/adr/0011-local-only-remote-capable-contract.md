@@ -4,7 +4,7 @@ Status: Accepted
 
 **Backfill note.** Written at V0.9.1 to record the decision made at V0.1 (`agentic/06-decisions.md`
 D-001, which this ADR restates in ADR form). `agentic/05-workflow.md` has listed this ADR as
-owed since the project's first commit. `piano-bops-v0.9.1-v2.0.md` §7 (V1.4) plans the actual
+owed since the project's first commit. The consolidated roadmap's V1.4 plans the actual
 remote transport; this ADR is not superseded by that plan — it is the reason V1.4 does not need
 to touch `NodeId`, the serializable tool boundary, or per-node registries when it arrives.
 
@@ -43,6 +43,6 @@ boundary crossing only as a serializable `ToolCallResult` (rule A2) — never a 
 Rules A2 through A6 cost close to nothing today — there is one node, `NodeId.Local`, and no
 remote path exercises any of this. They are the entire difference between V1.4 adding remote
 execution as new transport code versus rewriting the runtime to make remote execution possible
-at all. `piano-bops-v0.9.1-v2.0.md`'s V1.4 plan explicitly repeats the same constraint in its own
+at all. The consolidated roadmap's V1.4 plan explicitly repeats the same constraint in its own
 words: the Control Plane may send a node only typed objectives, never raw commands, and the node
 re-checks policy, approval and entitlement locally regardless of what a remote controller says.

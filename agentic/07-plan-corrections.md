@@ -1,9 +1,10 @@
-# 07 — Corrections to `piano-bops.md`
+# 07 — Corrections to the archived original plan
 
-`piano-bops.md` is a historical document: rich in rationale, valuable for understanding *why*
-bOps is shaped the way it is, and **not a specification**. It is never edited. Everything
-below is superseded by [`01-architecture-rules.md`](01-architecture-rules.md) and
-[`06-decisions.md`](06-decisions.md).
+`agentic/obsolete/plans/piano-bops.md` is a historical document: rich in rationale, valuable for
+understanding *why* bOps is shaped the way it is, and **not a specification**. It is excluded from
+normal agent bootstrap. Everything below is superseded by
+[`01-architecture-rules.md`](01-architecture-rules.md), [`06-decisions.md`](06-decisions.md) and
+the active consolidated roadmap.
 
 An agent finding a conflict between the plan and these documents follows these documents, and
 does not need to ask.

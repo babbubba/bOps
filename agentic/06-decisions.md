@@ -5,7 +5,8 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries: decided **2026-09-14**, status **Accepted**.
+All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+2026-09-15, and D-016–D-019 on 2026-09-16.
 
 ---
 
@@ -198,8 +199,8 @@ discovered. Promising stability the project cannot keep is worse than declaring 
 
 ### D-013 — Open core: `bOps` stays Apache-2.0 public; commercial work lives in a separate private repository
 
-**Decision.** Decided 2026-09-15, alongside `piano-bops-v0.9.1-v2.0.md` (that plan is the primary
-source for what this funds; this entry is the durable record of the decision itself). The public
+**Decision.** Decided 2026-09-15 and retained by the consolidated roadmap (the roadmap is the
+primary source for delivery scope; this entry is the durable record of the boundary). The public
 `bOps` repository — core, SDK, generic packages, first-party LLM providers, the local UI, and a
 purely-demonstrative sample Skill — stays Apache-2.0, forever, for anyone, including commercial
 use, per D-004. Everything commercially sensitive — official Skills, their knowledge/playbook
@@ -268,7 +269,7 @@ edit to this entry.
 merge (individual, plus a corporate path when the contributor's employer holds the rights) — not
 only a Developer Certificate of Origin `Signed-off-by` line. The CLA's actual legal text is not
 written by this project's engineering process; it must be drafted or reviewed by IP/software
-counsel before it is binding, per `piano-bops-v0.9.1-v2.0.md` §9. The outbound license for
+counsel before it is binding, per the consolidated roadmap. The outbound license for
 whatever is merged stays Apache-2.0 regardless — a CLA changes the relationship between a
 contributor and the maintainer, never the license everyone downstream receives.
 
@@ -286,3 +287,93 @@ requires.
 **Consequences.** No external contribution merges until the CLA process is actually operational
 and verifiable (a real signing flow, not just a written policy) — `CONTRIBUTING.md` documents the
 intended process; it is not itself the binding agreement.
+
+---
+
+### D-016 — Three-repository topology with private `bOps.Workspace`
+
+**Decision.** `bOps` remains the public Apache-2.0 repository. Commercial implementation lives in
+a separate private `bOps.Commercial` repository. The private `bOps.Workspace` repository contains
+both as Git submodules under `repos/bOps` and `repos/bOps.Commercial`, pins reviewed commits and
+provides cross-repository bootstrap and validation instructions. It contains no duplicated product
+source. All three repositories are hosted by the GitHub owner `babbubba`.
+
+**Reason.** An authorized coding agent needs one secure checkout from which it can inspect and
+coordinate both sides quickly, while the public/private source, license, access, history, CI and
+release boundaries remain structurally enforceable.
+
+**Rejected.** *Put commercial code in a private folder of the public repository* — violates D-013
+and makes accidental disclosure likely. *Copy the public source into the private monorepo* — creates
+contract forks and unclear fixes. *Use only adjacent independent clones with no root* — preserves
+separation but provides no reproducible cross-repository version pin or coordination entry point.
+
+**Consequences.** Product commits land in the owning repository first; the root then updates the
+submodule pointer. Public CI never requires private source. The coordination repository itself is
+private and cannot become a back door for secrets or proprietary artifacts into `bOps`.
+
+---
+
+### D-017 — Writable local secrets use an encrypted vault with an external master key
+
+**Decision.** UI-written provider API keys are persisted in a versioned encrypted local vault. Its
+master key is supplied externally through environment/service secret configuration and is never
+stored alongside the vault. There is no plaintext fallback. The full secret is never returned;
+display metadata supports only the approved `first6...last4` mask. Existing environment and
+development user-secret inputs remain supported with deterministic precedence.
+
+**Reason.** A cross-platform/headless deployment needs one predictable storage model. Encrypting
+the local file separates stolen state from the externally provisioned key while preserving current
+CLI configuration paths.
+
+**Rejected.** *OS-native credential stores as the only backend* — strong on interactive desktops
+but inconsistent for containers and headless Linux services. *Plain JSON protected only by file
+permissions* — does not meet the requirement for secure persistent UI writes. *Return the stored
+secret to render the mask* — breaks write-only secret providers and expands disclosure paths.
+
+**Consequences.** An ADR must define the standard AEAD envelope, atomic writes, permissions,
+rotation, recovery, precedence and short-secret masking before code. Missing/wrong keys and tamper
+fail closed. Mask metadata is captured on write and is not a secret-retrieval path.
+
+---
+
+### D-018 — Recursive deletion approval is bound to a complete immutable manifest
+
+**Decision.** Permanent recursive or batch deletion uses a distinct High-risk tool and a complete,
+canonical, immutable manifest. Approval binds to its hash. The full exact entry list remains
+server-side and is available through authorized pagination/download; model, browser and audit
+responses carry bounded summaries and references. Paths are re-resolved and identity is checked
+immediately before deletion. Any stale/incomplete/over-limit manifest fails closed.
+
+**Reason.** A text preview can differ from what is later deleted, while rendering thousands of
+entries in one response makes the safety feature unusable. Hashing the complete set preserves exact
+consent; pagination preserves usability for trees containing 5,000, 10,000 or more entries within
+an operator-configured finite ceiling.
+
+**Rejected.** *Unbound preview followed by path-based deletion* — permits time-of-check/time-of-use
+drift. *Put the complete list in the approval/audit/model payload* — creates oversized contexts,
+browser stalls and huge immutable audit events. *Claim atomic recursive deletion* — filesystems do
+not provide that guarantee across a tree and partial completion must be represented honestly.
+
+**Consequences.** Inventory and deletion need durable bounded manifest storage, expiry/cleanup,
+cursor APIs, deterministic canonicalization, failure reconciliation and an ADR before public
+contract changes. A scale test must cover at least 10,000 entries.
+
+---
+
+### D-019 — `web.search` uses an operator-configured SearXNG JSON endpoint
+
+**Decision.** The first `web.search` adapter targets a configured SearXNG JSON search endpoint and
+requires no API key in its tool contract. It does not silently scrape public search HTML and does
+not hard-code a third-party public instance. `web.fetch` remains a separate tool.
+
+**Reason.** SearXNG provides an explicit HTTP search interface without binding the product to a
+paid key, while an operator-owned endpoint gives a stable configuration and privacy boundary.
+HTML scraping would be brittle and difficult to test as a contract.
+
+**Rejected.** *DuckDuckGo or another HTML scraper as the primary backend* — markup, blocking and
+terms can change without an API contract. *Couple search and fetch into one tool* — obscures policy,
+limits and evidence provenance. *Pick a public SearXNG instance automatically* — transfers data and
+availability to an unapproved operator.
+
+**Consequences.** JSON output must be enabled on the configured instance. The Web package requires
+an ADR and SSRF/output threat-model work; all returned content remains untrusted tool data under S5.

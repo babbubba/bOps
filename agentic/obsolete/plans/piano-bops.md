@@ -1,3 +1,7 @@
+> **OBSOLETE HISTORICAL INPUT — DO NOT IMPLEMENT FROM THIS FILE.** It was migrated into
+> [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](../../_plans/2026-09-16-consolidated-roadmap.md).
+> Coding agents must ignore this archive unless a task explicitly requests historical research.
+
 # bOps — Piano di sviluppo
 
 **Un agent runtime open-source per operare in sicurezza su macchine Windows e Linux tramite tool dichiarativi, policy, planning e verifica.**

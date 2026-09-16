@@ -2,16 +2,17 @@
 
 V1.0 is complete, committed, and pushed to `origin/main` (verified: CI green on both
 `ubuntu-latest` and `windows-latest` after the push). This session began V1.1
-(`piano-bops-v0.9.1-v2.0.md` §7 — "Skill/Capability SDK, Evidence e piano immutabile") at the
+(the Skill/Capability SDK, Evidence and immutable execution-plan tranche) at the
 operator's explicit go-ahead, after pulling forward 95 commits done by a prior agent run
 (V0.9.1 → V0.10 → V1.0) that this session had not seen locally until it fetched them. It then
 continued through a second increment in the same session — real `ExecutionPlan` orchestration —
 after the operator said to push the first increment and keep going.
 
 Current tracked scope is recorded in
-`agentic/_plans/2026-09-16-v1.1-skill-capability-sdk.md` and
-`agentic/_tasks/2026-09-16-v1.1-skill-capability-sdk.md`. `agentic/00-bootstrap.md` is now the
-stable routing entry point for future sessions.
+`agentic/_plans/2026-09-16-consolidated-roadmap.md`; the immediate continuation is
+`agentic/_tasks/2026-09-16-v1.1-a-skill-sdk-completion.md`. `agentic/00-bootstrap.md` is the
+stable routing entry point for future sessions. Earlier plan/task snapshots are archived under
+`agentic/obsolete/` and must not be resumed.
 
 **This session delivers two of V1.1's pieces — the immutable data contracts, and the runtime
 orchestration that executes them — not the whole milestone.** V1.1's own Definition of Done (a

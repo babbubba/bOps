@@ -67,7 +67,7 @@ runtime state; the task itself is safe (it is `Running` in `ITaskStore` the mome
 created, per V0.7) but a specific pending approval is not resumable across a restart in this pass.
 
 **No authentication or authorization.** Not named in this version's roadmap line; the plan
-(`piano-bops.md`) does not spec one either. `bOps.Api` in this pass is meant to run on a trusted
+(the archived original plan) does not spec one either. `bOps.Api` in this pass is meant to run on a trusted
 local network or behind a reverse proxy the operator controls — flagged here explicitly, not
 silently skipped, because principle 2 ("every tool declares its own risk... policy engine decides
 the mode") already gates every *action* a task can take; what this version leaves open is *who may
@@ -76,7 +76,7 @@ signing and trust levels, secrets management, hardening" line, where the whole s
 gets designed together rather than one host bolting on its own scheme first.
 
 **No OpenAPI/Swagger generation, no provider-listing endpoint (`GET /api/providers`).** Both are
-named in `piano-bops.md` for the eventual Angular client (OpenAPI-generated TypeScript client,
+named in the archived original plan for the eventual Angular client (OpenAPI-generated TypeScript client,
 provider selector in Settings) but have no consumer yet in this session — the Angular UI is
 explicitly deferred, so building either now is exactly the "anticipating a later version" the
 project's scope discipline warns against. `IChatModelRegistry` also has no enumeration method

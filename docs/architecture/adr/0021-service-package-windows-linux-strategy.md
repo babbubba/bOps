@@ -2,8 +2,8 @@
 
 Status: Accepted
 
-Written before any code in `bOps.Packages.Service.*`, as required by `piano-bops-v0.9.1-v2.0.md`
-§7 note 8 and `agentic/05-workflow.md`'s ADR trigger list (this adds a dependency choice and a new
+Written before any code in `bOps.Packages.Service.*`, as required by the now-archived evolutionary
+plan's V0.11 note 8 and `agentic/05-workflow.md`'s ADR trigger list (this adds a dependency choice and a new
 package family whose Linux half has more than one real design). ADR-0006/D-005 already settled
 that operating systems are packages behind the shared `System.*` shell (rule A8); this ADR is
 specifically about *how* the Linux half of `Service.*` talks to systemd for V0.11's read-only
@@ -17,7 +17,7 @@ API over the Service Control Manager, the same kind of native wrapper `system.me
 (`GlobalMemoryStatusEx`) and `process.list` (`Process`) already use. Linux has no such BCL type —
 querying systemd means either shelling out to `systemctl`, or speaking D-Bus directly to
 `org.freedesktop.systemd1` (the approach `bOps.Packages.Docker` uses for the Docker daemon, via
-`Docker.DotNet` rather than shelling to the `docker` CLI). `piano-bops.md` §11 itself already
+`Docker.DotNet` rather than shelling to the `docker` CLI). The archived original plan §11 already
 weighs this exact choice and recommends starting with the shell-out.
 
 This choice matters more than it looks because of rule S1 ("no generic execution tool"): a Linux
@@ -85,8 +85,8 @@ maintained, dependency-light .NET library exists for the systemd D-Bus API.
   they are the same fact, and neither should cause a raw `systemctl` parse error to reach the
   model.
 - `service.status`'s JSON shape (`name`, `exists`, `status`, `description`) is deliberately the
-  same kind of structured, parseable output `fs.stat` produces, because `piano-bops-v0.9.1-v2.0.md`
-  §7 note 10 already names it as the verification target for V0.11's second tranche
+  same kind of structured, parseable output `fs.stat` produces, because the archived evolutionary
+  plan's V0.11 note 10 already names it as the verification target for V0.11's second tranche
   (`service.start`/`stop`/`restart`) — designing that shape now, while it is still Read-only and
   therefore low-stakes to get right, avoids a breaking change to it later.
 - If `systemctl`-shelling proves unreliable or too slow in practice, migrating the Linux
@@ -97,4 +97,4 @@ maintained, dependency-light .NET library exists for the systemd D-Bus API.
 - This ADR says nothing about `service.start`/`stop`/`restart` (V0.11's second tranche). Starting
   or stopping a unit is a materially different risk profile (non-`Read`, needs
   `VerificationSpec`/`IVerifiableTool`, needs policy/approval) and is deliberately left for its own
-  design pass when that tranche starts, per `piano-bops-v0.9.1-v2.0.md` §7's own sequencing.
+  design pass when that tranche starts, per the archived evolutionary plan's own sequencing.

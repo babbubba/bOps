@@ -1,3 +1,7 @@
+> **OBSOLETE HISTORICAL INPUT — DO NOT IMPLEMENT FROM THIS FILE.** It was migrated into
+> [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](../../_plans/2026-09-16-consolidated-roadmap.md).
+> Coding agents must ignore this archive unless a task explicitly requests historical research.
+
 # bOps — Piano evolutivo da v0.9.1 a v2.0
 
 Stato: approvato; v0.9 conclusa, prossima milestone v0.9.1  

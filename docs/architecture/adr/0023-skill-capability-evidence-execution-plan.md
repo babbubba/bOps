@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-Written at the start of V1.1 (`piano-bops-v0.9.1-v2.0.md` §7), as required by that plan's own
+Written at the start of V1.1 under the now-consolidated roadmap, as required by the earlier plan's
 ADR table ("Skill/capability/evidence/execution plan immutabile", minimum version v1.1) and by
 `agentic/05-workflow.md`'s trigger list: this alters `bOps.Abstractions` and extends the risk/
 policy model.
@@ -41,7 +41,7 @@ without a breaking `2.0.0`.
 | **Tool** | One atomic, policy-gated, audited runtime action (`ITool`/`ToolManifest`). The runtime's only unit of *execution*. | V0.1 |
 | **Capability** | A named, versioned, operator-facing *operation* a Skill declares — richer than one `ToolManifest`, and realized by an `ExecutionPlan` of one or more typed `Tool` calls, never by free commands. | V1.1 (this ADR) |
 | **Skill** | A package (A7) that contributes Capabilities, plus the deterministic domain logic to select one, gather Evidence, and produce an `ExecutionPlan`. Domain logic is ordinary package code, **not a second LLM call** — see "Skill logic is deterministic," below. | V1.1 (this ADR) |
-| **Agent** | An orchestration role that can delegate to other agents/Skills with a *reduced* privilege context. Named here only to draw the boundary; not built until V1.2 (`piano-bops-v0.9.1-v2.0.md`, v1.2). | Not yet |
+| **Agent** | An orchestration role that can delegate to other agents/Skills with a *reduced* privilege context. Named here only to draw the boundary; not built until V1.2 (consolidated roadmap). | Not yet |
 
 A Capability is not a bigger Tool and not a replacement for one. `ITool`/`ToolManifest` stay
 exactly what they are — the thing the runtime actually calls, one at a time, through the existing
@@ -188,7 +188,7 @@ This ADR intentionally does **not** define:
   same `ExecuteStepAsync` every Tool call already goes through — an `ExecutionPlanStep` executes
   exactly like any other tool call, never through a shortcut) is the next increment.
 - **`bOps.Policy` rule evaluation** over the new `PolicyContext` fields (above).
-- **A sample Skill.** V1.1's Definition of Done (`piano-bops-v0.9.1-v2.0.md` §7) requires one
+- **A sample Skill.** V1.1's Definition of Done in the consolidated roadmap requires one
   working end-to-end; it depends on both deferred items above and is not claimed done here.
 
 ## Alternatives considered

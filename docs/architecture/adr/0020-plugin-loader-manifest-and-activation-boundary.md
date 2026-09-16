@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-Written at the start of V0.10 (`piano-bops-v0.9.1-v2.0.md` §7), as required by
+Written at the start of V0.10 under the now-archived evolutionary plan, as required by
 `agentic/05-workflow.md`'s ADR trigger list: this changes how packages are loaded, isolated and
 identified. ADR-0012 (D-003) already recorded *why* dynamic loading was chosen over Native AOT;
 this ADR is the design that decision made possible.
@@ -114,7 +114,7 @@ face today (rule S8: do not imply verification that does not exist). The existin
 ceiling in `policy.yaml`, keyed by the plugin's own `PackageId` string, is how an operator
 constrains a newly-installed plugin's risk *today*: nothing here requires waiting for trust
 levels to do that. Assigning and enforcing `PackageTrustLevel` for dynamically loaded packages is
-explicitly deferred to V1.0, where it belongs alongside signing (`piano-bops-v0.9.1-v2.0.md`,
+explicitly deferred to V1.0, where it belongs alongside signing (archived evolutionary plan,
 V1.0 note 4).
 
 ## Alternatives considered

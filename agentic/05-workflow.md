@@ -78,10 +78,8 @@ work):
 | ADR-0011 | Local-only execution now, with a contract shaped for remote agents later |
 | ADR-0012 | Dynamic package loading over Native AOT |
 
-ADR-0013 through ADR-0019 already exist (`docs/architecture/adr/`), one per V0.2–V0.9 change
-that met the trigger list above. `piano-bops-v0.9.1-v2.0.md` §8 pre-commits ADRs for the versions
-after V0.9 — assign the number when the ADR is actually written, not in advance, to avoid a
-collision with whatever else lands first:
+ADR-0013 and later records already exist under `docs/architecture/adr/`. The consolidated roadmap
+pre-commits the following remaining ADR subjects. Assign a number only when an ADR is written:
 
 | | |
 |---|---|
@@ -89,8 +87,13 @@ collision with whatever else lands first:
 | Package loader, manifest shape, and the activation boundary/trust model | Due at V0.10 |
 | Freezing the `bOps.Abstractions` 1.0 surface | Due at V1.0 |
 | Skill/capability/evidence contracts and the immutable execution plan | Due at V1.1 |
+| Skill execution interfaces and restricted same-package invocation | Due at V1.1-A |
+| Exact filesystem inventory and hash-bound destructive preflight | Due at V1.1-C/D |
+| Web package outbound-network and SSRF boundary | Due at V1.1-E |
+| Encrypted local vault, master-key handling and rotation | Due at V1.1-G |
 | Multi-agent orchestration and privilege-reducing delegation | Due at V1.2 |
 | Entitlement, evaluated locally and remotely at the execution point | Due at V1.3 |
+| Mutating plugin lifecycle and upload | Due at V1.3 |
 | Node–Control Plane transport and the multi-tenant model | Due at V1.4 |
 
 ## Definition of done
@@ -123,7 +126,7 @@ around it and mention it afterwards.
 - Commit a secret, or anything matching a key pattern, even in a test fixture.
 - Add a dependency to `bOps.Abstractions`. It stays dependency-free, permanently.
 - Change a file in `agentic/` as part of a feature task.
-- Rewrite `piano-bops.md`. It is a historical document; corrections go in
-  [`07-plan-corrections.md`](07-plan-corrections.md).
+- Read or revive files under `agentic/obsolete/` as active scope. Historical research must be
+  explicitly requested by an active task.
 - Introduce a framework that hides the agent loop. Owning that loop explicitly is a project
   decision, not an oversight.

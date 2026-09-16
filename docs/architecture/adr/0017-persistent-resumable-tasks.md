@@ -11,7 +11,7 @@ history — only in local variables. If the process is killed (crash, restart, a
 Ctrl+C), that state is gone: there is no way to tell, after the fact, that a task was even
 `Running`, let alone to continue it from its last completed step.
 
-`piano-bops.md` §10 sketches this as an EF Core `bOpsDbContext` over SQLite. `07-plan-
+The archived original plan §10 sketches this as an EF Core `bOpsDbContext` over SQLite. `07-plan-
 corrections.md` does not flag that section as wrong, but D-003 (dynamic package loading) and
 D-010 (real targets, no unnecessary weight) both push against adding EF Core's machinery to the
 core for what is, structurally, "save one record, load it back, list a few."
@@ -51,7 +51,7 @@ project).
 
 ## Alternatives considered
 
-- **EF Core over SQLite**, matching `piano-bops.md` literally. Rejected: an object-relational
+- **EF Core over SQLite**, matching the archived original plan literally. Rejected: an object-relational
   mapper for a single serialized-blob table is exactly the kind of weight D-003 already argued
   against adding to the core, and it would be the first EF Core dependency in the repository for
   no relational benefit.

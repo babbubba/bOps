@@ -4,13 +4,13 @@ Status: Accepted
 
 **Backfill note.** Written at V0.9.1 to record the decision made at V0.1
 (`agentic/06-decisions.md` D-003) in ADR form. `agentic/05-workflow.md` has listed this ADR as
-owed since the project's first commit. The loader itself does not exist yet — it is `V0.10`'s
-deliverable per `piano-bops-v0.9.1-v2.0.md` §7 — this ADR records why AOT was ruled out before
+owed since the project's first commit. At the time, the loader did not exist — it was `V0.10`'s
+deliverable in the now-archived evolutionary plan — this ADR records why AOT was ruled out before
 V0.10 even starts, not the loader's design (a separate ADR is due when V0.10 begins).
 
 ## Context
 
-`piano-bops.md` §13 asked for `PublishAot=true` for startup speed and a small binary, while §5.2
+The archived original plan §13 asked for `PublishAot=true` for startup speed and a small binary, while §5.2
 separately described a plugin loader based on dynamically loading third-party assemblies at
 runtime. The two are technically incompatible: an ahead-of-time-compiled binary cannot load
 assemblies it did not know about at publish time. Principle 7 — "everything beyond the minimal
@@ -34,7 +34,7 @@ identity, not an optional feature bolted on afterward.
   its tradeoff.
 - **AOT with only statically-compiled, first-party packages; no third-party plugin story at
   all.** Rejected: kills closed-source third-party distribution outright, which is most of what
-  makes the open-core commercial plan (`piano-bops-v0.9.1-v2.0.md` §2, D-013) viable — official
+  makes the open-core commercial plan (now the consolidated roadmap and D-013) viable — official
   Skills need to load as packages into a core they don't need to fork.
 
 ## Consequences

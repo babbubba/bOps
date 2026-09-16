@@ -18,6 +18,8 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `1.1.0-preview.1` rather than publishing V1.1 contracts under the stable 1.0 version.
 - Project status documentation now distinguishes V1.0 implementation completion from the
   still-unexecuted release-candidate workflow.
+- Planning is consolidated into one active `agentic` roadmap with granular effort-rated task files;
+  superseded plans and specification inputs are preserved in an agent-ignored historical archive.
 
 ### Fixed
 

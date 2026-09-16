@@ -107,8 +107,9 @@ below it for what's coming and, deliberately, what never will.
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 
-V0.11 is now fully registered — every capability `piano-bops-v0.9.1-v2.0.md` §7 named for this
-version is a real, tested tool.
+V0.11 is fully registered. Planned V1.1 additions (`system.apps`, `system.devices`, `fs.size`,
+`fs.delete_tree`, `web.search` and `web.fetch`) are not listed above until they are implemented and
+tested.
 
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
@@ -186,11 +187,9 @@ TLS and an authenticated reverse proxy in front of it.
 
 ## Roadmap
 
-**V0.1 through V1.0 are implemented, and V1.1 is in progress** — runtime,
-planning/replanning, policy/approval, verification, Windows+Linux parity,
-Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` + the Angular UI, the
-dynamic plugin loader, the full V0.11 operational capability set, V1.0 security hardening, and
-the first V1.1 Skill/Capability contracts and immutable execution-plan orchestration.
+**V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
+still needs its first operator-authorized tagged run. V1.1 first completes the Skill/Capability SDK,
+then adds the accepted operational and local-management batches in a fixed order.
 
 | | |
 |---|---|
@@ -207,13 +206,21 @@ the first V1.1 Skill/Capability contracts and immutable execution-plan orchestra
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
-| `V1.1` *(in progress)* | Evidence/Finding/Capability contracts and immutable hashed ExecutionPlan are implemented (ADR-0023/0024); Skill provider interfaces, contextual policy, resumability decision and the end-to-end sample Skill remain open |
+| `V1.1-A` *(next)* | Complete Skill provider interfaces, restricted tool invocation, contextual policy, persistence decision and end-to-end OSS sample Skill |
+| `V1.1-B–E` | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, and SearXNG-backed Web search/safe fetch |
+| `V1.1-F–G` | Add a read-only plugin catalog UI, then writable Settings backed by an encrypted local vault |
+| `V1.1-H` | Cross-platform integration, documentation and release gate |
+| `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
+| `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
+| `V1.4` | Outbound secure node protocol and private Control Plane foundation |
+| `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
+| `V2.0` | Enterprise GA, recovery, compatibility, security and release readiness |
 
-**The remaining V1.1 work and later backlog** — Skill execution, multi-agent, entitlement, a
-private Control Plane and Portal, and commercial DBA Skills — lives in
-[`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
-forever, for anyone, including commercial use — see [Licensing](#license) below and
-[`docs/licensing.md`](docs/licensing.md).
+The [consolidated roadmap](agentic/_plans/2026-09-16-consolidated-roadmap.md) is the single active
+plan and links every executable public task with its recommended model effort. Historical plans and
+migration inputs are archived under `agentic/obsolete/` and are intentionally ignored by coding
+agents. `bOps` itself stays Apache-2.0 forever, including commercial use — see
+[Licensing](#license) and [`docs/licensing.md`](docs/licensing.md).
 
 ## Extending bOps
 
@@ -250,11 +257,11 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-V1.1 development is in progress. V1.0 implementation and security hardening are complete, and
-the current `main` CI is green on Windows and Linux, including the Angular build and headless
-tests. The formal V1.0 release gate remains open: no release-candidate tag has been created and
-the release workflow has not yet produced and attested the reproducible Windows/Linux artifacts,
-SBOMs and checksums. This is not yet a production endorsement.
+V1.1-A is the next implementation batch. V1.0 implementation and security hardening are complete,
+and the current `main` CI is green on Windows and Linux, including the Angular build and headless
+tests. The formal V1.0 release gate remains open: no release-candidate tag has been created and the
+release workflow has not yet produced and attested the reproducible Windows/Linux artifacts, SBOMs
+and checksums. This is not yet a production endorsement.
 
 ## Documentation
 
@@ -263,9 +270,9 @@ SBOMs and checksums. This is not yet a production endorsement.
 | [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md) | Stable agent bootstrap, required read order and validation baseline |
 | [`agentic/`](agentic/) | Binding specification, active plans and task tracking |
 | [`agentic/06-decisions.md`](agentic/06-decisions.md) | Decision register: what was chosen, what was rejected, why |
-| [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md) | The active backlog from V0.9.1 onward — versions, gates, scope, open-core boundary |
+| [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md) | Single active roadmap — actual status, ordered gates, open-core boundary and task index |
+| [`agentic/_tasks/README.md`](agentic/_tasks/README.md) | Detailed executable public tasks with model-effort guidance |
 | [`docs/licensing.md`](docs/licensing.md) | What Apache-2.0 does and doesn't grant, the open-core repository split, CLA policy |
-| [`piano-bops.md`](piano-bops.md) | Original development plan through V0.9 (Italian). Historical — see [corrections](agentic/07-plan-corrections.md) |
 | [`docs/architecture/`](docs/architecture/) | Architecture decision records |
 | [`docs/security/`](docs/security/) | Risk model, default policies, threat model |
 | [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md) | Write your first bOps plugin |
@@ -277,6 +284,8 @@ Packages are separately licensed: bOps does not require third-party packages to 
 source. `bOps` follows an **open-core** model: the core, SDK, first-party packages and this
 local UI stay Apache-2.0 in this public repository; official commercial Skills, a Control
 Plane and an enterprise Portal live in a separate private repository and are never merged
-here. See [`docs/licensing.md`](docs/licensing.md) for the full policy, including what
+here. The private `bOps.Workspace` coordination repository pins the public and commercial repositories
+as Git submodules without duplicating their source or changing their licenses. See
+[`docs/licensing.md`](docs/licensing.md) for the full policy, including what
 Apache-2.0 does not grant (no trademark rights — `bOps`/`bSoft` are not registered marks) and
 how third-party packages and contributions (via CLA) are handled.

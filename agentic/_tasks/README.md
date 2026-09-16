@@ -1,0 +1,35 @@
+# Active task index
+
+This directory contains executable public-repository work. Read the consolidated roadmap first,
+then open only the first task whose dependencies and operator gates are satisfied. Do not use task
+snapshots under `agentic/obsolete/`.
+
+| Order | Task | Status | Effort |
+|---:|---|---|---|
+| independent | [`Formal V1.0 release gate`](2026-09-16-release-v1.0-formal-gate.md) | Operator-gated | medio |
+| parallel admin | [`Repository topology bootstrap`](2026-09-16-repository-topology-bootstrap.md) | Decisions/authorization required; gates V1.3 | alto |
+| 1 | [`V1.1-A Skill SDK completion`](2026-09-16-v1.1-a-skill-sdk-completion.md) | **Next implementation task** | molto alto |
+| 2 | [`V1.1-B system inventory`](2026-09-16-v1.1-b-system-inventory.md) | Planned | alto |
+| 3 | [`V1.1-C filesystem inventory`](2026-09-16-v1.1-c-filesystem-inventory.md) | Planned | alto |
+| 4 | [`V1.1-D governed recursive delete`](2026-09-16-v1.1-d-governed-recursive-delete.md) | Planned | molto alto |
+| 5 | [`V1.1-E Web capabilities`](2026-09-16-v1.1-e-web-capabilities.md) | Planned | molto alto |
+| 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Planned | medio |
+| 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Planned | molto alto |
+| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Planned | alto |
+| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Future | molto alto |
+| 10 | [`V1.3 OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
+| 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
+| 12 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
+| 13 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+
+Private V1.3–V2.0 implementation tasks belong in `bOps.Commercial`. The private coordination root
+tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
+
+## Execution rules
+
+- Never start a later ordered task while an earlier dependency remains open.
+- Status checkboxes describe verified work only; do not check them prospectively.
+- A required ADR is written and accepted before the implementation it governs.
+- External mutations — repository creation, push, tag, publication or release — require explicit
+  operator authorization at execution time.
+- Keep README, CHANGELOG, HANDOFF and the selected task aligned with validated results.

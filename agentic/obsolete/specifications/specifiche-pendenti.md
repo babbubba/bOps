@@ -1,3 +1,7 @@
+> **OBSOLETE MIGRATION INPUT — DO NOT IMPLEMENT FROM THIS FILE.** Its accepted requirements were
+> migrated into [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](../../_plans/2026-09-16-consolidated-roadmap.md)
+> and the active task files. Coding agents must ignore this archive.
+
 # Specifiche pendenti — raccolta in attesa di consolidamento
 
 Stato: **documento di lavoro, non normativo**. Non è un piano, non fa parte di `agentic/`,
@@ -27,7 +31,9 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 ## Come si legge una voce
 
 - **Stato**: `Raccolta` (appena registrata) · `Da chiarire` (manca un'informazione da Fabio) ·
-  `Pronta per consolidamento` (verificata, in attesa del batch) · `Scartata` (in conflitto con
+  `Pronta per consolidamento` (verificata, in attesa del batch) · `Consolidata` (inclusa in un
+  estratto già girato all'agent per la proposta di aggiornamento del piano — non più pendente,
+  tenuta come traccia; vedi il file di consolidamento indicato) · `Scartata` (in conflitto con
   decisioni/regole già prese, motivo registrato, non si riapre senza informazioni nuove) ·
   `Già coperta dal piano` (verificata: non serve consolidarla, è già prevista così com'è —
   tenuta solo come traccia della verifica fatta)
@@ -39,15 +45,15 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 
 ## Indice
 
-- [SPEC-001 — Settings: provider LLM e API key modificabili e persistenti](#spec-001--settings-provider-llm-e-api-key-modificabili-e-persistenti) — Pronta per consolidamento
+- [SPEC-001 — Settings: provider LLM e API key modificabili e persistenti](#spec-001--settings-provider-llm-e-api-key-modificabili-e-persistenti) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
 - [SPEC-002 — Rinominare i package core in "Skill"](#spec-002--rinominare-i-package-core-in-skill) — Scartata
-- [SPEC-003 — Aggiornare il README e valutare una versione bilingue](#spec-003--aggiornare-il-readme-e-valutare-una-versione-bilingue) — Pronta per consolidamento
-- [SPEC-004 — Pagina UI dedicata a plugin/Skill installati e attivi](#spec-004--pagina-ui-dedicata-a-pluginskill-installati-e-attivi) — Pronta per consolidamento
+- [SPEC-003 — Aggiornare il README e valutare una versione bilingue](#spec-003--aggiornare-il-readme-e-valutare-una-versione-bilingue) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
+- [SPEC-004 — Pagina UI dedicata a plugin/Skill installati e attivi](#spec-004--pagina-ui-dedicata-a-pluginskill-installati-e-attivi) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
 - [SPEC-005 — Coordinamento agent remoti/multi-nodo](#spec-005--coordinamento-agent-remotimulti-nodo) — Già coperta dal piano
-- [SPEC-006 — Tool di sistema: applicazioni installate e inventario hardware/driver](#spec-006--tool-di-sistema-applicazioni-installate-e-inventario-hardwaredriver) — Pronta per consolidamento
-- [SPEC-007 — Tool di ricerca web e verifica driver aggiornati (fonte esterna)](#spec-007--tool-di-ricerca-web-e-verifica-driver-aggiornati-fonte-esterna) — Pronta per consolidamento
-- [SPEC-008 — Tool di analisi dimensione cartelle/file (tipo TreeSize)](#spec-008--tool-di-analisi-dimensione-cartellefile-tipo-treesize) — Pronta per consolidamento
-- [SPEC-009 — Tool di cancellazione cartelle/file in blocco per liberare spazio](#spec-009--tool-di-cancellazione-cartellefile-in-blocco-per-liberare-spazio) — Pronta per consolidamento
+- [SPEC-006 — Tool di sistema: applicazioni installate e inventario hardware/driver](#spec-006--tool-di-sistema-applicazioni-installate-e-inventario-hardwaredriver) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
+- [SPEC-007 — Tool di ricerca web e verifica driver aggiornati (fonte esterna)](#spec-007--tool-di-ricerca-web-e-verifica-driver-aggiornati-fonte-esterna) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
+- [SPEC-008 — Tool di analisi dimensione cartelle/file (tipo TreeSize)](#spec-008--tool-di-analisi-dimensione-cartellefile-tipo-treesize) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
+- [SPEC-009 — Tool di cancellazione cartelle/file in blocco per liberare spazio](#spec-009--tool-di-cancellazione-cartellefile-in-blocco-per-liberare-spazio) — Consolidata (2026-09-16) — vedi `consolidamento-2026-09-16.md`
 
 ---
 
@@ -77,7 +83,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
   - Fuori scope dichiarato: **No.**
 - **Versione candidata**: da assegnare in consolidamento — naturale come completamento della
   famiglia `fs.*` a v0.11, stesso pacchetto/capitolo di `fs.search`/`fs.hash`/`fs.move`.
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-009 — Tool di cancellazione cartelle/file in blocco per liberare spazio
 
@@ -127,7 +133,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - **Versione candidata**: da assegnare in consolidamento — dopo SPEC-008 (di cui dipende per il
   dato dell'anteprima), stessa area v0.11/`fs.*`, ma da valutare con più attenzione data la
   novità nel modello di rischio (primo tool `fs.*` `High` con blast radius su più elementi).
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-006 — Tool di sistema: applicazioni installate e inventario hardware/driver
 
@@ -174,7 +180,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
   della famiglia `system.*` già esistente, compatibile con V0.10 (loader/plugin SDK, in corso) o
   V0.11 (`00-project-spec.md` la descrive come "completing the operational capabilities the
   historical plan and README had promised but never registered").
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-007 — Tool di ricerca web e verifica driver aggiornati (fonte esterna)
 
@@ -238,7 +244,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - **Versione candidata**: da assegnare in consolidamento — nessun blocco residuo dopo i
   chiarimenti; stessa collocazione naturale ipotizzata per SPEC-006 (V0.10/V0.11), da confermare
   guardando la catena di propedeuticità (§5) insieme al resto del batch.
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-005 — Coordinamento agent remoti/multi-nodo
 
@@ -321,7 +327,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - **Versione candidata**: da assegnare in consolidamento — naturale come chiusura/completamento di
   V0.10 (UI di corredo, sullo stesso modello v0.9/Settings) oppure primi passi di v0.11; non prima
   che il lavoro V0.10 in corso sia committato.
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-003 — Aggiornare il README e valutare una versione bilingue
 
@@ -356,7 +362,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
     l'agent attualmente al lavoro su V0.10 committa il proprio risultato — non prima, e non da
     questa chat mentre il lavoro è in corso nella stessa working tree.
   - README bilingue (EN/IT): post-v2.0, per scelta esplicita di Fabio.
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 ### SPEC-002 — Rinominare i package core in "Skill"
 
@@ -453,7 +459,7 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - **Versione candidata**: post-v1.0 (confermato da Fabio, nessuna urgenza). Resta comunque
   dipendente dal secret-provider contract e dall'autenticazione reale di `bOps.Api` previsti in
   `piano-bops-v0.9.1-v2.0.md` §7, v1.0, punti 2 e 3.
-- **Stato**: Pronta per consolidamento.
+- **Stato**: Consolidata (2026-09-16) — inviata all'agent in `consolidamento-2026-09-16.md`, non più pendente.
 
 <!-- Ogni nuova specifica va aggiunta qui sotto con questo template:
 
@@ -471,4 +477,3 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - **Stato**: Raccolta
 
 -->
-

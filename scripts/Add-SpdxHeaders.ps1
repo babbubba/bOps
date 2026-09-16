@@ -1,5 +1,5 @@
 <#
-    Mechanically verifiable rewrite (piano-bops-v0.9.1-v2.0.md, V0.9.1, note 6): prepends the
+    Mechanically verifiable V0.9.1 rewrite (the source plan is now archived): prepends the
     SPDX license header and copyright notice to every OSS .cs source file under src/ and tests/
     that does not already carry one. Idempotent — re-running is a no-op for files already
     headered. Excludes bin/obj (build output, never a source file) and this scripts/ directory.

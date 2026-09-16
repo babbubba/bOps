@@ -8,7 +8,7 @@ using Docker.DotNet.Models;
 namespace bOps.Packages.Docker;
 
 /// <summary>
-/// Starts a stopped container. <see cref="RiskLevel.Medium"/> (piano-bops.md §11). Verified via
+/// Starts a stopped container. <see cref="RiskLevel.Medium"/> (archived original plan §11). Verified via
 /// <c>docker.inspect</c> on the same container: <c>status == "running"</c> afterwards confirms it,
 /// anything else refutes it.
 /// </summary>
