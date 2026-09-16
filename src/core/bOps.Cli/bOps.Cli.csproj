@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>bOps.Cli</RootNamespace>
     <AssemblyName>bops</AssemblyName>
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
     <Description>The bOps CLI — `bops "&lt;goal&gt;"`. The primary interface (agentic/00-project-spec.md, principle 6).</Description>
   </PropertyGroup>
 

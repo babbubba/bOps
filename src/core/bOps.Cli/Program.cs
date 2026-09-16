@@ -30,7 +30,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops plugin <install|list|enable|disable|remove|validate> ...
+    Usage: bops "<goal>" | bops resume <task-id> | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ...
     """;
 
 if (args.Length == 0)
@@ -45,6 +45,11 @@ if (args.Length == 0)
 if (string.Equals(args[0], "plugin", StringComparison.OrdinalIgnoreCase))
 {
     return await RunPluginCommandAsync(args[1..]);
+}
+
+if (string.Equals(args[0], "audit", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunAuditCommandAsync(args[1..]);
 }
 
 // V0.7 (ADR-0017): "resume" is the CLI's first real subcommand — everything else is still read
@@ -72,6 +77,7 @@ builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ISecretProvider, EnvironmentSecretProvider>();
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
 builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
@@ -184,8 +190,19 @@ chatModelRegistry.Register(new PackageId("bops.packages.providers.openai"), host
 chatModelRegistry.Register(new PackageId("bops.packages.providers.deepseek"), host.Services.GetRequiredService<DeepSeekProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), host.Services.GetRequiredService<AnthropicProviderPackage>());
 
-var modelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
+var configuredModelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
     ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");
+var modelOptions = new ChatModelOptions(
+    configuredModelOptions.Provider,
+    configuredModelOptions.BaseUrl,
+    configuredModelOptions.ApiKeySecret,
+    configuredModelOptions.Model,
+    configuredModelOptions.SupportsNativeToolCalling)
+{
+    ResolvedApiKey = configuredModelOptions.ApiKeySecret is null
+        ? null
+        : host.Services.GetRequiredService<ISecretProvider>().GetSecret(configuredModelOptions.ApiKeySecret),
+};
 
 var model = chatModelRegistry.Create(modelOptions);
 var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
@@ -308,6 +325,7 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
                bops plugin disable <id>
                bops plugin remove <id>
                bops plugin validate <directory>
+               bops plugin sign <directory> <publisher> <key-id> <private-key-pem-file>
         """;
 
     if (pluginArgs.Length == 0)
@@ -342,13 +360,16 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
         {
             case "install" when rest.Length == 1:
                 var installed = manager.Install(rest[0]);
-                Console.WriteLine($"Installed '{installed.Id}' v{installed.Manifest.Version} (disabled). Run 'bops plugin enable {installed.Id}' to activate it.");
+                var provenance = installed.Provenance?.Verified == true
+                    ? $"verified ({installed.Provenance.Publisher}/{installed.Provenance.KeyId}, {installed.Provenance.Trust})"
+                    : $"unverified ({installed.Provenance?.FailureReason ?? "no provenance"})";
+                Console.WriteLine($"Installed '{installed.Id}' v{installed.Manifest.Version} (disabled, {provenance}).");
                 return 0;
 
             case "list":
                 foreach (var record in manager.List())
                 {
-                    Console.WriteLine($"{record.Id}\t{(record.Enabled ? "enabled" : "disabled")}\tv{record.Manifest.Version}\t{record.Manifest.Publisher}");
+                    Console.WriteLine($"{record.Id}\t{(record.Enabled ? "enabled" : "disabled")}\tv{record.Manifest.Version}\t{record.Manifest.Publisher}\t{record.Provenance?.Trust ?? PackageTrustLevel.Unverified}");
                 }
 
                 return 0;
@@ -371,7 +392,17 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
             case "validate" when rest.Length == 1:
                 var manifest = PluginManifestValidator.ReadManifest(rest[0]);
                 PluginManifestValidator.Validate(manifest, rest[0]);
-                Console.WriteLine($"'{rest[0]}' is a valid manifest for '{manifest.Id}' v{manifest.Version}.");
+                var verified = PluginPackageSignature.Verify(
+                    rest[0], manifest,
+                    new PluginPublisherTrustStore(pluginBuilder.Configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json"));
+                Console.WriteLine($"'{rest[0]}' is a valid manifest for '{manifest.Id}' v{manifest.Version}; provenance: " +
+                    $"{(verified.Verified ? $"verified ({verified.Trust})" : $"unverified ({verified.FailureReason})")}.");
+                return 0;
+
+            case "sign" when rest.Length == 4:
+                var privateKeyPem = await File.ReadAllTextAsync(rest[3]);
+                PluginPackageSignature.Sign(rest[0], rest[1], rest[2], privateKeyPem);
+                Console.WriteLine($"Signed plugin package '{rest[0]}' as publisher '{rest[1]}' with key '{rest[2]}'.");
                 return 0;
 
             default:
@@ -389,4 +420,27 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
         await Console.Error.WriteLineAsync($"Operation failed: {ex.Message}");
         return 1;
     }
+}
+
+static async Task<int> RunAuditCommandAsync(string[] auditArgs)
+{
+    if (auditArgs.Length is < 1 or > 2 || !string.Equals(auditArgs[0], "verify", StringComparison.OrdinalIgnoreCase))
+    {
+        await Console.Error.WriteLineAsync("Usage: bops audit verify [file]");
+        return 1;
+    }
+
+    var filePath = auditArgs.Length == 2 ? auditArgs[1] : "audit.jsonl";
+    var result = AuditChainVerifier.VerifyFile(filePath);
+    if (result.IsValid)
+    {
+        Console.WriteLine($"Audit chain '{filePath}' is valid.");
+        return 0;
+    }
+
+    await Console.Error.WriteLineAsync(
+        $"Audit chain '{filePath}' is invalid" +
+        (result.BrokenAtSequence is { } sequence ? $" at sequence {sequence}" : string.Empty) +
+        $": {result.Reason}");
+    return 2;
 }
