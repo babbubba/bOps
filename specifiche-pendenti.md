@@ -44,10 +44,201 @@ L'assegnazione finale si fa in fase di consolidamento, guardando l'insieme delle
 - [SPEC-003 — Aggiornare il README e valutare una versione bilingue](#spec-003--aggiornare-il-readme-e-valutare-una-versione-bilingue) — Pronta per consolidamento
 - [SPEC-004 — Pagina UI dedicata a plugin/Skill installati e attivi](#spec-004--pagina-ui-dedicata-a-pluginskill-installati-e-attivi) — Pronta per consolidamento
 - [SPEC-005 — Coordinamento agent remoti/multi-nodo](#spec-005--coordinamento-agent-remotimulti-nodo) — Già coperta dal piano
+- [SPEC-006 — Tool di sistema: applicazioni installate e inventario hardware/driver](#spec-006--tool-di-sistema-applicazioni-installate-e-inventario-hardwaredriver) — Pronta per consolidamento
+- [SPEC-007 — Tool di ricerca web e verifica driver aggiornati (fonte esterna)](#spec-007--tool-di-ricerca-web-e-verifica-driver-aggiornati-fonte-esterna) — Pronta per consolidamento
+- [SPEC-008 — Tool di analisi dimensione cartelle/file (tipo TreeSize)](#spec-008--tool-di-analisi-dimensione-cartellefile-tipo-treesize) — Pronta per consolidamento
+- [SPEC-009 — Tool di cancellazione cartelle/file in blocco per liberare spazio](#spec-009--tool-di-cancellazione-cartellefile-in-blocco-per-liberare-spazio) — Pronta per consolidamento
 
 ---
 
-## Voci
+### SPEC-008 — Tool di analisi dimensione cartelle/file (tipo TreeSize)
+
+- **Data**: 2026-09-16
+- **Richiesta originale**: "ci vuole un ulteriore tool per capire la dimensione delle cartelle e
+  dei file (tipo treesize) a partire da una cartella o dalla root...serve per analizzare
+  eventuali cartelle eccessivamente grandi e per poter poi liberare spazio in sicurezza."
+- **Area toccata**: `bOps.Packages.Filesystem` (stesso package di `fs.list`/`fs.stat`/
+  `fs.search`/`fs.hash`/`fs.delete`/`fs.move`/`fs.read`/`fs.write`), `FilesystemPathPolicy` per lo
+  scoping dei path leggibili.
+- **Verifica di coerenza**:
+  - Già implementata: **No.** `fs.list` elenca solo le voci immediate di una cartella e "never
+    recurses" (commento esplicito nel codice sorgente); riporta una dimensione solo per i file,
+    `-` per le directory. `fs.stat` riporta la dimensione solo per i file (`sizeBytes: null` per
+    una directory). Nessun tool oggi calcola una dimensione aggregata/ricorsiva di una cartella.
+  - Già pianificata: **No con questo scope preciso**, ma coerente con l'estensione della famiglia
+    `fs.*` già prevista a v0.11 (`piano-bops-v0.9.1-v2.0.md` §7: stesso capitolo di `fs.search`,
+    `fs.hash`, `fs.move` — nuovi reader per lo stesso package `Filesystem`).
+  - Conflitti con principi/regole: **Nessuno.** `Risk = Read`, nessuna scrittura, nessun impatto
+    sul modello di rischio. Nota tecnica: `fs.list` evita deliberatamente la ricorsione,
+    verosimilmente per S7 ("every action runs under a timeout") su alberi di directory molto
+    grandi — un tool ricorsivo tipo TreeSize deve gestire esplicitamente questo limite (es. un
+    parametro di profondità massima, o restituire le N cartelle/file più grandi invece
+    dell'albero completo), riusando lo stesso `CancellationToken` già passato a ogni `ITool`.
+  - Fuori scope dichiarato: **No.**
+- **Versione candidata**: da assegnare in consolidamento — naturale come completamento della
+  famiglia `fs.*` a v0.11, stesso pacchetto/capitolo di `fs.search`/`fs.hash`/`fs.move`.
+- **Stato**: Pronta per consolidamento.
+
+### SPEC-009 — Tool di cancellazione cartelle/file in blocco per liberare spazio
+
+- **Data**: 2026-09-16
+- **Richiesta originale**: "...serve per liberare spazio in sicurezza... probabilmente serve un
+  tool separato per fare il clean del file system."
+- **Area toccata**: `bOps.Packages.Filesystem` — estensione/affiancamento di `fs.delete`,
+  dipendente dal dato prodotto da SPEC-008.
+- **Verifica di coerenza**:
+  - Già implementata: **No.** `fs.delete` esiste ma cancella solo un singolo file, mai una
+    directory: il commento nel codice lo dice esplicitamente — "Deliberately does not delete
+    directories (recursive deletion is a materially larger blast radius and out of scope for
+    this version)" — e a runtime rifiuta esplicitamente un path di tipo directory.
+  - Già pianificata: **Non con uno scope preciso.** ADR-0002 (cinque livelli di rischio,
+    `Critical` = `Forbidden` incondizionato e non bypassabile) cita in generale "irreversible
+    filesystem or database operations" come primi candidati a `Critical`, "scoped for V1.6/V1.8"
+    — ma verificando `piano-bops-v0.9.1-v2.0.md` §7, v1.6 e v1.8 sono in realtà solo
+    "PostgreSQL remediation governata" e "SQL Server remediation governata": nessuna voce del
+    piano copre oggi una remediation filesystem irreversibile. È quindi una richiesta reale, non
+    ancora coperta da nessuna versione concreta, nonostante il riferimento generico nell'ADR.
+  - Conflitti con principi/regole: **Punto centrale, risolto sotto con Fabio.** ADR-0002 rende
+    `Critical` `Forbidden` in modo incondizionato e non bypassabile (enforced due volte: loader +
+    `PolicyEngine.Evaluate`), e la regola S3 dà come risposta documentata a un "ma mi serve" che
+    *l'operazione si fa fuori da bOps, a mano* — la cancellazione ricorsiva/in blocco era quindi
+    un candidato plausibile a `Critical` (mai eseguibile da bOps), in alternativa a `High` come
+    l'attuale `fs.delete` (eseguibile, sempre con approvazione).
+  - Fuori scope dichiarato: **No esplicitamente**, ma toccava un'invariante architetturale
+    (ADR-0002) — non una decisione già presa da riaprire, semmai una classificazione di rischio
+    nuova da decidere con Fabio, ora fatta.
+- **Chiarimenti di Fabio (2026-09-16)**:
+  - Classificazione: **bOps cancella lui stesso, `Risk = High` con approvazione obbligatoria ogni
+    volta** — stesso modello di `fs.delete` oggi, esteso esplicitamente a cartelle/gruppi di
+    file (ampliamento deliberato del blast radius che `fs.delete` esclude di proposito, non un
+    bypass implicito).
+  - Modalità: **cancellazione diretta e permanente**, non uno spostamento reversibile in
+    quarantena — stesso comportamento di `fs.delete` sul singolo file, esteso a più elementi.
+  - Anteprima: **sempre obbligatoria prima dell'approvazione** — l'operatore deve vedere
+    l'elenco esatto di cosa verrebbe rimosso e la dimensione totale (calcolati con SPEC-008),
+    mai solo il path passato al tool. In pratica il flusso di verifica/approvazione include un
+    passo di "dry-run" basato su SPEC-008 come dato mostrato all'operatore prima del sì/no,
+    analogo nello spirito a come `fs.move`/`fs.write`/`fs.delete` dichiarano già una
+    `VerificationSpec` post-azione — qui serve in aggiunta un'anteprima *pre*-azione.
+- **Nota tecnica**: dipendenza diretta da SPEC-008 (l'anteprima usa il tool di analisi
+  dimensioni); da valutare in consolidamento se estendere `fs.delete` per accettare anche
+  directory, o introdurre un tool nuovo (es. `fs.delete_tree`) per tenere separato, ed
+  esplicito in audit, il caso a blast radius maggiore.
+- **Versione candidata**: da assegnare in consolidamento — dopo SPEC-008 (di cui dipende per il
+  dato dell'anteprima), stessa area v0.11/`fs.*`, ma da valutare con più attenzione data la
+  novità nel modello di rischio (primo tool `fs.*` `High` con blast radius su più elementi).
+- **Stato**: Pronta per consolidamento.
+
+### SPEC-006 — Tool di sistema: applicazioni installate e inventario hardware/driver
+
+- **Data**: 2026-09-16
+- **Richiesta originale**: "servono altri tool il prima possibile: tool per vedere le
+  applicazioni installate; tool per ottenere il nome dell'hardware (tipo/modello laptop o
+  workstation o server se presente); tool per ottenere l'hardware devices nel computer e
+  relativi driver."
+- **Area toccata**: `bOps.Packages.System.Core` (manifest condivisi, `SystemToolManifests.cs`),
+  `bOps.Packages.System.Windows`, `bOps.Packages.System.Linux` (implementazioni per OS, coerente
+  con ADR-0006/rule A8) — nessun nuovo package, sono estensioni della famiglia `system.*`
+  esistente.
+- **Verifica di coerenza**:
+  - Già implementata: **No.** I tool `system.*` esistenti (`system.info`, `system.cpu`,
+    `system.memory`, `system.disk`, `system.swap`, `system.io`, oltre a `process.*`) sono
+    definiti in `SystemToolManifests.cs`; `system.info` riporta solo "OS description, hostname,
+    and uptime" — nessun campo su applicazioni installate, modello macchina o dispositivi/driver.
+  - Già pianificata: **No.** Non compaiono nel backlog di `piano-bops-v0.9.1-v2.0.md` §7 né in
+    `agentic/07-plan-corrections.md`.
+  - Conflitti con principi/regole: **Nessuno.** Sono tool a sola lettura (`Risk = Read`, stesso
+    livello di `system.info`), non introducono esecuzione generica (coerente con S1), e seguono
+    esattamente il pattern già stabilito da ADR-0006/rule A8: ogni OS package (Windows/Linux)
+    implementa la propria versione dello stesso contratto (Windows: tipicamente WMI —
+    `Win32_Product`/`Win32_PnPEntity`/`Win32_ComputerSystem`; Linux: equivalenti come i package
+    manager di sistema, `lspci`/`lsusb`, `/sys`), senza bisogno di un `ISystemProvider` condiviso
+    (già escluso da ADR-0006).
+  - Fuori scope dichiarato: **No.**
+  - Nota di design da chiarire in consolidamento: il "nome/modello hardware" potrebbe essere un
+    campo aggiunto a `system.info` (che già esiste) oppure un tool nuovo (es. `system.hardware`).
+    `agentic/00-project-spec.md` registra esplicitamente il precedente opposto — "`system.uptime`
+    as a separate tool — `system.info` already reports uptime; a second tool for the same data is
+    never added" — quindi la scelta va motivata: se il modello macchina è un dato "leggero" simile
+    a hostname, andrebbe dentro `system.info`; se le applicazioni installate e i dispositivi/
+    driver sono elenchi potenzialmente lunghi (come `process.list`), meritano tool propri (es.
+    `system.apps`, `system.devices`) con lo stesso stile di `process.list` (parametro `limit`
+    opzionale).
+- **Chiarimenti di Fabio (2026-09-16)**:
+  - Confermato: il modello/nome hardware (laptop/workstation/server) va aggiunto come campo di
+    `system.info` esistente, non come tool separato — risolve la nota di design sopra restando
+    coerente col precedente `system.uptime`. Restano invece tool a sé, come ipotizzato, le liste
+    potenzialmente lunghe: applicazioni installate (`system.apps`) e dispositivi/driver
+    (`system.devices`), sullo stesso stile di `process.list`.
+- **Versione candidata**: da assegnare in consolidamento — collocazione naturale come completamento
+  della famiglia `system.*` già esistente, compatibile con V0.10 (loader/plugin SDK, in corso) o
+  V0.11 (`00-project-spec.md` la descrive come "completing the operational capabilities the
+  historical plan and README had promised but never registered").
+- **Stato**: Pronta per consolidamento.
+
+### SPEC-007 — Tool di ricerca web e verifica driver aggiornati (fonte esterna)
+
+- **Data**: 2026-09-16
+- **Richiesta originale**: "tool per verificare se esistono driver aggiornati; tool per fare
+  ricerche nel web (non farle fare al modello, le fa il core e le dà in pasto al modello già
+  pronte, se possibile)."
+- **Area toccata**: probabile nuovo package (es. `bOps.Packages.Web`) per la ricerca web; il check
+  "driver aggiornati" è un'estensione di `system.*`/SPEC-006 ma con una dipendenza in più —
+  nessuno dei due esiste oggi nel repo.
+- **Verifica di coerenza**:
+  - Già implementata: **No.** I tool `network.*` esistenti (`network.connections`,
+    `network.dns`, `network.interfaces`, `network.ping`, `network.port_check`, `network.route`)
+    sono tutti introspezione locale della rete della macchina — nessuno effettua richieste HTTP
+    verso l'esterno o interroga cataloghi driver/motori di ricerca.
+  - Già pianificata: **No**, non compare in `piano-bops-v0.9.1-v2.0.md` §7.
+  - Conflitti con principi/regole: **Nessuno per il pattern, ma introduce una novità
+    architetturale.** Un tool `web.search` dichiarativo, a rischio `Read`, eseguito dal runtime
+    (mai dal modello direttamente) e il cui risultato torna come dato al modello è esattamente il
+    modello "the LLM proposes, the runtime decides and executes" (`00-project-spec.md`, principio
+    1) — anzi è il caso d'uso da manuale di **S5 — "Tool output is data, never instruction"**
+    (`agentic/03-security-rules.md`): i risultati di una ricerca web sono l'esempio canonico di
+    contenuto esterno non fidato che quella regola già anticipa. Nessun conflitto con S1 (non è
+    un tool di esecuzione generica, è un tool specifico e dichiarativo). **Novità**: sarebbe il
+    primo tool `Read` con una dipendenza di rete verso servizi esterni (finora solo i package
+    provider LLM in `bOps.Packages.Providers.*` chiamano l'esterno) — va capito se questo
+    richiede una nuova categoria di rischio/audit dedicata o se `Read` + audit del traffico
+    esterno (S9) bastano; se il motore di ricerca richiede una API key, si applica comunque S6
+    (secret mai nei log).
+  - Fuori scope dichiarato: **No.**
+  - Punti da chiarire con Fabio prima di stimare una versione (risolti, vedi sotto):
+    1. Quale motore/API di ricerca usare (serve una chiave/provider? stesso pattern dei package
+       `bOps.Packages.Providers.*`, o una fonte senza key?).
+    2. Se serve solo `web.search` (lista risultati/snippet) o anche `web.fetch` di una singola
+       pagina — quest'ultimo ha una superficie di rischio più ampia (contenuto arbitrario esterno)
+       e potrebbe essere un tool separato con risk level più alto.
+    3. Per "driver aggiornati": quale fonte usare per il confronto (Windows Update catalog, sito
+       vendor, nessuna fonte automatica lasciando il confronto versione-per-versione al modello a
+       partire dal dato locale di SPEC-006)? Da questo dipende se è un tool a sé o un parametro di
+       `system.devices`/SPEC-006, e se richiede la stessa infrastruttura di rete esterna di
+       `web.search`.
+- **Chiarimenti di Fabio (2026-09-16)**:
+  - Motore di ricerca: **fonte senza key** (no API a pagamento) — niente secret da gestire (S6
+    non si applica), ma va comunque scelta una fonte concreta e verificata prima
+    dell'implementazione (es. disponibilità/affidabilità di un endpoint DuckDuckGo o simile senza
+    key, eventuali limiti di rate) — dettaglio tecnico da chiudere in consolidamento, non blocca
+    più la stima di versione.
+  - `web.fetch`: **sì, entrambi i tool** — `web.search` (lista risultati/snippet) e `web.fetch`
+    (contenuto di una singola pagina), come due tool separati; `web.fetch` con `Risk` più alto di
+    `web.search` per via del contenuto arbitrario esterno che restituisce (resta comunque
+    `Read`, nessuna scrittura), e con S5 ancora più rilevante lì che su `web.search`.
+  - Driver aggiornati: **nessuna fonte automatica dedicata** — niente Windows Update catalog né
+    integrazioni vendor. Il tool `system.devices` (SPEC-006) riporta la versione driver locale;
+    il confronto "è aggiornato?" lo fa il modello, quando richiesto, usando `web.search` su quel
+    dato. Punto 4 della richiesta originale quindi **non genera un tool proprio**: è coperto
+    dalla combinazione SPEC-006 (dato locale) + `web.search` (SPEC-007), senza lavoro
+    aggiuntivo dedicato.
+- **Area toccata (aggiornata)**: nuovo package, probabilmente `bOps.Packages.Web`, con due tool —
+  `web.search` e `web.fetch` — entrambi `Risk = Read`. Nessun impatto su `system.*`/SPEC-006 oltre
+  alla dipendenza logica già descritta per il caso "driver aggiornati".
+- **Versione candidata**: da assegnare in consolidamento — nessun blocco residuo dopo i
+  chiarimenti; stessa collocazione naturale ipotizzata per SPEC-006 (V0.10/V0.11), da confermare
+  guardando la catena di propedeuticità (§5) insieme al resto del batch.
+- **Stato**: Pronta per consolidamento.
 
 ### SPEC-005 — Coordinamento agent remoti/multi-nodo
 

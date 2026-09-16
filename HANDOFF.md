@@ -8,6 +8,11 @@ operator's explicit go-ahead, after pulling forward 95 commits done by a prior a
 continued through a second increment in the same session — real `ExecutionPlan` orchestration —
 after the operator said to push the first increment and keep going.
 
+Current tracked scope is recorded in
+`agentic/_plans/2026-09-16-v1.1-skill-capability-sdk.md` and
+`agentic/_tasks/2026-09-16-v1.1-skill-capability-sdk.md`. `agentic/00-bootstrap.md` is now the
+stable routing entry point for future sessions.
+
 **This session delivers two of V1.1's pieces — the immutable data contracts, and the runtime
 orchestration that executes them — not the whole milestone.** V1.1's own Definition of Done (a
 working sample Skill, end-to-end) is explicitly **not** claimed here; it is still blocked on
@@ -114,8 +119,8 @@ policy/approval/verification/audit in a new "Skill runner" component.
 - `git status` confirmed clean staging before each of the two commits: no stray build artifact
   (`tasks.db`/`audit.jsonl`), and `src/core/bOps.Cli/appsettings.json` untouched — the standing
   security constraint carried since V0.7.
-- Pushed to `origin/main` after increment one; CI queued at the time this file was last edited —
-  confirm it went green before building further on top.
+- Current merged HEAD `066b932` is present on `origin/main`; CI run `35123208276` completed
+  successfully on the Windows/Linux matrix, including the Angular build and headless tests.
 
 ## What remains — real gaps, not silently dropped (see ADR-0023 and ADR-0024's "Deferred"/"Still deferred" sections)
 

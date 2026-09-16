@@ -2,6 +2,28 @@
 
 All notable changes to bOps are documented here. Versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- V1.1 preview contracts for Capability, Evidence, Finding, SkillReport and immutable, canonically
+  hashed ExecutionPlan artifacts (ADR-0023).
+- Governed ExecutionPlan orchestration through the existing policy, approval, verification and
+  audit pipeline (ADR-0024).
+- Persistent V1.1 plan/task tracking and a stable `agentic/00-bootstrap.md` entry point.
+
+### Changed
+
+- `bOps.Abstractions` now identifies the in-progress additive SDK surface as
+  `1.1.0-preview.1` rather than publishing V1.1 contracts under the stable 1.0 version.
+- Project status documentation now distinguishes V1.0 implementation completion from the
+  still-unexecuted release-candidate workflow.
+
+### Fixed
+
+- API composition tests no longer inherit a developer's model-provider secret from the host
+  environment.
+
 ## [1.0.0-rc.1] - 2026-09-16
 
 ### Added

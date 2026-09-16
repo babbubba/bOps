@@ -1,9 +1,10 @@
 # agentic/ — binding rules for AI coding agents
 
-These documents are **normative**. An agent working on this repository must read
-[`00-project-spec.md`](00-project-spec.md), [`01-architecture-rules.md`](01-architecture-rules.md)
-and [`03-security-rules.md`](03-security-rules.md) before writing code, and must consult the
-others when the task touches their subject.
+These documents are **normative**. An agent working on this repository starts with
+[`00-bootstrap.md`](00-bootstrap.md), then reads [`00-project-spec.md`](00-project-spec.md),
+[`01-architecture-rules.md`](01-architecture-rules.md) and
+[`03-security-rules.md`](03-security-rules.md) before writing code, and consults the others when
+the task touches their subject.
 
 They are written in English because they are parsed alongside the code, and the codebase —
 identifiers, comments, commit messages, ADRs — is English. `piano-bops.md` remains in Italian.
@@ -12,6 +13,7 @@ identifiers, comments, commit messages, ADRs — is English. `piano-bops.md` rem
 
 | File | Read it when |
 |---|---|
+| [`00-bootstrap.md`](00-bootstrap.md) | Always first. Stable routing, active milestone and validation baseline. |
 | [`00-project-spec.md`](00-project-spec.md) | Always. What bOps is, what it is not, what is in scope for the current version. |
 | [`01-architecture-rules.md`](01-architecture-rules.md) | Always. Structural invariants and the authoritative contract definitions. |
 | [`02-coding-standards.md`](02-coding-standards.md) | Writing or reviewing any C#. |

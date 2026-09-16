@@ -24,10 +24,8 @@ public sealed class ProvidersEndpointsTests
     [Fact]
     public async Task GetProviders_ReportsTheConfiguredActiveProvider_WithoutTheApiKeyValue()
     {
-        // src/core/bOps.Api/appsettings.json ships Provider=OpenRouter, Model=openrouter/free,
-        // ApiKeySecret points at an unset test-process environment variable — this asserts against exactly
-        // that shape, not a substituted test value, since ModelProvider is not one of the
-        // settings TestAppFactory overrides for isolation.
+        // TestAppFactory preserves the shipped provider/model but replaces the secret reference
+        // with a unique unset environment variable so developer credentials cannot affect this test.
         using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
         using var client = factory.CreateClient();
 

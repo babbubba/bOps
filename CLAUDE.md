@@ -9,6 +9,7 @@ The binding rules live in [`agentic/`](agentic/). They are not suggestions.
 
 | | |
 |---|---|
+| [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md) | Stable bootstrap and required read order |
 | [`agentic/00-project-spec.md`](agentic/00-project-spec.md) | What bOps is, current roadmap version, what is out of scope |
 | [`agentic/01-architecture-rules.md`](agentic/01-architecture-rules.md) | Structural invariants and the authoritative contract |
 | [`agentic/03-security-rules.md`](agentic/03-security-rules.md) | Non-negotiable runtime safety behaviour |

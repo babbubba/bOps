@@ -22,6 +22,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 {
     private const string TestApiKey = "test-api-key";
     private readonly string _secretVariableName = $"BOPS_TEST_API_KEY_{Guid.NewGuid():N}";
+    private readonly string _modelProviderSecretVariableName = $"BOPS_TEST_MODEL_PROVIDER_API_KEY_{Guid.NewGuid():N}";
 
     public string TempDirectory { get; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
 
@@ -48,6 +49,8 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
                 ["Authentication:ApiKeys:0:Secret:Provider"] = "environment",
                 ["Authentication:ApiKeys:0:Secret:Name"] = _secretVariableName,
                 ["Authentication:ApiKeys:0:Roles"] = string.Join(',', Roles),
+                ["ModelProvider:ApiKeySecret:Provider"] = "environment",
+                ["ModelProvider:ApiKeySecret:Name"] = _modelProviderSecretVariableName,
             };
 
             config.AddInMemoryCollection(settings);

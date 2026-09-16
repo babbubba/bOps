@@ -177,18 +177,20 @@ bops plugin sign <directory> <publisher> <key-id> <private-key.pem>
 
 `bops diagnose` is **not implemented** — there is no such subcommand, planned or otherwise.
 
-Provider credentials are references, not committed values. Set `BOPS_MODEL_API_KEY` in the
-runtime environment for the default provider. The API additionally requires `BOPS_API_KEY` and
-accepts it only as `Authorization: Bearer <key>`; query-string credentials are never supported.
-The local UI keeps the key in memory and loses it on refresh by design. Bind the API to loopback,
-or put TLS and an authenticated reverse proxy in front of it.
+Provider credentials are references, not committed values. The CLI resolves its default model
+credential from `BOPS_MODEL_API_KEY`; the API resolves its model credential from
+`BOPS_MODELPROVIDER_API_KEY`. The API additionally requires `BOPS_API_KEY` and accepts it only as
+`Authorization: Bearer <key>`; query-string credentials are never supported. The local UI keeps
+the API credential in memory and loses it on refresh by design. Bind the API to loopback, or put
+TLS and an authenticated reverse proxy in front of it.
 
 ## Roadmap
 
-**V0.1 through V1.0 are implemented** — runtime, planning/replanning, policy/approval, verification,
-Windows+Linux parity, Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` +
-the Angular UI, the dynamic plugin loader, the full V0.11 operational capability set, and the
-V1.0 security/release hardening described below.
+**V0.1 through V1.0 are implemented, and V1.1 is in progress** — runtime,
+planning/replanning, policy/approval, verification, Windows+Linux parity,
+Filesystem/Network/Docker, persistence, five LLM providers, `bOps.Api` + the Angular UI, the
+dynamic plugin loader, the full V0.11 operational capability set, V1.0 security hardening, and
+the first V1.1 Skill/Capability contracts and immutable execution-plan orchestration.
 
 | | |
 |---|---|
@@ -205,10 +207,10 @@ V1.0 security/release hardening described below.
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
+| `V1.1` *(in progress)* | Evidence/Finding/Capability contracts and immutable hashed ExecutionPlan are implemented (ADR-0023/0024); Skill provider interfaces, contextual policy, resumability decision and the end-to-end sample Skill remain open |
 
-**From here, the remaining backlog** — the open-core commercial roadmap (Skills/Evidence,
-multi-agent, entitlement, a private Control Plane and Portal, and
-commercial DBA Skills) — lives in
+**The remaining V1.1 work and later backlog** — Skill execution, multi-agent, entitlement, a
+private Control Plane and Portal, and commercial DBA Skills — lives in
 [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md). `bOps` itself stays Apache-2.0,
 forever, for anyone, including commercial use — see [Licensing](#license) below and
 [`docs/licensing.md`](docs/licensing.md).
@@ -248,16 +250,18 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-V1.0 release candidate. The stable SDK and security hardening are implemented and validated
-locally on Windows. The release workflow repeats locked restore, build, tests, deterministic
-publish/package comparison, SBOM, checksums and artifact attestation on Windows and Linux. The
-cross-platform CI run is the remaining release gate; this is not yet a production endorsement.
+V1.1 development is in progress. V1.0 implementation and security hardening are complete, and
+the current `main` CI is green on Windows and Linux, including the Angular build and headless
+tests. The formal V1.0 release gate remains open: no release-candidate tag has been created and
+the release workflow has not yet produced and attested the reproducible Windows/Linux artifacts,
+SBOMs and checksums. This is not yet a production endorsement.
 
 ## Documentation
 
 | | |
 |---|---|
-| [`agentic/`](agentic/) | Binding specification and rules — the authoritative source |
+| [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md) | Stable agent bootstrap, required read order and validation baseline |
+| [`agentic/`](agentic/) | Binding specification, active plans and task tracking |
 | [`agentic/06-decisions.md`](agentic/06-decisions.md) | Decision register: what was chosen, what was rejected, why |
 | [`piano-bops-v0.9.1-v2.0.md`](piano-bops-v0.9.1-v2.0.md) | The active backlog from V0.9.1 onward — versions, gates, scope, open-core boundary |
 | [`docs/licensing.md`](docs/licensing.md) | What Apache-2.0 does and doesn't grant, the open-core repository split, CLA policy |
