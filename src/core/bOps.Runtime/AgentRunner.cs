@@ -524,7 +524,7 @@ public sealed class AgentRunner(
         // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
         // package loaded today is first-party, shipped in this repository, and there is no real
         // per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003).
-        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, PackageTrustLevel.Official, manifest, call.Arguments, actor);
+        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, registry.GetTrust(manifest.Package), manifest, call.Arguments, actor);
         var policyDecision = policyEngine.Evaluate(policyContext);
 
         if (policyDecision.Mode != PolicyMode.Automatic)

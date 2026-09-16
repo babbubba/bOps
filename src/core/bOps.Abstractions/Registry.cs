@@ -21,6 +21,12 @@ public interface IToolRegistry
     /// <param name="tool">The tool to register.</param>
     void Register(PackageId package, ITool tool);
 
+    /// <summary>Registers a tool with the host-assigned trust level used by policy evaluation.</summary>
+    /// <param name="package">The package contributing the tool.</param>
+    /// <param name="trust">Trust established by the host, never self-declared by the package.</param>
+    /// <param name="tool">The tool to register.</param>
+    void Register(PackageId package, PackageTrustLevel trust, ITool tool);
+
     /// <summary>
     /// Re-probes every capability required by a registered tool and updates the availability
     /// snapshot that <see cref="GetAvailableManifests"/> reads. <see cref="GetAvailableManifests"/>
@@ -36,6 +42,9 @@ public interface IToolRegistry
     /// <summary>Resolves a tool by name, or <c>null</c> if unknown or disabled.</summary>
     /// <param name="toolName">The tool's name, as it appears in its manifest.</param>
     ITool? Resolve(string toolName);
+
+    /// <summary>Returns the host-assigned trust level for a registered package, or <see cref="PackageTrustLevel.Unverified"/> when unknown.</summary>
+    PackageTrustLevel GetTrust(PackageId package);
 
     /// <summary>Enables or disables every tool contributed by a package, without restarting bOps.</summary>
     /// <param name="package">The package whose tools to enable or disable.</param>

@@ -12,6 +12,17 @@ namespace bOps.Runtime.Tests;
 /// </summary>
 public sealed class ToolRegistryTests
 {
+    [Fact]
+    public void GetTrust_ReturnsTheHostAssignedLevel_AndFailsClosedForUnknownPackages()
+    {
+        var registry = CreateRegistry();
+        var package = new PackageId("community.package");
+        registry.Register(package, PackageTrustLevel.Community, new FakeReadTool());
+
+        Assert.Equal(PackageTrustLevel.Community, registry.GetTrust(package));
+        Assert.Equal(PackageTrustLevel.Unverified, registry.GetTrust(new PackageId("unknown.package")));
+    }
+
     private static ToolRegistry CreateRegistry() => new(new AlwaysAvailableCapabilityProbe());
 
     [Fact]
