@@ -3,62 +3,198 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActiveProviderInfo } from '../../core/api/models';
-import { ProvidersStore } from '../../state/providers.store';
+import { SettingsProviderView, SettingsView } from '../../core/api/models';
+import { AuthService, CurrentIdentity } from '../../core/auth/auth.service';
+import { SettingsStore } from '../../state/settings.store';
 import { Settings } from './settings';
+
+function provider(overrides: Partial<SettingsProviderView> = {}): SettingsProviderView {
+  return {
+    providerId: 'Anthropic',
+    isActive: false,
+    hasStoredKey: false,
+    keyMaskPrefix: null,
+    keyMaskSuffix: null,
+    keyPlaintextLength: null,
+    keyUpdatedUtc: null,
+    baseUrl: null,
+    model: null,
+    supportsNativeToolCalling: null,
+    extraParameters: null,
+    profileUpdatedUtc: null,
+    ...overrides,
+  };
+}
+
+function settingsView(overrides: Partial<SettingsView> = {}): SettingsView {
+  return {
+    vaultVersion: 0,
+    activeProviderId: null,
+    activeProviderSource: 'Default',
+    providers: [provider()],
+    ...overrides,
+  };
+}
 
 describe('Settings', () => {
   let fixture: ComponentFixture<Settings>;
-  let registeredProviderIds: ReturnType<typeof signal<string[]>>;
-  let active: ReturnType<typeof signal<ActiveProviderInfo | null>>;
-  let loading: ReturnType<typeof signal<boolean>>;
-  let error: ReturnType<typeof signal<string | null>>;
+  let store: {
+    view: ReturnType<typeof signal<SettingsView | null>>;
+    loading: ReturnType<typeof signal<boolean>>;
+    saving: ReturnType<typeof signal<boolean>>;
+    error: ReturnType<typeof signal<string | null>>;
+    conflict: ReturnType<typeof signal<boolean>>;
+    refresh: jasmine.Spy;
+    setProviderKey: jasmine.Spy;
+    clearProviderKey: jasmine.Spy;
+    setProviderProfile: jasmine.Spy;
+    setActiveProvider: jasmine.Spy;
+  };
+  let identity: ReturnType<typeof signal<CurrentIdentity | null>>;
 
-  beforeEach(async () => {
-    registeredProviderIds = signal(['OpenAI', 'Ollama']);
-    active = signal<ActiveProviderInfo | null>({
-      provider: 'OpenAI',
-      model: 'gpt-test',
-      baseUrl: 'https://example.test/v1',
-      hasApiKey: false,
-    });
-    loading = signal(false);
-    error = signal<string | null>(null);
-
-    await TestBed.configureTestingModule({
+  function configure(): void {
+    TestBed.configureTestingModule({
       imports: [Settings],
-      providers: [{
-        provide: ProvidersStore,
-        useValue: { registeredProviderIds, active, loading, error },
-      }],
-    }).compileComponents();
-
+      providers: [
+        { provide: SettingsStore, useValue: store },
+        { provide: AuthService, useValue: { identity } },
+      ],
+    });
     fixture = TestBed.createComponent(Settings);
     fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    store = {
+      view: signal<SettingsView | null>(settingsView()),
+      loading: signal(false),
+      saving: signal(false),
+      error: signal<string | null>(null),
+      conflict: signal(false),
+      refresh: jasmine.createSpy('refresh').and.resolveTo(),
+      setProviderKey: jasmine.createSpy('setProviderKey').and.resolveTo(true),
+      clearProviderKey: jasmine.createSpy('clearProviderKey').and.resolveTo(true),
+      setProviderProfile: jasmine.createSpy('setProviderProfile').and.resolveTo(true),
+      setActiveProvider: jasmine.createSpy('setActiveProvider').and.resolveTo(true),
+    };
+    identity = signal<CurrentIdentity | null>({ id: 'admin-1', displayName: 'Admin', roles: ['administrator'] });
   });
 
-  it('renders active-provider details, missing-key state and the active marker', () => {
+  it('shows an access-denied message and never refreshes for a non-administrator', () => {
+    identity.set({ id: 'op-1', displayName: 'Operator', roles: ['viewer', 'operator'] });
+    configure();
+
+    expect(fixture.nativeElement.textContent).toContain('administrator role is required');
+    expect(store.refresh).not.toHaveBeenCalled();
+  });
+
+  it('refreshes on init for an administrator', () => {
+    configure();
+
+    expect(store.refresh).toHaveBeenCalled();
+  });
+
+  it('renders the active provider and its source', () => {
+    store.view.set(settingsView({ activeProviderId: 'Anthropic', activeProviderSource: 'Settings' }));
+    configure();
+
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('OpenAI');
-    expect(text).toContain('gpt-test');
-    expect(text).toContain('https://example.test/v1');
-    expect(text).toContain('Missing');
-    expect(text).toContain('· active');
-    expect(text).toContain('Ollama');
+    expect(text).toContain('Anthropic');
+    expect(text).toContain('Selected here.');
   });
 
-  it('renders loading, error and unconfigured states', () => {
-    active.set(null);
-    registeredProviderIds.set([]);
-    loading.set(true);
-    error.set('Provider API unavailable');
+  it('shows the key mask, never a raw key, when one is stored', () => {
+    store.view.set(settingsView({ providers: [provider({ hasStoredKey: true, keyMaskPrefix: 'sk-ant', keyMaskSuffix: 'wxyz' })] }));
+    configure();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('sk-ant');
+    expect(text).toContain('wxyz');
+    expect(text).not.toContain('sk-antwxyz');
+  });
+
+  it('expands a provider to show its editable key and profile form', () => {
+    configure();
+
+    const configureButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find((button) => button.textContent?.includes('Configure'));
+    configureButton?.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Provider API unavailable');
-    expect(fixture.nativeElement.textContent).toContain('Loading…');
+    expect(fixture.nativeElement.querySelector('input[type="password"]')).not.toBeNull();
+  });
 
-    loading.set(false);
-    fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('this host cannot run a task yet');
+  it('sets a new key and clears the draft afterward', async () => {
+    configure();
+    const component = fixture.componentInstance;
+    component['toggleExpanded']('Anthropic');
+    component['setApiKeyDraft']('Anthropic', 'sk-new-key-0123456789');
+
+    await component['saveKey']('Anthropic');
+
+    expect(store.setProviderKey).toHaveBeenCalledOnceWith('Anthropic', 'sk-new-key-0123456789');
+    expect(component['apiKeyDraft']('Anthropic')).toBe('');
+  });
+
+  it('does not submit an empty key', async () => {
+    configure();
+    const component = fixture.componentInstance;
+
+    await component['saveKey']('Anthropic');
+
+    expect(store.setProviderKey).not.toHaveBeenCalled();
+  });
+
+  it('asks for confirmation before clearing a stored key', async () => {
+    spyOn(window, 'confirm').and.returnValue(false);
+    configure();
+
+    await fixture.componentInstance['clearKey']('Anthropic');
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(store.clearProviderKey).not.toHaveBeenCalled();
+  });
+
+  it('clears the key once confirmed', async () => {
+    spyOn(window, 'confirm').and.returnValue(true);
+    configure();
+
+    await fixture.componentInstance['clearKey']('Anthropic');
+
+    expect(store.clearProviderKey).toHaveBeenCalledOnceWith('Anthropic');
+  });
+
+  it('saves the endpoint and model profile', async () => {
+    configure();
+    const component = fixture.componentInstance;
+    component['toggleExpanded']('Anthropic');
+    component['profileDrafts'].set('Anthropic', {
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      supportsNativeToolCalling: true,
+    });
+
+    await component['saveProfile']('Anthropic');
+
+    expect(store.setProviderProfile).toHaveBeenCalledOnceWith('Anthropic', {
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      supportsNativeToolCalling: true,
+      extraParameters: null,
+    });
+  });
+
+  it('makes a provider active', async () => {
+    configure();
+
+    await fixture.componentInstance['makeActive']('Anthropic');
+
+    expect(store.setActiveProvider).toHaveBeenCalledOnceWith('Anthropic');
+  });
+
+  it('shows a restart-required notice', () => {
+    configure();
+
+    expect(fixture.nativeElement.textContent).toContain('next restart');
   });
 });

@@ -31,13 +31,22 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ...
+    Usage: bops "<goal>" | bops resume <task-id> | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;
 
 if (args.Length == 0)
 {
     await Console.Error.WriteLineAsync(UsageMessage);
     return 1;
+}
+
+// ADR-0029: like "plugin" and "audit" above, "vault" is its own command family with no goal-
+// execution composition — rotation is a maintenance action, deliberately CLI-only (not exposed
+// through the API) to keep the highest-privilege vault operation on the surface that already
+// requires direct machine access.
+if (string.Equals(args[0], "vault", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunVaultCommandAsync(args[1..]);
 }
 
 // V0.10 (ADR-0020): "plugin" is its own command family, handled entirely separately — it needs
@@ -457,6 +466,65 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
     catch (PluginOperationException ex)
     {
         await Console.Error.WriteLineAsync($"Operation failed: {ex.Message}");
+        return 1;
+    }
+}
+
+static async Task<int> RunVaultCommandAsync(string[] vaultArgs)
+{
+    const string VaultUsageMessage = """
+        Usage: bops vault rotate-key <new-master-key-environment-variable>
+        """;
+
+    if (vaultArgs.Length != 2 || !string.Equals(vaultArgs[0], "rotate-key", StringComparison.OrdinalIgnoreCase))
+    {
+        await Console.Error.WriteLineAsync(VaultUsageMessage);
+        return 1;
+    }
+
+    var vaultBuilder = Host.CreateApplicationBuilder();
+    var masterKeySecretSection = vaultBuilder.Configuration.GetSection("Vault:MasterKeySecret");
+    if (!masterKeySecretSection.Exists())
+    {
+        await Console.Error.WriteLineAsync("'Vault:MasterKeySecret' is not configured; there is nothing to rotate.");
+        return 1;
+    }
+
+    var reference = masterKeySecretSection.Get<SecretReference>()
+        ?? throw new InvalidOperationException("'Vault:MasterKeySecret' is configured but has no 'Provider'/'Name'.");
+    var environmentSecretProvider = new EnvironmentSecretProvider();
+    var currentMasterSecret = environmentSecretProvider.GetSecret(reference);
+    if (string.IsNullOrEmpty(currentMasterSecret))
+    {
+        await Console.Error.WriteLineAsync($"'Vault:MasterKeySecret' ({reference.Provider}/{reference.Name}) did not resolve to a value.");
+        return 1;
+    }
+
+    var newMasterSecret = Environment.GetEnvironmentVariable(vaultArgs[1]);
+    if (string.IsNullOrEmpty(newMasterSecret))
+    {
+        await Console.Error.WriteLineAsync($"Environment variable '{vaultArgs[1]}' is not set.");
+        return 1;
+    }
+
+    var vaultFilePath = vaultBuilder.Configuration["Vault:FilePath"] ?? "vault.dat";
+    try
+    {
+        using var oldStore = new VaultStore(vaultFilePath, VaultCipher.DeriveKey(currentMasterSecret), TimeProvider.System);
+        var plaintextByProviderId = oldStore.List().ToDictionary(entry => entry.ProviderId, entry => oldStore.Resolve(entry.ProviderId)!);
+
+        using var newStore = new VaultStore(vaultFilePath, VaultCipher.DeriveKey(newMasterSecret), TimeProvider.System);
+        foreach (var (providerId, plaintext) in plaintextByProviderId)
+        {
+            newStore.Set(providerId, plaintext, newStore.Version);
+        }
+
+        Console.WriteLine($"Rotated the master key for {plaintextByProviderId.Count} stored provider key(s) in '{vaultFilePath}'.");
+        return 0;
+    }
+    catch (VaultCorruptedException ex)
+    {
+        await Console.Error.WriteLineAsync($"Rotation failed: {ex.Message}");
         return 1;
     }
 }

@@ -213,6 +213,34 @@ public sealed class JsonRoundTripTests
         Assert.Equal(((ApprovalAuditEvent)value).Note, typed.Note);
     }
 
+    [Fact]
+    public void SettingsChangedAuditEvent_RoundTrips_AsItsBaseType_WithSentinelTaskCoordinates()
+    {
+        AuditEvent value = new SettingsChangedAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UnixEpoch,
+            Node = SampleNode,
+            TaskId = Guid.Empty,
+            StepIndex = -1,
+            Actor = SampleActor,
+            SettingName = "provider.apiKey",
+            Operation = SettingsChangeOperation.Set,
+            ProviderId = "openai",
+            Outcome = SettingsChangeOutcome.Success,
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var result = JsonSerializer.Deserialize<AuditEvent>(json, Options);
+
+        var typed = Assert.IsType<SettingsChangedAuditEvent>(result);
+        Assert.Equal(Guid.Empty, typed.TaskId);
+        Assert.Equal(-1, typed.StepIndex);
+        Assert.Equal("provider.apiKey", typed.SettingName);
+        Assert.Equal(SettingsChangeOperation.Set, typed.Operation);
+        Assert.Equal("openai", typed.ProviderId);
+        Assert.Equal(SettingsChangeOutcome.Success, typed.Outcome);
+    }
+
     // ---- Model.cs ----
 
     [Fact]

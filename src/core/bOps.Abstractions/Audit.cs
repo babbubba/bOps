@@ -37,6 +37,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(PolicyDecisionAuditEvent), "policyDecision")]
 [JsonDerivedType(typeof(ApprovalAuditEvent), "approval")]
 [JsonDerivedType(typeof(SkillRunAuditEvent), "skillRun")]
+[JsonDerivedType(typeof(SettingsChangedAuditEvent), "settingsChanged")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -286,6 +287,58 @@ public sealed record SkillRunAuditEvent : AuditEvent
 
     /// <summary>A bounded failure explanation, absent on success.</summary>
     public string? ErrorMessage { get; init; }
+}
+
+/// <summary>How a <see cref="SettingsChangedAuditEvent"/> mutated Settings (ADR-0029).</summary>
+public enum SettingsChangeOperation
+{
+    /// <summary>A value was stored where none existed before.</summary>
+    Set,
+
+    /// <summary>An existing value was overwritten.</summary>
+    Replace,
+
+    /// <summary>A stored value was removed.</summary>
+    Clear,
+
+    /// <summary>The active provider selection changed.</summary>
+    SelectProvider,
+}
+
+/// <summary>How a <see cref="SettingsChangedAuditEvent"/> ended.</summary>
+public enum SettingsChangeOutcome
+{
+    /// <summary>The change was applied.</summary>
+    Success,
+
+    /// <summary>The change was refused by authorization.</summary>
+    Denied,
+
+    /// <summary>The change failed — for example, a stale concurrency version or an unknown provider id.</summary>
+    Failure,
+}
+
+/// <summary>
+/// An administrator changed Settings (ADR-0029): a provider's stored API key or the active
+/// provider selection. Never carries a secret value or a reversible fingerprint of one. Unlike
+/// every other <see cref="AuditEvent"/>, this one is not produced from inside an <c>AgentTask</c>
+/// — it is an administrator acting directly through the API. <see cref="AuditEvent.TaskId"/> and
+/// <see cref="AuditEvent.StepIndex"/> are documented sentinels here (<see cref="Guid.Empty"/> and
+/// <c>-1</c> respectively), not real task coordinates.
+/// </summary>
+public sealed record SettingsChangedAuditEvent : AuditEvent
+{
+    /// <summary>The setting that changed, for example <c>"provider.apiKey"</c> or <c>"provider.active"</c>.</summary>
+    public required string SettingName { get; init; }
+
+    /// <summary>What kind of change this was.</summary>
+    public required SettingsChangeOperation Operation { get; init; }
+
+    /// <summary>The provider id the change applies to.</summary>
+    public required string ProviderId { get; init; }
+
+    /// <summary>How the change ended.</summary>
+    public required SettingsChangeOutcome Outcome { get; init; }
 }
 
 /// <summary>

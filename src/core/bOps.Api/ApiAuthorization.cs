@@ -8,8 +8,10 @@ internal static class ApiAuthorization
     public const string ViewerPolicy = "bops.viewer";
     public const string OperatorPolicy = "bops.operator";
     public const string ApproverPolicy = "bops.approver";
+    public const string AdministratorPolicy = "bops.administrator";
 
     public const string ViewerRole = "viewer";
     public const string OperatorRole = "operator";
     public const string ApproverRole = "approver";
+    public const string AdministratorRole = "administrator";
 }

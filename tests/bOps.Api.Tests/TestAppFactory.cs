@@ -23,6 +23,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
     private const string TestApiKey = "test-api-key";
     private readonly string _secretVariableName = $"BOPS_TEST_API_KEY_{Guid.NewGuid():N}";
     private readonly string _modelProviderSecretVariableName = $"BOPS_TEST_MODEL_PROVIDER_API_KEY_{Guid.NewGuid():N}";
+    private readonly string _vaultMasterKeyVariableName = $"BOPS_TEST_VAULT_MASTER_KEY_{Guid.NewGuid():N}";
 
     public string TempDirectory { get; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
 
@@ -39,6 +40,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, config) =>
         {
             Environment.SetEnvironmentVariable(_secretVariableName, TestApiKey);
+            Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, $"test-vault-master-key-{Guid.NewGuid():N}");
             var settings = new Dictionary<string, string?>
             {
                 ["Audit:FilePath"] = Path.Combine(TempDirectory, "audit.jsonl"),
@@ -50,6 +52,10 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
                 ["Plugins:StorePath"] = Path.Combine(TempDirectory, "plugins.json"),
                 ["Plugins:RootPath"] = Path.Combine(TempDirectory, "plugins"),
                 ["Plugins:TrustStorePath"] = Path.Combine(TempDirectory, "publisher-trust.json"),
+                ["Vault:FilePath"] = Path.Combine(TempDirectory, "vault.dat"),
+                ["Vault:MasterKeySecret:Provider"] = "environment",
+                ["Vault:MasterKeySecret:Name"] = _vaultMasterKeyVariableName,
+                ["Settings:FilePath"] = Path.Combine(TempDirectory, "settings.json"),
                 ["Authentication:ApiKeys:0:Id"] = "test-user",
                 ["Authentication:ApiKeys:0:DisplayName"] = "Test User",
                 ["Authentication:ApiKeys:0:Secret:Provider"] = "environment",
@@ -92,6 +98,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         if (disposing && Directory.Exists(TempDirectory))
         {
             Environment.SetEnvironmentVariable(_secretVariableName, null);
+            Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, null);
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try
             {

@@ -29,6 +29,8 @@ secrets.json
 *.db-shm
 *.db-wal
 audit*.jsonl
+vault.dat
+settings.json
 
 # Node (web/bops-ui, Phase 2)
 node_modules/

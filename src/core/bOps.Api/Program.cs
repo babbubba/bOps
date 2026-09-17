@@ -43,6 +43,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(ApiAuthorization.ViewerPolicy, policy => policy.RequireRole(ApiAuthorization.ViewerRole));
     options.AddPolicy(ApiAuthorization.OperatorPolicy, policy => policy.RequireRole(ApiAuthorization.OperatorRole));
     options.AddPolicy(ApiAuthorization.ApproverPolicy, policy => policy.RequireRole(ApiAuthorization.ApproverRole));
+    options.AddPolicy(ApiAuthorization.AdministratorPolicy, policy => policy.RequireRole(ApiAuthorization.AdministratorRole));
 });
 builder.Services.AddRateLimiter(options =>
 {
@@ -99,9 +100,11 @@ builder.Services.AddSingleton<IPolicyEngine>(sp =>
 // configuration section or a live provider.
 builder.Services.AddSingleton<IChatModel>(sp =>
 {
-    var configured = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
-        ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");
-    var modelOptions = ResolveModelSecret(configured, sp.GetRequiredService<ISecretProvider>());
+    var modelOptions = ProviderResolution.ResolveEffectiveModelOptions(
+        builder.Configuration,
+        sp.GetRequiredService<SettingsStore>(),
+        sp.GetRequiredService<ISecretProvider>(),
+        sp.GetService<VaultSecretProvider>());
     return sp.GetRequiredService<IChatModelRegistry>().Create(modelOptions);
 });
 
@@ -158,6 +161,53 @@ builder.Services.AddSingleton(sp => new PluginManager(
     sp.GetRequiredService<IHttpClientFactory>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ICapabilityProbe>()));
+
+// ADR-0029: non-secret provider profiles and the active-provider selection are always available;
+// the encrypted vault (provider API keys) only activates when a master key is actually configured
+// — an unconfigured 'Vault' section means the Settings feature's key-management surface is simply
+// absent, not silently running with protection disabled.
+//
+// Both factories below read configuration through the DI-resolved IConfiguration, not the
+// pre-Build() 'builder.Configuration' reference — under WebApplicationFactory (bOps.Api.Tests),
+// a test's ConfigureAppConfiguration override is only guaranteed applied by the time Build()
+// returns, not while these top-level statements are still running. Registered as 'VaultStore?'
+// so the factory can return null (vault absent) without a nullable-return warning; nullable
+// annotations on a reference type are erased at runtime, so sp.GetService<VaultStore>() resolves
+// the same registration.
+builder.Services.AddSingleton(sp =>
+    new SettingsStore(sp.GetRequiredService<IConfiguration>()["Settings:FilePath"] ?? "settings.json", sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var masterKeySecretSection = configuration.GetSection("Vault:MasterKeySecret");
+    if (!masterKeySecretSection.Exists())
+    {
+        // Registered as non-nullable VaultStore so sp.GetService<VaultStore>() resolves it
+        // normally; null here (vault simply absent) is intentional, not an oversight.
+        return null!;
+    }
+
+    var reference = masterKeySecretSection.Get<SecretReference>()
+        ?? throw new InvalidOperationException("'Vault:MasterKeySecret' is configured but has no 'Provider'/'Name'.");
+    var masterSecret = sp.GetRequiredService<ISecretProvider>().GetSecret(reference);
+    if (string.IsNullOrEmpty(masterSecret))
+    {
+        throw new InvalidOperationException(
+            $"'Vault:MasterKeySecret' ({reference.Provider}/{reference.Name}) did not resolve to a value. " +
+            "Refusing to start with the vault silently unprotected — fix the master key or remove 'Vault' from configuration.");
+    }
+
+    if (masterSecret.Length < 20)
+    {
+        throw new InvalidOperationException(
+            "The vault master key is shorter than 20 characters, which is not enough entropy to protect stored secrets.");
+    }
+
+    return new VaultStore(
+        configuration["Vault:FilePath"] ?? "vault.dat", VaultCipher.DeriveKey(masterSecret), sp.GetRequiredService<TimeProvider>());
+});
+builder.Services.AddSingleton(sp =>
+    sp.GetService<VaultStore>() is { } store ? new VaultSecretProvider(store) : null!);
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
@@ -263,6 +313,10 @@ app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
 app.MapFilesystemDeletionEndpoints();
 app.MapPluginCatalogEndpoints();
+if (app.Services.GetService<VaultStore>() is not null)
+{
+    app.MapSettingsEndpoints();
+}
 
 await app.RunAsync();
 
@@ -302,12 +356,6 @@ static IPolicyEngine LoadPolicyEngine(string filePath, ILogger logger)
         return new PolicyEngine(PolicyConfig.AllForbidden);
     }
 }
-
-static ChatModelOptions ResolveModelSecret(ChatModelOptions configured, ISecretProvider secretProvider) =>
-    new(configured.Provider, configured.BaseUrl, configured.ApiKeySecret, configured.Model, configured.SupportsNativeToolCalling)
-    {
-        ResolvedApiKey = configured.ApiKeySecret is null ? null : secretProvider.GetSecret(configured.ApiKeySecret),
-    };
 
 /// <summary>Marker partial class so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/> can target this top-level-statements entry point. Internal, like every other type in this application (CA1515) — visible to the test project via <c>InternalsVisibleTo</c>.</summary>
 internal partial class Program;

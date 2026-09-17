@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.1**
-Next implementation batch: **V1.1-G — writable Settings backed by an encrypted local vault**
+Next implementation batch: **V1.1-H — cross-platform integration and release gate**
 
 ## 1. Authority and precedence
 
@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A through V1.1-F are complete and green on Windows/Linux CI; V1.1-G is active and batch H remains. |
+| V1.1 | In progress | V1.1-A through V1.1-G are complete and green on Windows/Linux CI; batch H remains. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -289,6 +289,21 @@ atomically. Startup defines deterministic precedence among explicit environment 
 encrypted vault and legacy development user-secrets.
 
 **Task.** `agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md` — effort **molto alto**.
+
+**Current state.** Complete. ADR-0029 (AES-256-GCM, HKDF-SHA256 master-key derivation,
+`expectedVersion` optimistic concurrency, fail-closed startup, CLI-only `bops vault rotate-key`).
+`bOps.Runtime` gained `VaultStore`/`VaultCipher`/`VaultSecretProvider`/`SecretMask` (provider API
+keys) and `SettingsStore`/`ProviderProfile` (non-secret endpoint/model/tool-calling profile and
+active-provider selection, kept separate from the vault). `bOps.Api` gained a new `administrator`
+role/policy and `GET/PUT/DELETE /api/settings/*`, opt-in only when `Vault:MasterKeySecret` is
+configured — absent it, the key-management surface does not exist and every existing CLI/
+environment deployment is unaffected. Scope grew once during implementation, by explicit operator
+direction: "provider selection" became full UI-managed provider configuration (endpoint, model,
+tool-calling support, API key), not just an id toggle plus key — see D-025 for why the narrower
+reading was insufficient (every provider needs its own `BaseUrl`, with no package-level default) and
+what was deliberately deferred (`ExtraParameters` is persisted but not yet wired into
+`ChatModelOptions`; no provider needs it today). Verified end-to-end against a real running
+`bOps.Api` and Angular dev server, not only the test suite.
 
 ### V1.1-H — integration and release gate
 

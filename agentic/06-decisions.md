@@ -515,3 +515,43 @@ documented to throw are caught; anything else is a broken invariant and still pr
 `PluginManager.LoadAllEnabled`'s return type changes from `void` to
 `IReadOnlyDictionary<string, string>`, a source change internal to `bOps.PluginHost` and its two
 callers (`bOps.Cli`, `bOps.Api`). No ADR is required by the subject table in `05-workflow.md`.
+
+---
+
+### D-025 — ADR-0029 lands; provider configuration is fully UI-managed, not just key insertion
+
+**Decision.** V1.1-G implements ADR-0029 as designed (encrypted local vault, AES-256-GCM,
+HKDF-SHA256 master-key derivation, `expectedVersion` optimistic concurrency, fail-closed startup)
+with one scope extension made during implementation, on explicit operator direction: a provider's
+full non-secret configuration — endpoint, model, tool-calling support, and an open extras bag — is
+persisted and administrator-managed from the Angular Settings page (`SettingsStore`/
+`ProviderProfile` in `bOps.Runtime`), not only its API key. The key still lives only in the
+encrypted vault, keyed by the same provider id; the profile lives in a separate plain, non-secret
+`settings.json`, since it holds nothing that benefits from encryption.
+
+**Reason.** Exploration surfaced a real design gap the task file's "provider selection" wording
+left implicit: every first-party provider package requires an operator-supplied `BaseUrl` with no
+built-in default, so switching the active provider while leaving `BaseUrl`/`Model` pinned to
+whatever the single `appsettings.json` `ModelProvider` block configured would point the newly
+selected provider's key at the wrong endpoint. Asked how to resolve this, the operator chose full
+UI-managed provider configuration over the narrower alternatives (key-only management with a
+read-only provider switch, or extending the mutation surface to accept raw endpoint values without
+persisting them structurally).
+
+**Rejected.** *Restrict "provider selection" to read-only, key-only management.* Rejected by
+explicit operator instruction — would not resolve the underlying BaseUrl/Model mismatch and leaves
+the feature unable to do what was asked. *Wire `ExtraParameters` into `ChatModelOptions`/
+`IModelProviderPackage.Create`.* Rejected for this batch: no first-party provider package accepts
+anything beyond `ChatModelOptions`'s existing fields, and `ChatModelOptions` is a
+`bOps.Abstractions` type — extending it speculatively, for no provider that concretely needs it
+today, is exactly the premature-generality the coding standard warns against. `ExtraParameters` is
+persisted and returned by the API so a future provider has somewhere to read it from, but affects
+no runtime behavior yet — a documented, deliberate gap.
+
+**Consequences.** `GET /api/settings` describes two independently-present halves per provider (key
+metadata from the vault, profile from `settings.json`) joined only by provider id — a caller must
+read both to fully describe one provider. Provider selection and profile/key changes take effect on
+the next restart, matching the existing composition-root-only resolution of `ModelProvider` — no
+live-reconfiguration of `IChatModelRegistry` was introduced. See ADR-0029 for the full design,
+including the precedence rule (`ProviderResolution`), the masking formula, and the documented
+Windows ACL-hardening gap.

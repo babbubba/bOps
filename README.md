@@ -128,6 +128,18 @@ activates the operator's already-enabled plugins at start-up exactly like `bOps.
 it runs its own `AgentRunner` for tasks started from the dashboard and needs the same
 plugin-contributed tools/Skills.
 
+The Angular UI's **Settings** page (`GET/PUT/DELETE /api/settings/*`, administrator role,
+ADR-0029) is where a provider's endpoint, model, tool-calling support and API key are fully
+managed: choose the active provider, save its endpoint/model, set or replace its key, or clear it.
+API keys never round-trip in plaintext — every response carries only presence, a `first
+six...last four` mask and timestamps. Keys are stored in a versioned, AES-256-GCM-encrypted local
+vault whose master key is supplied externally and never written beside it; a wrong key, tampered
+file or missing master key fails closed. An explicit `ModelProvider__Provider` environment
+variable always overrides Settings, so existing CLI/environment deployments are unaffected unless
+an operator opts in. Provider selection and secret changes take effect on the next restart. See
+[ADR-0029](docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md) and "Provider
+credentials" below for enabling the vault and rotating its master key.
+
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
 to the model), and a generic `process.start` (equivalent to a generic execution tool — see rule
@@ -204,12 +216,36 @@ credential from `BOPS_MODEL_API_KEY`; the API resolves its model credential from
 the API credential in memory and loses it on refresh by design. Bind the API to loopback, or put
 TLS and an authenticated reverse proxy in front of it.
 
+To let the Angular UI's Settings page manage provider keys (ADR-0029), add a `Vault` section
+pointing at an environment variable holding the master key — this is opt-in; without it, the
+Settings key-management surface (`/api/settings/*`) does not exist and behavior is unchanged from
+V1.1-F:
+
+```json
+"Vault": {
+  "FilePath": "vault.dat",
+  "MasterKeySecret": { "Provider": "environment", "Name": "BOPS_VAULT_MASTER_KEY" }
+}
+```
+
+Set `BOPS_VAULT_MASTER_KEY` to a real secret of at least 20 characters before starting `bOps.Api`
+— a configured-but-unresolvable master key refuses to start rather than run with the vault
+silently unprotected. Rotate the master key with the CLI (not exposed through the API, by design):
+
+```bash
+BOPS_VAULT_MASTER_KEY=<current-key> BOPS_NEW_VAULT_MASTER_KEY=<new-key> \
+  bops vault rotate-key BOPS_NEW_VAULT_MASTER_KEY
+```
+
+Backup/restore is file-level: copy `vault.dat`. Because the master key is deliberately never
+stored beside it, a copied vault file alone is inert — losing the vault means re-entering keys
+through the UI, exactly like losing `plugins.json` means reinstalling plugins.
+
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1-A through V1.1-F are complete;
-V1.1-G writable Settings backed by an encrypted local vault is the active next batch, while the
-remaining operational and local-management batches stay in their fixed order.
+still needs its first operator-authorized tagged run. V1.1-A through V1.1-G are complete;
+V1.1-H cross-platform integration and release gate is the active next batch.
 
 | | |
 |---|---|
@@ -228,7 +264,7 @@ remaining operational and local-management batches stay in their fixed order.
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
 | `V1.1-A` *(complete)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
 | `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
-| `V1.1-G` | Writable Settings backed by an encrypted local vault |
+| `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` | Cross-platform integration, documentation and release gate |
 | `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |

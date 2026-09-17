@@ -44,6 +44,21 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - `bOps.Api` now activates the operator's already-enabled plugins at start-up, the same way
   `bOps.Cli` already did — it runs its own `AgentRunner` and needs the same plugin-contributed
   tools/Skills visible to it.
+- Writable Settings: an administrator-only encrypted local vault (AES-256-GCM, HKDF-SHA256-derived
+  key from an externally supplied master secret) for provider API keys, a separate non-secret store
+  for each provider's endpoint/model/tool-calling profile and the active-provider selection, and
+  `GET/PUT/DELETE /api/settings/*` endpoints with optimistic-concurrency version checks on every key
+  write (ADR-0029). The vault is opt-in — absent `Vault:MasterKeySecret` configuration, the Settings
+  key-management surface does not exist and every existing CLI/environment deployment is unaffected.
+  A configured-but-unresolvable master key refuses to start rather than run unprotected. A new
+  `administrator` role/policy gates every mutation; a new `bops vault rotate-key` CLI command
+  rotates the master key without exposing rotation through the API. The Angular Settings page lets
+  an administrator choose the active provider and fully manage each provider's endpoint, model,
+  tool-calling support and API key — the key input is always write-only and a stored key is never
+  returned in plaintext, only as a `first six...last four` display mask captured at write time.
+- New `bops.administrator` role/policy (`bOps.Api.ApiAuthorization`), required by every Settings
+  mutation endpoint; the shipped local-dev credential now carries it alongside the three existing
+  roles.
 
 ### Changed
 

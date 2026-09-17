@@ -214,3 +214,43 @@ export interface ProvidersResponse {
   registeredProviderIds: string[];
   active: ActiveProviderInfo | null;
 }
+
+/** Where GET /api/settings' active provider came from (ADR-0029, bOps.Api.ProviderResolution.Source). */
+export type ActiveProviderSource = 'EnvironmentOverride' | 'Settings' | 'Default';
+
+/**
+ * bOps.Api.SettingsProviderView (ADR-0029, administrator-only GET /api/settings). The key half
+ * (`hasStoredKey`/`keyMask*`) and the profile half (`baseUrl`/`model`/…) describe two separate
+ * stores and can be present independently — never conflate "has a key" with "has a profile".
+ * Never carries a key's plaintext.
+ */
+export interface SettingsProviderView {
+  providerId: string;
+  isActive: boolean;
+  hasStoredKey: boolean;
+  keyMaskPrefix: string | null;
+  keyMaskSuffix: string | null;
+  keyPlaintextLength: number | null;
+  keyUpdatedUtc: string | null;
+  baseUrl: string | null;
+  model: string | null;
+  supportsNativeToolCalling: boolean | null;
+  extraParameters: Record<string, string> | null;
+  profileUpdatedUtc: string | null;
+}
+
+/** bOps.Api.SettingsView (ADR-0029, GET /api/settings). `vaultVersion` must be echoed back as `expectedVersion` on every key write. */
+export interface SettingsView {
+  vaultVersion: number;
+  activeProviderId: string | null;
+  activeProviderSource: ActiveProviderSource;
+  providers: SettingsProviderView[];
+}
+
+/** bOps.Api.SetProviderProfileRequest (ADR-0029, PUT /api/settings/providers/{id}/profile). */
+export interface SetProviderProfileRequest {
+  baseUrl: string;
+  model: string;
+  supportsNativeToolCalling: boolean;
+  extraParameters: Record<string, string> | null;
+}

@@ -14,6 +14,8 @@ import {
   PluginCatalogEntry,
   PluginCatalogPage,
   ProvidersResponse,
+  SetProviderProfileRequest,
+  SettingsView,
   TaskAcceptedResponse,
   TaskState,
   ToolManifest,
@@ -111,5 +113,33 @@ export class BOpsApiClient {
 
   getPlugin(id: string): Promise<PluginCatalogEntry> {
     return firstValueFrom(this.http.get<PluginCatalogEntry>(`/api/plugins/${id}`));
+  }
+
+  getSettings(): Promise<SettingsView> {
+    return firstValueFrom(this.http.get<SettingsView>('/api/settings'));
+  }
+
+  setProviderKey(providerId: string, apiKey: string, expectedVersion: number): Promise<void> {
+    return firstValueFrom(
+      this.http.put<void>(`/api/settings/providers/${encodeURIComponent(providerId)}/key`, { apiKey, expectedVersion }),
+    );
+  }
+
+  clearProviderKey(providerId: string, expectedVersion: number): Promise<void> {
+    return firstValueFrom(
+      this.http.delete<void>(
+        `/api/settings/providers/${encodeURIComponent(providerId)}/key?expectedVersion=${expectedVersion}`,
+      ),
+    );
+  }
+
+  setProviderProfile(providerId: string, request: SetProviderProfileRequest): Promise<void> {
+    return firstValueFrom(
+      this.http.put<void>(`/api/settings/providers/${encodeURIComponent(providerId)}/profile`, request),
+    );
+  }
+
+  setActiveProvider(providerId: string): Promise<void> {
+    return firstValueFrom(this.http.put<void>('/api/settings/active-provider', { providerId }));
   }
 }
