@@ -15,8 +15,8 @@ namespace bOps.Abstractions;
 /// <param name="Version">The plugin's own semantic version.</param>
 /// <param name="MinHostAbstractionsVersion">The lowest <c>bOps.Abstractions</c> version this plugin requires. The loader rejects installation if the running host is older.</param>
 /// <param name="EntryAssembly">The plugin's main assembly file name, relative to its own installed folder.</param>
-/// <param name="EntryType">The fully qualified type name the loader activates — must implement exactly one of <see cref="IToolProvider"/> or <see cref="IModelProviderPackage"/>.</param>
-/// <param name="DeclaredCapabilities">What the plugin claims it may register, shown to an operator before they enable it. Informational — never enforced against what the plugin actually registers.</param>
+/// <param name="EntryType">The fully qualified type name the loader activates — a Tool provider, a combined <see cref="ISkillProvider"/>/Tool provider, or an <see cref="IModelProviderPackage"/>. A Skill provider cannot also be a model provider.</param>
+/// <param name="DeclaredCapabilities">What the plugin claims it may register, shown to an operator before enablement. For an <see cref="ISkillProvider"/> this list must exactly match its activated Capability names; for Tool-only and model providers it remains informational.</param>
 /// <param name="Dependencies">The plugin's own third-party dependencies, for license inventory. Informational — the loader resolves the plugin's real dependencies from its own folder regardless of what is declared here (agentic/02-coding-standards.md forbids <c>Assembly.LoadFrom</c>; resolution goes through the isolated load context, not this list).</param>
 /// <param name="MaxDeclaredRisk">The highest risk level the plugin claims any of its tools may reach. Informational, exactly like a package manifest's declared ceiling elsewhere (agentic/03-security-rules.md, rule S3) — the operator's own <c>policy.yaml</c> package ceiling is what is actually enforced.</param>
 public sealed record PluginManifest(

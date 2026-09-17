@@ -188,8 +188,9 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1 first completes the Skill/Capability SDK,
-then adds the accepted operational and local-management batches in a fixed order.
+still needs its first operator-authorized tagged run. The V1.1 Skill/Capability SDK is implemented
+locally and awaits cross-platform CI; the remaining operational and local-management batches stay
+in their fixed order.
 
 | | |
 |---|---|
@@ -206,7 +207,7 @@ then adds the accepted operational and local-management batches in a fixed order
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
-| `V1.1-A` *(next)* | Complete Skill provider interfaces, restricted tool invocation, contextual policy, persistence decision and end-to-end OSS sample Skill |
+| `V1.1-A` *(local implementation complete; CI pending)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
 | `V1.1-B–E` | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, and SearXNG-backed Web search/safe fetch |
 | `V1.1-F–G` | Add a read-only plugin catalog UI, then writable Settings backed by an encrypted local vault |
 | `V1.1-H` | Cross-platform integration, documentation and release gate |
@@ -225,9 +226,10 @@ agents. `bOps` itself stays Apache-2.0 forever, including commercial use — see
 ## Extending bOps
 
 A plugin is one or more .NET assemblies referencing only the published `bOps.Abstractions`
-package, with an entry type implementing `IToolProvider` or `IModelProviderPackage`, plus a
-`bops-plugin.json` manifest naming it. [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/)
-is a real, working one — build it, then `bops plugin install`/`enable` it, as a starting point:
+package, with an entry type implementing `IToolProvider`, `ISkillProvider` or
+`IModelProviderPackage`, plus a `bops-plugin.json` manifest naming it.
+[`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) is a real, working Skill/Tool plugin —
+build it, then `bops plugin install`/`enable` it, as a starting point:
 
 ```json
 {
@@ -235,18 +237,19 @@ is a real, working one — build it, then `bops plugin install`/`enable` it, as 
   "Id": "acme.sample-plugin",
   "Publisher": "Acme",
   "Version": "1.0.0",
-  "MinHostAbstractionsVersion": "1.0.0",
+  "MinHostAbstractionsVersion": "1.1.0",
   "EntryAssembly": "Acme.SamplePlugin.dll",
   "EntryType": "Acme.SamplePlugin.SampleToolProvider",
-  "DeclaredCapabilities": ["sample.echo"],
+  "DeclaredCapabilities": ["sample.echo-marker"],
   "Dependencies": [],
-  "MaxDeclaredRisk": "Read"
+  "MaxDeclaredRisk": "Low"
 }
 ```
 
-Packages are never trusted at their word: `DeclaredCapabilities`, `Dependencies` and
-`MaxDeclaredRisk` are informational only, shown to the operator before they enable a plugin —
-the policy engine's own per-package risk ceiling in `policy.yaml` is what is actually enforced.
+Packages are never trusted at their word. For a Skill provider, `DeclaredCapabilities` must
+exactly match the activated Capability names or activation fails; `Dependencies` and
+`MaxDeclaredRisk` remain operator-facing declarations, while the policy engine's own per-package
+risk ceiling in `policy.yaml` is what is actually enforced.
 A plugin is loaded in an isolated, collectible `AssemblyLoadContext` sharing a single copy of
 `bOps.Abstractions` with the host (ADR-0020) and stays disabled until an operator enables it
 explicitly. V1.0 also requires a detached RSA-PSS/SHA-256 signature whose publisher key and trust
@@ -257,11 +260,12 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-V1.1-A is the next implementation batch. V1.0 implementation and security hardening are complete,
-and the current `main` CI is green on Windows and Linux, including the Angular build and headless
-tests. The formal V1.0 release gate remains open: no release-candidate tag has been created and the
-release workflow has not yet produced and attested the reproducible Windows/Linux artifacts, SBOMs
-and checksums. This is not yet a production endorsement.
+V1.1-A is implemented and validated locally; its required Windows/Linux CI matrix remains pending
+until these local commits are pushed. V1.0 implementation and security hardening are complete, and
+the previously pushed `main` baseline is green on both platforms. The formal V1.0 release gate
+also remains open: no release-candidate tag has been created and the release workflow has not yet
+produced and attested the reproducible Windows/Linux artifacts, SBOMs and checksums. This is not
+yet a production endorsement.
 
 ## Documentation
 

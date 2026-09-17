@@ -110,20 +110,25 @@ needs a host service, it asks for one of the explicitly published host services 
 
 ### A10 — The host publishes a closed set of services to packages
 
-A package's `IToolProvider` / `IModelProviderPackage` is constructed with
+A package's `IToolProvider` / `ISkillProvider` / `IModelProviderPackage` is constructed with
 `ActivatorUtilities`, not `Activator.CreateInstance`, from a container that exposes **only**
 this set:
 
 `ILoggerFactory` · `IHttpClientFactory` · `TimeProvider` · `IConfigurationSection` (the
-package's own section, nothing else) · `ICapabilityProbe` · `IToolInvoker` (read-only tools
-of the same package only)
+package's own section, nothing else) · `ICapabilityProbe`
+
+`IToolInvoker` is deliberately **not** a constructor-injected service. The host creates it for
+one `ICapability.PrepareAsync` invocation and binds the task, actor, Skill, Capability and
+host-assigned package identity. It can invoke only visible `Read` tools owned by that package,
+through validation, policy, timeout and audit (ADR-0025).
 
 Anything else is out of reach by design. This list changes only by ADR.
 
 ### A11 — `PackageId` is assigned by the host, never self-declared
 
 A package states its id in `bops-plugin.json`, but the *effective* `PackageId` stamped onto a
-`ToolManifest` is assigned by the registry at registration time, from the loading context.
+`ToolManifest` or `CapabilityManifest` is assigned by the registry at registration time, from
+the loading context.
 A package cannot claim to be another package and inherit its trust level.
 
 ### A12 — `bOps.Abstractions` stays on `0.x` until V1.0
@@ -397,10 +402,9 @@ composition root. `ConsoleApprovalProvider` (`bOps.Cli`) is the first `IApproval
 blocking console prompt, because the CLI is the primary interface (principle 6); a future host
 implements its own without `AgentRunner` or `PolicyEngine` changing.
 
-`PackageTrustLevel` is passed by `AgentRunner` as `Official` for every call in V0.3 — every
-package loaded today is first-party, shipped in this repository, and there is no real
-per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003). This is a
-known, accepted simplification, not an oversight.
+`PackageTrustLevel` is assigned by the host. Statically composed first-party packages default to
+`Official`; dynamically loaded packages inherit the trust established from their verified
+publisher key. Tool and Skill policy evaluation both use that host-assigned value.
 
 ### B8 — Audit
 
@@ -521,6 +525,25 @@ public sealed record TaskState(
 tool-call iterations, `Plans` records the act of planning itself. `PlanStep.PlanRevision` is
 nullable for completeness (the type does not assume a plan always exists) though no code path
 in the runtime currently leaves it null.
+
+### B10 — Skills and Capabilities
+
+An `ISkillProvider` extends `IToolProvider`: one activated package contributes a stable Skill id,
+deterministic `ICapability` implementations and every Tool those Capabilities may use. The
+node-scoped `ISkillRegistry` stamps package identity, rejects duplicate Skill or Capability names
+and unregisters providers before plugin unload.
+
+`AgentRunner.PrepareSkillAsync` gives one Capability a bound `IToolInvoker`; the invoker exposes
+only same-package, visible, `Read` tools and still applies argument validation, exact contextual
+policy, timeout, bounded results and audit. A prepared report may contain evidence, findings and
+an immutable `ExecutionPlan`. Every Finding must cite recorded Evidence, and every plan must match
+the selected Capability identity and risk ceiling.
+
+`AgentRunner.ExecutePreparedSkillAsync` requires an affirmative approval bound to the exact plan
+hash for every non-Read Capability. Plan steps then use the ordinary Tool policy, approval,
+execution, verification and audit path; Capability approval grants no bypass. V1.1 Skill runs are
+terminal and non-resumable: no Skill state is written to `ITaskStore`, and interruption requires a
+new preparation and approval. ADR-0025 is normative for this boundary.
 
 ---
 

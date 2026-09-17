@@ -10,6 +10,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   hashed ExecutionPlan artifacts (ADR-0023).
 - Governed ExecutionPlan orchestration through the existing policy, approval, verification and
   audit pipeline (ADR-0024).
+- Executable `ICapability`/`ISkillProvider` contracts, a node-scoped Skill registry and
+  invocation-scoped same-package Read-only `IToolInvoker` evidence collection (ADR-0025).
+- Exact contextual Skill policy, correlated Skill-run audit events and an end-to-end signed sample
+  Skill covering evidence, findings, hash-bound approval, action and independent verification.
 - Persistent V1.1 plan/task tracking and a stable `agentic/00-bootstrap.md` entry point.
 
 ### Changed
@@ -20,6 +24,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   still-unexecuted release-candidate workflow.
 - Planning is consolidated into one active `agentic` roadmap with granular effort-rated task files;
   superseded plans and specification inputs are preserved in an agent-ignored historical archive.
+- Dynamic plugin activation now registers combined Skill/Tool providers atomically and requires
+  their declared Capability names to match the activated provider exactly.
+- V1.1 Skill runs are explicitly terminal and non-resumable; interruption requires fresh
+  preparation and approval rather than unsafe partial-plan replay.
 
 ### Fixed
 

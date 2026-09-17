@@ -1,8 +1,9 @@
 # Writing your first bOps plugin
 
 This walks through what [`samples/bops-sample-plugin/`](../../samples/bops-sample-plugin/)
-already is: a real, buildable, purely-demonstrative plugin. Copy it as a starting point rather
-than writing a manifest from scratch. See ADR-0020 for why the loader works the way it does.
+already is: a real, buildable, purely-demonstrative Skill/Tool plugin. Copy it as a starting point
+rather than writing a manifest from scratch. ADR-0020 defines loading and trust; ADR-0025 defines
+Skill activation and restricted evidence invocation.
 
 ## What a plugin is
 
@@ -12,6 +13,8 @@ plugins, even though they are not shipped from this repository). An entry type i
 exactly one of:
 
 - `IToolProvider` — contributes one or more `ITool`s, each with its own `ToolManifest`.
+- `ISkillProvider` — contributes deterministic `ICapability` implementations and their Tools;
+  because it extends `IToolProvider`, this is one combined provider kind.
 - `IModelProviderPackage` — contributes an `IChatModel` factory for one or more provider ids.
 
 Alongside the built assemblies, a `bops-plugin.json` manifest:
@@ -22,12 +25,12 @@ Alongside the built assemblies, a `bops-plugin.json` manifest:
   "Id": "acme.sample-plugin",
   "Publisher": "Acme",
   "Version": "1.0.0",
-  "MinHostAbstractionsVersion": "1.0.0",
+  "MinHostAbstractionsVersion": "1.1.0",
   "EntryAssembly": "Acme.SamplePlugin.dll",
   "EntryType": "Acme.SamplePlugin.SampleToolProvider",
-  "DeclaredCapabilities": ["sample.echo"],
+  "DeclaredCapabilities": ["sample.echo-marker"],
   "Dependencies": [],
-  "MaxDeclaredRisk": "Read"
+  "MaxDeclaredRisk": "Low"
 }
 ```
 
@@ -40,7 +43,7 @@ Alongside the built assemblies, a `bops-plugin.json` manifest:
 | `MinHostAbstractionsVersion` | The lowest `bOps.Abstractions` version you built against. Installation is rejected if the running host is older. |
 | `EntryAssembly` | Your main assembly's file name, relative to the plugin's own folder. |
 | `EntryType` | The fully qualified type name the loader activates. |
-| `DeclaredCapabilities` | What you claim the plugin may register, shown to an operator before they enable it. Informational — never checked against what you actually register. |
+| `DeclaredCapabilities` | What you claim the plugin may register. For a Skill provider this must exactly equal its activated Capability names; any mismatch fails activation. It remains informational for Tool-only and model providers. |
 | `Dependencies` | Your own third-party NuGet dependencies, for license inventory. Informational — the loader resolves real dependencies from your plugin's own folder regardless of what you list here. |
 | `MaxDeclaredRisk` | The highest `RiskLevel` any of your tools may declare. Informational — the operator's own `policy.yaml` package ceiling is what is actually enforced (rule S3). |
 
@@ -96,6 +99,40 @@ The loader constructs this via `ActivatorUtilities`, against a container exposin
 (bound from the host's `Plugins:<your-id>` configuration section) and `ICapabilityProbe`
 (rule A10). Ask for anything else in your constructor and activation fails — that list changes
 only by an ADR to this project, not by adding a dependency to your plugin.
+
+## Writing a Skill
+
+Implement `ISkillProvider` when package code must turn observed evidence into findings and an
+immutable action plan. Each `ICapability` exposes a `CapabilityManifest` and implements
+`PrepareAsync`. The host supplies `IToolInvoker` only for that invocation; it can call visible
+`Read` tools belonging to the same package and still applies validation, policy, timeout, output
+limits and audit. The invoker is not available in the provider constructor and cannot be used to
+resolve registries or another package's services.
+
+The sample provider exposes `sample.echo-marker-skill`. Its `sample.echo-marker` Capability reads
+real evidence through `sample.echo`, creates a Finding that cites that Evidence, then returns a
+one-step immutable plan using the safe `sample.marker.create` action. The action accepts a bounded
+marker identity rather than a caller-controlled path and is independently verified by the
+`sample.marker.status` Read tool.
+
+Skill-originated calls fail closed unless `policy.yaml` contains exactly one matching contextual
+rule. All six fields are required and matching is ordinal/exact—there are no V1.1 wildcards:
+
+```yaml
+skills:
+  - skill: sample.echo-marker-skill
+    capability: sample.echo-marker
+    target: local
+    environment: test
+    blastRadius: single
+    mode: automatic
+```
+
+For a non-Read Capability, preparation and execution are intentionally separate. Inspect the
+prepared report and plan, approve the canonical plan hash, then execute that exact prepared run.
+Per-step Tool policy and verification still apply. V1.1 Skill runs are terminal and non-resumable:
+after interruption, prepare a new run and obtain a new approval rather than replaying a partial
+plan.
 
 ## Signing, trusting and installing it locally
 

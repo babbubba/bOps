@@ -6,7 +6,7 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, and D-016–D-019 on 2026-09-16.
+2026-09-15, and D-016–D-020 on 2026-09-16.
 
 ---
 
@@ -377,3 +377,28 @@ availability to an unapproved operator.
 
 **Consequences.** JSON output must be enabled on the configured instance. The Web package requires
 an ADR and SSRF/output threat-model work; all returned content remains untrusted tool data under S5.
+
+---
+
+### D-020 — Skill preparation uses a host-bound restricted invoker and terminal runs
+
+**Decision.** `ISkillProvider` extends `IToolProvider` and contributes deterministic
+`ICapability` implementations. During one preparation, the host passes an invocation-scoped
+`IToolInvoker` bound to the task, actor, Skill, Capability and host-assigned package. It exposes
+only visible `Read` tools owned by that package. Preparation and execution are separate; every
+non-Read plan needs affirmative approval of its exact canonical hash, then its steps still use the
+ordinary Tool policy and verification path. V1.1 Skill runs are terminal and non-resumable.
+
+**Reason.** Package code needs real evidence before it can build a plan, but registry or service
+provider access would permit cross-package discovery and identity forgery. Separating preparation
+from execution makes the approved artifact inspectable and immutable. Pretending a partially
+executed plan can resume without durable effect reconciliation would create a false safety claim.
+
+**Rejected.** *Constructor-injected process-wide `IToolInvoker`* — invocation identity would be
+missing or caller-forgeable. *Give a Skill `IToolRegistry`* — crosses package boundaries and leaks
+concrete tools. *Prepare and execute in one call* — no opportunity to approve the exact plan hash.
+*Persist only a step index* — does not prove which side effects occurred or were verified.
+
+**Consequences.** Activated Skill providers register through the existing signature/trust
+boundary, contextual Skill policy matches exact fields and fails closed, and interruption requires
+a new preparation and approval. Durable Skill reconciliation needs a future ADR. See ADR-0025.
