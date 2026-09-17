@@ -46,6 +46,9 @@ public enum ToolParameterType
     /// <summary>A filesystem path, subject to the path policy (agentic/03-security-rules.md, rule S11).</summary>
     Path,
 
+    /// <summary>A JSON array of filesystem paths, each subject to the path policy.</summary>
+    PathList,
+
     /// <summary>A span of time.</summary>
     Duration,
 
@@ -162,6 +165,12 @@ public sealed record ToolManifest
 
     /// <summary>Required when <see cref="Risk"/> is not <see cref="RiskLevel.Read"/>. See agentic/01-architecture-rules.md, rule B3.</summary>
     public VerificationSpec? Verification { get; init; }
+
+    /// <summary>
+    /// Whether this tool always requires a human approval even when policy would otherwise allow
+    /// automatic execution. This can tighten policy but never override a forbidden decision.
+    /// </summary>
+    public bool RequiresExplicitApproval { get; init; }
 
     /// <summary>
     /// The package that contributed this tool. Stamped by the registry at registration time —
@@ -292,6 +301,25 @@ public interface IContextualTool : ITool
     Task<ToolCallResult> ExecuteAsync(
         ToolArguments arguments,
         ToolExecutionContext context,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// Optional contract for a tool whose durable preflight state must be bound to the exact human
+/// approval decision before target execution. This callback must not perform the target side effect.
+/// </summary>
+public interface IApprovalBoundTool : ITool
+{
+    /// <summary>Records and validates one approval decision against the exact arguments and host-owned context.</summary>
+    /// <param name="arguments">The exact arguments shown to the approval provider.</param>
+    /// <param name="context">Host-owned invocation identity.</param>
+    /// <param name="decision">The human decision returned by the approval provider.</param>
+    /// <param name="ct">Cancelled when the task is cancelled or the binding timeout elapses.</param>
+    /// <returns>Success when the decision was durably bound or recorded; failure prevents approved execution.</returns>
+    Task<ToolCallResult> BindApprovalAsync(
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        ApprovalDecision decision,
         CancellationToken ct = default);
 }
 

@@ -108,6 +108,27 @@ internal sealed class FakeReadTool(string name = "test.read", string output = "o
         Task.FromResult(ToolCallResult.Success(output));
 }
 
+internal sealed class RecordingReadTool(string name, IReadOnlyList<ToolParameter> parameters) : ITool
+{
+    public int ExecutionCount { get; private set; }
+
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = name,
+        Description = "Records whether validation allowed execution.",
+        Risk = RiskLevel.Read,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = parameters,
+    };
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ExecutionCount++;
+        return Task.FromResult(ToolCallResult.Success("done"));
+    }
+}
+
 /// <summary>A Read tool that records the host-owned execution context supplied by the runtime.</summary>
 internal sealed class RecordingContextualTool(string name = "test.contextual") : IContextualTool
 {
@@ -207,6 +228,47 @@ internal sealed class FakeHighRiskTool(string name = "test.highrisk", Verificati
     public Task<VerificationOutcome> EvaluateVerificationAsync(
         ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
         Task.FromResult(_verificationOutcome);
+}
+
+internal sealed class ApprovalBoundHighRiskTool : IVerifiableTool, IApprovalBoundTool
+{
+    public List<ApprovalDecision> ApprovalDecisions { get; } = [];
+
+    public int ExecutionCount { get; private set; }
+
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = "test.approval-bound",
+        Description = "A fake approval-bound high-risk tool.",
+        Risk = RiskLevel.High,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = [],
+        RequiresExplicitApproval = true,
+        Verification = new VerificationSpec("test.read", [], "Checks the test effect."),
+    };
+
+    public Task<ToolCallResult> BindApprovalAsync(
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        ApprovalDecision decision,
+        CancellationToken ct = default)
+    {
+        ApprovalDecisions.Add(decision);
+        return Task.FromResult(ToolCallResult.Success("approval recorded"));
+    }
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ExecutionCount++;
+        return Task.FromResult(ToolCallResult.Success("done"));
+    }
+
+    public Task<VerificationOutcome> EvaluateVerificationAsync(
+        ToolArguments originalArguments,
+        ToolCallResult verificationToolResult,
+        CancellationToken ct = default) =>
+        Task.FromResult(new VerificationOutcome(VerificationStatus.Confirmed, null));
 }
 
 /// <summary>

@@ -26,7 +26,7 @@ public sealed class JsonRoundTripTests
     [Fact]
     public void ToolParameter_RoundTrips()
     {
-        var value = new ToolParameter("path", ToolParameterType.Path, "A file path.", Required: false, Sensitive: true, AllowedValues: ["a", "b"]);
+        var value = new ToolParameter("paths", ToolParameterType.PathList, "Filesystem paths.", Required: false, Sensitive: true, AllowedValues: ["a", "b"]);
 
         var result = RoundTrip(value);
 
@@ -64,6 +64,7 @@ public sealed class JsonRoundTripTests
             Requires = ["service-control"],
             Parameters = [new ToolParameter("name", ToolParameterType.String, "Service name.")],
             Verification = new VerificationSpec("service.status", ["name"], "Confirms the service is running."),
+            RequiresExplicitApproval = true,
         };
 
         var result = RoundTrip(value);
@@ -78,6 +79,7 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Verification!.VerifyToolName, result.Verification!.VerifyToolName);
         Assert.Equal(value.Verification.ArgumentsFrom, result.Verification.ArgumentsFrom);
         Assert.Equal(value.Verification.Description, result.Verification.Description);
+        Assert.True(result.RequiresExplicitApproval);
     }
 
     [Fact]

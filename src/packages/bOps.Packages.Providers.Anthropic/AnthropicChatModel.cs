@@ -260,6 +260,16 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
     private static JsonObject BuildParameterSchema(ToolParameter parameter)
     {
+        if (parameter.Type == ToolParameterType.PathList)
+        {
+            return new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = parameter.Description,
+                ["items"] = new JsonObject { ["type"] = "string" },
+            };
+        }
+
         var schema = new JsonObject { ["type"] = MapJsonSchemaType(parameter.Type), ["description"] = parameter.Description };
 
         if (parameter.AllowedValues is { Count: > 0 })
@@ -276,6 +286,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         ToolParameterType.Number => "number",
         ToolParameterType.Boolean => "boolean",
         ToolParameterType.String or ToolParameterType.Path or ToolParameterType.Duration or ToolParameterType.Enum => "string",
+        ToolParameterType.PathList => "array",
         _ => "string",
     };
 

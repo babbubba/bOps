@@ -215,6 +215,16 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
     private static JsonObject BuildParameterSchema(ToolParameter parameter)
     {
+        if (parameter.Type == ToolParameterType.PathList)
+        {
+            return new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = parameter.Description,
+                ["items"] = new JsonObject { ["type"] = "string" },
+            };
+        }
+
         var schema = new JsonObject
         {
             ["type"] = MapJsonSchemaType(parameter.Type),
@@ -235,6 +245,7 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         ToolParameterType.Number => "number",
         ToolParameterType.Boolean => "boolean",
         ToolParameterType.String or ToolParameterType.Path or ToolParameterType.Duration or ToolParameterType.Enum => "string",
+        ToolParameterType.PathList => "array",
         _ => "string",
     };
 

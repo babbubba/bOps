@@ -427,6 +427,94 @@ public sealed class AgentRunnerTests
         Assert.DoesNotContain(audit.Events, e => e is ApprovalAuditEvent);
     }
 
+    [Fact]
+    public async Task RunAsync_RequiresApproval_WhenManifestTightensAutomaticPolicy()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.approval-bound", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var tool = new ApprovalBoundHighRiskTool();
+        var registry = CreateRegistryWith(tool);
+        var audit = new RecordingAuditSink();
+
+        var result = await CreateRunner(
+            model,
+            registry,
+            audit,
+            policyEngine: new StubPolicyEngine(PolicyMode.Automatic, "configured automatic"),
+            approvalProvider: new StubApprovalProvider(approved: true))
+            .RunAsync("delete the approved set", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Single(tool.ApprovalDecisions);
+        Assert.True(tool.ApprovalDecisions[0].Approved);
+        Assert.Equal(1, tool.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is PolicyDecisionAuditEvent
+        {
+            Tool: "test.approval-bound",
+            Mode: PolicyMode.Approval,
+        });
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Tool: "test.approval-bound",
+            Authorization: AuthorizationKind.UserApproved,
+        });
+    }
+
+    [Fact]
+    public async Task RunAsync_RecordsRejectedDecisionOnApprovalBoundTool_WithoutExecuting()
+    {
+        var toolCall = new ModelToolCall("call-1", "test.approval-bound", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Stopped.", [], true, null));
+        var tool = new ApprovalBoundHighRiskTool();
+        var registry = CreateRegistryWith(tool);
+
+        var result = await CreateRunner(
+            model,
+            registry,
+            new RecordingAuditSink(),
+            policyEngine: new StubPolicyEngine(PolicyMode.Automatic),
+            approvalProvider: new StubApprovalProvider(approved: false))
+            .RunAsync("delete the approved set", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Single(tool.ApprovalDecisions);
+        Assert.False(tool.ApprovalDecisions[0].Approved);
+        Assert.Equal(0, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsMalformedPathListAndUnknownArguments_BeforeExecution()
+    {
+        var arguments = ToolArguments.FromJson(new JsonObject
+        {
+            ["paths"] = "not-an-array",
+            ["unexpected"] = true,
+        });
+        var toolCall = new ModelToolCall("call-1", "test.paths", arguments);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var tool = new RecordingReadTool(
+            "test.paths",
+            [new ToolParameter("paths", ToolParameterType.PathList, "Paths.")]);
+        var registry = CreateRegistryWith(tool);
+
+        var result = await CreateRunner(model, registry, new RecordingAuditSink())
+            .RunAsync("inspect paths", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(0, tool.ExecutionCount);
+        Assert.Contains("Unknown argument 'unexpected'", result.Steps[0].Result!.ErrorMessage, StringComparison.Ordinal);
+    }
+
     // ---- V0.4: post-action verification (rule S4, principle 3) ----
 
     [Fact]

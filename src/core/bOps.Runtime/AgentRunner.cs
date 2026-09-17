@@ -1022,6 +1022,14 @@ public sealed class AgentRunner(
         }
 
         var manifest = tool.Manifest;
+        var executionContext = new ToolExecutionContext(NodeId.Local, taskId, actor);
+
+        if (ValidateArguments(manifest, call.Arguments) is { } validationError)
+        {
+            var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
+                AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
+            return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic, null);
+        }
 
         // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
         // package loaded today is first-party, shipped in this repository, and there is no real
@@ -1034,7 +1042,12 @@ public sealed class AgentRunner(
             Environment = skillScope?.Environment,
             BlastRadius = skillScope?.BlastRadius,
         };
-        var policyDecision = policyEngine.Evaluate(policyContext);
+        var configuredPolicyDecision = policyEngine.Evaluate(policyContext);
+        var policyDecision = manifest.RequiresExplicitApproval && configuredPolicyDecision.Mode == PolicyMode.Automatic
+            ? new PolicyDecision(
+                PolicyMode.Approval,
+                $"The tool manifest requires explicit approval. Policy would otherwise allow automatic execution: {configuredPolicyDecision.Reason}")
+            : configuredPolicyDecision;
 
         if (policyDecision.Mode != PolicyMode.Automatic)
         {
@@ -1095,6 +1108,13 @@ public sealed class AgentRunner(
                 CapabilityName = skillScope?.CapabilityName,
             }, ct);
 
+            ToolCallResult? approvalBindingResult = null;
+            if (tool is IApprovalBoundTool approvalBoundTool)
+            {
+                approvalBindingResult = await BindApprovalWithTimeoutAsync(
+                    approvalBoundTool, call.Arguments, executionContext, approval, ct);
+            }
+
             if (!approval.Approved)
             {
                 var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
@@ -1105,15 +1125,13 @@ public sealed class AgentRunner(
             }
 
             authorization = AuthorizationKind.UserApproved;
-        }
 
-        if (ValidateArguments(manifest, call.Arguments) is { } validationError)
-        {
-            // Never executed, so there is nothing for verification to check (rule S4 only
-            // requires verifying an action that was actually attempted).
-            var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
-                authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
-            return (recorded.Step, recorded.Observation, authorization, null);
+            if (approvalBindingResult is { Succeeded: false })
+            {
+                var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, approvalBindingResult,
+                    authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
+                return (recorded.Step, recorded.Observation, authorization, null);
+            }
         }
 
         using var toolActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.tool");
@@ -1123,7 +1141,6 @@ public sealed class AgentRunner(
         toolActivity?.SetTag("bops.policy_mode", policyDecision.Mode.ToString());
 
         var stopwatch = Stopwatch.StartNew();
-        var executionContext = new ToolExecutionContext(NodeId.Local, taskId, actor);
         var result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
         stopwatch.Stop();
 
@@ -1269,6 +1286,34 @@ public sealed class AgentRunner(
         }
     }
 
+    private async Task<ToolCallResult> BindApprovalWithTimeoutAsync(
+        IApprovalBoundTool tool,
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        ApprovalDecision decision,
+        CancellationToken ct)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(options.DefaultToolTimeout);
+
+        try
+        {
+            return await tool.BindApprovalAsync(arguments, context, decision, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new ToolCallResult(
+                ToolOutcome.Timeout,
+                null,
+                $"Approval binding for '{tool.Manifest.Name}' did not complete within {options.DefaultToolTimeout}.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Tool {Tool}: approval binding threw", tool.Manifest.Name);
+            return ToolCallResult.Failure($"Approval binding for '{tool.Manifest.Name}' failed unexpectedly: {ex.Message}");
+        }
+    }
+
     private async Task<(PlanStep Step, string Observation)> RejectAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, PackageId package, RiskLevel risk,
         AuthorizationKind authorization,
@@ -1360,14 +1405,57 @@ public sealed class AgentRunner(
         return (step, WrapToolOutput(observationText));
     }
 
-    /// <summary>Presence-only validation for V0.1. Type coercion happens inside <see cref="ToolArguments"/> when a tool reads its own arguments.</summary>
+    /// <summary>Validates exact names and JSON-native types before policy, approval or execution (rule S2).</summary>
     private static string? ValidateArguments(ToolManifest manifest, ToolArguments arguments)
     {
+        var supplied = arguments.ToJson();
+        var declared = manifest.Parameters.ToDictionary(parameter => parameter.Name, StringComparer.Ordinal);
+        foreach (var (name, _) in supplied)
+        {
+            if (!declared.ContainsKey(name))
+            {
+                return $"Unknown argument '{name}'.";
+            }
+        }
+
         foreach (var parameter in manifest.Parameters.Where(p => p.Required))
         {
-            if (!arguments.ContainsKey(parameter.Name))
+            if (!supplied.TryGetPropertyValue(parameter.Name, out var requiredValue) || requiredValue is null)
             {
                 return $"Missing required argument '{parameter.Name}'.";
+            }
+        }
+
+        foreach (var parameter in manifest.Parameters)
+        {
+            if (!supplied.TryGetPropertyValue(parameter.Name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            var valid = parameter.Type switch
+            {
+                ToolParameterType.String or ToolParameterType.Path or ToolParameterType.Duration or ToolParameterType.Enum =>
+                    value.GetValueKind() == JsonValueKind.String,
+                ToolParameterType.Integer => value is JsonValue integer && integer.TryGetValue<int>(out _),
+                ToolParameterType.Number => value is JsonValue number && number.TryGetValue<double>(out _),
+                ToolParameterType.Boolean => value.GetValueKind() is JsonValueKind.True or JsonValueKind.False,
+                ToolParameterType.PathList => value is JsonArray paths
+                    && paths.All(path => path is not null && path.GetValueKind() == JsonValueKind.String),
+                _ => false,
+            };
+
+            if (!valid)
+            {
+                return $"Argument '{parameter.Name}' is not a valid {parameter.Type}.";
+            }
+
+            if (parameter.AllowedValues is { Count: > 0 }
+                && value is JsonValue allowedValue
+                && allowedValue.TryGetValue<string>(out var text)
+                && !parameter.AllowedValues.Contains(text, StringComparer.Ordinal))
+            {
+                return $"Argument '{parameter.Name}' is not one of the allowed values.";
             }
         }
 
