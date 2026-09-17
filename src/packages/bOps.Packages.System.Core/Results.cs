@@ -4,7 +4,11 @@
 namespace bOps.Packages.Sys.Core;
 
 /// <summary>Basic identification of the machine: OS, hostname, and how long it has been running.</summary>
-public sealed record SystemInfoResult(string OsDescription, string HostName, TimeSpan Uptime);
+public sealed record SystemInfoResult(
+    string OsDescription,
+    string HostName,
+    TimeSpan Uptime,
+    string? HardwareModel = null);
 
 /// <summary>Current CPU utilization, sampled over a short interval.</summary>
 public sealed record CpuUsageResult(double Percent);

@@ -12,6 +12,8 @@ public sealed class LinuxSystemToolProvider : IToolProvider
     public IEnumerable<ITool> GetTools() =>
     [
         new LinuxSystemInfoTool(),
+        new LinuxApplicationInventoryTool(),
+        new LinuxDeviceInventoryTool(),
         new LinuxCpuUsageTool(),
         new LinuxMemoryUsageTool(),
         new LinuxDiskUsageTool(),

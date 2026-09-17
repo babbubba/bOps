@@ -19,6 +19,14 @@ public sealed class WindowsSystemToolsTests
         SystemToolConformance.AssertSystemInfoConformsAsync(new WindowsSystemInfoTool(), "windows");
 
     [WindowsOnlyFact]
+    public Task Applications_Conform() =>
+        SystemToolConformance.AssertApplicationsConformAsync(new WindowsApplicationInventoryTool(), "windows");
+
+    [WindowsOnlyFact]
+    public Task Devices_Conform() =>
+        SystemToolConformance.AssertDevicesConformAsync(new WindowsDeviceInventoryTool(), "windows");
+
+    [WindowsOnlyFact]
     public Task Cpu_Conforms() =>
         SystemToolConformance.AssertCpuUsageConformsAsync(new WindowsCpuUsageTool(), "windows");
 
@@ -55,13 +63,13 @@ public sealed class WindowsSystemToolsTests
         SystemToolConformance.AssertProcessInspectReportsMissingAsync(new WindowsProcessInspectTool());
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheTenSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheTwelveSystemAndProcessTools()
     {
         var names = new WindowsSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
-                "system.info", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.apps", "system.devices", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.stop", "process.kill",
             ],
             names);

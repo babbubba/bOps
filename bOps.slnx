@@ -53,6 +53,7 @@
     <Project Path="tests/bOps.Packages.Service.Linux.Tests/bOps.Packages.Service.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Service.Windows.Tests/bOps.Packages.Service.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Conformance/bOps.Packages.System.Conformance.csproj" />
+    <Project Path="tests/bOps.Packages.System.Core.Tests/bOps.Packages.System.Core.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />
     <Project Path="tests/bOps.PluginHost.Tests/bOps.PluginHost.Tests.csproj" />

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using bOps.Abstractions;
 using Xunit;
@@ -18,6 +20,9 @@ namespace bOps.Packages.Sys.Conformance;
 /// </summary>
 public static partial class SystemToolConformance
 {
+    private static readonly string[] InventoryStatuses = ["complete", "partial", "unavailable"];
+    private static readonly string[] InventorySourceStatuses = ["available", "partial", "unavailable", "unsupported", "notApplicable"];
+
     /// <summary>Checks that a manifest is well-formed for the given platform and tool name, and that a <c>system.*</c> tool is <see cref="RiskLevel.Read"/> with no verification to declare.</summary>
     public static void AssertManifestIsWellFormed(ToolManifest manifest, string expectedPlatform, string expectedName)
     {
@@ -44,6 +49,63 @@ public static partial class SystemToolConformance
         Assert.Contains("OS:", result.Output, StringComparison.Ordinal);
         Assert.Contains("Host:", result.Output, StringComparison.Ordinal);
         Assert.Contains("Uptime:", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Hardware model:", result.Output, StringComparison.Ordinal);
+    }
+
+    /// <summary>Runs <paramref name="tool"/> and asserts the bounded cross-platform <c>system.apps</c> JSON shape.</summary>
+    public static async Task AssertApplicationsConformAsync(ITool tool, string platform)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        AssertManifestIsWellFormed(tool.Manifest, platform, "system.apps");
+        AssertInventoryParameters(tool.Manifest);
+
+        var result = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject
+        {
+            ["limit"] = 5,
+            ["maxOutputBytes"] = 4_096,
+        }));
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.True(Encoding.UTF8.GetByteCount(result.Output!) <= 4_096);
+        var root = AssertInventoryEnvelope(result.Output!, maximumItems: 5);
+        foreach (var item in root["items"]!.AsArray())
+        {
+            var app = item!.AsObject();
+            Assert.False(string.IsNullOrWhiteSpace(app["identity"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrWhiteSpace(app["name"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrWhiteSpace(app["source"]!.GetValue<string>()));
+            Assert.True(app.ContainsKey("version"));
+            Assert.True(app.ContainsKey("publisher"));
+        }
+    }
+
+    /// <summary>Runs <paramref name="tool"/> and asserts the bounded cross-platform <c>system.devices</c> JSON shape.</summary>
+    public static async Task AssertDevicesConformAsync(ITool tool, string platform)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        AssertManifestIsWellFormed(tool.Manifest, platform, "system.devices");
+        AssertInventoryParameters(tool.Manifest);
+
+        var result = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject
+        {
+            ["limit"] = 5,
+            ["maxOutputBytes"] = 4_096,
+        }));
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.True(Encoding.UTF8.GetByteCount(result.Output!) <= 4_096);
+        var root = AssertInventoryEnvelope(result.Output!, maximumItems: 5);
+        foreach (var item in root["items"]!.AsArray())
+        {
+            var device = item!.AsObject();
+            Assert.False(string.IsNullOrWhiteSpace(device["identity"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrWhiteSpace(device["category"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrWhiteSpace(device["name"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrWhiteSpace(device["source"]!.GetValue<string>()));
+            Assert.True(device.ContainsKey("vendor"));
+            Assert.True(device.ContainsKey("model"));
+            Assert.True(device.ContainsKey("status"));
+        }
     }
 
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.cpu</c> output shape: a single percentage within 0–100.</summary>
@@ -234,6 +296,35 @@ public static partial class SystemToolConformance
         Assert.True(result.Succeeded, result.ErrorMessage);
         var json = System.Text.Json.Nodes.JsonNode.Parse(result.Output!)!;
         Assert.False(json["exists"]!.GetValue<bool>());
+    }
+
+    private static void AssertInventoryParameters(ToolManifest manifest)
+    {
+        Assert.Contains(manifest.Parameters, parameter => parameter is { Name: "limit", Required: false });
+        Assert.Contains(manifest.Parameters, parameter => parameter is { Name: "maxOutputBytes", Required: false });
+    }
+
+    private static JsonObject AssertInventoryEnvelope(string output, int maximumItems)
+    {
+        var root = JsonNode.Parse(output)!.AsObject();
+        Assert.Contains(root["status"]!.GetValue<string>(), InventoryStatuses);
+        Assert.True(root["observedItems"]!.GetValue<int>() >= 0);
+        Assert.InRange(root["returnedItems"]!.GetValue<int>(), 0, maximumItems);
+        Assert.NotNull(root["truncated"]);
+
+        var items = root["items"]!.AsArray();
+        Assert.Equal(items.Count, root["returnedItems"]!.GetValue<int>());
+        var sources = root["sources"]!.AsArray();
+        Assert.NotEmpty(sources);
+        foreach (var source in sources)
+        {
+            var sourceObject = source!.AsObject();
+            Assert.False(string.IsNullOrWhiteSpace(sourceObject["name"]!.GetValue<string>()));
+            Assert.Contains(sourceObject["status"]!.GetValue<string>(), InventorySourceStatuses);
+            Assert.True(sourceObject.ContainsKey("detail"));
+        }
+
+        return root;
     }
 
     [GeneratedRegex(@"^CPU usage: (?<percent>\d+(\.\d+)?)%$")]

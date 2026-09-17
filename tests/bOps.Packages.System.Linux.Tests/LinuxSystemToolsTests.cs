@@ -23,6 +23,14 @@ public sealed class LinuxSystemToolsTests
         SystemToolConformance.AssertSystemInfoConformsAsync(new LinuxSystemInfoTool(), "linux");
 
     [LinuxOnlyFact]
+    public Task Applications_Conform() =>
+        SystemToolConformance.AssertApplicationsConformAsync(new LinuxApplicationInventoryTool(), "linux");
+
+    [LinuxOnlyFact]
+    public Task Devices_Conform() =>
+        SystemToolConformance.AssertDevicesConformAsync(new LinuxDeviceInventoryTool(), "linux");
+
+    [LinuxOnlyFact]
     public Task Cpu_Conforms() =>
         SystemToolConformance.AssertCpuUsageConformsAsync(new LinuxCpuUsageTool(), "linux");
 
@@ -59,13 +67,13 @@ public sealed class LinuxSystemToolsTests
         SystemToolConformance.AssertProcessInspectReportsMissingAsync(new LinuxProcessInspectTool());
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheTenSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheTwelveSystemAndProcessTools()
     {
         var names = new LinuxSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
-                "system.info", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.apps", "system.devices", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.stop", "process.kill",
             ],
             names);

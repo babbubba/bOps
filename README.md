@@ -100,16 +100,18 @@ below it for what's coming and, deliberately, what never will.
 
 | Package | Tools |
 |---|---|
-| **System** | `system.info` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
+| **System** | `system.info` `system.apps` `system.devices` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
 | **Process** | `process.list` `process.inspect` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 
-V0.11 is fully registered. Planned V1.1 additions (`system.apps`, `system.devices`, `fs.size`,
-`fs.delete_tree`, `web.search` and `web.fetch`) are not listed above until they are implemented and
-tested.
+V0.11 is fully registered. `system.apps` and `system.devices` are implemented for the V1.1 preview;
+their bounded output, supported native sources and explicit completeness semantics are documented
+in [`docs/system-inventory.md`](docs/system-inventory.md). Remaining planned V1.1 additions
+(`fs.size`, `fs.delete_tree`, `web.search` and `web.fetch`) are not listed above until implemented
+and tested.
 
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets

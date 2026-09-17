@@ -15,6 +15,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - Exact contextual Skill policy, correlated Skill-run audit events and an end-to-end signed sample
   Skill covering evidence, findings, hash-bound approval, action and independent verification.
 - Persistent V1.1 plan/task tracking and a stable `agentic/00-bootstrap.md` entry point.
+- Bounded cross-platform `system.apps` and `system.devices` inventories with deterministic JSON,
+  explicit source completeness and native Windows registry/Linux dpkg+sysfs collectors.
+- Additive hardware-model reporting in `system.info`, with an explicit `unknown` fallback.
 
 ### Changed
 

@@ -17,12 +17,20 @@ public static class SystemToolManifests
     public static ToolManifest Info(string platform) => new()
     {
         Name = "system.info",
-        Description = "Reports basic information about this machine: OS description, hostname, and uptime.",
+        Description = "Reports basic information about this machine: OS description, hostname, uptime, and hardware model when available.",
         Risk = RiskLevel.Read,
         Platforms = [platform],
         Requires = [],
         Parameters = [],
     };
+
+    /// <summary>The manifest for <c>system.apps</c> on the given platform.</summary>
+    public static ToolManifest Applications(string platform) => Inventory(
+        platform, "system.apps", "Reports a bounded installed-application inventory with explicit source completeness.");
+
+    /// <summary>The manifest for <c>system.devices</c> on the given platform.</summary>
+    public static ToolManifest Devices(string platform) => Inventory(
+        platform, "system.devices", "Reports a bounded hardware/device inventory with explicit source completeness.");
 
     /// <summary>The manifest for <c>system.cpu</c> on the given platform.</summary>
     public static ToolManifest Cpu(string platform) => new()
@@ -126,5 +134,21 @@ public static class SystemToolManifests
         Requires = [],
         Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to terminate.")],
         Verification = new VerificationSpec("process.inspect", ["pid"], "Confirms the process no longer exists afterward."),
+    };
+
+    private static ToolManifest Inventory(string platform, string name, string description) => new()
+    {
+        Name = name,
+        Description = description,
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters =
+        [
+            new ToolParameter("limit", ToolParameterType.Integer,
+                $"Maximum items to return (1-{InventoryToolLimits.MaximumItems}).", Required: false),
+            new ToolParameter("maxOutputBytes", ToolParameterType.Integer,
+                $"Maximum UTF-8 output bytes ({InventoryToolLimits.MinimumOutputBytes}-{InventoryToolLimits.MaximumOutputBytes}).", Required: false),
+        ],
     };
 }

@@ -22,6 +22,58 @@ public abstract class SystemInfoToolBase(string platform) : ITool
         ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
 }
 
+/// <summary>The shared bounded tool shell for <c>system.apps</c>.</summary>
+public abstract class ApplicationInventoryToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Applications(platform);
+
+    /// <summary>Collects applications from this platform without exceeding <paramref name="collectionLimit"/> observations.</summary>
+    protected abstract Task<InventorySnapshot<ApplicationInventoryItem>> CollectAsync(
+        int collectionLimit,
+        CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
+        return ToolCallResult.Success(SystemInventoryFormatting.FormatApplications(snapshot, limit, maxOutputBytes));
+    }
+}
+
+/// <summary>The shared bounded tool shell for <c>system.devices</c>.</summary>
+public abstract class DeviceInventoryToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Devices(platform);
+
+    /// <summary>Collects devices from this platform without exceeding <paramref name="collectionLimit"/> observations.</summary>
+    protected abstract Task<InventorySnapshot<DeviceInventoryItem>> CollectAsync(
+        int collectionLimit,
+        CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
+        return ToolCallResult.Success(SystemInventoryFormatting.FormatDevices(snapshot, limit, maxOutputBytes));
+    }
+}
+
 /// <summary>The tool shell for <c>system.cpu</c>.</summary>
 public abstract class CpuUsageToolBase(string platform) : ITool
 {

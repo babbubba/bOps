@@ -19,7 +19,7 @@ public static class SystemToolFormatting
     {
         ArgumentNullException.ThrowIfNull(info);
         return string.Create(CultureInfo.InvariantCulture,
-            $"OS: {info.OsDescription}\nHost: {info.HostName}\nUptime: {info.Uptime.Days}d {info.Uptime.Hours}h {info.Uptime.Minutes}m");
+            $"OS: {info.OsDescription}\nHost: {info.HostName}\nUptime: {info.Uptime.Days}d {info.Uptime.Hours}h {info.Uptime.Minutes}m\nHardware model: {info.HardwareModel ?? "unknown"}");
     }
 
     /// <summary>Formats a <see cref="CpuUsageResult"/>.</summary>
