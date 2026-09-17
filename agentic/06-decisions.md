@@ -6,7 +6,7 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, and D-016–D-020 on 2026-09-16.
+2026-09-15, D-016–D-020 on 2026-09-16, and D-021 on 2026-09-17.
 
 ---
 
@@ -402,3 +402,25 @@ concrete tools. *Prepare and execute in one call* — no opportunity to approve 
 **Consequences.** Activated Skill providers register through the existing signature/trust
 boundary, contextual Skill policy matches exact fields and fails closed, and interruption requires
 a new preparation and approval. Durable Skill reconciliation needs a future ADR. See ADR-0025.
+
+---
+
+### D-021 — Exact filesystem inventories are scoped SQLite state reached through contextual tools
+
+**Decision.** `fs.size` streams bounded summaries and optionally writes exact entries
+incrementally to a package-owned SQLite store. A new additive `IContextualTool` contract receives
+host-owned node, actor and task identity without changing `ITool`. Exact manifests are opaque,
+scope-bound, expiring and become ready only after complete deterministic enumeration and hashing.
+
+**Reason.** Model-supplied scope is forgeable, changing `ITool` would break the 1.0 SDK, and a
+complete target set cannot safely live in model output, audit payloads or process memory. SQLite
+also supplies the ordering, paging and crash-visible building state required by D-018.
+
+**Rejected.** *Scope fields in tool arguments* — caller-controlled authorization. *Ambient
+execution context* — hidden cross-call state. *One JSONL file per manifest* — poor scoped paging
+and cleanup. *Content-hash every file* — unbounded I/O without preventing later drift.
+
+**Consequences.** The runtime dispatches optional contextual tools with the same identity it
+audits; legacy tools remain unchanged. Incomplete inventories never return approval-ready
+references. V1.1-D must bind destructive approval to manifest instance metadata as well as the
+deterministic content hash and must revalidate every target. ADR-0026 is normative.
