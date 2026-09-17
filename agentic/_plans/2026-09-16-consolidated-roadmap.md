@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.1**
-Next implementation batch: **V1.1-E — Web package with SearXNG search and safe fetch**
+Next implementation batch: **V1.1-F — read-only plugin catalog API and UI**
 
 ## 1. Authority and precedence
 
@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A through V1.1-D are complete and green on Windows/Linux CI; V1.1-E is active and batches F–H remain. |
+| V1.1 | In progress | V1.1-A through V1.1-E are complete and green on Windows/Linux CI; V1.1-F is active and batches G–H remain. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -237,6 +237,12 @@ configuration, not a hard-coded public instance.
 Reference: <https://docs.searxng.org/dev/search_api>.
 
 **Task.** `agentic/_tasks/2026-09-16-v1.1-e-web-capabilities.md` — effort **molto alto**.
+
+**Current state.** Complete. `web.search` and `web.fetch` are implemented with connect-time SSRF/
+DNS-rebinding validation, a bounded revalidated redirect loop, decompression-bomb-safe reading and
+an allowlisted content-type/charset boundary (ADR-0028); GitHub Actions run `35245357524` passed on
+Windows and Linux after the package's local test server was moved from `HttpListener` to Kestrel to
+fix unreliable request dispatch on Linux.
 
 ### V1.1-F — read-only plugin catalog in the local UI
 
@@ -501,7 +507,7 @@ structural drift.
 | SPEC-004 plugin UI | V1.1-F read-only; V1.3 lifecycle | Planned in two safety-bounded phases. |
 | SPEC-005 remote/multi-node | V1.4 | Already covered; not duplicated. |
 | SPEC-006 apps/devices/hardware model | V1.1-B | Implemented and cross-platform CI validated. |
-| SPEC-007 search/fetch | V1.1-E | Planned; SearXNG selected for search. |
+| SPEC-007 search/fetch | V1.1-E | Implemented and cross-platform CI validated. |
 | SPEC-008 filesystem sizing | V1.1-C | Implemented and cross-platform CI validated. |
 | SPEC-009 recursive/batch delete | V1.1-D | Implemented and cross-platform CI validated. |
 | Original V0.1–V1.0 plan | Baseline/status sections | Implemented history retained without obsolete code snippets. |
