@@ -106,15 +106,18 @@ below it for what's coming and, deliberately, what never will.
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
+| **Web** | `web.search` `web.fetch` |
 
-V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size` and governed permanent
-recursive deletion are implemented for the V1.1 preview; their bounded output, supported native
-sources and explicit completeness semantics are documented in
+V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
+deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
+native sources and explicit completeness semantics are documented in
 [`docs/system-inventory.md`](docs/system-inventory.md) and
 [`docs/filesystem-inventory.md`](docs/filesystem-inventory.md). Recursive/batch deletion requires a
 complete hash-bound manifest and explicit approval; see
-[`docs/governed-recursive-deletion.md`](docs/governed-recursive-deletion.md). Remaining planned V1.1
-additions (`web.search` and `web.fetch`) are not listed above until implemented and tested.
+[`docs/governed-recursive-deletion.md`](docs/governed-recursive-deletion.md).
+`web.search` is invisible until an operator configures a SearXNG endpoint, and `web.fetch` denies
+loopback/private/link-local/metadata network destinations by default; see
+[`docs/security/web-network-policy.md`](docs/security/web-network-policy.md).
 
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
@@ -164,6 +167,7 @@ bops "check every Docker container and tell me if something is wrong"
 bops "list the files under this directory and tell me what's taking up the most space"
 bops "delete this temp file"        # fs.delete is High-risk — requires approval before it runs
 bops "permanently delete these trees" # exact manifest; fs.delete_tree always requires approval
+bops "search the web for the current LTS .NET version and fetch its release notes"
 ```
 
 ```bash
@@ -194,9 +198,9 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1-A through V1.1-D are complete;
-V1.1-E Web package (SearXNG search and safe fetch) is the active next batch, while the remaining
-operational and local-management batches stay in their fixed order.
+still needs its first operator-authorized tagged run. V1.1-A through V1.1-E are complete;
+V1.1-F read-only plugin catalog API/UI is the active next batch, while the remaining operational
+and local-management batches stay in their fixed order.
 
 | | |
 |---|---|
@@ -285,6 +289,7 @@ artifacts, SBOMs and checksums. This is not yet a production endorsement.
 | [`docs/architecture/`](docs/architecture/) | Architecture decision records |
 | [`docs/security/`](docs/security/) | Risk model, default policies, threat model |
 | [`docs/governed-recursive-deletion.md`](docs/governed-recursive-deletion.md) | Exact manifest, mandatory approval, bounds and partial-failure recovery |
+| [`docs/security/web-network-policy.md`](docs/security/web-network-policy.md) | SearXNG setup, `web.fetch` SSRF/redirect/decompression policy and configuration |
 | [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md) | Write your first bOps plugin |
 
 ## License
