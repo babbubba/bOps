@@ -1,9 +1,8 @@
-# Handoff — V1.1-A implemented locally; cross-platform CI pending
+# Handoff — V1.1-A complete; V1.1-B active
 
-V1.1-A now implements the executable public Skill/Capability boundary described by ADR-0025.
-The work is committed locally in the public `bOps` subrepository and has not been pushed. The
-required Windows/Linux CI matrix therefore remains the only open V1.1-A validation item. Do not
-start V1.1-B until those pushed checks are green.
+V1.1-A implements the executable public Skill/Capability boundary described by ADR-0025. The work
+was pushed to public `bOps` `main`, and GitHub Actions run `35178863698` passed on Windows and Linux.
+V1.1-A is complete; V1.1-B system applications, devices and hardware-model inventory is active.
 
 The formal V1.0 release gate is independent and remains operator-gated: no release-candidate tag
 or authoritative release workflow run was created by this work.
@@ -65,12 +64,11 @@ its existing UI checks.
 
 ## Next action and boundaries
 
-1. With explicit operator authorization, push the local public-subrepo commits and wait for the
-   Windows/Linux CI matrix.
-2. If green, check the final V1.1-A CI item and mark the task complete.
-3. Start `agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md` with effort **alto**.
+Implement `agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md` with effort **alto**. Preserve the
+existing System Core/Windows/Linux package pattern, define bounded common output shapes first and
+prove them through conformance plus real-platform tests.
 
 Do not create a tag, publish packages, pin the workspace submodule, or begin private commercial
-work as part of that CI closure unless separately authorized. The workspace root will correctly
+work as part of V1.1-B unless separately authorized. The workspace root will correctly
 show `repos/bOps` at a newer local commit until the submodule commit is reviewed/pushed and the
 root pin is intentionally updated.

@@ -188,9 +188,9 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. The V1.1 Skill/Capability SDK is implemented
-locally and awaits cross-platform CI; the remaining operational and local-management batches stay
-in their fixed order.
+still needs its first operator-authorized tagged run. The V1.1 Skill/Capability SDK is complete and
+green on Windows/Linux CI; system inventory is the active next batch and the remaining operational
+and local-management batches stay in their fixed order.
 
 | | |
 |---|---|
@@ -207,7 +207,7 @@ in their fixed order.
 | `V0.10` | Dynamic plugin loader (`bOps.PluginHost`, ADR-0020): manifest, isolated `AssemblyLoadContext`, `bops plugin *` |
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
-| `V1.1-A` *(local implementation complete; CI pending)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
+| `V1.1-A` *(complete)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
 | `V1.1-B–E` | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, and SearXNG-backed Web search/safe fetch |
 | `V1.1-F–G` | Add a read-only plugin catalog UI, then writable Settings backed by an encrypted local vault |
 | `V1.1-H` | Cross-platform integration, documentation and release gate |
@@ -260,12 +260,11 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-V1.1-A is implemented and validated locally; its required Windows/Linux CI matrix remains pending
-until these local commits are pushed. V1.0 implementation and security hardening are complete, and
-the previously pushed `main` baseline is green on both platforms. The formal V1.0 release gate
-also remains open: no release-candidate tag has been created and the release workflow has not yet
-produced and attested the reproducible Windows/Linux artifacts, SBOMs and checksums. This is not
-yet a production endorsement.
+V1.1-A is complete and GitHub Actions run `35178863698` is green on Windows and Linux, including
+.NET and Angular checks. V1.1-B system inventory is now active. V1.0 implementation and security
+hardening are complete, but its formal release gate remains open: no release-candidate tag has been
+created and the release workflow has not yet produced and attested the reproducible Windows/Linux
+artifacts, SBOMs and checksums. This is not yet a production endorsement.
 
 ## Documentation
 
