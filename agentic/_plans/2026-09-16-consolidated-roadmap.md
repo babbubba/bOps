@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A is complete through ADR-0025 and green on Windows/Linux CI; batches B–H remain. |
+| V1.1 | In progress | V1.1-A and V1.1-B are complete and green on Windows/Linux CI; V1.1-C is active and batches D–H remain. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -64,8 +64,8 @@ The target topology contains three repositories:
 
 | Repository | Visibility | Responsibility |
 |---|---|---|
-| `bOps` | Public, Apache-2.0 | Runtime, SDK, generic packages, providers, local API/UI, public protocol contracts and demonstration-only Skills. |
-| `bOps.Commercial` | Private | Official commercial Skills, knowledge/playbooks, entitlement providers, Control Plane and Portal. |
+| `bOps` | Public, Apache-2.0 | Standalone runtime, SDK, generic packages, providers, local API/UI, Managed Agent host, public protocol/entitlement contracts and demonstration-only Skills. |
+| `bOps.Commercial` | Private | Official Community Coordinator (including proprietary free components), commercial Skills and knowledge, entitlement providers, Account Portal, on-prem/SaaS Control Plane and Operations Portal. |
 | `bOps.Workspace` | Private | Pins both repositories as Git submodules and carries cross-repository bootstrap, coordination plans and validation orchestration; it contains no duplicated product source. |
 
 `bOps.Workspace` allows an authorized agent to clone one private repository recursively and
@@ -287,47 +287,107 @@ isolation.
 
 **Task.** `agentic/_tasks/2026-09-16-v1.2-multi-agent.md` — effort **molto alto**.
 
-## 10. V1.3 — entitlement and local plugin lifecycle
+## 10. V1.3 — generic entitlement and local plugin lifecycle
 
-The public repository adds only neutral `ISkillEntitlementService` contracts, serializable
-decisions and fail-closed enforcement. It contains no price, payment provider, commercial product
-name or license-token implementation. The private repository implements signed local licenses,
-commercial package manifests and providers after its legal text is reviewed.
+The public repository adds a product-neutral `IEntitlementService`, serializable requests/
+decisions and fail-closed enforcement. The contract evaluates concrete grants and constraints over
+subject, installation, feature, Skill, capability, resource/limit, node/target, validity and reason
+code. It contains no Community/commercial tier, price, SKU, payment provider, vendor token format or
+private product identity. The existing standalone OSS mode remains usable without registration or
+commercial entitlement. `ISkillEntitlementService` has not shipped and is therefore replaced in
+the future plan rather than introduced and later adapted.
+
+The private companion track, created only after public V1.2 and the private governance/legal gates
+close, owns the signed entitlement format/provider, Coordinator installation identity, one-active-
+Coordinator activation/transfer, the 90-day Community validity plus 30-day grace rules, commercial
+offline import/export and the minimum Account Portal activation surface. It consumes the generic
+public contract and never forks it. Community and commercial behavior is data-driven through grants
+and limits rather than hard-coded product bundles. During grace, heartbeat/visibility and permitted
+remote read diagnostics may continue, but no new remote mutation starts; the entitlement ADR must
+define what happens to work already executing when state changes.
+
+The Account Portal receives only account, activation, entitlement and download data by default —
+not node hostnames/IPs, prompts, tool output, database names, filesystem paths or operational audit.
+Product telemetry is separate, opt-in and disabled by default; marketing consent is never a
+technical prerequisite for a Community account.
 
 The OSS companion track adds authenticated plugin enable/disable/upload APIs and UI. Upload is a
 staged install pipeline with size/type limits, manifest parsing, compatibility checks, detached
 signature verification, publisher trust evaluation, atomic activation and rollback. Mutations are
 administrator-only and completely audited. In-process plugins remain trusted code.
 
-**Public Definition of Done.** Neutral entitlement denial is enforced after approval and before
-execution; read-only plugin discovery remains available when entitlement denies execution; upload
-or lifecycle failure cannot replace the active package or bypass trust.
+**Public Definition of Done.** Neutral entitlement denial is enforced at the execution point after
+approval validation and before execution; stale grants, resource/node limit breaches and provider
+failure fail closed without disabling unrelated standalone OSS capabilities. Read-only plugin
+discovery remains available when entitlement denies execution; upload or lifecycle failure cannot
+replace the active package or bypass trust.
 
 **Public task.** `agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md` — effort
-**molto alto**. Private implementation tasks belong only in `bOps.Commercial` and use effort
-**molto alto**.
+**molto alto**. Private implementation tasks belong only in `bOps.Commercial`, use effort
+**molto alto**, and are not created or started while that repository's bootstrap says product
+implementation is blocked.
 
-## 11. V1.4 — secure node transport and Control Plane foundation
+## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport
 
-The public repository owns only the minimal versioned protocol and outbound node connector. The
-private repository owns Control Plane storage, tenancy, identity, RBAC, remote entitlement and
-knowledge. Mutual authentication, explicit registration, rotation, revocation, freshness,
-replay/downgrade protection and protocol negotiation are mandatory. A controller sends typed
-objectives/plans/capabilities, never commands. The node re-checks signature, entitlement, policy,
-approval hash, target and verification locally and writes audit locally before idempotent shipping.
+V1.4 adds a third runtime profile without degrading the existing standalone OSS product:
+
+- **Standalone OSS** keeps the current local model/runtime/tools/policy path and requires no bSoft
+  account or Community entitlement.
+- **Managed Agent** is the public node-side host. It needs no LLM, commercial Skill knowledge,
+  provider key or direct Internet access; it executes only typed capabilities under node-local
+  entitlement/lease, policy, approval, verification, SQLite state and authoritative local audit.
+- **Official Coordinator** is private, may contain proprietary free and commercial components, and
+  owns reasoning, logical-agent orchestration, Skills/knowledge, fleet, approvals, entitlement,
+  reporting and central persistence. It never executes operational tools directly: every real
+  action, including actions on its own host, crosses the enrolled Agent protocol.
+
+The public repository owns the Managed Agent host/profile, minimal versioned protocol, outbound
+Agent-to-Coordinator connector, node/enrollment identities, delegated Node Lease contract,
+audit-synchronization contract and native Windows Service/systemd packaging. Mutual authentication,
+explicit registration, rotation, revocation, freshness, replay/downgrade protection, bounded
+reconnect/buffering and protocol negotiation are mandatory. No protocol field carries a raw
+command, shell, script or arbitrary SQL. The node independently checks Coordinator identity,
+signature, target, freshness/replay, delegated lease, local entitlement/policy, approval hash,
+capability risk/prerequisites and post-action verification; it writes audit locally before
+idempotent synchronization.
+
+The private repository owns the Community Coordinator, enrollment authority, Account integration,
+Control Plane storage/identity/RBAC, Coordinator-side providers/Skills, PostgreSQL plus pgvector,
+Operations Portal, entitlement refresh and Coordinator-mediated update distribution. Community is
+data-driven but initially grants one active Coordinator installation, at most three enrolled
+`Remote` nodes, and one Coordinator-assigned `Local` Agent excluded from that remote count. An Agent
+cannot self-assert `Local`; node removal/revocation immediately releases a remote slot. Agents
+receive Coordinator-signed leases that cannot amplify the vendor-signed entitlement.
+
+Coordinator packaging and update delivery require their own ADRs. Aspire remains dev/test only.
+The first official distribution evaluates a native bootstrapper managing Coordinator containers or
+native services plus PostgreSQL/pgvector on Linux x64 and Windows 10/11 x64; it must not silently
+install a container runtime. Agent updates are approved by an administrator, downloaded and
+verified by the Coordinator, delivered over the existing secure channel, reverified by the Agent
+and support staged rollback. Air-gapped commercial entitlement and update bundles remain private.
 
 **Definition of Done.** A registered node processes a typed objective under stricter local policy,
-survives offline/retry/reconciliation scenarios and synchronizes tenant-safe audit without opening
-an inbound administrative execution surface.
+survives Internet-denied/offline/retry/reconciliation scenarios and synchronizes tenant-safe audit
+without opening an inbound administrative execution surface. Community enforcement proves 0→3
+remote enrollments, rejects the fourth, permits one authenticated Local Agent in addition, rejects
+pseudo-local/cross-account enrollment and reuses a slot immediately after remote revocation. The
+Coordinator has no dependency path that permits direct operational execution.
 
 **Public task.** `agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md` — effort
-**molto alto**. Private Control Plane tasks belong only in `bOps.Commercial` and use effort
-**molto alto**.
+**molto alto**. Private sub-batches, created only after its gates close, cover entitlement/account
+activation, Coordinator core, enrollment and node limits, PostgreSQL/pgvector plus Operations Portal,
+official packaging, and update distribution/cross-platform integration. They belong only in
+`bOps.Commercial` and use effort **molto alto**. Cross-repository pinning and compatibility evidence
+belong only in `bOps.Workspace`.
 
 ## 12. V1.5–V1.9 — private commercial delivery
 
 These milestones are specified here for cross-repository sequencing, but executable task files are
-created in `bOps.Commercial`, not in the public repository.
+created in `bOps.Commercial`, not in the public repository. Commercial Skill reasoning and
+proprietary playbooks run on the Coordinator; public/generic typed database capabilities execute on
+the Managed Agent near the target. Database credentials remain node-side where possible and never
+enter model prompts. Every mutation remains locally policy-governed, approved and verified; no
+arbitrary SQL protocol or tool is introduced.
 
 ### V1.5 — PostgreSQL DBA read-only
 
@@ -381,11 +441,15 @@ approval, execution, independent verification, post-metrics and audit.
 
 Recommended task effort in `bOps.Commercial`: **molto alto**.
 
-Build the private multi-tenant Portal as a client of the Control Plane, not a second authority.
+Build the private multi-tenant Operations Portal as a client of the Control Plane, not a second
+authority and not a duplicate of the Community Operations Portal foundation delivered in V1.4.
 Cover Agents, Tasks, Targets, Skills, Policies, Approvals, Audit, Reports, Licenses and Settings.
 Authorization remains server-side; approvals display plan/hash/effects/rollback/verification;
-browser persistent storage contains no secrets or license tokens. Test every role, tenant isolation,
-session security, stale approvals, accessibility, large audit streams and reconnect/idempotency.
+browser persistent storage contains no secrets or license tokens. The separately hosted bOps
+Account Portal remains the bounded context for account, activation/transfer, entitlement issuance/
+refresh and official downloads and receives no operational payload by default. Test every role,
+tenant isolation, session security, stale approvals, accessibility, large audit streams and
+reconnect/idempotency.
 
 **DoD.** Administrator, Operator, Approver and Viewer complete only their permitted workflows.
 
@@ -394,7 +458,10 @@ session security, stale approvals, accessibility, large audit streams and reconn
 Both product repositories complete threat-model delta, independent security review, capacity and
 soak tests, retention/data residency, disaster recovery, migrations, canary/rollback, measurable
 SLOs, privacy-aware telemetry, compatibility/upgrade matrices, offline/online entitlement revocation,
-redacted support bundles, release signing and provenance. Legal/commercial review covers licenses,
+redacted support bundles, release signing and provenance. GA gates include Community onboarding,
+three-remote-node plus Local Agent accounting, 90-day/grace clock simulation, fully Internet-
+isolated Agent operation, air-gapped commercial entitlement, Coordinator compromise analysis,
+protocol/update compatibility and on-prem/SaaS contract parity. Legal/commercial review covers licenses,
 CLA, marks and third-party notices. Pricing and billing remain outside the OSS core.
 
 **Public task.** `agentic/_tasks/2026-09-16-v2.0-oss-ga-readiness.md` — effort **molto alto**.
@@ -442,7 +509,13 @@ At minimum, new ADRs are required before:
 - mutating plugin lifecycle and upload (V1.3);
 - multi-agent delegation (V1.2);
 - entitlement enforcement (V1.3);
-- remote node/Control Plane transport and tenancy (V1.4).
+- Community entitlement validity/grace, Coordinator installation identity and transfer (V1.3);
+- Coordinator/Agent strict execution separation and Managed Agent host profile (V1.4);
+- Local Agent enrollment and remote-slot accounting, and delegated Node Lease (V1.4);
+- remote node/Control Plane transport and tenancy (V1.4);
+- Coordinator packaging and PostgreSQL/pgvector persistence (V1.4);
+- Coordinator-mediated Agent update distribution (V1.4);
+- Account Portal/Operations Portal data boundary (V1.4/V1.9).
 
 Accepted ADRs are never edited to retrofit these decisions.
 
