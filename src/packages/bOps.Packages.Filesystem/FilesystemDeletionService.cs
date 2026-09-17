@@ -547,15 +547,23 @@ public sealed class FilesystemDeletionService
     private static bool Matches(
         DeletionManifestEntry expected,
         DeletionManifestEntry actual,
-        bool exactMetadata) =>
-        string.Equals(expected.AbsolutePath, actual.AbsolutePath, PathComparison)
+        bool exactMetadata)
+    {
+        // Linux exposes inode-change time through FileSystemInfo.CreationTimeUtc on filesystems
+        // without a birth-time value. Removing an approved child legitimately changes that value
+        // on its parent directory. The complete pre-delete reconciliation still compares it; the
+        // later parent check cannot do so without treating our own child deletion as hostile drift.
+        var creationMatches = expected.CreationTimeUtcTicks == actual.CreationTimeUtcTicks
+            || (!exactMetadata && expected.Type == "directory" && OperatingSystem.IsLinux());
+        return string.Equals(expected.AbsolutePath, actual.AbsolutePath, PathComparison)
         && string.Equals(expected.Type, actual.Type, StringComparison.Ordinal)
-        && expected.CreationTimeUtcTicks == actual.CreationTimeUtcTicks
+        && creationMatches
         && expected.Attributes == actual.Attributes
         && string.Equals(expected.LinkTarget, actual.LinkTarget, StringComparison.Ordinal)
         && (!exactMetadata
             || (expected.SizeBytes == actual.SizeBytes
                 && expected.LastWriteTimeUtcTicks == actual.LastWriteTimeUtcTicks));
+    }
 
     private static void DeleteEntry(DeletionManifestEntry entry)
     {

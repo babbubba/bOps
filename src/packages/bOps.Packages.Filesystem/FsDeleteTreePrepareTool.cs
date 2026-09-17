@@ -43,7 +43,7 @@ public sealed class FsDeleteTreePrepareTool(
             arguments.TryGet<int>("maxEntries", out var maxEntries) ? maxEntries : options.DefaultMaxEntries,
             arguments.TryGet<int>("maxDurationMilliseconds", out var durationMilliseconds)
                 ? TimeSpan.FromMilliseconds(durationMilliseconds)
-                : options.DefaultDuration);
+                : options.DefaultDeletionDuration);
 
         try
         {

@@ -36,7 +36,7 @@ internal static class FilesystemDeletionEndpoints
                 request.MaxEntries ?? options.DefaultMaxEntries,
                 request.MaxDurationMilliseconds is { } milliseconds
                     ? TimeSpan.FromMilliseconds(milliseconds)
-                    : options.DefaultDuration);
+                    : options.DefaultDeletionDuration);
             try
             {
                 var summary = await deletion.PrepareAsync(manifestRequest, context, http.RequestAborted);

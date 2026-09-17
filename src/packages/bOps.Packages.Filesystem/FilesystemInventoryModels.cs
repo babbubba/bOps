@@ -36,6 +36,8 @@ public sealed class FilesystemInventoryOptions
 
     public int MaximumDeletionRoots { get; set; } = 64;
 
+    public TimeSpan DefaultDeletionDuration { get; set; } = TimeSpan.FromSeconds(30);
+
     public TimeSpan DeletionApprovalWindow { get; set; } = TimeSpan.FromMinutes(10);
 
     public TimeSpan DeletionResultRetention { get; set; } = TimeSpan.FromDays(7);
@@ -89,6 +91,11 @@ public sealed class FilesystemInventoryOptions
         if (DefaultDeletionMaxRoots < 1 || MaximumDeletionRoots < DefaultDeletionMaxRoots)
         {
             throw new ArgumentOutOfRangeException(nameof(DefaultDeletionMaxRoots));
+        }
+
+        if (DefaultDeletionDuration <= TimeSpan.Zero || DefaultDeletionDuration > MaximumDuration)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DefaultDeletionDuration));
         }
 
         if (DeletionApprovalWindow <= TimeSpan.Zero || DeletionApprovalWindow > ManifestRetention)
