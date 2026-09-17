@@ -56,7 +56,8 @@ See `agentic/_tasks/2026-09-16-v1.1-f-plugin-catalog-ui.md` for the full checkli
 - `npm run build` — Angular production build succeeded; the new `plugins` route lazy-chunks
   correctly.
 - `npm test -- --watch=false` — 32/32, including `plugins.store.spec.ts` and `plugins.spec.ts`.
-- GitHub Actions run `<pending — fill in after push>` — Windows and Ubuntu, pending.
+- GitHub Actions run `35266612239` — Windows and Ubuntu restore/build/non-live tests, Angular
+  build/tests, and SBOM generation all passed.
 
 ## Next action and boundaries
 
