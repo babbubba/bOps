@@ -53,7 +53,8 @@ public sealed class SkillExecutionTests
     [InlineData("other.read")]
     [InlineData("sample.highrisk")]
     [InlineData("missing.read")]
-    public async Task PrepareSkillAsync_RestrictedInvokerRejectsCrossPackageNonReadAndMissingTools(string toolName)
+    [InlineData("platform.read")]
+    public async Task PrepareSkillAsync_RestrictedInvokerRejectsCrossPackageNonReadAndUnavailableTools(string toolName)
     {
         var capability = new DelegateCapability("sample.inspect", RiskLevel.Read, async (request, invoker, ct) =>
         {
@@ -64,6 +65,7 @@ public sealed class SkillExecutionTests
         });
         var (runner, audit, _) = CreateRunner(capability, new CapturingPolicyEngine(),
             new FakeReadTool("sample.read"), new FakeHighRiskTool("sample.highrisk"),
+            new UnsupportedPlatformReadTool(),
             new PackagedTool(new FakeReadTool("other.read"), new PackageId("other.package")));
 
         var prepared = await runner.PrepareSkillAsync(Guid.NewGuid(), Actor, "sample.skill", "sample.inspect", Request);
@@ -98,6 +100,24 @@ public sealed class SkillExecutionTests
         Assert.Equal(SkillPreparationStatus.Timeout, timeout.Status);
         Assert.Contains(audit.Events, evt => evt is SkillRunAuditEvent { Outcome: SkillRunOutcome.Failure });
         Assert.Contains(audit.Events, evt => evt is SkillRunAuditEvent { Outcome: SkillRunOutcome.Timeout });
+    }
+
+    [Fact]
+    public async Task PrepareSkillAsync_PropagatesCallerCancellation()
+    {
+        var capability = new DelegateCapability("sample.cancel", RiskLevel.Read,
+            async (request, invoker, ct) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new SkillReport([], [], null);
+            });
+        var (runner, _, _) = CreateRunner(capability, new CapturingPolicyEngine(), new FakeReadTool("sample.read"));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            runner.PrepareSkillAsync(
+                Guid.NewGuid(), Actor, "sample.skill", "sample.cancel", Request, cancellation.Token));
     }
 
     [Fact]
@@ -241,5 +261,22 @@ public sealed class SkillExecutionTests
         public ToolManifest Manifest => Inner.Manifest;
         public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
             Inner.ExecuteAsync(arguments, ct);
+    }
+
+    private sealed class UnsupportedPlatformReadTool : ITool
+    {
+        public ToolManifest Manifest { get; } = new()
+        {
+            Name = "platform.read",
+            Description = "A test tool unavailable on the current platform.",
+            Risk = RiskLevel.Read,
+            Platforms = ["unsupported-test-platform"],
+            Requires = [],
+            Parameters = [],
+        };
+
+        public Task<ToolCallResult> ExecuteAsync(
+            ToolArguments arguments, CancellationToken ct = default) =>
+            throw new InvalidOperationException("A platform-incompatible tool must never execute.");
     }
 }
