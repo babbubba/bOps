@@ -22,6 +22,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   deterministic content hashes and no full entry list in model, telemetry or audit payloads.
 - Additive host-owned `ToolExecutionContext` / `IContextualTool` dispatch for tools that persist
   task- and actor-scoped derived state without breaking existing `ITool` implementations.
+- Governed permanent recursive/batch deletion with complete hash-bound manifests, mandatory
+  approval, one-shot children-first execution, durable per-entry reconciliation and independent
+  verification (ADR-0027).
+- Scoped deletion-manifest API paging/search/NDJSON download and an Angular approval preview with
+  expiry/hash invalidation and explicit permanent-deletion acknowledgement.
+- Optional bounded tool audit summaries, used by deletion to retain hash/count/outcome evidence
+  without copying complete path lists into the append-only audit log.
 
 ### Changed
 
@@ -37,6 +44,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   preparation and approval rather than unsafe partial-plan replay.
 - Filesystem inventory limits, output ceilings, manifest path and retention are host configuration;
   out-of-range requests fail instead of being silently clamped.
+- Runtime argument validation now rejects undeclared names and JSON type mismatches before policy,
+  approval or execution; tool manifests can require explicit human approval even when policy would
+  otherwise allow automatic execution.
 
 ### Fixed
 

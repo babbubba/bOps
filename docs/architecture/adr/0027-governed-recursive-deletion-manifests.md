@@ -60,8 +60,11 @@ and covers:
 - every canonical absolute entry path and its type, size, timestamps, attributes and link target.
 
 The random id and scope intentionally make the approval hash instance-specific, unlike ADR-0026's
-repeatable content hash. The full list remains in SQLite. Tool output, pending-approval DTOs and
-audit carry only bounded summaries, id, approval hash, counts and bytes.
+repeatable content hash. The full list remains in SQLite. Tool output and pending-approval DTOs
+carry only bounded summaries, id, approval hash, counts and bytes. An optional host-bounded
+`IToolAuditSummaryProvider` lets this tool add those same aggregates to `ToolCallAuditEvent`
+without copying arbitrary output or entry paths into the audit log; the runtime drops summaries
+over 8 KiB.
 
 ### Bounds, freshness and retention
 
@@ -107,9 +110,11 @@ never traversal edges.
 Entries are processed deepest-first with deterministic ordinal tie-breaking. Files and links are
 deleted without following links; directories use non-recursive deletion only after their approved
 children. Directory last-write time is part of the initial freshness check but is not compared
-after approved child removal because that removal legitimately changes it; path resolution, type,
-creation identity, attributes and link state are still rechecked immediately before the directory
-operation.
+after approved child removal because that removal legitimately changes it. On Linux,
+`FileSystemInfo.CreationTimeUtc` may expose inode-change time when birth time is unavailable and
+therefore changes for the same reason; it too is used in the full zero-delete reconciliation but
+not the later parent check. Path resolution, type, attributes and link state are still rechecked
+immediately before the directory operation; Windows creation time remains stable and is compared.
 
 Every attempted entry receives one bounded durable result. Cancellation is propagated after
 recording reconciliation state and is never described as rollback. The tool returns aggregate

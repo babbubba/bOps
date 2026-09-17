@@ -6,7 +6,7 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, D-016–D-020 on 2026-09-16, and D-021 on 2026-09-17.
+2026-09-15, D-016–D-020 on 2026-09-16, and D-021–D-022 on 2026-09-17.
 
 ---
 
@@ -424,3 +424,28 @@ and cleanup. *Content-hash every file* — unbounded I/O without preventing late
 audits; legacy tools remain unchanged. Incomplete inventories never return approval-ready
 references. V1.1-D must bind destructive approval to manifest instance metadata as well as the
 deterministic content hash and must revalidate every target. ADR-0026 is normative.
+
+---
+
+### D-022 — Tools can tighten approval policy and emit bounded audit summaries
+
+**Decision.** A manifest may require explicit human approval even when configured policy would
+otherwise permit automatic execution; it can never override `forbidden`. An optional
+approval-binding callback atomically consumes durable preflight state before execution. An
+independent optional audit-summary callback may add at most 8 KiB of aggregate, non-sensitive JSON
+to the tool-call audit event; the runtime never audits an arbitrary full tool output.
+
+**Reason.** Permanent recursive deletion must not become automatic through a broad High-risk
+policy rule, and its approval must consume exactly one fresh manifest. Investigation still needs
+hash, counts and outcome without placing thousands of paths in an append-only event. Generic
+opt-in contracts preserve the package boundary and avoid naming a filesystem tool in the runtime.
+
+**Rejected.** *Hard-code `fs.delete_tree` in policy/runtime* — violates package independence.
+*Trust policy defaults for mandatory approval* — configuration could weaken a safety invariant.
+*Audit complete tool output* — may be large, sensitive or attacker-controlled. *Place every path
+in tool arguments* — bloats model, approval and audit boundaries.
+
+**Consequences.** `ToolManifest.RequiresExplicitApproval`, `IApprovalBoundTool` and
+`IToolAuditSummaryProvider` are additive V1.1 preview SDK surface. Runtime argument types are
+validated before these hooks. Summary-provider failures cannot fail execution and oversized
+summaries are discarded. ADR-0027 is normative.

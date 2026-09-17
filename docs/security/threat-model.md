@@ -107,8 +107,19 @@ but not followed. The inventory content hash is evidence of one observed metadat
 any later destructive workflow must re-resolve policy and compare entry metadata immediately
 before acting.
 
+Permanent recursive deletion uses a separate High-risk `fs.delete_tree` tool that cannot accept a
+path directly and cannot be configured to skip human approval. Its one-shot approval is bound to
+an expiring, instance-specific hash of the complete exact set. The executor performs a zero-delete
+full-set reconciliation, then a second identity and policy check immediately before each
+children-first non-recursive delete. Added, removed, renamed, replaced, retyped or escaped entries
+fail closed. Partial completion and verification are durable and explicit; neither atomicity nor
+rollback is claimed. Audit retains bounded aggregate metadata and a scoped manifest reference,
+never the complete path list.
+
 Residual risk: platform filesystem semantics can still race an attacker with equivalent write
-access. Protect runtime directories with OS permissions and do not share their ownership.
+access between the final identity check and the operating-system call. Protect runtime directories
+with OS permissions, keep the manifest database outside administered roots and do not share their
+ownership.
 
 ### Audit deletion or rewriting
 

@@ -23,9 +23,9 @@ store; they do not enter model context, ordinary telemetry or a single audit eve
 exact attempts return no manifest reference and `approvalReady` remains false.
 
 Manifest ids are random and each row is bound to the host-owned node, task and actor identity.
-Possession of an id is not authorization. The V1.1-D API and deletion workflow must match that full
-scope, include instance metadata in the approval hash and re-resolve/revalidate each path before a
-destructive action. See ADR-0026 and decision D-018.
+Possession of an id is not authorization. Governed deletion matches that full scope, includes
+instance metadata in its approval hash and re-resolves/revalidates each path before a destructive
+action. See ADR-0026, ADR-0027 and [`governed-recursive-deletion.md`](governed-recursive-deletion.md).
 
 ## Inputs and defaults
 

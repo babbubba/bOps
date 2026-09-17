@@ -180,7 +180,7 @@ public sealed class ToolArguments   // backed by JsonObject
 ```csharp
 public enum RiskLevel { Read, Low, Medium, High, Critical }
 
-public enum ToolParameterType { String, Integer, Number, Boolean, Path, Duration, Enum }
+public enum ToolParameterType { String, Integer, Number, Boolean, Path, PathList, Duration, Enum }
 
 public sealed record ToolParameter(
     string Name,
@@ -202,7 +202,8 @@ public sealed record ToolManifest(
     IReadOnlyList<string> Platforms,
     IReadOnlyList<string> Requires,
     IReadOnlyList<ToolParameter> Parameters,
-    VerificationSpec? Verification = null)
+    VerificationSpec? Verification = null,
+    bool RequiresExplicitApproval = false)
 {
     public PackageId Package { get; init; }       // stamped by the registry (A11)
 }
@@ -223,11 +224,39 @@ public interface ITool
     Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default);
 }
 
+public sealed record ToolExecutionContext(NodeId Node, Guid TaskId, ActorIdentity Actor);
+
+public interface IContextualTool : ITool
+{
+    Task<ToolCallResult> ExecuteAsync(
+        ToolArguments arguments, ToolExecutionContext context, CancellationToken ct = default);
+}
+
+public interface IApprovalBoundTool : ITool
+{
+    Task<ToolCallResult> BindApprovalAsync(
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        ApprovalDecision decision,
+        CancellationToken ct = default);
+}
+
+public interface IToolAuditSummaryProvider : ITool
+{
+    JsonObject? CreateAuditSummary(ToolArguments arguments, ToolCallResult result);
+}
+
 public interface IToolProvider
 {
     IEnumerable<ITool> GetTools();
 }
 ```
+
+`IContextualTool` receives node/task/actor identity from the host, never from model arguments
+(ADR-0026). `RequiresExplicitApproval` may tighten an automatic policy decision but cannot weaken
+`forbidden`; `IApprovalBoundTool` binds a returned human decision to durable preflight state before
+the target effect. `IToolAuditSummaryProvider` is opt-in aggregate metadata only: the runtime caps
+it at 8 KiB, ignores provider failures and never substitutes a complete tool result (ADR-0027).
 
 ### B3 — Verification is declared *and* evaluated by the package
 
