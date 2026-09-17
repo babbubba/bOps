@@ -37,6 +37,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - Bounded redirect following, decompression-bomb-safe response reading (the byte cap applies to
   decompressed output, not wire bytes), and an allowlisted textual content-type/charset boundary
   for `web.fetch`.
+- Read-only plugin catalog: `GET /api/plugins` and `GET /api/plugins/{id}`, and a lazy-loaded
+  Angular Plugins page showing installed/enabled/loaded/compatible state, signature/trust,
+  declared capabilities and dependencies, and declared-vs-effective maximum risk as distinct
+  values — no enable, disable or upload control in this batch.
+- `bOps.Api` now activates the operator's already-enabled plugins at start-up, the same way
+  `bOps.Cli` already did — it runs its own `AgentRunner` and needs the same plugin-contributed
+  tools/Skills visible to it.
 
 ### Changed
 
@@ -52,6 +59,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   preparation and approval rather than unsafe partial-plan replay.
 - Filesystem inventory limits, output ceilings, manifest path and retention are host configuration;
   out-of-range requests fail instead of being silently clamped.
+- `PluginManager.LoadAllEnabled` isolates each plugin's activation failure instead of letting one
+  bad plugin crash the whole host at start-up; it now returns the sanitized per-plugin failures
+  (install path scrubbed from the message) instead of throwing past the first one. `bOps.Cli` logs
+  these as warnings instead of ignoring them.
 - Runtime argument validation now rejects undeclared names and JSON type mismatches before policy,
   approval or execution; tool manifests can require explicit human approval even when policy would
   otherwise allow automatic execution.

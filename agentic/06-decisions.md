@@ -480,3 +480,38 @@ before any size check would run.
 the existing `ToolManifest.Requires` capability-probe mechanism already cover both tools. Attack
 tests require a real local HTTP listener and an injectable `IDnsResolver` rather than only recorded
 fixtures. ADR-0028 is normative.
+
+---
+
+### D-024 — `bOps.Api` activates plugins too, and one plugin's failure never takes the host down
+
+**Decision.** `bOps.Api` now wires `PluginManager` and calls `LoadAllEnabled()` at start-up, the
+same composition `bOps.Cli` already used (`Plugins:StorePath`/`Plugins:RootPath` configuration, the
+same `IToolRegistry`/`ISkillRegistry`/`IChatModelRegistry` this process already owns per rule A4).
+Separately, `LoadAllEnabled()` now isolates each plugin's activation: a `PluginOperationException`
+or `PluginValidationException` from one record is caught, its message has the plugin's own
+`InstallPath` scrubbed to a fixed placeholder, and the loop continues to the next plugin instead of
+propagating past the first failure. The per-plugin results are exposed as
+`PluginManager.StartupLoadErrors`; `PluginManager.IsActivated(id)` answers "is this plugin's
+package actually registered in this process right now," distinct from `PluginRecord.Enabled`
+(persisted operator intent).
+
+**Reason.** `bOps.Api` runs its own `AgentRunner` for every task started from the dashboard
+(`AgentsEndpoints`/`AgentTaskLauncher`) — it needed the same plugin-contributed tools/Skills the CLI
+already sees, not a second, parallel loading mechanism. Separately, V1.1-F's read-only catalog
+needs "enabled but did not load" to be an observable, survivable state — before this change, one
+plugin with a revoked trust key or a corrupted install directory crashed the entire host at
+start-up (on both CLI and API), which is exactly the moment an operator most needs the catalog to
+still work.
+
+**Rejected.** *Duplicate a slimmed-down plugin loader inside `bOps.Api`.* Rejected: would fork the
+one place ADR-0020's trust/signature/activation logic lives, for no reason — every other package
+(Filesystem, Web, Docker, …) is already wired independently per host process; plugins were simply
+the one exception. *Catch `Exception` broadly in `LoadAllEnabled`.* Rejected by
+`agentic/02-coding-standards.md`'s error model — only the two exception types this path is
+documented to throw are caught; anything else is a broken invariant and still propagates.
+
+**Consequences.** No `bOps.Abstractions`, risk-model, policy-semantics or audit-schema change —
+`PluginManager.LoadAllEnabled`'s return type changes from `void` to
+`IReadOnlyDictionary<string, string>`, a source change internal to `bOps.PluginHost` and its two
+callers (`bOps.Cli`, `bOps.Api`). No ADR is required by the subject table in `05-workflow.md`.

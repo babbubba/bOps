@@ -119,6 +119,15 @@ complete hash-bound manifest and explicit approval; see
 loopback/private/link-local/metadata network destinations by default; see
 [`docs/security/web-network-policy.md`](docs/security/web-network-policy.md).
 
+The Angular UI's **Plugins** page (`GET /api/plugins`, `GET /api/plugins/{id}`) is a read-only
+catalog of installed plugins — id, version, publisher, signature/trust, installed/enabled/loaded/
+compatible state (kept distinct, never merged into one "status"), declared capabilities and
+dependencies, and declared-vs-effective maximum risk. Enable, disable, install and remove stay
+`bops plugin *`-only; no mutation path exists through the API in this batch. `bOps.Api` now
+activates the operator's already-enabled plugins at start-up exactly like `bOps.Cli` always has —
+it runs its own `AgentRunner` for tasks started from the dashboard and needs the same
+plugin-contributed tools/Skills.
+
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
 to the model), and a generic `process.start` (equivalent to a generic execution tool — see rule
@@ -198,9 +207,9 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1-A through V1.1-E are complete;
-V1.1-F read-only plugin catalog API/UI is the active next batch, while the remaining operational
-and local-management batches stay in their fixed order.
+still needs its first operator-authorized tagged run. V1.1-A through V1.1-F are complete;
+V1.1-G writable Settings backed by an encrypted local vault is the active next batch, while the
+remaining operational and local-management batches stay in their fixed order.
 
 | | |
 |---|---|
@@ -218,8 +227,8 @@ and local-management batches stay in their fixed order.
 | `V0.11` | Full operational capability set: `system.swap`/`io`, `process.inspect`/`stop`/`kill`, `fs.search`/`hash`/`move`, `network.port_check`/`route`, and the new `Service.{Core,Windows,Linux}` package (`service.list`/`status`/`start`/`stop`/`restart`, ADR-0021) |
 | `V1.0` | Stable `bOps.Abstractions` 1.0 SDK; API authentication/roles; secret references; bounded/idempotent/cancellable execution; verified plugin provenance; audit verification; locked, reproducible SBOM/provenance release pipeline (ADR-0022) |
 | `V1.1-A` *(complete)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
-| `V1.1-B–E` | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, and SearXNG-backed Web search/safe fetch |
-| `V1.1-F–G` | Add a read-only plugin catalog UI, then writable Settings backed by an encrypted local vault |
+| `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
+| `V1.1-G` | Writable Settings backed by an encrypted local vault |
 | `V1.1-H` | Cross-platform integration, documentation and release gate |
 | `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
