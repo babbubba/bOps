@@ -2,12 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 
 namespace bOps.Api;
 
 /// <summary>One approval request currently waiting for an HTTP client to answer it, as shown by <c>GET /api/approvals/pending</c>.</summary>
-internal sealed record PendingApproval(string Id, Guid? TaskId, string Tool, string Reason, DateTimeOffset RequestedAtUtc);
+internal sealed record PendingApproval(
+    string Id,
+    Guid? TaskId,
+    string Tool,
+    string Reason,
+    DateTimeOffset RequestedAtUtc,
+    JsonObject Arguments,
+    bool PermanentDeletion);
 
 /// <summary>
 /// The HTTP channel's <see cref="IApprovalProvider"/> (ADR-0018) — an approval queue instead of
@@ -22,9 +30,12 @@ internal sealed record PendingApproval(string Id, Guid? TaskId, string Tool, str
 internal sealed class ApiApprovalProvider : IApprovalProvider
 {
     /// <summary>Set by whatever starts or resumes a task, for the duration of that call, so a nested approval request can recover which task it belongs to.</summary>
-    public static AsyncLocal<Guid?> CurrentTaskId { get; } = new();
+    public static AsyncLocal<ToolExecutionContext?> CurrentExecutionContext { get; } = new();
 
-    private sealed record Entry(PendingApproval Info, TaskCompletionSource<ApprovalDecision> Completion);
+    private sealed record Entry(
+        PendingApproval Info,
+        ToolExecutionContext? Context,
+        TaskCompletionSource<ApprovalDecision> Completion);
 
     private readonly ConcurrentDictionary<string, Entry> _pending = new();
 
@@ -39,7 +50,18 @@ internal sealed class ApiApprovalProvider : IApprovalProvider
 
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<ApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var entry = new Entry(new PendingApproval(id, CurrentTaskId.Value, manifest.Name, reason, DateTimeOffset.UtcNow), completion);
+        var context = CurrentExecutionContext.Value;
+        var entry = new Entry(
+            new PendingApproval(
+                id,
+                context?.TaskId,
+                manifest.Name,
+                reason,
+                DateTimeOffset.UtcNow,
+                arguments.ToJson(),
+                string.Equals(manifest.Name, "fs.delete_tree", StringComparison.Ordinal)),
+            context,
+            completion);
         _pending[id] = entry;
 
         await using var registration = ct.Register(() => completion.TrySetCanceled(ct));
@@ -66,5 +88,19 @@ internal sealed class ApiApprovalProvider : IApprovalProvider
         }
 
         return entry.Completion.TrySetResult(new ApprovalDecision(approved, approver, note));
+    }
+
+    public bool TryGet(string approvalId, out PendingApproval? approval, out ToolExecutionContext? context)
+    {
+        if (_pending.TryGetValue(approvalId, out var entry))
+        {
+            approval = entry.Info;
+            context = entry.Context;
+            return true;
+        }
+
+        approval = null;
+        context = null;
+        return false;
     }
 }

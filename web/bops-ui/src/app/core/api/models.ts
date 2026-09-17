@@ -58,6 +58,7 @@ export interface ToolManifest {
   requires: string[];
   parameters: ToolParameter[];
   verification: VerificationSpec | null;
+  requiresExplicitApproval: boolean;
   package: string;
 }
 
@@ -115,6 +116,44 @@ export interface PendingApproval {
   tool: string;
   reason: string;
   requestedAtUtc: string;
+  arguments: Record<string, unknown>;
+  permanentDeletion: boolean;
+}
+
+export type DeletionManifestStatus = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export const DeletionManifestReady: DeletionManifestStatus = 1;
+
+export interface DeletionManifestSummary {
+  id: string;
+  status: DeletionManifestStatus;
+  roots: string[];
+  warnings: string[];
+  approvalHash: string;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  entryCount: number;
+  fileCount: number;
+  directoryCount: number;
+  linkCount: number;
+  totalBytes: number;
+  deletedCount: number;
+  failureCount: number;
+}
+
+export interface DeletionManifestEntry {
+  ordinal: number;
+  absolutePath: string;
+  rootPath: string;
+  relativePath: string;
+  type: string;
+  sizeBytes: number | null;
+  outcome: string | null;
+  error: string | null;
+}
+
+export interface DeletionManifestPage {
+  entries: DeletionManifestEntry[];
+  nextCursor: string | null;
 }
 
 /** The provider this host is actually configured to use — never carries the API key's value (ADR-0019), only whether one is present. */

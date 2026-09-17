@@ -7,6 +7,8 @@ import { firstValueFrom } from 'rxjs';
 import {
   AgentTaskStatus,
   AgentTaskStatusName,
+  DeletionManifestPage,
+  DeletionManifestSummary,
   PendingApproval,
   ProvidersResponse,
   TaskAcceptedResponse,
@@ -45,10 +47,45 @@ export class BOpsApiClient {
     return firstValueFrom(this.http.get<PendingApproval[]>('/api/approvals/pending'));
   }
 
-  respondToApproval(approvalId: string, approved: boolean, note?: string, approver?: string): Promise<void> {
+  respondToApproval(
+    approvalId: string,
+    approved: boolean,
+    note?: string,
+    acknowledgePermanentDeletion = false,
+  ): Promise<void> {
     return firstValueFrom(
-      this.http.post<void>(`/api/approvals/${approvalId}/respond`, { approved, note, approver }),
+      this.http.post<void>(`/api/approvals/${approvalId}/respond`, {
+        approved,
+        note,
+        acknowledgePermanentDeletion,
+      }),
     );
+  }
+
+  getApprovalDeletionManifest(approvalId: string): Promise<DeletionManifestSummary> {
+    return firstValueFrom(
+      this.http.get<DeletionManifestSummary>(`/api/approvals/${approvalId}/deletion-manifest`),
+    );
+  }
+
+  getApprovalDeletionEntries(
+    approvalId: string,
+    cursor?: string,
+    limit = 200,
+    search?: string,
+  ): Promise<DeletionManifestPage> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    if (search) params.set('search', search);
+    return firstValueFrom(
+      this.http.get<DeletionManifestPage>(
+        `/api/approvals/${approvalId}/deletion-manifest/entries?${params.toString()}`,
+      ),
+    );
+  }
+
+  approvalDeletionDownloadUrl(approvalId: string): string {
+    return `/api/approvals/${approvalId}/deletion-manifest/download`;
   }
 
   listTools(): Promise<ToolManifest[]> {

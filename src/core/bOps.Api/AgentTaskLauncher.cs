@@ -44,7 +44,7 @@ internal sealed class AgentTaskLauncher(
             _capacity.Release();
             throw;
         }
-        if (!TryRunDetached(taskId, initial, token => runner.RunAsync(goal, actor, taskId: taskId, ct: token)))
+        if (!TryRunDetached(taskId, initial, actor, token => runner.RunAsync(goal, actor, taskId: taskId, ct: token)))
         {
             throw new InvalidOperationException($"The newly allocated task id '{taskId}' is already running.");
         }
@@ -61,7 +61,7 @@ internal sealed class AgentTaskLauncher(
             return false;
         }
 
-        return TryRunDetached(task.Id, task, token => runner.ResumeAsync(task, actor, token));
+        return TryRunDetached(task.Id, task, actor, token => runner.ResumeAsync(task, actor, token));
     }
 
     public bool Cancel(Guid taskId) =>
@@ -71,7 +71,11 @@ internal sealed class AgentTaskLauncher(
     /// Runs <paramref name="invoke"/> detached from the caller, with <see cref="ApiApprovalProvider.CurrentTaskId"/>
     /// set for the duration so a nested approval request can recover which task raised it.
     /// </summary>
-    private bool TryRunDetached(Guid taskId, TaskState lastKnownState, Func<CancellationToken, Task<TaskState>> invoke)
+    private bool TryRunDetached(
+        Guid taskId,
+        TaskState lastKnownState,
+        ActorIdentity actor,
+        Func<CancellationToken, Task<TaskState>> invoke)
     {
         var cancellation = new CancellationTokenSource();
         if (!_running.TryAdd(taskId, cancellation))
@@ -83,7 +87,7 @@ internal sealed class AgentTaskLauncher(
 
         _ = Task.Run(async () =>
         {
-            ApiApprovalProvider.CurrentTaskId.Value = taskId;
+            ApiApprovalProvider.CurrentExecutionContext.Value = new ToolExecutionContext(NodeId.Local, taskId, actor);
             try
             {
                 await invoke(cancellation.Token);
@@ -102,6 +106,7 @@ internal sealed class AgentTaskLauncher(
             }
             finally
             {
+                ApiApprovalProvider.CurrentExecutionContext.Value = null;
                 _running.TryRemove(taskId, out _);
                 cancellation.Dispose();
                 try

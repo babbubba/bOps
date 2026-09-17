@@ -10,7 +10,17 @@ internal sealed record StartTaskRequest(string Goal);
 internal sealed record TaskAcceptedResponse(Guid TaskId);
 
 /// <summary>Body of <c>POST /api/approvals/{approvalId}/respond</c>. Approver identity comes only from the authenticated principal (ADR-0022).</summary>
-internal sealed record RespondToApprovalRequest(bool Approved, string? Note);
+internal sealed record RespondToApprovalRequest(
+    bool Approved,
+    string? Note,
+    bool AcknowledgePermanentDeletion = false);
+
+internal sealed record PrepareDeletionManifestRequest(
+    Guid TaskId,
+    IReadOnlyList<string> Roots,
+    int? MaxDepth,
+    int? MaxEntries,
+    int? MaxDurationMilliseconds);
 
 /// <summary>
 /// Response of <c>GET /api/providers</c> (ADR-0019). <see cref="Active"/> is <c>null</c> if the

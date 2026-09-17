@@ -30,6 +30,94 @@
 
           <p class="mt-2 text-sm">{{ req.reason }}</p>
 
+          @if (req.permanentDeletion) {
+            <section class="mt-4 rounded-lg border border-risk-high bg-bg p-4" aria-label="Permanent deletion preview">
+              <p class="font-semibold text-risk-high">Permanent deletion — no trash and no rollback</p>
+              @if (previewFor(req.id); as preview) {
+                @if (preview.error) {
+                  <p class="mt-2 text-sm text-risk-critical">{{ preview.error }}</p>
+                } @else if (preview.summary; as summary) {
+                  <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
+                    <div><dt class="text-muted">Entries</dt><dd class="font-semibold">{{ formatCount(summary.entryCount) }}</dd></div>
+                    <div><dt class="text-muted">Files</dt><dd>{{ formatCount(summary.fileCount) }}</dd></div>
+                    <div><dt class="text-muted">Directories</dt><dd>{{ formatCount(summary.directoryCount) }}</dd></div>
+                    <div><dt class="text-muted">Bytes</dt><dd>{{ formatBytes(summary.totalBytes) }}</dd></div>
+                  </dl>
+
+                  <div class="mt-3 text-xs">
+                    <p class="text-muted">Approval hash</p>
+                    <code class="block break-all rounded bg-surface px-2 py-1">{{ summary.approvalHash }}</code>
+                    <p class="mt-1 text-muted">Expires {{ formatTime(summary.expiresAtUtc) }}</p>
+                  </div>
+
+                  <div class="mt-3">
+                    <p class="text-xs font-medium text-muted">Roots</p>
+                    <ul class="mt-1 space-y-1 text-xs">
+                      @for (root of summary.roots; track root) {
+                        <li><code class="break-all">{{ root }}</code></li>
+                      }
+                    </ul>
+                  </div>
+
+                  @if (summary.warnings.length > 0) {
+                    <ul class="mt-3 list-disc pl-5 text-xs text-risk-high">
+                      @for (warning of summary.warnings; track warning) { <li>{{ warning }}</li> }
+                    </ul>
+                  }
+
+                  <div class="mt-4 flex gap-2">
+                    <input
+                      type="search"
+                      aria-label="Filter deletion entries"
+                      placeholder="Filter exact paths"
+                      [ngModel]="preview.search"
+                      (ngModelChange)="setSearch(req.id, $event)"
+                      class="min-w-0 flex-1 rounded-lg border border-default bg-surface px-3 py-1.5 text-sm"
+                    />
+                    <button type="button" (click)="applySearch(req.id)" class="rounded-lg border border-default px-3 py-1.5 text-sm">
+                      Filter
+                    </button>
+                  </div>
+
+                  @if (preview.page; as page) {
+                    <div class="mt-3 max-h-72 overflow-auto rounded border border-default">
+                      <table class="w-full table-fixed text-left text-xs">
+                        <thead class="sticky top-0 bg-surface"><tr><th class="w-24 px-2 py-1">Type</th><th class="px-2 py-1">Exact path</th></tr></thead>
+                        <tbody>
+                          @for (entry of page.entries; track entry.ordinal) {
+                            <tr class="border-t border-default">
+                              <td class="px-2 py-1 align-top">{{ entry.type }}</td>
+                              <td class="break-all px-2 py-1"><code>{{ entry.absolutePath }}</code></td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between gap-2">
+                      <div class="flex gap-2">
+                        <button type="button" [disabled]="preview.cursorIndex === 0" (click)="previousPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">Previous</button>
+                        <button type="button" [disabled]="!page.nextCursor" (click)="nextPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">Next</button>
+                      </div>
+                      <a [href]="downloadUrl(req.id)" class="text-xs text-accent hover:underline">Download manifest</a>
+                    </div>
+                  }
+
+                  <label class="mt-4 flex items-start gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      class="mt-1"
+                      [checked]="acknowledgements()[req.id] === true"
+                      (change)="setAcknowledged(req.id, $any($event.target).checked)"
+                    />
+                    <span>I understand that exactly {{ formatCount(summary.entryCount) }} entries ({{ formatBytes(summary.totalBytes) }}) will be permanently deleted.</span>
+                  </label>
+                } @else {
+                  <p class="mt-2 text-sm text-muted">Loading exact manifest…</p>
+                }
+              }
+            </section>
+          }
+
           <input
             type="text"
             placeholder="Optional note"
@@ -42,7 +130,8 @@
             <button
               type="button"
               (click)="approve(req.id)"
-              class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              [disabled]="!canApprove(req)"
+              class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Approve
             </button>

@@ -32,6 +32,18 @@ public sealed class FilesystemInventoryOptions
 
     public TimeSpan ManifestRetention { get; set; } = TimeSpan.FromHours(24);
 
+    public int DefaultDeletionMaxRoots { get; set; } = 32;
+
+    public int MaximumDeletionRoots { get; set; } = 64;
+
+    public TimeSpan DeletionApprovalWindow { get; set; } = TimeSpan.FromMinutes(10);
+
+    public TimeSpan DeletionResultRetention { get; set; } = TimeSpan.FromDays(7);
+
+    public int DefaultManifestPageSize { get; set; } = 200;
+
+    public int MaximumManifestPageSize { get; set; } = 1_000;
+
     internal void Validate()
     {
         if (DefaultMaxDepth < 0 || MaximumDepth < DefaultMaxDepth)
@@ -72,6 +84,26 @@ public sealed class FilesystemInventoryOptions
         if (ManifestRetention <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(ManifestRetention));
+        }
+
+        if (DefaultDeletionMaxRoots < 1 || MaximumDeletionRoots < DefaultDeletionMaxRoots)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DefaultDeletionMaxRoots));
+        }
+
+        if (DeletionApprovalWindow <= TimeSpan.Zero || DeletionApprovalWindow > ManifestRetention)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DeletionApprovalWindow));
+        }
+
+        if (DeletionResultRetention <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DeletionResultRetention));
+        }
+
+        if (DefaultManifestPageSize < 1 || MaximumManifestPageSize < DefaultManifestPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DefaultManifestPageSize));
         }
     }
 }

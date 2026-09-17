@@ -123,6 +123,19 @@ builder.Services.AddSingleton(
     builder.Configuration.GetSection("Api:Tasks").Get<AgentTaskLauncherOptions>() ?? new AgentTaskLauncherOptions());
 builder.Services.AddSingleton<TaskIdempotencyStore>();
 
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IConfiguration>().GetSection("Filesystem:Inventory").Get<FilesystemInventoryOptions>()
+        ?? new FilesystemInventoryOptions());
+builder.Services.AddSingleton(sp =>
+{
+    var section = sp.GetRequiredService<IConfiguration>().GetSection("Filesystem");
+    return new FilesystemPathPolicy(
+        section.GetSection("ReadPatterns").Get<string[]>() ?? [],
+        section.GetSection("WritePatterns").Get<string[]>() ?? []);
+});
+builder.Services.AddSingleton<FilesystemToolProvider>();
+builder.Services.AddSingleton(sp => sp.GetRequiredService<FilesystemToolProvider>().DeletionService);
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
     .WithMetrics(metrics => metrics.AddMeter(BOpsTelemetry.MeterName).AddOtlpExporter());
@@ -150,15 +163,9 @@ foreach (var tool in platformToolProvider.GetTools())
     toolRegistry.Register(systemPackageId, tool);
 }
 
-var filesystemSection = builder.Configuration.GetSection("Filesystem");
-var pathPolicy = new FilesystemPathPolicy(
-    filesystemSection.GetSection("ReadPatterns").Get<string[]>() ?? [],
-    filesystemSection.GetSection("WritePatterns").Get<string[]>() ?? []);
-var filesystemInventoryOptions = filesystemSection.GetSection("Inventory").Get<FilesystemInventoryOptions>()
-    ?? new FilesystemInventoryOptions();
-
 var filesystemPackageId = new PackageId("bops.packages.filesystem");
-foreach (var tool in new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions).GetTools())
+var filesystemToolProvider = app.Services.GetRequiredService<FilesystemToolProvider>();
+foreach (var tool in filesystemToolProvider.GetTools())
 {
     toolRegistry.Register(filesystemPackageId, tool);
 }
@@ -199,6 +206,7 @@ app.MapApprovalsEndpoints();
 app.MapToolsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
+app.MapFilesystemDeletionEndpoints();
 
 await app.RunAsync();
 

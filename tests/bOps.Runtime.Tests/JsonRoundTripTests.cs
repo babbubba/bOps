@@ -122,6 +122,7 @@ public sealed class JsonRoundTripTests
             Authorization = AuthorizationKind.Automatic,
             Outcome = ToolOutcome.Success,
             Duration = TimeSpan.FromMilliseconds(120),
+            Summary = new JsonObject { ["observedCount"] = 5 },
             Verification = null,
         };
 
@@ -131,6 +132,7 @@ public sealed class JsonRoundTripTests
         var typed = Assert.IsType<ToolCallAuditEvent>(result);
         Assert.Equal(((ToolCallAuditEvent)value).Tool, typed.Tool);
         Assert.Equal(((ToolCallAuditEvent)value).Outcome, typed.Outcome);
+        Assert.Equal(5, typed.Summary!["observedCount"]!.GetValue<int>());
         Assert.Equal(value.TaskId, typed.TaskId);
         Assert.Equal(value.Actor, typed.Actor);
     }

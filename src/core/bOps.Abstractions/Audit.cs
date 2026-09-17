@@ -85,6 +85,12 @@ public sealed record ToolCallAuditEvent : AuditEvent
     public required TimeSpan Duration { get; init; }
 
     /// <summary>
+    /// Optional bounded, non-sensitive aggregate metadata supplied by the tool. The runtime never
+    /// copies a complete tool output here; large exact datasets remain behind scoped references.
+    /// </summary>
+    public JsonObject? Summary { get; init; }
+
+    /// <summary>
     /// <c>null</c> for a <see cref="RiskLevel.Read"/> tool, which has nothing to verify, and for
     /// a non-<see cref="RiskLevel.Read"/> call that was never executed at all (denied by policy
     /// or an operator, or rejected by argument validation) — there is nothing to check the effect

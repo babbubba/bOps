@@ -4,7 +4,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using bOps.Packages.Filesystem;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace bOps.Api.Tests;
@@ -347,6 +349,128 @@ public sealed class AgentsAndApprovalsEndpointsTests
     }
 
     [Fact]
+    public async Task PermanentDeletionApproval_RequiresAcknowledgement_AndUsesPagedScopedPreview()
+    {
+        using var factory = new TestAppFactory { PolicyEngine = new FixedPolicyEngine(PolicyMode.Automatic) };
+        var root = Directory.CreateDirectory(Path.Combine(factory.TempDirectory, "delete-target"));
+        await File.WriteAllTextAsync(Path.Combine(root.FullName, "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(root.FullName, "b.txt"), "bb");
+        factory.ChatModel = new DeletionWorkflowChatModel(root.FullName);
+        using var client = factory.CreateClient();
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("delete the exact tree"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        var pending = await PollUntilAsync(
+            () => client.GetFromJsonAsync<List<PendingApproval>>("/api/approvals/pending"),
+            list => list is { Count: > 0 });
+        var approval = Assert.Single(pending!);
+
+        Assert.Equal("fs.delete_tree", approval.Tool);
+        Assert.True(approval.PermanentDeletion);
+        Assert.NotNull(approval.Arguments["manifestId"]);
+        Assert.NotNull(approval.Arguments["approvalHash"]);
+
+        var summary = await client.GetFromJsonAsync<DeletionManifestSummary>(
+            $"/api/approvals/{approval.Id}/deletion-manifest");
+        Assert.NotNull(summary);
+        Assert.Equal(DeletionManifestStatus.Ready, summary.Status);
+        Assert.Equal(3, summary.EntryCount);
+
+        var page = await client.GetFromJsonAsync<DeletionManifestPage>(
+            $"/api/approvals/{approval.Id}/deletion-manifest/entries?limit=2");
+        Assert.NotNull(page);
+        Assert.Equal(2, page.Entries.Count);
+        Assert.NotNull(page.NextCursor);
+
+        var missingAcknowledgement = await client.PostAsJsonAsync(
+            $"/api/approvals/{approval.Id}/respond",
+            new RespondToApprovalRequest(true, "approved"));
+        Assert.Equal(HttpStatusCode.BadRequest, missingAcknowledgement.StatusCode);
+        Assert.True(Directory.Exists(root.FullName));
+
+        var approved = await client.PostAsJsonAsync(
+            $"/api/approvals/{approval.Id}/respond",
+            new RespondToApprovalRequest(true, "approved", AcknowledgePermanentDeletion: true));
+        Assert.Equal(HttpStatusCode.NoContent, approved.StatusCode);
+
+        var finalTask = await PollUntilTerminalAsync(client, started!.TaskId);
+        Assert.Equal(AgentTaskStatus.Completed, finalTask.Status);
+        Assert.False(Directory.Exists(root.FullName));
+        Assert.Contains(finalTask.Steps, step => step.ToolCall?.ToolName == "fs.delete_tree"
+            && step.Observation!.Contains("Verification: Confirmed", StringComparison.Ordinal));
+
+        var audit = await File.ReadAllLinesAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
+        var deletionEvent = audit
+            .Select(line => JsonDocument.Parse(line))
+            .Select(document => JsonDocument.Parse(document.RootElement.GetProperty("EventJson").GetString()!))
+            .Select(document => document.RootElement)
+            .Single(element => element.GetProperty("eventType").GetString() == "toolCall"
+                && element.GetProperty("Tool").GetString() == "fs.delete_tree");
+        var auditSummary = deletionEvent.GetProperty("Summary");
+        Assert.Equal(summary.ApprovalHash, auditSummary.GetProperty("approvalHash").GetString());
+        Assert.Equal(3, auditSummary.GetProperty("entryCount").GetInt32());
+        Assert.Equal(3, auditSummary.GetProperty("totalBytes").GetInt64());
+        Assert.Equal((int)ToolOutcome.Success, deletionEvent.GetProperty("Outcome").GetInt32());
+        Assert.DoesNotContain("a.txt", deletionEvent.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("b.txt", deletionEvent.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DeletionManifestApi_RejectsCrossTaskLookup()
+    {
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(QueueChatModel.PlanResponse(), QueueChatModel.Final("done")),
+        };
+        using var client = factory.CreateClient();
+        var root = Directory.CreateDirectory(Path.Combine(factory.TempDirectory, "preview-target"));
+        await File.WriteAllTextAsync(Path.Combine(root.FullName, "a.txt"), "a");
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("prepare preview"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        _ = await PollUntilTerminalAsync(client, started!.TaskId);
+        var created = await client.PostAsJsonAsync(
+            "/api/filesystem/deletion-manifests",
+            new PrepareDeletionManifestRequest(started.TaskId, [root.FullName], null, null, null));
+        Assert.True(
+            created.StatusCode == HttpStatusCode.Created,
+            $"Expected Created, got {created.StatusCode}: {await created.Content.ReadAsStringAsync()}");
+        var summary = await created.Content.ReadFromJsonAsync<DeletionManifestSummary>();
+
+        var crossTask = await client.GetAsync(new Uri(
+            $"/api/filesystem/deletion-manifests/{Guid.NewGuid()}/{summary!.Id}", UriKind.Relative));
+        Assert.Equal(HttpStatusCode.NotFound, crossTask.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeletionApprovalPreview_RejectsANonApprover()
+    {
+        using var factory = new TestAppFactory
+        {
+            PolicyEngine = new FixedPolicyEngine(PolicyMode.Automatic),
+            Roles = ["operator"],
+        };
+        var root = Directory.CreateDirectory(Path.Combine(factory.TempDirectory, "non-approver-target"));
+        await File.WriteAllTextAsync(Path.Combine(root.FullName, "a.txt"), "a");
+        factory.ChatModel = new DeletionWorkflowChatModel(root.FullName);
+        using var client = factory.CreateClient();
+
+        var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("preview exact deletion"));
+        var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
+        var approvalProvider = factory.Services.GetRequiredService<ApiApprovalProvider>();
+        var pending = await PollUntilAsync(
+            () => Task.FromResult<IReadOnlyList<PendingApproval>?>(approvalProvider.ListPending()),
+            approvals => approvals is { Count: > 0 });
+        var approval = Assert.Single(pending!);
+
+        var response = await client.GetAsync(
+            new Uri($"/api/approvals/{approval.Id}/deletion-manifest", UriKind.Relative));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await client.DeleteAsync(new Uri($"/api/agents/tasks/{started!.TaskId}", UriKind.Relative));
+    }
+
+    [Fact]
     public async Task GetTools_ReturnsTheRegisteredManifests()
     {
         using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
@@ -394,6 +518,42 @@ public sealed class AgentsAndApprovalsEndpointsTests
             timeoutCts.Token.ThrowIfCancellationRequested();
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeoutCts.Token);
         }
+    }
+}
+
+internal sealed class DeletionWorkflowChatModel(string root) : IChatModel
+{
+    private int _callCount;
+
+    public ChatModelDescriptor Descriptor { get; } = new("test", "deletion-workflow");
+
+    public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
+    {
+        var response = _callCount++ switch
+        {
+            0 => QueueChatModel.PlanResponse("prepare, approve and delete the exact tree"),
+            1 => QueueChatModel.ToolCall("fs.delete_tree.prepare", new JsonObject
+            {
+                ["paths"] = new JsonArray(root),
+                ["maxEntries"] = 100,
+            }),
+            2 => DeleteCall(request),
+            _ => QueueChatModel.Final("deletion verified"),
+        };
+        return Task.FromResult(response);
+    }
+
+    private static ModelResponse DeleteCall(ModelRequest request)
+    {
+        var output = request.History.Last(turn => turn.Role == ChatRole.Tool).Content!;
+        var start = output.IndexOf('{');
+        var end = output.LastIndexOf('}');
+        var summary = JsonNode.Parse(output[start..(end + 1)])!;
+        return QueueChatModel.ToolCall("fs.delete_tree", new JsonObject
+        {
+            ["manifestId"] = summary["manifestId"]!.GetValue<string>(),
+            ["approvalHash"] = summary["approvalHash"]!.GetValue<string>(),
+        });
     }
 }
 

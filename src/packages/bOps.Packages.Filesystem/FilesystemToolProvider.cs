@@ -11,6 +11,7 @@ public sealed class FilesystemToolProvider : IToolProvider
     private readonly FilesystemPathPolicy _pathPolicy;
     private readonly FilesystemInventoryOptions _inventoryOptions;
     private readonly FilesystemInventoryService _inventory;
+    private readonly FilesystemDeletionService _deletion;
 
     public FilesystemToolProvider(FilesystemPathPolicy pathPolicy)
         : this(pathPolicy, new FilesystemInventoryOptions())
@@ -24,7 +25,12 @@ public sealed class FilesystemToolProvider : IToolProvider
         _inventoryOptions.Validate();
         var store = new SqliteFilesystemManifestStore(_inventoryOptions.ManifestStorePath);
         _inventory = new FilesystemInventoryService(_pathPolicy, _inventoryOptions, store);
+        var deletionStore = new SqliteDeletionManifestStore(_inventoryOptions.ManifestStorePath);
+        _deletion = new FilesystemDeletionService(
+            _pathPolicy, _inventoryOptions, _inventory, store, deletionStore);
     }
+
+    public FilesystemDeletionService DeletionService => _deletion;
 
     public IEnumerable<ITool> GetTools() =>
     [
@@ -37,5 +43,8 @@ public sealed class FilesystemToolProvider : IToolProvider
         new FsHashTool(_pathPolicy),
         new FsMoveTool(_pathPolicy),
         new FsSizeTool(_inventory, _inventoryOptions),
+        new FsDeleteTreePrepareTool(_deletion, _inventoryOptions),
+        new FsDeleteTreeVerifyTool(_deletion),
+        new FsDeleteTreeTool(_deletion),
     ];
 }

@@ -1026,7 +1026,7 @@ public sealed class AgentRunner(
 
         if (ValidateArguments(manifest, call.Arguments) is { } validationError)
         {
-            var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, ToolCallResult.Failure(validationError),
+            var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, ToolCallResult.Failure(validationError),
                 AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
             return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic, null);
         }
@@ -1128,7 +1128,7 @@ public sealed class AgentRunner(
 
             if (approvalBindingResult is { Succeeded: false })
             {
-                var recorded = await RecordAsync(taskId, stepIndex, actor, call, manifest, approvalBindingResult,
+                var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, approvalBindingResult,
                     authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
                 return (recorded.Step, recorded.Observation, authorization, null);
             }
@@ -1164,7 +1164,7 @@ public sealed class AgentRunner(
             toolActivity?.SetTag("bops.verification", verificationOutcome.Status.ToString());
         }
 
-        var executed = await RecordAsync(taskId, stepIndex, actor, call, manifest, result,
+        var executed = await RecordAsync(taskId, stepIndex, actor, call, tool, result,
             authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope);
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
     }
@@ -1336,6 +1336,7 @@ public sealed class AgentRunner(
             Authorization = authorization,
             Outcome = ToolOutcome.Denied,
             Duration = TimeSpan.Zero,
+            Summary = null,
             Verification = null,
             SkillRunId = skillScope?.RunId,
             SkillId = skillScope?.SkillId,
@@ -1355,14 +1356,16 @@ public sealed class AgentRunner(
     }
 
     private async Task<(PlanStep Step, string Observation)> RecordAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, ToolManifest manifest,
+        Guid taskId, int stepIndex, ActorIdentity actor, ModelToolCall call, ITool tool,
         ToolCallResult result, AuthorizationKind authorization, TimeSpan duration, VerificationStatus? verification,
         string? verificationDetail,
         int planRevision,
         CancellationToken ct,
         SkillExecutionScope? skillScope = null)
     {
+        var manifest = tool.Manifest;
         var redacted = call.Arguments.Redact(manifest.Parameters.Where(p => p.Sensitive).Select(p => p.Name));
+        var summary = CreateAuditSummary(tool, call.Arguments, result);
 
         await audit.WriteAsync(new ToolCallAuditEvent
         {
@@ -1378,6 +1381,7 @@ public sealed class AgentRunner(
             Authorization = authorization,
             Outcome = result.Outcome,
             Duration = duration,
+            Summary = summary,
             Verification = verification,
             SkillRunId = skillScope?.RunId,
             SkillId = skillScope?.SkillId,
@@ -1403,6 +1407,33 @@ public sealed class AgentRunner(
 
         var step = new PlanStep(stepIndex, manifest.Name, call, result, observationText, planRevision);
         return (step, WrapToolOutput(observationText));
+    }
+
+    private JsonObject? CreateAuditSummary(ITool tool, ToolArguments arguments, ToolCallResult result)
+    {
+        if (tool is not IToolAuditSummaryProvider provider)
+        {
+            return null;
+        }
+
+        try
+        {
+            var summary = provider.CreateAuditSummary(arguments, result);
+            if (summary is null)
+            {
+                return null;
+            }
+
+            const int maximumAuditSummaryBytes = 8 * 1024;
+            return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(summary).Length <= maximumAuditSummaryBytes
+                ? summary.DeepClone().AsObject()
+                : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Tool {Tool} could not create its optional audit summary", tool.Manifest.Name);
+            return null;
+        }
     }
 
     /// <summary>Validates exact names and JSON-native types before policy, approval or execution (rule S2).</summary>

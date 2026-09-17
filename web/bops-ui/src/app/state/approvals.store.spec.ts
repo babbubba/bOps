@@ -14,6 +14,8 @@ const approval: PendingApproval = {
   tool: 'docker.stop',
   reason: 'Stopping a container requires approval.',
   requestedAtUtc: '2026-09-15T12:00:00Z',
+  arguments: {},
+  permanentDeletion: false,
 };
 
 const tool: ToolManifest = {
@@ -24,6 +26,7 @@ const tool: ToolManifest = {
   requires: ['docker'],
   parameters: [],
   verification: null,
+  requiresExplicitApproval: false,
   package: 'bOps.Packages.Docker',
 };
 
@@ -77,12 +80,12 @@ describe('ApprovalsStore', () => {
 
     void store.approve('approval-1', 'approved locally');
     tick();
-    expect(api.respondToApproval).toHaveBeenCalledWith('approval-1', true, 'approved locally');
+    expect(api.respondToApproval).toHaveBeenCalledWith('approval-1', true, 'approved locally', false);
     expect(store.pending().map((item) => item.id)).toEqual(['approval-2']);
 
     void store.reject('approval-2');
     tick();
-    expect(api.respondToApproval).toHaveBeenCalledWith('approval-2', false, undefined);
+    expect(api.respondToApproval).toHaveBeenCalledWith('approval-2', false, undefined, false);
     expect(store.pending()).toEqual([]);
     discardPeriodicTasks();
   }));

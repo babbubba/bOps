@@ -50,13 +50,13 @@ export const ApprovalsStore = signalStore(
       }
     },
 
-    async approve(id: string, note?: string): Promise<void> {
-      await api.respondToApproval(id, true, note);
+    async approve(id: string, note?: string, acknowledgePermanentDeletion = false): Promise<void> {
+      await api.respondToApproval(id, true, note, acknowledgePermanentDeletion);
       patchState(store, { pending: store.pending().filter((a) => a.id !== id) });
     },
 
     async reject(id: string, note?: string): Promise<void> {
-      await api.respondToApproval(id, false, note);
+      await api.respondToApproval(id, false, note, false);
       patchState(store, { pending: store.pending().filter((a) => a.id !== id) });
     },
   })),

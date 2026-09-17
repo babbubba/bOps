@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Nodes;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -321,6 +323,17 @@ public interface IApprovalBoundTool : ITool
         ToolExecutionContext context,
         ApprovalDecision decision,
         CancellationToken ct = default);
+}
+
+/// <summary>
+/// Optional additive contract for a tool that contributes a small, structured summary to its
+/// <see cref="ToolCallAuditEvent"/>. Implementations must return aggregate, non-sensitive data;
+/// the host rejects oversized summaries and never substitutes the full tool output.
+/// </summary>
+public interface IToolAuditSummaryProvider : ITool
+{
+    /// <summary>Builds bounded audit metadata from the validated arguments and completed result.</summary>
+    JsonObject? CreateAuditSummary(ToolArguments arguments, ToolCallResult result);
 }
 
 /// <summary>A package implements this to contribute one or more tools to the registry.</summary>
