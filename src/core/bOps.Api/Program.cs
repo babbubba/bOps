@@ -17,6 +17,7 @@ using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Packages.Web;
+using bOps.PluginHost;
 using bOps.Policy;
 using bOps.Runtime;
 using Microsoft.AspNetCore.Authentication;
@@ -143,6 +144,21 @@ builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<IConfiguration>().GetSection("Web:Search").Get<WebSearchOptions>() ?? new WebSearchOptions());
 builder.Services.AddSingleton<WebToolProvider>();
 
+// V0.10 (ADR-0020): same composition as bOps.Cli's CreatePluginManager — a PluginStore over the
+// configured store/root paths, wired to this process's own IToolRegistry/ISkillRegistry/
+// IChatModelRegistry (rule A4: each host is its own node with its own in-memory registries).
+builder.Services.AddSingleton(sp => new PluginManager(
+    new PluginStore(sp.GetRequiredService<IConfiguration>()["Plugins:StorePath"] ?? "plugins.json"),
+    sp.GetRequiredService<IToolRegistry>(),
+    sp.GetRequiredService<ISkillRegistry>(),
+    sp.GetRequiredService<IChatModelRegistry>(),
+    sp.GetRequiredService<IConfiguration>()["Plugins:RootPath"] ?? "plugins",
+    sp.GetRequiredService<IConfiguration>(),
+    sp.GetRequiredService<ILoggerFactory>(),
+    sp.GetRequiredService<IHttpClientFactory>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ICapabilityProbe>()));
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
     .WithMetrics(metrics => metrics.AddMeter(BOpsTelemetry.MeterName).AddOtlpExporter());
@@ -213,9 +229,26 @@ foreach (var tool in webToolProvider.GetTools())
     toolRegistry.Register(webPackageId, tool);
 }
 
+var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
+
+// V0.10 (ADR-0020): every plugin the operator has already enabled (via `bops plugin enable`, the
+// only management path today — V1.1-F's catalog is read-only) activates here too, exactly like
+// bOps.Cli already does — this host runs its own AgentRunner (AgentsEndpoints/AgentTaskLauncher)
+// and needs the same plugin-contributed tools/Skills visible to it. Before
+// RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured by the same refresh.
+var pluginManager = app.Services.GetRequiredService<PluginManager>();
+var pluginStartupErrors = pluginManager.LoadAllEnabled();
+if (pluginStartupErrors.Count > 0)
+{
+    var pluginLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Api.Plugins");
+    foreach (var (pluginId, reason) in pluginStartupErrors)
+    {
+        pluginLogger.LogWarning("Plugin '{PluginId}' did not activate: {Reason}", pluginId, reason);
+    }
+}
+
 await toolRegistry.RefreshCapabilitiesAsync();
 
-var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), app.Services.GetRequiredService<OpenRouterProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.ollama"), app.Services.GetRequiredService<OllamaProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.llamacpp"), app.Services.GetRequiredService<LlamaCppProviderPackage>());
@@ -229,6 +262,7 @@ app.MapToolsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
 app.MapFilesystemDeletionEndpoints();
+app.MapPluginCatalogEndpoints();
 
 await app.RunAsync();
 

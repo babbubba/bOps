@@ -17,6 +17,7 @@
     <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\bOps.Memory\bOps.Memory.csproj" />
     <ProjectReference Include="..\bOps.Policy\bOps.Policy.csproj" />
+    <ProjectReference Include="..\bOps.PluginHost\bOps.PluginHost.csproj" />
     <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
     <!-- Phase 1 packages are project-referenced directly; dynamic loading arrives at V0.10
          (agentic/06-decisions.md, D-003; agentic/01-architecture-rules.md §2) — same as bOps.Cli. -->

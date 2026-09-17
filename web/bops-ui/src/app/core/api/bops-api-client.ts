@@ -9,7 +9,10 @@ import {
   AgentTaskStatusName,
   DeletionManifestPage,
   DeletionManifestSummary,
+  PackageTrustLevel,
   PendingApproval,
+  PluginCatalogEntry,
+  PluginCatalogPage,
   ProvidersResponse,
   TaskAcceptedResponse,
   TaskState,
@@ -94,5 +97,19 @@ export class BOpsApiClient {
 
   getProviders(): Promise<ProvidersResponse> {
     return firstValueFrom(this.http.get<ProvidersResponse>('/api/providers'));
+  }
+
+  listPlugins(filter?: { enabled?: boolean; trust?: PackageTrustLevel; limit?: number; offset?: number }): Promise<PluginCatalogPage> {
+    const params = new URLSearchParams();
+    if (filter?.enabled !== undefined) params.set('enabled', String(filter.enabled));
+    if (filter?.trust !== undefined) params.set('trust', String(filter.trust));
+    if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+    if (filter?.offset !== undefined) params.set('offset', String(filter.offset));
+    const query = params.toString();
+    return firstValueFrom(this.http.get<PluginCatalogPage>(`/api/plugins${query ? `?${query}` : ''}`));
+  }
+
+  getPlugin(id: string): Promise<PluginCatalogEntry> {
+    return firstValueFrom(this.http.get<PluginCatalogEntry>(`/api/plugins/${id}`));
   }
 }

@@ -332,6 +332,45 @@ public sealed class PluginManagerTests : IDisposable
     }
 
     [Fact]
+    public void LoadAllEnabled_IsolatesOnePluginsFailure_AndSanitizesItsInstallPathFromTheMessage()
+    {
+        var installer = CreateManager();
+        installer.Install(StageSamplePluginSource());
+        installer.Enable("acme.sample-plugin");
+
+        // A second "enabled" record whose install directory was never actually populated — the
+        // same failure shape as a corrupted install or a manually edited store, without needing a
+        // second real plugin fixture. Appended directly to the on-disk store, mirroring how
+        // Enable_RejectsAStoreIdentityThatDoesNotMatchTheSignedInstalledManifest edits it above.
+        var missingInstallPath = Path.Combine(PluginsRoot, "acme.bogus-plugin");
+        var store = JsonNode.Parse(File.ReadAllText(StorePath))!.AsArray();
+        var bogusRecord = JsonNode.Parse(store[0]!.ToJsonString())!.AsObject();
+        bogusRecord["Id"] = "acme.bogus-plugin";
+        bogusRecord["InstallPath"] = missingInstallPath;
+        store.Add(bogusRecord);
+        File.WriteAllText(StorePath, store.ToJsonString());
+
+        // Simulates a new host process, exactly like LoadAllEnabled_ActivatesAnAlreadyEnabledPlugin
+        // above — a PluginManager that has never called Enable itself, reading the same store.
+        var freshToolRegistry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+        var nextProcessManager = new PluginManager(
+            new PluginStore(StorePath), freshToolRegistry, new SkillRegistry(), new ChatModelRegistry(), PluginsRoot,
+            Configuration(), NullLoggerFactory.Instance, new FakeHttpClientFactory(),
+            TimeProvider.System, new AlwaysAvailableCapabilityProbe());
+
+        var errors = nextProcessManager.LoadAllEnabled();
+
+        var error = Assert.Single(errors);
+        Assert.Equal("acme.bogus-plugin", error.Key);
+        Assert.DoesNotContain(missingInstallPath, error.Value, StringComparison.Ordinal);
+        Assert.Contains("<plugin-install-dir>", error.Value, StringComparison.Ordinal);
+        Assert.Same(errors, nextProcessManager.StartupLoadErrors);
+        Assert.NotNull(freshToolRegistry.Resolve("sample.echo"));
+        Assert.True(nextProcessManager.IsActivated("acme.sample-plugin"));
+        Assert.False(nextProcessManager.IsActivated("acme.bogus-plugin"));
+    }
+
+    [Fact]
     public void Enable_WorksWithARelativePluginsRootDirectory()
     {
         // Regression: LoadFromAssemblyPath requires an absolute path. A relative Plugins:RootPath

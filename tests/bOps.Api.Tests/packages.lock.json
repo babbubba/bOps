@@ -266,6 +266,7 @@
           "bOps.Packages.System.Linux": "[1.0.0, )",
           "bOps.Packages.System.Windows": "[1.0.0, )",
           "bOps.Packages.Web": "[1.0.0, )",
+          "bOps.PluginHost": "[1.0.0, )",
           "bOps.Policy": "[1.0.0, )",
           "bOps.Runtime": "[1.0.0, )"
         }
@@ -374,6 +375,12 @@
         }
       },
       "bops.packages.web": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.1.0-preview.1, )"
+        }
+      },
+      "bops.pluginhost": {
         "type": "Project",
         "dependencies": {
           "bOps.Abstractions": "[1.1.0-preview.1, )"

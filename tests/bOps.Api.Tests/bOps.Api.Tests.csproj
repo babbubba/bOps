@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Api\bOps.Api.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.PluginHost\bOps.PluginHost.csproj" />
   </ItemGroup>
 
 </Project>

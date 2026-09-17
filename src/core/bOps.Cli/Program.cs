@@ -208,7 +208,15 @@ var skillRegistry = host.Services.GetRequiredService<ISkillRegistry>();
 // activates on every run, exactly like a first-party package — there is no separate "plugin
 // mode." Before RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured too.
 var pluginManager = CreatePluginManager(builder.Configuration, host.Services, toolRegistry, chatModelRegistry);
-pluginManager.LoadAllEnabled();
+var pluginStartupErrors = pluginManager.LoadAllEnabled();
+if (pluginStartupErrors.Count > 0)
+{
+    var pluginLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Plugins");
+    foreach (var (pluginId, reason) in pluginStartupErrors)
+    {
+        pluginLogger.LogWarning("Plugin '{PluginId}' did not activate: {Reason}", pluginId, reason);
+    }
+}
 
 await toolRegistry.RefreshCapabilitiesAsync();
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), host.Services.GetRequiredService<OpenRouterProviderPackage>());

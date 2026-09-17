@@ -30,9 +30,16 @@ public sealed class PluginManager(
 {
     private readonly Dictionary<string, PluginLoadContext> _loadContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PluginKind> _activatedKinds = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _startupLoadErrors = new(StringComparer.Ordinal);
 
     /// <summary>Every installed plugin, enabled or not.</summary>
     public IReadOnlyList<PluginRecord> List() => store.List();
+
+    /// <summary>Whether a plugin's tools/Skills/model provider are currently registered in this process, distinct from <see cref="PluginRecord.Enabled"/> (the persisted operator intent).</summary>
+    public bool IsActivated(string id) => _activatedKinds.ContainsKey(id);
+
+    /// <summary>Per-plugin activation failures from the most recent <see cref="LoadAllEnabled"/> call, keyed by plugin id. Empty until <see cref="LoadAllEnabled"/> has run at least once.</summary>
+    public IReadOnlyDictionary<string, string> StartupLoadErrors => _startupLoadErrors;
 
     /// <summary>
     /// Installs a plugin from a local directory (no remote sources in V0.10 — ADR-0020).
@@ -110,13 +117,39 @@ public sealed class PluginManager(
     /// A10) — <see cref="Enable"/> is the operator-facing command that both activates now and
     /// persists the flag for next time.
     /// </summary>
-    public void LoadAllEnabled()
+    /// <remarks>
+    /// One plugin failing to reactivate (a revoked trust key, a corrupted install directory, a
+    /// digest that no longer matches what was recorded at install time) must not take every other
+    /// enabled plugin down with it — this isolates each activation and collects failures instead
+    /// (agentic/02-coding-standards.md's error model: convert a specific exception into a logged
+    /// outcome, never a silent swallow and never an unrelated crash). Only the two exception types
+    /// this path is documented to throw are caught; anything else is a broken invariant and still
+    /// propagates.
+    /// </remarks>
+    /// <returns>Plugin id to a sanitized failure reason, for every enabled plugin that failed to activate. Empty when every enabled plugin activated cleanly.</returns>
+    public IReadOnlyDictionary<string, string> LoadAllEnabled()
     {
+        var errors = new Dictionary<string, string>(StringComparer.Ordinal);
+
         foreach (var record in store.List().Where(r => r.Enabled))
         {
-            Activate(record);
+            try
+            {
+                Activate(record);
+            }
+            catch (Exception ex) when (ex is PluginOperationException or PluginValidationException)
+            {
+                errors[record.Id] = Sanitize(ex.Message, record.InstallPath);
+            }
         }
+
+        _startupLoadErrors = errors;
+        return errors;
     }
+
+    /// <summary>Replaces every occurrence of the plugin's own install path with a fixed placeholder, so a caught exception message never leaks a local filesystem layout to an operator-facing surface.</summary>
+    private static string Sanitize(string message, string installPath) =>
+        message.Replace(installPath, "<plugin-install-dir>", StringComparison.Ordinal);
 
     /// <summary>Activates an installed, currently-disabled plugin now, and persists that it should activate on every future start-up.</summary>
     public void Enable(string id)

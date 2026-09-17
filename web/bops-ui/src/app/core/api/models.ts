@@ -156,6 +156,51 @@ export interface DeletionManifestPage {
   nextCursor: string | null;
 }
 
+/** bOps.Abstractions.PackageTrustLevel, in declaration order. */
+export type PackageTrustLevel = 0 | 1 | 2 | 3;
+export const PackageTrustLevelName: Record<PackageTrustLevel, string> = {
+  0: 'Unverified',
+  1: 'Community',
+  2: 'Verified',
+  3: 'Official',
+};
+
+export interface PluginDependency {
+  name: string;
+  version: string;
+}
+
+/**
+ * bOps.Api.PluginCatalogEntry (V1.1-F, GET /api/plugins). `enabled` (persisted operator intent)
+ * and `loaded` (actually registered in this process right now) are two distinct fields on
+ * purpose — never merge them into one "status" in the UI. Likewise `declaredMaxRisk` (from the
+ * manifest) and `effectiveMaxRisk` (observed from currently-registered tools, null when not
+ * loaded) must stay visibly separate: a declaration is not enforcement.
+ */
+export interface PluginCatalogEntry {
+  id: string;
+  version: string;
+  publisher: string;
+  installedAtUtc: string;
+  enabled: boolean;
+  loaded: boolean;
+  compatible: boolean;
+  signaturePresent: boolean;
+  verified: boolean;
+  trust: PackageTrustLevel;
+  keyId: string | null;
+  declaredCapabilities: string[];
+  dependencies: PluginDependency[];
+  declaredMaxRisk: RiskLevel | null;
+  effectiveMaxRisk: RiskLevel | null;
+  loadError: string | null;
+}
+
+export interface PluginCatalogPage {
+  entries: PluginCatalogEntry[];
+  totalCount: number;
+}
+
 /** The provider this host is actually configured to use — never carries the API key's value (ADR-0019), only whether one is present. */
 export interface ActiveProviderInfo {
   provider: string;
