@@ -1,82 +1,49 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Net;
-using System.Net.Sockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace bOps.Packages.Web.Tests;
 
 /// <summary>
 /// A real loopback HTTP server for the attack tests ADR-0028 calls for (redirect chains, oversized
 /// and compressed bodies, slow responses) — a recorded fixture cannot exercise the real socket path
-/// <see cref="SsrfSafeConnectCallback"/> connects through.
+/// <see cref="SsrfSafeConnectCallback"/> connects through. Built on Kestrel, the same server
+/// <c>bOps.Api</c> itself runs: <see cref="System.Net.HttpListener"/> does not reliably dispatch
+/// requests on Linux in this environment, discovered when the earlier HttpListener-based version
+/// passed on Windows CI but returned a generic 404 for every request on Ubuntu CI.
 /// </summary>
-internal sealed class LocalHttpServer : IDisposable
+internal sealed class LocalHttpServer : IAsyncDisposable
 {
-    private readonly HttpListener _listener;
-    private readonly Func<HttpListenerContext, Task> _handler;
-    private readonly CancellationTokenSource _cts = new();
+    private readonly WebApplication _app;
 
-    public LocalHttpServer(Func<HttpListenerContext, Task> handler)
+    private LocalHttpServer(WebApplication app, int port)
     {
-        _handler = handler;
-        Port = GetFreePort();
-        _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-        _listener.Start();
-        _ = Task.Run(AcceptLoopAsync);
+        _app = app;
+        Port = port;
     }
 
     public int Port { get; }
 
-    public Uri BaseUri => new($"http://127.0.0.1:{Port}/");
-
-    private static int GetFreePort()
+    public static async Task<LocalHttpServer> StartAsync(RequestDelegate handler)
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        var app = builder.Build();
+        // WebApplication.Run(string?) — the blocking host-start overload — otherwise shadows the
+        // IApplicationBuilder.Run(RequestDelegate) extension this test server actually needs.
+        ((IApplicationBuilder)app).Run(handler);
+
+        await app.StartAsync();
+        var address = app.Urls.First();
+        var port = new Uri(address).Port;
+        return new LocalHttpServer(app, port);
     }
 
-    private async Task AcceptLoopAsync()
-    {
-        while (!_cts.IsCancellationRequested)
-        {
-            HttpListenerContext context;
-            try
-            {
-                context = await _listener.GetContextAsync();
-            }
-            catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException or InvalidOperationException)
-            {
-                return;
-            }
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _handler(context);
-                }
-                catch (Exception ex) when (ex is IOException or HttpListenerException or OperationCanceledException)
-                {
-                    // Client disconnected or the server is shutting down mid-response; nothing to assert on here.
-                }
-                finally
-                {
-                    context.Response.OutputStream.Close();
-                }
-            });
-        }
-    }
-
-    public void Dispose()
-    {
-        _cts.Cancel();
-        _listener.Stop();
-        _listener.Close();
-        _cts.Dispose();
-    }
+    public async ValueTask DisposeAsync() => await _app.DisposeAsync();
 }
