@@ -108,6 +108,39 @@ internal sealed class FakeReadTool(string name = "test.read", string output = "o
         Task.FromResult(ToolCallResult.Success(output));
 }
 
+/// <summary>A Read tool that records the host-owned execution context supplied by the runtime.</summary>
+internal sealed class RecordingContextualTool(string name = "test.contextual") : IContextualTool
+{
+    public ToolExecutionContext? ReceivedContext { get; private set; }
+
+    public bool LegacyOverloadCalled { get; private set; }
+
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = name,
+        Description = "Records contextual dispatch for tests.",
+        Risk = RiskLevel.Read,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = [],
+    };
+
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        LegacyOverloadCalled = true;
+        return Task.FromResult(ToolCallResult.Failure("Contextual dispatch was bypassed."));
+    }
+
+    public Task<ToolCallResult> ExecuteAsync(
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        CancellationToken ct = default)
+    {
+        ReceivedContext = context;
+        return Task.FromResult(ToolCallResult.Success("context received"));
+    }
+}
+
 /// <summary>A tool whose <see cref="ExecuteAsync"/> always throws, to exercise rule C1 (nothing thrown escapes an iteration).</summary>
 internal sealed class ThrowingTool(string name = "test.throws") : ITool
 {

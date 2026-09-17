@@ -18,6 +18,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - Bounded cross-platform `system.apps` and `system.devices` inventories with deterministic JSON,
   explicit source completeness and native Windows registry/Linux dpkg+sysfs collectors.
 - Additive hardware-model reporting in `system.info`, with an explicit `unknown` fallback.
+- Bounded cross-platform `fs.size` summaries plus scoped, expiring SQLite exact manifests with
+  deterministic content hashes and no full entry list in model, telemetry or audit payloads.
+- Additive host-owned `ToolExecutionContext` / `IContextualTool` dispatch for tools that persist
+  task- and actor-scoped derived state without breaking existing `ITool` implementations.
 
 ### Changed
 
@@ -31,6 +35,8 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   their declared Capability names to match the activated provider exactly.
 - V1.1 Skill runs are explicitly terminal and non-resumable; interruption requires fresh
   preparation and approval rather than unsafe partial-plan replay.
+- Filesystem inventory limits, output ceilings, manifest path and retention are host configuration;
+  out-of-range requests fail instead of being silently clamped.
 
 ### Fixed
 

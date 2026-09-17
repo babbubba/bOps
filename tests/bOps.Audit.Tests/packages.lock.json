@@ -105,7 +105,7 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.0.0, )"
+          "bOps.Abstractions": "[1.1.0-preview.1, )"
         }
       }
     }

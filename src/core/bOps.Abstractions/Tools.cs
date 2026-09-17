@@ -269,6 +269,32 @@ public interface ITool
     Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Host-owned identity for one tool invocation. The runtime constructs this from the task it is
+/// executing; tool arguments cannot nominate or replace these values (ADR-0026).
+/// </summary>
+/// <param name="Node">The node on which the tool executes.</param>
+/// <param name="TaskId">The task that caused the invocation.</param>
+/// <param name="Actor">The authenticated actor that caused the invocation.</param>
+public sealed record ToolExecutionContext(NodeId Node, Guid TaskId, ActorIdentity Actor);
+
+/// <summary>
+/// Optional additive tool contract for operations that must bind derived state to the host-owned
+/// node, task and actor identity. Existing <see cref="ITool"/> implementations remain unchanged;
+/// the runtime uses this overload when a tool implements it (ADR-0026).
+/// </summary>
+public interface IContextualTool : ITool
+{
+    /// <summary>Executes with the invocation identity supplied by the host runtime.</summary>
+    /// <param name="arguments">The validated arguments to execute with.</param>
+    /// <param name="context">Host-owned invocation identity; never sourced from tool arguments.</param>
+    /// <param name="ct">Cancelled when the tool timeout elapses or the task is cancelled.</param>
+    Task<ToolCallResult> ExecuteAsync(
+        ToolArguments arguments,
+        ToolExecutionContext context,
+        CancellationToken ct = default);
+}
+
 /// <summary>A package implements this to contribute one or more tools to the registry.</summary>
 public interface IToolProvider
 {

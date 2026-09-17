@@ -407,7 +407,7 @@
       "bops.packages.service.conformance": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.0.0, )",
+          "bOps.Abstractions": "[1.1.0-preview.1, )",
           "bOps.Packages.Service.Core": "[1.0.0, )",
           "xunit.assert": "[2.9.3, )"
         }
@@ -415,14 +415,14 @@
       "bops.packages.service.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.0.0, )"
+          "bOps.Abstractions": "[1.1.0-preview.1, )"
         }
       },
       "bops.packages.service.windows": {
         "type": "Project",
         "dependencies": {
           "System.ServiceProcess.ServiceController": "[10.0.0, )",
-          "bOps.Abstractions": "[1.0.0, )",
+          "bOps.Abstractions": "[1.1.0-preview.1, )",
           "bOps.Packages.Service.Core": "[1.0.0, )"
         }
       },

@@ -100,6 +100,13 @@ Filesystem packages resolve paths, symlinks and `..` immediately before use and 
 not match configured patterns. Plugin installation stages into a host-owned directory, rejects
 duplicate/untracked destinations and verifies the staged bytes before activation.
 
+Exact filesystem inventories are stored outside tool output in an expiring SQLite database. Their
+opaque ids are bound to node, task and actor; an incomplete, over-limit, inaccessible or changing
+tree never produces an approval-ready reference. Symbolic links and reparse points are recorded
+but not followed. The inventory content hash is evidence of one observed metadata set, not a lock:
+any later destructive workflow must re-resolve policy and compare entry metadata immediately
+before acting.
+
 Residual risk: platform filesystem semantics can still race an attacker with equivalent write
 access. Protect runtime directories with OS permissions and do not share their ownership.
 

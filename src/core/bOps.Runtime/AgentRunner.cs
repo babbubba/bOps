@@ -1123,7 +1123,8 @@ public sealed class AgentRunner(
         toolActivity?.SetTag("bops.policy_mode", policyDecision.Mode.ToString());
 
         var stopwatch = Stopwatch.StartNew();
-        var result = await ExecuteWithTimeoutAsync(tool, call, ct);
+        var executionContext = new ToolExecutionContext(NodeId.Local, taskId, actor);
+        var result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
         stopwatch.Stop();
 
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
@@ -1138,7 +1139,7 @@ public sealed class AgentRunner(
         // arguments, not against how the original call reported itself. Registration (rule B3)
         // guarantees a non-Read tool implements IVerifiableTool and declares a VerificationSpec.
         VerificationOutcome? verificationOutcome = manifest.Risk != RiskLevel.Read
-            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, ct)
+            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, ct)
             : null;
 
         if (verificationOutcome is not null)
@@ -1159,13 +1160,17 @@ public sealed class AgentRunner(
     /// still holds: the model never sees or requests this call).
     /// </summary>
     private async Task<VerificationOutcome> EvaluateVerificationAsync(
-        IVerifiableTool tool, VerificationSpec spec, ModelToolCall call, CancellationToken ct)
+        IVerifiableTool tool,
+        VerificationSpec spec,
+        ModelToolCall call,
+        ToolExecutionContext executionContext,
+        CancellationToken ct)
     {
         using var verificationActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.verification");
         verificationActivity?.SetTag("bops.tool", call.ToolName);
         verificationActivity?.SetTag("bops.verification_tool", spec.VerifyToolName);
 
-        var verificationResult = await ExecuteVerificationToolAsync(spec, call.Arguments, ct);
+        var verificationResult = await ExecuteVerificationToolAsync(spec, call.Arguments, executionContext, ct);
         verificationActivity?.SetTag("bops.verification_tool_outcome", verificationResult.Outcome.ToString());
 
         VerificationOutcome outcome;
@@ -1194,7 +1199,11 @@ public sealed class AgentRunner(
     /// itself failing (rule S4): <see cref="IVerifiableTool.EvaluateVerificationAsync"/> is the
     /// one place that turns "could not verify" into <see cref="VerificationStatus.Inconclusive"/>.
     /// </summary>
-    private async Task<ToolCallResult> ExecuteVerificationToolAsync(VerificationSpec spec, ToolArguments originalArguments, CancellationToken ct)
+    private async Task<ToolCallResult> ExecuteVerificationToolAsync(
+        VerificationSpec spec,
+        ToolArguments originalArguments,
+        ToolExecutionContext executionContext,
+        CancellationToken ct)
     {
         var verifyTool = registry.Resolve(spec.VerifyToolName);
         if (verifyTool is null)
@@ -1211,7 +1220,7 @@ public sealed class AgentRunner(
         }
 
         var verificationCall = new ModelToolCall("verification", spec.VerifyToolName, verificationArguments);
-        return await ExecuteWithTimeoutAsync(verifyTool, verificationCall, ct);
+        return await ExecuteWithTimeoutAsync(verifyTool, verificationCall, executionContext, ct);
     }
 
     private static ToolArguments ExtractVerificationArguments(ToolArguments originalArguments, IReadOnlyList<string> argumentsFrom)
@@ -1229,14 +1238,20 @@ public sealed class AgentRunner(
         return ToolArguments.FromJson(subset);
     }
 
-    private async Task<ToolCallResult> ExecuteWithTimeoutAsync(ITool tool, ModelToolCall call, CancellationToken ct)
+    private async Task<ToolCallResult> ExecuteWithTimeoutAsync(
+        ITool tool,
+        ModelToolCall call,
+        ToolExecutionContext executionContext,
+        CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(options.DefaultToolTimeout);
 
         try
         {
-            return await tool.ExecuteAsync(call.Arguments, timeoutCts.Token);
+            return tool is IContextualTool contextualTool
+                ? await contextualTool.ExecuteAsync(call.Arguments, executionContext, timeoutCts.Token)
+                : await tool.ExecuteAsync(call.Arguments, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

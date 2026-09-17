@@ -76,6 +76,28 @@ public sealed class AgentRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_SuppliesHostOwnedIdentityToAContextualTool()
+    {
+        var taskId = Guid.NewGuid();
+        var tool = new RecordingContextualTool();
+        var toolCall = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var registry = CreateRegistryWith(tool);
+
+        var result = await CreateRunner(model, registry, new RecordingAuditSink())
+            .RunAsync("capture context", Actor, taskId);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.False(tool.LegacyOverloadCalled);
+        Assert.Equal(NodeId.Local, tool.ReceivedContext?.Node);
+        Assert.Equal(taskId, tool.ReceivedContext?.TaskId);
+        Assert.Equal(Actor, tool.ReceivedContext?.Actor);
+    }
+
+    [Fact]
     public async Task RunAsync_HandlesAnUnknownToolName_ByReplanning_RatherThanACrash()
     {
         var toolCall = new ModelToolCall("call-1", "does.not.exist", ToolArguments.Empty);

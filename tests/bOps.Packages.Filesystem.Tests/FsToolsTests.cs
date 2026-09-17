@@ -250,13 +250,13 @@ public sealed class FsToolsTests : IDisposable
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheEightFsTools()
+    public void ToolProvider_ContributesExactlyTheNineFsTools()
     {
         var policy = new FilesystemPathPolicy([], []);
         var names = new FilesystemToolProvider(policy).GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
-            ["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash", "fs.move"], names);
+            ["fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash", "fs.move", "fs.size"], names);
     }
 
     [Fact]

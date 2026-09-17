@@ -102,16 +102,16 @@ below it for what's coming and, deliberately, what never will.
 |---|---|
 | **System** | `system.info` `system.apps` `system.devices` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
 | **Process** | `process.list` `process.inspect` `process.stop` `process.kill` |
-| **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` |
+| **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 
-V0.11 is fully registered. `system.apps` and `system.devices` are implemented for the V1.1 preview;
+V0.11 is fully registered. `system.apps`, `system.devices` and `fs.size` are implemented for the V1.1 preview;
 their bounded output, supported native sources and explicit completeness semantics are documented
-in [`docs/system-inventory.md`](docs/system-inventory.md). Remaining planned V1.1 additions
-(`fs.size`, `fs.delete_tree`, `web.search` and `web.fetch`) are not listed above until implemented
-and tested.
+in [`docs/system-inventory.md`](docs/system-inventory.md) and
+[`docs/filesystem-inventory.md`](docs/filesystem-inventory.md). Remaining planned V1.1 additions
+(`fs.delete_tree`, `web.search` and `web.fetch`) are not listed above until implemented and tested.
 
 **Never planned, on purpose:** `system.uptime` (`system.info` already reports it — a second tool
 for the same data won't be added), `system.environment` as an unfiltered dump (would hand secrets
@@ -190,8 +190,8 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. The V1.1 Skill/Capability SDK is complete and
-green on Windows/Linux CI; system inventory is the active next batch and the remaining operational
+still needs its first operator-authorized tagged run. V1.1-A and V1.1-B are complete; V1.1-C adds
+bounded filesystem sizing and exact immutable inventory manifests, while the remaining operational
 and local-management batches stay in their fixed order.
 
 | | |
