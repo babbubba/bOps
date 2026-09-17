@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.1**
-Next implementation batch: **V1.1-B — system and hardware inventory**
+Next implementation batch: **V1.1-C — bounded filesystem size and inventory**
 
 ## 1. Authority and precedence
 
@@ -170,6 +170,10 @@ No driver-update action or dedicated “check latest driver” tool is added. La
 `system.devices` evidence with `web.search` when freshness research is requested.
 
 **Task.** `agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md` — effort **alto**.
+
+**Current state.** Complete. Bounded native Windows/Linux collectors, shared conformance and
+explicit source-completeness semantics are implemented; GitHub Actions run `35180430313` passed on
+Windows and Linux, including .NET, Angular and Linux SBOM checks.
 
 ### V1.1-C — bounded filesystem size and inventory
 
@@ -419,7 +423,7 @@ structural drift.
 | SPEC-003 README alignment/bilingual docs | Every batch + post-V2.0 task | Ongoing; bilingual delivery gated after V2.0. |
 | SPEC-004 plugin UI | V1.1-F read-only; V1.3 lifecycle | Planned in two safety-bounded phases. |
 | SPEC-005 remote/multi-node | V1.4 | Already covered; not duplicated. |
-| SPEC-006 apps/devices/hardware model | V1.1-B | Planned. |
+| SPEC-006 apps/devices/hardware model | V1.1-B | Implemented and cross-platform CI validated. |
 | SPEC-007 search/fetch | V1.1-E | Planned; SearXNG selected for search. |
 | SPEC-008 filesystem sizing | V1.1-C | Planned; bounded inventory foundation. |
 | SPEC-009 recursive/batch delete | V1.1-D | Planned; permanent High-risk, hash-bound approval. |
