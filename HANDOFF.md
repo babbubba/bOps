@@ -110,7 +110,9 @@ through the UI — the same recovery story `plugins.json` already has.
   in the API response or the audit log, set a profile, made a provider active, confirmed the
   precedence source (`Settings`) and the expanded form's endpoint/model fields were correctly
   prefilled while the key field stayed empty — not only the test suite.
-- GitHub Actions run pending — confirmed after push, per the established closeout sequence.
+- GitHub Actions run [35277152220](https://github.com/babbubba/bOps/actions/runs/35277152220) —
+  Windows and Ubuntu restore/build/non-live tests, Angular build/tests, and SBOM generation all
+  passed.
 
 ## Next action and boundaries
 
