@@ -190,9 +190,9 @@ TLS and an authenticated reverse proxy in front of it.
 ## Roadmap
 
 **V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1-A and V1.1-B are complete; V1.1-C adds
-bounded filesystem sizing and exact immutable inventory manifests, while the remaining operational
-and local-management batches stay in their fixed order.
+still needs its first operator-authorized tagged run. V1.1-A through V1.1-C are complete;
+V1.1-D governed recursive deletion is the active next batch, while the remaining operational and
+local-management batches stay in their fixed order.
 
 | | |
 |---|---|

@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.1**
-Next implementation batch: **V1.1-C — bounded filesystem size and inventory**
+Next implementation batch: **V1.1-D — governed permanent recursive and batch deletion**
 
 ## 1. Authority and precedence
 
@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A and V1.1-B are complete and green on Windows/Linux CI; V1.1-C is active and batches D–H remain. |
+| V1.1 | In progress | V1.1-A through V1.1-C are complete and green on Windows/Linux CI; V1.1-D is active and batches E–H remain. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -186,6 +186,10 @@ workflow needs one. The full manifest is stored outside the model context and ou
 payloads. Tool output contains only bounded summaries plus an opaque manifest reference and hash.
 
 **Task.** `agentic/_tasks/2026-09-16-v1.1-c-filesystem-inventory.md` — effort **alto**.
+
+**Current state.** Complete. Bounded streaming summaries, host-owned contextual scope and expiring
+SQLite exact manifests are implemented; GitHub Actions run `35200996310` passed on Windows and
+Linux, including .NET, Angular, Linux permission/symlink coverage and SBOM checks.
 
 ### V1.1-D — governed permanent recursive and batch deletion
 
@@ -492,7 +496,7 @@ structural drift.
 | SPEC-005 remote/multi-node | V1.4 | Already covered; not duplicated. |
 | SPEC-006 apps/devices/hardware model | V1.1-B | Implemented and cross-platform CI validated. |
 | SPEC-007 search/fetch | V1.1-E | Planned; SearXNG selected for search. |
-| SPEC-008 filesystem sizing | V1.1-C | Planned; bounded inventory foundation. |
+| SPEC-008 filesystem sizing | V1.1-C | Implemented and cross-platform CI validated. |
 | SPEC-009 recursive/batch delete | V1.1-D | Planned; permanent High-risk, hash-bound approval. |
 | Original V0.1–V1.0 plan | Baseline/status sections | Implemented history retained without obsolete code snippets. |
 | Evolutionary V1.1–V2.0 plan | Sections 8–13 | Preserved and updated to actual repository state. |
