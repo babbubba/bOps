@@ -29,6 +29,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   expiry/hash invalidation and explicit permanent-deletion acknowledgement.
 - Optional bounded tool audit summaries, used by deletion to retain hash/count/outcome evidence
   without copying complete path lists into the append-only audit log.
+- `bOps.Packages.Web`: `web.search` against one operator-configured SearXNG JSON endpoint (no API
+  key, no HTML-scraping fallback) and a hardened `web.fetch` that resolves and validates every
+  connection's destination address at connect time, denying loopback/link-local/private/
+  carrier-grade-NAT/multicast/unspecified addresses by default and closing the DNS-rebinding TOCTOU
+  window by construction (ADR-0028).
+- Bounded redirect following, decompression-bomb-safe response reading (the byte cap applies to
+  decompressed output, not wire bytes), and an allowlisted textual content-type/charset boundary
+  for `web.fetch`.
 
 ### Changed
 

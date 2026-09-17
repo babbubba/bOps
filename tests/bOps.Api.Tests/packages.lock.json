@@ -265,6 +265,7 @@
           "bOps.Packages.Providers.OpenRouter": "[1.0.0, )",
           "bOps.Packages.System.Linux": "[1.0.0, )",
           "bOps.Packages.System.Windows": "[1.0.0, )",
+          "bOps.Packages.Web": "[1.0.0, )",
           "bOps.Policy": "[1.0.0, )",
           "bOps.Runtime": "[1.0.0, )"
         }
@@ -370,6 +371,12 @@
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
           "bOps.Abstractions": "[1.1.0-preview.1, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.web": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.1.0-preview.1, )"
         }
       },
       "bops.policy": {

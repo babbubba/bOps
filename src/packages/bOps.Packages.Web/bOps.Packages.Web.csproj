@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Web</RootNamespace>
+    <AssemblyName>bOps.Packages.Web</AssemblyName>
+    <Description>web.* tools: operator-configured SearXNG search and a hardened, SSRF-safe fetch (ADR-0028). No arbitrary headers, credentials, cookies or request bodies; deny-by-default outbound network policy enforced at connect time.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

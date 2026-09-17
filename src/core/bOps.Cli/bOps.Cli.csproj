@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\packages\bOps.Packages.Service.Windows\bOps.Packages.Service.Windows.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Service.Linux\bOps.Packages.Service.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Web\bOps.Packages.Web.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenRouter\bOps.Packages.Providers.OpenRouter.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.Ollama\bOps.Packages.Providers.Ollama.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />

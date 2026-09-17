@@ -6,7 +6,7 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, D-016–D-020 on 2026-09-16, and D-021–D-022 on 2026-09-17.
+2026-09-15, D-016–D-020 on 2026-09-16, and D-021–D-023 on 2026-09-17.
 
 ---
 
@@ -449,3 +449,34 @@ in tool arguments* — bloats model, approval and audit boundaries.
 `IToolAuditSummaryProvider` are additive V1.1 preview SDK surface. Runtime argument types are
 validated before these hooks. Summary-provider failures cannot fail execution and oversized
 summaries are discarded. ADR-0027 is normative.
+
+---
+
+### D-023 — `web.fetch` validates destination addresses at connect time, not before it
+
+**Decision.** SSRF and DNS-rebinding defense for `web.fetch` is enforced inside
+`SocketsHttpHandler.ConnectCallback`: the callback itself resolves the target host, validates every
+resolved address against a deny-by-default IP-range policy, and connects only to an address it just
+validated. `AllowAutoRedirect` is disabled; the package's own bounded redirect loop revalidates each
+hop through the same connect path, and a scheme downgrade on redirect is rejected by default.
+`web.search` calls only one fixed, operator-configured SearXNG endpoint and does not go through this
+path — that endpoint is operator-trusted configuration, not model-influenced input.
+
+**Reason.** A check performed before the connection (resolve, validate, then call
+`HttpClient.SendAsync`) leaves a window where the name can resolve to a different, disallowed
+address by the time the connection is actually made — the same time-of-check/time-of-use shape S11
+already names for filesystem paths. Validating inside the callback that performs the connection
+closes that window by construction, and gets redirect-target revalidation for free, since a
+cross-host redirect always opens a new connection.
+
+**Rejected.** *Validate once before sending, trust the client's own connect.* Rejected: the TOCTOU
+window this ADR exists to close. *Inspect the final response URI after redirects complete.*
+Rejected: detection after the request already reached a denied host is not prevention. *Block by
+hostname/domain blocklist.* Rejected: trivially bypassed by any name resolving into a denied range.
+*Let automatic decompression run and cap only final text length.* Rejected: decompression happens
+before any size check would run.
+
+**Consequences.** `bOps.Packages.Web` needs no change to `bOps.Abstractions`; `RiskLevel.Read` and
+the existing `ToolManifest.Requires` capability-probe mechanism already cover both tools. Attack
+tests require a real local HTTP listener and an injectable `IDnsResolver` rather than only recorded
+fixtures. ADR-0028 is normative.

@@ -121,6 +121,36 @@ access between the final identity check and the operating-system call. Protect r
 with OS permissions, keep the manifest database outside administered roots and do not share their
 ownership.
 
+### Outbound network requests (SSRF and DNS rebinding)
+
+`web.fetch` accepts a model-chosen URL — adversarial input in the same sense as any other tool
+output the model has previously seen, including a URL discovered inside a `web.search` result or a
+prior fetch. Its `HttpClient` resolves and validates the destination address inside
+`SocketsHttpHandler.ConnectCallback`, immediately before connecting, rather than at any earlier
+point: loopback, link-local (including the cloud-metadata address), RFC 1918 private ranges, IPv6
+unique-local, multicast and unspecified addresses are denied by default, and only a narrow explicit
+operator allowlist overrides this. Because validation happens inside the same callback that performs
+the connection, there is no window between checking a resolved address and using it — the address
+validated is the address connected to. Redirects are followed by the package's own bounded loop, not
+by the HTTP client, so every redirect hop re-enters the same validated connect path and a scheme
+downgrade is rejected by default.
+
+`web.search` calls only one fixed, operator-configured SearXNG endpoint — the same trust level as
+the configured LLM provider or Docker endpoint elsewhere in this host — and does not carry
+model-chosen input in the request target, so it is outside this control's scope.
+
+Response handling bounds resource cost independently of destination trust: automatic decompression
+is disabled so decompressed bytes can be counted and capped directly (defending against
+decompression bombs), raw response size is independently capped, only an allowlisted set of textual
+content types is decoded, and charset selection trusts only a small, unambiguous allowlist before
+falling back to UTF-8 with a replacement decoder. See ADR-0028 and
+[`web-network-policy.md`](web-network-policy.md).
+
+Residual risk: an operator-added allowlist entry is trusted as intended; an operator who allowlists
+a sensitive internal host accepts that risk explicitly. A destination that is publicly routable but
+still undesirable (e.g. an unrelated third party) is not blocked — this control defends the node and
+its private network, not general acceptable-use policy over fetched content.
+
 ### Audit deletion or rewriting
 
 Each JSONL event is chained to the previous hash. The CLI verifier recomputes the entire chain and

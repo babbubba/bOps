@@ -18,6 +18,7 @@ using bOps.Packages.Service.Linux;
 using bOps.Packages.Service.Windows;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
+using bOps.Packages.Web;
 using bOps.PluginHost;
 using bOps.Policy;
 using bOps.Runtime;
@@ -97,6 +98,15 @@ builder.Services.AddSingleton<OpenAiProviderPackage>();
 builder.Services.AddSingleton<DeepSeekProviderPackage>();
 builder.Services.AddSingleton<AnthropicProviderPackage>();
 
+// Registered here (rather than constructed inline below, like FilesystemToolProvider) because
+// WebToolProvider is IDisposable — the DI container disposes it when `host` disposes at the end
+// of this process, closing the HttpClient/SocketsHttpHandler it owns.
+builder.Services.AddSingleton(_ =>
+    builder.Configuration.GetSection("Web:Fetch").Get<WebFetchOptions>() ?? new WebFetchOptions());
+builder.Services.AddSingleton(_ =>
+    builder.Configuration.GetSection("Web:Search").Get<WebSearchOptions>() ?? new WebSearchOptions());
+builder.Services.AddSingleton<WebToolProvider>();
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(BOpsTelemetry.ActivitySourceName).AddOtlpExporter())
     .WithMetrics(metrics => metrics.AddMeter(BOpsTelemetry.MeterName).AddOtlpExporter());
@@ -175,6 +185,20 @@ var dockerPackageId = new PackageId("bops.packages.docker");
 foreach (var tool in new DockerToolProvider(dockerClientFactory).GetTools())
 {
     toolRegistry.Register(dockerPackageId, tool);
+}
+
+// web.search declares Requires: ["web.searxng"] (rule A8) — an unconfigured instance removes it
+// from what the planner sees, the same pattern docker.* uses for an absent daemon.
+var webSearchOptions = host.Services.GetRequiredService<WebSearchOptions>();
+if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe webCapabilityProbe)
+{
+    webCapabilityProbe.RegisterCheck(WebCapabilities.Searxng, ct => WebCapabilities.IsSearxngConfiguredAsync(webSearchOptions, ct));
+}
+
+var webPackageId = new PackageId("bops.packages.web");
+foreach (var tool in host.Services.GetRequiredService<WebToolProvider>().GetTools())
+{
+    toolRegistry.Register(webPackageId, tool);
 }
 
 var chatModelRegistry = host.Services.GetRequiredService<IChatModelRegistry>();

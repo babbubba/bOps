@@ -8,6 +8,7 @@
     <Project Path="src/packages/bOps.Packages.Docker/bOps.Packages.Docker.csproj" />
     <Project Path="src/packages/bOps.Packages.Filesystem/bOps.Packages.Filesystem.csproj" />
     <Project Path="src/packages/bOps.Packages.Network/bOps.Packages.Network.csproj" />
+    <Project Path="src/packages/bOps.Packages.Web/bOps.Packages.Web.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/bops-sample-plugin/Acme.SamplePlugin.csproj" />
@@ -48,6 +49,7 @@
     <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Web.Tests/bOps.Packages.Web.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Providers.Anthropic.Tests/bOps.Packages.Providers.Anthropic.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Service.Conformance/bOps.Packages.Service.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.Service.Linux.Tests/bOps.Packages.Service.Linux.Tests.csproj" />
