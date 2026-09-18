@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -39,7 +41,19 @@ public sealed record Evidence(
     string Description,
     string? Data,
     string SourceTool,
-    DateTimeOffset ObservedAtUtc);
+    DateTimeOffset ObservedAtUtc)
+{
+    /// <summary>
+    /// Which delegated run and agent observed this, when it was gathered inside one (ADR-0030 section 4);
+    /// <c>null</c> otherwise, and then omitted from the serialized value. Stamped by the runtime only, as
+    /// <see cref="PackageId"/> is on a manifest (rule A11): the setter is not public, so a Capability cannot
+    /// claim its evidence was gathered by another agent. It is serialized nonetheless, so it survives the
+    /// delegation store.
+    /// </summary>
+    [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EvidenceProvenance? Provenance { get; internal set; }
+}
 
 /// <summary>
 /// An interpretation built from one or more pieces of <see cref="Evidence"/> — never freestanding

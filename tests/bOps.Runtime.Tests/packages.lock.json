@@ -119,7 +119,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.1.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.1, )"
         }
       }
     }

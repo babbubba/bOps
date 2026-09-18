@@ -38,6 +38,10 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(ApprovalAuditEvent), "approval")]
 [JsonDerivedType(typeof(SkillRunAuditEvent), "skillRun")]
 [JsonDerivedType(typeof(SettingsChangedAuditEvent), "settingsChanged")]
+[JsonDerivedType(typeof(DelegationLifecycleAuditEvent), "delegationLifecycle")]
+[JsonDerivedType(typeof(DelegationEnvelopeAuditEvent), "delegationEnvelope")]
+[JsonDerivedType(typeof(DelegationJournalAuditEvent), "delegationJournal")]
+[JsonDerivedType(typeof(DelegationReconciliationAuditEvent), "delegationReconciliation")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -54,6 +58,16 @@ public abstract record AuditEvent
 
     /// <summary>Who caused this event: the operator who launched the task, or who approved/rejected the step.</summary>
     public required ActorIdentity Actor { get; init; }
+
+    /// <summary>
+    /// Which delegated run, agent and envelope this event belongs to (ADR-0030 section 8). <c>null</c> for
+    /// every event of a run that is not delegated, and then omitted from the serialized event, so such an
+    /// event is byte-identical to one written before delegation existed. It sits on the base type so a
+    /// delegated run's events cannot forget it: every event of one carries both the operator
+    /// (<see cref="Actor"/>) and the agent.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DelegationCorrelation? Delegation { get; init; }
 }
 
 /// <summary>

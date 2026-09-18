@@ -73,6 +73,17 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   key, and a governed system-evidence-then-Web-research workflow proving an unsafe fetch
   destination stays denied and audited.
 
+- V1.2-B delegation contracts in `bOps.Abstractions` (`1.2.0-preview.1`, ADR-0030), all additive and
+  dependency-free: `AgentId`/`AgentIdentity`/`AgentRoleKind`, the reduce-only `AuthorityEnvelope` with its
+  budgets, maintenance window, reduction result and canonical `DelegationHasher`, the durable
+  `DelegationRun` aggregate with its step journal and reconciliation records, `VerificationReport`,
+  `IDelegationStore`, four delegation audit events, an optional `Delegation` correlation block on every
+  audit event and optional runtime-stamped provenance on `Evidence`. Both new members are omitted from the
+  JSON when null, so events and evidence that never delegate serialize exactly as before. No runtime
+  behaviour changes yet; the orchestrator, enforcement and persistence follow in V1.2-C to V1.2-K.
+- `FrozenContractValuesTests` pins every member of the ten 1.0 enums to its 1.0 value, and
+  `AbstractionsStaysDependencyFreeTests` asserts the SDK references only the .NET base class library.
+
 ### Changed
 
 - `bOps.Abstractions` now identifies the in-progress additive SDK surface as

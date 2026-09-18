@@ -160,7 +160,7 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.1.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.1, )"
         }
       }
     }
