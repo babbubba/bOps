@@ -1,4 +1,4 @@
-# Handoff — V1.1 complete (A–H, untagged); V1.2 next
+# Handoff — V1.1 complete (A–H, released as `v1.1.0-preview.2`); V1.2 next
 
 ## V1.1-H status (2026-09-18) — closed
 

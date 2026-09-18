@@ -2,7 +2,7 @@
 
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
-Current implementation milestone: **V1.2** (V1.1 batches A–H complete; V1.1 tag/release remains operator-gated)
+Current implementation milestone: **V1.2** (V1.1 batches A–H complete; preview tag `v1.1.0-preview.2` released)
 Next implementation batch: **V1.2 — in-process multi-agent orchestration (ADR first)**
 
 ## 1. Authority and precedence
@@ -51,8 +51,8 @@ dependency isolation rather than a security sandbox.
 | V0.10 | Complete | Dynamic plugin loader, manifest, trust boundary and CLI lifecycle are implemented. |
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
-| V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | Complete (untagged) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). No V1.1 tag or package exists; that needs operator authorization. |
+| V1.0 formal release | Closed via `v1.1.0-preview.2` | The release workflow was proven on tag `v1.1.0-preview.2` (`c81ffab`, run `35383901325`) with verified archives, package, SBOMs, checksums and attestations. No stable `v1.0.x` tag exists or will be created; the first stable tag is decided at V1.1 GA. |
+| V1.1 | Complete (preview tag `v1.1.0-preview.2`) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). The preview artifacts are workflow artifacts only, not a GitHub Release or NuGet publication. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not

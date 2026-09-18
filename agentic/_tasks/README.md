@@ -6,7 +6,7 @@ snapshots under `agentic/obsolete/`.
 
 | Order | Task | Status | Effort |
 |---:|---|---|---|
-| independent | [`Formal V1.0 release gate`](2026-09-16-release-v1.0-formal-gate.md) | Operator-gated | medio |
+| independent | [`Formal V1.0 release gate`](2026-09-16-release-v1.0-formal-gate.md) | Done for `v1.1.0-preview.2` | medio |
 | parallel admin | [`Repository topology bootstrap`](2026-09-16-repository-topology-bootstrap.md) | Decisions/authorization required; gates V1.3 | alto |
 | 1 | [`V1.1-A Skill SDK completion`](2026-09-16-v1.1-a-skill-sdk-completion.md) | Complete | molto alto |
 | 2 | [`V1.1-B system inventory`](2026-09-16-v1.1-b-system-inventory.md) | Complete | alto |
