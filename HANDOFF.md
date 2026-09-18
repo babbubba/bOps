@@ -161,9 +161,8 @@ through the UI — the same recovery story `plugins.json` already has.
 
 ## Next action and boundaries
 
-V1.2 planning (V1.2-A) is done as a draft: ADR-0030 is written as Proposed and the operator's
-decisions are D-026. Next action: the operator reviews ADR-0030 and moves it to Accepted; only then
-start V1.2-B (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
+V1.2-A is complete: ADR-0030 is Accepted (2026-09-18) and the operator's decisions are D-026.
+Next action: start V1.2-B (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 
 Do not create a release tag or publish packages without separate operator authorization. The private commercial repository remains product-gated and

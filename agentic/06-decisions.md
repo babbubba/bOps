@@ -578,7 +578,7 @@ operator can drive and inspect delegations from the dashboard.
 low-risk auto-approval.* *Journal of every step of every role.* *Resume only at role boundaries.*
 *Runtime + CLI only, or runtime only.* Full reasons are in ADR-0030.
 
-**Consequences.** ADR-0030 (Proposed) governs V1.2 and must be Accepted before implementation. The
+**Consequences.** ADR-0030 (Accepted 2026-09-18) governs V1.2. The
 scope now includes an HTTP and UI surface, so the API authorization matrix and threat model grow.
 `bOps.Abstractions` moves to `1.2.0-preview.1`, additive only. No per-role model, parallelism, agent
 approval or wildcard envelope is in scope.

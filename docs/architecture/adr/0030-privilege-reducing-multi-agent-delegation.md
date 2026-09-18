@@ -1,6 +1,7 @@
 # ADR-0030 — Privilege-reducing multi-agent delegation
 
-Status: Proposed
+Status: Accepted
+Accepted: 2026-09-18 by the operator
 
 Governs V1.2 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md`). Continues ADR-0017 (task
 persistence), ADR-0023/0024/0025 (Skills, execution plans, restricted invocation) and ADR-0022
