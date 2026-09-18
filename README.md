@@ -7,7 +7,7 @@
 **An open-source agent runtime for safely operating Windows and Linux machines
 through declarative tools, policies, planning and verification.**
 
-[![Status](https://img.shields.io/badge/status-v1.0%20release%20candidate-orange)](#status)
+[![Status](https://img.shields.io/badge/status-v1.1%20preview-orange)](#status)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-informational)](#)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -37,9 +37,11 @@ how that intent becomes an action.
    valid conclusion until `service.status("nginx")` reports `ACTIVE`.
 4. **Everything is audited** — every tool call emits a structured event, whatever the outcome.
 5. **The core is agnostic** to LLM provider and operating system, both hidden behind interfaces.
-6. **The CLI is the primary interface**, not a stopgap. The web UI is Phase 2.
+6. **The CLI is the primary interface**, not a stopgap. The local Angular web UI — live task
+   activity, approvals, a read-only plugin catalog and provider Settings — runs on the very same
+   runtime, policy and audit path; it is not a second, more permissive door.
 7. **Everything beyond the minimal runtime is a package** — System, Filesystem, Network,
-   Docker, Service and the LLM providers themselves load through the exact same extension
+   Docker, Service, Web and the LLM providers themselves load through the exact same extension
    contract a third-party package uses.
 
 ## How it works
@@ -67,22 +69,24 @@ Each iteration passes through the same gates:
 src/
 ├── core/
 │   ├── bOps.Abstractions/   # The contract / plugin SDK — zero dependencies
-│   ├── bOps.Runtime/        # Agent loop, registries
+│   ├── bOps.Runtime/        # Agent loop, registries, Skills, encrypted local vault, Settings
 │   ├── bOps.PluginHost/     # Dynamic package loader (V0.10, ADR-0020): manifest, isolated
 │   │                        # AssemblyLoadContext, install/enable/disable/remove
 │   ├── bOps.Policy/         # Risk model, policy engine, approval flow
 │   ├── bOps.Memory/         # Task state and conversation context (SQLite)
 │   ├── bOps.Audit/          # Append-only structured audit log
 │   ├── bOps.Cli/            # `bops "..."` — the primary interface
-│   ├── bOps.Api/            # Minimal API backing the web UI
+│   ├── bOps.Api/            # Authenticated minimal API backing the web UI
 │   └── bOps.Worker/         # Windows Service / systemd unit — not built yet
 ├── packages/                # First-party packages — same contract as third-party ones
 │   ├── bOps.Packages.System.{Core,Windows,Linux}
 │   ├── bOps.Packages.Service.{Core,Windows,Linux}   # V0.11, ADR-0021
-│   ├── bOps.Packages.{Filesystem,Network,Docker}.*
+│   ├── bOps.Packages.{Filesystem,Network,Docker,Web}
 │   └── bOps.Packages.Providers.*   # OpenRouter, Ollama, llama.cpp, OpenAI, DeepSeek, Anthropic
-└── samples/
-    └── bops-sample-plugin/  # A real, purely-demonstrative third-party plugin — see docs/plugins/
+├── samples/
+│   └── bops-sample-plugin/  # A real, purely-demonstrative third-party plugin — see docs/plugins/
+└── web/
+    └── bops-ui/             # Local Angular UI (Dashboard, Approvals, Plugins, Settings)
 ```
 
 The core is deliberately small: loop, registries, policy, memory, audit, contract.
@@ -151,6 +155,9 @@ S1). None of these are gaps; they're explicit non-goals.
   gateway — genuinely useful for "can this host reach the internet from here?" — not the full OS
   routing table (every destination-specific static route), which would need `GetIpForwardTable2`
   on Windows and `/proc/net/route` parsing on Linux for a shape few ops questions actually need.
+- Filesystem tools read nothing until `Filesystem:ReadPatterns` names what they may read — the
+  shipped configuration is deny-all on purpose. For local use, put your own patterns in the
+  git-ignored `appsettings.Development.json` next to `appsettings.json`.
 - `fs.hash` is SHA-256 only, single algorithm, by design.
 - `fs.move` never overwrites an existing destination — a deliberate refusal, not a limitation; a
   deliberate overwrite is a separate `fs.delete` then `fs.move`.
@@ -243,9 +250,10 @@ through the UI, exactly like losing `plugins.json` means reinstalling plugins.
 
 ## Roadmap
 
-**V0.1 through V1.0 are implemented, and V1.1 is in progress.** The formal V1.0 release workflow
-still needs its first operator-authorized tagged run. V1.1-A through V1.1-G are complete;
-V1.1-H cross-platform integration and release gate is the active next batch.
+**V0.1 through V1.0 are implemented, and V1.1 is in its closing gate.** The formal V1.0 release
+workflow still needs its first operator-authorized tagged run. V1.1-A through V1.1-G are complete;
+V1.1-H (cross-platform integration and release gate) has passed its local matrix and now waits on
+Windows/Linux CI and an explicit release authorization.
 
 | | |
 |---|---|
@@ -265,7 +273,7 @@ V1.1-H cross-platform integration and release gate is the active next batch.
 | `V1.1-A` *(complete)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
 | `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
-| `V1.1-H` | Cross-platform integration, documentation and release gate |
+| `V1.1-H` *(local gate passed, CI pending)* | Cross-platform integration, documentation and release gate |
 | `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
@@ -315,11 +323,18 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-V1.1-A is complete and GitHub Actions run `35178863698` is green on Windows and Linux, including
-.NET and Angular checks. V1.1-B system inventory is now active. V1.0 implementation and security
-hardening are complete, but its formal release gate remains open: no release-candidate tag has been
-created and the release workflow has not yet produced and attested the reproducible Windows/Linux
-artifacts, SBOMs and checksums. This is not yet a production endorsement.
+**V1.1 is a preview, not a release.** All eight V1.1 batches (A–H) are implemented. The last green
+Windows + Linux GitHub Actions run, `35277152220`, covers V1.1-G; the V1.1-H integration gate has so
+far been run locally only — Release build with zero warnings, the .NET suite excluding live-model
+tests, the Angular production build and headless tests, SDK packing, and an install/enable/disable/
+remove smoke test of the signed sample plugin — and its Windows/Linux CI confirmation follows the
+next push. The public SDK is versioned `1.1.0-preview.1`, additive over 1.0, and no V1.1 tag or
+package has been published.
+
+V1.0 implementation and security hardening are complete, but its formal release gate also remains
+open: no release-candidate tag has been created and the release workflow has not yet produced and
+attested the reproducible Windows/Linux artifacts, SBOMs and checksums. This is not yet a
+production endorsement.
 
 ## Documentation
 

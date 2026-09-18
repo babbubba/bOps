@@ -59,6 +59,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - New `bops.administrator` role/policy (`bOps.Api.ApiAuthorization`), required by every Settings
   mutation endpoint; the shipped local-dev credential now carries it alongside the three existing
   roles.
+- V1.1-H release-gate tests (`V11ReleaseGateTests`): the API role matrix for the plugin catalog and
+  Settings with each role on its own, a guarantee that the catalog exposes no mutation route,
+  Settings persistence across a genuine host restart on the same state directory and vault master
+  key, and a governed system-evidence-then-Web-research workflow proving an unsafe fetch
+  destination stays denied and audited.
 
 ### Changed
 
@@ -84,6 +89,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- `bOps.Api`'s committed `appsettings.json` again ships the documented safe filesystem defaults (no
+  readable paths, `MaximumEntries` 100000, `MaximumOutputBytes` 32768); broader local values had
+  crept in with V1.1-F and now live in the git-ignored `appsettings.Development.json`.
+- `scripts/Add-SpdxHeaders.ps1` recognised an existing header only at the very start of a file, so
+  re-running it would have prepended a second header to every source file; it now detects the SPDX
+  identifier in the file's first lines and also covers `samples/`, whose four files lacked the
+  header.
 - API composition tests no longer inherit a developer's model-provider secret from the host
   environment.
 - The AppHost dependency lock now includes the centrally configured SourceLink dependency, so the

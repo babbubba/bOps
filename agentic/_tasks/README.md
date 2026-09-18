@@ -10,12 +10,12 @@ snapshots under `agentic/obsolete/`.
 | parallel admin | [`Repository topology bootstrap`](2026-09-16-repository-topology-bootstrap.md) | Decisions/authorization required; gates V1.3 | alto |
 | 1 | [`V1.1-A Skill SDK completion`](2026-09-16-v1.1-a-skill-sdk-completion.md) | Complete | molto alto |
 | 2 | [`V1.1-B system inventory`](2026-09-16-v1.1-b-system-inventory.md) | Complete | alto |
-| 3 | [`V1.1-C filesystem inventory`](2026-09-16-v1.1-c-filesystem-inventory.md) | **Active implementation task** | alto |
-| 4 | [`V1.1-D governed recursive delete`](2026-09-16-v1.1-d-governed-recursive-delete.md) | Planned | molto alto |
-| 5 | [`V1.1-E Web capabilities`](2026-09-16-v1.1-e-web-capabilities.md) | Planned | molto alto |
-| 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Planned | medio |
-| 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Planned | molto alto |
-| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Planned | alto |
+| 3 | [`V1.1-C filesystem inventory`](2026-09-16-v1.1-c-filesystem-inventory.md) | Complete | alto |
+| 4 | [`V1.1-D governed recursive delete`](2026-09-16-v1.1-d-governed-recursive-delete.md) | Complete | molto alto |
+| 5 | [`V1.1-E Web capabilities`](2026-09-16-v1.1-e-web-capabilities.md) | Complete | molto alto |
+| 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Complete | medio |
+| 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
+| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | **Active** — local gate passed, CI pending | alto |
 | 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Future | molto alto |
 | 10 | [`V1.3 OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
 | 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |

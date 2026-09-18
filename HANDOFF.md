@@ -1,4 +1,43 @@
-# Handoff — V1.1-G complete; V1.1-H active
+# Handoff — V1.1-G complete; V1.1-H local gate passed, CI pending
+
+## V1.1-H status (2026-09-18)
+
+The V1.1-H integration gate was run locally on Windows 11 and is **not closed**: Windows/Linux CI must confirm it.
+
+**Finding, resolved.** `src/core/bOps.Api/appsettings.json` had drifted from the documented and CLI
+defaults in `55d9585` (V1.1-F): `Filesystem:ReadPatterns` was `["*","c:\**"]` (read access to the
+whole `C:` drive on a fresh install), `MaximumEntries` `900000` and `MaximumOutputBytes` `131072`.
+The committed file now carries the safe defaults again (no readable paths, `100000`, `32768`). The
+wider values are a local developer setting and live in `src/core/bOps.Api/appsettings.Development.json`,
+which is git-ignored and loaded automatically by the Development launch profile. To use `fs.size`
+and inventory over real paths, set `Filesystem:ReadPatterns` explicitly (in that file or the
+environment); nothing is readable by default.
+
+What the local pass established (details in
+`agentic/_tasks/2026-09-16-v1.1-h-integration-release.md`): zero removed or changed public
+`bOps.Abstractions` members against the V1.0 close-out commit (`891dae2`), additions only; SDK
+packs as `1.1.0-preview.1`; the signed sample plugin validates, installs, enables, disables and
+removes through the built CLI; no credential-shaped strings outside test fixtures; every relative
+Markdown link resolves; and `Add-SpdxHeaders.ps1` was fixed (it would have doubled every header on
+re-run) and now covers `samples/`.
+
+### Validation on 2026-09-18
+
+- `dotnet build bOps.slnx --configuration Release` — 0 warnings, 0 errors.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"` —
+  **548 passed, 32 skipped, 0 failed (580 total)**. Per assembly (passed/skipped): Architecture 4/0,
+  Memory 5/0, Audit 9/0, Policy 23/0, Runtime 186/0, PluginHost 49/0, Api 65/0 (45 before this
+  batch plus 20 new in `V11ReleaseGateTests`), Providers.Anthropic 9/0, Network 10/0, System.Core
+  12/0, System.Windows 22/0, System.Linux 6/16, Service.Windows 7/5, Service.Linux 7/3, Docker 7/3,
+  Web 61/0, Filesystem 66/5.
+- Skipped tests are platform- or environment-gated and are **not** verified on this machine: Docker
+  daemon absent (3), Windows service tests need elevation (5), Linux-only System/Service tests
+  (16 + 3), and Filesystem tests needing Linux or symlink privilege (5). They belong to the CI gate.
+- Angular: `npm ci`, `npm run build` and `ng test --watch=false --browsers=ChromeHeadless` — 50/50.
+- Not exercised: a browser run of the UI in this batch, and any single test chaining a real model,
+  Web and an installed Skill together.
+
+## V1.1-G summary
 
 V1.1-A through V1.1-G are complete on public `bOps` `main`. V1.1-G adds writable Settings: an
 administrator-only encrypted local vault for provider API keys, a separate non-secret store for
@@ -116,8 +155,8 @@ through the UI — the same recovery story `plugins.json` already has.
 
 ## Next action and boundaries
 
-Implement `agentic/_tasks/2026-09-16-v1.1-h-integration-release.md` once authorized: cross-platform
-integration and the V1.1 release gate.
+Confirm the Windows and Linux CI run for this batch, then close the remaining unchecked items in
+`agentic/_tasks/2026-09-16-v1.1-h-integration-release.md`.
 
 Do not start V1.2 or later work until V1.1-H closes. Do not create a release tag or publish packages
 without separate operator authorization. The private commercial repository remains product-gated and

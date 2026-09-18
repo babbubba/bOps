@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A through V1.1-G are complete and green on Windows/Linux CI; batch H remains. |
+| V1.1 | In progress | V1.1-A through V1.1-G are complete and green on Windows/Linux CI; batch H has passed its local matrix and awaits its first Windows/Linux CI run. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
