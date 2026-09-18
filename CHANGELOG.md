@@ -103,6 +103,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   environment.
 - The AppHost dependency lock now includes the centrally configured SourceLink dependency, so the
   release workflow can restore the complete solution in locked mode.
+- `bOps.AppHost` no longer uses a package lock file: the Aspire SDK adds RID-specific Dashboard and
+  DCP packages for the restoring machine, so no single lock could satisfy locked restore on both
+  Windows and Linux (`v1.1.0-preview.1` Linux release job failed with NU1004).
+- The release workflow installs the UI dependencies before generating the SBOM and stamps the SBOM
+  with the SDK package version instead of the script's stale `1.0.0` default.
 
 ## [1.0.0-rc.1] - 2026-09-16
 

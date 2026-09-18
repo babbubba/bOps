@@ -12,6 +12,11 @@
          (a richer local dashboard/run experience). This AppHost is run with `dotnet run`, not the
          `aspire` CLI, and needs none of that — see docs/architecture/suppressions.md. -->
     <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+    <!-- The Aspire SDK adds Aspire.Dashboard.Sdk.<rid> and Aspire.Hosting.Orchestration.<rid> for the
+         restoring machine's RID, so a lock file is host-specific and can never satisfy
+         locked restore mode on both Windows and Linux. The AppHost is dev-only and is not a release
+         artifact (D-002), so it is the one project that opts out of lock files. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>
