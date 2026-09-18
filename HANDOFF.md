@@ -169,7 +169,14 @@ packs, and CI run `35399488393` is green on Windows and Linux. Two things to kno
 that V1.1 had renumbered `ToolParameterType` (fixed in B, see its task file), and ADR-0030's "empty
 intersection in any dimension is a denial" needs a per-role clarification before enforcement (the open
 question in `agentic/_tasks/2026-09-18-v1.2-b-contracts.md`).
-Next action: V1.2-C (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
+
+V1.2-C is in progress. On 2026-09-19 the operator chose a per-role requirement table, a new ADR-0031 to
+record it (an accepted ADR is not edited), and role-profile contracts in `bOps.Abstractions` (D-027).
+ADR-0031 is **Proposed**: it also states two things beyond the table for review (grant versus exhaustion,
+and that targets and environments are not matched for plain Read calls). No enforcement code is written
+until the operator accepts it.
+Next action: review and accept ADR-0031, then continue V1.2-C
+(`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 
 Do not create a release tag or publish packages without separate operator authorization. The private commercial repository remains product-gated and

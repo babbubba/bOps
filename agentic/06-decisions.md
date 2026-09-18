@@ -6,7 +6,8 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, and D-024–D-026 on 2026-09-18.
+2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
+D-027 on 2026-09-19.
 
 ---
 
@@ -582,3 +583,31 @@ low-risk auto-approval.* *Journal of every step of every role.* *Resume only at 
 scope now includes an HTTP and UI surface, so the API authorization matrix and threat model grow.
 `bOps.Abstractions` moves to `1.2.0-preview.1`, additive only. No per-role model, parallelism, agent
 approval or wildcard envelope is in scope.
+
+---
+
+### D-027 — V1.2 envelope: a per-role requirement table, ADR-0031, and profile contracts in the SDK
+
+**Decision.** Three choices, taken by the operator on 2026-09-19 when V1.2-C started. (1) ADR-0030's
+"an empty intersection in any dimension is a denial" is refined by a per-role table: each envelope
+dimension is required (empty is `DelegationDenied`), optional (empty means nothing permitted) or not
+applicable (forced to empty or zero) for each of Discovery, Diagnostic, Remediation and Verification.
+(2) The refinement is recorded as a new ADR-0031 that amends ADR-0030 §3, not as an edit to ADR-0030.
+(3) Role profiles, the operator's authority request and a read-only profile source interface are
+additive contracts in `bOps.Abstractions`; `bOps.Policy` implements the source from `policy.yaml`.
+
+**Reason.** The literal rule grants authority no role uses and, once Discovery and Diagnostic have
+spent the token budget, would deny an approved plan for a resource Remediation and Verification never
+consume. A fixed table keeps least privilege by construction and makes the fixed pipeline of ADR-0030 §2
+testable. `agentic/05-workflow.md` forbids changing an accepted ADR's meaning by editing it, and
+ADR-0019 is the precedent for amending with a new one. The contracts sit in the SDK because
+`bOps.Runtime` cannot reference `bOps.Policy`, and this mirrors `IPolicyEngine`.
+
+**Rejected.** *The literal reading.* *Requirements declared per dimension in the profile*, which turns an
+architectural fact into operator configuration. *A clarification section inside ADR-0030.*
+*Runtime-owned profile types with a host adapter*, which duplicates one concept in Api and Cli.
+
+**Consequences.** ADR-0031 (Proposed 2026-09-19) must be accepted before V1.2-C enforces anything.
+`bOps.Abstractions` moves to `1.2.0-preview.2`. Targets and environments are not matched per call for
+plain Read calls, because tools declare none; that limit is stated in ADR-0031 and carried into the
+threat model (V1.2-L).
