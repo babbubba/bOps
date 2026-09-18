@@ -176,7 +176,7 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.1.0-preview.1, )"
+          "bOps.Abstractions": "[1.1.0-preview.2, )"
         }
       },
       "bops.memory": {
@@ -184,21 +184,21 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.1.0-preview.1, )"
+          "bOps.Abstractions": "[1.1.0-preview.2, )"
         }
       },
       "bops.policy": {
         "type": "Project",
         "dependencies": {
           "YamlDotNet": "[18.1.0, )",
-          "bOps.Abstractions": "[1.1.0-preview.1, )"
+          "bOps.Abstractions": "[1.1.0-preview.2, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.1.0-preview.1, )"
+          "bOps.Abstractions": "[1.1.0-preview.2, )"
         }
       }
     }

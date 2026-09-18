@@ -54,9 +54,22 @@ jobs:
       - name: Restore .NET tools
         run: dotnet tool restore
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/bops-ui/package-lock.json
+
+      - name: UI install
+        run: npm ci
+        working-directory: web/bops-ui
+
       - name: Generate SBOM
         shell: pwsh
-        run: ./scripts/Generate-Sbom.ps1
+        run: |
+          $sdkProject = [xml](Get-Content -Raw src/core/bOps.Abstractions/bOps.Abstractions.csproj)
+          $version = @($sdkProject.Project.PropertyGroup.Version | Where-Object { $_ })[0]
+          ./scripts/Generate-Sbom.ps1 -Version $version
 
       - name: Create deterministic runtime archive and checksums
         shell: pwsh
