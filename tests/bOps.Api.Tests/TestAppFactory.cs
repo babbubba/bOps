@@ -25,7 +25,17 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
     private readonly string _modelProviderSecretVariableName = $"BOPS_TEST_MODEL_PROVIDER_API_KEY_{Guid.NewGuid():N}";
     private readonly string _vaultMasterKeyVariableName = $"BOPS_TEST_VAULT_MASTER_KEY_{Guid.NewGuid():N}";
 
-    public string TempDirectory { get; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
+    public string TempDirectory { get; init; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
+
+    /// <summary>
+    /// Leaves <see cref="TempDirectory"/> on disk at dispose so a second factory can boot against
+    /// the same persisted state — the only way to prove a change survives a real host restart.
+    /// The caller then owns the cleanup.
+    /// </summary>
+    public bool KeepTempDirectory { get; init; }
+
+    /// <summary>The vault master key value; share it between factories to reopen the same vault.</summary>
+    public string VaultMasterKey { get; init; } = $"test-vault-master-key-{Guid.NewGuid():N}";
 
     public IChatModel? ChatModel { get; set; }
 
@@ -40,7 +50,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, config) =>
         {
             Environment.SetEnvironmentVariable(_secretVariableName, TestApiKey);
-            Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, $"test-vault-master-key-{Guid.NewGuid():N}");
+            Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, VaultMasterKey);
             var settings = new Dictionary<string, string?>
             {
                 ["Audit:FilePath"] = Path.Combine(TempDirectory, "audit.jsonl"),
@@ -95,10 +105,14 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
 
-        if (disposing && Directory.Exists(TempDirectory))
+        if (disposing)
         {
             Environment.SetEnvironmentVariable(_secretVariableName, null);
             Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, null);
+        }
+
+        if (disposing && !KeepTempDirectory && Directory.Exists(TempDirectory))
+        {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try
             {
