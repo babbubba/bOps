@@ -114,7 +114,7 @@
         "type": "Project",
         "dependencies": {
           "Docker.DotNet": "[3.125.15, )",
-          "bOps.Abstractions": "[1.1.0-preview.1, )"
+          "bOps.Abstractions": "[1.1.0-preview.2, )"
         }
       }
     }
