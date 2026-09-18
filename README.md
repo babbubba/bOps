@@ -250,10 +250,10 @@ through the UI, exactly like losing `plugins.json` means reinstalling plugins.
 
 ## Roadmap
 
-**V0.1 through V1.0 are implemented, and V1.1 is in its closing gate.** The formal V1.0 release
-workflow still needs its first operator-authorized tagged run. V1.1-A through V1.1-G are complete;
-V1.1-H (cross-platform integration and release gate) has passed its local matrix and now waits on
-Windows/Linux CI and an explicit release authorization.
+**V0.1 through V1.1 are implemented.** The formal V1.0 release workflow still needs its first
+operator-authorized tagged run, and V1.1 is likewise untagged. V1.1-A through V1.1-H are complete,
+including the cross-platform integration and release gate, which is green on Windows and Linux CI.
+V1.2 (multi-agent orchestration) is next.
 
 | | |
 |---|---|
@@ -273,7 +273,7 @@ Windows/Linux CI and an explicit release authorization.
 | `V1.1-A` *(complete)* | Skill provider interfaces, restricted tool invocation, contextual policy, terminal-run semantics and end-to-end OSS sample Skill |
 | `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
-| `V1.1-H` *(local gate passed, CI pending)* | Cross-platform integration, documentation and release gate |
+| `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
@@ -323,13 +323,12 @@ sandbox — a loaded plugin runs with the host's own privileges.
 
 ## Status
 
-**V1.1 is a preview, not a release.** All eight V1.1 batches (A–H) are implemented. The last green
-Windows + Linux GitHub Actions run, `35277152220`, covers V1.1-G; the V1.1-H integration gate has so
-far been run locally only — Release build with zero warnings, the .NET suite excluding live-model
-tests, the Angular production build and headless tests, SDK packing, and an install/enable/disable/
-remove smoke test of the signed sample plugin — and its Windows/Linux CI confirmation follows the
-next push. The public SDK is versioned `1.1.0-preview.1`, additive over 1.0, and no V1.1 tag or
-package has been published.
+**V1.1 is a preview, not a release.** All eight V1.1 batches (A–H) are implemented and the V1.1-H
+integration gate is closed: Release build with zero warnings, the .NET suite excluding live-model
+tests, the Angular production build and headless tests, SDK packing and an install/enable/disable/
+remove smoke test of the signed sample plugin all passed locally, and GitHub Actions is green on
+Windows and Linux (runs `35365098294` and `35372748588`). The public SDK is versioned
+`1.1.0-preview.1`, additive over 1.0, and no V1.1 tag or package has been published.
 
 V1.0 implementation and security hardening are complete, but its formal release gate also remains
 open: no release-candidate tag has been created and the release workflow has not yet produced and

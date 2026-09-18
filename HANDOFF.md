@@ -1,8 +1,14 @@
-# Handoff — V1.1-G complete; V1.1-H local gate passed, CI pending
+# Handoff — V1.1 complete (A–H, untagged); V1.2 next
 
-## V1.1-H status (2026-09-18)
+## V1.1-H status (2026-09-18) — closed
 
-The V1.1-H integration gate was run locally on Windows 11 and is **not closed**: Windows/Linux CI must confirm it.
+The V1.1-H integration gate was run locally on Windows 11 and then on GitHub Actions. CI is green on
+Windows and Linux: run `35365098294` for the batch itself and `35372748588` for the follow-up
+dashboard history commit. The latter's first attempt failed on Windows in
+`WindowsProcessActionToolsTests.ProcessStop_Succeeds_ForAProcessWithAMainWindow` ("has no main window
+to close"): an existing race — the test only waits for input idle before `CloseMainWindow()` — in a
+commit that touched no .NET code, and it passed on a rerun of the failed job. It is a known flaky
+test, not a fixed one; harden it by polling for the main window handle if it recurs.
 
 **Finding, resolved.** `src/core/bOps.Api/appsettings.json` had drifted from the documented and CLI
 defaults in `55d9585` (V1.1-F): `Filesystem:ReadPatterns` was `["*","c:\**"]` (read access to the
@@ -155,9 +161,9 @@ through the UI — the same recovery story `plugins.json` already has.
 
 ## Next action and boundaries
 
-Confirm the Windows and Linux CI run for this batch, then close the remaining unchecked items in
-`agentic/_tasks/2026-09-16-v1.1-h-integration-release.md`.
+Start V1.2 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md`, effort molto alto) with its ADR on
+agent identity, delegation, reduced privilege context, budgets, cancellation and parent/child
+persistence. The independent formal V1.0 release gate and any V1.1 tag remain operator-gated.
 
-Do not start V1.2 or later work until V1.1-H closes. Do not create a release tag or publish packages
-without separate operator authorization. The private commercial repository remains product-gated and
+Do not create a release tag or publish packages without separate operator authorization. The private commercial repository remains product-gated and
 unchanged; only the workspace submodule pin advances after this public closure.

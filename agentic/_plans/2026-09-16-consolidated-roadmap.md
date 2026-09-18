@@ -2,8 +2,8 @@
 
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
-Current implementation milestone: **V1.1**
-Next implementation batch: **V1.1-H — cross-platform integration and release gate**
+Current implementation milestone: **V1.2** (V1.1 batches A–H complete; V1.1 tag/release remains operator-gated)
+Next implementation batch: **V1.2 — in-process multi-agent orchestration (ADR first)**
 
 ## 1. Authority and precedence
 
@@ -52,7 +52,7 @@ dependency isolation rather than a security sandbox.
 | V0.11 | Complete | Previously promised operational tools and Service packages are implemented. Closed milestones are not reopened. |
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Open | No release-candidate tag has run the authoritative release workflow and produced verified artifacts, SBOMs, checksums and attestations. |
-| V1.1 | In progress | V1.1-A through V1.1-G are complete and green on Windows/Linux CI; batch H has passed its local matrix and awaits its first Windows/Linux CI run. |
+| V1.1 | Complete (untagged) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). No V1.1 tag or package exists; that needs operator authorization. |
 | V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not

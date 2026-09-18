@@ -15,7 +15,7 @@ snapshots under `agentic/obsolete/`.
 | 5 | [`V1.1-E Web capabilities`](2026-09-16-v1.1-e-web-capabilities.md) | Complete | molto alto |
 | 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Complete | medio |
 | 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
-| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | **Active** — local gate passed, CI pending | alto |
+| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
 | 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Future | molto alto |
 | 10 | [`V1.3 OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
 | 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
