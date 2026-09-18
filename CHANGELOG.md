@@ -83,6 +83,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   behaviour changes yet; the orchestrator, enforcement and persistence follow in V1.2-C to V1.2-K.
 - `FrozenContractValuesTests` pins every member of the ten 1.0 enums to its 1.0 value, and
   `AbstractionsStaysDependencyFreeTests` asserts the SDK references only the .NET base class library.
+- ADR-0031 (Accepted) amends ADR-0030 §3 with a per-role table of required, optional and not-applicable
+  envelope dimensions, and D-027 records the operator's three choices. Documentation only; no behaviour
+  changes until V1.2-C implements it.
 
 ### Changed
 
