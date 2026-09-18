@@ -8,8 +8,8 @@ documents; it does not duplicate or supersede their rules.
 bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
 policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
 decides and executes. V1.1 (batches A–H) is complete, including the cross-platform integration and
-release gate; only its tag and formal release remain operator-gated. The next ordered milestone is
-V1.2 multi-agent orchestration, which starts with its ADR. All gates are defined only by the
+release gate, and its preview release `v1.1.0-preview.2` is tagged. The active milestone is V1.2
+multi-agent orchestration; its design is ADR-0030 and its sub-tasks A–M are listed in the V1.2 task. All gates are defined only by the
 consolidated roadmap.
 
 ## Required read order
