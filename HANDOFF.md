@@ -172,10 +172,10 @@ question in `agentic/_tasks/2026-09-18-v1.2-b-contracts.md`).
 
 V1.2-C is in progress. On 2026-09-19 the operator chose a per-role requirement table, a new ADR-0031 to
 record it (an accepted ADR is not edited), and role-profile contracts in `bOps.Abstractions` (D-027).
-ADR-0031 is **Proposed**: it also states two things beyond the table for review (grant versus exhaustion,
-and that targets and environments are not matched for plain Read calls). No enforcement code is written
-until the operator accepts it.
-Next action: review and accept ADR-0031, then continue V1.2-C
+ADR-0031 is **Accepted** (2026-09-19). It also states two things beyond the table (grant versus
+exhaustion, and that targets and environments are not matched for plain Read calls). No enforcement
+code is written yet.
+Next action: continue V1.2-C with the SDK profile contracts, the reduction and the enforcement
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

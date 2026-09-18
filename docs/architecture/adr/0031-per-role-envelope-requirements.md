@@ -1,11 +1,11 @@
 # ADR-0031 — Per-role envelope requirements: amends ADR-0030 §3
 
-Status: Proposed
-Date: 2026-09-19
+Status: Accepted
+Accepted: 2026-09-19 by the operator
 
 Amends ADR-0030 §3 (and where §1's role profiles live). The three choices below were made by the
 operator on 2026-09-19 when V1.2-C started and are recorded as D-027. Everything else in ADR-0030
-stands. On acceptance ADR-0030 receives an `Amended by ADR-0031` pointer; its text is not edited
+stands. ADR-0030 carries an `Amended by ADR-0031` pointer; its text is not edited
 (`agentic/05-workflow.md`: an accepted ADR is never edited to change its meaning).
 
 ## Context

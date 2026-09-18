@@ -607,7 +607,7 @@ ADR-0019 is the precedent for amending with a new one. The contracts sit in the 
 architectural fact into operator configuration. *A clarification section inside ADR-0030.*
 *Runtime-owned profile types with a host adapter*, which duplicates one concept in Api and Cli.
 
-**Consequences.** ADR-0031 (Proposed 2026-09-19) must be accepted before V1.2-C enforces anything.
+**Consequences.** ADR-0031 (Accepted 2026-09-19) governs V1.2-C enforcement.
 `bOps.Abstractions` moves to `1.2.0-preview.2`. Targets and environments are not matched per call for
 plain Read calls, because tools declare none; that limit is stated in ADR-0031 and carried into the
 threat model (V1.2-L).
