@@ -95,6 +95,65 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAsync_ChainsDelegationEvents_WithOldEventsUnchanged()
+    {
+        // ADR-0030 section 8 / V1.2-B: the real sink must serialize the new event types and the
+        // correlation block, keep one chain across old and new events, and write a non-delegated
+        // event exactly as before (no "Delegation" property at all).
+        var delegationId = Guid.NewGuid();
+        var agent = new AgentIdentity(AgentId.New(), AgentRoleKind.Remediation);
+        var correlation = new DelegationCorrelation(delegationId, "envelope-hash", agent);
+        var orchestrator = new DelegationCorrelation(delegationId, "root-hash", null);
+
+        AuditEvent[] events =
+        [
+            SampleEvent(0),
+            SampleEvent(1) with { Delegation = correlation },
+            new DelegationLifecycleAuditEvent
+            {
+                TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = delegationId, StepIndex = -1, Actor = Actor,
+                Delegation = orchestrator, Stage = DelegationStage.Requested, Status = DelegationStatus.Running,
+            },
+            new DelegationEnvelopeAuditEvent
+            {
+                TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = delegationId, StepIndex = -1, Actor = Actor,
+                Delegation = orchestrator, Role = AgentRoleKind.Remediation, ParentEnvelopeHash = "root-hash",
+                ReducedDimensions = [EnvelopeDimension.Tools], Denial = null,
+            },
+            new DelegationJournalAuditEvent
+            {
+                TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = delegationId, StepIndex = 0, Actor = Actor,
+                Delegation = correlation, Phase = JournalPhase.Intent, Tool = "test.tool", ArgumentsHash = "args-hash",
+            },
+            new DelegationReconciliationAuditEvent
+            {
+                TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = delegationId, StepIndex = 0, Actor = Actor,
+                Delegation = orchestrator, Action = ReconciliationAction.VerifiedDone, ResolvedBy = ActorIdentity.RuntimeSystem,
+                Verification = VerificationStatus.Confirmed,
+            },
+        ];
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            foreach (var evt in events)
+            {
+                await sink.WriteAsync(evt);
+            }
+        }
+
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        Assert.Equal(events.Length, lines.Length);
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        Assert.DoesNotContain("elegation", lines[0], StringComparison.Ordinal);
+        Assert.Contains("delegationLifecycle", lines[2], StringComparison.Ordinal);
+        Assert.Contains("delegationEnvelope", lines[3], StringComparison.Ordinal);
+        Assert.Contains("delegationJournal", lines[4], StringComparison.Ordinal);
+        Assert.Contains("delegationReconciliation", lines[5], StringComparison.Ordinal);
+        Assert.Contains(delegationId.ToString(), lines[1], StringComparison.Ordinal);
+        Assert.Contains(agent.Id.ToString(), lines[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VerifyFile_ReturnsValid_ForAFileThatDoesNotExist()
     {
         var result = AuditChainVerifier.VerifyFile(_filePath);

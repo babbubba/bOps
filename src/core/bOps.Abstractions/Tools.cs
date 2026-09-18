@@ -48,14 +48,18 @@ public enum ToolParameterType
     /// <summary>A filesystem path, subject to the path policy (agentic/03-security-rules.md, rule S11).</summary>
     Path,
 
-    /// <summary>A JSON array of filesystem paths, each subject to the path policy.</summary>
-    PathList,
-
     /// <summary>A span of time.</summary>
     Duration,
 
     /// <summary>One of a fixed set of values, listed in <see cref="ToolParameter.AllowedValues"/>.</summary>
     Enum,
+
+    /// <summary>
+    /// A JSON array of filesystem paths, each subject to the path policy. Added in 1.1, so it is last:
+    /// the C# compiler inlines an enum member's value into every package built against the SDK, so a
+    /// member inserted in the middle would silently change what a package built against 1.0 declares.
+    /// </summary>
+    PathList = 7,
 }
 #pragma warning restore CA1720
 

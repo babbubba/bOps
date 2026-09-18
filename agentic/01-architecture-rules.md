@@ -180,7 +180,7 @@ public sealed class ToolArguments   // backed by JsonObject
 ```csharp
 public enum RiskLevel { Read, Low, Medium, High, Critical }
 
-public enum ToolParameterType { String, Integer, Number, Boolean, Path, PathList, Duration, Enum }
+public enum ToolParameterType { String, Integer, Number, Boolean, Path, Duration, Enum, PathList = 7 }
 
 public sealed record ToolParameter(
     string Name,

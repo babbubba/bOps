@@ -73,6 +73,17 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   key, and a governed system-evidence-then-Web-research workflow proving an unsafe fetch
   destination stays denied and audited.
 
+- V1.2-B delegation contracts in `bOps.Abstractions` (`1.2.0-preview.1`, ADR-0030), all additive and
+  dependency-free: `AgentId`/`AgentIdentity`/`AgentRoleKind`, the reduce-only `AuthorityEnvelope` with its
+  budgets, maintenance window, reduction result and canonical `DelegationHasher`, the durable
+  `DelegationRun` aggregate with its step journal and reconciliation records, `VerificationReport`,
+  `IDelegationStore`, four delegation audit events, an optional `Delegation` correlation block on every
+  audit event and optional runtime-stamped provenance on `Evidence`. Both new members are omitted from the
+  JSON when null, so events and evidence that never delegate serialize exactly as before. No runtime
+  behaviour changes yet; the orchestrator, enforcement and persistence follow in V1.2-C to V1.2-K.
+- `FrozenContractValuesTests` pins every member of the ten 1.0 enums to its 1.0 value, and
+  `AbstractionsStaysDependencyFreeTests` asserts the SDK references only the .NET base class library.
+
 ### Changed
 
 - `bOps.Abstractions` now identifies the in-progress additive SDK surface as
@@ -115,6 +126,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   with the SDK package version instead of the script's stale `1.0.0` default.
 - `bOps.Abstractions` moves to `1.1.0-preview.2` so the package version matches the corrected
   release tag; `v1.1.0-preview.1` was published but its release run failed and produced no artifacts.
+- `ToolParameterType.PathList` had been inserted between `Path` and `Duration` in V1.1, renumbering
+  `Duration` (5 to 6) and `Enum` (6 to 7) and so breaking the additive-only promise for any package built
+  against 1.0, whose compiler inlined the old values. It is now the last member with the explicit value 7,
+  restoring the 1.0 values. Source-compatible; a binary built against a 1.1 preview must be recompiled.
+  The V1.1-H API diff compared member names and could not see this.
 
 ## [1.0.0-rc.1] - 2026-09-16
 
