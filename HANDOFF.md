@@ -161,9 +161,9 @@ through the UI — the same recovery story `plugins.json` already has.
 
 ## Next action and boundaries
 
-Start V1.2 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md`, effort molto alto) with its ADR on
-agent identity, delegation, reduced privilege context, budgets, cancellation and parent/child
-persistence. The independent formal V1.0 release gate and any V1.1 tag remain operator-gated.
+V1.2-A is complete: ADR-0030 is Accepted (2026-09-18) and the operator's decisions are D-026.
+Next action: start V1.2-B (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
+The formal release gate is closed via `v1.1.0-preview.2`.
 
 Do not create a release tag or publish packages without separate operator authorization. The private commercial repository remains product-gated and
 unchanged; only the workspace submodule pin advances after this public closure.

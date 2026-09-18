@@ -6,7 +6,7 @@ alternatives are not re-proposed without new information.
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
 All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
-2026-09-15, D-016–D-020 on 2026-09-16, and D-021–D-023 on 2026-09-17.
+2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, and D-024–D-026 on 2026-09-18.
 
 ---
 
@@ -555,3 +555,30 @@ the next restart, matching the existing composition-root-only resolution of `Mod
 live-reconfiguration of `IChatModelRegistry` was introduced. See ADR-0029 for the full design,
 including the precedence rule (`ProviderResolution`), the masking formula, and the documented
 Windows ACL-hardening gap.
+
+---
+
+### D-026 — V1.2 multi-agent: fixed pipeline, human-only approval, side-effect journal, all surfaces
+
+**Decision.** Four choices, taken by the operator on 2026-09-18 before ADR-0030 was drafted:
+(1) the orchestrator is a deterministic runtime pipeline — Discovery, Diagnostic, human approval,
+Remediation, Verification — and the model reasons only inside Discovery and Diagnostic; (2) agents
+never approve an action, approvals stay human and hash-bound; (3) only steps with side effects are
+journaled (intent before, outcome after), read-only roles restart from their beginning, and an
+ambiguous step is reconciled by its declared verification and otherwise fails closed with no automatic
+retry; (4) V1.2 ships the runtime, CLI, API and UI surfaces together.
+
+**Reason.** A fixed pipeline keeps the delegation graph testable and closes the path by which poisoned
+tool output could steer which role runs (S5). Human-only approval keeps separation of duties true by
+construction. A side-effect journal is the smallest state that answers "did this action happen" after a
+crash, which V1.2's resume goal requires. The operator chose full surfaces over runtime + CLI so an
+operator can drive and inspect delegations from the dashboard.
+
+**Rejected.** *Model-proposed delegation.* *Skill-only roles with no model.* *Agent approval, including
+low-risk auto-approval.* *Journal of every step of every role.* *Resume only at role boundaries.*
+*Runtime + CLI only, or runtime only.* Full reasons are in ADR-0030.
+
+**Consequences.** ADR-0030 (Accepted 2026-09-18) governs V1.2. The
+scope now includes an HTTP and UI surface, so the API authorization matrix and threat model grow.
+`bOps.Abstractions` moves to `1.2.0-preview.1`, additive only. No per-role model, parallelism, agent
+approval or wildcard envelope is in scope.

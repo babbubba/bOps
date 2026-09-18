@@ -322,11 +322,20 @@ reduced privilege context, budgets, timeouts, cancellation and parent/child pers
 is sequential by default. A sub-agent cannot increase capability, target or risk and cannot approve
 its own action. Evidence provenance and the complete delegation chain are audited.
 
+**Design (ADR-0030, decisions D-026).** A fixed, deterministic pipeline — Discovery, Diagnostic, human
+approval of the plan hash, Remediation, independent Verification. The model reasons only in Discovery
+and Diagnostic; Remediation and Verification make no model call. A child's authority envelope is the
+intersection of the parent's, the role profile's and the request's, and an empty intersection is a
+denial. Approvals are human only. Only side-effecting steps are journaled (intent before, outcome
+after); an ambiguous step is reconciled by its declared verification or fails closed with no automatic
+retry. Surfaces: runtime, CLI, API and UI.
+
 **Definition of Done.** One objective is delegated, diagnosed, planned, authorized, executed and
 independently verified by distinct roles with deterministic tests, resumability and privilege
 isolation.
 
-**Task.** `agentic/_tasks/2026-09-16-v1.2-multi-agent.md` — effort **molto alto**.
+**Task.** `agentic/_tasks/2026-09-16-v1.2-multi-agent.md` — effort **molto alto** for planning and the
+security-boundary sub-tasks; split into sub-tasks A–M with individual efforts (basso to molto alto).
 
 ## 10. V1.3 — generic entitlement and local plugin lifecycle
 
