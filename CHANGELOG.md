@@ -115,6 +115,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   with the SDK package version instead of the script's stale `1.0.0` default.
 - `bOps.Abstractions` moves to `1.1.0-preview.2` so the package version matches the corrected
   release tag; `v1.1.0-preview.1` was published but its release run failed and produced no artifacts.
+- `ToolParameterType.PathList` had been inserted between `Path` and `Duration` in V1.1, renumbering
+  `Duration` (5 to 6) and `Enum` (6 to 7) and so breaking the additive-only promise for any package built
+  against 1.0, whose compiler inlined the old values. It is now the last member with the explicit value 7,
+  restoring the 1.0 values. Source-compatible; a binary built against a 1.1 preview must be recompiled.
+  The V1.1-H API diff compared member names and could not see this.
 
 ## [1.0.0-rc.1] - 2026-09-16
 
