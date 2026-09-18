@@ -328,12 +328,15 @@ integration gate is closed: Release build with zero warnings, the .NET suite exc
 tests, the Angular production build and headless tests, SDK packing and an install/enable/disable/
 remove smoke test of the signed sample plugin all passed locally, and GitHub Actions is green on
 Windows and Linux (runs `35365098294` and `35372748588`). The public SDK is versioned
-`1.1.0-preview.1`, additive over 1.0, and no V1.1 tag or package has been published.
+`1.1.0-preview.2`, additive over 1.0.
 
-V1.0 implementation and security hardening are complete, but its formal release gate also remains
-open: no release-candidate tag has been created and the release workflow has not yet produced and
-attested the reproducible Windows/Linux artifacts, SBOMs and checksums. This is not yet a
-production endorsement.
+The release workflow has been proven on tag `v1.1.0-preview.2` (commit `c81ffab`, run
+`35383901325`): both the Windows and Linux jobs are green and produced the reproducible runtime
+archives, the `bOps.Abstractions` package, CycloneDX SBOMs and SHA-256 checksums, all attested with
+GitHub build provenance. The earlier tag `v1.1.0-preview.1` failed its run (host-specific AppHost
+lock, missing UI install before the SBOM step) and produced no artifacts; it is kept unchanged and
+superseded. The artifacts are workflow artifacts, not a GitHub Release or a NuGet publication, and
+this is not yet a production endorsement.
 
 ## Documentation
 
