@@ -4,6 +4,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ## [Unreleased]
 
+### Released
+
+- `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
+  Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
+
 ### Added
 
 - V1.1 preview contracts for Capability, Evidence, Finding, SkillReport and immutable, canonically

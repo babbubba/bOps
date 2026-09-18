@@ -22,7 +22,7 @@ environment); nothing is readable by default.
 What the local pass established (details in
 `agentic/_tasks/2026-09-16-v1.1-h-integration-release.md`): zero removed or changed public
 `bOps.Abstractions` members against the V1.0 close-out commit (`891dae2`), additions only; SDK
-packs as `1.1.0-preview.1`; the signed sample plugin validates, installs, enables, disables and
+packs as `1.1.0-preview.1` (released as `1.1.0-preview.2`, tag `v1.1.0-preview.2`, run `35383901325`); the signed sample plugin validates, installs, enables, disables and
 removes through the built CLI; no credential-shaped strings outside test fixtures; every relative
 Markdown link resolves; and `Add-SpdxHeaders.ps1` was fixed (it would have doubled every header on
 re-run) and now covers `samples/`.
