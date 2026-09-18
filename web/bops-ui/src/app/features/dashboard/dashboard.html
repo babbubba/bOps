@@ -35,15 +35,45 @@
 
   <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
     <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
-      <h2 class="mb-3 text-sm font-semibold text-muted uppercase tracking-wide">Running tasks</h2>
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
+          {{ isLive() ? 'Running tasks' : 'Task history' }}
+        </h2>
+        <div class="flex items-center gap-2">
+          @if (!isLive()) {
+            <button
+              type="button"
+              (click)="tasks.refresh()"
+              class="rounded-lg border border-default px-2 py-1 text-xs hover:bg-bg"
+            >
+              Refresh
+            </button>
+          }
+          <select
+            aria-label="Task status"
+            (change)="onFilterChange($event)"
+            class="rounded-lg border border-default bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
+          >
+            @for (option of statusOptions; track option.value) {
+              <option [value]="option.value" [selected]="option.value === tasks.statusFilter()">
+                {{ option.label }}
+              </option>
+            }
+          </select>
+        </div>
+      </div>
 
       @if (tasks.loading() && tasks.tasks().length === 0) {
         <p class="text-sm text-muted">Loading…</p>
       } @else if (tasks.tasks().length === 0) {
-        <p class="text-sm text-muted">Nothing running right now. Start a task above.</p>
+        @if (isLive()) {
+          <p class="text-sm text-muted">Nothing running right now. Start a task above.</p>
+        } @else {
+          <p class="text-sm text-muted">No tasks with this status.</p>
+        }
       } @else {
         <ul class="flex flex-col gap-2">
-          @for (task of tasks.tasks(); track task.id) {
+          @for (task of visibleTasks(); track task.id) {
             <li>
               <button
                 type="button"
@@ -62,6 +92,11 @@
             </li>
           }
         </ul>
+        @if (!isLive() && tasks.tasks().length > historyLimit) {
+          <p class="mt-2 text-xs text-muted">
+            Showing the latest {{ historyLimit }} of {{ tasks.tasks().length }}.
+          </p>
+        }
       }
     </section>
 

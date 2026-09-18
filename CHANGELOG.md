@@ -59,6 +59,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - New `bops.administrator` role/policy (`bOps.Api.ApiAuthorization`), required by every Settings
   mutation endpoint; the shipped local-dev credential now carries it alongside the three existing
   roles.
+- Dashboard task history: a status selector over every `AgentTaskStatus` (default `Running`) lets an
+  operator browse and reopen completed, failed and other terminal tasks; history is fetched on demand,
+  never polled, newest first and capped at 50 rows. UI-only; no API change.
 - V1.1-H release-gate tests (`V11ReleaseGateTests`): the API role matrix for the plugin catalog and
   Settings with each role on its own, a guarantee that the catalog exposes no mutation route,
   Settings persistence across a genuine host restart on the same state directory and vault master

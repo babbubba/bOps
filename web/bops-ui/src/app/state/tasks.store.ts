@@ -4,11 +4,13 @@
 import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
-import { TaskState, TaskStatusRunning } from '../core/api/models';
+import { AgentTaskStatus, TaskState, TaskStatusRunning } from '../core/api/models';
 import { watchTaskEvents } from '../core/streaming/task-events';
 import { AuthService } from '../core/auth/auth.service';
 
 interface TasksState {
+  /** Which status the task list shows; Running is the live view, anything else is history. */
+  statusFilter: AgentTaskStatus;
   tasks: TaskState[];
   selectedTaskId: string | null;
   selectedTask: TaskState | null;
@@ -18,6 +20,7 @@ interface TasksState {
 }
 
 const initialState: TasksState = {
+  statusFilter: TaskStatusRunning,
   tasks: [],
   selectedTaskId: null,
   selectedTask: null,
@@ -31,8 +34,7 @@ function describeError(err: unknown): string {
 }
 
 /**
- * Running tasks and whichever one is currently selected, kept live via SSE (ADR-0018,
- * core/streaming/task-events). One active watch at a time — selecting a different task, or
+ * The task list for the chosen status (default Running, polled; any terminal status is a plain\n * on-demand fetch of history) and whichever task is currently selected, kept live via SSE\n * (ADR-0018, core/streaming/task-events). One active watch at a time — selecting a different task, or
  * starting/resuming a new one, tears down the previous stream before opening the next.
  */
 export const TasksStore = signalStore(
@@ -51,15 +53,32 @@ export const TasksStore = signalStore(
       );
     }
 
-    return {
-      async refresh(): Promise<void> {
-        patchState(store, { loading: true, error: null });
-        try {
-          const tasks = await api.listTasks(TaskStatusRunning);
+    async function refresh(): Promise<void> {
+      const status = store.statusFilter();
+      patchState(store, { loading: true, error: null });
+      try {
+        const tasks = await api.listTasks(status);
+        // The operator may have switched filters while this request was in flight.
+        if (store.statusFilter() === status) {
           patchState(store, { tasks, loading: false });
-        } catch (err) {
+        }
+      } catch (err) {
+        if (store.statusFilter() === status) {
           patchState(store, { loading: false, error: describeError(err) });
         }
+      }
+    }
+
+    return {
+      refresh,
+
+      async setStatusFilter(status: AgentTaskStatus): Promise<void> {
+        if (status === store.statusFilter()) {
+          return;
+        }
+
+        patchState(store, { statusFilter: status, tasks: [] });
+        await refresh();
       },
 
       async start(goal: string): Promise<void> {
@@ -113,8 +132,9 @@ export const TasksStore = signalStore(
         // A light poll for the Running-task list itself (which tasks exist), independent of the
         // SSE stream (which only ever covers the one currently selected task) — catches a task
         // someone else started, or one that just left the list by completing.
+        // History (any terminal status) has nothing live to watch, so it is never polled.
         intervalId = setInterval(() => {
-          if (auth.authenticated()) void store.refresh();
+          if (auth.authenticated() && store.statusFilter() === TaskStatusRunning) void store.refresh();
         }, 3000);
       },
       onDestroy() {

@@ -1,8 +1,9 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { AgentTaskStatus, AgentTaskStatusName, TaskStatusRunning } from '../../core/api/models';
 import { StatusBadge } from '../../shared/status-badge';
 import { TasksStore } from '../../state/tasks.store';
 
@@ -15,6 +16,31 @@ export class Dashboard {
   protected readonly tasks = inject(TasksStore);
   protected readonly goal = signal('');
 
+  protected readonly statusOptions = (
+    Object.entries(AgentTaskStatusName) as [string, string][]
+  ).map(([value, label]) => ({ value: Number(value) as AgentTaskStatus, label }));
+
+  /** How many finished tasks are rendered at once; the API has no server-side page size. */
+  protected readonly historyLimit = 50;
+
+  protected readonly isLive = computed(() => this.tasks.statusFilter() === TaskStatusRunning);
+
+  /** Live view: everything running. History: newest first, capped at `historyLimit`. */
+  protected readonly visibleTasks = computed(() => {
+    const all = this.tasks.tasks();
+    if (this.isLive()) {
+      return all;
+    }
+
+    return [...all]
+      .sort((a, b) => Date.parse(b.createdAtUtc) - Date.parse(a.createdAtUtc))
+      .slice(0, this.historyLimit);
+  });
+
+  protected onFilterChange(event: Event): void {
+    const value = Number((event.target as HTMLSelectElement).value) as AgentTaskStatus;
+    void this.tasks.setStatusFilter(value);
+  }
   protected async onStart(): Promise<void> {
     const goal = this.goal().trim();
     if (!goal) {

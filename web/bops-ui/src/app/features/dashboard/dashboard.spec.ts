@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { TaskState } from '../../core/api/models';
+import { AgentTaskStatus, TaskState } from '../../core/api/models';
 import { TasksStore } from '../../state/tasks.store';
 import { Dashboard } from './dashboard';
 
@@ -22,6 +22,7 @@ function task(status: TaskState['status'] = 0): TaskState {
 describe('Dashboard', () => {
   let fixture: ComponentFixture<Dashboard>;
   let store: {
+    statusFilter: ReturnType<typeof signal<AgentTaskStatus>>;
     tasks: ReturnType<typeof signal<TaskState[]>>;
     selectedTaskId: ReturnType<typeof signal<string | null>>;
     selectedTask: ReturnType<typeof signal<TaskState | null>>;
@@ -31,10 +32,13 @@ describe('Dashboard', () => {
     start: jasmine.Spy;
     selectTask: jasmine.Spy;
     resume: jasmine.Spy;
+    refresh: jasmine.Spy;
+    setStatusFilter: jasmine.Spy;
   };
 
   beforeEach(async () => {
     store = {
+      statusFilter: signal<AgentTaskStatus>(0),
       tasks: signal([task()]),
       selectedTaskId: signal<string | null>(null),
       selectedTask: signal<TaskState | null>(null),
@@ -44,6 +48,8 @@ describe('Dashboard', () => {
       start: jasmine.createSpy('start').and.resolveTo(),
       selectTask: jasmine.createSpy('selectTask'),
       resume: jasmine.createSpy('resume').and.resolveTo(),
+      refresh: jasmine.createSpy('refresh').and.resolveTo(),
+      setStatusFilter: jasmine.createSpy('setStatusFilter').and.resolveTo(),
     };
 
     await TestBed.configureTestingModule({
@@ -91,5 +97,43 @@ describe('Dashboard', () => {
 
     expect(store.selectTask).toHaveBeenCalledOnceWith('task-1');
     expect(store.resume).toHaveBeenCalledOnceWith('task-1');
+  });
+
+  it('defaults to the live Running view without a refresh button', () => {
+    expect(fixture.nativeElement.textContent).toContain('Running tasks');
+    expect(fixture.nativeElement.textContent).not.toContain('Refresh');
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    expect(select.value).toBe('0');
+    expect(select.options.length).toBe(8);
+  });
+
+  it('asks the store for another status when the filter changes', () => {
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+
+    expect(store.setStatusFilter).toHaveBeenCalledOnceWith(1);
+  });
+
+  it('shows finished tasks newest first, capped, with a refresh button', () => {
+    const finished = Array.from({ length: 55 }, (_, index) => ({
+      ...task(1),
+      id: `t-${index}`,
+      goal: `Finished ${index}`,
+      createdAtUtc: new Date(Date.UTC(2026, 8, 15, 12, index)).toISOString(),
+    }));
+    store.statusFilter.set(1);
+    store.tasks.set(finished);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Task history');
+    expect(text).toContain('Refresh');
+    expect(text).toContain('Finished 54');
+    expect(text).not.toContain('Finished 4 ');
+    expect(text).toContain('Showing the latest 50 of 55.');
+    const items = fixture.nativeElement.querySelectorAll('ul li');
+    expect(items.length).toBe(50);
+    expect(items[0].textContent).toContain('Finished 54');
   });
 });

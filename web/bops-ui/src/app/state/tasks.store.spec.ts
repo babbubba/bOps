@@ -59,6 +59,45 @@ describe('TasksStore', () => {
     discardPeriodicTasks();
   }));
 
+  it('fetches history once for a terminal status and stops polling it', fakeAsync(() => {
+    api.listTasks.and.callFake(async (status) => (status === 1 ? [task('done', 1)] : []));
+    const store = TestBed.inject(TasksStore);
+    tick();
+    expect(store.statusFilter()).toBe(0);
+
+    void store.setStatusFilter(1);
+    tick();
+    expect(api.listTasks).toHaveBeenCalledWith(1);
+    expect(store.tasks()).toEqual([task('done', 1)]);
+
+    api.listTasks.calls.reset();
+    tick(9000);
+    expect(api.listTasks).not.toHaveBeenCalled();
+
+    void store.setStatusFilter(0);
+    tick();
+    expect(api.listTasks).toHaveBeenCalledOnceWith(0);
+    discardPeriodicTasks();
+  }));
+
+  it('ignores a slow response for a filter that is no longer selected', fakeAsync(() => {
+    let releaseRunning: (tasks: TaskState[]) => void = () => undefined;
+    api.listTasks.and.callFake((status) =>
+      status === 0
+        ? new Promise<TaskState[]>((resolve) => (releaseRunning = resolve))
+        : Promise.resolve([task('failed', 6)]),
+    );
+    const store = TestBed.inject(TasksStore);
+
+    void store.setStatusFilter(6);
+    tick();
+    releaseRunning([task('late-running')]);
+    tick();
+
+    expect(store.tasks()).toEqual([task('failed', 6)]);
+    discardPeriodicTasks();
+  }));
+
   it('starts a task and consumes authenticated live snapshots', fakeAsync(() => {
     api.startTask.and.resolveTo({ taskId: 'task-1' });
     api.getTask.and.resolveTo(task('task-1'));
