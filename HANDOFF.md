@@ -197,11 +197,20 @@ the SDK is unchanged. C3 also found that the older sections parse a number or a 
 `PolicyMode` that `AgentRunner` would run unattended; that is recorded in the C task file and left for a separate
 fix, since made (PR #12). V1.2-C is complete.
 
-V1.2-D is implemented on a branch: `DelegationRunner` runs the fixed pipeline over the existing paths, with a fake model
+V1.2-D is implemented (PR #13): `DelegationRunner` runs the fixed pipeline over the existing paths, with a fake model
 and fake tools in its tests. The SDK moves to `1.2.0-preview.4` for `IPlanApprovalProvider` (a human approves a plan by
 its hash) and a `PlanDecided` audit stage. It is in memory, checks only the deadline before a role, and is not wired into
 Cli or Api: registering the runner, the profile source and a human approval channel belongs to V1.2-I and V1.2-J. The
 task file lists the sixteen interpretations D made.
+
+Found by running a real task against `openrouter/free`: a model can end a step with no text (the last call generated
+788 tokens and returned no `content`), and the task was recorded as `Completed` with an empty "Final response". The
+runner now asks again once and then fails the task (rule S3), and every model call is kept for troubleshooting: the
+task store holds, per step, plan and replan, the model asked for and the one that answered, the duration, the tokens
+and the exact request and reply bodies (bounded by `Agent:MaxModelPayloadCharacters`); the API and the dashboard show
+the first three (a "?" on each step) and never the bodies, which stay in `tasks.db` (SDK `1.2.0-preview.5`). To read a
+call's bodies, query `tasks.db`: `state_json` of the task, `Steps[n].ModelCalls[m].RequestJson` / `.ResponseJson`.
+A separate task, `agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md`, plans Italian and English for the UI.
 Next action: V1.2-E (budgets, deadlines, cancellation)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.

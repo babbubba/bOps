@@ -1,20 +1,53 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AgentTaskStatus, AgentTaskStatusName, TaskStatusRunning } from '../../core/api/models';
+import {
+  AgentTaskStatus,
+  AgentTaskStatusName,
+  ModelCallFailed,
+  TaskStatusRunning,
+} from '../../core/api/models';
+import { formatDuration, modelServed } from '../../shared/model-call-format';
 import { StatusBadge } from '../../shared/status-badge';
 import { TasksStore } from '../../state/tasks.store';
 
 @Component({
   selector: 'bops-dashboard',
-  imports: [FormsModule, StatusBadge],
+  imports: [DecimalPipe, FormsModule, StatusBadge],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {
   protected readonly tasks = inject(TasksStore);
   protected readonly goal = signal('');
+
+  protected readonly formatDuration = formatDuration;
+  protected readonly modelServed = modelServed;
+  protected readonly modelCallFailed = ModelCallFailed;
+
+  /** Steps whose model-call details are open. Closed by default: the panel is for the curious, not the default view. */
+  private readonly openModelInfo = signal<ReadonlySet<string>>(new Set());
+
+  protected modelInfoKey(taskId: string, stepIndex: number): string {
+    return `${taskId}:${stepIndex}`;
+  }
+
+  protected isModelInfoOpen(key: string): boolean {
+    return this.openModelInfo().has(key);
+  }
+
+  protected toggleModelInfo(key: string): void {
+    this.openModelInfo.update((open) => {
+      const next = new Set(open);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+
+      return next;
+    });
+  }
 
   protected readonly statusOptions = (
     Object.entries(AgentTaskStatusName) as [string, string][]

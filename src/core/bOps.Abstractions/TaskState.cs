@@ -40,6 +40,82 @@ public enum AgentTaskStatus
     Cancelled,
 }
 
+/// <summary>
+/// One call the runtime made to a model, recorded with the step or plan it produced so a task can be
+/// troubleshot from what was actually sent and received. The request and reply bodies are bounded by
+/// the runtime and marked when cut short.
+/// </summary>
+public sealed record ModelCallRecord
+{
+    /// <summary>Creates a model call record.</summary>
+    /// <param name="Provider">The provider id that was called.</param>
+    /// <param name="RequestedModel">The model bOps asked for, as configured.</param>
+    /// <param name="ActualModel">The model the provider reports having served, when it says; can differ from <paramref name="RequestedModel"/>.</param>
+    /// <param name="StartedAtUtc">When the call started, in UTC.</param>
+    /// <param name="DurationMs">How long the call took, in milliseconds, including any transient retry the adapter made.</param>
+    /// <param name="Outcome">Whether the call produced a reply.</param>
+    /// <param name="Usage">Tokens sent and received, when the provider reports them.</param>
+    /// <param name="FinishReason">Why the provider stopped generating, when it says.</param>
+    /// <param name="ErrorMessage">Present when <paramref name="Outcome"/> is <see cref="ModelCallOutcome.Failure"/>.</param>
+    /// <param name="RequestJson">The request body as sent, possibly cut short; <c>null</c> when the adapter or the configuration keeps none.</param>
+    /// <param name="ResponseJson">The reply body as received, possibly cut short; <c>null</c> when the adapter or the configuration keeps none.</param>
+    /// <param name="PayloadTruncated">Whether <paramref name="RequestJson"/> or <paramref name="ResponseJson"/> was cut to the configured limit.</param>
+    public ModelCallRecord(
+        string Provider, string RequestedModel, string? ActualModel, DateTimeOffset StartedAtUtc, long DurationMs,
+        ModelCallOutcome Outcome, ModelUsage? Usage, string? FinishReason, string? ErrorMessage,
+        string? RequestJson, string? ResponseJson, bool PayloadTruncated)
+    {
+        this.Provider = Provider;
+        this.RequestedModel = RequestedModel;
+        this.ActualModel = ActualModel;
+        this.StartedAtUtc = StartedAtUtc;
+        this.DurationMs = DurationMs;
+        this.Outcome = Outcome;
+        this.Usage = Usage;
+        this.FinishReason = FinishReason;
+        this.ErrorMessage = ErrorMessage;
+        this.RequestJson = RequestJson;
+        this.ResponseJson = ResponseJson;
+        this.PayloadTruncated = PayloadTruncated;
+    }
+
+    /// <summary>The provider id that was called.</summary>
+    public string Provider { get; init; }
+
+    /// <summary>The model bOps asked for, as configured.</summary>
+    public string RequestedModel { get; init; }
+
+    /// <summary>The model the provider reports having served, when it says.</summary>
+    public string? ActualModel { get; init; }
+
+    /// <summary>When the call started, in UTC.</summary>
+    public DateTimeOffset StartedAtUtc { get; init; }
+
+    /// <summary>How long the call took, in milliseconds.</summary>
+    public long DurationMs { get; init; }
+
+    /// <summary>Whether the call produced a reply.</summary>
+    public ModelCallOutcome Outcome { get; init; }
+
+    /// <summary>Tokens sent and received, when the provider reports them.</summary>
+    public ModelUsage? Usage { get; init; }
+
+    /// <summary>Why the provider stopped generating, when it says.</summary>
+    public string? FinishReason { get; init; }
+
+    /// <summary>Present when the call failed.</summary>
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>The request body as sent, possibly cut short.</summary>
+    public string? RequestJson { get; init; }
+
+    /// <summary>The reply body as received, possibly cut short.</summary>
+    public string? ResponseJson { get; init; }
+
+    /// <summary>Whether a body was cut to the configured limit.</summary>
+    public bool PayloadTruncated { get; init; }
+}
+
 /// <summary>One iteration of the agent loop: the tool call requested (if any), its result, and the observation fed back to the model.</summary>
 public sealed record PlanStep
 {
@@ -77,6 +153,9 @@ public sealed record PlanStep
 
     /// <summary>Which <see cref="AgentPlan.Revision"/> was in effect when this step's tool call was proposed; <c>null</c> when no plan was ever established.</summary>
     public int? PlanRevision { get; init; }
+
+    /// <summary>The calls made to the model to obtain this step, oldest first: normally one, more when an empty reply was asked for again. <c>null</c> for a step recorded before calls were kept, or one that needed no model call.</summary>
+    public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
 }
 
 /// <summary>

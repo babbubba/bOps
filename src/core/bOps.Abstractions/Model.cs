@@ -125,6 +125,39 @@ public sealed record ChatModelDescriptor
     public string ModelId { get; init; }
 }
 
+/// <summary>
+/// What an adapter knows about one call to a provider beyond the content of the reply, kept so a
+/// call can be understood afterwards: which model actually answered, why it stopped, and the exact
+/// request and reply bodies. The runtime stores it; it never acts on it.
+/// </summary>
+public sealed record ModelCallDetails
+{
+    /// <summary>Creates model call details.</summary>
+    /// <param name="ActualModel">The model the provider reports having served, which can differ from the one requested (a router such as <c>openrouter/free</c> picks one); <c>null</c> when the provider does not say.</param>
+    /// <param name="FinishReason">Why the provider stopped generating (for example <c>stop</c>, <c>length</c>, <c>tool_calls</c>), when it says.</param>
+    /// <param name="RequestJson">The request body exactly as sent, without any credential (those travel in headers).</param>
+    /// <param name="ResponseJson">The reply body exactly as received.</param>
+    public ModelCallDetails(string? ActualModel, string? FinishReason, string? RequestJson, string? ResponseJson)
+    {
+        this.ActualModel = ActualModel;
+        this.FinishReason = FinishReason;
+        this.RequestJson = RequestJson;
+        this.ResponseJson = ResponseJson;
+    }
+
+    /// <summary>The model the provider reports having served, which can differ from the one requested.</summary>
+    public string? ActualModel { get; init; }
+
+    /// <summary>Why the provider stopped generating, when it says.</summary>
+    public string? FinishReason { get; init; }
+
+    /// <summary>The request body exactly as sent, without any credential.</summary>
+    public string? RequestJson { get; init; }
+
+    /// <summary>The reply body exactly as received.</summary>
+    public string? ResponseJson { get; init; }
+}
+
 /// <summary>A request for the model's next step: the standing instructions, the conversation so far, and what tools exist.</summary>
 public sealed record ModelRequest
 {
@@ -181,6 +214,9 @@ public sealed record ModelResponse
 
     /// <summary>Token and cost accounting for this call, when the provider reports it.</summary>
     public ModelUsage? Usage { get; init; }
+
+    /// <summary>The actual model, finish reason and the exact bodies of this call, when the adapter keeps them.</summary>
+    public ModelCallDetails? Details { get; init; }
 }
 
 /// <summary>
@@ -225,4 +261,7 @@ public sealed class ModelProtocolException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>The request and reply bodies of the failed call, when the adapter had them, so the failure can be diagnosed afterwards.</summary>
+    public ModelCallDetails? Details { get; init; }
 }

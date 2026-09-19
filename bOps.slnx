@@ -51,6 +51,7 @@
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Web.Tests/bOps.Packages.Web.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Providers.Anthropic.Tests/bOps.Packages.Providers.Anthropic.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Providers.OpenAiCompatible.Tests/bOps.Packages.Providers.OpenAiCompatible.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Service.Conformance/bOps.Packages.Service.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.Service.Linux.Tests/bOps.Packages.Service.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Service.Windows.Tests/bOps.Packages.Service.Windows.Tests.csproj" />

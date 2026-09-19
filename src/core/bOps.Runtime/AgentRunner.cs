@@ -96,6 +96,10 @@ public sealed class AgentRunner(
         Steps already completed do not need to be repeated. List only what remains.
         """;
 
+    private const string EmptyResponseRetryInstructions =
+        "Your last reply was empty: it had no text and no tool call. Either call a tool, or give your final " +
+        "answer to the operator's goal in plain text.";
+
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Reply again with " +
         "ONLY the JSON object — no prose, no markdown code fence.";
@@ -147,16 +151,17 @@ public sealed class AgentRunner(
         taskActivity?.SetTag("bops.node", NodeId.Local.Value);
 
         AgentPlan plan;
+        var planCalls = new List<ModelCallRecord>();
         try
         {
-            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, delegation, ct);
+            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, delegation, planCalls, ct);
             plan = createdPlan;
             totalTokens += planTokens;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Task {TaskId}: planning failed", resolvedTaskId);
-            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
+            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, ex.Message, planCalls), ct);
         }
 
         plans.Add(plan);
@@ -240,11 +245,22 @@ public sealed class AgentRunner(
             stepActivity?.SetTag("bops.plan_revision", plan.Revision);
 
             var request = new ModelRequest(BuildStepSystemPrompt(plan), history, ToolViewFor(delegation));
+            var stepCalls = new List<ModelCallRecord>();
 
             ModelResponse response;
             try
             {
-                response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, ct);
+                response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, stepCalls, ct);
+
+                // Rule S3: a model that stops with no text and no tool call has not answered. It is asked again
+                // (with what was wrong said plainly, and without keeping the empty turn in the conversation)
+                // rather than the task being completed with nothing to show.
+                for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
+                {
+                    totalTokens += UsageTokens(response);
+                    var retryRequest = request with { History = [.. history, ChatTurn.FromUser(EmptyResponseRetryInstructions)] };
+                    response = await CallModelAsync(taskId, stepIndex, actor, retryRequest, delegation, stepCalls, ct);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -253,14 +269,24 @@ public sealed class AgentRunner(
                 // own transport/parse errors must not be able to crash the loop either; this is
                 // a genuine dead end for the call either way, not something to retry forever.
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
-                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
+                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message, stepCalls), ct);
             }
 
             totalTokens += UsageTokens(response);
 
+            if (IsEmptyFinal(response))
+            {
+                logger.LogError("Task {TaskId} step {StepIndex}: the model returned an empty final response", taskId, stepIndex);
+                return await FinishAsync(
+                    BuildFailed(taskId, createdAtUtc, goal, steps, plans, DescribeEmptyResponse(stepCalls), stepCalls), ct);
+            }
+
             if (response.IsFinal || response.ToolCalls.Count == 0)
             {
-                steps.Add(new PlanStep(stepIndex, "Final response", null, null, response.TextResponse, plan.Revision));
+                steps.Add(new PlanStep(stepIndex, "Final response", null, null, response.TextResponse, plan.Revision)
+                {
+                    ModelCalls = stepCalls,
+                });
                 BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
                 return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Completed, steps, plans), ct);
             }
@@ -272,6 +298,7 @@ public sealed class AgentRunner(
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
             var (step, observation, authorization, verification) = await ExecuteStepAsync(
                 taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+            step = step with { ModelCalls = stepCalls };
             steps.Add(step);
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
@@ -337,16 +364,18 @@ public sealed class AgentRunner(
                     return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.ReplanLimitReached, steps, plans), ct);
                 }
 
+                var replanCalls = new List<ModelCallRecord>();
                 try
                 {
-                    var (newPlan, replanTokens) = await ReplanAsync(taskId, actor, goal, plan, steps, observation, stepIndex, delegation, ct);
+                    var (newPlan, replanTokens) = await ReplanAsync(
+                        taskId, actor, goal, plan, steps, observation, stepIndex, delegation, replanCalls, ct);
                     plan = newPlan;
                     totalTokens += replanTokens;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", taskId, stepIndex);
-                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message), ct);
+                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message, replanCalls), ct);
                 }
 
                 plans.Add(plan);
@@ -1153,19 +1182,20 @@ public sealed class AgentRunner(
     }
 
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>
-    private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, CancellationToken ct)
+    private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(
+        Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         var systemPrompt = $"{SystemPrompt}\n\n{PlanningInstructions}";
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, ct);
+            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, calls, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
         {
-            return (plan, tokens);
+            return (plan with { ModelCalls = calls }, tokens);
         }
 
         // One bounded retry against the model's own malformed reply, mirroring the JSON-schema
@@ -1175,23 +1205,27 @@ public sealed class AgentRunner(
         planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, ct);
+            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, calls, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
         {
-            return (retryPlan, tokens);
+            return (retryPlan with { ModelCalls = calls }, tokens);
         }
 
         logger.LogWarning(
             "Task {TaskId}: the model did not produce a parseable plan after one retry; proceeding without an explicit plan", taskId);
-        return (new AgentPlan(0, "Planning failed after a malformed response; proceeding step by step without an explicit plan.", []), tokens);
+        return (new AgentPlan(0, "Planning failed after a malformed response; proceeding step by step without an explicit plan.", [])
+        {
+            ModelCalls = calls,
+        }, tokens);
     }
 
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
     private async Task<(AgentPlan Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
-        string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, CancellationToken ct)
+        string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
+        CancellationToken ct)
     {
         var systemPrompt = $"{SystemPrompt}\n\n{ReplanningInstructions}";
         var replanHistory = new List<ChatTurn>
@@ -1204,36 +1238,46 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, ct);
+            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, calls, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
         {
-            return (plan, tokens);
+            return (plan with { ModelCalls = calls }, tokens);
         }
 
         replanHistory.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
         replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, ct);
+            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, calls, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
         {
-            return (retryPlan, tokens);
+            return (retryPlan with { ModelCalls = calls }, tokens);
         }
 
         logger.LogWarning(
             "Task {TaskId} step {StepIndex}: the model did not produce a parseable replan after one retry; proceeding without an explicit plan",
             taskId, triggeringStepIndex);
         return (new AgentPlan(previousPlan.Revision + 1,
-            "Replanning failed after a malformed response; proceeding step by step without an explicit plan.", []), tokens);
+            "Replanning failed after a malformed response; proceeding step by step without an explicit plan.", [])
+        {
+            ModelCalls = calls,
+        }, tokens);
     }
 
+    /// <summary>
+    /// Calls the model, audits the call whatever its outcome and appends what happened (which model, how long, how many
+    /// tokens, and the bodies sent and received) to <paramref name="calls"/>, so a failed call is kept too.
+    /// </summary>
     private async Task<ModelResponse> CallModelAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation, CancellationToken ct)
+        Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation,
+        List<ModelCallRecord> calls, CancellationToken ct)
     {
+        var startedAtUtc = timeProvider.GetUtcNow();
+        var startedAt = timeProvider.GetTimestamp();
         ModelResponse response;
         try
         {
@@ -1241,6 +1285,9 @@ public sealed class AgentRunner(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
+            var failedDetails = (ex as ModelProtocolException)?.Details;
+            calls.Add(BuildCallRecord(startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failedDetails, ex.Message));
             // Rule S9 / principle 4: a failed model call is still a model call, audited whatever
             // the outcome — exactly like a denied or timed-out tool call (ADR-0013). Without
             // this, a task that fails here leaves no trace at all in the audit log. StepIndex is
@@ -1258,9 +1305,14 @@ public sealed class AgentRunner(
                 Outcome = ModelCallOutcome.Failure,
                 ErrorMessage = ex.Message,
                 Usage = null,
+                ActualModel = failedDetails?.ActualModel,
+                DurationMs = failedMs,
             }, delegation, ct);
             throw;
         }
+
+        var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
+        calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null));
 
         await WriteAuditAsync(new ModelCallAuditEvent
         {
@@ -1274,9 +1326,60 @@ public sealed class AgentRunner(
             Outcome = ModelCallOutcome.Success,
             ErrorMessage = null,
             Usage = response.Usage,
+            ActualModel = response.Details?.ActualModel,
+            DurationMs = elapsedMs,
         }, delegation, ct);
 
         return response;
+    }
+
+    private ModelCallRecord BuildCallRecord(
+        DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome, ModelUsage? usage, ModelCallDetails? details, string? error)
+    {
+        var request = CapPayload(details?.RequestJson, out var requestCut);
+        var reply = CapPayload(details?.ResponseJson, out var replyCut);
+        return new ModelCallRecord(
+            model.Descriptor.ProviderId, model.Descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
+            details?.FinishReason, error, request, reply, requestCut || replyCut);
+    }
+
+    /// <summary>Bounds a recorded body to <see cref="AgentRunnerOptions.MaxModelPayloadCharacters"/> (0 keeps none), saying so when it cuts.</summary>
+    private string? CapPayload(string? body, out bool truncated)
+    {
+        truncated = false;
+        if (body is null || options.MaxModelPayloadCharacters <= 0)
+        {
+            return null;
+        }
+
+        if (body.Length <= options.MaxModelPayloadCharacters)
+        {
+            return body;
+        }
+
+        truncated = true;
+        var keep = options.MaxModelPayloadCharacters;
+        if (char.IsHighSurrogate(body[keep - 1]))
+        {
+            keep--;
+        }
+
+        return $"{body[..keep]}…[truncated {body.Length - keep} characters]";
+    }
+
+    private static bool IsEmptyFinal(ModelResponse response) =>
+        (response.IsFinal || response.ToolCalls.Count == 0) && string.IsNullOrWhiteSpace(response.TextResponse);
+
+    private static string DescribeEmptyResponse(List<ModelCallRecord> calls)
+    {
+        var last = calls[^1];
+        var served = last.ActualModel is { } actual && !string.Equals(actual, last.RequestedModel, StringComparison.Ordinal)
+            ? $"{last.RequestedModel} served by {actual}"
+            : last.RequestedModel;
+        var generated = last.Usage is { } usage ? $", {usage.CompletionTokens} completion tokens generated" : string.Empty;
+        var finish = last.FinishReason is { } reason ? $", finish reason '{reason}'" : string.Empty;
+        return $"The model returned an empty final response (no text and no tool call) after {calls.Count} attempt(s) " +
+               $"(model {served}{finish}{generated}). The recorded request and reply bodies show what it sent.";
     }
 
     private async Task<(PlanStep Step, string Observation, AuthorizationKind Authorization, VerificationStatus? Verification)> ExecuteStepAsync(
@@ -1962,9 +2065,10 @@ public sealed class AgentRunner(
     }
 
     private static TaskState BuildFailed(
-        Guid taskId, DateTimeOffset createdAtUtc, string goal, List<PlanStep> steps, List<AgentPlan> plans, string message)
+        Guid taskId, DateTimeOffset createdAtUtc, string goal, List<PlanStep> steps, List<AgentPlan> plans, string message,
+        IReadOnlyList<ModelCallRecord>? modelCalls = null)
     {
-        steps.Add(new PlanStep(steps.Count, "Model protocol failure", null, null, message));
+        steps.Add(new PlanStep(steps.Count, "Model protocol failure", null, null, message) { ModelCalls = modelCalls });
         return Build(taskId, createdAtUtc, goal, AgentTaskStatus.Failed, steps, plans);
     }
 

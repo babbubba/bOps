@@ -220,7 +220,7 @@
       "acme.sampleplugin": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.4, )"
+          "bOps.Abstractions": "[1.2.0-preview.5, )"
         }
       },
       "bops.abstractions": {
@@ -233,14 +233,14 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.0, )",
           "Microsoft.Extensions.Http": "[10.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.4, )"
+          "bOps.Abstractions": "[1.2.0-preview.5, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.4, )"
+          "bOps.Abstractions": "[1.2.0-preview.5, )"
         }
       }
     }

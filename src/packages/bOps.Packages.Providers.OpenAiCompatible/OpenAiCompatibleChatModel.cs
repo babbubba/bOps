@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
@@ -44,31 +44,39 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             ToolChoice = request.AvailableTools.Count == 0 ? null : "auto",
         };
 
-        var response = await SendAsync(payload, ct);
-        var message = response.Choices[0].Message;
+        var completion = await SendAsync(payload, ct);
+        var message = completion.Body.Choices[0].Message;
         var toolCalls = (message.ToolCalls ?? [])
             .Select(dto => new ModelToolCall(dto.Id, dto.Function.Name, ParseArguments(dto.Function.Arguments)))
             .ToList();
 
-        return new ModelResponse(message.Content, toolCalls, toolCalls.Count == 0, MapUsage(response.Usage));
+        return new ModelResponse(message.Content, toolCalls, toolCalls.Count == 0, MapUsage(completion.Body.Usage))
+        {
+            Details = completion.Details,
+        };
     }
 
     private async Task<ModelResponse> CompleteWithFallbackAsync(ModelRequest request, CancellationToken ct)
     {
         var messages = BuildMessages(request with { SystemPrompt = BuildFallbackSystemPrompt(request) });
+        ModelCallDetails? lastDetails = null;
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var payload = new ChatCompletionRequest { Model = options.Model, Messages = messages };
-            var response = await SendAsync(payload, ct);
-            var text = response.Choices[0].Message.Content ?? string.Empty;
+            var completion = await SendAsync(payload, ct);
+            var text = completion.Body.Choices[0].Message.Content ?? string.Empty;
+            lastDetails = completion.Details;
 
             if (TryParseFallbackJson(text, out var parsed))
             {
-                var usage = MapUsage(response.Usage);
+                var usage = MapUsage(completion.Body.Usage);
                 return parsed.IsFinal
-                    ? new ModelResponse(parsed.FinalText, [], true, usage)
-                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage);
+                    ? new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details }
+                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage)
+                    {
+                        Details = completion.Details,
+                    };
             }
 
             messages.Add(new ChatMessageDto { Role = "assistant", Content = text });
@@ -81,16 +89,24 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         }
 
         throw new ModelProtocolException(
-            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.");
+            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.")
+        {
+            Details = lastDetails,
+        };
     }
 
-    private async Task<ChatCompletionResponse> SendAsync(ChatCompletionRequest payload, CancellationToken ct)
+    /// <summary>A reply that parsed, with what was sent and received so the call can be understood afterwards.</summary>
+    private sealed record Completion(ChatCompletionResponse Body, ModelCallDetails Details);
+
+    private async Task<Completion> SendAsync(ChatCompletionRequest payload, CancellationToken ct)
     {
+        var requestJson = JsonSerializer.Serialize(payload, OpenAiJsonContext.Default.ChatCompletionRequest);
+
         for (var attempt = 0; attempt < 3; attempt++)
         {
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
             {
-                Content = JsonContent.Create(payload, OpenAiJsonContext.Default.ChatCompletionRequest),
+                Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
             };
             if (!string.IsNullOrEmpty(options.ResolvedApiKey))
             {
@@ -120,23 +136,43 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
                     continue;
                 }
 
+                var rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
+
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     throw new ModelProtocolException(
                         $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                        $"({httpResponse.StatusCode}) for the chat completion request.");
+                        $"({httpResponse.StatusCode}) for the chat completion request.")
+                    {
+                        Details = failedDetails,
+                    };
                 }
 
+                ChatCompletionResponse? body;
                 try
                 {
-                    var body = await httpResponse.Content.ReadFromJsonAsync(OpenAiJsonContext.Default.ChatCompletionResponse, ct);
-                    return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                    body = JsonSerializer.Deserialize(rawBody, OpenAiJsonContext.Default.ChatCompletionResponse);
                 }
                 catch (JsonException ex)
                 {
                     throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex)
+                    {
+                        Details = failedDetails,
+                    };
                 }
+
+                if (body is null || body.Choices.Count == 0)
+                {
+                    throw new ModelProtocolException(
+                        $"Provider '{options.Provider}' returned {(body is null ? "an empty response body" : "no choices")}.")
+                    {
+                        Details = failedDetails,
+                    };
+                }
+
+                return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody));
             }
         }
 

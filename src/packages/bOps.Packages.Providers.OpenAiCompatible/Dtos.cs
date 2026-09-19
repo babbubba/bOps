@@ -81,6 +81,10 @@ internal sealed class FunctionDefinitionDto
 
 internal sealed class ChatCompletionResponse
 {
+    /// <summary>The model the provider says served the call; a router such as <c>openrouter/free</c> reports the one it picked.</summary>
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
     [JsonPropertyName("choices")]
     public required List<ChatCompletionChoiceDto> Choices { get; set; }
 

@@ -91,6 +91,57 @@ public sealed class SqliteTaskStoreTests : IDisposable
         Assert.Equal(task.Goal, loaded!.Goal);
     }
 
+    [Fact]
+    public async Task SaveAsync_ThenLoadAsync_KeepsEveryModelCallWithItsBodies()
+    {
+        // The bodies are what troubleshooting needs: quotes, accents and a very long request must come back byte for byte.
+        var request = "{\"content\":\"perché il mio pc è lento? \\\"x\\\" 😀\"}" + new string('q', 300_000);
+        var call = new ModelCallRecord(
+            "OpenRouter", "openrouter/free", "vendor/picked-model", DateTimeOffset.UtcNow, 4321, ModelCallOutcome.Success,
+            new ModelUsage(10116, 788, null), "stop", null, request, "{\"choices\":[]}", PayloadTruncated: false);
+        var task = SampleTask(AgentTaskStatus.Completed);
+        task = task with
+        {
+            Steps = [task.Steps[0] with { ModelCalls = [call] }],
+            Plans = [task.Plans[0] with { ModelCalls = [call with { DurationMs = 7 }] }],
+        };
+
+        var store = new SqliteTaskStore(_filePath);
+        await store.SaveAsync(task);
+        var loaded = await store.LoadAsync(task.Id);
+
+        Assert.Equal(call, Assert.Single(loaded!.Steps[0].ModelCalls!));
+        Assert.Equal(7, Assert.Single(loaded.Plans[0].ModelCalls!).DurationMs);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReadsATaskStoredBeforeModelCallsWereKept_WithNone()
+    {
+        var id = Guid.NewGuid();
+        const string legacy = """
+            {"Id":"00000000-0000-0000-0000-000000000000","Node":"local","Goal":"g","Status":1,
+             "Steps":[{"Index":0,"Description":"Final response","ToolCall":null,"Result":null,"Observation":"x","PlanRevision":0}],
+             "Plans":[{"Revision":0,"Rationale":"r","Steps":[]}],"CreatedAtUtc":"2026-09-19T19:04:57.3626736+00:00"}
+            """;
+        _ = new SqliteTaskStore(_filePath); // creates the schema
+        await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = _filePath }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO tasks (id, status, updated_at_utc, state_json) VALUES ($id, 'Completed', $at, $json)";
+            command.Parameters.AddWithValue("$id", id.ToString());
+            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$json", legacy.Replace("00000000-0000-0000-0000-000000000000", id.ToString()));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var loaded = await new SqliteTaskStore(_filePath).LoadAsync(id);
+
+        Assert.Equal("x", loaded!.Steps[0].Observation);
+        Assert.Null(loaded.Steps[0].ModelCalls);
+        Assert.Null(loaded.Plans[0].ModelCalls);
+    }
+
     private static TaskState SampleTask(AgentTaskStatus status)
     {
         var arguments = ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["path"] = "/tmp/example" });

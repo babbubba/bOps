@@ -779,6 +779,109 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.BlastRadius, result.BlastRadius);
     }
 
+    // ---- model call records (V1.2 troubleshooting) ----
+
+    private static ModelCallRecord SampleModelCall() =>
+        new("OpenRouter", "openrouter/free", "vendor/picked-model", new DateTimeOffset(2026, 9, 19, 19, 5, 53, TimeSpan.Zero), 4321,
+            ModelCallOutcome.Success, new ModelUsage(10116, 788, 0.001m), "stop", null,
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"perché il mio pc è lento? \\\"x\\\"\"}]}", "{\"choices\":[]}", PayloadTruncated: true);
+
+    [Fact]
+    public void ModelCallRecord_RoundTrips()
+    {
+        var value = SampleModelCall();
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void ModelCallDetails_RoundTrips()
+    {
+        var value = new ModelCallDetails("vendor/picked-model", "length", "{\"a\":1}", "{\"b\":2}");
+
+        Assert.Equal(value, RoundTrip(value));
+    }
+
+    [Fact]
+    public void PlanStep_KeepsItsModelCalls_ThroughARoundTrip()
+    {
+        var value = new PlanStep(0, "Final response", null, null, "ok", PlanRevision: 0) { ModelCalls = [SampleModelCall(), SampleModelCall() with { DurationMs = 9 }] };
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(2, result!.ModelCalls!.Count);
+        Assert.Equal(value.ModelCalls[0], result.ModelCalls[0]);
+        Assert.Equal(9, result.ModelCalls[1].DurationMs);
+    }
+
+    [Fact]
+    public void AgentPlan_KeepsItsModelCalls_ThroughARoundTrip()
+    {
+        var value = new AgentPlan(0, "Plan.", []) { ModelCalls = [SampleModelCall()] };
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value.ModelCalls[0], result!.ModelCalls![0]);
+    }
+
+    [Fact]
+    public void APlanStepStoredBeforeModelCallsExisted_ReadsWithNone()
+    {
+        const string legacy = """{"Index":0,"Description":"Final response","ToolCall":null,"Result":null,"Observation":"ok","PlanRevision":0}""";
+
+        var result = JsonSerializer.Deserialize<PlanStep>(legacy, Options);
+
+        Assert.Null(result!.ModelCalls);
+    }
+
+    [Fact]
+    public void ModelCallAuditEvent_KeepsTheActualModelAndTheDuration_ThroughARoundTrip()
+    {
+        AuditEvent value = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Node = SampleNode,
+            TaskId = Guid.NewGuid(),
+            StepIndex = 1,
+            Actor = SampleActor,
+            Provider = "OpenRouter",
+            Model = "openrouter/free",
+            Outcome = ModelCallOutcome.Success,
+            ActualModel = "vendor/picked-model",
+            DurationMs = 1234,
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var typed = Assert.IsType<ModelCallAuditEvent>(JsonSerializer.Deserialize<AuditEvent>(json, Options));
+
+        Assert.Equal("vendor/picked-model", typed.ActualModel);
+        Assert.Equal(1234, typed.DurationMs);
+        Assert.Equal("openrouter/free", typed.Model);
+    }
+
+    [Fact]
+    public void ModelCallAuditEvent_WithoutTheNewFields_SerializesExactlyAsItDidBefore()
+    {
+        AuditEvent value = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Node = SampleNode,
+            TaskId = Guid.NewGuid(),
+            StepIndex = 1,
+            Actor = SampleActor,
+            Provider = "OpenRouter",
+            Model = "openrouter/free",
+            Outcome = ModelCallOutcome.Success,
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+
+        Assert.DoesNotContain("ActualModel", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("DurationMs", json, StringComparison.Ordinal);
+    }
+
     private static T? RoundTrip<T>(T value)
     {
         var json = JsonSerializer.Serialize(value, Options);

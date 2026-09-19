@@ -63,4 +63,7 @@ public sealed record AgentPlan
 
     /// <summary>The steps the model currently intends to take. May be empty when planning could not produce a usable response.</summary>
     public IReadOnlyList<PlannedStep> Steps { get; init; }
+
+    /// <summary>The calls made to the model to obtain this plan, oldest first: one, or two when the first reply was not a usable plan. <c>null</c> for a plan recorded before calls were kept.</summary>
+    public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
 }

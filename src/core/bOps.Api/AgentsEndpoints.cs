@@ -88,7 +88,9 @@ internal static class AgentsEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ITaskStore store) =>
         {
             var task = await store.LoadAsync(id);
-            return task is null ? Results.NotFound(new { message = $"No stored task with id '{id}'." }) : Results.Ok(task);
+            return task is null
+                ? Results.NotFound(new { message = $"No stored task with id '{id}'." })
+                : Results.Ok(TaskStateView.WithoutModelPayloads(task));
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
         group.MapGet("/", async (string? status, ITaskStore store) =>
@@ -98,7 +100,7 @@ internal static class AgentsEndpoints
                 return Results.BadRequest(new { message = $"Unknown status '{status}'." });
             }
 
-            return Results.Ok(await store.ListByStatusAsync(parsed));
+            return Results.Ok((await store.ListByStatusAsync(parsed)).Select(TaskStateView.WithoutModelPayloads));
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
         group.MapGet("/{id:guid}/events", StreamTaskEventsAsync)
@@ -139,7 +141,7 @@ internal static class AgentsEndpoints
             if (task.Steps.Count != lastStepCount)
             {
                 lastStepCount = task.Steps.Count;
-                await WriteEventAsync(response, "snapshot", JsonSerializer.Serialize(task, SseJsonOptions), ct);
+                await WriteEventAsync(response, "snapshot", JsonSerializer.Serialize(TaskStateView.WithoutModelPayloads(task), SseJsonOptions), ct);
             }
 
             if (task.Status != AgentTaskStatus.Running)

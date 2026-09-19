@@ -33,6 +33,12 @@ delegated call through two optional `PolicyContext` fields, `Delegation` and `En
 already refused anything outside the envelope, so they are context for the decision and never a way to
 widen it. A host also implements `IPlanApprovalProvider` to ask a human to approve one plan by its hash (`PlanApprovalRequest`); the runtime never calls it for an agent. They are additive and unused until the runtime orchestrator ships later in V1.2.
 
+A model adapter can also hand the runtime what it knows about one call (`ModelResponse.Details`, and
+`ModelProtocolException.Details` for a failed one): the model that actually answered, why it stopped and the exact
+request and reply bodies. The runtime keeps each call as a `ModelCallRecord` on the `PlanStep` or `AgentPlan` it
+produced, with its duration and tokens, so a task can be troubleshot afterwards; `ModelCallAuditEvent` gains
+`ActualModel` and `DurationMs`. All optional and additive.
+
 The 1.x public API follows Semantic Versioning. See the repository plugin guide and ADR-0022 for
 the package manifest, signing workflow, compatibility rules and security boundary. ADR-0023,
 ADR-0024 and ADR-0025 define Evidence, immutable ExecutionPlans and the executable Skill boundary.

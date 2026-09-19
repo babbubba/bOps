@@ -21,6 +21,7 @@ snapshots under `agentic/obsolete/`.
 | 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
 | 12 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 13 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+| independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | Planned; before V1.2-K | medio |
 
 Private V1.3–V2.0 implementation tasks belong in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
