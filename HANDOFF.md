@@ -211,7 +211,12 @@ and the exact request and reply bodies (bounded by `Agent:MaxModelPayloadCharact
 the first three (a "?" on each step) and never the bodies, which stay in `tasks.db` (SDK `1.2.0-preview.5`). To read a
 call's bodies, query `tasks.db`: `state_json` of the task, `Steps[n].ModelCalls[m].RequestJson` / `.ResponseJson`.
 A separate task, `agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md`, plans Italian and English for the UI.
-Next action: V1.2-E (budgets, deadlines, cancellation)
+V1.2-E is implemented: each role's steps and tokens are counted while it runs and reconciled at its end, its budget is
+reserved from what the run has left, it stops at its own deadline, and a cancelled or expired run ends as `Cancelled` or
+`DeadlineExceeded` (a run under way returns, it no longer throws), all audited. A side-effecting step cancelled while it
+runs is audited as an unknown outcome, not a failed one; the durable journal and resume are V1.2-F. No SDK change. The
+task file lists the interpretations E made.
+Next action: V1.2-F (durable delegation store, journal, resume and reconciliation)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

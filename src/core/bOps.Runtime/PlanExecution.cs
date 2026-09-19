@@ -16,6 +16,9 @@ internal enum PlanExecutionStatus
 
     /// <summary>A step was denied, unresolved or rejected, so it and every step after it did not run.</summary>
     Stopped,
+
+    /// <summary>The role ran out of steps or reached its deadline before the plan's last step, so it and every step after it did not run (ADR-0030 section 6).</summary>
+    OutOfBudget,
 }
 
 /// <summary>
