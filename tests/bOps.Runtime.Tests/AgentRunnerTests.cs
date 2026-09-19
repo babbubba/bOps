@@ -427,6 +427,36 @@ public sealed class AgentRunnerTests
         Assert.DoesNotContain(audit.Events, e => e is ApprovalAuditEvent);
     }
 
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    [InlineData(99)]
+    public async Task RunAsync_TreatsAnUndefinedPolicyModeAsForbidden_NeverAsAutomatic(int undefinedMode)
+    {
+        // Rule S3: an unknown value resolves to Forbidden. A mode outside the enum used to fall through both the
+        // Forbidden and the Approval branch and execute unattended.
+        var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(),
+            new ModelResponse(null, [toolCall], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Understood, not executing.", [], true, null));
+        var audit = new RecordingAuditSink();
+        var policy = new StubPolicyEngine((PolicyMode)undefinedMode, "undefined for test");
+
+        // The default approval provider throws if approval is ever requested.
+        var result = await CreateRunner(model, CreateRegistryWith(new FakeHighRiskTool()), audit, policyEngine: policy)
+            .RunAsync("restart the thing", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        var decision = Assert.Single(audit.Events.OfType<PolicyDecisionAuditEvent>());
+        Assert.Equal(PolicyMode.Forbidden, decision.Mode);
+        Assert.Contains("undefined", decision.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(audit.Events, e => e is ToolCallAuditEvent { Outcome: ToolOutcome.Success });
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Outcome: ToolOutcome.Denied, Tool: "test.highrisk" });
+        Assert.DoesNotContain(audit.Events, e => e is ApprovalAuditEvent);
+    }
+
     [Fact]
     public async Task RunAsync_RequiresApproval_WhenManifestTightensAutomaticPolicy()
     {

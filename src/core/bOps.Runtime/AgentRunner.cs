@@ -1223,6 +1223,16 @@ public sealed class AgentRunner(
             Envelope = delegation?.Envelope,
         };
         var configuredPolicyDecision = policyEngine.Evaluate(policyContext);
+
+        // Rule S3: an unknown value resolves to Forbidden, never Automatic. Only Forbidden and Approval are
+        // branched on below, so a mode outside the enum would otherwise fall through and execute unattended.
+        if (!Enum.IsDefined(configuredPolicyDecision.Mode))
+        {
+            configuredPolicyDecision = new PolicyDecision(
+                PolicyMode.Forbidden,
+                $"The policy engine returned an undefined mode ({(int)configuredPolicyDecision.Mode}); failing closed.");
+        }
+
         var policyDecision = manifest.RequiresExplicitApproval && configuredPolicyDecision.Mode == PolicyMode.Automatic
             ? new PolicyDecision(
                 PolicyMode.Approval,

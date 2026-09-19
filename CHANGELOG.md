@@ -136,6 +136,12 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- Policy fails closed on a value that is not a name (rule S3). `policy.yaml` enums were read with
+  `Enum.TryParse`, so a number or a comma list (`read: "approval, forbidden"`, `read: 3`) loaded as a `PolicyMode`
+  that does not exist and `AgentRunner` executed that tool unattended, and `"low, medium"` loaded as a different
+  `RiskLevel` than written. The loader now accepts member names only, in `defaults`, `tools`, `packages` and
+  `skills`, and refuses anything else naming the section and key. As defence in depth, `AgentRunner` treats any
+  mode outside the enum, whatever the policy engine returned, as a Forbidden decision (audited like any denial).
 - `bOps.Api`'s committed `appsettings.json` again ships the documented safe filesystem defaults (no
   readable paths, `MaximumEntries` 100000, `MaximumOutputBytes` 32768); broader local values had
   crept in with V1.1-F and now live in the git-ignored `appsettings.Development.json`.
