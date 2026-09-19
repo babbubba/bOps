@@ -12,7 +12,7 @@ namespace bOps.Runtime.Tests;
 /// tools. It is not a model: the order of the roles, the approval and every terminal state are decided here, and
 /// what one role hands the next is only structured Evidence, Finding and ExecutionPlan values.
 /// </summary>
-public sealed class DelegationRunnerTests
+public sealed partial class DelegationRunnerTests
 {
     private const string OpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string CloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -65,7 +65,8 @@ public sealed class DelegationRunnerTests
     }
 
     /// <summary>The non-Read tool of the plan: counts real executions and can be told how its verification comes out.</summary>
-    private sealed class RestartTool(string name = "service.restart", VerificationStatus verdict = VerificationStatus.Confirmed) : IVerifiableTool
+    private sealed class RestartTool(
+        string name = "service.restart", VerificationStatus verdict = VerificationStatus.Confirmed, Func<CancellationToken, Task>? whileRunning = null) : IVerifiableTool
     {
         public int ExecutionCount { get; private set; }
 
@@ -82,10 +83,15 @@ public sealed class DelegationRunnerTests
             Verification = new VerificationSpec("test.read", [], "Reads the service state."),
         };
 
-        public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+        public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
         {
             ExecutionCount++;
-            return Task.FromResult(ToolCallResult.Success("restarted"));
+            if (whileRunning is not null)
+            {
+                await whileRunning(ct);
+            }
+
+            return ToolCallResult.Success("restarted");
         }
 
         public Task<VerificationOutcome> EvaluateVerificationAsync(
@@ -120,6 +126,16 @@ public sealed class DelegationRunnerTests
     {
         public Task WriteAsync(AuditEvent evt, CancellationToken ct = default) =>
             failsOn(evt) ? throw new InvalidOperationException("the audit sink is down") : inner.WriteAsync(evt, ct);
+    }
+
+    /// <summary>A sink that, like a real one writing to a file or a database, refuses to write with a token that is already cancelled.</summary>
+    private sealed class CancellationHonouringSink(IAuditSink inner) : IAuditSink
+    {
+        public Task WriteAsync(AuditEvent evt, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return inner.WriteAsync(evt, ct);
+        }
     }
 
     private sealed class RecordingPlanApproval(Func<PlanApprovalRequest, ApprovalDecision>? decide = null) : IPlanApprovalProvider
@@ -173,7 +189,9 @@ public sealed class DelegationRunnerTests
         IApprovalProvider? stepApproval = null,
         bool capabilityThrows = false,
         Func<AuditEvent, bool>? failAuditOn = null,
-        AgentRunnerOptions? options = null)
+        AgentRunnerOptions? options = null,
+        bool auditHonoursCancellation = false,
+        Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
@@ -185,19 +203,34 @@ public sealed class DelegationRunnerTests
         var skills = new SkillRegistry();
         skills.Register(SamplePackage, new TestSkillProvider(
         [
-            new DelegateCapability("sample.remediate", RiskLevel.High, (_, _, _) => capabilityThrows
-                ? throw new InvalidOperationException("the capability blew up")
-                : Task.FromResult(
-                new SkillReport(
-                    [new Evidence("cap-e1", EvidenceKind.Fact, "The service is down.", "down", "host.info", Start)],
-                    [new Finding("cap-f1", "The service is down.", ["cap-e1"], RiskLevel.High)],
-                    plan is null ? DefaultPlan() : plan())),
+            new DelegateCapability("sample.remediate", RiskLevel.High, async (_, invoker, ct) =>
+                {
+                    if (capabilityThrows)
+                    {
+                        throw new InvalidOperationException("the capability blew up");
+                    }
+
+                    if (evidenceCalls is not null)
+                    {
+                        await evidenceCalls(invoker, ct);
+                    }
+
+                    return new SkillReport(
+                        [new Evidence("cap-e1", EvidenceKind.Fact, "The service is down.", "down", "host.info", Start)],
+                        [new Finding("cap-f1", "The service is down.", ["cap-e1"], RiskLevel.High)],
+                        plan is null ? DefaultPlan() : plan());
+                },
                 verification: new VerificationSpec("test.read", [], "Reads the service state.")),
         ]));
 
         var fakeModel = model as FakeChatModel ?? new FakeChatModel(script ?? HappyScript());
         var recording = new RecordingAuditSink();
         IAuditSink audit = failAuditOn is null ? recording : new FlakyAuditSink(recording, failAuditOn);
+        if (auditHonoursCancellation)
+        {
+            audit = new CancellationHonouringSink(audit);
+        }
+
         var time = clock ?? new FakeTimeProvider(Start);
         var agentRunner = new AgentRunner(
             model ?? fakeModel, registry, policy ?? new StubPolicyEngine(PolicyMode.Automatic), stepApproval ?? new NeverCalledApprovalProvider(), audit,

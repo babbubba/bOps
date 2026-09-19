@@ -123,6 +123,18 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `PlanApprovalRequest` (a human approves a plan by its hash; a decision from an agent, the runtime or one of the run's
   own agents is refused), `DelegationStage.PlanDecided` and `DelegationLifecycleAuditEvent.PlanHash`. The run is kept in
   memory and nothing is wired into Cli or Api yet; budgets, durable state and resume follow in V1.2-E and V1.2-F.
+- V1.2-E budgets, deadlines and cancellation (ADR-0030 section 6; no SDK change): a delegated run now counts what each role
+  spends. The run's budget is the sum of the roles' and each role's is reserved from what is left of it when the role
+  starts, so a role can never be granted what an earlier one used; what the role spent (steps, and the tokens of every
+  model call, plan, replan and retry) is reconciled when it ends, persisted on its `DelegationRoleRun.Consumed` and
+  audited as a `BudgetConsumed` event. A role stops at its own deadline while it runs, even inside a model call or a tool.
+  A run with no steps or tokens left for the next role ends as `BudgetExceeded` (not as a denial), and a plan the
+  Remediation role has too few steps to finish is refused before a human is asked and before anything changes. One
+  cancellation token tree covers the run (the caller's token and the run's deadline, so an approval nobody gives cannot
+  hold a run past it), each role (its own deadline) and each step (the tool's timeout). Cancelling an already running
+  run now ends it as `Cancelled` and returns it, audited, instead of throwing; `DeadlineExceeded` and `BudgetExceeded`
+  stay distinct. A side-effecting step cancelled while it runs is audited as an unknown outcome (`StepOutcomeKind.Cancelled`
+  in a `DelegationJournalAuditEvent`), never as a failed tool call; the durable journal and reconciliation are V1.2-F.
 - Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
   runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
   `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`

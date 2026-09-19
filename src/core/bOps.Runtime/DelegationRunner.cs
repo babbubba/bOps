@@ -28,9 +28,15 @@ namespace bOps.Runtime;
 /// Remediation's result, so no role approves or verifies its own work.
 /// </para>
 /// <para>
-/// This version keeps a run in memory. Counting steps and tokens, cancellation as a terminal state, the durable
-/// journal and resume, and the independence checks that go beyond this construction are V1.2-E to V1.2-G; the
-/// deadline is checked before every role.
+/// Budgets, deadlines and cancellation hold across the roles (V1.2-E, ADR-0030 section 6). Each role's budget is reserved
+/// from what is left of the run's, its steps and tokens are counted while it runs and reconciled when it ends, and it is
+/// stopped at its own deadline. One cancellation token tree covers the run (the caller's token and the run's deadline),
+/// each role (its own deadline) and each step (the tool's timeout), and exhaustion, deadline expiry and cancellation are
+/// distinct terminal states, each audited.
+/// </para>
+/// <para>
+/// This version keeps a run in memory. The durable journal and resume, and the independence checks that go beyond this
+/// construction, are V1.2-F and V1.2-G.
 /// </para>
 /// </remarks>
 public sealed class DelegationRunner(
@@ -43,11 +49,17 @@ public sealed class DelegationRunner(
 {
     private const int MaximumMessageLength = 500;
 
+    // CancellationTokenSource takes a delay of at most about 49 days; a deadline further off than this is left to the clock checks.
+    private static readonly TimeSpan MaximumTimer = TimeSpan.FromDays(30);
+
     /// <summary>Runs one objective through the fixed pipeline and returns how it ended.</summary>
     /// <param name="request">The objective, an optional narrowing of authority, and the change to prepare if any.</param>
     /// <param name="actor">The operator on whose authority the objective runs. Every envelope of the run is granted to them.</param>
     /// <param name="delegationId">The id to give the run; a fresh one when omitted. For a caller that must hand the id out before the run ends.</param>
-    /// <param name="ct">Cancelled to abandon the run; the cancellation propagates, it does not end the run as a status yet (V1.2-E).</param>
+    /// <param name="ct">
+    /// Cancelled to abandon the run. A run that is already under way ends as <see cref="DelegationStatus.Cancelled"/> and is
+    /// returned, audited like every other end; a token that is cancelled before the run exists throws, because no run does.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="actor"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="delegationId"/> is empty.</exception>
     public async Task<DelegationRun> StartAsync(
@@ -61,21 +73,27 @@ public sealed class DelegationRunner(
         }
 
         ct.ThrowIfCancellationRequested();
-        var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow());
+        using var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow());
 
         try
         {
             await RunPipelineAsync(state, ct);
         }
+        catch (OperationCanceledException)
+        {
+            // Cancelled by the caller, or stopped by the run's or the role's deadline: a terminal state either way.
+            await EndInterruptedAsync(state, ct);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Rule C1: nothing thrown escapes a run. A failure in the orchestrator itself is a terminal state, never a crash.
             logger.LogError(ex, "Delegation {DelegationId}: the orchestrator failed", state.Id);
-            await FailActiveRoleAsync(state, ex.Message, ct);
+            await FailActiveRoleAsync(state, ex.Message);
             state.End(DelegationStatus.Failed, Bounded(ex.Message));
         }
 
-        return await FinishAsync(state, ct);
+        // An ending is audited whatever ended it, so the write is never itself cancelled.
+        return await FinishAsync(state);
     }
 
     // ---- the pipeline ----
@@ -94,6 +112,9 @@ public sealed class DelegationRunner(
         }
 
         state.SetRoot(reduction.Envelope!);
+
+        // From here the run's token is the caller's and the run's deadline, whichever comes first.
+        ct = state.BindDeadline(timeProvider, ct);
         await WriteLifecycleAsync(state, DelegationStage.Requested, DelegationStatus.Running, state.Orchestrator, ct);
 
         if (state.Request.Remediation is { } remediation && await PrepareCheckAsync(state, remediation, ct) is { } refused)
@@ -109,7 +130,7 @@ public sealed class DelegationRunner(
         }
 
         var discoveryTask = await runner.RunDelegatedAsync(
-            DelegationRoleData.DiscoveryGoal(state.Request.Objective), state.Actor, discovery.Scope, discovery.TaskId, ct);
+            DelegationRoleData.DiscoveryGoal(state.Request.Objective), state.Actor, discovery.Scope, discovery.TaskId, discovery.Token);
         if (await EndModelRoleIfNotCompletedAsync(state, discovery, discoveryTask, ct))
         {
             return;
@@ -126,7 +147,7 @@ public sealed class DelegationRunner(
         }
 
         var diagnosticTask = await runner.RunDelegatedAsync(
-            DelegationRoleData.DiagnosticGoal(state.Request.Objective, discoveryEvidence), state.Actor, diagnostic.Scope, diagnostic.TaskId, ct);
+            DelegationRoleData.DiagnosticGoal(state.Request.Objective, discoveryEvidence), state.Actor, diagnostic.Scope, diagnostic.TaskId, diagnostic.Token);
         if (await EndModelRoleIfNotCompletedAsync(state, diagnostic, diagnosticTask, ct))
         {
             return;
@@ -145,9 +166,16 @@ public sealed class DelegationRunner(
         if (state.Request.Remediation is { } toPrepare)
         {
             var preparedRun = await runner.PrepareDelegatedSkillAsync(
-                diagnostic.TaskId, state.Actor, toPrepare.SkillId, toPrepare.CapabilityName, toPrepare.Request, diagnostic.Scope, ct);
+                diagnostic.TaskId, state.Actor, toPrepare.SkillId, toPrepare.CapabilityName, toPrepare.Request, diagnostic.Scope, diagnostic.Token);
             if (preparedRun.Status != SkillPreparationStatus.Prepared)
             {
+                if (BudgetEnd(diagnostic) is (var budgetStatus, var budgetReason))
+                {
+                    await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, budgetReason, ct);
+                    state.End(budgetStatus, budgetReason);
+                    return;
+                }
+
                 var why = Bounded(preparedRun.ErrorMessage ?? "The Capability could not prepare a plan.");
                 await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, why, ct);
                 state.End(DelegationStatus.Failed, why);
@@ -190,6 +218,16 @@ public sealed class DelegationRunner(
             return;
         }
 
+        // A plan is applied whole or not at all: one the Remediation role has too few steps to finish would be left half
+        // applied, so it is stopped here, before a human is asked to approve it and before anything is changed.
+        if (plan.Steps.Count > previewScope.Envelope!.Budget.MaxSteps)
+        {
+            state.End(
+                DelegationStatus.BudgetExceeded,
+                Bounded($"The approved plan has {plan.Steps.Count} steps, but the Remediation role has only {previewScope.Envelope.Budget.MaxSteps} left to take."));
+            return;
+        }
+
         var remediation = state.Request.Remediation!;
         var approvalRequest = new PlanApprovalRequest(
             state.Id, hash, plan, remediation.SkillId, remediation.CapabilityName,
@@ -220,7 +258,7 @@ public sealed class DelegationRunner(
         }
 
         var execution = await runner.ExecuteDelegatedPlanAsync(
-            remediationRole.TaskId, state.Actor, prepared, new ExecutionPlanApproval(hash, decision), remediationRole.Scope, ct);
+            remediationRole.TaskId, state.Actor, prepared, new ExecutionPlanApproval(hash, decision), remediationRole.Scope, remediationRole.Token);
         if (execution.Status != PlanExecutionStatus.Completed)
         {
             var (status, why) = ClassifyStoppedPlan(state, prepared, execution, remediationRole);
@@ -238,7 +276,15 @@ public sealed class DelegationRunner(
             return;
         }
 
-        var verified = await runner.VerifyPlanAsync(verificationRole.TaskId, state.Actor, plan, hash, verificationRole.Scope, ct);
+        var verified = await runner.VerifyPlanAsync(verificationRole.TaskId, state.Actor, plan, hash, verificationRole.Scope, verificationRole.Token);
+        if (BudgetEnd(verificationRole) is (var verifiedStatus, var verifiedReason))
+        {
+            // A verifier that ran out of steps or time did not verify (rule S4), and says why it ended.
+            await CompleteRoleAsync(state, verificationRole, DelegationRoleStatus.Failed, null, null, verifiedReason, ct);
+            state.End(verifiedStatus, verifiedReason);
+            return;
+        }
+
         var provenance = verificationRole.Provenance(state.Id);
         var report = verified with { Evidence = [.. verified.Evidence.Select(e => e with { Provenance = provenance })] };
         await CompleteRoleAsync(state, verificationRole, DelegationRoleStatus.Completed, null, report, null, ct);
@@ -283,11 +329,53 @@ public sealed class DelegationRunner(
         return null;
     }
 
+    /// <summary>
+    /// What is left of the run's budget for the next role (ADR-0030 section 6): the root envelope with what the roles before
+    /// it spent taken off. Also says when there is nothing left for that role: no steps, or, for a role that calls the model,
+    /// no tokens. A role that makes no model call needs no tokens, so an empty token budget does not stop it.
+    /// </summary>
+    private static (AuthorityEnvelope Parent, string? Exhausted) Reserve(RunState state, AgentRoleKind role)
+    {
+        var root = state.Root;
+        var steps = (int)Math.Clamp(root.Budget.MaxSteps - state.SpentSteps, 0, int.MaxValue);
+        var tokens = (int)Math.Clamp(root.Budget.MaxTokens - state.SpentTokens, 0, int.MaxValue);
+        var parent = root with { Budget = new DelegationBudget(steps, tokens, root.Budget.DeadlineUtc) };
+
+        if (steps < 1)
+        {
+            return (parent, $"The run has no steps left in its budget for the {role} role.");
+        }
+
+        if (tokens < 1 && RoleRequirements.Of(role, EnvelopeDimension.Tokens) != EnvelopeRequirement.NotApplicable)
+        {
+            return (parent, $"The run has no model tokens left in its budget for the {role} role.");
+        }
+
+        return (parent, null);
+    }
+
+    /// <summary>How a role's own budget ended it, when it did: the deadline, its steps or its tokens. <c>null</c> when it did not.</summary>
+    private static (DelegationStatus Status, string Reason)? BudgetEnd(ActiveRole role) =>
+        role.Scope.Meter?.Stopped switch
+        {
+            BudgetStop.Deadline => (DelegationStatus.DeadlineExceeded, $"The {role.Agent.Role} role reached its deadline."),
+            BudgetStop.Steps => (DelegationStatus.BudgetExceeded, $"The {role.Agent.Role} role used every step it was granted."),
+            BudgetStop.Tokens => (DelegationStatus.BudgetExceeded, $"The {role.Agent.Role} role used more model tokens than it was granted."),
+            _ => null,
+        };
+
     /// <summary>A throwaway scope over the envelope the Remediation role would get now, to test a plan against before asking a human.</summary>
     private async Task<DelegatedExecutionScope?> EnvelopeForPlanCheckAsync(RunState state, CancellationToken ct)
     {
+        var (parent, exhausted) = Reserve(state, AgentRoleKind.Remediation);
+        if (exhausted is not null)
+        {
+            state.End(DelegationStatus.BudgetExceeded, exhausted);
+            return null;
+        }
+
         var reduction = EnvelopeReducer.ReduceForRole(
-            state.Root, AgentRoleKind.Remediation, profiles.GetProfile(AgentRoleKind.Remediation), state.Request.Authority, timeProvider.GetUtcNow());
+            parent, AgentRoleKind.Remediation, profiles.GetProfile(AgentRoleKind.Remediation), state.Request.Authority, timeProvider.GetUtcNow());
         if (reduction.IsDenied)
         {
             await WriteDenialAsync(state, AgentRoleKind.Remediation, reduction.Denial!, ct);
@@ -315,7 +403,16 @@ public sealed class DelegationRunner(
             return null;
         }
 
-        var reduction = EnvelopeReducer.ReduceForRole(state.Root, role, profiles.GetProfile(role), state.Request.Authority, now);
+        // ADR-0030 section 6: the role's budget is reserved from what the run has left, not from what it started with. Nothing
+        // left is exhaustion, not a denial of authority (ADR-0031 section 3).
+        var (parent, exhausted) = Reserve(state, role);
+        if (exhausted is not null)
+        {
+            state.End(DelegationStatus.BudgetExceeded, exhausted);
+            return null;
+        }
+
+        var reduction = EnvelopeReducer.ReduceForRole(parent, role, profiles.GetProfile(role), state.Request.Authority, now);
         if (reduction.IsDenied)
         {
             await WriteDenialAsync(state, role, reduction.Denial!, ct);
@@ -326,7 +423,7 @@ public sealed class DelegationRunner(
         var envelope = reduction.Envelope!;
         var agent = new AgentIdentity(AgentId.New(), role);
         var scope = DelegatedExecutionScope.For(state.Id, agent, envelope);
-        var active = new ActiveRole(agent, envelope, scope, Guid.NewGuid());
+        var active = new ActiveRole(agent, envelope, scope, Guid.NewGuid(), envelope.Budget.DeadlineUtc - now, timeProvider, ct);
 
         await WriteAsync(
             new DelegationEnvelopeAuditEvent
@@ -358,22 +455,30 @@ public sealed class DelegationRunner(
     private async Task CompleteRoleAsync(
         RunState state, ActiveRole role, DelegationRoleStatus status, SkillReport? report, VerificationReport? verification, string? error, CancellationToken ct)
     {
+        // Reconciled when the role ends (ADR-0030 section 6): what it spent comes off what the run has left for the next role.
+        var consumed = role.Scope.Meter?.Consumed ?? BudgetConsumption.Empty;
         var index = state.Roles.FindIndex(r => r.Agent.Id == role.Agent.Id);
         state.Roles[index] = state.Roles[index] with
         {
             Status = status,
             CompletedAtUtc = timeProvider.GetUtcNow(),
+            Consumed = consumed,
             Report = report,
             Verification = verification,
             ErrorMessage = error,
         };
+        state.Spend(consumed);
         state.Active = null;
+        role.Dispose();
         await WriteLifecycleAsync(
             state, DelegationStage.RoleCompleted, DelegationStatus.Running, role.Scope.Correlation, ct,
-            roleStatus: status, consumed: BudgetConsumption.Empty, error: error);
+            roleStatus: status, consumed: consumed, error: error);
+        await WriteLifecycleAsync(
+            state, DelegationStage.BudgetConsumed, DelegationStatus.Running, role.Scope.Correlation, ct,
+            roleStatus: status, consumed: consumed);
     }
 
-    private async Task FailActiveRoleAsync(RunState state, string message, CancellationToken ct)
+    private async Task FailActiveRoleAsync(RunState state, string message, DelegationRoleStatus status = DelegationRoleStatus.Failed)
     {
         if (state.Active is not { } active)
         {
@@ -382,7 +487,8 @@ public sealed class DelegationRunner(
 
         try
         {
-            await CompleteRoleAsync(state, active, DelegationRoleStatus.Failed, null, null, Bounded(message), ct);
+            // Recording how a role ended is never itself cancelled.
+            await CompleteRoleAsync(state, active, status, null, null, Bounded(message), CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -407,6 +513,14 @@ public sealed class DelegationRunner(
             _ => DelegationStatus.Failed,
         };
         var why = $"The {role.Agent.Role} role ended as {task.Status}.";
+
+        // A role stopped by its own budget says which one ran out: its deadline is not its steps.
+        if (task.Status == AgentTaskStatus.BudgetExceeded && BudgetEnd(role) is (var stoppedStatus, var stoppedReason))
+        {
+            status = stoppedStatus;
+            why = stoppedReason;
+        }
+
         await CompleteRoleAsync(state, role, status == DelegationStatus.Cancelled ? DelegationRoleStatus.Cancelled : DelegationRoleStatus.Failed, null, null, why, ct);
         state.End(status, why);
         return true;
@@ -416,6 +530,11 @@ public sealed class DelegationRunner(
     private (DelegationStatus Status, string Reason) ClassifyStoppedPlan(
         RunState state, PreparedSkillRun prepared, PlanExecution execution, ActiveRole role)
     {
+        if (execution.Status == PlanExecutionStatus.OutOfBudget)
+        {
+            return BudgetEnd(role) ?? (DelegationStatus.BudgetExceeded, $"The {role.Agent.Role} role ran out of budget before the last step of the approved plan.");
+        }
+
         if (execution.Status == PlanExecutionStatus.Stopped)
         {
             return execution.StoppedBy switch
@@ -434,11 +553,43 @@ public sealed class DelegationRunner(
 
     // ---- ending ----
 
-    private async Task<DelegationRun> FinishAsync(RunState state, CancellationToken ct)
+    /// <summary>
+    /// Ends a run that was interrupted: cancelled by its caller, or stopped by its own or its role's deadline. The two are
+    /// distinct terminal states (ADR-0030 section 6). A side-effecting step that was running is said to have an unknown
+    /// outcome, never a failed one.
+    /// </summary>
+    private async Task EndInterruptedAsync(RunState state, CancellationToken callerToken)
+    {
+        var role = state.Active?.Agent.Role;
+        var where = role is null ? "between roles" : $"during the {role} role";
+        var unknown = state.Active?.Scope.Meter?.UnknownOutcome;
+        var unknownNote = unknown is null ? string.Empty : $" The {unknown} was running, so whether it took effect is unknown.";
+
+        DelegationStatus status;
+        DelegationRoleStatus roleStatus;
+        string why;
+        if (callerToken.IsCancellationRequested)
+        {
+            (status, roleStatus, why) = (DelegationStatus.Cancelled, DelegationRoleStatus.Cancelled, $"The run was cancelled {where}.{unknownNote}");
+        }
+        else if (state.DeadlineReached(timeProvider.GetUtcNow()))
+        {
+            (status, roleStatus, why) = (DelegationStatus.DeadlineExceeded, DelegationRoleStatus.Failed, $"The deadline passed {where}.{unknownNote}");
+        }
+        else
+        {
+            (status, roleStatus, why) = (DelegationStatus.Failed, DelegationRoleStatus.Failed, $"The run was interrupted {where}.{unknownNote}");
+        }
+
+        await FailActiveRoleAsync(state, why, roleStatus);
+        state.End(status, Bounded(why));
+    }
+
+    private async Task<DelegationRun> FinishAsync(RunState state)
     {
         // A run that was never ended by a decision ran every role to the end.
         var status = state.Ended ?? DelegationStatus.Failed;
-        await WriteLifecycleAsync(state, DelegationStage.Terminal, status, state.Orchestrator, ct, error: state.Error);
+        await WriteLifecycleAsync(state, DelegationStage.Terminal, status, state.Orchestrator, CancellationToken.None, error: state.Error);
 
         return new DelegationRun
         {
@@ -539,14 +690,61 @@ public sealed class DelegationRunner(
 
     // ---- state ----
 
-    private sealed record ActiveRole(AgentIdentity Agent, AuthorityEnvelope Envelope, DelegatedExecutionScope Scope, Guid TaskId)
+    /// <summary>
+    /// The role that is running. It owns the role's link in the cancellation token tree: the run's token, cut short at the
+    /// role's own deadline, so a role stops when it reaches its deadline even in the middle of a model call or a tool.
+    /// </summary>
+    private sealed class ActiveRole : IDisposable
     {
+        private readonly CancellationTokenSource _deadline;
+        private readonly CancellationTokenSource _linked;
+
+        internal ActiveRole(
+            AgentIdentity agent, AuthorityEnvelope envelope, DelegatedExecutionScope scope, Guid taskId,
+            TimeSpan untilDeadline, TimeProvider timeProvider, CancellationToken run)
+        {
+            Agent = agent;
+            Envelope = envelope;
+            Scope = scope;
+            TaskId = taskId;
+            _deadline = TimerFor(untilDeadline, timeProvider);
+            _linked = CancellationTokenSource.CreateLinkedTokenSource(run, _deadline.Token);
+        }
+
+        internal AgentIdentity Agent { get; }
+
+        internal AuthorityEnvelope Envelope { get; }
+
+        internal DelegatedExecutionScope Scope { get; }
+
+        internal Guid TaskId { get; }
+
+        /// <summary>The run's token and this role's deadline: cancelled by either.</summary>
+        internal CancellationToken Token => _linked.Token;
+
+        /// <summary>Whether the role's own deadline is what cancelled it.</summary>
+        internal bool DeadlineFired => _deadline.IsCancellationRequested;
+
         internal EvidenceProvenance Provenance(Guid delegationId) => new(delegationId, Agent.Id, Agent.Role);
+
+        public void Dispose()
+        {
+            _linked.Dispose();
+            _deadline.Dispose();
+        }
     }
 
-    private sealed class RunState(Guid id, DelegationRequest request, ActorIdentity actor, DateTimeOffset createdAt)
+    /// <summary>A source that cancels after <paramref name="delay"/> on <paramref name="timeProvider"/>'s clock, or never when that is too far off for a timer.</summary>
+    private static CancellationTokenSource TimerFor(TimeSpan delay, TimeProvider timeProvider) =>
+        delay > TimeSpan.Zero && delay < MaximumTimer
+            ? new CancellationTokenSource(delay, timeProvider)
+            : new CancellationTokenSource();
+
+    private sealed class RunState(Guid id, DelegationRequest request, ActorIdentity actor, DateTimeOffset createdAt) : IDisposable
     {
         private AuthorityEnvelope? _root;
+        private CancellationTokenSource? _deadline;
+        private CancellationTokenSource? _linked;
 
         public Guid Id { get; } = id;
 
@@ -559,6 +757,42 @@ public sealed class DelegationRunner(
         public AuthorityEnvelope Root => _root ?? throw new InvalidOperationException("The root envelope is not set yet.");
 
         public string RootHash { get; private set; } = string.Empty;
+
+        /// <summary>What the roles that have ended spent, to reconcile against the root budget (ADR-0030 section 6).</summary>
+        public long SpentSteps { get; private set; }
+
+        public long SpentTokens { get; private set; }
+
+        public void Spend(BudgetConsumption consumed)
+        {
+            SpentSteps += consumed.Steps;
+            SpentTokens += consumed.Tokens;
+        }
+
+        /// <summary>
+        /// The run's link in the token tree: the caller's token, cut short at the run's deadline. A human's decision on the plan
+        /// is awaited under it, so an approval nobody gives cannot hold a run past its deadline.
+        /// </summary>
+        public CancellationToken BindDeadline(TimeProvider timeProvider, CancellationToken caller)
+        {
+            _deadline = TimerFor(Root.Budget.DeadlineUtc - timeProvider.GetUtcNow(), timeProvider);
+            _linked = CancellationTokenSource.CreateLinkedTokenSource(caller, _deadline.Token);
+            return _linked.Token;
+        }
+
+        /// <summary>Whether the run's own deadline, or the running role's, has been reached, by timer or by the clock.</summary>
+        public bool DeadlineReached(DateTimeOffset now) =>
+            _root is not null
+            && (_deadline?.IsCancellationRequested == true
+                || Active?.DeadlineFired == true
+                || now >= (Active?.Envelope.Budget.DeadlineUtc ?? _root.Budget.DeadlineUtc));
+
+        public void Dispose()
+        {
+            Active?.Dispose();
+            _linked?.Dispose();
+            _deadline?.Dispose();
+        }
 
         /// <summary>The correlation of an event of the orchestrator itself: the run and the root envelope, no agent.</summary>
         public DelegationCorrelation Orchestrator => new(Id, RootHash, null);

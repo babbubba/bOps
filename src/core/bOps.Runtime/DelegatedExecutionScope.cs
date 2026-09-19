@@ -32,12 +32,14 @@ internal sealed record DelegatedExecutionScope
     /// <param name="correlation">The block stamped on every audit event of the run's steps. Its agent is the one executing them.</param>
     /// <param name="envelope">The authority the agent was granted, or <c>null</c> when the caller has none to give, which makes every step refused.</param>
     /// <exception cref="ArgumentNullException"><paramref name="correlation"/> is <c>null</c>.</exception>
-    internal DelegatedExecutionScope(DelegationCorrelation correlation, AuthorityEnvelope? envelope)
+    /// <param name="consumed">What the agent already spent under this envelope, when it is a role being restarted; nothing otherwise.</param>
+    internal DelegatedExecutionScope(DelegationCorrelation correlation, AuthorityEnvelope? envelope, BudgetConsumption? consumed = null)
     {
         ArgumentNullException.ThrowIfNull(correlation);
 
         Correlation = correlation;
         Envelope = envelope;
+        Meter = envelope is null ? null : new RoleMeter(envelope.Budget, consumed);
     }
 
     /// <summary>The delegated run, the acting agent and the hash of the envelope in force.</summary>
@@ -46,6 +48,9 @@ internal sealed record DelegatedExecutionScope
     /// <summary>The authority the agent was granted. <c>null</c> refuses every step.</summary>
     internal AuthorityEnvelope? Envelope { get; }
 
+    /// <summary>What the agent has spent of the budget its envelope grants (ADR-0030 section 6). <c>null</c> when there is no envelope, which refuses every step anyway.</summary>
+    internal RoleMeter? Meter { get; }
+
     /// <summary>
     /// The normal way to build a scope: from the run, the agent and the envelope the reduction granted it, with
     /// the correlation's hash computed from that envelope so the two agree.
@@ -53,13 +58,15 @@ internal sealed record DelegatedExecutionScope
     /// <param name="delegationId">The delegated run (<see cref="DelegationRun.Id"/>).</param>
     /// <param name="agent">The agent that acts.</param>
     /// <param name="envelope">The envelope granted to that agent.</param>
-    internal static DelegatedExecutionScope For(Guid delegationId, AgentIdentity agent, AuthorityEnvelope envelope)
+    /// <param name="consumed">What the agent already spent, for a role that is restarted: its budget is never reset.</param>
+    internal static DelegatedExecutionScope For(Guid delegationId, AgentIdentity agent, AuthorityEnvelope envelope, BudgetConsumption? consumed = null)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentNullException.ThrowIfNull(envelope);
 
         return new DelegatedExecutionScope(
             new DelegationCorrelation(delegationId, DelegationHasher.ComputeEnvelopeHash(envelope), agent),
-            envelope);
+            envelope,
+            consumed);
     }
 }

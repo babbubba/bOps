@@ -121,8 +121,9 @@ public sealed class AgentRunner(
     /// <summary>
     /// <see cref="RunAsync"/> for one role of a delegated run (V1.2, ADR-0030): the same loop, with every step
     /// checked against the role's authority envelope before policy, and every audit event it writes correlated
-    /// to the delegated run. Internal, so only the runtime's orchestrator can call it. It does not yet narrow the
-    /// tool view the model is shown or count the role's budget; the orchestrator does (V1.2-D, V1.2-E).
+    /// to the delegated run. Internal, so only the runtime's orchestrator can call it. It counts the role's steps and
+    /// tokens against its envelope and stops the role when they run out or its deadline is reached (V1.2-E); the tool
+    /// view the model is shown is narrowed to the envelope.
     /// </summary>
     /// <param name="goal">The role's objective.</param>
     /// <param name="actor">The operator on whose authority the run executes.</param>
@@ -168,7 +169,7 @@ public sealed class AgentRunner(
         taskActivity?.SetTag("bops.plan_revision", plan.Revision);
         taskActivity?.SetTag("bops.plan_steps", plan.Steps.Count);
 
-        if (options.MaxTotalTokens is { } initialBudget && totalTokens > initialBudget)
+        if ((options.MaxTotalTokens is { } initialBudget && totalTokens > initialBudget) || BudgetStops(delegation))
         {
             return await FinishAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
         }
@@ -237,6 +238,12 @@ public sealed class AgentRunner(
         for (var stepIndex = startStepIndex; stepIndex < options.MaxSteps; stepIndex++)
         {
             ct.ThrowIfCancellationRequested();
+
+            // ADR-0030 section 6: a delegated role takes a step only inside its own step budget and deadline.
+            if (BudgetStopsStep(delegation))
+            {
+                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+            }
 
             var stepStopwatch = Stopwatch.StartNew();
             using var stepActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.step");
@@ -336,7 +343,7 @@ public sealed class AgentRunner(
 
             BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
 
-            if (options.MaxTotalTokens is { } budget && totalTokens > budget)
+            if ((options.MaxTotalTokens is { } budget && totalTokens > budget) || BudgetStops(delegation))
             {
                 return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
             }
@@ -383,7 +390,7 @@ public sealed class AgentRunner(
                 plannedStepCursor = 0;
                 BOpsTelemetry.ReplansTotal.Add(1);
 
-                if (options.MaxTotalTokens is { } replanBudget && totalTokens > replanBudget)
+                if ((options.MaxTotalTokens is { } replanBudget && totalTokens > replanBudget) || BudgetStops(delegation))
                 {
                     return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
                 }
@@ -460,9 +467,18 @@ public sealed class AgentRunner(
         var evidence = new List<Evidence>();
         AuthorizationKind? stoppedBy = null;
 
+        var outOfBudget = false;
+
         foreach (var planStep in plan.Steps.OrderBy(s => s.Index))
         {
             ct.ThrowIfCancellationRequested();
+
+            // ADR-0030 section 6: a step the role has no budget or time left for does not run, and neither does any after it.
+            if (BudgetStopsStep(delegation))
+            {
+                outOfBudget = true;
+                break;
+            }
 
             var call = new ModelToolCall($"plan-step-{planStep.Index}", planStep.ToolName, planStep.Arguments);
             var (step, _, authorization, verification) = await ExecuteStepAsync(
@@ -501,7 +517,7 @@ public sealed class AgentRunner(
         // method produces the Evidence a Skill would build Findings from, never Findings itself.
         return new PlanExecution(
             new SkillReport(evidence, [], plan),
-            stoppedBy is null ? PlanExecutionStatus.Completed : PlanExecutionStatus.Stopped,
+            outOfBudget ? PlanExecutionStatus.OutOfBudget : stoppedBy is null ? PlanExecutionStatus.Completed : PlanExecutionStatus.Stopped,
             stoppedBy);
     }
 
@@ -847,6 +863,13 @@ public sealed class AgentRunner(
                 continue;
             }
 
+            if (BudgetStopsStep(delegation))
+            {
+                // A verifier that ran out of budget or time confirmed nothing (rule S4); the orchestrator reads why from the meter.
+                return new VerificationReport(
+                    planHash, VerificationStatus.Inconclusive, evidence, "The Verification role ran out of budget or time before it had read every declared effect.");
+            }
+
             var call = new ModelToolCall(
                 $"verify-step-{planStep.Index}", spec.VerifyToolName, ExtractVerificationArguments(planStep.Arguments, spec.ArgumentsFrom));
             var (readStep, _, authorization, _) = await ExecuteStepAsync(
@@ -980,6 +1003,11 @@ public sealed class AgentRunner(
                 taskId, stepIndex, actor, call, rejectedPackage, rejectedRisk,
                 AuthorizationKind.PolicyDenied, rejection, planRevision: -1, ct, scope, delegation);
             return new ToolCallResult(ToolOutcome.Denied, null, rejection);
+        }
+
+        if (BudgetStopsStep(delegation))
+        {
+            return new ToolCallResult(ToolOutcome.Denied, null, "The role has no budget or time left for another step.");
         }
 
         var evidenceCall = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
@@ -1313,6 +1341,7 @@ public sealed class AgentRunner(
 
         var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
         calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null));
+        delegation?.Meter?.AddTokens(UsageTokens(response));
 
         await WriteAuditAsync(new ModelCallAuditEvent
         {
@@ -1566,7 +1595,31 @@ public sealed class AgentRunner(
         toolActivity?.SetTag("bops.policy_mode", policyDecision.Mode.ToString());
 
         var stopwatch = Stopwatch.StartNew();
-        var result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
+        ToolCallResult result;
+        try
+        {
+            result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
+        }
+        catch (OperationCanceledException) when (delegation is not null && manifest.Risk != RiskLevel.Read)
+        {
+            // ADR-0030 section 6: a side-effecting step that is cancelled while it runs may or may not have taken effect. It is
+            // recorded as unknown, never as failed, so nothing treats the change as absent; reconciliation is V1.2-F.
+            delegation.Meter?.MarkUnknownOutcome($"step {stepIndex} ('{call.ToolName}')");
+            await WriteAuditAsync(new DelegationJournalAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Phase = JournalPhase.Outcome,
+                Tool = call.ToolName,
+                ArgumentsHash = DelegationHasher.ComputeArgumentsHash(call.Arguments),
+                Outcome = StepOutcomeKind.Cancelled,
+            }, delegation, CancellationToken.None);
+            throw;
+        }
+
         stopwatch.Stop();
 
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
@@ -1970,6 +2023,14 @@ public sealed class AgentRunner(
 
         return $"{ToolOutputOpenDelimiter}\n{sanitized}\n{ToolOutputCloseDelimiter}";
     }
+
+    /// <summary>Charges one step to a delegated role. <c>true</c> when it has no step or time left for it (ADR-0030 section 6). Never for an undelegated run.</summary>
+    private bool BudgetStopsStep(DelegatedExecutionScope? delegation) =>
+        delegation?.Meter?.BeginStep(timeProvider.GetUtcNow()) is not null;
+
+    /// <summary>Whether a delegated role has used up its tokens or reached its deadline. Never for an undelegated run.</summary>
+    private bool BudgetStops(DelegatedExecutionScope? delegation) =>
+        delegation?.Meter?.Check(timeProvider.GetUtcNow()) is not null;
 
     private static int UsageTokens(ModelResponse response) =>
         (response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0);
