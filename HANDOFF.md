@@ -188,8 +188,15 @@ delegated agent can take, `PolicyContext` gains `Delegation` and `Envelope` (SDK
 audit event the runner writes for a delegated role carries the correlation block. The entry points are internal
 and nothing calls them until V1.2-D, so a run that is not delegated is unchanged. The task file lists what C2
 interpreted (where a step becomes delegated, why a refusal is a Forbidden decision, why budgets are left to E).
-C3 (the `policy.yaml` loader) remains.
-Next action: V1.2-C3, then V1.2-D
+C3 is implemented: the optional `delegation` section of `policy.yaml` configures one profile per role and is read
+strictly (an unknown key, a number where a name belongs, a bare duration, an instant without a zone or a grant a
+role cannot use is an error with the line and key); a malformed section fails the load, so the hosts fall back to
+`AllForbidden`, which has no profile and denies delegation. `bOps.Policy` gains `PolicyRoleProfileSource`, an
+`IRoleProfileSource` over the loaded profiles. It is not wired into Cli or Api until D builds the orchestrator, and
+the SDK is unchanged. C3 also found that the older sections parse a number or a comma list as an undefined
+`PolicyMode` that `AgentRunner` would run unattended; that is recorded in the C task file and left for a separate
+fix. V1.2-C is complete.
+Next action: V1.2-D
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

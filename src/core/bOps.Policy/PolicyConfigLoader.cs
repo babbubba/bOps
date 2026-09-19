@@ -149,7 +149,11 @@ public static class PolicyConfigLoader
             }
         }
 
-        return new PolicyConfig(defaults, toolOverrides, packageCeilings, skillRules);
+        // Read last, so a problem in an older section is reported exactly as before. Strict where the sections above
+        // are lenient: see DelegationSectionParser.
+        var roleProfiles = DelegationSectionParser.Parse(yaml);
+
+        return new PolicyConfig(defaults, toolOverrides, packageCeilings, skillRules, roleProfiles);
     }
 
     private static T ParseEnum<T>(string value, string section, string key) where T : struct, Enum =>

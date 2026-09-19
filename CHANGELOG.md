@@ -103,6 +103,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   before its first step. `PolicyContext` gains optional `Delegation` and `Envelope`, and every audit event the
   runner writes for a delegated role carries the correlation block. The delegated entry points are internal
   and nothing calls them until V1.2-D, so a run that is not delegated is unchanged.
+- V1.2-C3 `policy.yaml` `delegation` section (ADR-0031 §5): an optional section configures one profile per role
+  (tools, risk and blast-radius ceilings, targets, environments, steps, tokens, duration, window), read strictly:
+  an unknown key, a number or comma list where a name is expected, a bare duration or an instant without a zone
+  is an error, and so is a grant a role cannot use, reported with the line and key. A malformed section fails the
+  load, so the hosts fall back to `AllForbidden`, which ships no profile and denies delegation. `bOps.Policy` gains
+  `PolicyRoleProfileSource`, an `IRoleProfileSource` over the loaded profiles, and `PolicyConfig.RoleProfiles`.
+  `SafeDefault` has none, so delegation stays off until an operator grants it. Nothing is wired into the hosts
+  until V1.2-D, and the SDK is unchanged.
 
 ### Changed
 
