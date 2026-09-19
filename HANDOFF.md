@@ -195,8 +195,14 @@ role cannot use is an error with the line and key); a malformed section fails th
 `IRoleProfileSource` over the loaded profiles. It is not wired into Cli or Api until D builds the orchestrator, and
 the SDK is unchanged. C3 also found that the older sections parse a number or a comma list as an undefined
 `PolicyMode` that `AgentRunner` would run unattended; that is recorded in the C task file and left for a separate
-fix. V1.2-C is complete.
-Next action: V1.2-D
+fix, since made (PR #12). V1.2-C is complete.
+
+V1.2-D is implemented on a branch: `DelegationRunner` runs the fixed pipeline over the existing paths, with a fake model
+and fake tools in its tests. The SDK moves to `1.2.0-preview.4` for `IPlanApprovalProvider` (a human approves a plan by
+its hash) and a `PlanDecided` audit stage. It is in memory, checks only the deadline before a role, and is not wired into
+Cli or Api: registering the runner, the profile source and a human approval channel belongs to V1.2-I and V1.2-J. The
+task file lists the sixteen interpretations D made.
+Next action: V1.2-E (budgets, deadlines, cancellation)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

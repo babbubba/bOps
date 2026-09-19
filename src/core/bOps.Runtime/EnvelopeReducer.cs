@@ -46,6 +46,14 @@ internal static class EnvelopeReducer
     /// <param name="originator">The operator on whose authority the run executes.</param>
     /// <param name="now">The instant delegation starts.</param>
     internal static EnvelopeReduction DeriveRoot(
+        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        DeriveRootAttributed(profiles, request, originator, now).Reduction;
+
+    /// <summary>
+    /// <see cref="DeriveRoot"/> that also says which role a refusal is about, for the orchestrator's audit event (V1.2-D).
+    /// A refusal of the request itself, its deadline or its window, belongs to no role and reports <c>null</c>.
+    /// </summary>
+    internal static (EnvelopeReduction Reduction, AgentRoleKind? Role) DeriveRootAttributed(
         IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(profiles);
@@ -58,12 +66,12 @@ internal static class EnvelopeReducer
             var profile = profiles.GetProfile(role);
             if (profile is null)
             {
-                return NoProfile(role);
+                return (NoProfile(role), role);
             }
 
             if (profile.Role != role)
             {
-                return WrongProfile(role, profile);
+                return (WrongProfile(role, profile), role);
             }
 
             roleProfiles.Add(profile);
@@ -71,12 +79,12 @@ internal static class EnvelopeReducer
 
         if (request.DeadlineUtc is { } requestedDeadline && requestedDeadline <= now)
         {
-            return EnvelopeReduction.Denied(EnvelopeDimension.Deadline, "The requested deadline has already passed.");
+            return (EnvelopeReduction.Denied(EnvelopeDimension.Deadline, "The requested deadline has already passed."), null);
         }
 
         if (request.Window is { } requestedWindow && requestedWindow.EndUtc <= now)
         {
-            return EnvelopeReduction.Denied(EnvelopeDimension.MaintenanceWindow, "The requested maintenance window has already ended.");
+            return (EnvelopeReduction.Denied(EnvelopeDimension.MaintenanceWindow, "The requested maintenance window has already ended."), null);
         }
 
         var root = BuildRoot(roleProfiles, request, originator, now);
@@ -88,17 +96,17 @@ internal static class EnvelopeReducer
             var reduction = ReduceForRole(root, profile.Role, profile, request, now);
             if (reduction.IsDenied)
             {
-                return reduction;
+                return (reduction, profile.Role);
             }
 
             if (reduction.Envelope!.Window is { } window && window.EndUtc <= now)
             {
-                return EnvelopeReduction.Denied(
-                    EnvelopeDimension.MaintenanceWindow, $"{profile.Role} role: its maintenance window has already ended.");
+                return (EnvelopeReduction.Denied(
+                    EnvelopeDimension.MaintenanceWindow, $"{profile.Role} role: its maintenance window has already ended."), profile.Role);
             }
         }
 
-        return EnvelopeReduction.Granted(root, NarrowedDimensions(BuildRoot(roleProfiles, new DelegationAuthorityRequest(), originator, now), root));
+        return (EnvelopeReduction.Granted(root, NarrowedDimensions(BuildRoot(roleProfiles, new DelegationAuthorityRequest(), originator, now), root)), null);
     }
 
     /// <summary>

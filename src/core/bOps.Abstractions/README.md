@@ -31,7 +31,7 @@ host-facing: a Tool or Skill package does not implement them and cannot grant it
 through them, and `Evidence.Provenance` can be stamped only by the runtime. A policy engine sees a
 delegated call through two optional `PolicyContext` fields, `Delegation` and `Envelope`; the runtime has
 already refused anything outside the envelope, so they are context for the decision and never a way to
-widen it. They are additive and unused until the runtime orchestrator ships later in V1.2.
+widen it. A host also implements `IPlanApprovalProvider` to ask a human to approve one plan by its hash (`PlanApprovalRequest`); the runtime never calls it for an agent. They are additive and unused until the runtime orchestrator ships later in V1.2.
 
 The 1.x public API follows Semantic Versioning. See the repository plugin guide and ADR-0022 for
 the package manifest, signing workflow, compatibility rules and security boundary. ADR-0023,

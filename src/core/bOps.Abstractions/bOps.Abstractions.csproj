@@ -7,7 +7,7 @@
     <PackageId>bOps.Abstractions</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <!-- ADR-0022: SemVer is binding from 1.0. V1.2 (ADR-0030 delegation contracts) is still an incomplete preview milestone. -->
-    <Version>1.2.0-preview.3</Version>
+    <Version>1.2.0-preview.4</Version>
   </PropertyGroup>
 
   <ItemGroup>
