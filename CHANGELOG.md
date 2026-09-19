@@ -93,6 +93,16 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `EnvelopeReducer` that derives the objective's root envelope and each role's envelope as
   parent ∩ profile ∩ request under the per-role table. Nothing calls it yet: enforcement in
   `ExecuteStepAsync` follows in V1.2-C2 and the `policy.yaml` loader in V1.2-C3.
+- V1.2-C2 authority-envelope enforcement (`bOps.Abstractions` `1.2.0-preview.3`, ADR-0030 §3, ADR-0031 §4):
+  every step of a delegated agent is checked against its envelope in `ExecuteStepAsync`, before argument
+  validation and before policy, and the envelope can only deny (tool, risk ceiling, maintenance window,
+  and for a step with a Skill scope the Skill, Capability, blast radius, target and environment). A delegated
+  step that carries no envelope, an envelope other than the recorded one, or one granted to another
+  operator is refused, and so is a step above `Read` that is not a step of an approved plan. A Capability is
+  refused before its code runs when the envelope does not allow it, and an approved plan is checked whole
+  before its first step. `PolicyContext` gains optional `Delegation` and `Envelope`, and every audit event the
+  runner writes for a delegated role carries the correlation block. The delegated entry points are internal
+  and nothing calls them until V1.2-D, so a run that is not delegated is unchanged.
 
 ### Changed
 

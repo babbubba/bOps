@@ -179,9 +179,17 @@ V1.2-C is delivered in three steps. C1 is implemented: the SDK (`1.2.0-preview.2
 `DelegationAuthorityRequest` and `IRoleProfileSource`, and the runtime gains an internal `EnvelopeReducer`
 that derives the root envelope and each role's envelope under the per-role table. Nothing calls it yet, so
 no runtime behaviour changed; `agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md` records the ten
-interpretations C1 made where the ADRs leave a detail open. C2 (enforcement in `ExecuteStepAsync`) and C3
-(the `policy.yaml` loader) remain.
-Next action: V1.2-C2, then V1.2-C3
+interpretations C1 made where the ADRs leave a detail open.
+
+C2 is implemented: `ExecuteStepAsync` checks every step of a delegated agent against its envelope before
+argument validation and before policy (`EnvelopeEnforcer`), the delegated entry points `RunDelegatedAsync`,
+`PrepareDelegatedSkillAsync` and `ExecuteDelegatedPreparedSkillAsync` carry the scope on all three paths a
+delegated agent can take, `PolicyContext` gains `Delegation` and `Envelope` (SDK `1.2.0-preview.3`), and every
+audit event the runner writes for a delegated role carries the correlation block. The entry points are internal
+and nothing calls them until V1.2-D, so a run that is not delegated is unchanged. The task file lists what C2
+interpreted (where a step becomes delegated, why a refusal is a Forbidden decision, why budgets are left to E).
+C3 (the `policy.yaml` loader) remains.
+Next action: V1.2-C3, then V1.2-D
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

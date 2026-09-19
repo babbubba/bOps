@@ -481,7 +481,7 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.memory": {
@@ -489,14 +489,14 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.docker": {
         "type": "Project",
         "dependencies": {
           "Docker.DotNet": "[3.125.15, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.filesystem": {
@@ -504,27 +504,27 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.network": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.providers.anthropic": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.providers.deepseek": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
@@ -532,7 +532,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
@@ -540,7 +540,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
@@ -548,34 +548,34 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.providers.openaicompatible": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.providers.openrouter": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.service.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.service.linux": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Service.Core": "[1.0.0, )"
         }
       },
@@ -583,20 +583,20 @@
         "type": "Project",
         "dependencies": {
           "System.ServiceProcess.ServiceController": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.Service.Core": "[1.0.0, )"
         }
       },
       "bops.packages.system.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.packages.system.linux": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
       },
@@ -604,14 +604,14 @@
         "type": "Project",
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )",
+          "bOps.Abstractions": "[1.2.0-preview.3, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
       },
       "bops.packages.web": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.pluginhost": {
@@ -621,21 +621,21 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.0, )",
           "Microsoft.Extensions.Http": "[10.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.policy": {
         "type": "Project",
         "dependencies": {
           "YamlDotNet": "[18.1.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       }
     },

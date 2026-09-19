@@ -214,37 +214,6 @@ public sealed class SkillExecutionTests
         return (runner, audit, store);
     }
 
-    private sealed class TestSkillProvider(IReadOnlyList<ICapability> capabilities) : ISkillProvider
-    {
-        public string SkillId => "sample.skill";
-        public IReadOnlyList<ICapability> GetCapabilities() => capabilities;
-        public IEnumerable<ITool> GetTools() => [];
-    }
-
-    private sealed class DelegateCapability : ICapability
-    {
-        private readonly Func<CapabilityRequest, IToolInvoker, CancellationToken, Task<SkillReport>> _prepare;
-
-        public DelegateCapability(
-            string name,
-            RiskLevel risk,
-            Func<CapabilityRequest, IToolInvoker, CancellationToken, Task<SkillReport>> prepare,
-            TimeSpan? timeout = null,
-            VerificationSpec? verification = null)
-        {
-            _prepare = prepare;
-            Manifest = new CapabilityManifest(
-                name, "1.0.0", "Test Capability.", risk, [], [], [],
-                timeout ?? TimeSpan.FromSeconds(5), SupportsDryRun: true, verification);
-        }
-
-        public CapabilityManifest Manifest { get; }
-
-        public Task<SkillReport> PrepareAsync(
-            CapabilityRequest request, IToolInvoker toolInvoker, CancellationToken ct = default) =>
-            _prepare(request, toolInvoker, ct);
-    }
-
     private sealed class CapturingPolicyEngine : IPolicyEngine
     {
         public List<PolicyContext> Contexts { get; } = [];

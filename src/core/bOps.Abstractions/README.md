@@ -28,8 +28,10 @@ correlation block on every audit event. A host also describes what each role may
 `RoleProfile` per role, narrows one objective with a `DelegationAuthorityRequest` (it can only
 narrow, never grant) and exposes its profiles through an `IRoleProfileSource` (ADR-0031). They are
 host-facing: a Tool or Skill package does not implement them and cannot grant itself authority
-through them, and `Evidence.Provenance` can be stamped only by the runtime. They are additive and
-unused until the runtime orchestrator ships later in V1.2.
+through them, and `Evidence.Provenance` can be stamped only by the runtime. A policy engine sees a
+delegated call through two optional `PolicyContext` fields, `Delegation` and `Envelope`; the runtime has
+already refused anything outside the envelope, so they are context for the decision and never a way to
+widen it. They are additive and unused until the runtime orchestrator ships later in V1.2.
 
 The 1.x public API follows Semantic Versioning. See the repository plugin guide and ADR-0022 for
 the package manifest, signing workflow, compatibility rules and security boundary. ADR-0023,
