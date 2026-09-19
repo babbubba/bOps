@@ -14,4 +14,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The envelope reduction is the security boundary of V1.2 (ADR-0030, ADR-0031): internal, so nothing
+         outside the runtime can call it, and visible to its own tests. -->
+    <InternalsVisibleTo Include="bOps.Runtime.Tests" />
+  </ItemGroup>
+
 </Project>

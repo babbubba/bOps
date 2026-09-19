@@ -173,9 +173,15 @@ question in `agentic/_tasks/2026-09-18-v1.2-b-contracts.md`).
 V1.2-C is in progress. On 2026-09-19 the operator chose a per-role requirement table, a new ADR-0031 to
 record it (an accepted ADR is not edited), and role-profile contracts in `bOps.Abstractions` (D-027).
 ADR-0031 is **Accepted** (2026-09-19). It also states two things beyond the table (grant versus
-exhaustion, and that targets and environments are not matched for plain Read calls). No enforcement
-code is written yet.
-Next action: continue V1.2-C with the SDK profile contracts, the reduction and the enforcement
+exhaustion, and that targets and environments are not matched for plain Read calls).
+
+V1.2-C is delivered in three steps. C1 is implemented: the SDK (`1.2.0-preview.2`) gains `RoleProfile`,
+`DelegationAuthorityRequest` and `IRoleProfileSource`, and the runtime gains an internal `EnvelopeReducer`
+that derives the root envelope and each role's envelope under the per-role table. Nothing calls it yet, so
+no runtime behaviour changed; `agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md` records the ten
+interpretations C1 made where the ADRs leave a detail open. C2 (enforcement in `ExecuteStepAsync`) and C3
+(the `policy.yaml` loader) remain.
+Next action: V1.2-C2, then V1.2-C3
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

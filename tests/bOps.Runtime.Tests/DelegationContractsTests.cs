@@ -666,8 +666,215 @@ public sealed class DelegationContractsTests
             Values<ReconciliationAction>());
         Assert.Equal(
             [("Originator", 0), ("Depth", 1), ("Skills", 2), ("Capabilities", 3), ("Tools", 4), ("Risk", 5), ("BlastRadius", 6),
-             ("Targets", 7), ("Environments", 8), ("MaintenanceWindow", 9), ("Steps", 10), ("Tokens", 11), ("Deadline", 12)],
+             ("Targets", 7), ("Environments", 8), ("MaintenanceWindow", 9), ("Steps", 10), ("Tokens", 11), ("Deadline", 12),
+             ("Profile", 13)],
             Values<EnvelopeDimension>());
+    }
+
+    [Fact]
+    public void EnvelopeProfileAndRequest_TakeASnapshotOfTheSetsTheyAreBuiltFrom()
+    {
+        // These contracts state authority and claim to be immutable values. A list the caller keeps and edits
+        // afterwards must not be able to widen what was validated, or slip in a wildcard.
+        var tools = new List<string> { "system.cpu" };
+        var envelope = new AuthorityEnvelope(
+            Operator, 1, [], [], tools, RiskLevel.Read, BlastRadius.Single, ["n"], ["e"], new DelegationBudget(1, 1, T0.AddHours(1)));
+        var profile = new RoleProfile(
+            AgentRoleKind.Verification, [], [], tools, RiskLevel.Read, BlastRadius.Single, ["n"], ["e"], 1, 0, TimeSpan.FromMinutes(1));
+        var request = new DelegationAuthorityRequest(AllowedTools: tools);
+
+        tools.Add("*");
+        tools[0] = "evil.tool";
+
+        Assert.Equal(["system.cpu"], envelope.AllowedTools);
+        Assert.Equal(["system.cpu"], profile.AllowedTools);
+        Assert.Equal(["system.cpu"], request.AllowedTools);
+        Assert.Throws<NotSupportedException>(() => ((IList<string>)envelope.AllowedTools).Add("evil.tool"));
+    }
+
+    // ---- role profile, authority request and profile source (ADR-0031 section 5) ----
+
+    private static RoleProfile SampleRemediationProfile() => new(
+        AgentRoleKind.Remediation,
+        AllowedSkills: ["system.skill"],
+        AllowedCapabilities: ["system.diagnose"],
+        AllowedTools: ["service.restart"],
+        MaxRisk: RiskLevel.High,
+        MaxBlastRadius: BlastRadius.Multiple,
+        AllowedTargets: ["node-1"],
+        AllowedEnvironments: ["staging"],
+        MaxSteps: 5,
+        MaxTokens: 0,
+        MaxDuration: TimeSpan.FromMinutes(5),
+        Window: new MaintenanceWindow(T0, T0.AddHours(1)));
+
+    private static RoleProfile ProfileWith(
+        AgentRoleKind role,
+        IReadOnlyList<string>? skills = null,
+        IReadOnlyList<string>? capabilities = null,
+        IReadOnlyList<string>? tools = null,
+        int maxSteps = 1,
+        int maxTokens = 0,
+        TimeSpan? duration = null) =>
+        new(role, skills ?? [], capabilities ?? [], tools ?? ["system.cpu"], RiskLevel.Read, BlastRadius.Single, ["node-1"], ["staging"], maxSteps, maxTokens, duration ?? TimeSpan.FromMinutes(1));
+
+    [Fact]
+    public void RoleProfile_RoundTrips()
+    {
+        var value = SampleRemediationProfile();
+
+        var result = RoundTripBoth(value, DelegationContractsJsonContext.Default.RoleProfile);
+
+        Assert.Equal(AgentRoleKind.Remediation, result.Role);
+        Assert.Equal(value.AllowedSkills, result.AllowedSkills);
+        Assert.Equal(value.AllowedCapabilities, result.AllowedCapabilities);
+        Assert.Equal(value.AllowedTools, result.AllowedTools);
+        Assert.Equal(RiskLevel.High, result.MaxRisk);
+        Assert.Equal(BlastRadius.Multiple, result.MaxBlastRadius);
+        Assert.Equal(value.AllowedTargets, result.AllowedTargets);
+        Assert.Equal(value.AllowedEnvironments, result.AllowedEnvironments);
+        Assert.Equal(5, result.MaxSteps);
+        Assert.Equal(0, result.MaxTokens);
+        Assert.Equal(TimeSpan.FromMinutes(5), result.MaxDuration);
+        Assert.Equal(value.Window, result.Window);
+    }
+
+    [Fact]
+    public void RoleProfile_ReadFromJson_IsHeldToTheSameRulesAsOneBuiltInCode()
+    {
+        // A profile that arrives from configuration or the wire cannot get around the constructor: a
+        // Discovery profile that grants Skills is malformed however it was produced.
+        const string json = """
+            {"Role":0,"AllowedSkills":["system.skill"],"AllowedCapabilities":[],"AllowedTools":["system.cpu"],
+             "MaxRisk":0,"MaxBlastRadius":0,"AllowedTargets":["node-1"],"AllowedEnvironments":["staging"],
+             "MaxSteps":5,"MaxTokens":100,"MaxDuration":"00:05:00"}
+            """;
+
+        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize(json, DelegationContractsJsonContext.Default.RoleProfile));
+        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<RoleProfile>(json, Reflection));
+    }
+
+    public static TheoryData<AgentRoleKind, string> NotApplicableGrants => new()
+    {
+        { AgentRoleKind.Discovery, "skills" },
+        { AgentRoleKind.Discovery, "capabilities" },
+        { AgentRoleKind.Verification, "skills" },
+        { AgentRoleKind.Verification, "capabilities" },
+        { AgentRoleKind.Remediation, "tokens" },
+        { AgentRoleKind.Verification, "tokens" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NotApplicableGrants))]
+    public void RoleProfile_RefusesToGrantADimensionThatIsNotApplicableToItsRole(AgentRoleKind role, string dimension)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => ProfileWith(
+            role,
+            skills: dimension == "skills" ? ["system.skill"] : null,
+            capabilities: dimension == "capabilities" ? ["system.diagnose"] : null,
+            maxTokens: dimension == "tokens" ? 1 : 0));
+
+        Assert.Contains("not applicable", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(role.ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RoleProfile_AcceptsWhatIsApplicableToItsRole()
+    {
+        Assert.NotNull(ProfileWith(AgentRoleKind.Diagnostic, skills: ["system.skill"], capabilities: ["system.diagnose"], maxTokens: 30_000));
+        Assert.NotNull(ProfileWith(AgentRoleKind.Remediation, skills: ["system.skill"], capabilities: ["system.diagnose"]));
+        Assert.NotNull(ProfileWith(AgentRoleKind.Discovery, maxTokens: 20_000));
+        Assert.NotNull(ProfileWith(AgentRoleKind.Verification));
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("system.*")]
+    [InlineData("tool?")]
+    [InlineData(" padded")]
+    [InlineData("padded ")]
+    [InlineData(" ")]
+    [InlineData("")]
+    public void RoleProfileAndRequest_RejectWildcardsBlanksAndPadding(string member)
+    {
+        Assert.Throws<ArgumentException>(() => ProfileWith(AgentRoleKind.Verification, tools: [member]));
+        Assert.Throws<ArgumentException>(() => new DelegationAuthorityRequest(AllowedSkills: [member]));
+        Assert.Throws<ArgumentException>(() => new DelegationAuthorityRequest(AllowedCapabilities: [member]));
+        Assert.Throws<ArgumentException>(() => new DelegationAuthorityRequest(AllowedTools: [member]));
+        Assert.Throws<ArgumentException>(() => new DelegationAuthorityRequest(AllowedTargets: [member]));
+        Assert.Throws<ArgumentException>(() => new DelegationAuthorityRequest(AllowedEnvironments: [member]));
+    }
+
+    [Fact]
+    public void RoleProfile_RejectsAmountsAndValuesThatMeanNothing()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProfileWith(AgentRoleKind.Discovery, maxSteps: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProfileWith(AgentRoleKind.Discovery, maxTokens: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProfileWith(AgentRoleKind.Discovery, duration: TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProfileWith(AgentRoleKind.Discovery, duration: TimeSpan.FromSeconds(-1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProfileWith((AgentRoleKind)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RoleProfile(
+            AgentRoleKind.Discovery, [], [], ["system.cpu"], (RiskLevel)99, BlastRadius.Single, ["n"], ["e"], 1, 1, TimeSpan.FromMinutes(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RoleProfile(
+            AgentRoleKind.Discovery, [], [], ["system.cpu"], RiskLevel.Read, (BlastRadius)99, ["n"], ["e"], 1, 1, TimeSpan.FromMinutes(1)));
+        Assert.Throws<ArgumentNullException>(() => new RoleProfile(
+            AgentRoleKind.Discovery, null!, [], ["system.cpu"], RiskLevel.Read, BlastRadius.Single, ["n"], ["e"], 1, 1, TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public void DelegationAuthorityRequest_OmitsWhatItDoesNotNarrow_AndDistinguishesEmptyFromAbsent()
+    {
+        var nothing = new DelegationAuthorityRequest();
+
+        Assert.Equal("{}", JsonSerializer.Serialize(nothing, Reflection));
+        Assert.Equal("{}", JsonSerializer.Serialize(nothing, DelegationContractsJsonContext.Default.DelegationAuthorityRequest));
+
+        var value = new DelegationAuthorityRequest(
+            AllowedSkills: [],
+            AllowedTools: ["system.cpu"],
+            MaxRisk: RiskLevel.Low,
+            Window: new MaintenanceWindow(T0, T0.AddHours(1)),
+            MaxSteps: 0,
+            DeadlineUtc: T0.AddHours(2));
+
+        var result = RoundTripBoth(value, DelegationContractsJsonContext.Default.DelegationAuthorityRequest);
+
+        // An explicit empty set narrows to nothing; an absent one does not narrow at all.
+        Assert.NotNull(result.AllowedSkills);
+        Assert.Empty(result.AllowedSkills);
+        Assert.Null(result.AllowedCapabilities);
+        Assert.Equal(["system.cpu"], result.AllowedTools);
+        Assert.Equal(RiskLevel.Low, result.MaxRisk);
+        Assert.Null(result.MaxBlastRadius);
+        Assert.Null(result.AllowedTargets);
+        Assert.Null(result.AllowedEnvironments);
+        Assert.Equal(value.Window, result.Window);
+        Assert.Equal(0, result.MaxSteps);
+        Assert.Null(result.MaxTokens);
+        Assert.Equal(T0.AddHours(2), result.DeadlineUtc);
+    }
+
+    [Fact]
+    public void DelegationAuthorityRequest_RejectsAmountsAndValuesThatMeanNothing()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DelegationAuthorityRequest(MaxSteps: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DelegationAuthorityRequest(MaxTokens: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DelegationAuthorityRequest(MaxRisk: (RiskLevel)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DelegationAuthorityRequest(MaxBlastRadius: (BlastRadius)99));
+    }
+
+    [Fact]
+    public void RoleProfileSource_CanBeImplementedByAHostWithoutAnyPolicyAssembly()
+    {
+        IRoleProfileSource source = new SingleProfileSource(SampleRemediationProfile());
+
+        Assert.Equal(AgentRoleKind.Remediation, source.GetProfile(AgentRoleKind.Remediation)!.Role);
+        Assert.Null(source.GetProfile(AgentRoleKind.Discovery));
+    }
+
+    private sealed class SingleProfileSource(RoleProfile profile) : IRoleProfileSource
+    {
+        public RoleProfile? GetProfile(AgentRoleKind role) => role == profile.Role ? profile : null;
     }
 
     // ---- fixtures ----
@@ -791,6 +998,8 @@ public sealed class DelegationContractsTests
 [JsonSerializable(typeof(AuthorityEnvelope))]
 [JsonSerializable(typeof(DelegationBudget))]
 [JsonSerializable(typeof(BudgetConsumption))]
+[JsonSerializable(typeof(RoleProfile))]
+[JsonSerializable(typeof(DelegationAuthorityRequest))]
 [JsonSerializable(typeof(EnvelopeReduction))]
 [JsonSerializable(typeof(Evidence))]
 [JsonSerializable(typeof(AuditEvent))]
