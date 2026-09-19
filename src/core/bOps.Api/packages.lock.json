@@ -139,7 +139,7 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.memory": {
@@ -147,14 +147,14 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.docker": {
         "type": "Project",
         "dependencies": {
           "Docker.DotNet": "[3.125.15, )",
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.filesystem": {
@@ -162,72 +162,72 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.network": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.providers.anthropic": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.providers.deepseek": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.providers.llamacpp": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.providers.ollama": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.providers.openai": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.providers.openaicompatible": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.providers.openrouter": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
       "bops.packages.system.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.packages.system.linux": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
       },
@@ -235,33 +235,33 @@
         "type": "Project",
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.3, )",
+          "bOps.Abstractions": "[1.2.0-preview.4, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
       },
       "bops.packages.web": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.pluginhost": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.policy": {
         "type": "Project",
         "dependencies": {
           "YamlDotNet": "[18.1.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.3, )"
+          "bOps.Abstractions": "[1.2.0-preview.4, )"
         }
       }
     }

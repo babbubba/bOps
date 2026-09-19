@@ -111,6 +111,18 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `PolicyRoleProfileSource`, an `IRoleProfileSource` over the loaded profiles, and `PolicyConfig.RoleProfiles`.
   `SafeDefault` has none, so delegation stays off until an operator grants it. Nothing is wired into the hosts
   until V1.2-D, and the SDK is unchanged.
+- V1.2-D deterministic orchestrator (`bOps.Abstractions` `1.2.0-preview.4`, ADR-0030 sections 2 to 5): `DelegationRunner`
+  runs Discovery, Diagnostic, a human approval of the plan's hash, Remediation and Verification in that order and no
+  other, over the existing paths. Each role is a new agent with its own envelope, derived from the root, its profile and
+  the request when it starts; a model reasons only inside Discovery and Diagnostic, over a tool view narrowed to what
+  the envelope allows; what one role hands the next is only Evidence, Findings (kept only if they cite recorded
+  evidence) and the plan, delivered as delimited data. Remediation executes exactly the approved plan with no model
+  call, and Verification reads the system itself through its own envelope instead of trusting Remediation. A run ends as
+  completed, a completed diagnosis, rejected, denied, policy blocked, verification failed, failed or deadline exceeded,
+  and never reports success on an inconclusive verification. The SDK gains `IPlanApprovalProvider` and
+  `PlanApprovalRequest` (a human approves a plan by its hash; a decision from an agent, the runtime or one of the run's
+  own agents is refused), `DelegationStage.PlanDecided` and `DelegationLifecycleAuditEvent.PlanHash`. The run is kept in
+  memory and nothing is wired into Cli or Api yet; budgets, durable state and resume follow in V1.2-E and V1.2-F.
 
 ### Changed
 

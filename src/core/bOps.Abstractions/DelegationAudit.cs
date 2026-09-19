@@ -26,6 +26,9 @@ public enum DelegationStage
 
     /// <summary>The run reached a terminal status, or stopped waiting for an operator.</summary>
     Terminal,
+
+    /// <summary>A human decided on the prepared plan. The event's <see cref="AuditEvent.Actor"/> is who decided and <see cref="DelegationLifecycleAuditEvent.PlanHash"/> the hash they decided on. Appended after the values persisted since <c>1.2.0-preview.1</c>, so none of them moves.</summary>
+    PlanDecided,
 }
 
 /// <summary>
@@ -49,6 +52,9 @@ public sealed record DelegationLifecycleAuditEvent : AuditEvent
 
     /// <summary>A bounded failure explanation, absent otherwise.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>The plan hash a human decided on, for <see cref="DelegationStage.PlanDecided"/>; <c>null</c> for every other transition.</summary>
+    public string? PlanHash { get; init; }
 }
 
 /// <summary>

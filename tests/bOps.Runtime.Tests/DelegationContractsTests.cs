@@ -440,6 +440,30 @@ public sealed class DelegationContractsTests
     }
 
     [Fact]
+    public void DelegationLifecycleAuditEvent_RoundTrips_AHumansDecisionOnAPlanHash()
+    {
+        AuditEvent value = new DelegationLifecycleAuditEvent
+        {
+            TimestampUtc = T0,
+            Node = Node,
+            TaskId = DelegationId,
+            StepIndex = -1,
+            Actor = Administrator,
+            Delegation = SampleCorrelation(),
+            Stage = DelegationStage.PlanDecided,
+            Status = DelegationStatus.Rejected,
+            PlanHash = HashA,
+        };
+
+        var result = Assert.IsType<DelegationLifecycleAuditEvent>(RoundTripBoth(value, DelegationContractsJsonContext.Default.AuditEvent));
+
+        Assert.Equal(DelegationStage.PlanDecided, result.Stage);
+        Assert.Equal(HashA, result.PlanHash);
+        Assert.Equal(Administrator, result.Actor);
+        Assert.Equal(5, (int)DelegationStage.PlanDecided);
+    }
+
+    [Fact]
     public void DelegationEnvelopeAuditEvent_RoundTrips_ForAReductionAndForADenial()
     {
         AuditEvent reduced = new DelegationEnvelopeAuditEvent
@@ -877,6 +901,79 @@ public sealed class DelegationContractsTests
         public RoleProfile? GetProfile(AgentRoleKind role) => role == profile.Role ? profile : null;
     }
 
+    // ---- plan approval (V1.2-D) ----
+
+    private static PlanApprovalRequest SamplePlanApproval(ExecutionPlan? plan = null)
+    {
+        var realPlan = plan ?? SamplePlan();
+        return new PlanApprovalRequest(
+            DelegationId, ExecutionPlanHasher.ComputeHash(realPlan), realPlan, "system.skill", "system.remediate",
+            "node-1", "staging", BlastRadius.Single, [new Finding("f1", "The service is down.", ["e1"], RiskLevel.High)]);
+    }
+
+    [Fact]
+    public void PlanApprovalRequest_RoundTrips()
+    {
+        var value = SamplePlanApproval();
+
+        var result = RoundTripBoth(value, DelegationContractsJsonContext.Default.PlanApprovalRequest);
+
+        Assert.Equal(value.PlanHash, result.PlanHash);
+        Assert.Equal(value.DelegationId, result.DelegationId);
+        Assert.Equal("system.remediate", result.CapabilityName);
+        Assert.Equal("f1", Assert.Single(result.Findings).Id);
+        Assert.Equal(ExecutionPlanHasher.ComputeHash(result.Plan), result.PlanHash);
+    }
+
+    [Fact]
+    public void PlanApprovalRequest_RefusesAHashThatIsNotThePlansOwn()
+    {
+        // The approval binds to the hash. A request whose hash is another plan's would ask the human to approve one
+        // plan and authorize another.
+        var other = new ExecutionPlan(
+            "system.diagnose", "1.0.0", "Something else.",
+            [new ExecutionPlanStep(0, "service.stop", ToolArguments.Empty, null)]);
+
+        var ex = Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(
+            DelegationId, ExecutionPlanHasher.ComputeHash(other), SamplePlan(), "system.skill", "system.remediate",
+            "node-1", "staging", BlastRadius.Single, []));
+
+        Assert.Equal("PlanHash", ex.ParamName);
+    }
+
+    [Fact]
+    public void PlanApprovalRequest_RefusesAnEmptyDelegationBlankNamesAndMissingParts()
+    {
+        var plan = SamplePlan();
+        var hash = ExecutionPlanHasher.ComputeHash(plan);
+
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(Guid.Empty, hash, plan, "s", "c", "t", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(DelegationId, " ", plan, "s", "c", "t", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(DelegationId, hash, plan, "", "c", "t", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(DelegationId, hash, plan, "s", " ", "t", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(DelegationId, hash, plan, "s", "c", "", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentException>(() => new PlanApprovalRequest(DelegationId, hash, plan, "s", "c", "t", "", BlastRadius.Single, []));
+        Assert.Throws<ArgumentNullException>(() => new PlanApprovalRequest(DelegationId, hash, null!, "s", "c", "t", "e", BlastRadius.Single, []));
+        Assert.Throws<ArgumentNullException>(() => new PlanApprovalRequest(DelegationId, hash, plan, "s", "c", "t", "e", BlastRadius.Single, null!));
+    }
+
+    [Fact]
+    public async Task PlanApprovalProvider_CanBeImplementedByAHostAndReturnsTheOrdinaryApprovalDecision()
+    {
+        IPlanApprovalProvider provider = new ApprovingPlanProvider();
+
+        var decision = await provider.RequestPlanApprovalAsync(SamplePlanApproval());
+
+        Assert.True(decision.Approved);
+        Assert.Equal(Operator, decision.Actor);
+    }
+
+    private sealed class ApprovingPlanProvider : IPlanApprovalProvider
+    {
+        public Task<ApprovalDecision> RequestPlanApprovalAsync(PlanApprovalRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new ApprovalDecision(true, Operator, null));
+    }
+
     // ---- fixtures ----
 
     private static (string Name, int Value)[] Values<TEnum>()
@@ -1007,4 +1104,5 @@ public sealed class DelegationContractsTests
 [JsonSerializable(typeof(DelegationRun))]
 [JsonSerializable(typeof(StepJournalEntry))]
 [JsonSerializable(typeof(DelegationStartResult))]
+[JsonSerializable(typeof(PlanApprovalRequest))]
 internal sealed partial class DelegationContractsJsonContext : JsonSerializerContext;

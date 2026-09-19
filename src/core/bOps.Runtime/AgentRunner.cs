@@ -239,7 +239,7 @@ public sealed class AgentRunner(
             stepActivity?.SetTag("bops.step_index", stepIndex);
             stepActivity?.SetTag("bops.plan_revision", plan.Revision);
 
-            var request = new ModelRequest(BuildStepSystemPrompt(plan), history, registry.GetAvailableManifests());
+            var request = new ModelRequest(BuildStepSystemPrompt(plan), history, ToolViewFor(delegation));
 
             ModelResponse response;
             try
@@ -396,9 +396,9 @@ public sealed class AgentRunner(
     /// <param name="ct">Cancelled to abandon the run.</param>
     public async Task<SkillReport> ExecuteExecutionPlanAsync(
         Guid taskId, ActorIdentity actor, ExecutionPlan plan, ExecutionPlanApproval? approval, CancellationToken ct = default)
-        => await ExecuteExecutionPlanCoreAsync(taskId, actor, plan, approval, skillScope: null, delegation: null, ct);
+        => (await ExecuteExecutionPlanCoreAsync(taskId, actor, plan, approval, skillScope: null, delegation: null, ct)).Report;
 
-    private async Task<SkillReport> ExecuteExecutionPlanCoreAsync(
+    private async Task<PlanExecution> ExecuteExecutionPlanCoreAsync(
         Guid taskId,
         ActorIdentity actor,
         ExecutionPlan plan,
@@ -424,11 +424,12 @@ public sealed class AgentRunner(
                     null,
                     "bops.runtime",
                     timeProvider.GetUtcNow());
-                return new SkillReport([refusal], [], plan);
+                return new PlanExecution(new SkillReport([refusal], [], plan), PlanExecutionStatus.Refused, Reason: refusal.Description);
             }
         }
 
         var evidence = new List<Evidence>();
+        AuthorizationKind? stoppedBy = null;
 
         foreach (var planStep in plan.Steps.OrderBy(s => s.Index))
         {
@@ -462,13 +463,17 @@ public sealed class AgentRunner(
             // succeeded, so this stops here rather than attempting the rest anyway.
             if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected)
             {
+                stoppedBy = authorization;
                 break;
             }
         }
 
         // Findings are domain interpretation only a Skill's own logic can make (ADR-0023) — this
         // method produces the Evidence a Skill would build Findings from, never Findings itself.
-        return new SkillReport(evidence, [], plan);
+        return new PlanExecution(
+            new SkillReport(evidence, [], plan),
+            stoppedBy is null ? PlanExecutionStatus.Completed : PlanExecutionStatus.Stopped,
+            stoppedBy);
     }
 
     /// <summary>
@@ -614,7 +619,7 @@ public sealed class AgentRunner(
         PreparedSkillRun prepared,
         ExecutionPlanApproval? approval,
         CancellationToken ct = default)
-        => await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation: null, ct);
+        => (await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation: null, ct)).Report;
 
     /// <summary>
     /// <see cref="ExecutePreparedSkillAsync"/> for the Remediation role of a delegated run (V1.2, ADR-0030): the
@@ -628,13 +633,27 @@ public sealed class AgentRunner(
         PreparedSkillRun prepared,
         ExecutionPlanApproval? approval,
         DelegatedExecutionScope delegation,
+        CancellationToken ct = default) =>
+        (await ExecuteDelegatedPlanAsync(taskId, actor, prepared, approval, delegation, ct)).Report;
+
+    /// <summary>
+    /// <see cref="ExecuteDelegatedPreparedSkillAsync"/> with the reason it ended, for the orchestrator (V1.2-D): a plan
+    /// that was refused before its first step, one that a step's denial stopped, and one that ran are different
+    /// terminal states of a delegated run, and the report alone does not say which. Internal, and the same path.
+    /// </summary>
+    internal async Task<PlanExecution> ExecuteDelegatedPlanAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        PreparedSkillRun prepared,
+        ExecutionPlanApproval? approval,
+        DelegatedExecutionScope delegation,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(delegation);
         return await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation, ct);
     }
 
-    private async Task<SkillReport> ExecutePreparedSkillCoreAsync(
+    private async Task<PlanExecution> ExecutePreparedSkillCoreAsync(
         Guid taskId,
         ActorIdentity actor,
         PreparedSkillRun prepared,
@@ -647,7 +666,7 @@ public sealed class AgentRunner(
 
         if (skillRegistry is null)
         {
-            return prepared.Report;
+            return new PlanExecution(prepared.Report, PlanExecutionStatus.Refused, Reason: "This host has no Skill registry configured.");
         }
 
         var capability = skillRegistry.Resolve(prepared.SkillId, prepared.CapabilityName);
@@ -660,7 +679,7 @@ public sealed class AgentRunner(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
                 prepared.Report, refusal, delegation, ct);
-            return prepared.Report;
+            return new PlanExecution(prepared.Report, PlanExecutionStatus.Refused, Reason: refusal);
         }
 
         try
@@ -673,7 +692,7 @@ public sealed class AgentRunner(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
                 prepared.Report, ex.Message, delegation, ct);
-            return prepared.Report;
+            return new PlanExecution(prepared.Report, PlanExecutionStatus.Refused, Reason: ex.Message);
         }
         if (prepared.Report.Plan is null || prepared.Request.DryRun)
         {
@@ -681,7 +700,7 @@ public sealed class AgentRunner(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash,
                 prepared.Report, null, delegation, ct);
-            return prepared.Report;
+            return new PlanExecution(prepared.Report, PlanExecutionStatus.Completed);
         }
 
         var scope = new SkillExecutionScope(
@@ -699,20 +718,20 @@ public sealed class AgentRunner(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
                 prepared.Report, planRefusal, delegation, ct);
-            return prepared.Report;
+            return new PlanExecution(prepared.Report, PlanExecutionStatus.Refused, Reason: planRefusal);
         }
 
         var executed = await ExecuteExecutionPlanCoreAsync(
             taskId, actor, prepared.Report.Plan, approval, scope, delegation, ct);
         var merged = new SkillReport(
-            [.. prepared.Report.Evidence, .. executed.Evidence],
+            [.. prepared.Report.Evidence, .. executed.Report.Evidence],
             prepared.Report.Findings,
             prepared.Report.Plan);
 
         await WriteSkillAuditAsync(
             taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
             SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash, merged, null, delegation, ct);
-        return merged;
+        return executed with { Report = merged };
     }
 
     /// <summary>
@@ -739,6 +758,119 @@ public sealed class AgentRunner(
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether the envelope of the Remediation role would refuse any step of a prepared plan, so the orchestrator can reject a
+    /// plan that is certain to be denied before it asks a human to approve it (V1.2-D). The same check
+    /// <see cref="ExecuteDelegatedPlanAsync"/> makes before the first step, exposed so it can be made earlier.
+    /// </summary>
+    /// <returns><c>null</c> when every step is inside the envelope, otherwise why one is not.</returns>
+    internal string? CheckPlanForDelegation(ActorIdentity actor, PreparedSkillRun prepared, DelegatedExecutionScope delegation)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(prepared);
+        ArgumentNullException.ThrowIfNull(delegation);
+
+        if (prepared.Report.Plan is null)
+        {
+            return null;
+        }
+
+        var scope = new SkillExecutionScope(
+            prepared.RunId, prepared.SkillId, prepared.CapabilityName,
+            prepared.Request.Target, prepared.Request.Environment, prepared.Request.BlastRadius, prepared.PlanHash);
+        return CheckPlanAgainstEnvelope(delegation, actor, prepared.Report.Plan, scope);
+    }
+
+    /// <summary>
+    /// The Verification role (ADR-0030 sections 2 and 5): it does not trust what Remediation reported. For each step of the
+    /// approved plan that declares a verification it reads the system itself, through the one step pipeline and its own
+    /// envelope, and only then asks the tool's own deterministic evaluator what that fresh reading means. No model is
+    /// called. A verdict is <see cref="VerificationStatus.Confirmed"/> only when every verifiable step was confirmed
+    /// against a reading this role took; a read it was not allowed to take, a verification that threw and a plan with
+    /// nothing to verify are never success (rule S4).
+    /// </summary>
+    /// <param name="taskId">Correlates the reads this role makes.</param>
+    /// <param name="actor">The operator on whose authority the run executes.</param>
+    /// <param name="plan">The approved plan whose declared effects are checked.</param>
+    /// <param name="planHash">The approved hash, recorded on the report.</param>
+    /// <param name="delegation">The Verification agent and its envelope.</param>
+    /// <param name="ct">Cancelled to abandon the verification.</param>
+    internal async Task<VerificationReport> VerifyPlanAsync(
+        Guid taskId, ActorIdentity actor, ExecutionPlan plan, string planHash, DelegatedExecutionScope delegation, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(delegation);
+
+        var evidence = new List<Evidence>();
+        var statuses = new List<VerificationStatus>();
+        var details = new List<string>();
+
+        foreach (var planStep in plan.Steps.OrderBy(step => step.Index))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // A step that declares no verification (a Read step) has nothing to confirm.
+            if (registry.Resolve(planStep.ToolName) is not IVerifiableTool verifiable || verifiable.Manifest.Verification is not { } spec)
+            {
+                continue;
+            }
+
+            var call = new ModelToolCall(
+                $"verify-step-{planStep.Index}", spec.VerifyToolName, ExtractVerificationArguments(planStep.Arguments, spec.ArgumentsFrom));
+            var (readStep, _, authorization, _) = await ExecuteStepAsync(
+                taskId, planStep.Index, actor, call, planRevision: -1, ct, skillScope: null, delegation);
+
+            VerificationOutcome outcome;
+            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected
+                || readStep.Result is null)
+            {
+                // The verifier was not allowed to take the reading, or could not: it cannot confirm anything.
+                outcome = new VerificationOutcome(
+                    VerificationStatus.Inconclusive, $"The verification read '{spec.VerifyToolName}' could not be taken: {readStep.Observation}");
+            }
+            else
+            {
+                try
+                {
+                    outcome = await verifiable.EvaluateVerificationAsync(planStep.Arguments, readStep.Result, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Rule C1 and S4: a package's evaluation is third-party code, and one that cannot run has confirmed nothing.
+                    logger.LogError(ex, "Tool {Tool}: verification evaluation threw", planStep.ToolName);
+                    outcome = new VerificationOutcome(VerificationStatus.Inconclusive, $"Verification threw: {ex.Message}");
+                }
+            }
+
+            statuses.Add(outcome.Status);
+            if (outcome.Detail is not null)
+            {
+                details.Add($"'{planStep.ToolName}': {outcome.Detail}");
+            }
+
+            evidence.Add(new Evidence(
+                $"verification-{planStep.Index}",
+                EvidenceKind.Verification,
+                $"Verification of '{planStep.ToolName}': {outcome.Status}.",
+                readStep.Observation,
+                spec.VerifyToolName,
+                timeProvider.GetUtcNow()));
+        }
+
+        if (statuses.Count == 0)
+        {
+            return new VerificationReport(
+                planHash, VerificationStatus.NotApplicable, [], "No step of the approved plan declares a verification, so nothing can be confirmed.");
+        }
+
+        var verdict = statuses.Contains(VerificationStatus.Refuted) ? VerificationStatus.Refuted
+            : statuses.Contains(VerificationStatus.Inconclusive) ? VerificationStatus.Inconclusive
+            : statuses.Contains(VerificationStatus.NotApplicable) ? VerificationStatus.NotApplicable
+            : VerificationStatus.Confirmed;
+        return new VerificationReport(planHash, verdict, evidence, details.Count == 0 ? null : string.Join(' ', details));
     }
 
     private async Task<PreparedSkillRun> FailedPreparationAsync(
@@ -1028,7 +1160,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), delegation, ct);
+            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
@@ -1043,7 +1175,7 @@ public sealed class AgentRunner(
         planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), delegation, ct);
+            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
@@ -1072,7 +1204,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), delegation, ct);
+            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
@@ -1084,7 +1216,7 @@ public sealed class AgentRunner(
         replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), delegation, ct);
+            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
@@ -1702,7 +1834,32 @@ public sealed class AgentRunner(
             output.AsSpan(output.Length - tailLength, tailLength));
     }
 
-    private static string WrapToolOutput(string content)
+    /// <summary>
+    /// The tools a model is shown. Outside delegation that is everything the registry offers. In a delegated run it is only
+    /// what the agent's envelope lets it call, so a role is never offered a tool it would be refused (V1.2-D; the
+    /// envelope is still enforced on every call, so this narrows what is offered and grants nothing). No envelope
+    /// shows nothing, like a step with no envelope runs nothing.
+    /// </summary>
+    private IReadOnlyList<ToolManifest> ToolViewFor(DelegatedExecutionScope? delegation)
+    {
+        var all = registry.GetAvailableManifests();
+        if (delegation is null)
+        {
+            return all;
+        }
+
+        if (delegation.Envelope is not { } envelope || delegation.Correlation.Agent is not { } agent)
+        {
+            return [];
+        }
+
+        var roleCap = RoleRequirements.RiskCap(agent.Role);
+        var ceiling = envelope.MaxRisk < roleCap ? envelope.MaxRisk : roleCap;
+        return [.. all.Where(m => m.Risk != RiskLevel.Critical && m.Risk <= ceiling && envelope.AllowedTools.Contains(m.Name, StringComparer.Ordinal))];
+    }
+
+    /// <summary>Wraps data that must reach a model as data, never as an instruction, and neutralizes any delimiter inside it (rule S5). The one place this is done, also for what one role hands the next.</summary>
+    internal static string WrapToolOutput(string content)
     {
         var sanitized = content
             .Replace(ToolOutputOpenDelimiter, "«redacted-delimiter»", StringComparison.Ordinal)
