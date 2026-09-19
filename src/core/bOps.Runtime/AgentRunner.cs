@@ -112,6 +112,28 @@ public sealed class AgentRunner(
     /// </param>
     /// <param name="ct">Cancelled to abandon the task; the returned state is never built for a genuinely cancelled run — the cancellation propagates instead.</param>
     public async Task<TaskState> RunAsync(string goal, ActorIdentity actor, Guid? taskId = null, CancellationToken ct = default)
+        => await RunCoreAsync(goal, actor, taskId, delegation: null, ct);
+
+    /// <summary>
+    /// <see cref="RunAsync"/> for one role of a delegated run (V1.2, ADR-0030): the same loop, with every step
+    /// checked against the role's authority envelope before policy, and every audit event it writes correlated
+    /// to the delegated run. Internal, so only the runtime's orchestrator can call it. It does not yet narrow the
+    /// tool view the model is shown or count the role's budget; the orchestrator does (V1.2-D, V1.2-E).
+    /// </summary>
+    /// <param name="goal">The role's objective.</param>
+    /// <param name="actor">The operator on whose authority the run executes.</param>
+    /// <param name="delegation">The agent and envelope every step runs under.</param>
+    /// <param name="taskId">The id to assign the role's inner task; a fresh one when omitted.</param>
+    /// <param name="ct">Cancelled to abandon the task.</param>
+    internal async Task<TaskState> RunDelegatedAsync(
+        string goal, ActorIdentity actor, DelegatedExecutionScope delegation, Guid? taskId = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(delegation);
+        return await RunCoreAsync(goal, actor, taskId, delegation, ct);
+    }
+
+    private async Task<TaskState> RunCoreAsync(
+        string goal, ActorIdentity actor, Guid? taskId, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
         var resolvedTaskId = taskId ?? Guid.NewGuid();
         var createdAtUtc = timeProvider.GetUtcNow();
@@ -127,7 +149,7 @@ public sealed class AgentRunner(
         AgentPlan plan;
         try
         {
-            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, ct);
+            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, delegation, ct);
             plan = createdPlan;
             totalTokens += planTokens;
         }
@@ -149,7 +171,7 @@ public sealed class AgentRunner(
         await taskStore.SaveAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
 
         return await ContinueAsync(resolvedTaskId, actor, goal, createdAtUtc, steps, plans, history, plan, totalTokens,
-            plannedStepCursor: 0, replanCount: 0, startStepIndex: 0, ct);
+            plannedStepCursor: 0, replanCount: 0, startStepIndex: 0, delegation, ct);
     }
 
     /// <summary>
@@ -191,7 +213,7 @@ public sealed class AgentRunner(
         }
 
         return await ContinueAsync(task.Id, actor, task.Goal, task.CreatedAtUtc, steps, plans, history, plan, totalTokens: 0,
-            plannedStepCursor, replanCount, startStepIndex: steps.Count, ct);
+            plannedStepCursor, replanCount, startStepIndex: steps.Count, delegation: null, ct);
     }
 
     /// <summary>
@@ -202,7 +224,7 @@ public sealed class AgentRunner(
     private async Task<TaskState> ContinueAsync(
         Guid taskId, ActorIdentity actor, string goal, DateTimeOffset createdAtUtc,
         List<PlanStep> steps, List<AgentPlan> plans, List<ChatTurn> history, AgentPlan plan, int totalTokens,
-        int plannedStepCursor, int replanCount, int startStepIndex, CancellationToken ct)
+        int plannedStepCursor, int replanCount, int startStepIndex, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
         string? lastPolicyDeniedTool = null;
         var consecutivePolicyDenials = 0;
@@ -222,7 +244,7 @@ public sealed class AgentRunner(
             ModelResponse response;
             try
             {
-                response = await CallModelAsync(taskId, stepIndex, actor, request, ct);
+                response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -248,7 +270,8 @@ public sealed class AgentRunner(
             // safe default for an ops agent; parallel execution needs its own policy story.
             var primaryCall = response.ToolCalls[0];
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
-            var (step, observation, authorization, verification) = await ExecuteStepAsync(taskId, stepIndex, actor, primaryCall, plan.Revision, ct);
+            var (step, observation, authorization, verification) = await ExecuteStepAsync(
+                taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
             steps.Add(step);
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
@@ -316,7 +339,7 @@ public sealed class AgentRunner(
 
                 try
                 {
-                    var (newPlan, replanTokens) = await ReplanAsync(taskId, actor, goal, plan, steps, observation, stepIndex, ct);
+                    var (newPlan, replanTokens) = await ReplanAsync(taskId, actor, goal, plan, steps, observation, stepIndex, delegation, ct);
                     plan = newPlan;
                     totalTokens += replanTokens;
                 }
@@ -373,7 +396,7 @@ public sealed class AgentRunner(
     /// <param name="ct">Cancelled to abandon the run.</param>
     public async Task<SkillReport> ExecuteExecutionPlanAsync(
         Guid taskId, ActorIdentity actor, ExecutionPlan plan, ExecutionPlanApproval? approval, CancellationToken ct = default)
-        => await ExecuteExecutionPlanCoreAsync(taskId, actor, plan, approval, skillScope: null, ct);
+        => await ExecuteExecutionPlanCoreAsync(taskId, actor, plan, approval, skillScope: null, delegation: null, ct);
 
     private async Task<SkillReport> ExecuteExecutionPlanCoreAsync(
         Guid taskId,
@@ -381,6 +404,7 @@ public sealed class AgentRunner(
         ExecutionPlan plan,
         ExecutionPlanApproval? approval,
         SkillExecutionScope? skillScope,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -412,7 +436,7 @@ public sealed class AgentRunner(
 
             var call = new ModelToolCall($"plan-step-{planStep.Index}", planStep.ToolName, planStep.Arguments);
             var (step, _, authorization, verification) = await ExecuteStepAsync(
-                taskId, planStep.Index, actor, call, planRevision: -1, ct, skillScope);
+                taskId, planStep.Index, actor, call, planRevision: -1, ct, skillScope, delegation);
 
             evidence.Add(new Evidence(
                 Guid.NewGuid().ToString(),
@@ -458,6 +482,35 @@ public sealed class AgentRunner(
         string capabilityName,
         CapabilityRequest request,
         CancellationToken ct = default)
+        => await PrepareSkillCoreAsync(taskId, actor, skillId, capabilityName, request, delegation: null, ct);
+
+    /// <summary>
+    /// <see cref="PrepareSkillAsync"/> for a role of a delegated run (V1.2, ADR-0030): the Capability is refused
+    /// before its code runs when the envelope does not allow the Skill, the Capability, the target, the
+    /// environment, the blast radius or the time, every evidence call it makes is checked against the envelope
+    /// like any other step, and every audit event is correlated to the delegated run. Internal.
+    /// </summary>
+    internal async Task<PreparedSkillRun> PrepareDelegatedSkillAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        string skillId,
+        string capabilityName,
+        CapabilityRequest request,
+        DelegatedExecutionScope delegation,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(delegation);
+        return await PrepareSkillCoreAsync(taskId, actor, skillId, capabilityName, request, delegation, ct);
+    }
+
+    private async Task<PreparedSkillRun> PrepareSkillCoreAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        string skillId,
+        string capabilityName,
+        CapabilityRequest request,
+        DelegatedExecutionScope? delegation,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentException.ThrowIfNullOrWhiteSpace(skillId);
@@ -470,7 +523,7 @@ public sealed class AgentRunner(
         {
             return await FailedPreparationAsync(
                 taskId, actor, runId, PackageId.Unknown, skillId, capabilityName, request,
-                "This host has no Skill registry configured.", emptyReport, ct);
+                "This host has no Skill registry configured.", emptyReport, delegation, ct);
         }
 
         var capability = skillRegistry.Resolve(skillId, capabilityName);
@@ -479,25 +532,40 @@ public sealed class AgentRunner(
         {
             return await FailedPreparationAsync(
                 taskId, actor, runId, package, skillId, capabilityName, request,
-                $"Skill '{skillId}' Capability '{capabilityName}' is not activated.", emptyReport, ct);
+                $"Skill '{skillId}' Capability '{capabilityName}' is not activated.", emptyReport, delegation, ct);
         }
 
         await WriteSkillAuditAsync(
             taskId, actor, runId, package, skillId, capabilityName,
-            SkillRunStage.ProviderResolved, SkillRunOutcome.Success, null, emptyReport, null, ct);
+            SkillRunStage.ProviderResolved, SkillRunOutcome.Success, null, emptyReport, null, delegation, ct);
+
+        var scope = new SkillExecutionScope(
+            runId, skillId, capabilityName, request.Target, request.Environment, request.BlastRadius, PlanHash: null);
+
+        // ADR-0031 section 4: the Skills and Capabilities dimensions are about what an agent may prepare, and a
+        // Capability that makes no evidence call would never meet the per-step check, so its code is refused
+        // here, before it runs.
+        if (delegation is not null
+            && EnvelopeEnforcer.CheckPreparation(delegation, actor, scope, timeProvider.GetUtcNow()) is { } refusal)
+        {
+            await WriteSkillAuditAsync(
+                taskId, actor, runId, package, skillId, capabilityName,
+                SkillRunStage.Preparation, SkillRunOutcome.Refused, null, emptyReport, refusal.Reason, delegation, ct);
+            return new PreparedSkillRun(
+                runId, skillId, capabilityName, request, SkillPreparationStatus.Failed,
+                emptyReport, null, refusal.Reason);
+        }
 
         if (request.DryRun && !capability.Manifest.SupportsDryRun)
         {
             return await FailedPreparationAsync(
                 taskId, actor, runId, package, skillId, capabilityName, request,
-                $"Capability '{capabilityName}' does not support dry-run preparation.", emptyReport, ct);
+                $"Capability '{capabilityName}' does not support dry-run preparation.", emptyReport, delegation, ct);
         }
 
-        var scope = new SkillExecutionScope(
-            runId, skillId, capabilityName, request.Target, request.Environment, request.BlastRadius, PlanHash: null);
         using var invoker = new RestrictedToolInvoker(
             (toolName, arguments, sequence, token) =>
-                InvokeEvidenceToolAsync(taskId, actor, package, scope, toolName, arguments, sequence, token));
+                InvokeEvidenceToolAsync(taskId, actor, package, scope, delegation, toolName, arguments, sequence, token));
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(capability.Manifest.Timeout);
@@ -514,7 +582,7 @@ public sealed class AgentRunner(
             var message = $"Capability '{capabilityName}' exceeded its preparation timeout of {capability.Manifest.Timeout}.";
             await WriteSkillAuditAsync(
                 taskId, actor, runId, package, skillId, capabilityName,
-                SkillRunStage.Preparation, SkillRunOutcome.Timeout, null, emptyReport, message, ct);
+                SkillRunStage.Preparation, SkillRunOutcome.Timeout, null, emptyReport, message, delegation, ct);
             return new PreparedSkillRun(
                 runId, skillId, capabilityName, request, SkillPreparationStatus.Timeout,
                 emptyReport, null, message);
@@ -524,13 +592,13 @@ public sealed class AgentRunner(
             logger.LogError(ex, "Skill {SkillId} Capability {CapabilityName} failed during preparation", skillId, capabilityName);
             return await FailedPreparationAsync(
                 taskId, actor, runId, package, skillId, capabilityName, request,
-                $"Capability preparation failed: {TruncateForHistory(ex.Message)}", emptyReport, ct);
+                $"Capability preparation failed: {TruncateForHistory(ex.Message)}", emptyReport, delegation, ct);
         }
 
         var planHash = report.Plan is null ? null : ExecutionPlanHasher.ComputeHash(report.Plan);
         await WriteSkillAuditAsync(
             taskId, actor, runId, package, skillId, capabilityName,
-            SkillRunStage.Preparation, SkillRunOutcome.Success, planHash, report, null, ct);
+            SkillRunStage.Preparation, SkillRunOutcome.Success, planHash, report, null, delegation, ct);
         return new PreparedSkillRun(
             runId, skillId, capabilityName, request, SkillPreparationStatus.Prepared,
             report, planHash, null);
@@ -546,6 +614,33 @@ public sealed class AgentRunner(
         PreparedSkillRun prepared,
         ExecutionPlanApproval? approval,
         CancellationToken ct = default)
+        => await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation: null, ct);
+
+    /// <summary>
+    /// <see cref="ExecutePreparedSkillAsync"/> for the Remediation role of a delegated run (V1.2, ADR-0030): the
+    /// whole approved plan is checked against the role's envelope before its first step runs, so a plan the
+    /// envelope would stop halfway never starts; each step is then checked again when it executes, and every
+    /// audit event is correlated to the delegated run. Internal.
+    /// </summary>
+    internal async Task<SkillReport> ExecuteDelegatedPreparedSkillAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        PreparedSkillRun prepared,
+        ExecutionPlanApproval? approval,
+        DelegatedExecutionScope delegation,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(delegation);
+        return await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation, ct);
+    }
+
+    private async Task<SkillReport> ExecutePreparedSkillCoreAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        PreparedSkillRun prepared,
+        ExecutionPlanApproval? approval,
+        DelegatedExecutionScope? delegation,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(prepared);
@@ -564,7 +659,7 @@ public sealed class AgentRunner(
             await WriteSkillAuditAsync(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
-                prepared.Report, refusal, ct);
+                prepared.Report, refusal, delegation, ct);
             return prepared.Report;
         }
 
@@ -577,7 +672,7 @@ public sealed class AgentRunner(
             await WriteSkillAuditAsync(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
-                prepared.Report, ex.Message, ct);
+                prepared.Report, ex.Message, delegation, ct);
             return prepared.Report;
         }
         if (prepared.Report.Plan is null || prepared.Request.DryRun)
@@ -585,7 +680,7 @@ public sealed class AgentRunner(
             await WriteSkillAuditAsync(
                 taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
                 SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash,
-                prepared.Report, null, ct);
+                prepared.Report, null, delegation, ct);
             return prepared.Report;
         }
 
@@ -597,8 +692,18 @@ public sealed class AgentRunner(
             prepared.Request.Environment,
             prepared.Request.BlastRadius,
             prepared.PlanHash);
+
+        if (delegation is not null && CheckPlanAgainstEnvelope(delegation, actor, prepared.Report.Plan, scope) is { } planRefusal)
+        {
+            await WriteSkillAuditAsync(
+                taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
+                SkillRunStage.Execution, SkillRunOutcome.Refused, prepared.PlanHash,
+                prepared.Report, planRefusal, delegation, ct);
+            return prepared.Report;
+        }
+
         var executed = await ExecuteExecutionPlanCoreAsync(
-            taskId, actor, prepared.Report.Plan, approval, scope, ct);
+            taskId, actor, prepared.Report.Plan, approval, scope, delegation, ct);
         var merged = new SkillReport(
             [.. prepared.Report.Evidence, .. executed.Evidence],
             prepared.Report.Findings,
@@ -606,8 +711,34 @@ public sealed class AgentRunner(
 
         await WriteSkillAuditAsync(
             taskId, actor, prepared.RunId, package, prepared.SkillId, prepared.CapabilityName,
-            SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash, merged, null, ct);
+            SkillRunStage.Execution, SkillRunOutcome.Success, prepared.PlanHash, merged, null, delegation, ct);
         return merged;
+    }
+
+    /// <summary>
+    /// Checks every step of an approved plan against the envelope before any of them runs, so a plan the
+    /// envelope would stop halfway is refused whole rather than left partly applied. The per-step check still
+    /// runs at execution: the window can close between this check and a later step.
+    /// </summary>
+    private string? CheckPlanAgainstEnvelope(
+        DelegatedExecutionScope delegation, ActorIdentity actor, ExecutionPlan plan, SkillExecutionScope scope)
+    {
+        var now = timeProvider.GetUtcNow();
+        foreach (var planStep in plan.Steps.OrderBy(s => s.Index))
+        {
+            var tool = registry.Resolve(planStep.ToolName);
+            if (tool is null)
+            {
+                continue; // ValidateExecutionRequest already refused a plan whose tool is unavailable.
+            }
+
+            if (EnvelopeEnforcer.CheckStep(delegation, actor, tool.Manifest, scope, now) is { } refusal)
+            {
+                return $"Step {planStep.Index} ('{planStep.ToolName}') was refused before the plan started. {refusal.Reason}";
+            }
+        }
+
+        return null;
     }
 
     private async Task<PreparedSkillRun> FailedPreparationAsync(
@@ -620,11 +751,12 @@ public sealed class AgentRunner(
         CapabilityRequest request,
         string message,
         SkillReport report,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct)
     {
         await WriteSkillAuditAsync(
             taskId, actor, runId, package, skillId, capabilityName,
-            SkillRunStage.Preparation, SkillRunOutcome.Failure, null, report, message, ct);
+            SkillRunStage.Preparation, SkillRunOutcome.Failure, null, report, message, delegation, ct);
         return new PreparedSkillRun(
             runId, skillId, capabilityName, request, SkillPreparationStatus.Failed,
             report, null, message);
@@ -635,6 +767,7 @@ public sealed class AgentRunner(
         ActorIdentity actor,
         PackageId package,
         SkillExecutionScope scope,
+        DelegatedExecutionScope? delegation,
         string toolName,
         ToolArguments arguments,
         int sequence,
@@ -663,7 +796,7 @@ public sealed class AgentRunner(
         {
             var rejectedPackage = tool?.Manifest.Package ?? PackageId.Unknown;
             var rejectedRisk = tool?.Manifest.Risk ?? RiskLevel.Read;
-            await audit.WriteAsync(new PolicyDecisionAuditEvent
+            await WriteAuditAsync(new PolicyDecisionAuditEvent
             {
                 TimestampUtc = timeProvider.GetUtcNow(),
                 Node = NodeId.Local,
@@ -680,17 +813,17 @@ public sealed class AgentRunner(
                 Target = scope.Target,
                 Environment = scope.Environment,
                 BlastRadius = scope.BlastRadius,
-            }, ct);
+            }, delegation, ct);
             var call = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
             await RejectAsync(
                 taskId, stepIndex, actor, call, rejectedPackage, rejectedRisk,
-                AuthorizationKind.PolicyDenied, rejection, planRevision: -1, ct, scope);
+                AuthorizationKind.PolicyDenied, rejection, planRevision: -1, ct, scope, delegation);
             return new ToolCallResult(ToolOutcome.Denied, null, rejection);
         }
 
         var evidenceCall = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
         var (step, _, authorization, _) = await ExecuteStepAsync(
-            taskId, stepIndex, actor, evidenceCall, planRevision: -1, ct, scope);
+            taskId, stepIndex, actor, evidenceCall, planRevision: -1, ct, scope, delegation);
         if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.UnknownTool)
         {
             return new ToolCallResult(ToolOutcome.Denied, null, step.Result?.ErrorMessage ?? "Evidence invocation was denied.");
@@ -826,8 +959,9 @@ public sealed class AgentRunner(
         string? planHash,
         SkillReport report,
         string? errorMessage,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct) =>
-        audit.WriteAsync(new SkillRunAuditEvent
+        WriteAuditAsync(new SkillRunAuditEvent
         {
             TimestampUtc = timeProvider.GetUtcNow(),
             Node = NodeId.Local,
@@ -844,7 +978,16 @@ public sealed class AgentRunner(
             EvidenceCount = report.Evidence.Count,
             FindingCount = report.Findings.Count,
             ErrorMessage = errorMessage is null ? null : TruncateForHistory(errorMessage),
-        }, ct);
+        }, delegation, ct);
+
+    /// <summary>
+    /// The one place this runner writes an audit event. For a delegated run it stamps the correlation block
+    /// (ADR-0030 section 8) on the event, so a call site cannot forget it and an event of a delegated run is never
+    /// written without the run, the agent and the envelope hash. For a run that is not delegated the event is
+    /// written exactly as built, which keeps it byte-identical to one written before delegation existed.
+    /// </summary>
+    private Task WriteAuditAsync(AuditEvent evt, DelegatedExecutionScope? delegation, CancellationToken ct) =>
+        audit.WriteAsync(delegation is null ? evt : evt with { Delegation = delegation.Correlation }, ct);
 
     /// <summary>Persists a task's terminal state and returns it — the one place every exit from <see cref="ContinueAsync"/> goes through.</summary>
     private async Task<TaskState> FinishAsync(TaskState task, CancellationToken ct)
@@ -878,14 +1021,14 @@ public sealed class AgentRunner(
     }
 
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>
-    private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(Guid taskId, ActorIdentity actor, string goal, CancellationToken ct)
+    private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         var systemPrompt = $"{SystemPrompt}\n\n{PlanningInstructions}";
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), ct);
+            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), delegation, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
@@ -900,7 +1043,7 @@ public sealed class AgentRunner(
         planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), ct);
+            new ModelRequest(systemPrompt, planningHistory, registry.GetAvailableManifests()), delegation, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
@@ -916,7 +1059,7 @@ public sealed class AgentRunner(
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
     private async Task<(AgentPlan Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
-        string latestObservation, int triggeringStepIndex, CancellationToken ct)
+        string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
         var systemPrompt = $"{SystemPrompt}\n\n{ReplanningInstructions}";
         var replanHistory = new List<ChatTurn>
@@ -929,7 +1072,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), ct);
+            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), delegation, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
@@ -941,7 +1084,7 @@ public sealed class AgentRunner(
         replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), ct);
+            new ModelRequest(systemPrompt, replanHistory, registry.GetAvailableManifests()), delegation, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
@@ -956,7 +1099,8 @@ public sealed class AgentRunner(
             "Replanning failed after a malformed response; proceeding step by step without an explicit plan.", []), tokens);
     }
 
-    private async Task<ModelResponse> CallModelAsync(Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, CancellationToken ct)
+    private async Task<ModelResponse> CallModelAsync(
+        Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
         ModelResponse response;
         try
@@ -970,7 +1114,7 @@ public sealed class AgentRunner(
             // this, a task that fails here leaves no trace at all in the audit log. StepIndex is
             // -1 for the initial plan call, and the triggering step's index for a replan — see
             // ADR-0014.
-            await audit.WriteAsync(new ModelCallAuditEvent
+            await WriteAuditAsync(new ModelCallAuditEvent
             {
                 TimestampUtc = timeProvider.GetUtcNow(),
                 Node = NodeId.Local,
@@ -982,11 +1126,11 @@ public sealed class AgentRunner(
                 Outcome = ModelCallOutcome.Failure,
                 ErrorMessage = ex.Message,
                 Usage = null,
-            }, ct);
+            }, delegation, ct);
             throw;
         }
 
-        await audit.WriteAsync(new ModelCallAuditEvent
+        await WriteAuditAsync(new ModelCallAuditEvent
         {
             TimestampUtc = timeProvider.GetUtcNow(),
             Node = NodeId.Local,
@@ -998,7 +1142,7 @@ public sealed class AgentRunner(
             Outcome = ModelCallOutcome.Success,
             ErrorMessage = null,
             Usage = response.Usage,
-        }, ct);
+        }, delegation, ct);
 
         return response;
     }
@@ -1010,24 +1154,58 @@ public sealed class AgentRunner(
         ModelToolCall call,
         int planRevision,
         CancellationToken ct,
-        SkillExecutionScope? skillScope = null)
+        SkillExecutionScope? skillScope = null,
+        DelegatedExecutionScope? delegation = null)
     {
         var tool = registry.Resolve(call.ToolName);
         if (tool is null)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
-                $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct, skillScope);
+                $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct, skillScope, delegation);
             return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool, null);
         }
 
         var manifest = tool.Manifest;
         var executionContext = new ToolExecutionContext(NodeId.Local, taskId, actor);
 
+        // ADR-0030 section 3, ADR-0031 section 4: a delegated step meets its authority envelope before argument
+        // validation and before policy, and the envelope can only deny. It comes before validation so a tool the
+        // agent may not use never gets to tell it, through an argument error, what its arguments look like. A
+        // refusal is a Forbidden decision like any other: audited as such, ended as PolicyDenied, so every caller
+        // that already treats a policy denial as a dead end (the repeated-denial stop, the replan trigger, the
+        // stop of a plan) treats it the same way.
+        if (delegation is not null
+            && EnvelopeEnforcer.CheckStep(delegation, actor, manifest, skillScope, timeProvider.GetUtcNow()) is { } envelopeRefusal)
+        {
+            await WriteAuditAsync(new PolicyDecisionAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = manifest.Package,
+                Tool = manifest.Name,
+                Mode = PolicyMode.Forbidden,
+                Reason = envelopeRefusal.Reason,
+                SkillRunId = skillScope?.RunId,
+                SkillId = skillScope?.SkillId,
+                CapabilityName = skillScope?.CapabilityName,
+                Target = skillScope?.Target,
+                Environment = skillScope?.Environment,
+                BlastRadius = skillScope?.BlastRadius,
+            }, delegation, ct);
+
+            var refused = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
+                AuthorizationKind.PolicyDenied, envelopeRefusal.Reason, planRevision, ct, skillScope, delegation);
+            return (refused.Step, refused.Observation, AuthorizationKind.PolicyDenied, null);
+        }
+
         if (ValidateArguments(manifest, call.Arguments) is { } validationError)
         {
             var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, ToolCallResult.Failure(validationError),
-                AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
+                AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope, delegation);
             return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic, null);
         }
 
@@ -1041,6 +1219,8 @@ public sealed class AgentRunner(
             Target = skillScope?.Target,
             Environment = skillScope?.Environment,
             BlastRadius = skillScope?.BlastRadius,
+            Delegation = delegation?.Correlation,
+            Envelope = delegation?.Envelope,
         };
         var configuredPolicyDecision = policyEngine.Evaluate(policyContext);
         var policyDecision = manifest.RequiresExplicitApproval && configuredPolicyDecision.Mode == PolicyMode.Automatic
@@ -1054,7 +1234,7 @@ public sealed class AgentRunner(
             // Rule S3: "a Forbidden decision is always audited as a PolicyDecisionAuditEvent" —
             // applied to Approval too, since an investigator asking "what did policy decide, and
             // why" should not have to reconstruct it from whatever happened next.
-            await audit.WriteAsync(new PolicyDecisionAuditEvent
+            await WriteAuditAsync(new PolicyDecisionAuditEvent
             {
                 TimestampUtc = timeProvider.GetUtcNow(),
                 Node = NodeId.Local,
@@ -1071,13 +1251,13 @@ public sealed class AgentRunner(
                 Target = skillScope?.Target,
                 Environment = skillScope?.Environment,
                 BlastRadius = skillScope?.BlastRadius,
-            }, ct);
+            }, delegation, ct);
         }
 
         if (policyDecision.Mode == PolicyMode.Forbidden)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
-                AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct, skillScope);
+                AuthorizationKind.PolicyDenied, policyDecision.Reason, planRevision, ct, skillScope, delegation);
             return (rejected.Step, rejected.Observation, AuthorizationKind.PolicyDenied, null);
         }
 
@@ -1091,7 +1271,7 @@ public sealed class AgentRunner(
             // ADR-0015: distinct from the PolicyDecisionAuditEvent above — that records what
             // policy decided (approval is required, and why); this records what the human
             // decided, and by whom, which policy cannot know in advance.
-            await audit.WriteAsync(new ApprovalAuditEvent
+            await WriteAuditAsync(new ApprovalAuditEvent
             {
                 TimestampUtc = timeProvider.GetUtcNow(),
                 Node = NodeId.Local,
@@ -1106,7 +1286,7 @@ public sealed class AgentRunner(
                 SkillRunId = skillScope?.RunId,
                 SkillId = skillScope?.SkillId,
                 CapabilityName = skillScope?.CapabilityName,
-            }, ct);
+            }, delegation, ct);
 
             ToolCallResult? approvalBindingResult = null;
             if (tool is IApprovalBoundTool approvalBoundTool)
@@ -1120,7 +1300,7 @@ public sealed class AgentRunner(
                 var rejected = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
                     AuthorizationKind.UserRejected,
                     $"Operator rejected '{call.ToolName}'" + (approval.Note is null ? "." : $": {approval.Note}"),
-                    planRevision, ct, skillScope);
+                    planRevision, ct, skillScope, delegation);
                 return (rejected.Step, rejected.Observation, AuthorizationKind.UserRejected, null);
             }
 
@@ -1129,7 +1309,7 @@ public sealed class AgentRunner(
             if (approvalBindingResult is { Succeeded: false })
             {
                 var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, approvalBindingResult,
-                    authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope);
+                    authorization, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope, delegation);
                 return (recorded.Step, recorded.Observation, authorization, null);
             }
         }
@@ -1165,7 +1345,7 @@ public sealed class AgentRunner(
         }
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, tool, result,
-            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope);
+            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope, delegation);
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
     }
 
@@ -1320,9 +1500,10 @@ public sealed class AgentRunner(
         string message,
         int planRevision,
         CancellationToken ct,
-        SkillExecutionScope? skillScope = null)
+        SkillExecutionScope? skillScope = null,
+        DelegatedExecutionScope? delegation = null)
     {
-        await audit.WriteAsync(new ToolCallAuditEvent
+        await WriteAuditAsync(new ToolCallAuditEvent
         {
             TimestampUtc = timeProvider.GetUtcNow(),
             Node = NodeId.Local,
@@ -1345,7 +1526,7 @@ public sealed class AgentRunner(
             Environment = skillScope?.Environment,
             BlastRadius = skillScope?.BlastRadius,
             PlanHash = skillScope?.PlanHash,
-        }, ct);
+        }, delegation, ct);
 
         // Rule S3: a Forbidden decision is audited as its own PolicyDecisionAuditEvent too,
         // distinct from the ToolCallAuditEvent above — written by the caller in ExecuteStepAsync,
@@ -1361,13 +1542,14 @@ public sealed class AgentRunner(
         string? verificationDetail,
         int planRevision,
         CancellationToken ct,
-        SkillExecutionScope? skillScope = null)
+        SkillExecutionScope? skillScope = null,
+        DelegatedExecutionScope? delegation = null)
     {
         var manifest = tool.Manifest;
         var redacted = call.Arguments.Redact(manifest.Parameters.Where(p => p.Sensitive).Select(p => p.Name));
         var summary = CreateAuditSummary(tool, call.Arguments, result);
 
-        await audit.WriteAsync(new ToolCallAuditEvent
+        await WriteAuditAsync(new ToolCallAuditEvent
         {
             TimestampUtc = timeProvider.GetUtcNow(),
             Node = NodeId.Local,
@@ -1390,7 +1572,7 @@ public sealed class AgentRunner(
             Environment = skillScope?.Environment,
             BlastRadius = skillScope?.BlastRadius,
             PlanHash = skillScope?.PlanHash,
-        }, ct);
+        }, delegation, ct);
 
         var observationText = result.Succeeded
             ? TruncateForHistory(result.Output)
@@ -1622,15 +1804,6 @@ public sealed class AgentRunner(
     private static TaskState Build(
         Guid taskId, DateTimeOffset createdAtUtc, string goal, AgentTaskStatus status, List<PlanStep> steps, List<AgentPlan> plans) =>
         new(taskId, NodeId.Local, goal, status, steps, plans, createdAtUtc);
-
-    private sealed record SkillExecutionScope(
-        Guid RunId,
-        string SkillId,
-        string CapabilityName,
-        string Target,
-        string Environment,
-        BlastRadius BlastRadius,
-        string? PlanHash);
 
     private delegate Task<ToolCallResult> EvidenceInvocation(
         string toolName,

@@ -111,7 +111,7 @@
         "type": "Project",
         "dependencies": {
           "YamlDotNet": "[18.1.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.2, )"
+          "bOps.Abstractions": "[1.2.0-preview.3, )"
         }
       }
     }

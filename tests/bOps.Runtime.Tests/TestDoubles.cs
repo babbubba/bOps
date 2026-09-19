@@ -359,3 +359,35 @@ internal sealed class DeclaredButNotVerifiableTool(string name = "test.declared-
     public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
         Task.FromResult(ToolCallResult.Success("done"));
 }
+
+/// <summary>A Skill provider that exposes fixed Capabilities under the Skill id <c>sample.skill</c>, for tests of the Skill paths.</summary>
+internal sealed class TestSkillProvider(IReadOnlyList<ICapability> capabilities) : ISkillProvider
+{
+    public string SkillId => "sample.skill";
+    public IReadOnlyList<ICapability> GetCapabilities() => capabilities;
+    public IEnumerable<ITool> GetTools() => [];
+}
+
+internal sealed class DelegateCapability : ICapability
+{
+    private readonly Func<CapabilityRequest, IToolInvoker, CancellationToken, Task<SkillReport>> _prepare;
+
+    public DelegateCapability(
+        string name,
+        RiskLevel risk,
+        Func<CapabilityRequest, IToolInvoker, CancellationToken, Task<SkillReport>> prepare,
+        TimeSpan? timeout = null,
+        VerificationSpec? verification = null)
+    {
+        _prepare = prepare;
+        Manifest = new CapabilityManifest(
+            name, "1.0.0", "Test Capability.", risk, [], [], [],
+            timeout ?? TimeSpan.FromSeconds(5), SupportsDryRun: true, verification);
+    }
+
+    public CapabilityManifest Manifest { get; }
+
+    public Task<SkillReport> PrepareAsync(
+        CapabilityRequest request, IToolInvoker toolInvoker, CancellationToken ct = default) =>
+        _prepare(request, toolInvoker, ct);
+}

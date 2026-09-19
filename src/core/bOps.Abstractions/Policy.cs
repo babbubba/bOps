@@ -114,6 +114,20 @@ public sealed record PolicyContext
 
     /// <summary>The scale of this call's potential effect, when known.</summary>
     public BlastRadius? BlastRadius { get; init; }
+
+    /// <summary>
+    /// Which delegated run and agent this call belongs to, and the hash of the envelope in force (ADR-0030
+    /// section 3). <c>null</c> for a call that is not part of a delegated run, which is every call before V1.2.
+    /// </summary>
+    public DelegationCorrelation? Delegation { get; init; }
+
+    /// <summary>
+    /// The authority envelope the call was checked against, so a policy rule can see what the agent may reach.
+    /// Present exactly when <see cref="Delegation"/> is. The runtime has already refused the call if it is
+    /// outside the envelope: this is context for the decision, never a way to widen it. <c>null</c> for a call
+    /// that is not part of a delegated run.
+    /// </summary>
+    public AuthorityEnvelope? Envelope { get; init; }
 }
 
 /// <summary>A policy engine's decision for one call. <see cref="Reason"/> is always audited — a denial without a reason is not useful to anyone investigating it.</summary>
