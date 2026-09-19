@@ -35,8 +35,10 @@ namespace bOps.Runtime;
 /// distinct terminal states, each audited.
 /// </para>
 /// <para>
-/// This version keeps a run in memory. The durable journal and resume, and the independence checks that go beyond this
-/// construction, are V1.2-F and V1.2-G.
+/// With an <see cref="IDelegationStore"/> a run is durable (V1.2-F, ADR-0030 section 7): it is saved at every transition, the
+/// intent of each side-effecting step is committed before the step runs and its outcome after, and a run a crash left
+/// <see cref="DelegationStatus.Running"/> can be resumed without repeating a completed side effect. Without one a run lives in
+/// memory, as before. The independence checks that go beyond this construction are V1.2-G.
 /// </para>
 /// </remarks>
 public sealed class DelegationRunner(
@@ -45,8 +47,13 @@ public sealed class DelegationRunner(
     IPlanApprovalProvider planApproval,
     IAuditSink audit,
     TimeProvider timeProvider,
-    ILogger<DelegationRunner> logger)
+    ILogger<DelegationRunner> logger,
+    IDelegationStore? store = null,
+    int maximumResumes = DelegationRunner.DefaultMaximumResumes)
 {
+    /// <summary>How many times a run may be resumed before it is ended as failed, so a run that crashes every time cannot loop forever (ADR-0030 section 6).</summary>
+    public const int DefaultMaximumResumes = 3;
+
     private const int MaximumMessageLength = 500;
 
     // CancellationTokenSource takes a delay of at most about 49 days; a deadline further off than this is left to the clock checks.
@@ -56,6 +63,10 @@ public sealed class DelegationRunner(
     /// <param name="request">The objective, an optional narrowing of authority, and the change to prepare if any.</param>
     /// <param name="actor">The operator on whose authority the objective runs. Every envelope of the run is granted to them.</param>
     /// <param name="delegationId">The id to give the run; a fresh one when omitted. For a caller that must hand the id out before the run ends.</param>
+    /// <param name="idempotencyKey">
+    /// A caller-supplied key that makes starting the same objective again safe: with a store, a second start by the same
+    /// operator with the same key returns the run the first one created and starts nothing. Ignored without a store.
+    /// </param>
     /// <param name="ct">
     /// Cancelled to abandon the run. A run that is already under way ends as <see cref="DelegationStatus.Cancelled"/> and is
     /// returned, audited like every other end; a token that is cancelled before the run exists throws, because no run does.
@@ -63,7 +74,7 @@ public sealed class DelegationRunner(
     /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="actor"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="delegationId"/> is empty.</exception>
     public async Task<DelegationRun> StartAsync(
-        DelegationRequest request, ActorIdentity actor, Guid? delegationId = null, CancellationToken ct = default)
+        DelegationRequest request, ActorIdentity actor, Guid? delegationId = null, string? idempotencyKey = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
@@ -73,7 +84,7 @@ public sealed class DelegationRunner(
         }
 
         ct.ThrowIfCancellationRequested();
-        using var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow());
+        using var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow()) { IdempotencyKey = idempotencyKey };
 
         try
         {
@@ -92,8 +103,144 @@ public sealed class DelegationRunner(
             state.End(DelegationStatus.Failed, Bounded(ex.Message));
         }
 
-        // An ending is audited whatever ended it, so the write is never itself cancelled.
+        // A start that an earlier one with the same key already made returns that run and has nothing to end.
+        return state.Existing ?? await FinishAsync(state);
+    }
+
+    /// <summary>
+    /// Continues a run that a crash or a restart left <see cref="DelegationStatus.Running"/> (ADR-0030 section 7), without
+    /// repeating a side effect. It carries on from what the store holds: a completed role is not run again, an interrupted
+    /// read-only role restarts from its beginning against what the run has left, and a step the journal shows as done is
+    /// never executed again. A step whose outcome is not known is settled by its own declared verification; one it cannot
+    /// confirm ends the run as <see cref="DelegationStatus.RequiresReconciliation"/> and waits for an operator. Approvals are
+    /// never persisted, so a plan that has steps left to run is put to a human again, by the same hash.
+    /// </summary>
+    /// <param name="delegationId">The run to resume.</param>
+    /// <param name="resumedBy">Who resumed it, recorded in the audit log. The authority stays the one the run was granted.</param>
+    /// <param name="ct">Cancelled to abandon the resumed run, which then ends as <see cref="DelegationStatus.Cancelled"/>.</param>
+    /// <returns>The run as it stands after this resume. A run that is not running, because it ended or waits for an operator, is returned unchanged.</returns>
+    /// <exception cref="InvalidOperationException">The runner has no store, or no run with this id is stored.</exception>
+    public async Task<DelegationRun> ResumeAsync(Guid delegationId, ActorIdentity resumedBy, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(resumedBy);
+
+        var stored = await RequireStore().LoadAsync(delegationId, CancellationToken.None)
+            ?? throw new InvalidOperationException($"No delegation run {delegationId} is stored.");
+        if (stored.Status != DelegationStatus.Running)
+        {
+            return stored;
+        }
+
+        ct.ThrowIfCancellationRequested();
+        using var state = RunState.FromStored(stored);
+
+        try
+        {
+            if (stored.ResumeCount >= maximumResumes)
+            {
+                state.End(DelegationStatus.Failed, $"The run was resumed {stored.ResumeCount} times already, which is the most it may be.");
+            }
+            else
+            {
+                state.ResumeCount = stored.ResumeCount + 1;
+                await WriteLifecycleAsync(state, DelegationStage.Resumed, DelegationStatus.Running, state.Orchestrator, CancellationToken.None, actor: resumedBy);
+                await InterruptedRolesAsync(state);
+                await PersistAsync(state);
+                await ResumePipelineAsync(state, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await EndInterruptedAsync(state, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Delegation {DelegationId}: resuming failed", state.Id);
+            await FailActiveRoleAsync(state, ex.Message);
+            state.End(DelegationStatus.Failed, Bounded(ex.Message));
+        }
+
         return await FinishAsync(state);
+    }
+
+    /// <summary>
+    /// An operator's decision on a run that <see cref="DelegationStatus.RequiresReconciliation"/> (ADR-0030 section 7): accept the
+    /// steps whose outcome is unknown as done, after which the run can be resumed, or abandon the run. Audited. There is no
+    /// automatic retry: what an abandoned run was meant to do is a new objective with a new plan and a new approval.
+    /// </summary>
+    /// <param name="delegationId">The run.</param>
+    /// <param name="action"><see cref="ReconciliationAction.OperatorAcceptedDone"/> or <see cref="ReconciliationAction.OperatorAbandoned"/>.</param>
+    /// <param name="administrator">The human deciding. Only a human identity is accepted; that they hold the administrator role is for the surface that authenticates them (V1.2-I and V1.2-J).</param>
+    /// <param name="note">An optional note, kept in the audit log.</param>
+    /// <param name="ct">Cancelled to abandon the call before anything is written.</param>
+    /// <exception cref="InvalidOperationException">The runner has no store, no such run is stored, the run is not waiting for reconciliation, or the identity is not a human.</exception>
+    /// <exception cref="ArgumentException"><paramref name="action"/> is not an operator action.</exception>
+    public async Task<DelegationRun> ReconcileAsync(
+        Guid delegationId, ReconciliationAction action, ActorIdentity administrator, string? note = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(administrator);
+        if (action is not (ReconciliationAction.OperatorAcceptedDone or ReconciliationAction.OperatorAbandoned))
+        {
+            throw new ArgumentException("An operator can only accept a step as done or abandon the run.", nameof(action));
+        }
+
+        var runStore = RequireStore();
+        var stored = await runStore.LoadAsync(delegationId, ct)
+            ?? throw new InvalidOperationException($"No delegation run {delegationId} is stored.");
+        if (stored.Status != DelegationStatus.RequiresReconciliation)
+        {
+            throw new InvalidOperationException($"Run {delegationId} is {stored.Status}, not waiting for reconciliation.");
+        }
+
+        if (!IsHuman(administrator, stored.Roles))
+        {
+            throw new InvalidOperationException("Reconciliation is a human decision; an agent or the runtime cannot make it.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var correlation = new DelegationCorrelation(stored.Id, DelegationHasher.ComputeEnvelopeHash(stored.RootEnvelope), null);
+        DelegationRun updated;
+
+        if (action == ReconciliationAction.OperatorAbandoned)
+        {
+            updated = stored with { Status = DelegationStatus.Abandoned, ErrorMessage = Bounded(note ?? "An operator abandoned the run."), UpdatedAtUtc = now };
+            await WriteReconciliationAsync(stored.Id, -1, action, administrator, null, note, correlation);
+        }
+        else
+        {
+            var journal = new List<StepJournalEntry>();
+            foreach (var entry in stored.Journal)
+            {
+                if (IsUnsettled(entry))
+                {
+                    journal.Add(entry with { Reconciliation = new StepReconciliation(action, entry.Reconciliation?.Verification, administrator, now) });
+                    await WriteReconciliationAsync(stored.Id, entry.StepIndex, action, administrator, entry.Reconciliation?.Verification, note, correlation);
+                }
+                else
+                {
+                    journal.Add(entry);
+                }
+            }
+
+            updated = stored with { Status = DelegationStatus.Running, Journal = journal, ErrorMessage = null, UpdatedAtUtc = now };
+        }
+
+        await runStore.SaveAsync(updated, CancellationToken.None);
+        await audit.WriteAsync(
+            new DelegationLifecycleAuditEvent
+            {
+                TimestampUtc = now,
+                Node = NodeId.Local,
+                TaskId = stored.Id,
+                StepIndex = -1,
+                Actor = administrator,
+                Stage = DelegationStage.Terminal,
+                Status = updated.Status,
+                ErrorMessage = updated.ErrorMessage,
+                Delegation = correlation,
+            },
+            CancellationToken.None);
+        return updated;
     }
 
     // ---- the pipeline ----
@@ -105,6 +252,11 @@ public sealed class DelegationRunner(
         {
             // No root exists, so the authority in force for the refusal is nothing at all.
             state.SetRoot(NoAuthority(state));
+            if (!await RegisterAsync(state))
+            {
+                return;
+            }
+
             await WriteLifecycleAsync(state, DelegationStage.Requested, DelegationStatus.Running, state.Orchestrator, ct);
             await WriteDenialAsync(state, deniedRole ?? RoleRequirements.Pipeline[0], reduction.Denial!, ct);
             state.End(DelegationStatus.Denied, reduction.Denial!.Reason, reduction.Denial);
@@ -112,6 +264,10 @@ public sealed class DelegationRunner(
         }
 
         state.SetRoot(reduction.Envelope!);
+        if (!await RegisterAsync(state))
+        {
+            return;
+        }
 
         // From here the run's token is the caller's and the run's deadline, whichever comes first.
         ct = state.BindDeadline(timeProvider, ct);
@@ -123,6 +279,11 @@ public sealed class DelegationRunner(
             return;
         }
 
+        await RunFromDiscoveryAsync(state, ct);
+    }
+
+    private async Task RunFromDiscoveryAsync(RunState state, CancellationToken ct)
+    {
         // Discovery: gathers evidence with Read tools. Read-only, and the first of the two roles that use the model.
         if (await BeginRoleAsync(state, AgentRoleKind.Discovery, ct) is not { } discovery)
         {
@@ -140,6 +301,11 @@ public sealed class DelegationRunner(
             discoveryTask, AgentRoleKind.Discovery, discovery.Provenance(state.Id), timeProvider.GetUtcNow());
         await CompleteRoleAsync(state, discovery, DelegationRoleStatus.Completed, new SkillReport(discoveryEvidence, [], null), null, null, ct);
 
+        await RunFromDiagnosticAsync(state, discoveryEvidence, ct);
+    }
+
+    private async Task RunFromDiagnosticAsync(RunState state, IReadOnlyList<Evidence> discoveryEvidence, CancellationToken ct)
+    {
         // Diagnostic: turns that evidence into findings and, through a Capability, may prepare an immutable plan.
         if (await BeginRoleAsync(state, AgentRoleKind.Diagnostic, ct) is not { } diagnostic)
         {
@@ -197,14 +363,165 @@ public sealed class DelegationRunner(
             return;
         }
 
-        await RunApprovedPlanAsync(state, prepared, plan, findings, ct);
+        await RunApprovedPlanAsync(state, prepared, plan, findings, resuming: false, ct);
     }
 
+    // ---- resuming ----
+
+    /// <summary>Continues from the first stage whose result is not stored (ADR-0030 section 7).</summary>
+    private async Task ResumePipelineAsync(RunState state, CancellationToken ct)
+    {
+        ct = state.BindDeadline(timeProvider, ct);
+
+        var discovery = state.LastCompleted(AgentRoleKind.Discovery);
+        if (discovery?.Report is null)
+        {
+            await RunFromDiscoveryAsync(state, ct);
+            return;
+        }
+
+        var diagnostic = state.LastCompleted(AgentRoleKind.Diagnostic);
+        if (diagnostic?.Report is null)
+        {
+            await RunFromDiagnosticAsync(state, discovery.Report.Evidence, ct);
+            return;
+        }
+
+        // The Diagnostic role is done. What is left is decided by its stored plan and by the journal, not by a role's status.
+        var plan = diagnostic.Report.Plan;
+        if (state.Request.Remediation is not { } remediation || plan is null || remediation.Request.DryRun)
+        {
+            state.End(DelegationStatus.DiagnosisCompleted);
+            return;
+        }
+
+        // The plan a human approves is the one whose hash was recorded; a stored plan that no longer has it is not run.
+        var hash = ExecutionPlanHasher.ComputeHash(plan);
+        if (state.PlanHash is { } recorded && !string.Equals(recorded, hash, StringComparison.Ordinal))
+        {
+            state.End(DelegationStatus.Failed, "The stored plan no longer matches the hash that was recorded for it, so it is not run.");
+            return;
+        }
+
+        var prepared = new PreparedSkillRun(
+            Guid.NewGuid(), remediation.SkillId, remediation.CapabilityName, remediation.Request,
+            SkillPreparationStatus.Prepared, new SkillReport([], [], plan), hash, null);
+        await RunApprovedPlanAsync(state, prepared, plan, diagnostic.Report.Findings, resuming: true, ct);
+    }
+
+    /// <summary>
+    /// A role the crash interrupted did not finish, and what it spent before it stopped is not known. It is closed as failed
+    /// and charged everything it was granted, so restarting it never gives its budget back (ADR-0030 section 6).
+    /// </summary>
+    private async Task InterruptedRolesAsync(RunState state)
+    {
+        foreach (var index in Enumerable.Range(0, state.Roles.Count).Where(i => state.Roles[i].Status == DelegationRoleStatus.Running))
+        {
+            var role = state.Roles[index];
+            var charged = new BudgetConsumption(role.Envelope.Budget.MaxSteps, role.Envelope.Budget.MaxTokens);
+            state.Roles[index] = role with
+            {
+                Status = DelegationRoleStatus.Failed,
+                CompletedAtUtc = timeProvider.GetUtcNow(),
+                Consumed = charged,
+                ErrorMessage = "The process stopped while this role was running. It is restarted from its beginning and charged everything it was granted.",
+            };
+            await WriteLifecycleAsync(
+                state, DelegationStage.RoleCompleted, DelegationStatus.Running,
+                new DelegationCorrelation(state.Id, DelegationHasher.ComputeEnvelopeHash(role.Envelope), role.Agent), CancellationToken.None,
+                roleStatus: DelegationRoleStatus.Failed, consumed: charged, error: state.Roles[index].ErrorMessage);
+        }
+
+        state.RecountSpent();
+    }
+
+    /// <summary>
+    /// Settles the steps the journal cannot vouch for (ADR-0030 section 7): one with an intent and no outcome, or an outcome of
+    /// cancelled or timed out. Each is checked by its own declared verification, read by a Verification role. Confirmed is done by
+    /// reconciliation; refuted or inconclusive ends the run as <see cref="DelegationStatus.RequiresReconciliation"/>. There is no retry.
+    /// </summary>
+    /// <returns>The steps that are done and must not run again, or <c>null</c> when the run has ended.</returns>
+    private async Task<HashSet<int>?> SettleJournalAsync(RunState state, ExecutionPlan plan, string hash, CancellationToken ct)
+    {
+        foreach (var entry in state.Journal.Where(IsUnsettled).OrderBy(e => e.StepIndex).ToList())
+        {
+            var planStep = plan.Steps.FirstOrDefault(step => step.Index == entry.StepIndex);
+            if (planStep is null)
+            {
+                state.End(DelegationStatus.RequiresReconciliation, $"Step {entry.StepIndex} is in the journal but not in the plan, so it cannot be verified.");
+                return null;
+            }
+
+            if (await BeginRoleAsync(state, AgentRoleKind.Verification, ct) is not { } verifier)
+            {
+                return null;
+            }
+
+            var single = new ExecutionPlan(plan.CapabilityName, plan.CapabilityVersion, plan.Rationale, [planStep]);
+            var verified = await runner.VerifyPlanAsync(verifier.TaskId, state.Actor, single, hash, verifier.Scope, verifier.Token);
+            if (BudgetEnd(verifier) is (var budgetStatus, var budgetReason))
+            {
+                await CompleteRoleAsync(state, verifier, DelegationRoleStatus.Failed, null, null, budgetReason, ct);
+                state.End(budgetStatus, budgetReason);
+                return null;
+            }
+
+            var provenance = verifier.Provenance(state.Id);
+            var report = verified with { Evidence = [.. verified.Evidence.Select(e => e with { Provenance = provenance })] };
+            await CompleteRoleAsync(state, verifier, DelegationRoleStatus.Completed, null, report, null, ct);
+
+            var confirmed = report.Status == VerificationStatus.Confirmed;
+            var action = confirmed ? ReconciliationAction.VerifiedDone : ReconciliationAction.EscalatedToOperator;
+            state.SetReconciliation(entry.StepIndex, new StepReconciliation(action, report.Status, ActorIdentity.RuntimeSystem, timeProvider.GetUtcNow()));
+            await WriteReconciliationAsync(state.Id, entry.StepIndex, action, ActorIdentity.RuntimeSystem, report.Status, null, state.Orchestrator);
+            await PersistAsync(state);
+
+            if (!confirmed)
+            {
+                state.End(
+                    DelegationStatus.RequiresReconciliation,
+                    Bounded($"Step {entry.StepIndex} ('{planStep.ToolName}') may or may not have taken effect, and its verification was {report.Status}. An operator must accept it as done or abandon the run."));
+                return null;
+            }
+        }
+
+        return [.. state.Journal.Where(e => IsSettledDone(e)).Select(e => e.StepIndex)];
+    }
+
+    private static bool IsUnsettled(StepJournalEntry entry) =>
+        (entry.Reconciliation is null || entry.Reconciliation.Action == ReconciliationAction.EscalatedToOperator)
+        && (entry.Outcome is null || entry.Outcome.Kind is StepOutcomeKind.Cancelled or StepOutcomeKind.Timeout);
+
+    /// <summary>A step that ran and reported, or that reconciliation settled as done: it is never executed again.</summary>
+    private static bool IsSettledDone(StepJournalEntry entry) =>
+        entry.Outcome?.Kind is StepOutcomeKind.Succeeded or StepOutcomeKind.Failed
+        || entry.Reconciliation?.Action is ReconciliationAction.VerifiedDone or ReconciliationAction.OperatorAcceptedDone;
+
     private async Task RunApprovedPlanAsync(
-        RunState state, PreparedSkillRun prepared, ExecutionPlan plan, IReadOnlyList<Finding> findings, CancellationToken ct)
+        RunState state, PreparedSkillRun prepared, ExecutionPlan plan, IReadOnlyList<Finding> findings, bool resuming, CancellationToken ct)
     {
         var hash = prepared.PlanHash!;
         state.PlanHash = hash;
+
+        // A run that is resumed first settles what its journal cannot vouch for; a step done before the crash is not run again.
+        var done = new HashSet<int>();
+        if (resuming)
+        {
+            if (await SettleJournalAsync(state, plan, hash, ct) is not { } settled)
+            {
+                return;
+            }
+
+            done = settled;
+        }
+
+        var remainingSteps = plan.Steps.Count(step => !done.Contains(step.Index));
+        if (remainingSteps == 0)
+        {
+            // Everything the plan asked for was done before the crash: nothing needs approving or running, only verifying.
+            await RunVerificationAsync(state, plan, hash, ct);
+            return;
+        }
 
         // A plan the Remediation envelope is certain to refuse is rejected before a human is asked to approve it.
         if (await EnvelopeForPlanCheckAsync(state, ct) is not { } previewScope)
@@ -220,11 +537,11 @@ public sealed class DelegationRunner(
 
         // A plan is applied whole or not at all: one the Remediation role has too few steps to finish would be left half
         // applied, so it is stopped here, before a human is asked to approve it and before anything is changed.
-        if (plan.Steps.Count > previewScope.Envelope!.Budget.MaxSteps)
+        if (remainingSteps > previewScope.Envelope!.Budget.MaxSteps)
         {
             state.End(
                 DelegationStatus.BudgetExceeded,
-                Bounded($"The approved plan has {plan.Steps.Count} steps, but the Remediation role has only {previewScope.Envelope.Budget.MaxSteps} left to take."));
+                Bounded($"The approved plan has {remainingSteps} steps to run, but the Remediation role has only {previewScope.Envelope.Budget.MaxSteps} left to take."));
             return;
         }
 
@@ -250,6 +567,7 @@ public sealed class DelegationRunner(
         }
 
         state.Approval = new DelegationApproval(hash, decision.Actor, timeProvider.GetUtcNow());
+        await PersistAsync(state);
 
         // Remediation: executes exactly the approved plan through the ordinary step pipeline. It makes no model call.
         if (await BeginRoleAsync(state, AgentRoleKind.Remediation, ct) is not { } remediationRole)
@@ -258,7 +576,7 @@ public sealed class DelegationRunner(
         }
 
         var execution = await runner.ExecuteDelegatedPlanAsync(
-            remediationRole.TaskId, state.Actor, prepared, new ExecutionPlanApproval(hash, decision), remediationRole.Scope, remediationRole.Token);
+            remediationRole.TaskId, state.Actor, prepared, new ExecutionPlanApproval(hash, decision), remediationRole.Scope, done, remediationRole.Token);
         if (execution.Status != PlanExecutionStatus.Completed)
         {
             var (status, why) = ClassifyStoppedPlan(state, prepared, execution, remediationRole);
@@ -268,7 +586,11 @@ public sealed class DelegationRunner(
         }
 
         await CompleteRoleAsync(state, remediationRole, DelegationRoleStatus.Completed, null, null, null, ct);
+        await RunVerificationAsync(state, plan, hash, ct);
+    }
 
+    private async Task RunVerificationAsync(RunState state, ExecutionPlan plan, string hash, CancellationToken ct)
+    {
         // Verification: a distinct identity that reads the system itself. It makes no model call, and it does not look at
         // what Remediation reported.
         if (await BeginRoleAsync(state, AgentRoleKind.Verification, ct) is not { } verificationRole)
@@ -423,6 +745,11 @@ public sealed class DelegationRunner(
         var envelope = reduction.Envelope!;
         var agent = new AgentIdentity(AgentId.New(), role);
         var scope = DelegatedExecutionScope.For(state.Id, agent, envelope);
+        if (store is not null)
+        {
+            scope = scope with { Journal = new StepJournal(this, state, scope.Correlation) };
+        }
+
         var active = new ActiveRole(agent, envelope, scope, Guid.NewGuid(), envelope.Budget.DeadlineUtc - now, timeProvider, ct);
 
         await WriteAsync(
@@ -448,6 +775,7 @@ public sealed class DelegationRunner(
             StartedAtUtc = now,
         });
         state.Active = active;
+        await PersistAsync(state);
         await WriteLifecycleAsync(state, DelegationStage.RoleStarted, DelegationStatus.Running, scope.Correlation, ct, roleStatus: DelegationRoleStatus.Running);
         return active;
     }
@@ -470,6 +798,7 @@ public sealed class DelegationRunner(
         state.Spend(consumed);
         state.Active = null;
         role.Dispose();
+        await PersistAsync(state);
         await WriteLifecycleAsync(
             state, DelegationStage.RoleCompleted, DelegationStatus.Running, role.Scope.Correlation, ct,
             roleStatus: status, consumed: consumed, error: error);
@@ -591,29 +920,159 @@ public sealed class DelegationRunner(
         var status = state.Ended ?? DelegationStatus.Failed;
         await WriteLifecycleAsync(state, DelegationStage.Terminal, status, state.Orchestrator, CancellationToken.None, error: state.Error);
 
-        return new DelegationRun
+        var run = Snapshot(state, status);
+        if (store is not null)
+        {
+            try
+            {
+                await store.SaveAsync(run, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Rule C1. The run is returned with how it ended; what the store holds is the last state it did save, which a
+                // resume treats as interrupted, so nothing is lost and nothing is repeated.
+                logger.LogError(ex, "Delegation {DelegationId}: could not store how the run ended", state.Id);
+            }
+        }
+
+        return run;
+    }
+
+    // ---- storing ----
+
+    private DelegationRun Snapshot(RunState state, DelegationStatus status) =>
+        new()
         {
             Id = state.Id,
             Node = NodeId.Local,
             Actor = state.Actor,
             Objective = state.Request.Objective,
+            IdempotencyKey = state.IdempotencyKey,
+            Authority = state.Request.Authority,
+            Remediation = state.Request.Remediation is { } remediation
+                ? new DelegationRemediationRequest(remediation.SkillId, remediation.CapabilityName, remediation.Request)
+                : null,
             Status = status,
             RootEnvelope = state.Root,
             Roles = [.. state.Roles],
             PlanHash = state.PlanHash,
             Approval = state.Approval,
-            Journal = [],
+            Journal = [.. state.Journal],
+            ResumeCount = state.ResumeCount,
             Denial = state.Denial,
             ErrorMessage = state.Error,
             CreatedAtUtc = state.CreatedAt,
             UpdatedAtUtc = timeProvider.GetUtcNow(),
         };
+
+    /// <summary>Stores the run as it stands. A write that fails stops the run: what it cannot store it cannot resume, so it must not go on. Never cancelled by the caller's token.</summary>
+    private async Task PersistAsync(RunState state)
+    {
+        if (store is not null)
+        {
+            await store.SaveAsync(Snapshot(state, state.Ended ?? DelegationStatus.Running), CancellationToken.None);
+        }
     }
 
-    private static bool IsHuman(ActorIdentity approver, RunState state) =>
+    /// <summary>Stores a new run, or finds the one an earlier start with the same key made. <c>false</c> when the run already exists and nothing is to be started.</summary>
+    private async Task<bool> RegisterAsync(RunState state)
+    {
+        if (store is null)
+        {
+            return true;
+        }
+
+        var result = await store.StartAsync(Snapshot(state, DelegationStatus.Running), CancellationToken.None);
+        if (!result.Created)
+        {
+            state.Existing = result.Run;
+        }
+
+        return result.Created;
+    }
+
+    private DateTimeOffset UtcNow() => timeProvider.GetUtcNow();
+
+    private IDelegationStore RequireStore() =>
+        store ?? throw new InvalidOperationException("This runner has no delegation store, so a run cannot be resumed or reconciled.");
+
+    private Task WriteReconciliationAsync(
+        Guid runId, int stepIndex, ReconciliationAction action, ActorIdentity resolvedBy, VerificationStatus? verification, string? note,
+        DelegationCorrelation correlation) =>
+        audit.WriteAsync(
+            new DelegationReconciliationAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = runId,
+                StepIndex = stepIndex,
+                Actor = resolvedBy,
+                Action = action,
+                ResolvedBy = resolvedBy,
+                Verification = verification,
+                Note = note is null ? null : Bounded(note),
+                Delegation = correlation,
+            },
+            CancellationToken.None);
+
+    /// <summary>The runner's <see cref="IStepJournal"/> for one run: every write is a save of the whole run, durable before it returns.</summary>
+    private sealed class StepJournal(DelegationRunner owner, RunState state, DelegationCorrelation correlation) : IStepJournal
+    {
+        public async Task BeginAsync(int stepIndex, string toolName, ToolArguments arguments)
+        {
+            var hash = DelegationHasher.ComputeArgumentsHash(arguments);
+            state.Journal.Add(new StepJournalEntry
+            {
+                StepIndex = stepIndex,
+                ToolName = toolName,
+                ArgumentsHash = hash,
+                IntentAtUtc = owner.UtcNow(),
+            });
+            await owner.PersistAsync(state);
+            await owner.WriteJournalAuditAsync(state, stepIndex, JournalPhase.Intent, toolName, hash, null, null, correlation);
+        }
+
+        public async Task CompleteAsync(int stepIndex, StepOutcome outcome)
+        {
+            var index = state.Journal.FindLastIndex(e => e.StepIndex == stepIndex);
+            if (index < 0)
+            {
+                return;
+            }
+
+            state.Journal[index] = state.Journal[index] with { Outcome = outcome };
+            await owner.PersistAsync(state);
+            var entry = state.Journal[index];
+            await owner.WriteJournalAuditAsync(state, stepIndex, JournalPhase.Outcome, entry.ToolName, entry.ArgumentsHash, outcome.Kind, outcome.Verification, correlation);
+        }
+    }
+
+    private Task WriteJournalAuditAsync(
+        RunState state, int stepIndex, JournalPhase phase, string tool, string argumentsHash, StepOutcomeKind? outcome,
+        VerificationStatus? verification, DelegationCorrelation correlation) =>
+        audit.WriteAsync(
+            new DelegationJournalAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = state.Id,
+                StepIndex = stepIndex,
+                Actor = state.Actor,
+                Phase = phase,
+                Tool = tool,
+                ArgumentsHash = argumentsHash,
+                Outcome = outcome,
+                Verification = verification,
+                Delegation = correlation,
+            },
+            CancellationToken.None);
+
+    private static bool IsHuman(ActorIdentity approver, RunState state) => IsHuman(approver, state.Roles);
+
+    private static bool IsHuman(ActorIdentity approver, IReadOnlyList<DelegationRoleRun> roles) =>
         !string.Equals(approver.Kind, "agent", StringComparison.OrdinalIgnoreCase)
         && !string.Equals(approver.Kind, ActorIdentity.RuntimeSystem.Kind, StringComparison.OrdinalIgnoreCase)
-        && !state.Roles.Any(role => string.Equals(role.Agent.Id.ToString(), approver.Id, StringComparison.OrdinalIgnoreCase));
+        && !roles.Any(role => string.Equals(role.Agent.Id.ToString(), approver.Id, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// A private copy of a prepared plan, so a list a Capability kept cannot change what a human approved. The hash the run
@@ -757,6 +1216,54 @@ public sealed class DelegationRunner(
         public AuthorityEnvelope Root => _root ?? throw new InvalidOperationException("The root envelope is not set yet.");
 
         public string RootHash { get; private set; } = string.Empty;
+
+        public string? IdempotencyKey { get; init; }
+
+        /// <summary>The run an earlier start with the same key created, when this start is a repeat and has nothing to run.</summary>
+        public DelegationRun? Existing { get; set; }
+
+        /// <summary>The journal of the side-effecting steps, in the order their intent was committed.</summary>
+        public List<StepJournalEntry> Journal { get; } = [];
+
+        public int ResumeCount { get; set; }
+
+        /// <summary>Rebuilds the state of a stored run, for a resume. What a human approved is never carried over: an approval is not authority once the process that held it is gone.</summary>
+        public static RunState FromStored(DelegationRun stored)
+        {
+            var remediation = stored.Remediation is { } request
+                ? new DelegationRemediation(request.SkillId, request.CapabilityName, request.Request)
+                : null;
+            var state = new RunState(stored.Id, new DelegationRequest(stored.Objective, stored.Authority, remediation), stored.Actor, stored.CreatedAtUtc)
+            {
+                IdempotencyKey = stored.IdempotencyKey,
+                ResumeCount = stored.ResumeCount,
+                PlanHash = stored.PlanHash,
+            };
+            state.SetRoot(stored.RootEnvelope);
+            state.Roles.AddRange(stored.Roles);
+            state.Journal.AddRange(stored.Journal);
+            return state;
+        }
+
+        /// <summary>The most recent role of a kind that ended as completed, or <c>null</c>.</summary>
+        public DelegationRoleRun? LastCompleted(AgentRoleKind kind) =>
+            Roles.LastOrDefault(role => role.Agent.Role == kind && role.Status == DelegationRoleStatus.Completed);
+
+        public void SetReconciliation(int stepIndex, StepReconciliation reconciliation)
+        {
+            var index = Journal.FindLastIndex(e => e.StepIndex == stepIndex);
+            if (index >= 0)
+            {
+                Journal[index] = Journal[index] with { Reconciliation = reconciliation };
+            }
+        }
+
+        /// <summary>Adds up what every role has spent, from the roles as they are stored.</summary>
+        public void RecountSpent()
+        {
+            SpentSteps = Roles.Sum(role => (long)role.Consumed.Steps);
+            SpentTokens = Roles.Sum(role => (long)role.Consumed.Tokens);
+        }
 
         /// <summary>What the roles that have ended spent, to reconcile against the root budget (ADR-0030 section 6).</summary>
         public long SpentSteps { get; private set; }

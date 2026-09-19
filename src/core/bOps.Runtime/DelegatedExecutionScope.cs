@@ -48,6 +48,9 @@ internal sealed record DelegatedExecutionScope
     /// <summary>The authority the agent was granted. <c>null</c> refuses every step.</summary>
     internal AuthorityEnvelope? Envelope { get; }
 
+    /// <summary>Where the agent's side-effecting steps are journaled, when the run is durable (ADR-0030 section 7). <c>null</c> for a run that is not stored.</summary>
+    internal IStepJournal? Journal { get; init; }
+
     /// <summary>What the agent has spent of the budget its envelope grants (ADR-0030 section 6). <c>null</c> when there is no envelope, which refuses every step anyway.</summary>
     internal RoleMeter? Meter { get; }
 

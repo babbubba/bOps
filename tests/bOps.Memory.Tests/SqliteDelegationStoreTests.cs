@@ -82,6 +82,26 @@ public sealed class SqliteDelegationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task StartAsync_ThenLoadAsync_KeepsTheRequestTheRunWasStartedWith_SoItCanBeResumed()
+    {
+        var store = new SqliteDelegationStore(_filePath);
+        var input = ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["service"] = "nginx" });
+        var run = Run() with
+        {
+            Authority = new DelegationAuthorityRequest(MaxSteps: 12, MaxTokens: 50_000),
+            Remediation = new DelegationRemediationRequest("sample.skill", "sample.remediate", new CapabilityRequest(input, "local", "test", BlastRadius.Single, DryRun: true)),
+        };
+        await store.StartAsync(run);
+
+        var loaded = await new SqliteDelegationStore(_filePath).LoadAsync(run.Id);
+
+        Assert.Equal(12, loaded!.Authority!.MaxSteps);
+        Assert.Equal("sample.remediate", loaded.Remediation!.CapabilityName);
+        Assert.Equal("nginx", loaded.Remediation.Request.Input.GetRequired<string>("service"));
+        Assert.True(loaded.Remediation.Request.DryRun);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReturnsNull_ForAnUnknownRun()
     {
         Assert.Null(await new SqliteDelegationStore(_filePath).LoadAsync(Guid.NewGuid()));

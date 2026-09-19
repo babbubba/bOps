@@ -216,7 +216,14 @@ reserved from what the run has left, it stops at its own deadline, and a cancell
 `DeadlineExceeded` (a run under way returns, it no longer throws), all audited. A side-effecting step cancelled while it
 runs is audited as an unknown outcome, not a failed one; the durable journal and resume are V1.2-F. No SDK change. The
 task file lists the interpretations E made.
-Next action: V1.2-F (durable delegation store, journal, resume and reconciliation)
+V1.2-F is implemented: `SqliteDelegationStore`, the step journal, `DelegationRunner.ResumeAsync` and `ReconcileAsync`, and an
+idempotent `StartAsync`, proven with a store that dies at a chosen write so a resume finds exactly what was durable then. The
+SDK moves to `1.2.0-preview.6`. A run is durable only when the runner is given a store; nothing is wired into Cli or Api yet
+(V1.2-I, V1.2-J), which is also where the administrator role for `ReconcileAsync` is enforced: the runtime checks only that
+the decider is a human identity. A run that ends `Cancelled` or `DeadlineExceeded` with a step of unknown outcome is not
+resumed (it is an end, and a retry is a new objective); its journal and its error say the outcome is unknown. The task file
+lists the interpretations F made.
+Next action: V1.2-G (separation of duties and independence checks)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

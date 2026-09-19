@@ -620,6 +620,46 @@ public sealed class DelegationContractsTests
     }
 
     [Fact]
+    public void DelegationRun_RoundTrips_WithTheRequestItWasStartedWith()
+    {
+        var request = new CapabilityRequest(ToolArguments.FromJson(new JsonObject { ["service"] = "nginx" }), "node-1", "staging", BlastRadius.Single);
+        var value = SampleRun() with
+        {
+            Authority = new DelegationAuthorityRequest(MaxSteps: 12, MaxTokens: 50_000),
+            Remediation = new DelegationRemediationRequest("system.skill", "system.diagnose", request),
+        };
+
+        var result = RoundTripBoth(value, DelegationContractsJsonContext.Default.DelegationRun);
+
+        Assert.Equal(12, result.Authority!.MaxSteps);
+        Assert.Equal(50_000, result.Authority.MaxTokens);
+        Assert.Equal("system.skill", result.Remediation!.SkillId);
+        Assert.Equal("system.diagnose", result.Remediation.CapabilityName);
+        Assert.Equal("staging", result.Remediation.Request.Environment);
+        Assert.Equal("nginx", result.Remediation.Request.Input.GetRequired<string>("service"));
+    }
+
+    [Fact]
+    public void DelegationRun_StoredBeforeTheRequestWasKept_ReadsWithNoRequest()
+    {
+        var node = JsonNode.Parse(JsonSerializer.Serialize(SampleRun(), DelegationContractsJsonContext.Default.DelegationRun))!.AsObject();
+        node.Remove("Authority");
+        node.Remove("Remediation");
+
+        var result = JsonSerializer.Deserialize(node.ToJsonString(), DelegationContractsJsonContext.Default.DelegationRun)!;
+
+        Assert.Null(result.Authority);
+        Assert.Null(result.Remediation);
+    }
+
+    [Fact]
+    public void DelegationStage_Resumed_IsAppendedAfterTheValuesAlreadyPersisted()
+    {
+        Assert.Equal(5, (int)DelegationStage.PlanDecided);
+        Assert.Equal(6, (int)DelegationStage.Resumed);
+    }
+
+    [Fact]
     public void StepJournalEntry_DistinguishesIntentOnlyFromCompleted_AndReconciled()
     {
         var intentOnly = SampleRun().Journal[1];

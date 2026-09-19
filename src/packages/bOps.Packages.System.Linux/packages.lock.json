@@ -37,7 +37,7 @@
       "bops.packages.system.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.5, )"
+          "bOps.Abstractions": "[1.2.0-preview.6, )"
         }
       }
     }

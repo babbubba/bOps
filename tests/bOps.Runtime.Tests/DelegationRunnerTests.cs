@@ -70,6 +70,9 @@ public sealed partial class DelegationRunnerTests
     {
         public int ExecutionCount { get; private set; }
 
+        /// <summary>What the tool's own verification concludes; a test can change it between a crash and a resume.</summary>
+        public VerificationStatus Verdict { get; set; } = verdict;
+
         public List<string?> VerificationReads { get; } = [];
 
         public ToolManifest Manifest { get; } = new()
@@ -98,7 +101,7 @@ public sealed partial class DelegationRunnerTests
             ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default)
         {
             VerificationReads.Add(verificationToolResult.Output);
-            return Task.FromResult(new VerificationOutcome(verdict, verdict.ToString()));
+            return Task.FromResult(new VerificationOutcome(Verdict, Verdict.ToString()));
         }
     }
 
@@ -191,7 +194,9 @@ public sealed partial class DelegationRunnerTests
         Func<AuditEvent, bool>? failAuditOn = null,
         AgentRunnerOptions? options = null,
         bool auditHonoursCancellation = false,
-        Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null)
+        Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null,
+        IDelegationStore? store = null,
+        int maximumResumes = DelegationRunner.DefaultMaximumResumes)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
@@ -238,7 +243,8 @@ public sealed partial class DelegationRunnerTests
             options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills);
         var planApproval = approval ?? new RecordingPlanApproval();
         var runner = new DelegationRunner(
-            agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance);
+            agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance,
+            store, maximumResumes);
         return new Harness { Runner = runner, Agent = agentRunner, Model = fakeModel, Audit = recording, Approval = planApproval, Restart = restartTool, Clock = time };
     }
 
