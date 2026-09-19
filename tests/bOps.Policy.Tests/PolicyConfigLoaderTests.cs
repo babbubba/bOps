@@ -113,6 +113,59 @@ public sealed class PolicyConfigLoaderTests
         Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(yaml));
     }
 
+    // Rule S3: a value that is not the name of a member is refused. Enum.TryParse also reads numbers and comma
+    // lists, which produced members that do not exist (PolicyMode 3) or a different one than was written.
+    [Theory]
+    [InlineData("approval, forbidden")]
+    [InlineData("automatic,approval")]
+    [InlineData("3")]
+    [InlineData("1")]
+    [InlineData("99")]
+    [InlineData("-1")]
+    [InlineData(" ")]
+    [InlineData("\"\"")]
+    public void Load_RefusesAModeThatIsNotAName(string mode)
+    {
+        var defaults = $"defaults:\n  read: {mode}\n";
+        var tools = $"tools:\n  service.restart: {mode}\n";
+        var skills = $"skills:\n  - skill: s\n    capability: c\n    target: t\n    environment: e\n    blastRadius: single\n    mode: {mode}\n";
+
+        foreach (var yaml in new[] { defaults, tools, skills })
+        {
+            Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(yaml));
+        }
+    }
+
+    [Theory]
+    [InlineData("low, medium")]
+    [InlineData("3")]
+    [InlineData("99")]
+    [InlineData(" ")]
+    public void Load_RefusesARiskLevelThatIsNotAName(string risk)
+    {
+        Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load($"defaults:\n  \"{risk}\": automatic\n"));
+        Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load($"packages:\n  some.package: \"{risk}\"\n"));
+    }
+
+    [Theory]
+    [InlineData("single, fleet")]
+    [InlineData("0")]
+    [InlineData("7")]
+    public void Load_RefusesABlastRadiusThatIsNotAName(string radius)
+    {
+        var yaml = $"skills:\n  - skill: s\n    capability: c\n    target: t\n    environment: e\n    blastRadius: \"{radius}\"\n    mode: approval\n";
+
+        Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load(yaml));
+    }
+
+    [Fact]
+    public void Load_NamesTheSectionAndKeyOfARefusedValue()
+    {
+        var ex = Assert.Throws<PolicyConfigurationException>(() => PolicyConfigLoader.Load("defaults:\n  read: \"approval, forbidden\"\n"));
+
+        Assert.Contains("defaults.read", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Load_ParsesExactSkillRules()
     {

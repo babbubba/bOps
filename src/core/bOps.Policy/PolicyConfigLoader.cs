@@ -156,11 +156,21 @@ public static class PolicyConfigLoader
         return new PolicyConfig(defaults, toolOverrides, packageCeilings, skillRules, roleProfiles);
     }
 
-    private static T ParseEnum<T>(string value, string section, string key) where T : struct, Enum =>
-        Enum.TryParse<T>(value, ignoreCase: true, out var parsed)
-            ? parsed
-            : throw new PolicyConfigurationException(
-                $"policy.yaml: '{value}' under {section}.{key} is not a valid {typeof(T).Name}.");
+    // Names only (rule S3). Enum.TryParse also reads a number and a comma list, so "3" or "approval, forbidden"
+    // loaded as a PolicyMode that does not exist, and "low, medium" as a different RiskLevel than was written.
+    private static T ParseEnum<T>(string? value, string section, string key) where T : struct, Enum
+    {
+        foreach (var name in Enum.GetNames<T>())
+        {
+            if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return Enum.Parse<T>(name);
+            }
+        }
+
+        throw new PolicyConfigurationException(
+            $"policy.yaml: '{value}' under {section}.{key} is not a valid {typeof(T).Name}; expected one of: {string.Join(", ", Enum.GetNames<T>())}.");
+    }
 
     private sealed class PolicyDocument
     {
