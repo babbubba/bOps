@@ -37,4 +37,18 @@ public sealed record AgentRunnerOptions
     /// guard-rail rule C5 already requires for steps, applied to plan revisions.
     /// </summary>
     public int MaxReplans { get; init; } = 3;
+
+    /// <summary>
+    /// How many times a model that ends a step with no text and no tool call (an empty final response) is asked
+    /// again before the task fails instead of completing with nothing to show. <c>0</c> fails at the first empty
+    /// reply. Rule S3: an empty reply is never taken as an answer.
+    /// </summary>
+    public int EmptyFinalResponseRetries { get; init; } = 1;
+
+    /// <summary>
+    /// The most characters of each request body and each reply body kept with a recorded model call; a longer body is
+    /// cut and the record marked. <c>0</c> keeps no bodies (the model, timing and tokens are still recorded). The
+    /// request repeats the whole conversation on every call, so this bounds how fast a task's stored state grows.
+    /// </summary>
+    public int MaxModelPayloadCharacters { get; init; } = 200_000;
 }

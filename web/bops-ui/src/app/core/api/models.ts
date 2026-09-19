@@ -75,6 +75,32 @@ export interface ToolCallResult {
   succeeded: boolean;
 }
 
+export interface ModelUsage {
+  promptTokens: number;
+  completionTokens: number;
+  estimatedCostUsd: number | null;
+}
+
+/** ModelCallOutcome on the wire: 0 = success, 1 = failure. */
+export const ModelCallFailed = 1;
+
+/**
+ * One call the runtime made to a model. The request and reply bodies are kept in the task store for
+ * troubleshooting and are never sent to the UI, so they are not part of this type.
+ */
+export interface ModelCallRecord {
+  provider: string;
+  requestedModel: string;
+  actualModel: string | null;
+  startedAtUtc: string;
+  durationMs: number;
+  outcome: number;
+  usage: ModelUsage | null;
+  finishReason: string | null;
+  errorMessage: string | null;
+  payloadTruncated: boolean;
+}
+
 export interface PlanStep {
   index: number;
   description: string | null;
@@ -82,6 +108,8 @@ export interface PlanStep {
   result: ToolCallResult | null;
   observation: string | null;
   planRevision: number | null;
+  /** Absent on a step stored before model calls were kept. */
+  modelCalls?: ModelCallRecord[] | null;
 }
 
 export interface PlannedStep {
@@ -94,6 +122,7 @@ export interface AgentPlan {
   revision: number;
   rationale: string;
   steps: PlannedStep[];
+  modelCalls?: ModelCallRecord[] | null;
 }
 
 export interface TaskState {

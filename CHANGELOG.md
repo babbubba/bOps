@@ -123,6 +123,18 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `PlanApprovalRequest` (a human approves a plan by its hash; a decision from an agent, the runtime or one of the run's
   own agents is refused), `DelegationStage.PlanDecided` and `DelegationLifecycleAuditEvent.PlanHash`. The run is kept in
   memory and nothing is wired into Cli or Api yet; budgets, durable state and resume follow in V1.2-E and V1.2-F.
+- Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
+  runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
+  `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`
+  is answered by whichever model the router picked), when it started, how long it took, tokens sent and received, the
+  finish reason, the error of a failed call, and the exact request and reply bodies, each bounded by the new
+  `Agent:MaxModelPayloadCharacters` (default 200000, `0` keeps no bodies; a cut body is marked). A failed call keeps the
+  bodies its adapter had (`ModelProtocolException.Details`). `ModelCallAuditEvent` gains `ActualModel` and `DurationMs`,
+  omitted when unknown so an older event is unchanged. The OpenAI-compatible and Anthropic adapters fill these in (they
+  now read the reply as text before parsing it, so the body can be kept); the OpenAI-compatible adapter now says
+  "no choices" instead of failing with an index error when a provider returns none. The API sends the model, time and
+  tokens but never the bodies, on task reads, lists and the events stream. The dashboard shows them behind a "?" on
+  each step. The OpenAI-compatible adapter has its own test project for the first time.
 
 ### Changed
 
@@ -148,6 +160,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- A model that ends a step with no text and no tool call no longer completes the task with an empty "Final response"
+  (rule S3). `AgentRunner` asks again once (`Agent:EmptyFinalResponseRetries`, default 1), telling the model its reply
+  was empty and leaving the empty turn out of the conversation, and if it stays empty the task fails with the model,
+  the finish reason and the tokens generated in its message. Found on a task run against `openrouter/free`, whose
+  last call generated 788 tokens and returned no `content`.
 - Policy fails closed on a value that is not a name (rule S3). `policy.yaml` enums were read with
   `Enum.TryParse`, so a number or a comma list (`read: "approval, forbidden"`, `read: 3`) loaded as a `PolicyMode`
   that does not exist and `AgentRunner` executed that tool unattended, and `"low, medium"` loaded as a different

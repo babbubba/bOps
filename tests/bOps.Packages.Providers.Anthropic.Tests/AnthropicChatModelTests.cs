@@ -190,4 +190,45 @@ public sealed class AnthropicChatModelTests
         await Assert.ThrowsAsync<ModelProtocolException>(
             () => model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], [])));
     }
+
+    [Fact]
+    public async Task CompleteAsync_KeepsTheActualModelTheFinishReasonAndBothBodies()
+    {
+        const string reply = """{"model":"claude-test-20260901","content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}""";
+        var (model, handler) = CreateModel([(HttpStatusCode.OK, reply)]);
+
+        var result = await model.CompleteAsync(new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], []));
+
+        Assert.Equal("claude-test-20260901", result.Details!.ActualModel);
+        Assert.Equal("end_turn", result.Details.FinishReason);
+        Assert.Equal(reply, result.Details.ResponseJson);
+        Assert.Equal(handler.RequestBodies[0], result.Details.RequestJson);
+        Assert.DoesNotContain("test-key", result.Details.RequestJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_AttachesTheBodiesToTheFailure_WhenTheProviderRefusesTheRequest()
+    {
+        const string refusal = """{"type":"error","error":{"type":"invalid_request_error","message":"bad"}}""";
+        var (model, _) = CreateModel([(HttpStatusCode.BadRequest, refusal)]);
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(
+            () => model.CompleteAsync(new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], [])));
+
+        Assert.Equal(refusal, failure.Details!.ResponseJson);
+        Assert.Contains("claude-test", failure.Details.RequestJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_InTheJsonFallback_KeepsTheDetailsOfTheReplyItAccepted()
+    {
+        const string reply = """{"model":"claude-test-x","content":[{"type":"text","text":"{\"final\":\"done\"}"}],"stop_reason":"end_turn"}""";
+        var (model, _) = CreateModel([(HttpStatusCode.OK, reply)], nativeToolCalling: false);
+
+        var result = await model.CompleteAsync(new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], []));
+
+        Assert.Equal("done", result.TextResponse);
+        Assert.Equal("claude-test-x", result.Details!.ActualModel);
+        Assert.Equal(reply, result.Details.ResponseJson);
+    }
 }

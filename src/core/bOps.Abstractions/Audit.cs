@@ -167,6 +167,19 @@ public sealed record ModelCallAuditEvent : AuditEvent
 
     /// <summary>Token and cost accounting, when the provider reports it.</summary>
     public ModelUsage? Usage { get; init; }
+
+    /// <summary>
+    /// The model the provider reports having served, which can differ from <see cref="Model"/> (a router
+    /// such as <c>openrouter/free</c> picks one). <c>null</c> when the provider does not say, and then
+    /// omitted from the serialized event, so such an event is byte-identical to one written before this
+    /// field existed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActualModel { get; init; }
+
+    /// <summary>How long the call took, in milliseconds; <c>null</c> (and omitted) for an event written before it was measured.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? DurationMs { get; init; }
 }
 
 /// <summary>A policy decision was made for a tool call, whatever the outcome that followed.</summary>

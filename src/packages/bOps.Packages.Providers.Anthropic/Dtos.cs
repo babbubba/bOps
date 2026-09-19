@@ -84,6 +84,10 @@ internal sealed class ToolDto
 
 internal sealed class MessagesResponse
 {
+    /// <summary>The model the provider says served the call.</summary>
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
     [JsonPropertyName("content")]
     public required List<ContentBlockDto> Content { get; set; }
 

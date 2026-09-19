@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
@@ -57,7 +57,8 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
             Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(BuildToolDefinition).ToList(),
         };
 
-        var response = await SendAsync(payload, ct);
+        var completion = await SendAsync(payload, ct);
+        var response = completion.Body;
         var toolCalls = response.Content
             .Where(block => block.Type == "tool_use")
             .Select(block => new ModelToolCall(block.Id!, block.Name!, ToolArguments.FromJson(block.Input ?? new JsonObject())))
@@ -65,26 +66,35 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         var text = string.Concat(response.Content.Where(block => block.Type == "text").Select(block => block.Text));
 
         return new ModelResponse(
-            string.IsNullOrEmpty(text) ? null : text, toolCalls, toolCalls.Count == 0, MapUsage(response.Usage));
+            string.IsNullOrEmpty(text) ? null : text, toolCalls, toolCalls.Count == 0, MapUsage(response.Usage))
+        {
+            Details = completion.Details,
+        };
     }
 
     private async Task<ModelResponse> CompleteWithFallbackAsync(ModelRequest request, CancellationToken ct)
     {
         var system = BuildFallbackSystemPrompt(request);
         var messages = BuildMessages(request.History);
+        ModelCallDetails? lastDetails = null;
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var payload = new MessagesRequest { Model = options.Model, MaxTokens = MaxTokens, System = system, Messages = messages };
-            var response = await SendAsync(payload, ct);
+            var completion = await SendAsync(payload, ct);
+            var response = completion.Body;
             var text = string.Concat(response.Content.Where(block => block.Type == "text").Select(block => block.Text));
+            lastDetails = completion.Details;
 
             if (TryParseFallbackJson(text, out var parsed))
             {
                 var usage = MapUsage(response.Usage);
                 return parsed.IsFinal
-                    ? new ModelResponse(parsed.FinalText, [], true, usage)
-                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage);
+                    ? new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details }
+                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage)
+                    {
+                        Details = completion.Details,
+                    };
             }
 
             messages.Add(new AnthropicMessageDto { Role = "assistant", Content = [new ContentBlockDto { Type = "text", Text = text }] });
@@ -104,16 +114,24 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         }
 
         throw new ModelProtocolException(
-            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.");
+            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.")
+        {
+            Details = lastDetails,
+        };
     }
 
-    private async Task<MessagesResponse> SendAsync(MessagesRequest payload, CancellationToken ct)
+    /// <summary>A reply that parsed, with what was sent and received so the call can be understood afterwards.</summary>
+    private sealed record Completion(MessagesResponse Body, ModelCallDetails Details);
+
+    private async Task<Completion> SendAsync(MessagesRequest payload, CancellationToken ct)
     {
+        var requestJson = JsonSerializer.Serialize(payload, AnthropicJsonContext.Default.MessagesRequest);
+
         for (var attempt = 0; attempt < 3; attempt++)
         {
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/v1/messages")
             {
-                Content = JsonContent.Create(payload, AnthropicJsonContext.Default.MessagesRequest),
+                Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
             };
             httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
             if (!string.IsNullOrEmpty(options.ResolvedApiKey))
@@ -144,23 +162,42 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
                     continue;
                 }
 
+                var rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
+
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     throw new ModelProtocolException(
                         $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                        $"({httpResponse.StatusCode}) for the messages request.");
+                        $"({httpResponse.StatusCode}) for the messages request.")
+                    {
+                        Details = failedDetails,
+                    };
                 }
 
+                MessagesResponse? body;
                 try
                 {
-                    var body = await httpResponse.Content.ReadFromJsonAsync(AnthropicJsonContext.Default.MessagesResponse, ct);
-                    return body ?? throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.");
+                    body = JsonSerializer.Deserialize(rawBody, AnthropicJsonContext.Default.MessagesResponse);
                 }
                 catch (JsonException ex)
                 {
                     throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex);
+                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex)
+                    {
+                        Details = failedDetails,
+                    };
                 }
+
+                if (body is null)
+                {
+                    throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.")
+                    {
+                        Details = failedDetails,
+                    };
+                }
+
+                return new Completion(body, new ModelCallDetails(body.Model, body.StopReason, requestJson, rawBody));
             }
         }
 
