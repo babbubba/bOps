@@ -86,6 +86,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - ADR-0031 (Accepted) amends ADR-0030 §3 with a per-role table of required, optional and not-applicable
   envelope dimensions, and D-027 records the operator's three choices. Documentation only; no behaviour
   changes until V1.2-C implements it.
+- V1.2-C1 role profiles and envelope reduction (`bOps.Abstractions` `1.2.0-preview.2`, ADR-0031): the SDK
+  gains `RoleProfile` (a profile that grants a dimension its role cannot use is refused at construction),
+  `DelegationAuthorityRequest` (narrows only, never grants) and `IRoleProfileSource`; `EnvelopeDimension`
+  gains a trailing `Profile` value for a missing or malformed profile. The runtime gains an internal
+  `EnvelopeReducer` that derives the objective's root envelope and each role's envelope as
+  parent ∩ profile ∩ request under the per-role table. Nothing calls it yet: enforcement in
+  `ExecuteStepAsync` follows in V1.2-C2 and the `policy.yaml` loader in V1.2-C3.
 
 ### Changed
 

@@ -55,6 +55,13 @@ public enum EnvelopeDimension
 
     /// <summary>The absolute UTC instant by which the agent must be finished.</summary>
     Deadline,
+
+    /// <summary>
+    /// Not a field of the envelope: the role has no usable profile, because none is configured or the
+    /// configuration that would define it is malformed (ADR-0031 section 5). Delegation is refused.
+    /// Appended after the values persisted since <c>1.2.0-preview.1</c>, so none of them moves.
+    /// </summary>
+    Profile,
 }
 
 /// <summary>An interval of UTC time during which an agent may act, from <see cref="StartUtc"/> inclusive to <see cref="EndUtc"/> exclusive.</summary>
@@ -202,13 +209,13 @@ public sealed record AuthorityEnvelope
 
         this.Originator = Originator;
         this.Depth = Depth;
-        this.AllowedSkills = ValidateExact(AllowedSkills, nameof(AllowedSkills));
-        this.AllowedCapabilities = ValidateExact(AllowedCapabilities, nameof(AllowedCapabilities));
-        this.AllowedTools = ValidateExact(AllowedTools, nameof(AllowedTools));
+        this.AllowedSkills = EnvelopeMembers.ValidateExact(AllowedSkills, nameof(AllowedSkills));
+        this.AllowedCapabilities = EnvelopeMembers.ValidateExact(AllowedCapabilities, nameof(AllowedCapabilities));
+        this.AllowedTools = EnvelopeMembers.ValidateExact(AllowedTools, nameof(AllowedTools));
         this.MaxRisk = MaxRisk;
         this.MaxBlastRadius = MaxBlastRadius;
-        this.AllowedTargets = ValidateExact(AllowedTargets, nameof(AllowedTargets));
-        this.AllowedEnvironments = ValidateExact(AllowedEnvironments, nameof(AllowedEnvironments));
+        this.AllowedTargets = EnvelopeMembers.ValidateExact(AllowedTargets, nameof(AllowedTargets));
+        this.AllowedEnvironments = EnvelopeMembers.ValidateExact(AllowedEnvironments, nameof(AllowedEnvironments));
         this.Budget = Budget;
         this.Window = Window;
     }
@@ -245,11 +252,24 @@ public sealed record AuthorityEnvelope
 
     /// <summary>When the agent may act, or <c>null</c> for no time restriction beyond the budget's deadline.</summary>
     public MaintenanceWindow? Window { get; init; }
+}
 
-    private static IReadOnlyList<string> ValidateExact(IReadOnlyList<string> members, string parameterName)
+/// <summary>
+/// The one definition of an acceptable envelope member, shared by the envelope, a role profile and an
+/// authority request so the three cannot drift apart: an exact, unpadded, non-blank name (ADR-0025's
+/// exact-match posture) with no wildcard. It returns a read-only snapshot, not the list it was given: these
+/// contracts state authority and claim to be immutable values, so a list the caller keeps and edits after
+/// construction must not be able to widen what was validated or slip in a wildcard.
+/// </summary>
+internal static class EnvelopeMembers
+{
+    internal static IReadOnlyList<string> ValidateExact(IReadOnlyList<string> members, string parameterName)
     {
         ArgumentNullException.ThrowIfNull(members, parameterName);
-        foreach (var member in members)
+
+        // Copy first, then validate the copy, so nothing can change between the check and the use.
+        string[] snapshot = [.. members];
+        foreach (var member in snapshot)
         {
             if (string.IsNullOrWhiteSpace(member) || member.Trim().Length != member.Length)
             {
@@ -262,7 +282,7 @@ public sealed record AuthorityEnvelope
             }
         }
 
-        return members;
+        return Array.AsReadOnly(snapshot);
     }
 }
 

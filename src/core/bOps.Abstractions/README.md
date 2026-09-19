@@ -24,10 +24,12 @@ Skill runs are terminal and non-resumable; interruption requires a fresh prepara
 The V1.2 preview adds the contracts for delegating one objective among logical agents in a single
 process (ADR-0030): agent identity and roles, a reduce-only `AuthorityEnvelope`, a durable
 `DelegationRun` with a step journal and `IDelegationStore`, delegation audit events and an optional
-correlation block on every audit event. They are host-facing: a Tool or Skill package does not
-implement them and cannot grant itself authority through them, and `Evidence.Provenance` can be
-stamped only by the runtime. They are additive and unused until the runtime orchestrator ships later
-in V1.2.
+correlation block on every audit event. A host also describes what each role may do with a
+`RoleProfile` per role, narrows one objective with a `DelegationAuthorityRequest` (it can only
+narrow, never grant) and exposes its profiles through an `IRoleProfileSource` (ADR-0031). They are
+host-facing: a Tool or Skill package does not implement them and cannot grant itself authority
+through them, and `Evidence.Provenance` can be stamped only by the runtime. They are additive and
+unused until the runtime orchestrator ships later in V1.2.
 
 The 1.x public API follows Semantic Versioning. See the repository plugin guide and ADR-0022 for
 the package manifest, signing workflow, compatibility rules and security boundary. ADR-0023,
