@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.ObjectModel;
 using bOps.Abstractions;
 
 namespace bOps.Policy;
@@ -17,16 +18,21 @@ public sealed class PolicyConfig
     /// <param name="defaults">The mode to use for a risk level with no more specific entry.</param>
     /// <param name="toolOverrides">A mode for one specific tool by name, taking precedence over <paramref name="defaults"/>.</param>
     /// <param name="packageCeilings">The highest risk level a package's tools may reach, regardless of what the tool/risk-default decision says (rule S3: ceilings can only lower a decision, never raise it).</param>
+    /// <param name="skillRules">Exact contextual authorization rules for Skill-originated tool calls.</param>
+    /// <param name="roleProfiles">What each role of a delegated run may do (ADR-0031), at most one per role. Copied, so a list the caller edits afterwards changes nothing. Absent means none, which is delegation off.</param>
+    /// <exception cref="ArgumentException"><paramref name="roleProfiles"/> holds a null or two profiles for one role.</exception>
     public PolicyConfig(
         IReadOnlyDictionary<RiskLevel, PolicyMode> defaults,
         IReadOnlyDictionary<string, PolicyMode> toolOverrides,
         IReadOnlyDictionary<string, RiskLevel> packageCeilings,
-        IReadOnlyList<SkillPolicyRule>? skillRules = null)
+        IReadOnlyList<SkillPolicyRule>? skillRules = null,
+        IReadOnlyList<RoleProfile>? roleProfiles = null)
     {
         Defaults = defaults;
         ToolOverrides = toolOverrides;
         PackageCeilings = packageCeilings;
         SkillRules = skillRules ?? [];
+        RoleProfiles = SnapshotOfProfiles(roleProfiles);
     }
 
     /// <summary>The mode to use for a risk level with no more specific entry.</summary>
@@ -40,6 +46,13 @@ public sealed class PolicyConfig
 
     /// <summary>Exact contextual authorization rules for Skill-originated tool calls.</summary>
     public IReadOnlyList<SkillPolicyRule> SkillRules { get; }
+
+    /// <summary>
+    /// What each role of a delegated run may do, from the optional <c>delegation</c> section (ADR-0031 section 5).
+    /// Empty when none is configured, which is delegation off: a role without a profile is refused. Served to the
+    /// runtime through <see cref="PolicyRoleProfileSource"/>; the policy decision for a tool call never reads it.
+    /// </summary>
+    public IReadOnlyList<RoleProfile> RoleProfiles { get; }
 
     /// <summary>
     /// The built-in policy used when no <c>policy.yaml</c> file exists at all: Read/Low run
@@ -83,6 +96,31 @@ public sealed class PolicyConfig
         toolOverrides: new Dictionary<string, PolicyMode>(StringComparer.Ordinal),
         packageCeilings: new Dictionary<string, RiskLevel>(StringComparer.Ordinal),
         skillRules: []);
+
+    private static ReadOnlyCollection<RoleProfile> SnapshotOfProfiles(IReadOnlyList<RoleProfile>? roleProfiles)
+    {
+        if (roleProfiles is null)
+        {
+            return Array.AsReadOnly<RoleProfile>([]);
+        }
+
+        RoleProfile[] snapshot = [.. roleProfiles];
+        var roles = new HashSet<AgentRoleKind>();
+        foreach (var profile in snapshot)
+        {
+            if (profile is null)
+            {
+                throw new ArgumentException("A role profile must not be null.", nameof(roleProfiles));
+            }
+
+            if (!roles.Add(profile.Role))
+            {
+                throw new ArgumentException($"More than one profile for the {profile.Role} role.", nameof(roleProfiles));
+            }
+        }
+
+        return Array.AsReadOnly(snapshot);
+    }
 }
 
 /// <summary>One exact-match contextual rule for Skill-originated tool calls (ADR-0025).</summary>
