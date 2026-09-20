@@ -351,7 +351,7 @@ lock, missing UI install before the SBOM step) and produced no artifacts; it is 
 superseded. The artifacts are workflow artifacts, not a GitHub Release or a NuGet publication, and
 this is not yet a production endorsement.
 
-**V1.2 is a preview, not a stable release.** Delegated runs (`bops delegate`, `/api/delegations`, the dashboard's Delegations view) are
+**V1.2 is a preview, not a stable release** (tag `v1.2.0-preview.8`, published as a GitHub pre-release, run `35516050493`, not a NuGet publication). Delegated runs (`bops delegate`, `/api/delegations`, the dashboard's Delegations view) are
 implemented, each sub-task passed Windows and Linux CI, and the integration and release gate is closed (a real objective end to end with
 real tools, a crash and resume, and the frozen 1.0 surface kept by a permanent test). Treat the feature as a preview: the public SDK is
 `1.2.0-preview.8`, and what it does not do is stated in
