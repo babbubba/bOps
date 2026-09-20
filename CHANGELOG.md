@@ -158,6 +158,15 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   declares no verification but is not a Read): it counts as `Inconclusive`, so the confirmation of the other steps cannot
   stand for it (rule S4). The verdict of a plan with several steps is now covered as its own guarantee: the worst of its
   steps, and only `Confirmed` is a success. No SDK change.
+- V1.2-H audit correlation and provenance (`bOps.Abstractions` `1.2.0-preview.7`, additive, ADR-0030 section 8):
+  `DelegationLifecycleAuditEvent.EvidenceIds` lists, on a role's `RoleCompleted` event, the ids of the evidence that role itself
+  gathered (never what it says), so with the acting agent on the event's correlation block the chain from observation to
+  verdict, and who gathered each piece, can be rebuilt from the audit log alone. The rest of the section was already in place
+  and is now proven end to end: every audit event of a delegated run carries the block of that run, whichever of nine ways it
+  ends and across a resume and a reconciliation, and a run that is not delegated writes none; the whole run (roles, agents,
+  envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
+  envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
+  mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
 - Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
   runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
   `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`

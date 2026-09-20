@@ -53,6 +53,14 @@ public sealed record DelegationLifecycleAuditEvent : AuditEvent
     /// <summary>What the role consumed, for <see cref="DelegationStage.BudgetConsumed"/> and <see cref="DelegationStage.RoleCompleted"/>.</summary>
     public BudgetConsumption? Consumed { get; init; }
 
+    /// <summary>
+    /// The ids of the evidence this role itself gathered, for <see cref="DelegationStage.RoleCompleted"/> of a role that gathered any;
+    /// <c>null</c> otherwise. With the acting agent in <see cref="AuditEvent.Delegation"/> it says who gathered each piece of
+    /// evidence, so the chain from observation to verdict can be rebuilt from the audit log alone (ADR-0030 section 8). Ids only: what
+    /// the evidence says is never audited here. Evidence a role received from an earlier one is listed under the earlier role.
+    /// </summary>
+    public IReadOnlyList<string>? EvidenceIds { get; init; }
+
     /// <summary>A bounded failure explanation, absent otherwise.</summary>
     public string? ErrorMessage { get; init; }
 
