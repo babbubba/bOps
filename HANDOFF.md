@@ -252,7 +252,10 @@ V1.2-K is implemented: the Delegations view in `web/bops-ui` (`features/delegati
 methods for `/api/delegations`, a route and a nav entry with a badge for plans waiting). It polls every two seconds like the approval
 queue; buttons follow the role, the API decides. Strings are English literals: the multilingual UI task
 (`2026-09-19-ui-multilanguage-it-en.md`) has not landed, so this view's strings join the catalogues when it migrates the UI.
-Next action: V1.2-L (documentation and alignment)
+V1.2-L is implemented: `docs/agents/delegation.md`, `docs/agents/delegation-policy.md` (its yaml example is loaded by
+`DelegationPolicyGuideTests`, so it cannot drift from the loader), the threat-model section on the limits of the envelope, and the
+README, roadmap, bootstrap and task index aligned to "V1.2 A–L implemented, M open". Nothing is claimed as released.
+Next action: V1.2-M (integration and release gate). Do not tag or publish without separate operator authorization.
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 
