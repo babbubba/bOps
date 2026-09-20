@@ -1,0 +1,587 @@
+bOps.Abstractions.ActorIdentity | ctor(System.String, System.String, System.String)
+bOps.Abstractions.ActorIdentity | implements System.IEquatable`1<bOps.Abstractions.ActorIdentity>
+bOps.Abstractions.ActorIdentity | kind sealed class
+bOps.Abstractions.ActorIdentity | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ActorIdentity | method System.Boolean Equals(bOps.Abstractions.ActorIdentity)
+bOps.Abstractions.ActorIdentity | method System.Int32 GetHashCode()
+bOps.Abstractions.ActorIdentity | method System.String ToString()
+bOps.Abstractions.ActorIdentity | method System.Void Deconstruct(System.String&, System.String&, System.String&)
+bOps.Abstractions.ActorIdentity | method static bOps.Abstractions.ActorIdentity FromOperatingSystemUser(System.String)
+bOps.Abstractions.ActorIdentity | property System.String DisplayName() {get;set;}
+bOps.Abstractions.ActorIdentity | property System.String Id() {get;set;}
+bOps.Abstractions.ActorIdentity | property System.String Kind() {get;set;}
+bOps.Abstractions.ActorIdentity | property bOps.Abstractions.ActorIdentity RuntimeSystem() {get;}
+bOps.Abstractions.AgentPlan | ctor(System.Int32, System.String, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PlannedStep>)
+bOps.Abstractions.AgentPlan | implements System.IEquatable`1<bOps.Abstractions.AgentPlan>
+bOps.Abstractions.AgentPlan | kind sealed class
+bOps.Abstractions.AgentPlan | method System.Boolean Equals(System.Object)
+bOps.Abstractions.AgentPlan | method System.Boolean Equals(bOps.Abstractions.AgentPlan)
+bOps.Abstractions.AgentPlan | method System.Int32 GetHashCode()
+bOps.Abstractions.AgentPlan | method System.String ToString()
+bOps.Abstractions.AgentPlan | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PlannedStep> Steps() {get;set;}
+bOps.Abstractions.AgentPlan | property System.Int32 Revision() {get;set;}
+bOps.Abstractions.AgentPlan | property System.String Rationale() {get;set;}
+bOps.Abstractions.AgentTaskStatus | enum-value BudgetExceeded = 3
+bOps.Abstractions.AgentTaskStatus | enum-value Cancelled = 7
+bOps.Abstractions.AgentTaskStatus | enum-value Completed = 1
+bOps.Abstractions.AgentTaskStatus | enum-value Failed = 6
+bOps.Abstractions.AgentTaskStatus | enum-value MaxStepsReached = 2
+bOps.Abstractions.AgentTaskStatus | enum-value PolicyBlocked = 4
+bOps.Abstractions.AgentTaskStatus | enum-value ReplanLimitReached = 5
+bOps.Abstractions.AgentTaskStatus | enum-value Running = 0
+bOps.Abstractions.AgentTaskStatus | field System.Int32 value__
+bOps.Abstractions.AgentTaskStatus | implements System.IComparable
+bOps.Abstractions.AgentTaskStatus | implements System.IConvertible
+bOps.Abstractions.AgentTaskStatus | implements System.IFormattable
+bOps.Abstractions.AgentTaskStatus | implements System.ISpanFormattable
+bOps.Abstractions.AgentTaskStatus | kind enum
+bOps.Abstractions.ApprovalAuditEvent | base bOps.Abstractions.AuditEvent
+bOps.Abstractions.ApprovalAuditEvent | ctor()
+bOps.Abstractions.ApprovalAuditEvent | implements System.IEquatable`1<bOps.Abstractions.ApprovalAuditEvent>
+bOps.Abstractions.ApprovalAuditEvent | implements System.IEquatable`1<bOps.Abstractions.AuditEvent>
+bOps.Abstractions.ApprovalAuditEvent | kind sealed class
+bOps.Abstractions.ApprovalAuditEvent | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ApprovalAuditEvent | method System.Boolean Equals(bOps.Abstractions.ApprovalAuditEvent)
+bOps.Abstractions.ApprovalAuditEvent | method System.Boolean Equals(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.ApprovalAuditEvent | method System.Boolean PrintMembers(System.Text.StringBuilder)
+bOps.Abstractions.ApprovalAuditEvent | method System.Int32 GetHashCode()
+bOps.Abstractions.ApprovalAuditEvent | method System.String ToString()
+bOps.Abstractions.ApprovalAuditEvent | property System.Boolean Approved() {get;set;}
+bOps.Abstractions.ApprovalAuditEvent | property System.String Note() {get;set;}
+bOps.Abstractions.ApprovalAuditEvent | property System.String Tool() {get;set;}
+bOps.Abstractions.ApprovalAuditEvent | property System.Type EqualityContract() {get;}
+bOps.Abstractions.ApprovalAuditEvent | property bOps.Abstractions.ActorIdentity Approver() {get;set;}
+bOps.Abstractions.ApprovalAuditEvent | property bOps.Abstractions.PackageId Package() {get;set;}
+bOps.Abstractions.ApprovalDecision | ctor(System.Boolean, bOps.Abstractions.ActorIdentity, System.String)
+bOps.Abstractions.ApprovalDecision | implements System.IEquatable`1<bOps.Abstractions.ApprovalDecision>
+bOps.Abstractions.ApprovalDecision | kind sealed class
+bOps.Abstractions.ApprovalDecision | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ApprovalDecision | method System.Boolean Equals(bOps.Abstractions.ApprovalDecision)
+bOps.Abstractions.ApprovalDecision | method System.Int32 GetHashCode()
+bOps.Abstractions.ApprovalDecision | method System.String ToString()
+bOps.Abstractions.ApprovalDecision | property System.Boolean Approved() {get;set;}
+bOps.Abstractions.ApprovalDecision | property System.String Note() {get;set;}
+bOps.Abstractions.ApprovalDecision | property bOps.Abstractions.ActorIdentity Actor() {get;set;}
+bOps.Abstractions.AuditEvent | ctor()
+bOps.Abstractions.AuditEvent | ctor(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.AuditEvent | implements System.IEquatable`1<bOps.Abstractions.AuditEvent>
+bOps.Abstractions.AuditEvent | kind abstract class
+bOps.Abstractions.AuditEvent | method System.Boolean Equals(System.Object)
+bOps.Abstractions.AuditEvent | method System.Boolean Equals(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.AuditEvent | method System.Boolean PrintMembers(System.Text.StringBuilder)
+bOps.Abstractions.AuditEvent | method System.Int32 GetHashCode()
+bOps.Abstractions.AuditEvent | method System.String ToString()
+bOps.Abstractions.AuditEvent | property System.DateTimeOffset TimestampUtc() {get;set;}
+bOps.Abstractions.AuditEvent | property System.Guid TaskId() {get;set;}
+bOps.Abstractions.AuditEvent | property System.Int32 StepIndex() {get;set;}
+bOps.Abstractions.AuditEvent | property System.Type EqualityContract() {get;}
+bOps.Abstractions.AuditEvent | property bOps.Abstractions.ActorIdentity Actor() {get;set;}
+bOps.Abstractions.AuditEvent | property bOps.Abstractions.NodeId Node() {get;set;}
+bOps.Abstractions.AuthorizationKind | enum-value Automatic = 0
+bOps.Abstractions.AuthorizationKind | enum-value PolicyDenied = 3
+bOps.Abstractions.AuthorizationKind | enum-value UnknownTool = 4
+bOps.Abstractions.AuthorizationKind | enum-value UserApproved = 1
+bOps.Abstractions.AuthorizationKind | enum-value UserRejected = 2
+bOps.Abstractions.AuthorizationKind | field System.Int32 value__
+bOps.Abstractions.AuthorizationKind | implements System.IComparable
+bOps.Abstractions.AuthorizationKind | implements System.IConvertible
+bOps.Abstractions.AuthorizationKind | implements System.IFormattable
+bOps.Abstractions.AuthorizationKind | implements System.ISpanFormattable
+bOps.Abstractions.AuthorizationKind | kind enum
+bOps.Abstractions.ChatModelDescriptor | ctor(System.String, System.String)
+bOps.Abstractions.ChatModelDescriptor | implements System.IEquatable`1<bOps.Abstractions.ChatModelDescriptor>
+bOps.Abstractions.ChatModelDescriptor | kind sealed class
+bOps.Abstractions.ChatModelDescriptor | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ChatModelDescriptor | method System.Boolean Equals(bOps.Abstractions.ChatModelDescriptor)
+bOps.Abstractions.ChatModelDescriptor | method System.Int32 GetHashCode()
+bOps.Abstractions.ChatModelDescriptor | method System.String ToString()
+bOps.Abstractions.ChatModelDescriptor | property System.String ModelId() {get;set;}
+bOps.Abstractions.ChatModelDescriptor | property System.String ProviderId() {get;set;}
+bOps.Abstractions.ChatModelOptions | ctor(System.String, System.String, bOps.Abstractions.SecretReference, System.String, System.Boolean)
+bOps.Abstractions.ChatModelOptions | kind sealed class
+bOps.Abstractions.ChatModelOptions | method System.String ToString()
+bOps.Abstractions.ChatModelOptions | property System.Boolean SupportsNativeToolCalling() {get;set;}
+bOps.Abstractions.ChatModelOptions | property System.String BaseUrl() {get;set;}
+bOps.Abstractions.ChatModelOptions | property System.String Model() {get;set;}
+bOps.Abstractions.ChatModelOptions | property System.String Provider() {get;set;}
+bOps.Abstractions.ChatModelOptions | property System.String ResolvedApiKey() {get;set;}
+bOps.Abstractions.ChatModelOptions | property bOps.Abstractions.SecretReference ApiKeySecret() {get;set;}
+bOps.Abstractions.ChatRole | enum-value Assistant = 2
+bOps.Abstractions.ChatRole | enum-value System = 0
+bOps.Abstractions.ChatRole | enum-value Tool = 3
+bOps.Abstractions.ChatRole | enum-value User = 1
+bOps.Abstractions.ChatRole | field System.Int32 value__
+bOps.Abstractions.ChatRole | implements System.IComparable
+bOps.Abstractions.ChatRole | implements System.IConvertible
+bOps.Abstractions.ChatRole | implements System.IFormattable
+bOps.Abstractions.ChatRole | implements System.ISpanFormattable
+bOps.Abstractions.ChatRole | kind enum
+bOps.Abstractions.ChatTurn | ctor()
+bOps.Abstractions.ChatTurn | implements System.IEquatable`1<bOps.Abstractions.ChatTurn>
+bOps.Abstractions.ChatTurn | kind sealed class
+bOps.Abstractions.ChatTurn | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ChatTurn | method System.Boolean Equals(bOps.Abstractions.ChatTurn)
+bOps.Abstractions.ChatTurn | method System.Int32 GetHashCode()
+bOps.Abstractions.ChatTurn | method System.String ToString()
+bOps.Abstractions.ChatTurn | method static bOps.Abstractions.ChatTurn FromAssistantText(System.String)
+bOps.Abstractions.ChatTurn | method static bOps.Abstractions.ChatTurn FromAssistantToolCalls(System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ModelToolCall>)
+bOps.Abstractions.ChatTurn | method static bOps.Abstractions.ChatTurn FromSystem(System.String)
+bOps.Abstractions.ChatTurn | method static bOps.Abstractions.ChatTurn FromToolResult(System.String, System.String)
+bOps.Abstractions.ChatTurn | method static bOps.Abstractions.ChatTurn FromUser(System.String)
+bOps.Abstractions.ChatTurn | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ModelToolCall> ToolCalls() {get;set;}
+bOps.Abstractions.ChatTurn | property System.String Content() {get;set;}
+bOps.Abstractions.ChatTurn | property System.String ToolCallId() {get;set;}
+bOps.Abstractions.ChatTurn | property bOps.Abstractions.ChatRole Role() {get;set;}
+bOps.Abstractions.IApprovalProvider | kind interface
+bOps.Abstractions.IApprovalProvider | method fixed System.Threading.Tasks.Task`1<bOps.Abstractions.ApprovalDecision> RequestApprovalAsync(bOps.Abstractions.ToolManifest, bOps.Abstractions.ToolArguments, bOps.Abstractions.VerificationSpec, System.String, System.Threading.CancellationToken)
+bOps.Abstractions.IAuditSink | kind interface
+bOps.Abstractions.IAuditSink | method fixed System.Threading.Tasks.Task WriteAsync(bOps.Abstractions.AuditEvent, System.Threading.CancellationToken)
+bOps.Abstractions.ICapabilityProbe | kind interface
+bOps.Abstractions.ICapabilityProbe | method fixed System.Threading.Tasks.Task`1<System.Boolean> IsAvailableAsync(System.String, System.Threading.CancellationToken)
+bOps.Abstractions.IChatModel | kind interface
+bOps.Abstractions.IChatModel | method fixed System.Threading.Tasks.Task`1<bOps.Abstractions.ModelResponse> CompleteAsync(bOps.Abstractions.ModelRequest, System.Threading.CancellationToken)
+bOps.Abstractions.IChatModel | property bOps.Abstractions.ChatModelDescriptor Descriptor() {get;}
+bOps.Abstractions.IChatModelRegistry | kind interface
+bOps.Abstractions.IChatModelRegistry | method fixed System.Void Register(bOps.Abstractions.PackageId, bOps.Abstractions.IModelProviderPackage)
+bOps.Abstractions.IChatModelRegistry | method fixed bOps.Abstractions.IChatModel Create(bOps.Abstractions.ChatModelOptions)
+bOps.Abstractions.IChatModelRegistry | property System.Collections.Generic.IReadOnlyList`1<System.String> RegisteredProviderIds() {get;}
+bOps.Abstractions.IModelProviderPackage | kind interface
+bOps.Abstractions.IModelProviderPackage | method fixed bOps.Abstractions.IChatModel Create(bOps.Abstractions.ChatModelOptions)
+bOps.Abstractions.IModelProviderPackage | property System.Collections.Generic.IReadOnlyList`1<System.String> SupportedProviderIds() {get;}
+bOps.Abstractions.IPolicyEngine | kind interface
+bOps.Abstractions.IPolicyEngine | method fixed bOps.Abstractions.PolicyDecision Evaluate(bOps.Abstractions.PolicyContext)
+bOps.Abstractions.ISecretProvider | kind interface
+bOps.Abstractions.ISecretProvider | method fixed System.String GetSecret(bOps.Abstractions.SecretReference)
+bOps.Abstractions.ITaskStore | kind interface
+bOps.Abstractions.ITaskStore | method fixed System.Threading.Tasks.Task SaveAsync(bOps.Abstractions.TaskState, System.Threading.CancellationToken)
+bOps.Abstractions.ITaskStore | method fixed System.Threading.Tasks.Task`1<System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.TaskState>> ListByStatusAsync(bOps.Abstractions.AgentTaskStatus, System.Threading.CancellationToken)
+bOps.Abstractions.ITaskStore | method fixed System.Threading.Tasks.Task`1<bOps.Abstractions.TaskState> LoadAsync(System.Guid, System.Threading.CancellationToken)
+bOps.Abstractions.ITool | kind interface
+bOps.Abstractions.ITool | method fixed System.Threading.Tasks.Task`1<bOps.Abstractions.ToolCallResult> ExecuteAsync(bOps.Abstractions.ToolArguments, System.Threading.CancellationToken)
+bOps.Abstractions.ITool | property bOps.Abstractions.ToolManifest Manifest() {get;}
+bOps.Abstractions.IToolProvider | kind interface
+bOps.Abstractions.IToolProvider | method fixed System.Collections.Generic.IEnumerable`1<bOps.Abstractions.ITool> GetTools()
+bOps.Abstractions.IToolRegistry | kind interface
+bOps.Abstractions.IToolRegistry | method fixed System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ToolManifest> GetAvailableManifests()
+bOps.Abstractions.IToolRegistry | method fixed System.Threading.Tasks.Task RefreshCapabilitiesAsync(System.Threading.CancellationToken)
+bOps.Abstractions.IToolRegistry | method fixed System.Void Register(bOps.Abstractions.PackageId, bOps.Abstractions.ITool)
+bOps.Abstractions.IToolRegistry | method fixed System.Void Register(bOps.Abstractions.PackageId, bOps.Abstractions.PackageTrustLevel, bOps.Abstractions.ITool)
+bOps.Abstractions.IToolRegistry | method fixed System.Void SetEnabled(bOps.Abstractions.PackageId, System.Boolean)
+bOps.Abstractions.IToolRegistry | method fixed System.Void Unregister(bOps.Abstractions.PackageId)
+bOps.Abstractions.IToolRegistry | method fixed bOps.Abstractions.ITool Resolve(System.String)
+bOps.Abstractions.IToolRegistry | method fixed bOps.Abstractions.PackageTrustLevel GetTrust(bOps.Abstractions.PackageId)
+bOps.Abstractions.IVerifiableTool | implements bOps.Abstractions.ITool
+bOps.Abstractions.IVerifiableTool | kind interface
+bOps.Abstractions.IVerifiableTool | method fixed System.Threading.Tasks.Task`1<bOps.Abstractions.VerificationOutcome> EvaluateVerificationAsync(bOps.Abstractions.ToolArguments, bOps.Abstractions.ToolCallResult, System.Threading.CancellationToken)
+bOps.Abstractions.ModelCallAuditEvent | base bOps.Abstractions.AuditEvent
+bOps.Abstractions.ModelCallAuditEvent | ctor()
+bOps.Abstractions.ModelCallAuditEvent | implements System.IEquatable`1<bOps.Abstractions.AuditEvent>
+bOps.Abstractions.ModelCallAuditEvent | implements System.IEquatable`1<bOps.Abstractions.ModelCallAuditEvent>
+bOps.Abstractions.ModelCallAuditEvent | kind sealed class
+bOps.Abstractions.ModelCallAuditEvent | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ModelCallAuditEvent | method System.Boolean Equals(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.ModelCallAuditEvent | method System.Boolean Equals(bOps.Abstractions.ModelCallAuditEvent)
+bOps.Abstractions.ModelCallAuditEvent | method System.Boolean PrintMembers(System.Text.StringBuilder)
+bOps.Abstractions.ModelCallAuditEvent | method System.Int32 GetHashCode()
+bOps.Abstractions.ModelCallAuditEvent | method System.String ToString()
+bOps.Abstractions.ModelCallAuditEvent | property System.String ErrorMessage() {get;set;}
+bOps.Abstractions.ModelCallAuditEvent | property System.String Model() {get;set;}
+bOps.Abstractions.ModelCallAuditEvent | property System.String Provider() {get;set;}
+bOps.Abstractions.ModelCallAuditEvent | property System.Type EqualityContract() {get;}
+bOps.Abstractions.ModelCallAuditEvent | property bOps.Abstractions.ModelCallOutcome Outcome() {get;set;}
+bOps.Abstractions.ModelCallAuditEvent | property bOps.Abstractions.ModelUsage Usage() {get;set;}
+bOps.Abstractions.ModelCallOutcome | enum-value Failure = 1
+bOps.Abstractions.ModelCallOutcome | enum-value Success = 0
+bOps.Abstractions.ModelCallOutcome | field System.Int32 value__
+bOps.Abstractions.ModelCallOutcome | implements System.IComparable
+bOps.Abstractions.ModelCallOutcome | implements System.IConvertible
+bOps.Abstractions.ModelCallOutcome | implements System.IFormattable
+bOps.Abstractions.ModelCallOutcome | implements System.ISpanFormattable
+bOps.Abstractions.ModelCallOutcome | kind enum
+bOps.Abstractions.ModelProtocolException | base System.Exception
+bOps.Abstractions.ModelProtocolException | ctor()
+bOps.Abstractions.ModelProtocolException | ctor(System.String)
+bOps.Abstractions.ModelProtocolException | ctor(System.String, System.Exception)
+bOps.Abstractions.ModelProtocolException | implements System.Runtime.Serialization.ISerializable
+bOps.Abstractions.ModelProtocolException | kind sealed class
+bOps.Abstractions.ModelRequest | ctor(System.String, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ChatTurn>, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ToolManifest>)
+bOps.Abstractions.ModelRequest | implements System.IEquatable`1<bOps.Abstractions.ModelRequest>
+bOps.Abstractions.ModelRequest | kind sealed class
+bOps.Abstractions.ModelRequest | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ModelRequest | method System.Boolean Equals(bOps.Abstractions.ModelRequest)
+bOps.Abstractions.ModelRequest | method System.Int32 GetHashCode()
+bOps.Abstractions.ModelRequest | method System.String ToString()
+bOps.Abstractions.ModelRequest | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ChatTurn> History() {get;set;}
+bOps.Abstractions.ModelRequest | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ToolManifest> AvailableTools() {get;set;}
+bOps.Abstractions.ModelRequest | property System.String SystemPrompt() {get;set;}
+bOps.Abstractions.ModelResponse | ctor(System.String, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ModelToolCall>, System.Boolean, bOps.Abstractions.ModelUsage)
+bOps.Abstractions.ModelResponse | implements System.IEquatable`1<bOps.Abstractions.ModelResponse>
+bOps.Abstractions.ModelResponse | kind sealed class
+bOps.Abstractions.ModelResponse | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ModelResponse | method System.Boolean Equals(bOps.Abstractions.ModelResponse)
+bOps.Abstractions.ModelResponse | method System.Int32 GetHashCode()
+bOps.Abstractions.ModelResponse | method System.String ToString()
+bOps.Abstractions.ModelResponse | property System.Boolean IsFinal() {get;set;}
+bOps.Abstractions.ModelResponse | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ModelToolCall> ToolCalls() {get;set;}
+bOps.Abstractions.ModelResponse | property System.String TextResponse() {get;set;}
+bOps.Abstractions.ModelResponse | property bOps.Abstractions.ModelUsage Usage() {get;set;}
+bOps.Abstractions.ModelToolCall | ctor(System.String, System.String, bOps.Abstractions.ToolArguments)
+bOps.Abstractions.ModelToolCall | implements System.IEquatable`1<bOps.Abstractions.ModelToolCall>
+bOps.Abstractions.ModelToolCall | kind sealed class
+bOps.Abstractions.ModelToolCall | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ModelToolCall | method System.Boolean Equals(bOps.Abstractions.ModelToolCall)
+bOps.Abstractions.ModelToolCall | method System.Int32 GetHashCode()
+bOps.Abstractions.ModelToolCall | method System.String ToString()
+bOps.Abstractions.ModelToolCall | property System.String Id() {get;set;}
+bOps.Abstractions.ModelToolCall | property System.String ToolName() {get;set;}
+bOps.Abstractions.ModelToolCall | property bOps.Abstractions.ToolArguments Arguments() {get;set;}
+bOps.Abstractions.ModelUsage | ctor(System.Int32, System.Int32, System.Nullable`1<System.Decimal>)
+bOps.Abstractions.ModelUsage | implements System.IEquatable`1<bOps.Abstractions.ModelUsage>
+bOps.Abstractions.ModelUsage | kind sealed class
+bOps.Abstractions.ModelUsage | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ModelUsage | method System.Boolean Equals(bOps.Abstractions.ModelUsage)
+bOps.Abstractions.ModelUsage | method System.Int32 GetHashCode()
+bOps.Abstractions.ModelUsage | method System.String ToString()
+bOps.Abstractions.ModelUsage | property System.Int32 CompletionTokens() {get;set;}
+bOps.Abstractions.ModelUsage | property System.Int32 PromptTokens() {get;set;}
+bOps.Abstractions.ModelUsage | property System.Nullable`1<System.Decimal> EstimatedCostUsd() {get;set;}
+bOps.Abstractions.NodeId | ctor(System.String)
+bOps.Abstractions.NodeId | implements System.IEquatable`1<bOps.Abstractions.NodeId>
+bOps.Abstractions.NodeId | kind struct
+bOps.Abstractions.NodeId | method System.Boolean Equals(System.Object)
+bOps.Abstractions.NodeId | method System.Boolean Equals(bOps.Abstractions.NodeId)
+bOps.Abstractions.NodeId | method System.Int32 GetHashCode()
+bOps.Abstractions.NodeId | method System.String ToString()
+bOps.Abstractions.NodeId | method System.Void Deconstruct(System.String&)
+bOps.Abstractions.NodeId | property System.String Value() {get;set;}
+bOps.Abstractions.NodeId | property bOps.Abstractions.NodeId Local() {get;}
+bOps.Abstractions.NodeIdJsonConverter | base System.Text.Json.Serialization.JsonConverter`1<bOps.Abstractions.NodeId>
+bOps.Abstractions.NodeIdJsonConverter | ctor()
+bOps.Abstractions.NodeIdJsonConverter | kind sealed class
+bOps.Abstractions.NodeIdJsonConverter | method System.Void Write(System.Text.Json.Utf8JsonWriter, bOps.Abstractions.NodeId, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.NodeIdJsonConverter | method bOps.Abstractions.NodeId Read(System.Text.Json.Utf8JsonReader&, System.Type, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.PackageId | ctor(System.String)
+bOps.Abstractions.PackageId | implements System.IEquatable`1<bOps.Abstractions.PackageId>
+bOps.Abstractions.PackageId | kind struct
+bOps.Abstractions.PackageId | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PackageId | method System.Boolean Equals(bOps.Abstractions.PackageId)
+bOps.Abstractions.PackageId | method System.Int32 GetHashCode()
+bOps.Abstractions.PackageId | method System.String ToString()
+bOps.Abstractions.PackageId | method System.Void Deconstruct(System.String&)
+bOps.Abstractions.PackageId | property System.String Value() {get;set;}
+bOps.Abstractions.PackageId | property bOps.Abstractions.PackageId Unknown() {get;}
+bOps.Abstractions.PackageIdJsonConverter | base System.Text.Json.Serialization.JsonConverter`1<bOps.Abstractions.PackageId>
+bOps.Abstractions.PackageIdJsonConverter | ctor()
+bOps.Abstractions.PackageIdJsonConverter | kind sealed class
+bOps.Abstractions.PackageIdJsonConverter | method System.Void Write(System.Text.Json.Utf8JsonWriter, bOps.Abstractions.PackageId, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.PackageIdJsonConverter | method bOps.Abstractions.PackageId Read(System.Text.Json.Utf8JsonReader&, System.Type, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.PackageTrustLevel | enum-value Community = 1
+bOps.Abstractions.PackageTrustLevel | enum-value Official = 3
+bOps.Abstractions.PackageTrustLevel | enum-value Unverified = 0
+bOps.Abstractions.PackageTrustLevel | enum-value Verified = 2
+bOps.Abstractions.PackageTrustLevel | field System.Int32 value__
+bOps.Abstractions.PackageTrustLevel | implements System.IComparable
+bOps.Abstractions.PackageTrustLevel | implements System.IConvertible
+bOps.Abstractions.PackageTrustLevel | implements System.IFormattable
+bOps.Abstractions.PackageTrustLevel | implements System.ISpanFormattable
+bOps.Abstractions.PackageTrustLevel | kind enum
+bOps.Abstractions.PlanStep | ctor(System.Int32, System.String, bOps.Abstractions.ModelToolCall, bOps.Abstractions.ToolCallResult, System.String, System.Nullable`1<System.Int32>)
+bOps.Abstractions.PlanStep | implements System.IEquatable`1<bOps.Abstractions.PlanStep>
+bOps.Abstractions.PlanStep | kind sealed class
+bOps.Abstractions.PlanStep | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PlanStep | method System.Boolean Equals(bOps.Abstractions.PlanStep)
+bOps.Abstractions.PlanStep | method System.Int32 GetHashCode()
+bOps.Abstractions.PlanStep | method System.String ToString()
+bOps.Abstractions.PlanStep | property System.Int32 Index() {get;set;}
+bOps.Abstractions.PlanStep | property System.Nullable`1<System.Int32> PlanRevision() {get;set;}
+bOps.Abstractions.PlanStep | property System.String Description() {get;set;}
+bOps.Abstractions.PlanStep | property System.String Observation() {get;set;}
+bOps.Abstractions.PlanStep | property bOps.Abstractions.ModelToolCall ToolCall() {get;set;}
+bOps.Abstractions.PlanStep | property bOps.Abstractions.ToolCallResult Result() {get;set;}
+bOps.Abstractions.PlannedStep | ctor(System.Int32, System.String, System.String)
+bOps.Abstractions.PlannedStep | implements System.IEquatable`1<bOps.Abstractions.PlannedStep>
+bOps.Abstractions.PlannedStep | kind sealed class
+bOps.Abstractions.PlannedStep | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PlannedStep | method System.Boolean Equals(bOps.Abstractions.PlannedStep)
+bOps.Abstractions.PlannedStep | method System.Int32 GetHashCode()
+bOps.Abstractions.PlannedStep | method System.String ToString()
+bOps.Abstractions.PlannedStep | property System.Int32 Index() {get;set;}
+bOps.Abstractions.PlannedStep | property System.String Description() {get;set;}
+bOps.Abstractions.PlannedStep | property System.String ExpectedTool() {get;set;}
+bOps.Abstractions.PluginDependency | ctor(System.String, System.String)
+bOps.Abstractions.PluginDependency | implements System.IEquatable`1<bOps.Abstractions.PluginDependency>
+bOps.Abstractions.PluginDependency | kind sealed class
+bOps.Abstractions.PluginDependency | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PluginDependency | method System.Boolean Equals(bOps.Abstractions.PluginDependency)
+bOps.Abstractions.PluginDependency | method System.Int32 GetHashCode()
+bOps.Abstractions.PluginDependency | method System.String ToString()
+bOps.Abstractions.PluginDependency | method System.Void Deconstruct(System.String&, System.String&)
+bOps.Abstractions.PluginDependency | property System.String Name() {get;set;}
+bOps.Abstractions.PluginDependency | property System.String Version() {get;set;}
+bOps.Abstractions.PluginManifest | ctor(System.Int32, System.String, System.String, System.String, System.String, System.String, System.String, System.Collections.Generic.IReadOnlyList`1<System.String>, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PluginDependency>, System.Nullable`1<bOps.Abstractions.RiskLevel>)
+bOps.Abstractions.PluginManifest | implements System.IEquatable`1<bOps.Abstractions.PluginManifest>
+bOps.Abstractions.PluginManifest | kind sealed class
+bOps.Abstractions.PluginManifest | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PluginManifest | method System.Boolean Equals(bOps.Abstractions.PluginManifest)
+bOps.Abstractions.PluginManifest | method System.Int32 GetHashCode()
+bOps.Abstractions.PluginManifest | method System.String ToString()
+bOps.Abstractions.PluginManifest | method System.Void Deconstruct(System.Int32&, System.String&, System.String&, System.String&, System.String&, System.String&, System.String&, System.Collections.Generic.IReadOnlyList`1<System.String>&, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PluginDependency>&, System.Nullable`1<bOps.Abstractions.RiskLevel>&)
+bOps.Abstractions.PluginManifest | property System.Collections.Generic.IReadOnlyList`1<System.String> DeclaredCapabilities() {get;set;}
+bOps.Abstractions.PluginManifest | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PluginDependency> Dependencies() {get;set;}
+bOps.Abstractions.PluginManifest | property System.Int32 SchemaVersion() {get;set;}
+bOps.Abstractions.PluginManifest | property System.Nullable`1<bOps.Abstractions.RiskLevel> MaxDeclaredRisk() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String EntryAssembly() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String EntryType() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String Id() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String MinHostAbstractionsVersion() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String Publisher() {get;set;}
+bOps.Abstractions.PluginManifest | property System.String Version() {get;set;}
+bOps.Abstractions.PolicyContext | ctor(bOps.Abstractions.NodeId, bOps.Abstractions.PackageId, bOps.Abstractions.PackageTrustLevel, bOps.Abstractions.ToolManifest, bOps.Abstractions.ToolArguments, bOps.Abstractions.ActorIdentity)
+bOps.Abstractions.PolicyContext | implements System.IEquatable`1<bOps.Abstractions.PolicyContext>
+bOps.Abstractions.PolicyContext | kind sealed class
+bOps.Abstractions.PolicyContext | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PolicyContext | method System.Boolean Equals(bOps.Abstractions.PolicyContext)
+bOps.Abstractions.PolicyContext | method System.Int32 GetHashCode()
+bOps.Abstractions.PolicyContext | method System.String ToString()
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.ActorIdentity Actor() {get;set;}
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.NodeId Node() {get;set;}
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.PackageId Package() {get;set;}
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.PackageTrustLevel Trust() {get;set;}
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.ToolArguments Arguments() {get;set;}
+bOps.Abstractions.PolicyContext | property bOps.Abstractions.ToolManifest Manifest() {get;set;}
+bOps.Abstractions.PolicyDecision | ctor(bOps.Abstractions.PolicyMode, System.String)
+bOps.Abstractions.PolicyDecision | implements System.IEquatable`1<bOps.Abstractions.PolicyDecision>
+bOps.Abstractions.PolicyDecision | kind sealed class
+bOps.Abstractions.PolicyDecision | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PolicyDecision | method System.Boolean Equals(bOps.Abstractions.PolicyDecision)
+bOps.Abstractions.PolicyDecision | method System.Int32 GetHashCode()
+bOps.Abstractions.PolicyDecision | method System.String ToString()
+bOps.Abstractions.PolicyDecision | property System.String Reason() {get;set;}
+bOps.Abstractions.PolicyDecision | property bOps.Abstractions.PolicyMode Mode() {get;set;}
+bOps.Abstractions.PolicyDecisionAuditEvent | base bOps.Abstractions.AuditEvent
+bOps.Abstractions.PolicyDecisionAuditEvent | ctor()
+bOps.Abstractions.PolicyDecisionAuditEvent | implements System.IEquatable`1<bOps.Abstractions.AuditEvent>
+bOps.Abstractions.PolicyDecisionAuditEvent | implements System.IEquatable`1<bOps.Abstractions.PolicyDecisionAuditEvent>
+bOps.Abstractions.PolicyDecisionAuditEvent | kind sealed class
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.Boolean Equals(System.Object)
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.Boolean Equals(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.Boolean Equals(bOps.Abstractions.PolicyDecisionAuditEvent)
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.Boolean PrintMembers(System.Text.StringBuilder)
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.Int32 GetHashCode()
+bOps.Abstractions.PolicyDecisionAuditEvent | method System.String ToString()
+bOps.Abstractions.PolicyDecisionAuditEvent | property System.String Reason() {get;set;}
+bOps.Abstractions.PolicyDecisionAuditEvent | property System.String Tool() {get;set;}
+bOps.Abstractions.PolicyDecisionAuditEvent | property System.Type EqualityContract() {get;}
+bOps.Abstractions.PolicyDecisionAuditEvent | property bOps.Abstractions.PackageId Package() {get;set;}
+bOps.Abstractions.PolicyDecisionAuditEvent | property bOps.Abstractions.PolicyMode Mode() {get;set;}
+bOps.Abstractions.PolicyMode | enum-value Approval = 1
+bOps.Abstractions.PolicyMode | enum-value Automatic = 0
+bOps.Abstractions.PolicyMode | enum-value Forbidden = 2
+bOps.Abstractions.PolicyMode | field System.Int32 value__
+bOps.Abstractions.PolicyMode | implements System.IComparable
+bOps.Abstractions.PolicyMode | implements System.IConvertible
+bOps.Abstractions.PolicyMode | implements System.IFormattable
+bOps.Abstractions.PolicyMode | implements System.ISpanFormattable
+bOps.Abstractions.PolicyMode | kind enum
+bOps.Abstractions.ProviderNotSupportedException | base System.Exception
+bOps.Abstractions.ProviderNotSupportedException | ctor()
+bOps.Abstractions.ProviderNotSupportedException | ctor(System.String)
+bOps.Abstractions.ProviderNotSupportedException | ctor(System.String, System.Exception)
+bOps.Abstractions.ProviderNotSupportedException | implements System.Runtime.Serialization.ISerializable
+bOps.Abstractions.ProviderNotSupportedException | kind sealed class
+bOps.Abstractions.ProviderNotSupportedException | property System.String ProviderId() {get;}
+bOps.Abstractions.RiskLevel | enum-value Critical = 4
+bOps.Abstractions.RiskLevel | enum-value High = 3
+bOps.Abstractions.RiskLevel | enum-value Low = 1
+bOps.Abstractions.RiskLevel | enum-value Medium = 2
+bOps.Abstractions.RiskLevel | enum-value Read = 0
+bOps.Abstractions.RiskLevel | field System.Int32 value__
+bOps.Abstractions.RiskLevel | implements System.IComparable
+bOps.Abstractions.RiskLevel | implements System.IConvertible
+bOps.Abstractions.RiskLevel | implements System.IFormattable
+bOps.Abstractions.RiskLevel | implements System.ISpanFormattable
+bOps.Abstractions.RiskLevel | kind enum
+bOps.Abstractions.SecretProviderNotSupportedException | base System.Exception
+bOps.Abstractions.SecretProviderNotSupportedException | ctor()
+bOps.Abstractions.SecretProviderNotSupportedException | ctor(System.String)
+bOps.Abstractions.SecretProviderNotSupportedException | ctor(System.String, System.Exception)
+bOps.Abstractions.SecretProviderNotSupportedException | implements System.Runtime.Serialization.ISerializable
+bOps.Abstractions.SecretProviderNotSupportedException | kind sealed class
+bOps.Abstractions.SecretProviderNotSupportedException | property System.String Provider() {get;}
+bOps.Abstractions.SecretReference | ctor(System.String, System.String)
+bOps.Abstractions.SecretReference | implements System.IEquatable`1<bOps.Abstractions.SecretReference>
+bOps.Abstractions.SecretReference | kind sealed class
+bOps.Abstractions.SecretReference | method System.Boolean Equals(System.Object)
+bOps.Abstractions.SecretReference | method System.Boolean Equals(bOps.Abstractions.SecretReference)
+bOps.Abstractions.SecretReference | method System.Int32 GetHashCode()
+bOps.Abstractions.SecretReference | method System.String ToString()
+bOps.Abstractions.SecretReference | method System.Void Deconstruct(System.String&, System.String&)
+bOps.Abstractions.SecretReference | property System.String Name() {get;set;}
+bOps.Abstractions.SecretReference | property System.String Provider() {get;set;}
+bOps.Abstractions.TaskState | ctor(System.Guid, bOps.Abstractions.NodeId, System.String, bOps.Abstractions.AgentTaskStatus, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PlanStep>, System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.AgentPlan>, System.DateTimeOffset)
+bOps.Abstractions.TaskState | implements System.IEquatable`1<bOps.Abstractions.TaskState>
+bOps.Abstractions.TaskState | kind sealed class
+bOps.Abstractions.TaskState | method System.Boolean Equals(System.Object)
+bOps.Abstractions.TaskState | method System.Boolean Equals(bOps.Abstractions.TaskState)
+bOps.Abstractions.TaskState | method System.Int32 GetHashCode()
+bOps.Abstractions.TaskState | method System.String ToString()
+bOps.Abstractions.TaskState | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.AgentPlan> Plans() {get;set;}
+bOps.Abstractions.TaskState | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.PlanStep> Steps() {get;set;}
+bOps.Abstractions.TaskState | property System.DateTimeOffset CreatedAtUtc() {get;set;}
+bOps.Abstractions.TaskState | property System.Guid Id() {get;set;}
+bOps.Abstractions.TaskState | property System.String Goal() {get;set;}
+bOps.Abstractions.TaskState | property bOps.Abstractions.AgentTaskStatus Status() {get;set;}
+bOps.Abstractions.TaskState | property bOps.Abstractions.NodeId Node() {get;set;}
+bOps.Abstractions.ToolArgumentException | base System.Exception
+bOps.Abstractions.ToolArgumentException | ctor()
+bOps.Abstractions.ToolArgumentException | ctor(System.String)
+bOps.Abstractions.ToolArgumentException | ctor(System.String, System.Exception)
+bOps.Abstractions.ToolArgumentException | ctor(System.String, System.String)
+bOps.Abstractions.ToolArgumentException | implements System.Runtime.Serialization.ISerializable
+bOps.Abstractions.ToolArgumentException | kind sealed class
+bOps.Abstractions.ToolArgumentException | property System.String ArgumentName() {get;}
+bOps.Abstractions.ToolArguments | ctor()
+bOps.Abstractions.ToolArguments | ctor(System.Text.Json.Nodes.JsonObject)
+bOps.Abstractions.ToolArguments | kind sealed class
+bOps.Abstractions.ToolArguments | method System.Boolean ContainsKey(System.String)
+bOps.Abstractions.ToolArguments | method System.Boolean TryGet<T>(System.String, T&)
+bOps.Abstractions.ToolArguments | method System.Text.Json.Nodes.JsonObject Redact(System.Collections.Generic.IEnumerable`1<System.String>)
+bOps.Abstractions.ToolArguments | method System.Text.Json.Nodes.JsonObject ToJson()
+bOps.Abstractions.ToolArguments | method T GetRequired<T>(System.String)
+bOps.Abstractions.ToolArguments | method static bOps.Abstractions.ToolArguments FromJson(System.Text.Json.Nodes.JsonObject)
+bOps.Abstractions.ToolArguments | property bOps.Abstractions.ToolArguments Empty() {get;}
+bOps.Abstractions.ToolArgumentsJsonConverter | base System.Text.Json.Serialization.JsonConverter`1<bOps.Abstractions.ToolArguments>
+bOps.Abstractions.ToolArgumentsJsonConverter | ctor()
+bOps.Abstractions.ToolArgumentsJsonConverter | kind sealed class
+bOps.Abstractions.ToolArgumentsJsonConverter | method System.Void Write(System.Text.Json.Utf8JsonWriter, bOps.Abstractions.ToolArguments, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.ToolArgumentsJsonConverter | method bOps.Abstractions.ToolArguments Read(System.Text.Json.Utf8JsonReader&, System.Type, System.Text.Json.JsonSerializerOptions)
+bOps.Abstractions.ToolCallAuditEvent | base bOps.Abstractions.AuditEvent
+bOps.Abstractions.ToolCallAuditEvent | ctor()
+bOps.Abstractions.ToolCallAuditEvent | implements System.IEquatable`1<bOps.Abstractions.AuditEvent>
+bOps.Abstractions.ToolCallAuditEvent | implements System.IEquatable`1<bOps.Abstractions.ToolCallAuditEvent>
+bOps.Abstractions.ToolCallAuditEvent | kind sealed class
+bOps.Abstractions.ToolCallAuditEvent | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ToolCallAuditEvent | method System.Boolean Equals(bOps.Abstractions.AuditEvent)
+bOps.Abstractions.ToolCallAuditEvent | method System.Boolean Equals(bOps.Abstractions.ToolCallAuditEvent)
+bOps.Abstractions.ToolCallAuditEvent | method System.Boolean PrintMembers(System.Text.StringBuilder)
+bOps.Abstractions.ToolCallAuditEvent | method System.Int32 GetHashCode()
+bOps.Abstractions.ToolCallAuditEvent | method System.String ToString()
+bOps.Abstractions.ToolCallAuditEvent | property System.Nullable`1<bOps.Abstractions.VerificationStatus> Verification() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property System.String Tool() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property System.Text.Json.Nodes.JsonObject Arguments() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property System.TimeSpan Duration() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property System.Type EqualityContract() {get;}
+bOps.Abstractions.ToolCallAuditEvent | property bOps.Abstractions.AuthorizationKind Authorization() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property bOps.Abstractions.PackageId Package() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property bOps.Abstractions.RiskLevel Risk() {get;set;}
+bOps.Abstractions.ToolCallAuditEvent | property bOps.Abstractions.ToolOutcome Outcome() {get;set;}
+bOps.Abstractions.ToolCallRequest | ctor(System.String, bOps.Abstractions.ToolArguments)
+bOps.Abstractions.ToolCallRequest | implements System.IEquatable`1<bOps.Abstractions.ToolCallRequest>
+bOps.Abstractions.ToolCallRequest | kind sealed class
+bOps.Abstractions.ToolCallRequest | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ToolCallRequest | method System.Boolean Equals(bOps.Abstractions.ToolCallRequest)
+bOps.Abstractions.ToolCallRequest | method System.Int32 GetHashCode()
+bOps.Abstractions.ToolCallRequest | method System.String ToString()
+bOps.Abstractions.ToolCallRequest | property System.String ToolName() {get;set;}
+bOps.Abstractions.ToolCallRequest | property bOps.Abstractions.ToolArguments Arguments() {get;set;}
+bOps.Abstractions.ToolCallResult | ctor(bOps.Abstractions.ToolOutcome, System.String, System.String)
+bOps.Abstractions.ToolCallResult | implements System.IEquatable`1<bOps.Abstractions.ToolCallResult>
+bOps.Abstractions.ToolCallResult | kind sealed class
+bOps.Abstractions.ToolCallResult | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ToolCallResult | method System.Boolean Equals(bOps.Abstractions.ToolCallResult)
+bOps.Abstractions.ToolCallResult | method System.Int32 GetHashCode()
+bOps.Abstractions.ToolCallResult | method System.String ToString()
+bOps.Abstractions.ToolCallResult | method static bOps.Abstractions.ToolCallResult Failure(System.String)
+bOps.Abstractions.ToolCallResult | method static bOps.Abstractions.ToolCallResult Success(System.String)
+bOps.Abstractions.ToolCallResult | property System.Boolean Succeeded() {get;}
+bOps.Abstractions.ToolCallResult | property System.String ErrorMessage() {get;set;}
+bOps.Abstractions.ToolCallResult | property System.String Output() {get;set;}
+bOps.Abstractions.ToolCallResult | property bOps.Abstractions.ToolOutcome Outcome() {get;set;}
+bOps.Abstractions.ToolManifest | ctor()
+bOps.Abstractions.ToolManifest | implements System.IEquatable`1<bOps.Abstractions.ToolManifest>
+bOps.Abstractions.ToolManifest | kind sealed class
+bOps.Abstractions.ToolManifest | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ToolManifest | method System.Boolean Equals(bOps.Abstractions.ToolManifest)
+bOps.Abstractions.ToolManifest | method System.Int32 GetHashCode()
+bOps.Abstractions.ToolManifest | method System.String ToString()
+bOps.Abstractions.ToolManifest | property System.Collections.Generic.IReadOnlyList`1<System.String> Platforms() {get;set;}
+bOps.Abstractions.ToolManifest | property System.Collections.Generic.IReadOnlyList`1<System.String> Requires() {get;set;}
+bOps.Abstractions.ToolManifest | property System.Collections.Generic.IReadOnlyList`1<bOps.Abstractions.ToolParameter> Parameters() {get;set;}
+bOps.Abstractions.ToolManifest | property System.String Description() {get;set;}
+bOps.Abstractions.ToolManifest | property System.String Name() {get;set;}
+bOps.Abstractions.ToolManifest | property bOps.Abstractions.PackageId Package() {get;}
+bOps.Abstractions.ToolManifest | property bOps.Abstractions.RiskLevel Risk() {get;set;}
+bOps.Abstractions.ToolManifest | property bOps.Abstractions.VerificationSpec Verification() {get;set;}
+bOps.Abstractions.ToolOutcome | enum-value Denied = 2
+bOps.Abstractions.ToolOutcome | enum-value Failure = 1
+bOps.Abstractions.ToolOutcome | enum-value Success = 0
+bOps.Abstractions.ToolOutcome | enum-value Timeout = 3
+bOps.Abstractions.ToolOutcome | field System.Int32 value__
+bOps.Abstractions.ToolOutcome | implements System.IComparable
+bOps.Abstractions.ToolOutcome | implements System.IConvertible
+bOps.Abstractions.ToolOutcome | implements System.IFormattable
+bOps.Abstractions.ToolOutcome | implements System.ISpanFormattable
+bOps.Abstractions.ToolOutcome | kind enum
+bOps.Abstractions.ToolParameter | ctor(System.String, bOps.Abstractions.ToolParameterType, System.String, System.Boolean, System.Boolean, System.Collections.Generic.IReadOnlyList`1<System.String>)
+bOps.Abstractions.ToolParameter | implements System.IEquatable`1<bOps.Abstractions.ToolParameter>
+bOps.Abstractions.ToolParameter | kind sealed class
+bOps.Abstractions.ToolParameter | method System.Boolean Equals(System.Object)
+bOps.Abstractions.ToolParameter | method System.Boolean Equals(bOps.Abstractions.ToolParameter)
+bOps.Abstractions.ToolParameter | method System.Int32 GetHashCode()
+bOps.Abstractions.ToolParameter | method System.String ToString()
+bOps.Abstractions.ToolParameter | property System.Boolean Required() {get;set;}
+bOps.Abstractions.ToolParameter | property System.Boolean Sensitive() {get;set;}
+bOps.Abstractions.ToolParameter | property System.Collections.Generic.IReadOnlyList`1<System.String> AllowedValues() {get;set;}
+bOps.Abstractions.ToolParameter | property System.String Description() {get;set;}
+bOps.Abstractions.ToolParameter | property System.String Name() {get;set;}
+bOps.Abstractions.ToolParameter | property bOps.Abstractions.ToolParameterType Type() {get;set;}
+bOps.Abstractions.ToolParameterType | enum-value Boolean = 3
+bOps.Abstractions.ToolParameterType | enum-value Duration = 5
+bOps.Abstractions.ToolParameterType | enum-value Enum = 6
+bOps.Abstractions.ToolParameterType | enum-value Integer = 1
+bOps.Abstractions.ToolParameterType | enum-value Number = 2
+bOps.Abstractions.ToolParameterType | enum-value Path = 4
+bOps.Abstractions.ToolParameterType | enum-value String = 0
+bOps.Abstractions.ToolParameterType | field System.Int32 value__
+bOps.Abstractions.ToolParameterType | implements System.IComparable
+bOps.Abstractions.ToolParameterType | implements System.IConvertible
+bOps.Abstractions.ToolParameterType | implements System.IFormattable
+bOps.Abstractions.ToolParameterType | implements System.ISpanFormattable
+bOps.Abstractions.ToolParameterType | kind enum
+bOps.Abstractions.ToolRegistrationException | base System.Exception
+bOps.Abstractions.ToolRegistrationException | ctor()
+bOps.Abstractions.ToolRegistrationException | ctor(System.String)
+bOps.Abstractions.ToolRegistrationException | ctor(System.String, System.Exception)
+bOps.Abstractions.ToolRegistrationException | ctor(System.String, System.String)
+bOps.Abstractions.ToolRegistrationException | implements System.Runtime.Serialization.ISerializable
+bOps.Abstractions.ToolRegistrationException | kind sealed class
+bOps.Abstractions.ToolRegistrationException | property System.String ToolName() {get;}
+bOps.Abstractions.VerificationOutcome | ctor(bOps.Abstractions.VerificationStatus, System.String)
+bOps.Abstractions.VerificationOutcome | implements System.IEquatable`1<bOps.Abstractions.VerificationOutcome>
+bOps.Abstractions.VerificationOutcome | kind sealed class
+bOps.Abstractions.VerificationOutcome | method System.Boolean Equals(System.Object)
+bOps.Abstractions.VerificationOutcome | method System.Boolean Equals(bOps.Abstractions.VerificationOutcome)
+bOps.Abstractions.VerificationOutcome | method System.Int32 GetHashCode()
+bOps.Abstractions.VerificationOutcome | method System.String ToString()
+bOps.Abstractions.VerificationOutcome | property System.String Detail() {get;set;}
+bOps.Abstractions.VerificationOutcome | property bOps.Abstractions.VerificationStatus Status() {get;set;}
+bOps.Abstractions.VerificationSpec | ctor(System.String, System.Collections.Generic.IReadOnlyList`1<System.String>, System.String)
+bOps.Abstractions.VerificationSpec | implements System.IEquatable`1<bOps.Abstractions.VerificationSpec>
+bOps.Abstractions.VerificationSpec | kind sealed class
+bOps.Abstractions.VerificationSpec | method System.Boolean Equals(System.Object)
+bOps.Abstractions.VerificationSpec | method System.Boolean Equals(bOps.Abstractions.VerificationSpec)
+bOps.Abstractions.VerificationSpec | method System.Int32 GetHashCode()
+bOps.Abstractions.VerificationSpec | method System.String ToString()
+bOps.Abstractions.VerificationSpec | property System.Collections.Generic.IReadOnlyList`1<System.String> ArgumentsFrom() {get;set;}
+bOps.Abstractions.VerificationSpec | property System.String Description() {get;set;}
+bOps.Abstractions.VerificationSpec | property System.String VerifyToolName() {get;set;}
+bOps.Abstractions.VerificationStatus | enum-value Confirmed = 0
+bOps.Abstractions.VerificationStatus | enum-value Inconclusive = 2
+bOps.Abstractions.VerificationStatus | enum-value NotApplicable = 3
+bOps.Abstractions.VerificationStatus | enum-value Refuted = 1
+bOps.Abstractions.VerificationStatus | field System.Int32 value__
+bOps.Abstractions.VerificationStatus | implements System.IComparable
+bOps.Abstractions.VerificationStatus | implements System.IConvertible
+bOps.Abstractions.VerificationStatus | implements System.IFormattable
+bOps.Abstractions.VerificationStatus | implements System.ISpanFormattable
+bOps.Abstractions.VerificationStatus | kind enum

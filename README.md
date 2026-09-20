@@ -266,7 +266,7 @@ through the UI, exactly like losing `plugins.json` means reinstalling plugins.
 **V0.1 through V1.1 are implemented.** The formal V1.0 release workflow still needs its first
 operator-authorized tagged run, and V1.1 is likewise untagged. V1.1-A through V1.1-H are complete,
 including the cross-platform integration and release gate, which is green on Windows and Linux CI.
-V1.2 (multi-agent orchestration) is in progress: its sub-tasks A–L are implemented and the integration and release gate (M) is open.
+V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–M are complete and the integration and release gate is closed.
 
 | | |
 |---|---|
@@ -287,7 +287,7 @@ V1.2 (multi-agent orchestration) is in progress: its sub-tasks A–L are impleme
 | `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
-| `V1.2` *(A–L implemented, gate M open)* | In-process multi-agent orchestration with privilege-reducing delegation |
+| `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
 | `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
@@ -351,9 +351,10 @@ lock, missing UI install before the SBOM step) and produced no artifacts; it is 
 superseded. The artifacts are workflow artifacts, not a GitHub Release or a NuGet publication, and
 this is not yet a production endorsement.
 
-**V1.2 is in progress, not released.** Delegated runs (`bops delegate`, `/api/delegations`, the dashboard's Delegations view) are
-implemented and each sub-task passed Windows and Linux CI, but the V1.2 integration and release gate has not been run, so treat the
-feature as a preview: the public SDK is `1.2.0-preview.8`, no V1.2 tag exists, and what it does not do is stated in
+**V1.2 is a preview, not a stable release.** Delegated runs (`bops delegate`, `/api/delegations`, the dashboard's Delegations view) are
+implemented, each sub-task passed Windows and Linux CI, and the integration and release gate is closed (a real objective end to end with
+real tools, a crash and resume, and the frozen 1.0 surface kept by a permanent test). Treat the feature as a preview: the public SDK is
+`1.2.0-preview.8`, and what it does not do is stated in
 [`docs/agents/delegation.md`](docs/agents/delegation.md).
 
 ## Documentation

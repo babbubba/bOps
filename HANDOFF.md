@@ -255,7 +255,11 @@ queue; buttons follow the role, the API decides. Strings are English literals: t
 V1.2-L is implemented: `docs/agents/delegation.md`, `docs/agents/delegation-policy.md` (its yaml example is loaded by
 `DelegationPolicyGuideTests`, so it cannot drift from the loader), the threat-model section on the limits of the envelope, and the
 README, roadmap, bootstrap and task index aligned to "V1.2 A–L implemented, M open". Nothing is claimed as released.
-Next action: V1.2-M (integration and release gate). Do not tag or publish without separate operator authorization.
+V1.2-M is implemented: `V12ReleaseGateTests` (real tools, real policy, real store, over HTTP, plus a host killed between a write and its
+outcome and resumed by a new one) and `PublicSurfaceSnapshotTests` (the frozen 1.0 surface, permanently). The local gate is closed: Release
+build with 0 warnings, 1521 non-live tests passed (32 skipped, named in the M task), the Angular build and 91 tests, and the SDK packed as
+`1.2.0-preview.8`. The operator authorized the tag and the release once the gate is green; the tag is `v1.2.0-preview.8`, matching the SDK.
+Next action: none in the V1.2 chain. The next milestone is V1.3, which is not started.
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 
