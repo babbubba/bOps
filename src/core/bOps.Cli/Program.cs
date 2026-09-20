@@ -31,7 +31,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
+    Usage: bops "<goal>" | bops resume <task-id> | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;
 
 if (args.Length == 0)
@@ -66,8 +66,24 @@ if (string.Equals(args[0], "audit", StringComparison.OrdinalIgnoreCase))
 // as the goal, exactly as before, so `bops "<goal>"` keeps working unchanged.
 string? goal = null;
 Guid? resumeTaskId = null;
+DelegateInvocation? delegateInvocation = null;
 
-if (string.Equals(args[0], "resume", StringComparison.OrdinalIgnoreCase))
+// V1.2 (ADR-0030 section 9): "delegate" runs an objective through the fixed Discovery, Diagnostic, Remediation and Verification
+// pipeline, or reads, resumes, cancels or reconciles a stored run. It shares the composition below and adds a store, a role-profile
+// source over the same loaded policy, and a console approval of the plan.
+if (string.Equals(args[0], "delegate", StringComparison.OrdinalIgnoreCase))
+{
+    var (parsedInvocation, parseError) = DelegateArguments.Parse(args[1..]);
+    if (parsedInvocation is null)
+    {
+        await Console.Error.WriteLineAsync(parseError);
+        await Console.Error.WriteLineAsync(DelegateArguments.Usage);
+        return 1;
+    }
+
+    delegateInvocation = parsedInvocation;
+}
+else if (string.Equals(args[0], "resume", StringComparison.OrdinalIgnoreCase))
 {
     if (args.Length != 2 || !Guid.TryParse(args[1], out var parsedTaskId))
     {
@@ -253,7 +269,7 @@ var model = chatModelRegistry.Create(modelOptions);
 var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
 
 var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Policy");
-var policyEngine = await LoadPolicyEngineAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
+var (policyEngine, policyConfig) = await LoadPolicyAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
 var approvalProvider = new ConsoleApprovalProvider();
 
 // V0.7 (ADR-0017): a plain SQLite file next to the audit log — every task is persisted as it
@@ -274,6 +290,32 @@ var runner = new AgentRunner(
     skillRegistry);
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
+
+if (delegateInvocation is not null)
+{
+    // The role profiles come from the same loaded policy the engine does, so a policy.yaml that failed to load (AllForbidden) has
+    // none and a start ends Denied on the Profile dimension, before any model call.
+    var delegationStore = new SqliteDelegationStore(builder.Configuration["Delegation:FilePath"] ?? "delegations.db");
+    var delegationRunner = new DelegationRunner(
+        runner,
+        new PolicyRoleProfileSource(policyConfig),
+        new ConsolePlanApprovalProvider(Console.In, Console.Out, actor),
+        host.Services.GetRequiredService<IAuditSink>(),
+        host.Services.GetRequiredService<TimeProvider>(),
+        host.Services.GetRequiredService<ILogger<DelegationRunner>>(),
+        delegationStore);
+
+    // Ctrl+C cancels the run under way, which then ends as Cancelled and is reported like any other end.
+    using var interrupt = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        interrupt.Cancel();
+    };
+
+    return await new DelegateCommand(delegationRunner, delegationStore, actor, Console.Out, Console.Error)
+        .RunAsync(delegateInvocation, interrupt.Token);
+}
 
 TaskState result;
 if (resumeTaskId is { } taskIdToResume)
@@ -313,7 +355,7 @@ static void PrintTranscript(TaskState task)
 // to load means the operator tried to configure something and got it wrong; falling back to the
 // safe default there could silently be *more* permissive than what they thought they had
 // configured, so everything above Read is forbidden instead, until the file is fixed.
-static async Task<IPolicyEngine> LoadPolicyEngineAsync(string filePath, ILogger logger)
+static async Task<(IPolicyEngine Engine, PolicyConfig Config)> LoadPolicyAsync(string filePath, ILogger logger)
 {
     if (!File.Exists(filePath))
     {
@@ -324,7 +366,7 @@ static async Task<IPolicyEngine> LoadPolicyEngineAsync(string filePath, ILogger 
                 filePath);
         }
 
-        return new PolicyEngine(PolicyConfig.SafeDefault);
+        return (new PolicyEngine(PolicyConfig.SafeDefault), PolicyConfig.SafeDefault);
     }
 
     try
@@ -337,12 +379,12 @@ static async Task<IPolicyEngine> LoadPolicyEngineAsync(string filePath, ILogger 
             logger.LogInformation("Loaded policy from '{Path}'.", filePath);
         }
 
-        return new PolicyEngine(config);
+        return (new PolicyEngine(config), config);
     }
     catch (PolicyConfigurationException ex)
     {
         logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
-        return new PolicyEngine(PolicyConfig.AllForbidden);
+        return (new PolicyEngine(PolicyConfig.AllForbidden), PolicyConfig.AllForbidden);
     }
 }
 

@@ -45,4 +45,8 @@
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Cli.Tests" />
+  </ItemGroup>
+
 </Project>

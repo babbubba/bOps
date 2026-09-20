@@ -105,7 +105,7 @@
       "bops.packages.service.conformance": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.7, )",
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.Service.Core": "[1.0.0, )",
           "xunit.assert": "[2.9.3, )"
         }
@@ -113,13 +113,13 @@
       "bops.packages.service.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.7, )"
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
         }
       },
       "bops.packages.service.linux": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.7, )",
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.Service.Core": "[1.0.0, )"
         }
       }

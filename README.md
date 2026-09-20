@@ -203,6 +203,18 @@ bops resume <task-id>          # resume a persisted task (V0.7, SQLite-backed) f
 ```
 
 ```bash
+bops delegate "why did nginx stop?"                        # V1.2: a diagnosis by four roles, each with less authority than you
+bops delegate "fix nginx" --skill service.skill --capability service.restore --target web-1 --environment prod
+                                                           # ... and a change: you approve the plan by its hash first
+bops delegate status|resume|cancel <run-id>                # read, continue or end a stored run
+bops delegate reconcile <run-id> --accept|--abandon        # settle a step whose outcome is not known; it is never retried
+```
+
+Delegation is off until `policy.yaml` has a `delegation` section (ADR-0031). Exit codes: `0` completed or diagnosed, `1` failed
+or a usage error, `2` denied or blocked by policy, `3` rejected or abandoned, `4` requires reconciliation, `5` budget or
+deadline exceeded, `6` verification did not confirm, `10` not finished, `130` cancelled.
+
+```bash
 bops audit verify [audit-file]   # verify the complete append-only audit hash chain
 
 bops plugin install <directory>   # install a local plugin build — disabled until you enable it

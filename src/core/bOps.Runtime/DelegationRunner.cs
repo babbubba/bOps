@@ -178,6 +178,71 @@ public sealed class DelegationRunner(
     }
 
     /// <summary>
+    /// Ends a stored run that no process is executing (a run a crash left <see cref="DelegationStatus.Running"/>) as
+    /// <see cref="DelegationStatus.Cancelled"/>, audited with who did it (ADR-0030 section 9). A run that is executing in a live
+    /// process is cancelled through that process's own token, not through the store: this cannot reach into another process, and
+    /// a live one that saves after this call replaces what it wrote. A step whose outcome is not known stays in the journal and
+    /// the message says so; nothing is run or retried. A run that already ended is returned unchanged.
+    /// </summary>
+    /// <param name="delegationId">The run to cancel.</param>
+    /// <param name="cancelledBy">The human cancelling it, recorded in the audit log. An agent or the runtime is refused.</param>
+    /// <param name="ct">Cancelled to abandon the call before anything is written.</param>
+    /// <exception cref="InvalidOperationException">The runner has no store, no such run is stored, the run waits for reconciliation (which an operator settles with <see cref="ReconcileAsync"/>), or the identity is not a human.</exception>
+    public async Task<DelegationRun> CancelAsync(Guid delegationId, ActorIdentity cancelledBy, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(cancelledBy);
+
+        var runStore = RequireStore();
+        var stored = await runStore.LoadAsync(delegationId, ct)
+            ?? throw new InvalidOperationException($"No delegation run {delegationId} is stored.");
+        if (stored.Status == DelegationStatus.RequiresReconciliation)
+        {
+            throw new InvalidOperationException(
+                $"Run {delegationId} waits for reconciliation: accept its unsettled steps as done or abandon it, instead of cancelling it.");
+        }
+
+        if (stored.Status != DelegationStatus.Running)
+        {
+            return stored;
+        }
+
+        if (!IsHuman(cancelledBy, stored.Roles))
+        {
+            throw new InvalidOperationException("Cancelling a run is a human decision; an agent or the runtime cannot make it.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var unsettled = stored.Journal.Any(IsUnsettled);
+        var updated = stored with
+        {
+            Status = DelegationStatus.Cancelled,
+            ErrorMessage = Bounded(
+                "An operator cancelled the run."
+                + (unsettled ? " A step of it may or may not have taken effect: the journal holds no outcome for it." : string.Empty)),
+            Roles = [.. stored.Roles.Select(role => role.Status == DelegationRoleStatus.Running
+                ? role with { Status = DelegationRoleStatus.Cancelled, CompletedAtUtc = now }
+                : role)],
+            UpdatedAtUtc = now,
+        };
+        await runStore.SaveAsync(updated, CancellationToken.None);
+        await audit.WriteAsync(
+            new DelegationLifecycleAuditEvent
+            {
+                TimestampUtc = now,
+                Node = NodeId.Local,
+                TaskId = stored.Id,
+                StepIndex = -1,
+                Actor = cancelledBy,
+                Stage = DelegationStage.Terminal,
+                Status = DelegationStatus.Cancelled,
+                ErrorMessage = updated.ErrorMessage,
+                Delegation = new DelegationCorrelation(stored.Id, DelegationHasher.ComputeEnvelopeHash(stored.RootEnvelope), null),
+            },
+            CancellationToken.None);
+        return updated;
+    }
+
+    /// <summary>
     /// An operator's decision on a run that <see cref="DelegationStatus.RequiresReconciliation"/> (ADR-0030 section 7): accept the
     /// steps whose outcome is unknown as done, after which the run can be resumed, or abandon the run. Audited. There is no
     /// automatic retry: what an abandoned run was meant to do is a new objective with a new plan and a new approval.
@@ -387,6 +452,14 @@ public sealed class DelegationRunner(
     {
         ct = state.BindDeadline(timeProvider, ct);
 
+        // A step is journaled only once the plan it belongs to is stored. Diagnosis would be run again for a run that has the
+        // step without the plan, and its new plan could be put over a step already taken, so such a run is not resumed.
+        if (state.Journal.Count > 0 && state.LastCompleted(AgentRoleKind.Diagnostic)?.Report is null)
+        {
+            state.End(DelegationStatus.Failed, "The stored run has steps in its journal but no stored plan they belong to, so it is not resumed.");
+            return;
+        }
+
         var discovery = state.LastCompleted(AgentRoleKind.Discovery);
         if (discovery?.Report is null)
         {
@@ -562,7 +635,10 @@ public sealed class DelegationRunner(
         var remediation = state.Request.Remediation!;
         var approvalRequest = new PlanApprovalRequest(
             state.Id, hash, plan, remediation.SkillId, remediation.CapabilityName,
-            remediation.Request.Target, remediation.Request.Environment, remediation.Request.BlastRadius, findings);
+            remediation.Request.Target, remediation.Request.Environment, remediation.Request.BlastRadius, findings)
+        {
+            Authority = previewScope.Envelope,
+        };
         var decision = await planApproval.RequestPlanApprovalAsync(approvalRequest, ct);
 
         // Approvals are human only: the runtime never asks on an agent's behalf, and never accepts a decision made in the

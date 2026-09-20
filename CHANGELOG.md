@@ -167,6 +167,21 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
   envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
   mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
+- V1.2-I `bops delegate` (`bOps.Abstractions` `1.2.0-preview.8`, additive, ADR-0030 section 9): `bops delegate "<objective>"`
+  runs an objective through Discovery, Diagnostic, Remediation and Verification, diagnosing only unless `--skill`,
+  `--capability`, `--target` and `--environment` name a change; `bops delegate status|resume|cancel <run-id>` and
+  `bops delegate reconcile <run-id> --accept|--abandon` read, continue, end or settle a stored run. `bops "<goal>"` and
+  `bops resume` are unchanged. The role profiles come from the same loaded `policy.yaml` the policy engine does, so a missing
+  or broken file has none and a start ends `Denied` on the `Profile` dimension before any model call. The plan is approved at
+  the console by its hash, with its steps, findings and the authority it will run under (`PlanApprovalRequest.Authority`, new);
+  anything but an explicit yes, including a closed input, is a no. Every end has its own exit code (0 completed or
+  diagnosed, 1 failed or a usage error, 2 denied or blocked by policy, 3 rejected or abandoned, 4 requires reconciliation,
+  5 budget or deadline exceeded, 6 verification did not confirm, 10 not finished, 130 cancelled) and Ctrl+C cancels the run
+  under way. `DelegationRunner.CancelAsync` ends a stored run no process is executing, audited with who did it.
+  Two defects the new end-to-end tests found are fixed: `SqliteDelegationStore` could not save any run whose evidence carried
+  provenance (the source generator in `bOps.Memory` could not see the non-public setter, and the runtime tests used an
+  in-memory store, so it was never exercised), and a stored run with journaled steps but no stored plan is now refused on
+  resume instead of diagnosing again over a step already taken.
 - Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
   runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
   `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`

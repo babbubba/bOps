@@ -45,6 +45,7 @@
     <Project Path="tests/bOps.Api.Tests/bOps.Api.Tests.csproj" />
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
     <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />
+    <Project Path="tests/bOps.Cli.Tests/bOps.Cli.Tests.csproj" />
     <Project Path="tests/bOps.Memory.Tests/bOps.Memory.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
