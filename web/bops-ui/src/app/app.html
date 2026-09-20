@@ -16,14 +16,14 @@
         routerLinkActive="bg-accent/10 text-accent"
         class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Dashboard
+        {{ 'app.nav.dashboard' | t }}
       </a>
       <a
         routerLink="/approvals"
         routerLinkActive="bg-accent/10 text-accent"
         class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Approvals
+        {{ 'app.nav.approvals' | t }}
         @if (approvals.pending().length > 0) {
           <span class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-risk-high px-1.5 text-xs font-semibold text-white">
             {{ approvals.pending().length }}
@@ -35,7 +35,7 @@
         routerLinkActive="bg-accent/10 text-accent"
         class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Delegations
+        {{ 'app.nav.delegations' | t }}
         @if (delegations.awaitingApproval().length > 0) {
           <span class="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-risk-high px-1.5 text-xs font-semibold text-white">
             {{ delegations.awaitingApproval().length }}
@@ -47,25 +47,26 @@
         routerLinkActive="bg-accent/10 text-accent"
         class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Plugins
+        {{ 'app.nav.plugins' | t }}
       </a>
       <a
         routerLink="/settings"
         routerLinkActive="bg-accent/10 text-accent"
         class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Settings
+        {{ 'app.nav.settings' | t }}
       </a>
     </nav>
 
     <div class="border-t border-default p-2">
       <div class="px-3 py-2 text-xs text-muted">{{ auth.identity()?.displayName }}</div>
+      <div class="px-3 py-1"><bops-language-switch /></div>
       <button
         type="button"
         (click)="auth.signOut()"
         class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
-        Sign out
+        {{ 'app.signOut' | t }}
       </button>
       <button
         type="button"
@@ -74,10 +75,10 @@
       >
         @if (theme.theme() === 'dark') {
           <span>☀️</span>
-          <span>Light mode</span>
+          <span>{{ 'app.theme.light' | t }}</span>
         } @else {
           <span>🌙</span>
-          <span>Dark mode</span>
+          <span>{{ 'app.theme.dark' | t }}</span>
         }
       </button>
     </div>

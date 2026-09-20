@@ -1,7 +1,7 @@
 <div class="mx-auto flex max-w-3xl flex-col gap-6 p-4 md:p-8">
   <header>
-    <h1 class="text-2xl font-semibold">Approvals</h1>
-    <p class="text-sm text-muted">Actions waiting for a human decision before they run.</p>
+    <h1 class="text-2xl font-semibold">{{ 'approvals.title' | t }}</h1>
+    <p class="text-sm text-muted">{{ 'approvals.subtitle' | t }}</p>
   </header>
 
   @if (approvals.error()) {
@@ -9,10 +9,10 @@
   }
 
   @if (approvals.loading() && approvals.pending().length === 0) {
-    <p class="text-sm text-muted">Loading…</p>
+    <p class="text-sm text-muted">{{ 'common.loading' | t }}</p>
   } @else if (approvals.pending().length === 0) {
     <div class="rounded-xl border border-default bg-surface p-8 text-center text-sm text-muted shadow-sm">
-      Nothing waiting on you right now.
+      {{ 'approvals.empty' | t }}
     </div>
   } @else {
     <ul class="flex flex-col gap-4">
@@ -31,27 +31,27 @@
           <p class="mt-2 text-sm">{{ req.reason }}</p>
 
           @if (req.permanentDeletion) {
-            <section class="mt-4 rounded-lg border border-risk-high bg-bg p-4" aria-label="Permanent deletion preview">
-              <p class="font-semibold text-risk-high">Permanent deletion — no trash and no rollback</p>
+            <section class="mt-4 rounded-lg border border-risk-high bg-bg p-4" [attr.aria-label]="'approvals.deletion.aria' | t">
+              <p class="font-semibold text-risk-high">{{ 'approvals.deletion.warning' | t }}</p>
               @if (previewFor(req.id); as preview) {
                 @if (preview.error) {
                   <p class="mt-2 text-sm text-risk-critical">{{ preview.error }}</p>
                 } @else if (preview.summary; as summary) {
                   <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
-                    <div><dt class="text-muted">Entries</dt><dd class="font-semibold">{{ formatCount(summary.entryCount) }}</dd></div>
-                    <div><dt class="text-muted">Files</dt><dd>{{ formatCount(summary.fileCount) }}</dd></div>
-                    <div><dt class="text-muted">Directories</dt><dd>{{ formatCount(summary.directoryCount) }}</dd></div>
-                    <div><dt class="text-muted">Bytes</dt><dd>{{ formatBytes(summary.totalBytes) }}</dd></div>
+                    <div><dt class="text-muted">{{ 'approvals.deletion.entries' | t }}</dt><dd class="font-semibold">{{ formatCount(summary.entryCount) }}</dd></div>
+                    <div><dt class="text-muted">{{ 'approvals.deletion.files' | t }}</dt><dd>{{ formatCount(summary.fileCount) }}</dd></div>
+                    <div><dt class="text-muted">{{ 'approvals.deletion.directories' | t }}</dt><dd>{{ formatCount(summary.directoryCount) }}</dd></div>
+                    <div><dt class="text-muted">{{ 'approvals.deletion.bytes' | t }}</dt><dd>{{ formatBytes(summary.totalBytes) }}</dd></div>
                   </dl>
 
                   <div class="mt-3 text-xs">
-                    <p class="text-muted">Approval hash</p>
+                    <p class="text-muted">{{ 'approvals.deletion.approvalHash' | t }}</p>
                     <code class="block break-all rounded bg-surface px-2 py-1">{{ summary.approvalHash }}</code>
-                    <p class="mt-1 text-muted">Expires {{ formatTime(summary.expiresAtUtc) }}</p>
+                    <p class="mt-1 text-muted">{{ 'approvals.deletion.expires' | t: { time: formatTime(summary.expiresAtUtc) } }}</p>
                   </div>
 
                   <div class="mt-3">
-                    <p class="text-xs font-medium text-muted">Roots</p>
+                    <p class="text-xs font-medium text-muted">{{ 'approvals.deletion.roots' | t }}</p>
                     <ul class="mt-1 space-y-1 text-xs">
                       @for (root of summary.roots; track root) {
                         <li><code class="break-all">{{ root }}</code></li>
@@ -68,21 +68,21 @@
                   <div class="mt-4 flex gap-2">
                     <input
                       type="search"
-                      aria-label="Filter deletion entries"
-                      placeholder="Filter exact paths"
+                      [attr.aria-label]="'approvals.deletion.filterAria' | t"
+                      [placeholder]="'approvals.deletion.filterPlaceholder' | t"
                       [ngModel]="preview.search"
                       (ngModelChange)="setSearch(req.id, $event)"
                       class="min-w-0 flex-1 rounded-lg border border-default bg-surface px-3 py-1.5 text-sm"
                     />
                     <button type="button" (click)="applySearch(req.id)" class="rounded-lg border border-default px-3 py-1.5 text-sm">
-                      Filter
+                      {{ 'approvals.deletion.filter' | t }}
                     </button>
                   </div>
 
                   @if (preview.page; as page) {
                     <div class="mt-3 max-h-72 overflow-auto rounded border border-default">
                       <table class="w-full table-fixed text-left text-xs">
-                        <thead class="sticky top-0 bg-surface"><tr><th class="w-24 px-2 py-1">Type</th><th class="px-2 py-1">Exact path</th></tr></thead>
+                        <thead class="sticky top-0 bg-surface"><tr><th class="w-24 px-2 py-1">{{ 'approvals.deletion.type' | t }}</th><th class="px-2 py-1">{{ 'approvals.deletion.path' | t }}</th></tr></thead>
                         <tbody>
                           @for (entry of page.entries; track entry.ordinal) {
                             <tr class="border-t border-default">
@@ -95,10 +95,10 @@
                     </div>
                     <div class="mt-2 flex items-center justify-between gap-2">
                       <div class="flex gap-2">
-                        <button type="button" [disabled]="preview.cursorIndex === 0" (click)="previousPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">Previous</button>
-                        <button type="button" [disabled]="!page.nextCursor" (click)="nextPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">Next</button>
+                        <button type="button" [disabled]="preview.cursorIndex === 0" (click)="previousPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">{{ 'approvals.deletion.previous' | t }}</button>
+                        <button type="button" [disabled]="!page.nextCursor" (click)="nextPage(req.id)" class="rounded border border-default px-2 py-1 text-xs disabled:opacity-40">{{ 'approvals.deletion.next' | t }}</button>
                       </div>
-                      <a [href]="downloadUrl(req.id)" class="text-xs text-accent hover:underline">Download manifest</a>
+                      <a [href]="downloadUrl(req.id)" class="text-xs text-accent hover:underline">{{ 'approvals.deletion.download' | t }}</a>
                     </div>
                   }
 
@@ -109,10 +109,10 @@
                       [checked]="acknowledgements()[req.id] === true"
                       (change)="setAcknowledged(req.id, $any($event.target).checked)"
                     />
-                    <span>I understand that exactly {{ formatCount(summary.entryCount) }} entries ({{ formatBytes(summary.totalBytes) }}) will be permanently deleted.</span>
+                    <span>{{ 'approvals.deletion.acknowledge' | t: { count: summary.entryCount, size: formatBytes(summary.totalBytes) } }}</span>
                   </label>
                 } @else {
-                  <p class="mt-2 text-sm text-muted">Loading exact manifest…</p>
+                  <p class="mt-2 text-sm text-muted">{{ 'approvals.deletion.loading' | t }}</p>
                 }
               }
             </section>
@@ -120,7 +120,7 @@
 
           <input
             type="text"
-            placeholder="Optional note"
+            [placeholder]="'common.optionalNote' | t"
             [ngModel]="noteFor(req.id)"
             (ngModelChange)="setNote(req.id, $event)"
             class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
@@ -133,14 +133,14 @@
               [disabled]="!canApprove(req)"
               class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Approve
+              {{ 'approvals.approve' | t }}
             </button>
             <button
               type="button"
               (click)="reject(req.id)"
               class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg"
             >
-              Reject
+              {{ 'approvals.reject' | t }}
             </button>
           </div>
         </li>

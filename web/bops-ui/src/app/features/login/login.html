@@ -5,12 +5,12 @@
         <img src="logo.png" alt="" class="h-[110px] w-[110px] -translate-y-[17px] object-cover" />
       </div>
       <div>
-        <h1 class="text-lg font-semibold">Sign in to bOps</h1>
-        <p class="text-sm text-muted">Use the API key referenced by the local host configuration.</p>
+        <h1 class="text-lg font-semibold">{{ 'login.title' | t }}</h1>
+        <p class="text-sm text-muted">{{ 'login.hint' | t }}</p>
       </div>
     </div>
 
-    <label for="api-key" class="mb-1 block text-sm font-medium">API key</label>
+    <label for="api-key" class="mb-1 block text-sm font-medium">{{ 'login.apiKey' | t }}</label>
     <input
       id="api-key"
       name="api-key"
@@ -21,10 +21,10 @@
       (ngModelChange)="token.set($event)"
       class="w-full rounded-lg border border-default bg-bg px-3 py-2 outline-none focus:border-accent"
     />
-    <p class="mt-2 text-xs text-muted">The key is kept only in this page's memory and is never placed in a URL or browser storage.</p>
+    <p class="mt-2 text-xs text-muted">{{ 'login.keyNote' | t }}</p>
 
-    @if (error()) {
-      <p class="mt-3 text-sm text-risk-critical">{{ error() }}</p>
+    @if (error(); as errorKey) {
+      <p class="mt-3 text-sm text-risk-critical">{{ errorKey | t }}</p>
     }
 
     <button
@@ -32,7 +32,8 @@
       [disabled]="submitting() || !token().trim()"
       class="mt-5 w-full rounded-lg bg-accent px-4 py-2 font-medium text-white disabled:opacity-50"
     >
-      {{ submitting() ? 'Signing in…' : 'Sign in' }}
+      {{ (submitting() ? 'login.submitting' : 'login.submit') | t }}
     </button>
+    <div class="mt-4 flex justify-end"><bops-language-switch /></div>
   </form>
 </main>

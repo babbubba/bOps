@@ -1,32 +1,32 @@
 <div class="mx-auto flex max-w-4xl flex-col gap-6 p-4 md:p-8">
   <header>
-    <h1 class="text-2xl font-semibold">Settings</h1>
-    <p class="text-sm text-muted">Provider endpoint, model and API key, fully managed from here (ADR-0029). Changes take effect on the next restart.</p>
+    <h1 class="text-2xl font-semibold">{{ 'settings.title' | t }}</h1>
+    <p class="text-sm text-muted">{{ 'settings.subtitle' | t }}</p>
   </header>
 
   @if (!isAdministrator()) {
-    <p class="text-sm text-risk-critical">The administrator role is required to view or change Settings.</p>
+    <p class="text-sm text-risk-critical">{{ 'settings.adminRequired' | t }}</p>
   } @else {
     @if (settings.error()) {
       <p class="text-sm text-risk-critical" role="alert">
         {{ settings.error() }}
         @if (settings.conflict()) {
-          — someone else changed Settings since this page loaded; it has been refreshed with the latest state, please retry.
+          {{ 'settings.conflict' | t }}
         }
       </p>
     }
 
     @if (settings.loading() && !settings.view()) {
-      <p class="text-sm text-muted">Loading…</p>
+      <p class="text-sm text-muted">{{ 'common.loading' | t }}</p>
     } @else if (settings.view(); as view) {
       <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
-        <h2 class="text-sm font-semibold text-muted">Active provider</h2>
+        <h2 class="text-sm font-semibold text-muted">{{ 'settings.activeProvider' | t }}</h2>
         <p class="mt-1 text-lg font-medium">{{ view.activeProviderId ?? '—' }}</p>
         <p class="mt-1 text-xs text-muted">
           @switch (view.activeProviderSource) {
-            @case ('EnvironmentOverride') { Set by the <code>ModelProvider__Provider</code> environment variable — overrides anything below. }
-            @case ('Settings') { Selected here. }
-            @default { The <code>appsettings.json</code> default — nothing has been selected here yet. }
+            @case ('EnvironmentOverride') { {{ 'settings.source.environment' | t: { name: 'ModelProvider__Provider' } }} }
+            @case ('Settings') { {{ 'settings.source.settings' | t }} }
+            @default { {{ 'settings.source.default' | t: { name: 'appsettings.json' } }} }
           }
         </p>
       </section>
@@ -38,7 +38,7 @@
               <div class="flex items-center gap-2">
                 <h3 class="text-base font-semibold">{{ provider.providerId }}</h3>
                 @if (provider.isActive) {
-                  <span class="rounded-full bg-status-completed/15 px-2 py-0.5 text-xs font-medium text-status-completed">Active</span>
+                  <span class="rounded-full bg-status-completed/15 px-2 py-0.5 text-xs font-medium text-status-completed">{{ 'settings.active' | t }}</span>
                 }
               </div>
               <button
@@ -46,44 +46,44 @@
                 (click)="toggleExpanded(provider.providerId)"
                 class="rounded-lg border border-default px-2.5 py-1 text-xs font-medium hover:bg-bg"
               >
-                {{ expandedProviderId() === provider.providerId ? 'Close' : 'Configure' }}
+                {{ (expandedProviderId() === provider.providerId ? 'settings.close' : 'settings.configure') | t }}
               </button>
             </div>
 
             <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
               <div>
-                <dt class="text-xs text-muted">API key</dt>
+                <dt class="text-xs text-muted">{{ 'settings.apiKey' | t }}</dt>
                 <dd>
                   @if (provider.hasStoredKey) {
                     <span class="font-mono">{{ provider.keyMaskPrefix }}···{{ provider.keyMaskSuffix }}</span>
                   } @else {
-                    <span class="text-muted">Not set</span>
+                    <span class="text-muted">{{ 'settings.notSet' | t }}</span>
                   }
                 </dd>
               </div>
               <div>
-                <dt class="text-xs text-muted">Base URL</dt>
+                <dt class="text-xs text-muted">{{ 'settings.baseUrl' | t }}</dt>
                 <dd class="truncate">{{ provider.baseUrl ?? '—' }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-muted">Model</dt>
+                <dt class="text-xs text-muted">{{ 'settings.model' | t }}</dt>
                 <dd class="truncate">{{ provider.model ?? '—' }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-muted">Native tool calling</dt>
-                <dd>{{ provider.supportsNativeToolCalling === null ? '—' : (provider.supportsNativeToolCalling ? 'Yes' : 'No') }}</dd>
+                <dt class="text-xs text-muted">{{ 'settings.nativeToolCalling' | t }}</dt>
+                <dd>{{ provider.supportsNativeToolCalling === null ? '—' : ((provider.supportsNativeToolCalling ? 'settings.yes' : 'settings.no') | t) }}</dd>
               </div>
             </dl>
 
             @if (expandedProviderId() === provider.providerId) {
               <div class="mt-4 flex flex-col gap-4 border-t border-default pt-4">
                 <div>
-                  <h4 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">API key</h4>
+                  <h4 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'settings.apiKey' | t }}</h4>
                   <div class="flex flex-wrap items-center gap-2">
                     <input
                       type="password"
                       autocomplete="off"
-                      placeholder="Enter a new key to set or replace"
+                      [placeholder]="'settings.key.placeholder' | t"
                       [ngModel]="apiKeyDraft(provider.providerId)"
                       (ngModelChange)="setApiKeyDraft(provider.providerId, $event)"
                       class="min-w-0 flex-1 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
@@ -94,7 +94,7 @@
                       (click)="saveKey(provider.providerId)"
                       class="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
                     >
-                      {{ provider.hasStoredKey ? 'Replace' : 'Set' }}
+                      {{ (provider.hasStoredKey ? 'settings.key.replace' : 'settings.key.set') | t }}
                     </button>
                     @if (provider.hasStoredKey) {
                       <button
@@ -103,26 +103,26 @@
                         (click)="clearKey(provider.providerId)"
                         class="rounded-lg border border-risk-high px-3 py-1.5 text-sm font-medium text-risk-high disabled:opacity-50"
                       >
-                        Clear
+                        {{ 'settings.key.clear' | t }}
                       </button>
                     }
                   </div>
-                  <p class="mt-1 text-xs text-muted">Write-only — a stored key is never shown or re-entered here, only replaced.</p>
+                  <p class="mt-1 text-xs text-muted">{{ 'settings.key.writeOnly' | t }}</p>
                 </div>
 
                 <div>
-                  <h4 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">Endpoint and model</h4>
+                  <h4 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'settings.profile.heading' | t }}</h4>
                   <div class="grid gap-2 sm:grid-cols-2">
                     <input
                       type="text"
-                      placeholder="https://api.example.com"
+                      [placeholder]="'settings.profile.baseUrlPlaceholder' | t"
                       [ngModel]="profileDraft(provider.providerId).baseUrl"
                       (ngModelChange)="profileDraft(provider.providerId).baseUrl = $event"
                       class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
                     />
                     <input
                       type="text"
-                      placeholder="model name"
+                      [placeholder]="'settings.profile.modelPlaceholder' | t"
                       [ngModel]="profileDraft(provider.providerId).model"
                       (ngModelChange)="profileDraft(provider.providerId).model = $event"
                       class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
@@ -134,7 +134,7 @@
                       [ngModel]="profileDraft(provider.providerId).supportsNativeToolCalling"
                       (ngModelChange)="profileDraft(provider.providerId).supportsNativeToolCalling = $event"
                     />
-                    Supports native tool calling
+                    {{ 'settings.profile.nativeToolCalling' | t }}
                   </label>
                   <div class="mt-2 flex flex-wrap gap-2">
                     <button
@@ -143,7 +143,7 @@
                       (click)="saveProfile(provider.providerId)"
                       class="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
                     >
-                      Save endpoint and model
+                      {{ 'settings.profile.save' | t }}
                     </button>
                     @if (!provider.isActive && provider.baseUrl !== null) {
                       <button
@@ -152,7 +152,7 @@
                         (click)="makeActive(provider.providerId)"
                         class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-50"
                       >
-                        Make active
+                        {{ 'settings.profile.makeActive' | t }}
                       </button>
                     }
                   </div>

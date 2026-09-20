@@ -210,7 +210,7 @@ task store holds, per step, plan and replan, the model asked for and the one tha
 and the exact request and reply bodies (bounded by `Agent:MaxModelPayloadCharacters`); the API and the dashboard show
 the first three (a "?" on each step) and never the bodies, which stay in `tasks.db` (SDK `1.2.0-preview.5`). To read a
 call's bodies, query `tasks.db`: `state_json` of the task, `Steps[n].ModelCalls[m].RequestJson` / `.ResponseJson`.
-A separate task, `agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md`, plans Italian and English for the UI.
+The multilingual UI (Italian and English, `agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md`) is implemented; see `web/bops-ui/README.md`.
 V1.2-E is implemented: each role's steps and tokens are counted while it runs and reconciled at its end, its budget is
 reserved from what the run has left, it stops at its own deadline, and a cancelled or expired run ends as `Cancelled` or
 `DeadlineExceeded` (a run under way returns, it no longer throws), all audited. A side-effecting step cancelled while it
@@ -250,8 +250,7 @@ waiting for its plan is `Running`; the API adds `awaitingPlanApproval`), and fou
 `operator` and `approver` can approve its own plan; documented as residual risk).
 V1.2-K is implemented: the Delegations view in `web/bops-ui` (`features/delegations`, `state/delegations.store.ts`, models and client
 methods for `/api/delegations`, a route and a nav entry with a badge for plans waiting). It polls every two seconds like the approval
-queue; buttons follow the role, the API decides. Strings are English literals: the multilingual UI task
-(`2026-09-19-ui-multilanguage-it-en.md`) has not landed, so this view's strings join the catalogues when it migrates the UI.
+queue; buttons follow the role, the API decides. Its strings were migrated to the translation catalogues by the multilingual UI task.
 V1.2-L is implemented: `docs/agents/delegation.md`, `docs/agents/delegation-policy.md` (its yaml example is loaded by
 `DelegationPolicyGuideTests`, so it cannot drift from the loader), the threat-model section on the limits of the envelope, and the
 README, roadmap, bootstrap and task index aligned to "V1.2 A–L implemented, M open". Nothing is claimed as released.

@@ -6,11 +6,14 @@ import { FormsModule } from '@angular/forms';
 import {
   Delegation,
   DelegationRole,
+  DelegationStep,
   DelegationRoleOrder,
   PendingPlanApproval,
   StartDelegationRequest,
 } from '../../core/api/models';
 import { AuthService } from '../../core/auth/auth.service';
+import { I18n } from '../../core/i18n/i18n';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { DelegationsStore } from '../../state/delegations.store';
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -35,12 +38,13 @@ const NEUTRAL_CLASS = 'bg-status-neutral/15 text-status-neutral';
  */
 @Component({
   selector: 'bops-delegations',
-  imports: [FormsModule],
+  imports: [FormsModule, TranslatePipe],
   templateUrl: './delegations.html',
 })
 export class Delegations {
   protected readonly store = inject(DelegationsStore);
   private readonly auth = inject(AuthService);
+  protected readonly i18n = inject(I18n);
 
   protected readonly selectedId = signal<string | null>(null);
   protected readonly notes = signal<Record<string, string>>({});
@@ -93,7 +97,23 @@ export class Delegations {
   }
 
   protected formatTime(iso: string | null): string {
-    return iso ? new Date(iso).toLocaleString() : '';
+    return this.i18n.dateTime(iso);
+  }
+
+  /** A role's status, steps and tokens on one line, each in the active language (steps and tokens by plural rule). */
+  protected roleStats(role: DelegationRole): string {
+    return this.i18n.t('delegations.roles.stats', {
+      status: this.i18n.label('roleStatus', role.status),
+      steps: this.i18n.t('delegations.roles.steps', { count: role.steps }),
+      tokens: this.i18n.t('delegations.roles.tokens', { count: role.tokens }),
+    });
+  }
+
+  /** How a journal entry ended: how it was reconciled if it was, else its outcome, else that it is not known. */
+  protected journalOutcome(entry: DelegationStep): string {
+    if (entry.reconciliation) return this.i18n.label('reconciliation', entry.reconciliation);
+    if (entry.outcome) return this.i18n.label('stepOutcome', entry.outcome);
+    return this.i18n.t('delegations.journal.unknown');
   }
 
   protected json(value: unknown): string {

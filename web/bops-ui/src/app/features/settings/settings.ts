@@ -5,6 +5,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SettingsProviderView } from '../../core/api/models';
 import { AuthService } from '../../core/auth/auth.service';
+import { I18n } from '../../core/i18n/i18n';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { SettingsStore } from '../../state/settings.store';
 
 interface ProfileDraft {
@@ -15,12 +17,13 @@ interface ProfileDraft {
 
 @Component({
   selector: 'bops-settings',
-  imports: [FormsModule],
+  imports: [FormsModule, TranslatePipe],
   templateUrl: './settings.html',
 })
 export class Settings implements OnInit {
   protected readonly settings = inject(SettingsStore);
   private readonly auth = inject(AuthService);
+  private readonly i18n = inject(I18n);
 
   protected readonly isAdministrator = () => this.auth.identity()?.roles.includes('administrator') ?? false;
 
@@ -71,7 +74,7 @@ export class Settings implements OnInit {
   }
 
   protected async clearKey(providerId: string): Promise<void> {
-    if (!confirm(`Clear the stored API key for '${providerId}'? This cannot be undone from here.`)) {
+    if (!confirm(this.i18n.t('settings.key.confirmClear', { provider: providerId }))) {
       return;
     }
 

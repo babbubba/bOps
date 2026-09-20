@@ -111,6 +111,6 @@ Telemetry never carries output or arguments.
 
 - The runtime does not write the `AwaitingApproval` status: a run waiting for its plan is `Running`. The API and the dashboard report
   `awaitingPlanApproval` from their own approval queue.
-- The dashboard's text is English; it joins the translation catalogues when the multilingual UI task lands.
+- The dashboard is translated (English and Italian); what the API returns, such as findings and evidence descriptions, and its own error messages stay as sent.
 - The administrator role for reconciling is enforced by the API. The CLI trusts whoever is at the terminal, as `bops vault rotate-key`
   does.
