@@ -167,6 +167,15 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
   envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
   mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
+- V1.2-J delegations API (no SDK change, ADR-0030 section 9; `docs/agents/delegations-api.md`): `POST /api/delegations` (operator,
+  `Idempotency-Key` honoured through the delegation store, so it holds across a restart), `GET /api/delegations` and
+  `GET /api/delegations/{id}` (viewer), `POST /api/delegations/{id}/cancel` and `/resume` (operator), `POST /api/delegations/{id}/reconcile`
+  (administrator), `GET /api/delegations/approvals` and `POST /api/delegations/{id}/approval` (approver). A plan is decided through an
+  approval queue (`ApiPlanApprovalProvider`) beside the step approval queue, by the plan's hash: an answer for another hash decides
+  nothing. The host builds the role profiles from the same loaded `policy.yaml` as its policy engine, so a missing or broken file ends a
+  delegation `Denied` on the `Profile` dimension before any model call. A run's view omits the data of every piece of evidence, the
+  authority of each role and the model calls. While a plan waits, the run is `Running` with `awaitingPlanApproval: true` (the runtime
+  never writes `AwaitingApproval`). The threat model gains the delegated-run surface and the inter-agent data flow.
 - V1.2-I `bops delegate` (`bOps.Abstractions` `1.2.0-preview.8`, additive, ADR-0030 section 9): `bops delegate "<objective>"`
   runs an objective through Discovery, Diagnostic, Remediation and Verification, diagnosing only unless `--skill`,
   `--capability`, `--target` and `--environment` name a change; `bops delegate status|resume|cancel <run-id>` and

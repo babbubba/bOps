@@ -243,7 +243,12 @@ store and the real `bops` executable as a process; it found two defects that are
 SQLite, and a resume of a journal without a plan). The administrator role for `reconcile` is not enforced by the CLI: a person at
 the terminal is the trust anchor, as for `bops vault rotate-key`; the API (V1.2-J) enforces the role. `cancel` reaches a stored
 run only; a run executing in a live process is cancelled with Ctrl+C in it.
-Next action: V1.2-J (API surface)
+V1.2-J is implemented: `/api/delegations` (start, list, read, cancel, resume, reconcile, plan approval), role-gated as ADR-0030 section 9
+asks, with `docs/agents/delegations-api.md` and a threat-model section. The API host builds `PolicyRoleProfileSource` over the same loaded
+`PolicyConfig` as its engine (`LoadedPolicy`). Two things to know: the runtime never writes `DelegationStatus.AwaitingApproval` (a run
+waiting for its plan is `Running`; the API adds `awaitingPlanApproval`), and four-eyes approval is not built (an identity holding both
+`operator` and `approver` can approve its own plan; documented as residual risk).
+Next action: V1.2-K (Angular Delegations view)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

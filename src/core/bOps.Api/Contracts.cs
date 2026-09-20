@@ -9,6 +9,22 @@ internal sealed record StartTaskRequest(string Goal);
 /// <summary>Response of <c>POST /api/agents/tasks</c> and <c>POST /api/agents/tasks/{id}/resume</c> — the task has started, not finished.</summary>
 internal sealed record TaskAcceptedResponse(Guid TaskId);
 
+/// <summary>Body of <c>POST /api/delegations</c> (ADR-0030 section 9). Without <see cref="Remediation"/> the run only diagnoses.</summary>
+internal sealed record StartDelegationRequest(string Objective, int? MaxSteps, int? MaxTokens, DelegationRemediationBody? Remediation);
+
+/// <summary>The change a delegated run may prepare. <see cref="BlastRadius"/> is <c>single</c>, <c>multiple</c> or <c>fleet</c>; omitted, <c>single</c>.</summary>
+internal sealed record DelegationRemediationBody(
+    string SkillId, string CapabilityName, string Target, string Environment, string? BlastRadius, bool DryRun, System.Text.Json.Nodes.JsonObject? Input);
+
+/// <summary>Response of <c>POST /api/delegations</c> and <c>POST /api/delegations/{id}/resume</c>: the run exists, it has not finished.</summary>
+internal sealed record DelegationAcceptedResponse(Guid DelegationId);
+
+/// <summary>Body of <c>POST /api/delegations/{id}/reconcile</c>. <see cref="Decision"/> is <c>accept</c> (the unsettled steps are done) or <c>abandon</c> (end the run).</summary>
+internal sealed record ReconcileDelegationRequest(string Decision, string? Note);
+
+/// <summary>Body of <c>POST /api/delegations/{id}/approval</c>. <see cref="PlanHash"/> is the hash of the plan being decided, so an answer cannot land on a different plan.</summary>
+internal sealed record RespondToPlanApprovalRequest(string PlanHash, bool Approved, string? Note);
+
 /// <summary>Body of <c>POST /api/approvals/{approvalId}/respond</c>. Approver identity comes only from the authenticated principal (ADR-0022).</summary>
 internal sealed record RespondToApprovalRequest(
     bool Approved,
