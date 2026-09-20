@@ -866,9 +866,17 @@ public sealed class AgentRunner(
         {
             ct.ThrowIfCancellationRequested();
 
-            // A step that declares no verification (a Read step) has nothing to confirm.
-            if (registry.Resolve(planStep.ToolName) is not IVerifiableTool verifiable || verifiable.Manifest.Verification is not { } spec)
+            var resolved = registry.Resolve(planStep.ToolName);
+            if (resolved is not IVerifiableTool verifiable || verifiable.Manifest.Verification is not { } spec)
             {
+                // A Read step declares no verification and has nothing to confirm. Anything else that cannot be verified is
+                // not skipped: a step nobody could check must not let the others' confirmation stand for it (rule S4).
+                if (resolved is null || resolved.Manifest.Risk != RiskLevel.Read)
+                {
+                    statuses.Add(VerificationStatus.Inconclusive);
+                    details.Add($"'{planStep.ToolName}': it declares no verification or is not registered, so it was not confirmed.");
+                }
+
                 continue;
             }
 
@@ -1550,6 +1558,15 @@ public sealed class AgentRunner(
         {
             var approval = await approvalProvider.RequestApprovalAsync(
                 manifest, call.Arguments, manifest.Verification, policyDecision.Reason, ct);
+
+            // ADR-0030 section 5: in a delegated run an agent can only request an approval. A yes from an agent, from the runtime or
+            // in the name of one of the run's agents is not one, and is recorded and acted on as a refusal.
+            if (delegation is not null && approval.Approved
+                && !SeparationOfDuties.IsHumanApprover(
+                    approval.Actor, delegation.Correlation.Agent is { } acting ? [acting.Id, .. delegation.PeerAgents] : delegation.PeerAgents))
+            {
+                approval = approval with { Approved = false, Note = "The approval did not come from a human identity and was refused." };
+            }
 
             // ADR-0015: distinct from the PolicyDecisionAuditEvent above — that records what
             // policy decided (approval is required, and why); this records what the human

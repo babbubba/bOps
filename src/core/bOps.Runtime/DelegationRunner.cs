@@ -38,7 +38,13 @@ namespace bOps.Runtime;
 /// With an <see cref="IDelegationStore"/> a run is durable (V1.2-F, ADR-0030 section 7): it is saved at every transition, the
 /// intent of each side-effecting step is committed before the step runs and its outcome after, and a run a crash left
 /// <see cref="DelegationStatus.Running"/> can be resumed without repeating a completed side effect. Without one a run lives in
-/// memory, as before. The independence checks that go beyond this construction are V1.2-G.
+/// memory, as before.
+/// </para>
+/// <para>
+/// No role approves or verifies its own work (V1.2-G, ADR-0030 section 5). Approvals are human only, at the plan and at every
+/// step: a decision made by an agent, by the runtime or in the name of one of the run's agents is refused and audited as a
+/// refusal. Every role has its own agent identity, and a run in which two share one is invalid, whether it is being run or
+/// read back from a store. Verification is given only the approved plan and reads the system through its own envelope.
 /// </para>
 /// </remarks>
 public sealed class DelegationRunner(
@@ -55,6 +61,9 @@ public sealed class DelegationRunner(
     public const int DefaultMaximumResumes = 3;
 
     private const int MaximumMessageLength = 500;
+
+    /// <summary>Where the agent of each role comes from. The runtime is the only source of an agent id (ADR-0030 section 1); a test replaces it to make two roles collide.</summary>
+    internal Func<AgentId> AgentIds { get; init; } = AgentId.New;
 
     // CancellationTokenSource takes a delay of at most about 49 days; a deadline further off than this is left to the clock checks.
     private static readonly TimeSpan MaximumTimer = TimeSpan.FromDays(30);
@@ -136,7 +145,12 @@ public sealed class DelegationRunner(
 
         try
         {
-            if (stored.ResumeCount >= maximumResumes)
+            if (SeparationOfDuties.SharedIdentity(stored.Roles.Select(role => role.Agent)) is { } shared)
+            {
+                // A stored run that fails the rule is not trusted to have been independently checked, so it is not continued.
+                state.End(DelegationStatus.Failed, $"{shared} The stored run is not resumed.");
+            }
+            else if (stored.ResumeCount >= maximumResumes)
             {
                 state.End(DelegationStatus.Failed, $"The run was resumed {stored.ResumeCount} times already, which is the most it may be.");
             }
@@ -743,8 +757,15 @@ public sealed class DelegationRunner(
         }
 
         var envelope = reduction.Envelope!;
-        var agent = new AgentIdentity(AgentId.New(), role);
-        var scope = DelegatedExecutionScope.For(state.Id, agent, envelope);
+        var agent = new AgentIdentity(AgentIds(), role);
+        if (SeparationOfDuties.SharedIdentity([.. state.Roles.Select(r => r.Agent), agent]) is { } shared)
+        {
+            // ADR-0030 section 5: nothing has been granted to this role yet, and none will be.
+            state.End(DelegationStatus.Failed, shared);
+            return null;
+        }
+
+        var scope = DelegatedExecutionScope.For(state.Id, agent, envelope) with { PeerAgents = [.. state.Roles.Select(r => r.Agent.Id)] };
         if (store is not null)
         {
             scope = scope with { Journal = new StepJournal(this, state, scope.Correlation) };
@@ -1070,9 +1091,7 @@ public sealed class DelegationRunner(
     private static bool IsHuman(ActorIdentity approver, RunState state) => IsHuman(approver, state.Roles);
 
     private static bool IsHuman(ActorIdentity approver, IReadOnlyList<DelegationRoleRun> roles) =>
-        !string.Equals(approver.Kind, "agent", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(approver.Kind, ActorIdentity.RuntimeSystem.Kind, StringComparison.OrdinalIgnoreCase)
-        && !roles.Any(role => string.Equals(role.Agent.Id.ToString(), approver.Id, StringComparison.OrdinalIgnoreCase));
+        SeparationOfDuties.IsHumanApprover(approver, roles.Select(role => role.Agent.Id));
 
     /// <summary>
     /// A private copy of a prepared plan, so a list a Capability kept cannot change what a human approved. The hash the run
