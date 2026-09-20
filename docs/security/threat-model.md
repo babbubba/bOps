@@ -211,6 +211,31 @@ every role has a step, token and deadline budget.
 
 Residual risk: no four-eyes rule; an `approver` can read plan arguments; an in-process package still has the host's privileges (S8).
 
+### Limits of the authority envelope
+
+The envelope of a delegated role is a real control and has edges. These are stated where they were found (V1.2-C2, C3, D and G);
+the model is in `docs/agents/delegation.md`.
+
+- **Targets and environments are matched only for a step that carries a Skill scope.** A tool manifest declares no target or
+  environment; only a step that realizes an ADR-0025 capability names them. A plain `Read` call is not checked against them, and its
+  reach stays bound by its own argument validation and path policy (ADR-0031 section 4, S2, S11).
+- **An envelope restricts calls that go through the runtime's delegated entry points.** It does nothing against code that does not
+  (S8): an in-process package still has the host's privileges, and a role that reached a public, non-delegated entry point would run
+  unrestricted. The orchestrator is therefore the trust boundary: it is the only caller of the delegated entry points, and a test
+  shows that every audit event of every role carries the delegation's correlation block, which a call through a public entry point would lack.
+- **The post-action verification of an executed step runs outside the envelope.** It is named by the tool's own manifest, never by
+  an agent, and bypasses policy as rule S4 requires. The independent Verification role, by contrast, reads through its own envelope.
+- **An envelope refusal is audited as a `Forbidden` policy decision** whose reason starts "Authority envelope:", followed by a denied
+  tool-call event. It reuses the existing denial path, so the repeated-denial stop and the replan trigger treat it as they treat any
+  policy denial. The reason names the role and what the step asked for, and never lists what the envelope allows, because it reaches
+  the model as a tool observation.
+- **Budgets and the deadline are enforced by the orchestrator, not the step path.** Exhausting a budget or passing a deadline is
+  `BudgetExceeded` or `DeadlineExceeded`, not a denial.
+- **The tool view is narrowed as a courtesy.** A delegated role is offered only the tools its envelope allows and no more than its
+  risk ceiling; the envelope is still enforced on every call.
+- **A malformed `delegation` section fails the whole policy to `AllForbidden`.** This denies delegation, and every tool above `Read`,
+  until the file is fixed (`docs/agents/delegation-policy.md`).
+
 ### Denial of service
 
 API rate limits, maximum concurrent agent runs, model/tool timeouts, step/replan/token/cost budgets,

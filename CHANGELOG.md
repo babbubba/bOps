@@ -167,6 +167,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
   envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
   mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
+- V1.2-L documentation and alignment (no code or SDK change): `docs/agents/delegation.md` (the model: roles, authority reduction, approval,
+  budgets, resume and reconciliation, audit, surfaces, and what it does not do: no parallelism, no agent approval, no microservices, no remote
+  guarantees), `docs/agents/delegation-policy.md` (the `delegation` section of `policy.yaml` for operators, with a working example that a
+  test loads from the document itself), and a threat-model section on the limits of the authority envelope. README, roadmap, bootstrap and
+  task index now say V1.2 A–L are implemented and the gate (M) is open.
 - V1.2-K Delegations view in the dashboard (`web/bops-ui`, no API or SDK change): a list of runs and, for the one selected, its roles
   in pipeline order with agent id, status and consumption, the findings and the evidence they cite (never what a tool returned), the
   verification verdict, the plan hash and who approved it, the step journal, a denial with the dimension it was refused on, and a

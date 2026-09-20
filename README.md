@@ -208,10 +208,10 @@ bops delegate "fix nginx" --skill service.skill --capability service.restore --t
                                                            # ... and a change: you approve the plan by its hash first
 bops delegate status|resume|cancel <run-id>                # read, continue or end a stored run
 bops delegate reconcile <run-id> --accept|--abandon        # settle a step whose outcome is not known; it is never retried
-# over HTTP: /api/delegations (see docs/agents/delegations-api.md)
+# over HTTP: /api/delegations (docs/agents/delegations-api.md); model and limits: docs/agents/delegation.md
 ```
 
-Delegation is off until `policy.yaml` has a `delegation` section (ADR-0031). Exit codes: `0` completed or diagnosed, `1` failed
+Delegation is off until `policy.yaml` has a `delegation` section (ADR-0031; [how to write it](docs/agents/delegation-policy.md)). Exit codes: `0` completed or diagnosed, `1` failed
 or a usage error, `2` denied or blocked by policy, `3` rejected or abandoned, `4` requires reconciliation, `5` budget or
 deadline exceeded, `6` verification did not confirm, `10` not finished, `130` cancelled.
 
@@ -266,7 +266,7 @@ through the UI, exactly like losing `plugins.json` means reinstalling plugins.
 **V0.1 through V1.1 are implemented.** The formal V1.0 release workflow still needs its first
 operator-authorized tagged run, and V1.1 is likewise untagged. V1.1-A through V1.1-H are complete,
 including the cross-platform integration and release gate, which is green on Windows and Linux CI.
-V1.2 (multi-agent orchestration) is next.
+V1.2 (multi-agent orchestration) is in progress: its sub-tasks A–L are implemented and the integration and release gate (M) is open.
 
 | | |
 |---|---|
@@ -287,7 +287,7 @@ V1.2 (multi-agent orchestration) is next.
 | `V1.1-B–F` *(complete)* | Add bounded system/device inventory, filesystem sizing, hash-bound recursive deletion, SearXNG-backed Web search/safe fetch, and a read-only plugin catalog API/UI |
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
-| `V1.2` | In-process multi-agent orchestration with privilege-reducing delegation |
+| `V1.2` *(A–L implemented, gate M open)* | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
 | `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
@@ -351,6 +351,11 @@ lock, missing UI install before the SBOM step) and produced no artifacts; it is 
 superseded. The artifacts are workflow artifacts, not a GitHub Release or a NuGet publication, and
 this is not yet a production endorsement.
 
+**V1.2 is in progress, not released.** Delegated runs (`bops delegate`, `/api/delegations`, the dashboard's Delegations view) are
+implemented and each sub-task passed Windows and Linux CI, but the V1.2 integration and release gate has not been run, so treat the
+feature as a preview: the public SDK is `1.2.0-preview.8`, no V1.2 tag exists, and what it does not do is stated in
+[`docs/agents/delegation.md`](docs/agents/delegation.md).
+
 ## Documentation
 
 | | |
@@ -366,6 +371,9 @@ this is not yet a production endorsement.
 | [`docs/governed-recursive-deletion.md`](docs/governed-recursive-deletion.md) | Exact manifest, mandatory approval, bounds and partial-failure recovery |
 | [`docs/security/web-network-policy.md`](docs/security/web-network-policy.md) | SearXNG setup, `web.fetch` SSRF/redirect/decompression policy and configuration |
 | [`docs/plugins/getting-started.md`](docs/plugins/getting-started.md) | Write your first bOps plugin |
+| [`docs/agents/delegation.md`](docs/agents/delegation.md) | Delegated runs: roles, authority reduction, approval, resume, and what they do not do |
+| [`docs/agents/delegation-policy.md`](docs/agents/delegation-policy.md) | Turning delegation on in `policy.yaml`, with a working example |
+| [`docs/agents/delegations-api.md`](docs/agents/delegations-api.md) | The `/api/delegations` endpoints and their roles |
 
 ## License
 

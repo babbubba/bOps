@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.2** (V1.1 batches A–H complete; preview tag `v1.1.0-preview.2` released)
-Next implementation batch: **V1.2 — in-process multi-agent orchestration (ADR first)**
+Next implementation batch: **V1.2-M — integration and release gate** (V1.2-A through V1.2-L are implemented)
 
 ## 1. Authority and precedence
 
@@ -53,7 +53,8 @@ dependency isolation rather than a security sandbox.
 | V1.0 implementation | Complete | Authentication/authorization, secret references, bounded execution, plugin provenance, audit verification and release workflow are present. |
 | V1.0 formal release | Closed via `v1.1.0-preview.2` | The release workflow was proven on tag `v1.1.0-preview.2` (`c81ffab`, run `35383901325`) with verified archives, package, SBOMs, checksums and attestations. No stable `v1.0.x` tag exists or will be created; the first stable tag is decided at V1.1 GA. |
 | V1.1 | Complete (preview tag `v1.1.0-preview.2`) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). The preview artifacts are workflow artifacts only, not a GitHub Release or NuGet publication. |
-| V1.2–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
+| V1.2 | In progress | Sub-tasks A–L are implemented, each with its pull request green on Windows and Linux CI: contracts, authority reduction, the orchestrator, budgets, durable state, separation of duties, audit provenance, CLI, API, dashboard view and documentation. M (integration and release gate) is open, so V1.2 is not closed and has no tag. |
+| V1.3–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
 formally released until its release gate is satisfied.
