@@ -132,7 +132,7 @@
       "bops.packages.system.conformance": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.6, )",
+          "bOps.Abstractions": "[1.2.0-preview.7, )",
           "bOps.Packages.System.Core": "[1.0.0, )",
           "xunit.assert": "[2.9.3, )"
         }
@@ -140,14 +140,14 @@
       "bops.packages.system.core": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.6, )"
+          "bOps.Abstractions": "[1.2.0-preview.7, )"
         }
       },
       "bops.packages.system.windows": {
         "type": "Project",
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.6, )",
+          "bOps.Abstractions": "[1.2.0-preview.7, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
       }

@@ -820,9 +820,12 @@ public sealed class DelegationRunner(
         state.Active = null;
         role.Dispose();
         await PersistAsync(state);
+        // Which evidence this role itself gathered, by id: enough to say who it came from, without what it says (ADR-0030 section 8).
+        var gathered = (report?.Evidence ?? verification?.Evidence)?
+            .Where(e => e.Provenance?.AgentId == role.Agent.Id).Select(e => e.Id).ToList();
         await WriteLifecycleAsync(
             state, DelegationStage.RoleCompleted, DelegationStatus.Running, role.Scope.Correlation, ct,
-            roleStatus: status, consumed: consumed, error: error);
+            roleStatus: status, consumed: consumed, error: error, evidenceIds: gathered is { Count: > 0 } ? gathered : null);
         await WriteLifecycleAsync(
             state, DelegationStage.BudgetConsumed, DelegationStatus.Running, role.Scope.Correlation, ct,
             roleStatus: status, consumed: consumed);
@@ -1132,7 +1135,8 @@ public sealed class DelegationRunner(
         BudgetConsumption? consumed = null,
         string? error = null,
         string? planHash = null,
-        ActorIdentity? actor = null) =>
+        ActorIdentity? actor = null,
+        IReadOnlyList<string>? evidenceIds = null) =>
         WriteAsync(
             new DelegationLifecycleAuditEvent
             {
@@ -1145,6 +1149,7 @@ public sealed class DelegationRunner(
                 Status = status,
                 RoleStatus = roleStatus,
                 Consumed = consumed,
+                EvidenceIds = evidenceIds,
                 ErrorMessage = error is null ? null : Bounded(error),
                 PlanHash = planHash,
             },

@@ -230,7 +230,12 @@ approval; a run that shares an identity between roles is invalid when it runs an
 through its own envelope, and that is now a test of its signature as well as of its behaviour. No SDK change. Open for the
 operator (agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md, "For the operator"): the runtime accepts the operator
 who started a run as the approver of its plan; requiring a second person is a policy decision, not built.
-Next action: V1.2-H (audit correlation and provenance)
+V1.2-H is implemented, and found the audit trail already nearly complete: C2, D, E and F had stamped the correlation block on
+every event and emitted every event type of ADR-0030 section 8. What it added is the one thing missing to rebuild the chain of
+provenance from the log, the ids of the evidence each role gathered (`EvidenceIds`, SDK `1.2.0-preview.7`), and the tests that
+prove the section end to end (`DelegationRunnerAuditTests`). `bops audit verify` needed no change. `bOps.Runtime.Tests` now
+references `bOps.Audit` to run a delegated run through the real hash-chained sink.
+Next action: V1.2-I (CLI surface)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

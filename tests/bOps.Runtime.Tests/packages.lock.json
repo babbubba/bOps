@@ -115,11 +115,17 @@
       "bops.abstractions": {
         "type": "Project"
       },
+      "bops.audit": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.7, )"
+        }
+      },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.6, )"
+          "bOps.Abstractions": "[1.2.0-preview.7, )"
         }
       }
     }

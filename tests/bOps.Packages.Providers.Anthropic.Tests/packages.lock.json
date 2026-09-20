@@ -221,7 +221,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Http": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.6, )"
+          "bOps.Abstractions": "[1.2.0-preview.7, )"
         }
       }
     }

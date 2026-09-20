@@ -69,7 +69,8 @@ public sealed partial class DelegationRunnerTests
         string name = "service.restart",
         VerificationStatus verdict = VerificationStatus.Confirmed,
         Func<CancellationToken, Task>? whileRunning = null,
-        Func<string?, VerificationStatus>? judge = null) : IVerifiableTool
+        Func<string?, VerificationStatus>? judge = null,
+        IReadOnlyList<ToolParameter>? parameters = null) : IVerifiableTool
     {
         public int ExecutionCount { get; private set; }
 
@@ -88,7 +89,7 @@ public sealed partial class DelegationRunnerTests
             Risk = RiskLevel.High,
             Platforms = [CurrentPlatform.Id],
             Requires = [],
-            Parameters = [],
+            Parameters = parameters ?? [],
             Verification = new VerificationSpec("test.read", [], "Reads the service state."),
         };
 
@@ -205,7 +206,8 @@ public sealed partial class DelegationRunnerTests
         bool auditHonoursCancellation = false,
         Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null,
         IDelegationStore? store = null,
-        int maximumResumes = DelegationRunner.DefaultMaximumResumes)
+        int maximumResumes = DelegationRunner.DefaultMaximumResumes,
+        IAuditSink? sink = null)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
@@ -239,7 +241,7 @@ public sealed partial class DelegationRunnerTests
 
         var fakeModel = model as FakeChatModel ?? new FakeChatModel(script ?? HappyScript());
         var recording = new RecordingAuditSink();
-        IAuditSink audit = failAuditOn is null ? recording : new FlakyAuditSink(recording, failAuditOn);
+        IAuditSink audit = sink ?? (failAuditOn is null ? recording : new FlakyAuditSink(recording, failAuditOn));
         if (auditHonoursCancellation)
         {
             audit = new CancellationHonouringSink(audit);

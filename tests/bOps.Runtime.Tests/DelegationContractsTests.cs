@@ -440,6 +440,34 @@ public sealed class DelegationContractsTests
     }
 
     [Fact]
+    public void DelegationLifecycleAuditEvent_RoundTrips_TheIdsOfTheEvidenceARoleGathered_AndReadsOlderEventsWithNone()
+    {
+        AuditEvent value = new DelegationLifecycleAuditEvent
+        {
+            TimestampUtc = T0,
+            Node = Node,
+            TaskId = DelegationId,
+            StepIndex = -1,
+            Actor = Operator,
+            Delegation = SampleCorrelation(),
+            Stage = DelegationStage.RoleCompleted,
+            Status = DelegationStatus.Running,
+            RoleStatus = DelegationRoleStatus.Completed,
+            Consumed = new BudgetConsumption(4, 900),
+            EvidenceIds = ["discovery-0", "discovery-1"],
+        };
+
+        var result = Assert.IsType<DelegationLifecycleAuditEvent>(RoundTripBoth(value, DelegationContractsJsonContext.Default.AuditEvent));
+        var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(value, Reflection))!.AsObject();
+        node.Remove("EvidenceIds");
+        var older = Assert.IsType<DelegationLifecycleAuditEvent>(JsonSerializer.Deserialize<AuditEvent>(node.ToJsonString(), Reflection));
+
+        Assert.Equal(["discovery-0", "discovery-1"], result.EvidenceIds);
+        Assert.DoesNotContain("discovery", JsonSerializer.Serialize(older, Reflection), StringComparison.Ordinal);
+        Assert.Null(older.EvidenceIds);
+    }
+
+    [Fact]
     public void DelegationLifecycleAuditEvent_RoundTrips_AHumansDecisionOnAPlanHash()
     {
         AuditEvent value = new DelegationLifecycleAuditEvent
