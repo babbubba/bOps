@@ -236,21 +236,76 @@ credential from `BOPS_MODEL_API_KEY`; the API resolves its model credential from
 the API credential in memory and loses it on refresh by design. Bind the API to loopback, or put
 TLS and an authenticated reverse proxy in front of it.
 
-To let the Angular UI's Settings page manage provider keys (ADR-0029), add a `Vault` section
-pointing at an environment variable holding the master key — this is opt-in; without it, the
-Settings key-management surface (`/api/settings/*`) does not exist and behavior is unchanged from
-V1.1-F:
+### Enabling the Settings page (the credential vault)
 
-```json
-"Vault": {
-  "FilePath": "vault.dat",
-  "MasterKeySecret": { "Provider": "environment", "Name": "BOPS_VAULT_MASTER_KEY" }
-}
-```
+The Angular UI's Settings page (provider endpoint, model and API key, ADR-0029) is **opt-in**. It needs the encrypted local vault, and
+the vault needs a master key that you provide from outside the repository. That is why `src/core/bOps.Api/appsettings.json` does not
+contain a `Vault` section: the shipped file cannot hold a secret, and a configured master key that does not resolve makes the API refuse
+to start. Without the vault the `/api/settings/*` endpoints are simply not mapped: the API answers `404` and the Settings page says the
+vault is not configured. Everything else behaves as before.
 
-Set `BOPS_VAULT_MASTER_KEY` to a real secret of at least 20 characters before starting `bOps.Api`
-— a configured-but-unresolvable master key refuses to start rather than run with the vault
-silently unprotected. Rotate the master key with the CLI (not exposed through the API, by design):
+1. **Create a master key**: any secret of at least 20 characters. Keep it in your password manager, not in the repository.
+
+   ```powershell
+   # PowerShell
+   [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+   ```
+
+   ```bash
+   # bash
+   openssl rand -base64 32
+   ```
+
+2. **Put it in the environment of the process that runs `bOps.Api`**, next to `BOPS_API_KEY`:
+
+   ```powershell
+   $env:BOPS_VAULT_MASTER_KEY = '<the key from step 1>'
+   ```
+
+   ```bash
+   export BOPS_VAULT_MASTER_KEY='<the key from step 1>'
+   ```
+
+   If `bOps.Api` is started by a launcher (an Aspire AppHost, a service, a container), set the variable in that launcher's
+   environment; a variable set in another terminal does not reach it.
+
+3. **Tell the API to use it**, with either of these (the same configuration, two spellings):
+
+   - environment variables, no file to edit:
+
+     ```powershell
+     $env:Vault__MasterKeySecret__Provider = 'environment'
+     $env:Vault__MasterKeySecret__Name = 'BOPS_VAULT_MASTER_KEY'
+     ```
+
+   - or a `Vault` section in the API's configuration, for example in `src/core/bOps.Api/appsettings.json` (or an
+     `appsettings.Production.json` you keep out of git). `FilePath` is optional and defaults to `vault.dat` in the API's working
+     directory, like `tasks.db` and `audit.jsonl`:
+
+     ```json
+     "Vault": {
+       "FilePath": "vault.dat",
+       "MasterKeySecret": { "Provider": "environment", "Name": "BOPS_VAULT_MASTER_KEY" }
+     }
+     ```
+
+     The provider is `environment` (the value of the variable named in `Name`); there is no default, so `MasterKeySecret` has to be
+     present for the vault to be active.
+
+4. **Start `bOps.Api` and check.** `GET /api/settings` with your `BOPS_API_KEY` (an `administrator` key) answers `200`, and the
+   Settings page lists the providers. The page is visible to administrators only.
+
+What the API does at start-up, so the errors are not a surprise:
+
+| Situation | Result |
+|---|---|
+| No `Vault:MasterKeySecret` in the configuration | Vault off: `/api/settings/*` answers `404`, the Settings page says so. |
+| Configured, but the environment variable is unset or empty | The API **refuses to start**, naming the variable. |
+| Configured, but the value is shorter than 20 characters | The API **refuses to start**. |
+| Configured and valid | Vault on. Keys entered in Settings are encrypted (AES-256-GCM) in `vault.dat`; profiles and the active provider are in `settings.json`. Changes take effect on the next restart. |
+
+The master key is never stored beside `vault.dat`, and no endpoint returns a stored key. Losing the master key means re-entering the
+provider keys in Settings. Rotate the master key with the CLI (not exposed through the API, by design):
 
 ```bash
 BOPS_VAULT_MASTER_KEY=<current-key> BOPS_NEW_VAULT_MASTER_KEY=<new-key> \
