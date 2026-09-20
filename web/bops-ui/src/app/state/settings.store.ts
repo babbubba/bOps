@@ -5,6 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { I18n } from '../core/i18n/i18n';
+import { describeError } from './describe-error';
 import { SetProviderProfileRequest, SettingsView } from '../core/api/models';
 
 interface SettingsState {
@@ -23,15 +25,6 @@ const initialState: SettingsState = {
   conflict: false,
 };
 
-function describeError(err: unknown): string {
-  if (err instanceof HttpErrorResponse) {
-    const message = (err.error as { message?: string } | null)?.message;
-    return message ?? err.message;
-  }
-
-  return err instanceof Error ? err.message : 'Something went wrong.';
-}
-
 /**
  * Administrator-only Settings (ADR-0029): active provider, each provider's profile, and each
  * provider's stored API key (write-only — never returned in plaintext). Every mutation
@@ -41,14 +34,19 @@ function describeError(err: unknown): string {
 export const SettingsStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
-  withMethods((store, api = inject(BOpsApiClient)) => {
+  withMethods((store, api = inject(BOpsApiClient), i18n = inject(I18n)) => {
     async function refresh(): Promise<void> {
       patchState(store, { loading: true, error: null });
       try {
         const view = await api.getSettings();
         patchState(store, { view, loading: false, conflict: false });
       } catch (err) {
-        patchState(store, { loading: false, error: describeError(err) });
+        // The Settings endpoints exist only when the vault is configured (Program.cs), so a 404 means "not on this host".
+        if (err instanceof HttpErrorResponse && err.status === 404) {
+          patchState(store, { view: null, loading: false, error: i18n.t('settings.error.notAvailable') });
+        } else {
+          patchState(store, { loading: false, error: describeError(err, i18n) });
+        }
       }
     }
 
@@ -61,7 +59,7 @@ export const SettingsStore = signalStore(
         return true;
       } catch (err) {
         const conflict = err instanceof HttpErrorResponse && err.status === 409;
-        const errorMessage = describeError(err);
+        const errorMessage = describeError(err, i18n);
         await refresh();
         patchState(store, { saving: false, error: errorMessage, conflict });
         return false;

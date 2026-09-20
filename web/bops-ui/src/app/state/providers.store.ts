@@ -4,6 +4,8 @@
 import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { I18n } from '../core/i18n/i18n';
+import { describeError } from './describe-error';
 import { ActiveProviderInfo } from '../core/api/models';
 import { AuthService } from '../core/auth/auth.service';
 
@@ -12,10 +14,6 @@ interface ProvidersState {
   active: ActiveProviderInfo | null;
   loading: boolean;
   error: string | null;
-}
-
-function describeError(err: unknown): string {
-  return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
 /**
@@ -27,7 +25,7 @@ function describeError(err: unknown): string {
 export const ProvidersStore = signalStore(
   { providedIn: 'root' },
   withState<ProvidersState>({ registeredProviderIds: [], active: null, loading: false, error: null }),
-  withMethods((store, api = inject(BOpsApiClient)) => ({
+  withMethods((store, api = inject(BOpsApiClient), i18n = inject(I18n)) => ({
     async refresh(): Promise<void> {
       patchState(store, { loading: true });
       try {
@@ -39,7 +37,7 @@ export const ProvidersStore = signalStore(
           error: null,
         });
       } catch (err) {
-        patchState(store, { loading: false, error: describeError(err) });
+        patchState(store, { loading: false, error: describeError(err, i18n) });
       }
     },
   })),
