@@ -6,6 +6,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Released
 
+- `v1.2.0-preview.8` (commit `5cd9046`): V1.2 multi-agent delegation preview. The release workflow passed on Windows and Linux (run
+  `35516050493`) with attested runtime archives, the `bOps.Abstractions` `1.2.0-preview.8` package, SBOMs and checksums, published as a
+  GitHub pre-release. Not a NuGet publication.
 - `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
   Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
 
