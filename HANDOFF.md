@@ -235,7 +235,15 @@ every event and emitted every event type of ADR-0030 section 8. What it added is
 provenance from the log, the ids of the evidence each role gathered (`EvidenceIds`, SDK `1.2.0-preview.7`), and the tests that
 prove the section end to end (`DelegationRunnerAuditTests`). `bops audit verify` needed no change. `bOps.Runtime.Tests` now
 references `bOps.Audit` to run a delegated run through the real hash-chained sink.
-Next action: V1.2-I (CLI surface)
+V1.2-I is implemented: `bops delegate` (start, status, resume, cancel, reconcile), a console plan approval that shows the hash,
+the steps, the findings and the authority the change will run under, and one exit code per end. The role profiles come from the
+same loaded policy the engine does. `DelegationRunner.CancelAsync` and `PlanApprovalRequest.Authority` are new (SDK
+`1.2.0-preview.8`). The new `bOps.Cli.Tests` project drives the parser, the console approval, the command over a real SQLite
+store and the real `bops` executable as a process; it found two defects that are fixed (provenance could not be stored in
+SQLite, and a resume of a journal without a plan). The administrator role for `reconcile` is not enforced by the CLI: a person at
+the terminal is the trust anchor, as for `bops vault rotate-key`; the API (V1.2-J) enforces the role. `cancel` reaches a stored
+run only; a run executing in a live process is cancelled with Ctrl+C in it.
+Next action: V1.2-J (API surface)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

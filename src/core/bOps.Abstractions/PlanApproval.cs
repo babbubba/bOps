@@ -94,6 +94,13 @@ public sealed record PlanApprovalRequest
 
     /// <summary>What the diagnosis found, each citing the evidence it rests on.</summary>
     public IReadOnlyList<Finding> Findings { get; init; }
+
+    /// <summary>
+    /// The authority the plan will run under: the envelope the Remediation role will be granted, as it stands when the human is
+    /// asked. What is approved is the plan and that authority together, so a surface shows both. <c>null</c> for a request built by
+    /// a caller that has no envelope to show. Its budget and deadline are those the role will then be given, counted from when it starts.
+    /// </summary>
+    public AuthorityEnvelope? Authority { get; init; }
 }
 
 /// <summary>

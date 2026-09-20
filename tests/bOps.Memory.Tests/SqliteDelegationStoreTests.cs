@@ -102,6 +102,29 @@ public sealed class SqliteDelegationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_ThenLoadAsync_KeepsWhichAgentGatheredEachPieceOfEvidence()
+    {
+        // The setter of Evidence.Provenance is not public, so no package can stamp it; the store must still write and read it, or
+        // every delegated run that gathered evidence would fail to be saved.
+        var agent = AgentId.New();
+        var evidence = System.Text.Json.JsonSerializer.Deserialize<Evidence>(
+            "{\"Id\":\"discovery-0\",\"Kind\":0,\"Description\":\"Observed.\",\"Data\":\"cpu 91%\",\"SourceTool\":\"host.info\","
+            + "\"ObservedAtUtc\":\"2026-09-18T12:00:00+00:00\",\"Provenance\":{\"DelegationId\":\"11111111-1111-1111-1111-111111111111\","
+            + $"\"AgentId\":\"{agent.Value}\",\"Role\":0}}}}")!;
+        Assert.NotNull(evidence.Provenance);
+        var run = Run();
+        var role = run.Roles[0] with { Report = new SkillReport([evidence], [], null) };
+        var store = new SqliteDelegationStore(_filePath);
+        await store.StartAsync(run with { Roles = [role] });
+
+        var loaded = await new SqliteDelegationStore(_filePath).LoadAsync(run.Id);
+
+        var kept = Assert.Single(loaded!.Roles[0].Report!.Evidence);
+        Assert.Equal(agent, kept.Provenance!.AgentId);
+        Assert.Equal(AgentRoleKind.Discovery, kept.Provenance.Role);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReturnsNull_ForAnUnknownRun()
     {
         Assert.Null(await new SqliteDelegationStore(_filePath).LoadAsync(Guid.NewGuid()));

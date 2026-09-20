@@ -10,5 +10,6 @@ using System.Runtime.CompilerServices;
 // ToolManifest fixture with a specific Package value directly, without routing every unit test
 // through a full IToolRegistry.Register call.
 [assembly: InternalsVisibleTo("bOps.Runtime")]
+[assembly: InternalsVisibleTo("bOps.Memory")]
 [assembly: InternalsVisibleTo("bOps.Runtime.Tests")]
 [assembly: InternalsVisibleTo("bOps.Policy.Tests")]
