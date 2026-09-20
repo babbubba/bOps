@@ -66,12 +66,18 @@ public sealed partial class DelegationRunnerTests
 
     /// <summary>The non-Read tool of the plan: counts real executions and can be told how its verification comes out.</summary>
     private sealed class RestartTool(
-        string name = "service.restart", VerificationStatus verdict = VerificationStatus.Confirmed, Func<CancellationToken, Task>? whileRunning = null) : IVerifiableTool
+        string name = "service.restart",
+        VerificationStatus verdict = VerificationStatus.Confirmed,
+        Func<CancellationToken, Task>? whileRunning = null,
+        Func<string?, VerificationStatus>? judge = null) : IVerifiableTool
     {
         public int ExecutionCount { get; private set; }
 
         /// <summary>What the tool's own verification concludes; a test can change it between a crash and a resume.</summary>
         public VerificationStatus Verdict { get; set; } = verdict;
+
+        /// <summary>Verdicts handed out first, one per evaluation, before <see cref="Verdict"/> applies: the runtime's own check, then the Verification role's.</summary>
+        public Queue<VerificationStatus> Verdicts { get; } = new();
 
         public List<string?> VerificationReads { get; } = [];
 
@@ -101,7 +107,8 @@ public sealed partial class DelegationRunnerTests
             ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default)
         {
             VerificationReads.Add(verificationToolResult.Output);
-            return Task.FromResult(new VerificationOutcome(Verdict, Verdict.ToString()));
+            var status = Verdicts.Count > 0 ? Verdicts.Dequeue() : judge is not null ? judge(verificationToolResult.Output) : Verdict;
+            return Task.FromResult(new VerificationOutcome(status, status.ToString()));
         }
     }
 
@@ -184,6 +191,8 @@ public sealed partial class DelegationRunnerTests
         IPolicyEngine? policy = null,
         RecordingPlanApproval? approval = null,
         RestartTool? restart = null,
+        RestartTool? stop = null,
+        Func<AgentId>? agentIds = null,
         Func<ExecutionPlan?>? plan = null,
         string discoveryOutput = "cpu 91%",
         IChatModel? model = null,
@@ -203,7 +212,7 @@ public sealed partial class DelegationRunnerTests
         registry.Register(SamplePackage, new FakeReadTool("host.info", discoveryOutput));
         registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
         registry.Register(SamplePackage, restartTool);
-        registry.Register(SamplePackage, new RestartTool("service.stop"));
+        registry.Register(SamplePackage, stop ?? new RestartTool("service.stop"));
 
         var skills = new SkillRegistry();
         skills.Register(SamplePackage, new TestSkillProvider(
@@ -244,7 +253,7 @@ public sealed partial class DelegationRunnerTests
         var planApproval = approval ?? new RecordingPlanApproval();
         var runner = new DelegationRunner(
             agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance,
-            store, maximumResumes);
+            store, maximumResumes) { AgentIds = agentIds ?? AgentId.New };
         return new Harness { Runner = runner, Agent = agentRunner, Model = fakeModel, Audit = recording, Approval = planApproval, Restart = restartTool, Clock = time };
     }
 

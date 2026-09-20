@@ -223,7 +223,14 @@ SDK moves to `1.2.0-preview.6`. A run is durable only when the runner is given a
 the decider is a human identity. A run that ends `Cancelled` or `DeadlineExceeded` with a step of unknown outcome is not
 resumed (it is an end, and a retry is a new objective); its journal and its error say the outcome is unknown. The task file
 lists the interpretations F made.
-Next action: V1.2-G (separation of duties and independence checks)
+V1.2-G is implemented: `SeparationOfDuties` is the one rule for who may approve (not an agent, not the runtime, not a claimed
+agent id of the run) and for distinct agent identities; a step approval in a delegated run is now checked like the plan
+approval; a run that shares an identity between roles is invalid when it runs and when it is read back from a store;
+`VerifyPlanAsync` no longer skips a step it cannot verify. Verification takes only the approved plan and reads the system
+through its own envelope, and that is now a test of its signature as well as of its behaviour. No SDK change. Open for the
+operator (agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md, "For the operator"): the runtime accepts the operator
+who started a run as the approver of its plan; requiring a second person is a policy decision, not built.
+Next action: V1.2-H (audit correlation and provenance)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

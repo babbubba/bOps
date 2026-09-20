@@ -150,6 +150,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   abandon the run, audited. `StartAsync` takes an idempotency key. The SDK gains `DelegationRun.Authority` and
   `DelegationRun.Remediation` (the request the run started with, so it can resume without its caller),
   `DelegationRemediationRequest` and `DelegationStage.Resumed`; runs stored before this read with none of them.
+- V1.2-G separation of duties (runtime only, ADR-0030 section 5): no role approves or verifies its own work. In a delegated
+  run a step approval decided by an agent, by the runtime or in the name of one of the run's own agents is now refused and
+  audited as a refusal (the plan-level approval already was); before, only the plan's approver was checked. A run in which two
+  roles would share an agent identity ends as `Failed` before the second is granted anything, and a stored run that fails the
+  same rule is not resumed. `VerifyPlanAsync` no longer skips a plan step it cannot verify (an unregistered tool, or a tool that
+  declares no verification but is not a Read): it counts as `Inconclusive`, so the confirmation of the other steps cannot
+  stand for it (rule S4). The verdict of a plan with several steps is now covered as its own guarantee: the worst of its
+  steps, and only `Confirmed` is a success. No SDK change.
 - Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
   runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
   `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`

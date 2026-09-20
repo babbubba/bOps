@@ -185,7 +185,15 @@ public sealed record ApprovalDecision
     public string? Note { get; init; }
 }
 
-/// <summary>Requests a human decision for a call that policy has placed in <see cref="PolicyMode.Approval"/>.</summary>
+/// <summary>
+/// Requests a human decision for a call that policy has placed in <see cref="PolicyMode.Approval"/>.
+/// </summary>
+/// <remarks>
+/// The decision is a human's. In a delegated run (ADR-0030 section 5) an agent can only cause a request to be made, never
+/// answer one: the runtime refuses, and audits as a refusal, an approval whose <see cref="ApprovalDecision.Actor"/> is an agent
+/// identity, the runtime itself or an identity that names one of the run's agents. An implementation must therefore report the
+/// person who actually decided, never a service identity of its own.
+/// </remarks>
 public interface IApprovalProvider
 {
     /// <summary>Asks an operator to approve or reject a call.</summary>

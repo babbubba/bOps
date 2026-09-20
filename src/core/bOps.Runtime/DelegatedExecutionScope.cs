@@ -51,6 +51,9 @@ internal sealed record DelegatedExecutionScope
     /// <summary>Where the agent's side-effecting steps are journaled, when the run is durable (ADR-0030 section 7). <c>null</c> for a run that is not stored.</summary>
     internal IStepJournal? Journal { get; init; }
 
+    /// <summary>The agents the run had created before this one, so an approval decided in the name of any of them can be recognised as not human (ADR-0030 section 5).</summary>
+    internal IReadOnlyCollection<AgentId> PeerAgents { get; init; } = [];
+
     /// <summary>What the agent has spent of the budget its envelope grants (ADR-0030 section 6). <c>null</c> when there is no envelope, which refuses every step anyway.</summary>
     internal RoleMeter? Meter { get; }
 
