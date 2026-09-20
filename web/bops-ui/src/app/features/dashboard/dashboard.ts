@@ -1,7 +1,6 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
@@ -10,20 +9,22 @@ import {
   ModelCallFailed,
   TaskStatusRunning,
 } from '../../core/api/models';
-import { formatDuration, modelServed } from '../../shared/model-call-format';
+import { I18n } from '../../core/i18n/i18n';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { modelServed } from '../../shared/model-call-format';
 import { StatusBadge } from '../../shared/status-badge';
 import { TasksStore } from '../../state/tasks.store';
 
 @Component({
   selector: 'bops-dashboard',
-  imports: [DecimalPipe, FormsModule, StatusBadge],
+  imports: [FormsModule, StatusBadge, TranslatePipe],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {
   protected readonly tasks = inject(TasksStore);
+  protected readonly i18n = inject(I18n);
   protected readonly goal = signal('');
 
-  protected readonly formatDuration = formatDuration;
   protected readonly modelServed = modelServed;
   protected readonly modelCallFailed = ModelCallFailed;
 
@@ -49,6 +50,7 @@ export class Dashboard {
     });
   }
 
+  /** `label` is the enum's name; the template turns it into the active language's text. */
   protected readonly statusOptions = (
     Object.entries(AgentTaskStatusName) as [string, string][]
   ).map(([value, label]) => ({ value: Number(value) as AgentTaskStatus, label }));
@@ -98,6 +100,6 @@ export class Dashboard {
   }
 
   protected formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString();
+    return this.i18n.time(iso);
   }
 }

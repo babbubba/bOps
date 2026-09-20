@@ -7,11 +7,13 @@ import { ThemeService } from './core/theme';
 import { ApprovalsStore } from './state/approvals.store';
 import { DelegationsStore } from './state/delegations.store';
 import { AuthService } from './core/auth/auth.service';
+import { LanguageSwitch } from './core/i18n/language-switch';
+import { TranslatePipe } from './core/i18n/translate.pipe';
 import { Login } from './features/login/login';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Login],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Login, LanguageSwitch, TranslatePipe],
   templateUrl: './app.html',
 })
 export class App {

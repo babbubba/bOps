@@ -4,10 +4,13 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
+import { LanguageSwitch } from '../../core/i18n/language-switch';
+import type { MessageKey } from '../../core/i18n/messages';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 
 @Component({
   selector: 'bops-login',
-  imports: [FormsModule],
+  imports: [FormsModule, LanguageSwitch, TranslatePipe],
   templateUrl: './login.html',
 })
 export class Login {
@@ -15,7 +18,7 @@ export class Login {
 
   protected readonly token = signal('');
   protected readonly submitting = signal(false);
-  protected readonly error = signal<string | null>(null);
+  protected readonly error = signal<MessageKey | null>(null);
 
   protected async submit(): Promise<void> {
     this.submitting.set(true);
@@ -24,7 +27,7 @@ export class Login {
       await this.auth.signIn(this.token());
       this.token.set('');
     } catch {
-      this.error.set('Authentication failed. Check the local API key and try again.');
+      this.error.set('login.error.failed');
     } finally {
       this.submitting.set(false);
     }

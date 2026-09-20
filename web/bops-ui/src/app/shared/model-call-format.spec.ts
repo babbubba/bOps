@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ModelCallRecord } from '../core/api/models';
-import { formatDuration, modelServed } from './model-call-format';
+import { modelServed } from './model-call-format';
 
 function call(overrides: Partial<ModelCallRecord> = {}): ModelCallRecord {
   return {
@@ -19,29 +19,6 @@ function call(overrides: Partial<ModelCallRecord> = {}): ModelCallRecord {
     ...overrides,
   };
 }
-
-describe('formatDuration', () => {
-  it('uses milliseconds under a second', () => {
-    expect(formatDuration(0)).toBe('0 ms');
-    expect(formatDuration(820)).toBe('820 ms');
-    expect(formatDuration(999.4)).toBe('999 ms');
-  });
-
-  it('uses seconds with one decimal under a minute', () => {
-    expect(formatDuration(1000)).toBe('1.0 s');
-    expect(formatDuration(4321)).toBe('4.3 s');
-  });
-
-  it('uses minutes and seconds from a minute up', () => {
-    expect(formatDuration(65_000)).toBe('1 min 5 s');
-    expect(formatDuration(120_000)).toBe('2 min');
-  });
-
-  it('shows a dash for a value that cannot be a duration', () => {
-    expect(formatDuration(-1)).toBe('—');
-    expect(formatDuration(Number.NaN)).toBe('—');
-  });
-});
 
 describe('modelServed', () => {
   it('reports the actual model when a router picked one other than the one requested', () => {

@@ -1,8 +1,9 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { AgentTaskStatus, AgentTaskStatusName } from '../core/api/models';
+import { I18n } from '../core/i18n/i18n';
 
 const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   0: 'bg-status-running/15 text-status-running',
@@ -27,10 +28,11 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   `,
 })
 export class StatusBadge {
+  private readonly i18n = inject(I18n);
   readonly status = input.required<AgentTaskStatus>();
 
   protected label(): string {
-    return AgentTaskStatusName[this.status()];
+    return this.i18n.label('taskStatus', AgentTaskStatusName[this.status()]);
   }
 
   protected cssClass(): string {

@@ -14,6 +14,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- Multilingual UI (Italian and English): a dependency-free translation service with two typed catalogues (`en.ts` is the shape, `it.ts`
+  must satisfy it), a `t` pipe, a visible `EN | IT` switch that re-renders without a reload and is remembered in `localStorage`
+  (`<html lang>` follows it), plural rules, dates, numbers, sizes and durations in the chosen language, and enum labels keyed by name.
+  English stays the default. Every screen, including Delegations, is translated; `npm run lint:i18n` fails CI when a template holds
+  text outside the translation. API data and the API's own messages are not translated. No API, SDK or persistence change.
 - V1.1 preview contracts for Capability, Evidence, Finding, SkillReport and immutable, canonically
   hashed ExecutionPlan artifacts (ADR-0023).
 - Governed ExecutionPlan orchestration through the existing policy, approval, verification and

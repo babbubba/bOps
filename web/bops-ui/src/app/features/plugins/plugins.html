@@ -1,7 +1,7 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-8">
   <header>
-    <h1 class="text-2xl font-semibold">Plugins</h1>
-    <p class="text-sm text-muted">Installed and active plugins, read-only. Enable, disable and install stay on the operator console.</p>
+    <h1 class="text-2xl font-semibold">{{ 'plugins.title' | t }}</h1>
+    <p class="text-sm text-muted">{{ 'plugins.subtitle' | t }}</p>
   </header>
 
   @if (plugins.error()) {
@@ -11,35 +11,35 @@
   <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
     <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">Installed ({{ plugins.totalCount() }})</h2>
+        <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">{{ 'plugins.installed' | t: { count: plugins.totalCount() } }}</h2>
       </div>
 
       <div class="mb-3 flex flex-col gap-2">
         <select
-          aria-label="Filter by enabled state"
+          [attr.aria-label]="'plugins.filter.enabledAria' | t"
           (change)="onEnabledFilterChange($any($event.target).value)"
           class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
         >
-          <option value="">All states</option>
-          <option value="true">Enabled</option>
-          <option value="false">Disabled</option>
+          <option value="">{{ 'plugins.filter.allStates' | t }}</option>
+          <option value="true">{{ 'plugins.enabled' | t }}</option>
+          <option value="false">{{ 'plugins.disabled' | t }}</option>
         </select>
         <select
-          aria-label="Filter by trust level"
+          [attr.aria-label]="'plugins.filter.trustAria' | t"
           (change)="onTrustFilterChange($any($event.target).value)"
           class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
         >
-          <option value="">Any trust level</option>
+          <option value="">{{ 'plugins.filter.anyTrust' | t }}</option>
           @for (level of trustLevels; track level) {
-            <option [value]="level">{{ trustLevelName[level] }}</option>
+            <option [value]="level">{{ i18n.label('trust', trustLevelName[level]) }}</option>
           }
         </select>
       </div>
 
       @if (plugins.loading() && plugins.entries().length === 0) {
-        <p class="text-sm text-muted">Loading…</p>
+        <p class="text-sm text-muted">{{ 'common.loading' | t }}</p>
       } @else if (plugins.entries().length === 0) {
-        <p class="text-sm text-muted">No plugins match this filter.</p>
+        <p class="text-sm text-muted">{{ 'plugins.empty' | t }}</p>
       } @else {
         <ul class="flex flex-col gap-2">
           @for (entry of plugins.entries(); track entry.id) {
@@ -55,10 +55,10 @@
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate font-medium">{{ entry.id }}</span>
                   @if (entry.loadError) {
-                    <span class="text-xs font-semibold text-status-failed">error</span>
+                    <span class="text-xs font-semibold text-status-failed">{{ 'plugins.errorBadge' | t }}</span>
                   }
                 </div>
-                <div class="mt-1 text-xs text-muted">v{{ entry.version }} · {{ entry.publisher }}</div>
+                <div class="mt-1 text-xs text-muted">{{ 'plugins.version' | t: { version: entry.version } }} · {{ entry.publisher }}</div>
               </button>
             </li>
           }
@@ -69,48 +69,48 @@
     <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
       @if (!selectedPlugin(); as _) {
         <div class="flex h-full flex-col items-center justify-center gap-2 py-16 text-center text-muted">
-          <p class="text-sm">Select a plugin on the left to see its details here.</p>
+          <p class="text-sm">{{ 'plugins.detail.empty' | t }}</p>
         </div>
       } @else {
         @let plugin = selectedPlugin()!;
         <div class="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 class="text-base font-semibold">{{ plugin.id }}</h2>
-            <p class="text-xs text-muted">v{{ plugin.version }} · {{ plugin.publisher }} · installed {{ formatTime(plugin.installedAtUtc) }}</p>
+            <p class="text-xs text-muted">{{ 'plugins.detail.meta' | t: { version: plugin.version, publisher: plugin.publisher, time: formatTime(plugin.installedAtUtc) } }}</p>
           </div>
         </div>
 
         <div class="mb-4 flex flex-wrap gap-2 text-xs font-medium">
           <span class="rounded-full px-2 py-0.5" [class]="plugin.enabled ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'">
-            {{ plugin.enabled ? 'Enabled' : 'Disabled' }}
+            {{ (plugin.enabled ? 'plugins.enabled' : 'plugins.disabled') | t }}
           </span>
           <span class="rounded-full px-2 py-0.5" [class]="plugin.loaded ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'">
-            {{ plugin.loaded ? 'Loaded' : 'Not loaded' }}
+            {{ (plugin.loaded ? 'plugins.loaded' : 'plugins.notLoaded') | t }}
           </span>
           <span class="rounded-full px-2 py-0.5" [class]="plugin.compatible ? 'bg-status-completed/15 text-status-completed' : 'bg-status-failed/15 text-status-failed'">
-            {{ plugin.compatible ? 'Compatible' : 'Incompatible' }}
+            {{ (plugin.compatible ? 'plugins.compatible' : 'plugins.incompatible') | t }}
           </span>
-          <span class="rounded-full bg-accent/10 px-2 py-0.5 text-accent">{{ trustLevelName[plugin.trust] }} trust</span>
+          <span class="rounded-full bg-accent/10 px-2 py-0.5 text-accent">{{ 'plugins.trustBadge' | t: { level: i18n.label('trust', trustLevelName[plugin.trust]) } }}</span>
         </div>
 
         @if (plugin.loadError) {
           <div class="mb-4 rounded-lg border border-risk-high bg-bg p-3 text-sm text-risk-high" role="alert">
-            <p class="font-semibold">Did not load at startup</p>
+            <p class="font-semibold">{{ 'plugins.loadError' | t }}</p>
             <p class="mt-1">{{ plugin.loadError }}</p>
           </div>
         }
 
         <dl class="mb-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-4">
           <div>
-            <dt class="text-xs text-muted">Signature</dt>
-            <dd>{{ plugin.signaturePresent ? (plugin.verified ? 'Verified' : 'Present, not verified') : 'Absent' }}</dd>
+            <dt class="text-xs text-muted">{{ 'plugins.signature' | t }}</dt>
+            <dd>{{ (plugin.signaturePresent ? (plugin.verified ? 'plugins.signature.verified' : 'plugins.signature.unverified') : 'plugins.signature.absent') | t }}</dd>
           </div>
           <div>
-            <dt class="text-xs text-muted">Key id</dt>
+            <dt class="text-xs text-muted">{{ 'plugins.keyId' | t }}</dt>
             <dd>{{ plugin.keyId ?? '—' }}</dd>
           </div>
           <div>
-            <dt class="text-xs text-muted">Declared max risk</dt>
+            <dt class="text-xs text-muted">{{ 'plugins.declaredMaxRisk' | t }}</dt>
             <dd>
               @if (plugin.declaredMaxRisk !== null) {
                 <bops-risk-badge [risk]="plugin.declaredMaxRisk" />
@@ -120,21 +120,21 @@
             </dd>
           </div>
           <div>
-            <dt class="text-xs text-muted">Effective max risk</dt>
+            <dt class="text-xs text-muted">{{ 'plugins.effectiveMaxRisk' | t }}</dt>
             <dd>
               @if (plugin.effectiveMaxRisk !== null) {
                 <bops-risk-badge [risk]="plugin.effectiveMaxRisk" />
               } @else {
-                <span class="text-muted">not loaded</span>
+                <span class="text-muted">{{ 'plugins.effectiveNotLoaded' | t }}</span>
               }
             </dd>
           </div>
         </dl>
 
         <div class="mb-4">
-          <h3 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">Declared capabilities</h3>
+          <h3 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'plugins.capabilities' | t }}</h3>
           @if (plugin.declaredCapabilities.length === 0) {
-            <p class="text-sm text-muted">None declared.</p>
+            <p class="text-sm text-muted">{{ 'plugins.noneDeclared' | t }}</p>
           } @else {
             <ul class="flex flex-wrap gap-1.5">
               @for (capability of plugin.declaredCapabilities; track capability) {
@@ -145,9 +145,9 @@
         </div>
 
         <div>
-          <h3 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">Dependencies</h3>
+          <h3 class="mb-2 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'plugins.dependencies' | t }}</h3>
           @if (plugin.dependencies.length === 0) {
-            <p class="text-sm text-muted">None declared.</p>
+            <p class="text-sm text-muted">{{ 'plugins.noneDeclared' | t }}</p>
           } @else {
             <ul class="flex flex-col gap-1 text-sm">
               @for (dependency of plugin.dependencies; track dependency.name) {

@@ -62,6 +62,11 @@ jobs:
         run: npm run build
         working-directory: web/bops-ui
 
+      - name: UI translation check
+        # Fails when a template holds text that does not go through the translation (see web/bops-ui/README.md).
+        run: npm run lint:i18n
+        working-directory: web/bops-ui
+
       - name: UI test
         # ChromeHeadless, not the default interactive launcher — there is no display on a runner.
         run: npx ng test --watch=false --browsers=ChromeHeadless

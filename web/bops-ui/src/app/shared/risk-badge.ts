@@ -1,8 +1,9 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { RiskLevel, RiskLevelName } from '../core/api/models';
+import { I18n } from '../core/i18n/i18n';
 
 const RISK_CLASSES: Record<RiskLevel, string> = {
   0: 'bg-risk-read/15 text-risk-read',
@@ -21,10 +22,11 @@ const RISK_CLASSES: Record<RiskLevel, string> = {
   `,
 })
 export class RiskBadge {
+  private readonly i18n = inject(I18n);
   readonly risk = input.required<RiskLevel>();
 
   protected label(): string {
-    return RiskLevelName[this.risk()];
+    return this.i18n.label('risk', RiskLevelName[this.risk()]);
   }
 
   protected cssClass(): string {

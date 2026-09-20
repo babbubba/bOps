@@ -11,6 +11,8 @@ import {
   PendingApproval,
   RiskLevel,
 } from '../../core/api/models';
+import { I18n } from '../../core/i18n/i18n';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { RiskBadge } from '../../shared/risk-badge';
 import { ApprovalsStore } from '../../state/approvals.store';
 
@@ -26,12 +28,13 @@ interface DeletionPreview {
 
 @Component({
   selector: 'bops-approvals',
-  imports: [FormsModule, RiskBadge],
+  imports: [FormsModule, RiskBadge, TranslatePipe],
   templateUrl: './approvals.html',
 })
 export class Approvals {
   protected readonly approvals = inject(ApprovalsStore);
   private readonly api = inject(BOpsApiClient);
+  private readonly i18n = inject(I18n);
   protected readonly notes = signal<Record<string, string>>({});
   protected readonly acknowledgements = signal<Record<string, boolean>>({});
   protected readonly previews = signal<Record<string, DeletionPreview>>({});
@@ -78,7 +81,7 @@ export class Approvals {
   }
 
   protected formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString();
+    return this.i18n.time(iso);
   }
 
   protected previewFor(id: string): DeletionPreview | undefined {
@@ -101,19 +104,11 @@ export class Approvals {
   }
 
   protected formatCount(value: number): string {
-    return new Intl.NumberFormat().format(value);
+    return this.i18n.number(value);
   }
 
   protected formatBytes(value: number): string {
-    if (value < 1024) return `${value} B`;
-    const units = ['KiB', 'MiB', 'GiB', 'TiB'];
-    let amount = value / 1024;
-    let index = 0;
-    while (amount >= 1024 && index < units.length - 1) {
-      amount /= 1024;
-      index++;
-    }
-    return `${amount.toFixed(1)} ${units[index]}`;
+    return this.i18n.bytes(value);
   }
 
   protected setSearch(id: string, search: string): void {
@@ -174,7 +169,7 @@ export class Approvals {
       this.updatePreview(id, (preview) => ({
         ...preview,
         loading: false,
-        error: error instanceof Error ? error.message : 'Deletion preview is unavailable.',
+        error: error instanceof Error ? error.message : this.i18n.t('approvals.deletion.error.preview'),
       }));
     } finally {
       this.previewRequests.delete(id);
@@ -197,7 +192,7 @@ export class Approvals {
       this.updatePreview(id, (current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : 'Deletion entries are unavailable.',
+        error: error instanceof Error ? error.message : this.i18n.t('approvals.deletion.error.entries'),
       }));
     }
   }
