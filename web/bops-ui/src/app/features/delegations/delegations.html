@@ -1,0 +1,307 @@
+<div class="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-8">
+  <header>
+    <h1 class="text-2xl font-semibold">Delegations</h1>
+    <p class="text-sm text-muted">
+      An objective taken through Discovery, Diagnostic, Remediation and Verification, each role with less authority than you. A
+      change runs only after a person approves its plan by its hash.
+    </p>
+  </header>
+
+  @if (store.error()) {
+    <p class="text-sm text-risk-critical" role="alert">{{ store.error() }}</p>
+  }
+
+  @if (canOperate()) {
+    <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" aria-label="Start a delegation">
+      <h2 class="text-sm font-semibold">Start a delegation</h2>
+      <textarea
+        aria-label="Objective"
+        placeholder="What should be looked into?"
+        rows="2"
+        [ngModel]="objective()"
+        (ngModelChange)="objective.set($event)"
+        class="mt-2 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+      ></textarea>
+      <label class="mt-2 flex items-center gap-2 text-sm">
+        <input type="checkbox" aria-label="Prepare a change" [ngModel]="withChange()" (ngModelChange)="withChange.set($event)" />
+        <span>Prepare a change (you approve its plan before anything runs)</span>
+      </label>
+      @if (withChange()) {
+        <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+          <input aria-label="Skill" placeholder="Skill" [ngModel]="skillId()" (ngModelChange)="skillId.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+          <input aria-label="Capability" placeholder="Capability" [ngModel]="capabilityName()" (ngModelChange)="capabilityName.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+          <input aria-label="Target" placeholder="Target" [ngModel]="target()" (ngModelChange)="target.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+          <input aria-label="Environment" placeholder="Environment" [ngModel]="environment()" (ngModelChange)="environment.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+          <select aria-label="Blast radius" [ngModel]="blastRadius()" (ngModelChange)="blastRadius.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+            <option value="single">Single</option>
+            <option value="multiple">Multiple</option>
+            <option value="fleet">Fleet</option>
+          </select>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" [ngModel]="dryRun()" (ngModelChange)="dryRun.set($event)" />
+            <span>Dry run</span>
+          </label>
+        </div>
+      }
+      <button
+        type="button"
+        (click)="start()"
+        [disabled]="!canStart() || starting()"
+        class="mt-3 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Start
+      </button>
+    </section>
+  }
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <section aria-label="Delegations list" class="lg:col-span-1">
+      @if (store.loading() && store.runs().length === 0) {
+        <p class="text-sm text-muted">Loading…</p>
+      } @else if (store.runs().length === 0) {
+        <div class="rounded-xl border border-default bg-surface p-8 text-center text-sm text-muted shadow-sm">No delegations yet.</div>
+      } @else {
+        <ul class="flex flex-col gap-2">
+          @for (run of store.runs(); track run.id) {
+            <li>
+              <button
+                type="button"
+                (click)="select(run.id)"
+                [class.border-accent]="selectedId() === run.id"
+                class="w-full rounded-xl border border-default bg-surface p-3 text-left shadow-sm hover:bg-bg"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)">{{ run.status }}</span>
+                  <span class="text-xs text-muted">{{ formatTime(run.createdAtUtc) }}</span>
+                </div>
+                <p class="mt-1 line-clamp-2 text-sm">{{ run.objective }}</p>
+                @if (run.awaitingPlanApproval) {
+                  <p class="mt-1 text-xs font-semibold text-risk-high">Plan waiting for approval</p>
+                }
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <section aria-label="Delegation detail" class="lg:col-span-2">
+      @if (selected(); as run) {
+        <div class="flex flex-col gap-4">
+          <div class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)">{{ run.status }}</span>
+              <code class="break-all text-xs text-muted">{{ run.id }}</code>
+            </div>
+            <p class="mt-2 text-sm font-medium">{{ run.objective }}</p>
+            <p class="mt-1 text-xs text-muted">
+              Started by {{ run.actorDisplayName ?? run.actorId }} · {{ formatTime(run.createdAtUtc) }}
+              @if (run.resumeCount > 0) { · resumed {{ run.resumeCount }} time(s) }
+            </p>
+
+            @if (run.denial) {
+              <p class="mt-2 text-sm text-status-blocked">Refused on {{ run.denial.dimension }}: {{ run.denial.reason }}</p>
+            } @else if (run.errorMessage) {
+              <p class="mt-2 text-sm text-risk-critical">{{ run.errorMessage }}</p>
+            }
+
+            <div class="mt-3 flex flex-wrap gap-2">
+              @if (canCancel(run)) {
+                <button type="button" (click)="cancel(run)" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">Cancel run</button>
+              }
+              @if (canResume(run)) {
+                <button type="button" (click)="resume(run)" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">Resume</button>
+              }
+            </div>
+            @if (run.status === 'Running' && !run.runningInThisHost) {
+              <p class="mt-2 text-xs text-muted">Nothing in this host is executing this run: a crash or a restart left it running.</p>
+            }
+          </div>
+
+          @if (run.status === 'RequiresReconciliation') {
+            <section class="rounded-xl border border-risk-high bg-surface p-4 shadow-sm" aria-label="Reconciliation">
+              <p class="font-semibold text-risk-high">A step may or may not have taken effect</p>
+              <p class="mt-1 text-sm">
+                Its outcome could not be settled, and it is never retried. Check the system yourself: accept the steps below as done
+                (the run can then be resumed), or abandon the run.
+              </p>
+              @if (canReconcileRun(run)) {
+                <input
+                  type="text"
+                  aria-label="Reconciliation note"
+                  placeholder="Optional note"
+                  [ngModel]="noteFor(run.id)"
+                  (ngModelChange)="setNote(run.id, $event)"
+                  class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm"
+                />
+                <div class="mt-3 flex gap-2">
+                  <button type="button" (click)="reconcile(run, 'accept')" [disabled]="store.busy()" class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40">Accept as done</button>
+                  <button type="button" (click)="reconcile(run, 'abandon')" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">Abandon run</button>
+                </div>
+              } @else {
+                <p class="mt-2 text-xs text-muted">Only an administrator can settle this.</p>
+              }
+            </section>
+          }
+
+          @if (run.awaitingPlanApproval) {
+            <section class="rounded-xl border border-risk-high bg-surface p-4 shadow-sm" aria-label="Plan approval">
+              <p class="font-semibold">Plan waiting for a decision</p>
+              @if (pendingPlan(); as plan) {
+                <p class="mt-1 text-sm">
+                  <code>{{ plan.skillId }}</code> / <code>{{ plan.capabilityName }}</code> on <code>{{ plan.target }}</code>
+                  ({{ plan.environment }}), blast radius {{ plan.blastRadius }}
+                </p>
+                <p class="mt-2 text-xs text-muted">Plan hash</p>
+                <code class="block break-all rounded bg-bg px-2 py-1 text-xs">{{ plan.planHash }}</code>
+                <p class="mt-2 text-sm">{{ plan.rationale }}</p>
+
+                <p class="mt-3 text-xs font-medium text-muted">Steps</p>
+                <ol class="mt-1 space-y-1 text-sm">
+                  @for (step of plan.steps; track step.index) {
+                    <li>
+                      <code class="font-semibold">{{ step.tool }}</code>
+                      <code class="ml-2 break-all text-xs">{{ json(step.arguments) }}</code>
+                      @if (step.description) { <span class="block text-xs text-muted">{{ step.description }}</span> }
+                    </li>
+                  }
+                </ol>
+
+                <p class="mt-3 text-xs font-medium text-muted">Findings it rests on</p>
+                <ul class="mt-1 space-y-1 text-sm">
+                  @for (finding of plan.findings; track finding.id) {
+                    <li>
+                      @if (finding.severity) { <span class="font-semibold">[{{ finding.severity }}]</span> }
+                      {{ finding.summary }}
+                      <span class="text-xs text-muted">(evidence: {{ finding.evidenceIds.join(', ') }})</span>
+                    </li>
+                  }
+                </ul>
+
+                @if (plan.authority; as authority) {
+                  <p class="mt-3 text-xs font-medium text-muted">Authority the change will run under</p>
+                  <dl class="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs md:grid-cols-2">
+                    <div><dt class="inline text-muted">Tools: </dt><dd class="inline">{{ authority.tools.join(', ') }}</dd></div>
+                    <div><dt class="inline text-muted">Up to: </dt><dd class="inline">{{ authority.maxRisk }} risk, {{ authority.maxBlastRadius }} blast radius</dd></div>
+                    <div><dt class="inline text-muted">Targets: </dt><dd class="inline">{{ authority.targets.join(', ') }}</dd></div>
+                    <div><dt class="inline text-muted">Environments: </dt><dd class="inline">{{ authority.environments.join(', ') }}</dd></div>
+                    <div><dt class="inline text-muted">Budget: </dt><dd class="inline">{{ authority.maxSteps }} steps, until {{ formatTime(authority.deadlineUtc) }}</dd></div>
+                  </dl>
+                }
+
+                @if (canApprove()) {
+                  <input
+                    type="text"
+                    aria-label="Plan decision note"
+                    placeholder="Optional note"
+                    [ngModel]="noteFor(plan.delegationId)"
+                    (ngModelChange)="setNote(plan.delegationId, $event)"
+                    class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm"
+                  />
+                  <div class="mt-3 flex gap-2">
+                    <button type="button" (click)="decide(plan, true)" [disabled]="store.busy()" class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40">Approve exactly this plan</button>
+                    <button type="button" (click)="decide(plan, false)" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">Reject</button>
+                  </div>
+                } @else {
+                  <p class="mt-3 text-xs text-muted">Only an approver can decide this plan.</p>
+                }
+              } @else {
+                <p class="mt-1 text-sm text-muted">Waiting for an approver.</p>
+              }
+            </section>
+          }
+
+          <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" aria-label="Roles">
+            <h2 class="text-sm font-semibold">Roles, in order</h2>
+            @if (run.roles.length === 0) {
+              <p class="mt-2 text-sm text-muted">No role has started.</p>
+            }
+            <ol class="mt-2 flex flex-col gap-3">
+              @for (role of roles(run); track role.agentId) {
+                <li class="rounded-lg border border-default p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="font-semibold">{{ role.role }}</span>
+                    <span class="text-xs text-muted">{{ role.status }} · {{ role.steps }} steps · {{ role.tokens }} tokens</span>
+                  </div>
+                  <code class="block break-all text-xs text-muted">agent {{ role.agentId }}</code>
+
+                  @if (role.verification; as verification) {
+                    <p class="mt-2 text-sm">
+                      Verification verdict: <span class="font-semibold">{{ verification.status }}</span>
+                      @if (verification.detail) { <span class="text-muted"> — {{ verification.detail }}</span> }
+                    </p>
+                  }
+
+                  @if (role.findings.length > 0) {
+                    <p class="mt-2 text-xs font-medium text-muted">Findings</p>
+                    <ul class="mt-1 space-y-1 text-sm">
+                      @for (finding of role.findings; track finding.id) {
+                        <li>
+                          @if (finding.severity) { <span class="font-semibold">[{{ finding.severity }}]</span> }
+                          {{ finding.summary }}
+                          <span class="text-xs text-muted">(evidence: {{ finding.evidenceIds.join(', ') }})</span>
+                        </li>
+                      }
+                    </ul>
+                  }
+
+                  @if (role.evidence.length > 0) {
+                    <p class="mt-2 text-xs font-medium text-muted">Evidence (what the tools returned is not shown)</p>
+                    <table class="mt-1 w-full table-fixed text-left text-xs">
+                      <tbody>
+                        @for (item of role.evidence; track item.id) {
+                          <tr class="border-t border-default">
+                            <td class="w-28 break-all px-1 py-1 align-top"><code>{{ item.id }}</code></td>
+                            <td class="w-24 px-1 py-1 align-top">{{ item.kind }}</td>
+                            <td class="w-32 break-all px-1 py-1 align-top">{{ item.sourceTool }}</td>
+                            <td class="break-words px-1 py-1">{{ item.description }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  }
+
+                  @if (role.errorMessage) {
+                    <p class="mt-2 text-sm text-risk-critical">{{ role.errorMessage }}</p>
+                  }
+                </li>
+              }
+            </ol>
+          </section>
+
+          @if (run.planHash) {
+            <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" aria-label="Plan and approval">
+              <h2 class="text-sm font-semibold">Plan</h2>
+              <code class="mt-1 block break-all rounded bg-bg px-2 py-1 text-xs">{{ run.planHash }}</code>
+              @if (run.approval; as approval) {
+                <p class="mt-2 text-sm">Approved by {{ approval.approverDisplayName ?? approval.approverId }} · {{ formatTime(approval.approvedAtUtc) }}</p>
+              } @else {
+                <p class="mt-2 text-sm text-muted">Not approved.</p>
+              }
+            </section>
+          }
+
+          @if (run.journal.length > 0) {
+            <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" aria-label="Step journal">
+              <h2 class="text-sm font-semibold">Step journal</h2>
+              <ol class="mt-2 space-y-1 text-sm">
+                @for (entry of run.journal; track entry.stepIndex) {
+                  <li>
+                    <span class="text-muted">{{ entry.stepIndex }}</span>
+                    <code class="ml-2 font-semibold">{{ entry.tool }}</code>
+                    <span class="ml-2">
+                      {{ entry.reconciliation ?? entry.outcome ?? 'outcome not known' }}
+                      @if (entry.verification) { · verification {{ entry.verification }} }
+                    </span>
+                  </li>
+                }
+              </ol>
+            </section>
+          }
+        </div>
+      } @else {
+        <div class="rounded-xl border border-default bg-surface p-8 text-center text-sm text-muted shadow-sm">Select a delegation to follow it.</div>
+      }
+    </section>
+  </div>
+</div>

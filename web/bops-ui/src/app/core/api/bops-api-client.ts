@@ -6,6 +6,9 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AgentTaskStatus,
+  Delegation,
+  PendingPlanApproval,
+  StartDelegationRequest,
   AgentTaskStatusName,
   DeletionManifestPage,
   DeletionManifestSummary,
@@ -141,5 +144,43 @@ export class BOpsApiClient {
 
   setActiveProvider(providerId: string): Promise<void> {
     return firstValueFrom(this.http.put<void>('/api/settings/active-provider', { providerId }));
+  }
+
+  // ---- Delegations (V1.2) ----
+
+  startDelegation(request: StartDelegationRequest, idempotencyKey?: string): Promise<{ delegationId: string }> {
+    return firstValueFrom(
+      this.http.post<{ delegationId: string }>('/api/delegations', request, {
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+      }),
+    );
+  }
+
+  listDelegations(limit = 50): Promise<Delegation[]> {
+    return firstValueFrom(this.http.get<Delegation[]>(`/api/delegations?limit=${limit}`));
+  }
+
+  getDelegation(id: string): Promise<Delegation> {
+    return firstValueFrom(this.http.get<Delegation>(`/api/delegations/${id}`));
+  }
+
+  cancelDelegation(id: string): Promise<Delegation> {
+    return firstValueFrom(this.http.post<Delegation>(`/api/delegations/${id}/cancel`, {}));
+  }
+
+  resumeDelegation(id: string): Promise<{ delegationId: string }> {
+    return firstValueFrom(this.http.post<{ delegationId: string }>(`/api/delegations/${id}/resume`, {}));
+  }
+
+  reconcileDelegation(id: string, decision: 'accept' | 'abandon', note?: string): Promise<Delegation> {
+    return firstValueFrom(this.http.post<Delegation>(`/api/delegations/${id}/reconcile`, { decision, note }));
+  }
+
+  listPendingPlanApprovals(): Promise<PendingPlanApproval[]> {
+    return firstValueFrom(this.http.get<PendingPlanApproval[]>('/api/delegations/approvals'));
+  }
+
+  respondToPlanApproval(id: string, planHash: string, approved: boolean, note?: string): Promise<void> {
+    return firstValueFrom(this.http.post<void>(`/api/delegations/${id}/approval`, { planHash, approved, note }));
   }
 }

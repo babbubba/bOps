@@ -283,3 +283,126 @@ export interface SetProviderProfileRequest {
   supportsNativeToolCalling: boolean;
   extraParameters: Record<string, string> | null;
 }
+
+// ---- Delegations (bOps.Api /api/delegations, ADR-0030 section 9, V1.2) ----
+// Unlike the older shapes above, every enum here is sent as its name (a string), and no field carries what a tool
+// returned: the API omits the data of each piece of evidence, the authority of each role and the model calls.
+
+export interface DelegationEvidence {
+  id: string;
+  kind: string;
+  description: string;
+  sourceTool: string;
+  observedAtUtc: string;
+}
+
+export interface DelegationFinding {
+  id: string;
+  summary: string;
+  severity: string | null;
+  evidenceIds: string[];
+}
+
+export interface DelegationVerification {
+  status: string;
+  detail: string | null;
+  evidence: DelegationEvidence[];
+}
+
+export interface DelegationRole {
+  role: string;
+  agentId: string;
+  status: string;
+  steps: number;
+  tokens: number;
+  startedAtUtc: string | null;
+  completedAtUtc: string | null;
+  findings: DelegationFinding[];
+  evidence: DelegationEvidence[];
+  planHash: string | null;
+  verification: DelegationVerification | null;
+  errorMessage: string | null;
+}
+
+export interface DelegationStep {
+  stepIndex: number;
+  tool: string;
+  argumentsHash: string;
+  intentAtUtc: string;
+  outcome: string | null;
+  verification: string | null;
+  reconciliation: string | null;
+}
+
+export interface Delegation {
+  id: string;
+  status: string;
+  objective: string;
+  actorId: string;
+  actorDisplayName: string | null;
+  runningInThisHost: boolean;
+  awaitingPlanApproval: boolean;
+  planHash: string | null;
+  approval: { planHash: string; approverId: string; approverDisplayName: string | null; approvedAtUtc: string } | null;
+  roles: DelegationRole[];
+  journal: DelegationStep[];
+  resumeCount: number;
+  denial: { dimension: string; reason: string } | null;
+  errorMessage: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface PendingPlanApproval {
+  delegationId: string;
+  planHash: string;
+  requestedAtUtc: string;
+  skillId: string;
+  capabilityName: string;
+  target: string;
+  environment: string;
+  blastRadius: string;
+  rationale: string;
+  steps: { index: number; tool: string; arguments: Record<string, unknown>; description: string | null }[];
+  findings: { id: string; summary: string; severity: string | null; evidenceIds: string[] }[];
+  authority: {
+    tools: string[];
+    maxRisk: string;
+    maxBlastRadius: string;
+    targets: string[];
+    environments: string[];
+    maxSteps: number;
+    deadlineUtc: string;
+  } | null;
+}
+
+export interface StartDelegationRequest {
+  objective: string;
+  maxSteps?: number;
+  maxTokens?: number;
+  remediation?: {
+    skillId: string;
+    capabilityName: string;
+    target: string;
+    environment: string;
+    blastRadius?: string;
+    dryRun: boolean;
+  };
+}
+
+export const DelegationRoleOrder = ['Discovery', 'Diagnostic', 'Remediation', 'Verification'];
+
+/** Statuses a run ends in; anything else is still under way or waiting for a person. */
+export const DelegationTerminalStatuses = [
+  'Completed',
+  'DiagnosisCompleted',
+  'Rejected',
+  'VerificationFailed',
+  'Denied',
+  'PolicyBlocked',
+  'BudgetExceeded',
+  'DeadlineExceeded',
+  'Cancelled',
+  'Abandoned',
+  'Failed',
+];
