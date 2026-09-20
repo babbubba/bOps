@@ -308,7 +308,8 @@ The master key is never stored beside `vault.dat`, and no endpoint returns a sto
 provider keys in Settings. Rotate the master key with the CLI (not exposed through the API, by design):
 
 ```bash
-BOPS_VAULT_MASTER_KEY=<current-key> BOPS_NEW_VAULT_MASTER_KEY=<new-key> \n  bops vault rotate-key BOPS_NEW_VAULT_MASTER_KEY
+BOPS_VAULT_MASTER_KEY=<current-key> BOPS_NEW_VAULT_MASTER_KEY=<new-key> \
+  bops vault rotate-key BOPS_NEW_VAULT_MASTER_KEY
 ```
 
 Backup/restore is file-level: copy `vault.dat`. Because the master key is deliberately never
