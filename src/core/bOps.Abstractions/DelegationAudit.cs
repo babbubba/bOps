@@ -29,6 +29,9 @@ public enum DelegationStage
 
     /// <summary>A human decided on the prepared plan. The event's <see cref="AuditEvent.Actor"/> is who decided and <see cref="DelegationLifecycleAuditEvent.PlanHash"/> the hash they decided on. Appended after the values persisted since <c>1.2.0-preview.1</c>, so none of them moves.</summary>
     PlanDecided,
+
+    /// <summary>A run that a restart or a crash interrupted was resumed. The event's <see cref="AuditEvent.Actor"/> is who resumed it. Appended after <see cref="PlanDecided"/>, so no persisted value moves.</summary>
+    Resumed,
 }
 
 /// <summary>

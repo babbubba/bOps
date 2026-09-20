@@ -8,4 +8,5 @@ namespace bOps.Memory;
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(TaskState))]
+[JsonSerializable(typeof(DelegationRun))]
 internal sealed partial class MemoryJsonContext : JsonSerializerContext;

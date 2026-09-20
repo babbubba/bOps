@@ -441,7 +441,8 @@ public sealed class AgentRunner(
         ExecutionPlanApproval? approval,
         SkillExecutionScope? skillScope,
         DelegatedExecutionScope? delegation,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlySet<int>? alreadyDone = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
@@ -472,6 +473,12 @@ public sealed class AgentRunner(
         foreach (var planStep in plan.Steps.OrderBy(s => s.Index))
         {
             ct.ThrowIfCancellationRequested();
+
+            // A step the journal shows as done, or as settled by reconciliation, is never run again (ADR-0030 section 7).
+            if (alreadyDone?.Contains(planStep.Index) == true)
+            {
+                continue;
+            }
 
             // ADR-0030 section 6: a step the role has no budget or time left for does not run, and neither does any after it.
             if (BudgetStopsStep(delegation))
@@ -679,7 +686,7 @@ public sealed class AgentRunner(
         ExecutionPlanApproval? approval,
         DelegatedExecutionScope delegation,
         CancellationToken ct = default) =>
-        (await ExecuteDelegatedPlanAsync(taskId, actor, prepared, approval, delegation, ct)).Report;
+        (await ExecuteDelegatedPlanAsync(taskId, actor, prepared, approval, delegation, ct: ct)).Report;
 
     /// <summary>
     /// <see cref="ExecuteDelegatedPreparedSkillAsync"/> with the reason it ended, for the orchestrator (V1.2-D): a plan
@@ -692,10 +699,11 @@ public sealed class AgentRunner(
         PreparedSkillRun prepared,
         ExecutionPlanApproval? approval,
         DelegatedExecutionScope delegation,
+        IReadOnlySet<int>? alreadyDone = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(delegation);
-        return await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation, ct);
+        return await ExecutePreparedSkillCoreAsync(taskId, actor, prepared, approval, delegation, ct, alreadyDone);
     }
 
     private async Task<PlanExecution> ExecutePreparedSkillCoreAsync(
@@ -704,7 +712,8 @@ public sealed class AgentRunner(
         PreparedSkillRun prepared,
         ExecutionPlanApproval? approval,
         DelegatedExecutionScope? delegation,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlySet<int>? alreadyDone = null)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(prepared);
@@ -767,7 +776,7 @@ public sealed class AgentRunner(
         }
 
         var executed = await ExecuteExecutionPlanCoreAsync(
-            taskId, actor, prepared.Report.Plan, approval, scope, delegation, ct);
+            taskId, actor, prepared.Report.Plan, approval, scope, delegation, ct, alreadyDone);
         var merged = new SkillReport(
             [.. prepared.Report.Evidence, .. executed.Report.Evidence],
             prepared.Report.Findings,
@@ -1595,6 +1604,14 @@ public sealed class AgentRunner(
         toolActivity?.SetTag("bops.policy_mode", policyDecision.Mode.ToString());
 
         var stopwatch = Stopwatch.StartNew();
+        // ADR-0030 section 7: the intent is durable before a side-effecting step runs, and a step whose intent could not be
+        // committed does not run. Read steps have no side effect to reconcile, so they are not journaled.
+        var journal = manifest.Risk != RiskLevel.Read ? delegation?.Journal : null;
+        if (journal is not null)
+        {
+            await journal.BeginAsync(stepIndex, call.ToolName, call.Arguments);
+        }
+
         ToolCallResult result;
         try
         {
@@ -1603,20 +1620,28 @@ public sealed class AgentRunner(
         catch (OperationCanceledException) when (delegation is not null && manifest.Risk != RiskLevel.Read)
         {
             // ADR-0030 section 6: a side-effecting step that is cancelled while it runs may or may not have taken effect. It is
-            // recorded as unknown, never as failed, so nothing treats the change as absent; reconciliation is V1.2-F.
+            // recorded as unknown, never as failed, so nothing treats the change as absent.
             delegation.Meter?.MarkUnknownOutcome($"step {stepIndex} ('{call.ToolName}')");
-            await WriteAuditAsync(new DelegationJournalAuditEvent
+            if (journal is not null)
             {
-                TimestampUtc = timeProvider.GetUtcNow(),
-                Node = NodeId.Local,
-                TaskId = taskId,
-                StepIndex = stepIndex,
-                Actor = actor,
-                Phase = JournalPhase.Outcome,
-                Tool = call.ToolName,
-                ArgumentsHash = DelegationHasher.ComputeArgumentsHash(call.Arguments),
-                Outcome = StepOutcomeKind.Cancelled,
-            }, delegation, CancellationToken.None);
+                await journal.CompleteAsync(stepIndex, new StepOutcome(StepOutcomeKind.Cancelled, timeProvider.GetUtcNow()));
+            }
+            else
+            {
+                await WriteAuditAsync(new DelegationJournalAuditEvent
+                {
+                    TimestampUtc = timeProvider.GetUtcNow(),
+                    Node = NodeId.Local,
+                    TaskId = taskId,
+                    StepIndex = stepIndex,
+                    Actor = actor,
+                    Phase = JournalPhase.Outcome,
+                    Tool = call.ToolName,
+                    ArgumentsHash = DelegationHasher.ComputeArgumentsHash(call.Arguments),
+                    Outcome = StepOutcomeKind.Cancelled,
+                }, delegation, CancellationToken.None);
+            }
+
             throw;
         }
 
@@ -1644,6 +1669,18 @@ public sealed class AgentRunner(
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, tool, result,
             authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope, delegation);
+
+        if (journal is not null)
+        {
+            var kind = result.Outcome switch
+            {
+                ToolOutcome.Success => StepOutcomeKind.Succeeded,
+                ToolOutcome.Timeout => StepOutcomeKind.Timeout,
+                _ => StepOutcomeKind.Failed,
+            };
+            await journal.CompleteAsync(stepIndex, new StepOutcome(kind, timeProvider.GetUtcNow(), verificationOutcome?.Status));
+        }
+
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
     }
 

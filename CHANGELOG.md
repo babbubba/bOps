@@ -135,6 +135,21 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   run now ends it as `Cancelled` and returns it, audited, instead of throwing; `DeadlineExceeded` and `BudgetExceeded`
   stay distinct. A side-effecting step cancelled while it runs is audited as an unknown outcome (`StepOutcomeKind.Cancelled`
   in a `DelegationJournalAuditEvent`), never as a failed tool call; the durable journal and reconciliation are V1.2-F.
+- V1.2-F durable delegation (`bOps.Abstractions` `1.2.0-preview.6`, additive, ADR-0030 section 7): `SqliteDelegationStore`
+  in `bOps.Memory` stores a `DelegationRun` as one row (the whole aggregate as JSON, replaced in one transaction, synced to disk
+  on every commit, owner-only file on Linux), with the status, actor and idempotency key as columns so a start is idempotent
+  and what is resumable or waiting for an operator is found without reading a run. `DelegationRunner`, given a store, saves
+  the run at every transition and journals each side-effecting step in two durable writes, its intent before the step runs
+  and its outcome after; a step whose intent could not be committed does not run. `ResumeAsync` continues a run a crash left
+  running without repeating a completed side effect: a finished role is not run again, an interrupted read-only role restarts
+  from its beginning and is charged everything it was granted (a restart never gives a budget back), a step the journal shows
+  as done is skipped, and a step with an intent but no outcome, or a cancelled or timed-out one, is settled by its own
+  declared verification (confirmed is done by reconciliation; refuted or inconclusive ends the run as
+  `RequiresReconciliation`, never retried). Approvals are never persisted: a plan with steps left is put to a human again by
+  the same hash. Resumes are bounded (`3` by default). `ReconcileAsync` lets a human accept the unsettled steps as done or
+  abandon the run, audited. `StartAsync` takes an idempotency key. The SDK gains `DelegationRun.Authority` and
+  `DelegationRun.Remediation` (the request the run started with, so it can resume without its caller),
+  `DelegationRemediationRequest` and `DelegationStage.Resumed`; runs stored before this read with none of them.
 - Model calls can be troubleshot from the task store (`bOps.Abstractions` `1.2.0-preview.5`, additive). Every call the
   runtime makes to a model, for a step, a plan or a replan, is kept as a `ModelCallRecord` on the `PlanStep` or
   `AgentPlan` it produced: the provider, the model asked for and the one the provider says answered (`openrouter/free`

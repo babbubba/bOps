@@ -342,6 +342,15 @@ public sealed record DelegationRun
     /// </summary>
     public string? IdempotencyKey { get; init; }
 
+    /// <summary>
+    /// What the operator limited the objective to, or <c>null</c> for no narrowing. Stored so a resumed run derives each role's
+    /// envelope from the same request it started with, and can only narrow it further.
+    /// </summary>
+    public DelegationAuthorityRequest? Authority { get; init; }
+
+    /// <summary>The change the operator asked the run to be able to make, or <c>null</c> for a diagnosis only. Stored so a resumed run needs no request from its caller.</summary>
+    public DelegationRemediationRequest? Remediation { get; init; }
+
     /// <summary>Where the run stands or how it ended.</summary>
     public required DelegationStatus Status { get; init; }
 
