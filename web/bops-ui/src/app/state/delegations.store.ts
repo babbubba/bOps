@@ -4,6 +4,8 @@
 import { computed, inject } from '@angular/core';
 import { patchState, signalStore, withComputed, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { I18n } from '../core/i18n/i18n';
+import { describeError } from './describe-error';
 import { Delegation, PendingPlanApproval, StartDelegationRequest } from '../core/api/models';
 import { AuthService } from '../core/auth/auth.service';
 
@@ -19,13 +21,6 @@ interface DelegationsState {
   error: string | null;
 }
 
-/** The API answers a refusal with `{ message }`; prefer that to the transport's generic text. */
-function describeError(err: unknown): string {
-  const body = (err as { error?: { message?: unknown } } | null)?.error;
-  if (typeof body?.message === 'string') return body.message;
-  return err instanceof Error ? err.message : 'Something went wrong.';
-}
-
 /**
  * Delegated runs (ADR-0030, /api/delegations): the recent runs and the plans waiting for a person. There is no stream for
  * them, so this polls on a fixed interval, as the approval queue does, starting when the store is created. Every action
@@ -38,7 +33,7 @@ export const DelegationsStore = signalStore(
     /** Runs that wait for a human to decide their plan (the nav badge). */
     awaitingApproval: computed(() => store.runs().filter((run) => run.awaitingPlanApproval)),
   })),
-  withMethods((store, api = inject(BOpsApiClient), auth = inject(AuthService)) => {
+  withMethods((store, api = inject(BOpsApiClient), auth = inject(AuthService), i18n = inject(I18n)) => {
     /** `keepError`: after a refused action the refresh must not wipe the reason the person is waiting to read. */
     const refresh = async (keepError = false): Promise<void> => {
       try {
@@ -47,7 +42,7 @@ export const DelegationsStore = signalStore(
         const pendingPlans = canApprove ? await api.listPendingPlanApprovals() : [];
         patchState(store, keepError ? { runs, pendingPlans, loading: false } : { runs, pendingPlans, loading: false, error: null });
       } catch (err) {
-        patchState(store, { loading: false, error: describeError(err) });
+        patchState(store, { loading: false, error: describeError(err, i18n) });
       }
     };
 
@@ -56,7 +51,7 @@ export const DelegationsStore = signalStore(
       try {
         return await action();
       } catch (err) {
-        patchState(store, { error: describeError(err) });
+        patchState(store, { error: describeError(err, i18n) });
         return undefined;
       } finally {
         patchState(store, { busy: false });

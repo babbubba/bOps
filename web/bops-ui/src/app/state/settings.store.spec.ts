@@ -73,6 +73,30 @@ describe('SettingsStore', () => {
     expect(store.error()).toBe('unreachable');
   }));
 
+  it('explains a 404 as Settings not being available on this host, and drops what it showed before', fakeAsync(() => {
+    const store = TestBed.inject(SettingsStore);
+    void store.refresh();
+    tick();
+    expect(store.view()).not.toBeNull();
+
+    api.getSettings.and.rejectWith(new HttpErrorResponse({ status: 404, statusText: 'Not Found', url: '/api/settings' }));
+    void store.refresh();
+    tick();
+
+    expect(store.view()).toBeNull();
+    expect(store.error()).toContain('Vault:MasterKeySecret');
+  }));
+
+  it('says the API cannot be reached when the backend does not answer', fakeAsync(() => {
+    api.getSettings.and.rejectWith(new HttpErrorResponse({ status: 504, statusText: 'Gateway Timeout', url: '/api/settings' }));
+    const store = TestBed.inject(SettingsStore);
+
+    void store.refresh();
+    tick();
+
+    expect(store.error()).toContain('Cannot reach the bOps API');
+  }));
+
   it('setProviderKey sends the current vaultVersion and refreshes on success', fakeAsync(() => {
     api.setProviderKey.and.resolveTo();
     const store = TestBed.inject(SettingsStore);

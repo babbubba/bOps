@@ -34,6 +34,8 @@ export const en = {
   'common.optionalNote': 'Optional note',
   'common.error.generic': 'Something went wrong.',
   'common.error.liveConnection': 'Lost the live connection to this task.',
+  'common.error.http': 'The request to the bOps API failed (HTTP {status}). If the backend is not running or not reachable, start it and try again.',
+  'common.error.unreachable': 'Cannot reach the bOps API. Check that the backend is running and reachable, then try again.',
   'common.duration.ms': '{value} ms',
   'common.duration.s': '{value} s',
   'common.duration.min': '{minutes} min',
@@ -200,6 +202,8 @@ export const en = {
   'settings.title': 'Settings',
   'settings.subtitle': 'Provider endpoint, model and API key, fully managed from here (ADR-0029). Changes take effect on the next restart.',
   'settings.adminRequired': 'The administrator role is required to view or change Settings.',
+  'settings.error.notAvailable':
+    'Settings are not available on this host: the API only offers them when the credential vault is configured (Vault:MasterKeySecret, see the README).',
   'settings.conflict': '— someone else changed Settings since this page loaded; it has been refreshed with the latest state, please retry.',
   'settings.activeProvider': 'Active provider',
   'settings.source.environment': 'Set by the {name} environment variable — overrides anything below.',

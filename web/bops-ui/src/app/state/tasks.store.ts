@@ -4,6 +4,8 @@
 import { inject } from '@angular/core';
 import { patchState, signalStore, withHooks, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
+import { I18n } from '../core/i18n/i18n';
+import { describeError } from './describe-error';
 import { AgentTaskStatus, TaskState, TaskStatusRunning } from '../core/api/models';
 import { watchTaskEvents } from '../core/streaming/task-events';
 import { AuthService } from '../core/auth/auth.service';
@@ -29,10 +31,6 @@ const initialState: TasksState = {
   error: null,
 };
 
-function describeError(err: unknown): string {
-  return err instanceof Error ? err.message : 'Something went wrong.';
-}
-
 /**
  * The task list for the chosen status (default Running, polled; any terminal status is a plain\n * on-demand fetch of history) and whichever task is currently selected, kept live via SSE\n * (ADR-0018, core/streaming/task-events). One active watch at a time — selecting a different task, or
  * starting/resuming a new one, tears down the previous stream before opening the next.
@@ -40,7 +38,7 @@ function describeError(err: unknown): string {
 export const TasksStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
-  withMethods((store, api = inject(BOpsApiClient)) => {
+  withMethods((store, api = inject(BOpsApiClient), i18n = inject(I18n)) => {
     let stopWatching: (() => void) | null = null;
 
     function watch(taskId: string): void {
@@ -49,7 +47,7 @@ export const TasksStore = signalStore(
         taskId,
         (id) => api.getTask(id),
         (task) => patchState(store, { selectedTask: task }),
-        () => patchState(store, { error: 'Lost the live connection to this task.' }),
+        () => patchState(store, { error: i18n.t('common.error.liveConnection') }),
       );
     }
 
@@ -64,7 +62,7 @@ export const TasksStore = signalStore(
         }
       } catch (err) {
         if (store.statusFilter() === status) {
-          patchState(store, { loading: false, error: describeError(err) });
+          patchState(store, { loading: false, error: describeError(err, i18n) });
         }
       }
     }
@@ -88,7 +86,7 @@ export const TasksStore = signalStore(
           patchState(store, { starting: false, selectedTaskId: taskId, selectedTask: null });
           watch(taskId);
         } catch (err) {
-          patchState(store, { starting: false, error: describeError(err) });
+          patchState(store, { starting: false, error: describeError(err, i18n) });
         }
       },
 
@@ -99,7 +97,7 @@ export const TasksStore = signalStore(
           patchState(store, { selectedTaskId: taskId, selectedTask: null });
           watch(taskId);
         } catch (err) {
-          patchState(store, { error: describeError(err) });
+          patchState(store, { error: describeError(err, i18n) });
         }
       },
 
@@ -112,7 +110,7 @@ export const TasksStore = signalStore(
             watch(taskId);
           }
         } catch (err) {
-          patchState(store, { error: describeError(err) });
+          patchState(store, { error: describeError(err, i18n) });
         }
       },
 

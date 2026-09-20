@@ -35,6 +35,8 @@ export const it: Messages = {
   'common.optionalNote': 'Nota facoltativa',
   'common.error.generic': 'Qualcosa è andato storto.',
   'common.error.liveConnection': 'Connessione in tempo reale con questo task persa.',
+  'common.error.http': 'La richiesta all’API di bOps non è riuscita (HTTP {status}). Se il backend non è in esecuzione o non è raggiungibile, avvialo e riprova.',
+  'common.error.unreachable': 'Impossibile raggiungere l’API di bOps. Controlla che il backend sia in esecuzione e raggiungibile, poi riprova.',
   'common.duration.ms': '{value} ms',
   'common.duration.s': '{value} s',
   'common.duration.min': '{minutes} min',
@@ -201,6 +203,8 @@ export const it: Messages = {
   'settings.title': 'Impostazioni',
   'settings.subtitle': 'Endpoint, modello e chiave API del provider, gestiti interamente da qui (ADR-0029). Le modifiche hanno effetto al riavvio successivo.',
   'settings.adminRequired': 'Per vedere o modificare le Impostazioni serve il ruolo di amministratore.',
+  'settings.error.notAvailable':
+    'Le Impostazioni non sono disponibili su questo host: l’API le offre solo se il vault delle credenziali è configurato (Vault:MasterKeySecret, vedi il README).',
   'settings.conflict': '— qualcun altro ha modificato le Impostazioni dopo il caricamento di questa pagina; è stata aggiornata con lo stato più recente, riprova.',
   'settings.activeProvider': 'Provider attivo',
   'settings.source.environment': 'Impostato dalla variabile d’ambiente {name} — ha la precedenza su tutto ciò che segue.',
