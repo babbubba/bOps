@@ -248,7 +248,11 @@ asks, with `docs/agents/delegations-api.md` and a threat-model section. The API 
 `PolicyConfig` as its engine (`LoadedPolicy`). Two things to know: the runtime never writes `DelegationStatus.AwaitingApproval` (a run
 waiting for its plan is `Running`; the API adds `awaitingPlanApproval`), and four-eyes approval is not built (an identity holding both
 `operator` and `approver` can approve its own plan; documented as residual risk).
-Next action: V1.2-K (Angular Delegations view)
+V1.2-K is implemented: the Delegations view in `web/bops-ui` (`features/delegations`, `state/delegations.store.ts`, models and client
+methods for `/api/delegations`, a route and a nav entry with a badge for plans waiting). It polls every two seconds like the approval
+queue; buttons follow the role, the API decides. Strings are English literals: the multilingual UI task
+(`2026-09-19-ui-multilanguage-it-en.md`) has not landed, so this view's strings join the catalogues when it migrates the UI.
+Next action: V1.2-L (documentation and alignment)
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists sub-tasks A–M with effort).
 The formal release gate is closed via `v1.1.0-preview.2`.
 

@@ -14,6 +14,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/approvals/approvals').then((m) => m.Approvals),
   },
   {
+    path: 'delegations',
+    loadComponent: () => import('./features/delegations/delegations').then((m) => m.Delegations),
+  },
+  {
     path: 'plugins',
     loadComponent: () => import('./features/plugins/plugins').then((m) => m.Plugins),
   },

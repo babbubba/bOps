@@ -16,7 +16,7 @@ snapshots under `agentic/obsolete/`.
 | 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Complete | medio |
 | 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
 | 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
-| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | **Active — A to J implemented (C1 to C3, the orchestrator, its budgets, durable state, separation of duties, audit provenance, the CLI and the API), K next**; sub-tasks A–M | molto alto, split A–M |
+| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | **Active — A to K implemented (C1 to C3, the orchestrator, its budgets, durable state, separation of duties, audit provenance, the CLI, the API and the UI), L next**; sub-tasks A–M | molto alto, split A–M |
 | 10 | [`V1.3 OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
 | 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
 | 12 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |

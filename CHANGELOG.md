@@ -167,6 +167,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
   envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
   mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
+- V1.2-K Delegations view in the dashboard (`web/bops-ui`, no API or SDK change): a list of runs and, for the one selected, its roles
+  in pipeline order with agent id, status and consumption, the findings and the evidence they cite (never what a tool returned), the
+  verification verdict, the plan hash and who approved it, the step journal, a denial with the dimension it was refused on, and a
+  banner for a step awaiting reconciliation. A plan waiting for a decision is shown with its steps and arguments, findings and the
+  authority it would run under, and is approved or rejected by its hash; a start form takes an objective and, optionally, a change.
+  Approve is offered to the approver role, cancel and resume to the operator role, reconcile to the administrator role, and the API
+  checks each again. Everything a run carries is untrusted text and is only interpolated, never bound as HTML. The nav gets a
+  Delegations entry with a badge for plans waiting.
 - V1.2-J delegations API (no SDK change, ADR-0030 section 9; `docs/agents/delegations-api.md`): `POST /api/delegations` (operator,
   `Idempotency-Key` honoured through the delegation store, so it holds across a restart), `GET /api/delegations` and
   `GET /api/delegations/{id}` (viewer), `POST /api/delegations/{id}/cancel` and `/resume` (operator), `POST /api/delegations/{id}/reconcile`
