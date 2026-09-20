@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Snapshots\*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Policy\bOps.Policy.csproj" />

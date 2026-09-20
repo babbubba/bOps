@@ -41,6 +41,9 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 
     public IPolicyEngine? PolicyEngine { get; set; }
 
+    /// <summary>Extra service registrations, applied last so they replace the host's own (for example, a decorated store).</summary>
+    public Action<IServiceCollection>? ConfigureExtraServices { get; init; }
+
     public IReadOnlyList<string> Roles { get; init; } = ["viewer", "operator", "approver"];
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -90,6 +93,8 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
             {
                 services.AddSingleton(policyEngine);
             }
+
+            ConfigureExtraServices?.Invoke(services);
         });
     }
 

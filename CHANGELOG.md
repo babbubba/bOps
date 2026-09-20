@@ -167,6 +167,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   envelope hashes and their parent, budgets, the human decision, the journal, the end) is rebuilt from the log in a test;
   envelope contents, arguments and tool output reach neither a delegation event nor telemetry; and the hash chain of a file that
   mixes old and new events verifies, and an altered delegation event breaks it at its sequence number.
+- V1.2-M integration and release gate: `V12ReleaseGateTests` takes one objective end to end over HTTP with the real system and filesystem tools and
+  the real policy engine (discovery, diagnosis, approval of the plan by its hash and of the write, remediation, independent verification by
+  distinct agents, a verified audit chain), and kills a host between a write and the record of its outcome to show a new host resumes the run,
+  settles the step by its own verification and does not write twice. `PublicSurfaceSnapshotTests` turns the manual comparison with the frozen
+  1.0 surface of `bOps.Abstractions` into a permanent test, by member, signature and enum value, taken from the V1.0 close-out build.
 - V1.2-L documentation and alignment (no code or SDK change): `docs/agents/delegation.md` (the model: roles, authority reduction, approval,
   budgets, resume and reconciliation, audit, surfaces, and what it does not do: no parallelism, no agent approval, no microservices, no remote
   guarantees), `docs/agents/delegation-policy.md` (the `delegation` section of `policy.yaml` for operators, with a working example that a
