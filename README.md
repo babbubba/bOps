@@ -208,6 +208,7 @@ bops delegate "fix nginx" --skill service.skill --capability service.restore --t
                                                            # ... and a change: you approve the plan by its hash first
 bops delegate status|resume|cancel <run-id>                # read, continue or end a stored run
 bops delegate reconcile <run-id> --accept|--abandon        # settle a step whose outcome is not known; it is never retried
+# over HTTP: /api/delegations (see docs/agents/delegations-api.md)
 ```
 
 Delegation is off until `policy.yaml` has a `delegation` section (ADR-0031). Exit codes: `0` completed or diagnosed, `1` failed

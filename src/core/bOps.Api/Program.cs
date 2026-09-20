@@ -88,11 +88,16 @@ builder.Services.AddSingleton<AnthropicProviderPackage>();
 builder.Services.AddSingleton<ApiApprovalProvider>();
 builder.Services.AddSingleton<IApprovalProvider>(sp => sp.GetRequiredService<ApiApprovalProvider>());
 
-builder.Services.AddSingleton<IPolicyEngine>(sp =>
+// The policy file is read once: the engine and the delegation role profiles (V1.2, ADR-0030) come from the same PolicyConfig, so a
+// policy.yaml that failed to load leaves every tool above Read forbidden and gives no role a profile, and a delegation started
+// against it ends Denied on the Profile dimension before any model call.
+builder.Services.AddSingleton(sp =>
 {
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Api.Policy");
-    return LoadPolicyEngine(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", logger);
+    return LoadPolicy(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", logger);
 });
+builder.Services.AddSingleton<IPolicyEngine>(sp => sp.GetRequiredService<LoadedPolicy>().Engine);
+builder.Services.AddSingleton<IRoleProfileSource>(sp => new PolicyRoleProfileSource(sp.GetRequiredService<LoadedPolicy>().Config));
 
 // Resolved lazily, on the first request that needs it — by then every provider package below has
 // already registered with IChatModelRegistry. Lazy resolution also means a test can replace this
@@ -124,6 +129,22 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<ISkillRegistry>());
 });
 builder.Services.AddSingleton<AgentTaskLauncher>();
+
+// V1.2 (ADR-0030 section 9): delegated runs. The store is one more SQLite file next to the task store; the plan approval is a queue
+// answered by a separate request from an approver, beside ApiApprovalProvider (which still answers the approval of each step).
+builder.Services.AddSingleton<IDelegationStore>(
+    sp => new SqliteDelegationStore(sp.GetRequiredService<IConfiguration>()["Delegation:FilePath"] ?? "delegations.db"));
+builder.Services.AddSingleton<ApiPlanApprovalProvider>();
+builder.Services.AddSingleton<IPlanApprovalProvider>(sp => sp.GetRequiredService<ApiPlanApprovalProvider>());
+builder.Services.AddSingleton(sp => new DelegationRunner(
+    sp.GetRequiredService<AgentRunner>(),
+    sp.GetRequiredService<IRoleProfileSource>(),
+    sp.GetRequiredService<IPlanApprovalProvider>(),
+    sp.GetRequiredService<IAuditSink>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<DelegationRunner>>(),
+    sp.GetRequiredService<IDelegationStore>()));
+builder.Services.AddSingleton<DelegationLauncher>();
 builder.Services.AddSingleton(
     builder.Configuration.GetSection("Api:Tasks").Get<AgentTaskLauncherOptions>() ?? new AgentTaskLauncherOptions());
 builder.Services.AddSingleton<TaskIdempotencyStore>();
@@ -308,6 +329,7 @@ chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), a
 
 app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
+app.MapDelegationsEndpoints();
 app.MapToolsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
@@ -324,7 +346,7 @@ await app.RunAsync();
 // the identical async version; this one is synchronous because it runs inside a synchronous DI
 // factory delegate (agentic/02-coding-standards.md forbids blocking on async here, so this uses
 // genuinely synchronous file I/O rather than blocking on the async version).
-static IPolicyEngine LoadPolicyEngine(string filePath, ILogger logger)
+static LoadedPolicy LoadPolicy(string filePath, ILogger logger)
 {
     if (!File.Exists(filePath))
     {
@@ -335,7 +357,7 @@ static IPolicyEngine LoadPolicyEngine(string filePath, ILogger logger)
                 filePath);
         }
 
-        return new PolicyEngine(PolicyConfig.SafeDefault);
+        return new LoadedPolicy(new PolicyEngine(PolicyConfig.SafeDefault), PolicyConfig.SafeDefault);
     }
 
     try
@@ -348,14 +370,17 @@ static IPolicyEngine LoadPolicyEngine(string filePath, ILogger logger)
             logger.LogInformation("Loaded policy from '{Path}'.", filePath);
         }
 
-        return new PolicyEngine(config);
+        return new LoadedPolicy(new PolicyEngine(config), config);
     }
     catch (PolicyConfigurationException ex)
     {
         logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
-        return new PolicyEngine(PolicyConfig.AllForbidden);
+        return new LoadedPolicy(new PolicyEngine(PolicyConfig.AllForbidden), PolicyConfig.AllForbidden);
     }
 }
+
+/// <summary>The policy the host loaded, as the engine that evaluates it and the config it came from.</summary>
+internal sealed record LoadedPolicy(IPolicyEngine Engine, PolicyConfig Config);
 
 /// <summary>Marker partial class so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/> can target this top-level-statements entry point. Internal, like every other type in this application (CA1515) — visible to the test project via <c>InternalsVisibleTo</c>.</summary>
 internal partial class Program;

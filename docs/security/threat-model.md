@@ -170,6 +170,47 @@ an actor-scoped idempotency key, and only bounded transient provider failures ar
 Residual risk: a process can die after a side effect but before its state write. Side-effecting
 tools have independent verification, and operators must inspect/verify state before resuming.
 
+### Delegated multi-agent runs (V1.2)
+
+A delegated run (ADR-0030) takes an objective through Discovery, Diagnostic, Remediation and Verification. It adds an HTTP surface
+(`/api/delegations`, see `docs/agents/delegations-api.md`) and a flow of data between roles. Both are new attack surface.
+
+**Who may do what.** Viewing needs `viewer`; starting, cancelling and resuming need `operator`; deciding a plan needs `approver`;
+settling a step whose outcome is not known needs `administrator`. The role is checked before the handler runs, and the person who
+decides is always the authenticated principal: no request body names an approver, a canceller or a reconciler. The runtime refuses a
+decision whose identity is an agent, the runtime itself or one of the run's own agent ids, and audits the refusal. A principal
+holding both `operator` and `approver` can approve the plan of a run it started; a second person (four eyes) is not required in
+V1.2, so grant the two roles to different keys where that matters.
+
+**Approval is bound to the plan.** A decision carries the plan hash it is about. The queue refuses one for another hash, the runtime
+binds the approval to the hash again, and a plan that changes is a new hash and a new request. Approvals are memory-only and are
+asked again on resume, for the same reasons as in the approval lifecycle decision below. A run started with a `policy.yaml` that failed to load, or
+with no `delegation` section, has no role profile and ends `Denied` before any model call.
+
+**Inter-agent data flow.** Roles do not talk to each other and share no conversation. Discovery gives Diagnostic structured
+evidence, each piece marked with the delegation, agent and role that produced it; Diagnostic gives Remediation findings that cite
+evidence ids and a plan; Verification is given only the approved plan and reads the system through its own reduced authority, with
+no model. What one role reads reaches the next only as data in a delimited tool-result turn, never as instruction, and cannot widen
+an envelope, which is computed by the runtime from the operator's request and the profile and can only be narrowed at each step.
+Poisoned tool output can therefore shape a finding and a proposed plan, but the human sees the plan, its steps and arguments, the
+findings and the evidence they cite, and the authority it would run under before approving, and a change is confirmed by a role that
+did not make it.
+
+**What the API discloses.** A run's view omits the data of each piece of evidence (what tools returned), the full authority of each
+role and the model requests and replies; it carries ids, descriptions, statuses, hashes, bounded error text and who decided.
+Telemetry never carries output or arguments. The pending-approval list shows the plan's own arguments, as the existing approvals
+queue does, so treat the `approver` role as able to read them.
+
+**Crash, cancel and reconcile.** Every side-effecting step is journaled before it runs and settled after. A step whose outcome is
+unknown is settled by its own verification or waits for an `administrator`, and is never retried. Cancelling a run this host is
+executing stops it in place and is audited under the operator who asked; cancelling a stored run a crash left `Running` closes it
+in the store.
+
+**Denial of service.** The host caps concurrent delegated runs (503 beyond it), a start waits only until its run is stored, and
+every role has a step, token and deadline budget.
+
+Residual risk: no four-eyes rule; an `approver` can read plan arguments; an in-process package still has the host's privileges (S8).
+
 ### Denial of service
 
 API rate limits, maximum concurrent agent runs, model/tool timeouts, step/replan/token/cost budgets,
