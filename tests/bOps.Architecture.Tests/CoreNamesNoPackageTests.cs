@@ -30,6 +30,8 @@ public sealed class CoreNamesNoPackageTests
     [
         "docker.restart", "docker.stop", "docker.start", "docker.logs", "docker.inspect",
         "docker.containers", "docker.images", "docker.networks",
+        "docker.image.inspect", "docker.image.pull", "docker.image.tag", "docker.image.remove", "docker.build",
+        "docker.volumes", "docker.volume.inspect", "docker.volume.create", "docker.volume.remove",
         "service.status", "service.restart", "service.start", "service.stop",
         "/proc", "/sys", "systemctl", "servicecontroller", "performancecounter",
         "openrouter", "ollama", "llamacpp", "llama.cpp", "anthropic", "deepseek",

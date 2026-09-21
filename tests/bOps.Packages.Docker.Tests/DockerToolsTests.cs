@@ -122,12 +122,16 @@ public sealed class DockerToolsTests
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheEightDockerTools_AllRequiringTheDockerCapability()
+    public void ToolProvider_ContributesTheEightOriginalTools_ThenTheNineAddedInV13B_AllRequiringTheDockerCapability()
     {
         var tools = new DockerToolProvider(ClientFactory).GetTools().ToList();
 
         Assert.Equal(
-            ["docker.containers", "docker.images", "docker.networks", "docker.inspect", "docker.logs", "docker.start", "docker.stop", "docker.restart"],
+            [
+                "docker.containers", "docker.images", "docker.networks", "docker.inspect", "docker.logs", "docker.start", "docker.stop", "docker.restart",
+                "docker.image.inspect", "docker.image.pull", "docker.image.tag", "docker.image.remove", "docker.build",
+                "docker.volumes", "docker.volume.inspect", "docker.volume.create", "docker.volume.remove",
+            ],
             tools.Select(t => t.Manifest.Name));
         Assert.All(tools, t => Assert.Contains(DockerCapability.Name, t.Manifest.Requires));
     }

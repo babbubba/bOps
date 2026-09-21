@@ -75,6 +75,34 @@ public sealed class DockerDaemonUnavailableTests
         Assert.True(result.ErrorMessage!.Length < 2_000);
     }
 
+    [Theory]
+    [InlineData("limit", 1, true)]
+    [InlineData("limit", 500, true)]
+    [InlineData("limit", 0, false)]
+    [InlineData("limit", 501, false)]
+    [InlineData("limit", -1, false)]
+    [InlineData("maxOutputBytes", 4_096, true)]
+    [InlineData("maxOutputBytes", 65_536, true)]
+    [InlineData("maxOutputBytes", 4_095, false)]
+    [InlineData("maxOutputBytes", 65_537, false)]
+    public async Task TheVolumeListArguments_AreCheckedAtTheirBoundsBeforeTheDaemonIsAsked(string name, int value, bool accepted)
+    {
+        var result = await new DockerVolumesTool(new NothingListeningFactory()).ExecuteAsync(Args((name, value)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(accepted, result.ErrorMessage!.Contains("could not be reached", StringComparison.Ordinal));
+        Assert.Equal(!accepted, result.ErrorMessage.Contains($"{name} must be between", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ANonIntegerVolumeListArgument_IsRefused()
+    {
+        var result = await new DockerVolumesTool(new NothingListeningFactory()).ExecuteAsync(Args(("limit", "many")));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("limit must be an integer", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task TheCapabilityProbe_SaysTheDaemonIsNotAvailable_NeverThrows()
     {

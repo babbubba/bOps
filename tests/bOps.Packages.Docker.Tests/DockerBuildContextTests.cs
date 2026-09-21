@@ -330,6 +330,17 @@ public sealed class DockerBuildContextTests : IDisposable
         Assert.Equal(0, LeftoverArchives);
     }
 
+    [Fact]
+    public async Task ADockerignoreThatIsADirectory_RefusesTheBuildToo()
+    {
+        var context = Context();
+        Directory.CreateDirectory(Path.Combine(context, ".dockerignore"));
+
+        await using var prepared = await PrepareAsync(Options(), context);
+
+        Assert.Contains(".dockerignore", prepared.Error, StringComparison.Ordinal);
+    }
+
     [SymlinkCapableFact]
     public async Task ASymbolicLinkPointingOutsideTheContext_RefusesTheBuild()
     {

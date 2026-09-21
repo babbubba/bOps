@@ -343,6 +343,19 @@ public sealed class DockerManagementTests
     }
 
     [DockerAvailableFact]
+    public async Task Pull_ByDigest_FetchesTheSameImage()
+    {
+        var pull = new DockerImagePullTool(Factory);
+        var first = Json(await RunAsync(pull, ("image", Alpine)));
+        var pinned = first["digests"]![0]!.GetValue<string>();
+
+        var again = Json(await RunAsync(pull, ("image", pinned)));
+
+        Assert.Equal(first["id"]!.GetValue<string>(), again["id"]!.GetValue<string>());
+        Assert.Contains("@sha256:", again["image"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [DockerAvailableFact]
     public async Task Pull_OfAnImageThatDoesNotExist_IsAFailedResultWithTheDaemonsReason()
     {
         var pull = new DockerImagePullTool(Factory);
@@ -486,6 +499,26 @@ public sealed class DockerManagementTests
         Assert.False(again.Succeeded);
         Assert.Contains("No such image", again.ErrorMessage, StringComparison.Ordinal);
         Assert.False((await RunAsync(remove, ("image", "Not Valid"))).Succeeded);
+    }
+
+    [DockerAvailableFact]
+    public async Task Remove_NeverPrunes_ItLeavesAnUntaggedParentImageInPlace()
+    {
+        await using var scope = new Scope();
+        var parent = await scope.BuildAsync("parent");
+        var inspect = new DockerImageInspectTool(Factory);
+        var parentId = Json(await RunAsync(inspect, ("image", parent)))["id"]!.GetValue<string>();
+        scope.TrackImage(parentId);
+
+        var child = scope.NewImageName();
+        var context = scope.NewContext("child", $"FROM {parent}{Environment.NewLine}COPY hello.txt /child.txt{Environment.NewLine}");
+        Assert.True((await RunAsync(scope.Build, ("context", context), ("image", child))).Succeeded);
+
+        var remove = new DockerImageRemoveTool(Factory);
+        Assert.True((await RunAsync(remove, ("image", parent))).Succeeded);
+        Assert.True((await RunAsync(remove, ("image", child))).Succeeded);
+
+        Assert.True(Json(await RunAsync(inspect, ("image", parentId)))["exists"]!.GetValue<bool>());
     }
 
     [DockerAvailableFact]

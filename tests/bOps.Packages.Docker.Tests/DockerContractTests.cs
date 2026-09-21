@@ -379,6 +379,18 @@ public sealed class DockerContractTests
     }
 
     [Fact]
+    public void AVolumeWithZeroUsageReportsZero_NotUnknown()
+    {
+        var volume = Volume("data");
+        volume.UsageData = new VolumeUsageData { Size = 0, RefCount = 0 };
+
+        var json = JsonNode.Parse(DockerVolumeOutput.Present(volume))!.AsObject();
+
+        Assert.Equal(0, json["usageBytes"]!.GetValue<long>());
+        Assert.Equal(0, json["referenceCount"]!.GetValue<long>());
+    }
+
+    [Fact]
     public void LabelsAreBoundedInCountAndLength()
     {
         var volume = Volume("data");
