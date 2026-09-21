@@ -238,11 +238,12 @@ TLS and an authenticated reverse proxy in front of it.
 
 ### Enabling the Settings page (the credential vault)
 
-The Angular UI's Settings page (provider endpoint, model and API key, ADR-0029) is **opt-in**. It needs the encrypted local vault, and
-the vault needs a master key that you provide from outside the repository. That is why `src/core/bOps.Api/appsettings.json` does not
-contain a `Vault` section: the shipped file cannot hold a secret, and a configured master key that does not resolve makes the API refuse
-to start. Without the vault the `/api/settings/*` endpoints are simply not mapped: the API answers `404` and the Settings page says the
-vault is not configured. Everything else behaves as before.
+The Angular UI's Settings page (provider endpoint, model and API key, ADR-0029) needs the encrypted local vault, and the vault needs a
+master key that you provide from outside the repository. The shipped `src/core/bOps.Api/appsettings.json` names the environment
+variable that holds it (`Vault:MasterKeySecret`, pointing at `BOPS_VAULT_MASTER_KEY`), never the key itself. Because that reference is
+configured, **the API refuses to start until `BOPS_VAULT_MASTER_KEY` is set** to a key of at least 20 characters. If you do not want the
+vault, remove `MasterKeySecret` from the `Vault` section: the `/api/settings/*` endpoints are then not mapped, the API answers `404` and
+the Settings page says the vault is not configured. Everything else behaves as before.
 
 1. **Create a master key**: any secret of at least 20 characters. Keep it in your password manager, not in the repository.
 
@@ -269,7 +270,8 @@ vault is not configured. Everything else behaves as before.
    If `bOps.Api` is started by a launcher (an Aspire AppHost, a service, a container), set the variable in that launcher's
    environment; a variable set in another terminal does not reach it.
 
-3. **Tell the API to use it**, with either of these (the same configuration, two spellings):
+3. **Point the API at it.** The shipped `appsettings.json` already does, so with step 2 done there is nothing to edit. To use another
+   variable name, or a different setup, use either of these (the same configuration, two spellings):
 
    - environment variables, no file to edit:
 
@@ -278,9 +280,9 @@ vault is not configured. Everything else behaves as before.
      $env:Vault__MasterKeySecret__Name = 'BOPS_VAULT_MASTER_KEY'
      ```
 
-   - or a `Vault` section in the API's configuration, for example in `src/core/bOps.Api/appsettings.json` (or an
-     `appsettings.Production.json` you keep out of git). `FilePath` is optional and defaults to `vault.dat` in the API's working
-     directory, like `tasks.db` and `audit.jsonl`:
+   - or the `Vault` section of the API's configuration (`src/core/bOps.Api/appsettings.json`, or an `appsettings.Production.json` you
+     keep out of git). `FilePath` is optional and defaults to `vault.dat` in the API's working directory, like `tasks.db` and
+     `audit.jsonl`:
 
      ```json
      "Vault": {
@@ -289,8 +291,8 @@ vault is not configured. Everything else behaves as before.
      }
      ```
 
-     The provider is `environment` (the value of the variable named in `Name`); there is no default, so `MasterKeySecret` has to be
-     present for the vault to be active.
+     The provider is `environment` (the value of the variable named in `Name`). `MasterKeySecret` has no built-in default: the vault is
+     active only while it is present in the configuration.
 
 4. **Start `bOps.Api` and check.** `GET /api/settings` with your `BOPS_API_KEY` (an `administrator` key) answers `200`, and the
    Settings page lists the providers. The page is visible to administrators only.
