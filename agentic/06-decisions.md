@@ -611,3 +611,22 @@ architectural fact into operator configuration. *A clarification section inside 
 `bOps.Abstractions` moves to `1.2.0-preview.2`. Targets and environments are not matched per call for
 plain Read calls, because tools declare none; that limit is stated in ADR-0031 and carried into the
 threat model (V1.2-L).
+
+### D-028 — V1.3-A: one `system.events` tool, journalctl run directly, no new privilege
+
+**Decision.** Four choices made while implementing V1.3-A (ADR-0032). (1) One `Read` tool, `system.events`, with the same
+manifest, arguments and result on Windows and Linux; no `service.logs`, `journalctl.*` or `eventlog.*`. (2) Linux collects
+with `journalctl` started directly (fixed switches, values as separate arguments, fixed environment), not with a libsystemd
+binding. (3) Out-of-range arguments are rejected, never clamped, and names accept a small fixed character set. (4) bOps asks for
+no extra privilege: what the host identity cannot read is reported as a gap (`partial` or `unavailable`), never as an empty log.
+
+**Reason.** A binding adds a native dependency that minimal images lack, for a query `journalctl` already answers in structured
+JSON, and the choice stays isolated behind the Linux tool. A clamped request is a wrong answer that looks right. Event messages
+are attacker-influenceable text, so they stay data inside the delimited tool result and never reach audit or telemetry.
+
+**Rejected.** *A libsystemd binding* (revisit if the process cost matters). *PowerShell or `wevtutil`* (a command surface). *A
+`minSeverity` default of `warning`* (hides information events). *Raw native records* (unbounded, OS-shaped).
+
+**Consequences.** `complete` is the only signal that an empty result can be trusted. Linux source and text filtering runs after a
+10,000-record scan ceiling, so a rare source in a long window can be reported truncated. No change to the abstractions, policy,
+runtime or persistence.

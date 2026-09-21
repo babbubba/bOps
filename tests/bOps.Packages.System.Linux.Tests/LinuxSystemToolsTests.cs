@@ -67,13 +67,13 @@ public sealed class LinuxSystemToolsTests
         SystemToolConformance.AssertProcessInspectReportsMissingAsync(new LinuxProcessInspectTool());
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheTwelveSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheThirteenSystemAndProcessTools()
     {
         var names = new LinuxSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
-                "system.info", "system.apps", "system.devices", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.stop", "process.kill",
             ],
             names);

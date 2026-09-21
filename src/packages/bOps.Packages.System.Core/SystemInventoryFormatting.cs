@@ -135,7 +135,7 @@ public static class SystemInventoryFormatting
         return output;
     }
 
-    private static string GetStatus(IReadOnlyList<InventorySourceResult> sources)
+    internal static string GetStatus(IReadOnlyList<InventorySourceResult> sources)
     {
         var applicable = sources
             .Where(source => source.Status != InventorySourceStatus.NotApplicable)
@@ -155,7 +155,7 @@ public static class SystemInventoryFormatting
             : "unavailable";
     }
 
-    private static string ToWireValue(InventorySourceStatus status) => status switch
+    internal static string ToWireValue(InventorySourceStatus status) => status switch
     {
         InventorySourceStatus.Available => "available",
         InventorySourceStatus.Partial => "partial",
@@ -176,7 +176,7 @@ public static class SystemInventoryFormatting
         && !string.IsNullOrWhiteSpace(item.Name)
         && !string.IsNullOrWhiteSpace(item.Source);
 
-    private static string? Bounded(string? value, int maximumCharacters) =>
+    internal static string? Bounded(string? value, int maximumCharacters) =>
         value is null || value.Length <= maximumCharacters
             ? value
             : value[..maximumCharacters];

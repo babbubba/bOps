@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.3** (V1.2-A through V1.2-M are complete and `v1.2.0-preview.8` is released as a pre-release)
-Next implementation batch: **V1.3-A — bounded cross-platform system events**; V1.3 then completes the local senior-operator diagnostic surface through V1.3-L before V1.3-M entitlement/plugin lifecycle
+Next implementation batch: **V1.3-B — Docker management** (V1.3-A, bounded cross-platform system events, is implemented); V1.3 then completes the local senior-operator diagnostic surface through V1.3-L before V1.3-M entitlement/plugin lifecycle
 
 ## 1. Authority and precedence
 
@@ -54,7 +54,7 @@ dependency isolation rather than a security sandbox.
 | V1.0 formal release | Closed via `v1.1.0-preview.2` | The release workflow was proven on tag `v1.1.0-preview.2` (`c81ffab`, run `35383901325`) with verified archives, package, SBOMs, checksums and attestations. No stable `v1.0.x` tag exists or will be created; the first stable tag is decided at V1.1 GA. |
 | V1.1 | Complete (preview tag `v1.1.0-preview.2`) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). The preview artifacts are workflow artifacts only, not a GitHub Release or NuGet publication. |
 | V1.2 | Complete (preview) | Sub-tasks A–M are implemented, each with its pull request green on Windows and Linux CI: contracts, authority reduction, the orchestrator, budgets, durable state, separation of duties, audit provenance, CLI, API, dashboard view and documentation. M (integration and release gate) is closed: Release build with zero warnings, the non-live suite, the Angular build and tests, the SDK pack, an end-to-end objective with real tools and a crash-and-resume scenario, and a permanent snapshot of the frozen 1.0 surface. Tag `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`) and is published as a GitHub pre-release, not a NuGet publication or a stable release. |
-| V1.3 | Not started | Ordered public batches A–L complete the senior-operator local diagnostic surface; M adds the neutral entitlement boundary and local plugin lifecycle. |
+| V1.3 | In progress | V1.3-A (`system.events`) is implemented. Ordered public batches A–L complete the senior-operator local diagnostic surface; M adds the neutral entitlement boundary and local plugin lifecycle. |
 | V1.4–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -359,6 +359,7 @@ not reopened.
 
 ### V1.3-A — system events
 Windows Event Log + Linux journald through one bounded read-only `system.events`.
+**Status.** Implemented (ADR-0032, D-028); the task file holds the evidence.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-a-system-events.md` — **alto**.
 
 ### V1.3-B — Docker management
@@ -569,7 +570,7 @@ structural drift.
 
 | Source requirement | Normalized destination | State |
 |---|---|---|
-| Historical Windows EventLog / Linux journald capability | V1.3-A | Planned; restored as one bounded cross-platform `system.events` tool rather than reopening V0.11. |
+| Historical Windows EventLog / Linux journald capability | V1.3-A | Implemented; restored as one bounded cross-platform `system.events` tool rather than reopening V0.11. |
 | Docker image/build/volume management | V1.3-B | Planned; existing start/stop/restart and image listing remain baseline, with typed verified extensions. |
 | SPEC-001 writable Settings/API keys | V1.1-G | Planned; encrypted local vault selected. |
 | SPEC-002 rename package to Skill | None | Rejected; package and Skill remain distinct concepts. |

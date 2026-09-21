@@ -104,7 +104,7 @@ below it for what's coming and, deliberately, what never will.
 
 | Package | Tools |
 |---|---|
-| **System** | `system.info` `system.apps` `system.devices` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
+| **System** | `system.info` `system.apps` `system.devices` `system.events` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
 | **Process** | `process.list` `process.inspect` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
@@ -112,8 +112,10 @@ below it for what's coming and, deliberately, what never will.
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 | **Web** | `web.search` `web.fetch` |
 
-V1.3-A (`system.events`) and V1.3-B (additional Docker image/build/volume tools) are planned work
-and are intentionally not listed in the registered-today table until their implementation gates pass.
+`system.events` (V1.3-A) reads recent Windows Event Log or journald events as bounded, newest-first JSON
+that says whether it is complete (see [`docs/system-events.md`](docs/system-events.md)). V1.3-B (additional Docker
+image/build/volume tools) is planned work and is intentionally not listed in the registered-today table until its
+implementation gate passes.
 
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
@@ -348,7 +350,7 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
-| `V1.3-A` | Bounded cross-platform `system.events`: Windows Event Log + Linux journald |
+| `V1.3-A` *(implemented)* | Bounded cross-platform `system.events`: Windows Event Log + Linux journald |
 | `V1.3-B` | Docker image/build/volume management; existing start/stop/restart remain the container lifecycle baseline |
 | `V1.3-C–K` | Process, network, storage, filesystem, service/scheduler, identity/time, firewall, TLS/certificates, updates/crashes/drivers |
 | `V1.3-L` | Senior-operator diagnostic integration gate and evidence baseline for future Skills |

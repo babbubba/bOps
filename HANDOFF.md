@@ -258,7 +258,10 @@ V1.2-M is implemented: `V12ReleaseGateTests` (real tools, real policy, real stor
 outcome and resumed by a new one) and `PublicSurfaceSnapshotTests` (the frozen 1.0 surface, permanently). The local gate is closed: Release
 build with 0 warnings, 1521 non-live tests passed (32 skipped, named in the M task), the Angular build and 91 tests, and the SDK packed as
 `1.2.0-preview.8`. The operator authorized the tag and the release once the gate was green: `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`), its artifacts were checked (checksums and attestations) and it is published as a GitHub pre-release. No NuGet publication.
-Next action: V1.3-A, the bounded cross-platform `system.events` reader. V1.3 now has an ordered
+V1.3-A is implemented (2026-09-21): `system.events` on Windows (Event Log) and Linux (journald), ADR-0032, decision D-028 and
+`docs/system-events.md`. The pull request is merged only when the operator asks; the Linux real-journald tests were verified in a
+container, so the hosted CI run is the remaining evidence.
+Next action: V1.3-B, Docker image/build/volume management. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
 a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent
