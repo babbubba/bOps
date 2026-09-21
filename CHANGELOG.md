@@ -21,6 +21,12 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-A `system.events`: one read-only tool over the Windows Event Log (`EventLogReader`) and journald (`journalctl` run
+  directly, with fixed switches and values as separate arguments), with the same arguments and result on both systems: a
+  time window, minimum severity, source, event id, channel and message text, newest first, bounded in events, bytes and
+  scanned records. The result says whether it is complete, a source that cannot be read (permissions, a missing channel or
+  `journalctl`, a timeout) is reported and never mistaken for an empty log, and event messages stay out of audit and telemetry
+  (aggregate audit summary only). ADR-0032; `docs/system-events.md`.
 - Multilingual UI (Italian and English): a dependency-free translation service with two typed catalogues (`en.ts` is the shape, `it.ts`
   must satisfy it), a `t` pipe, a visible `EN | IT` switch that re-renders without a reload and is remembered in `localStorage`
   (`<html lang>` follows it), plural rules, dates, numbers, sizes and durations in the chosen language, and enum labels keyed by name.

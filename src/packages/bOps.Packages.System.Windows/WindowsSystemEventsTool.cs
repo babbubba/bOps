@@ -18,7 +18,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     private const int MaximumDetailCharacters = 200;
 
     private static readonly string[] DefaultChannels = ["System", "Application"];
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
 
     private readonly TimeSpan timeout;
 

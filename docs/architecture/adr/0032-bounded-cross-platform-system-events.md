@@ -64,7 +64,7 @@ Deterministic JSON, newest first (ties broken by source, channel, event id and m
     {
       "timestampUtc": "2026-09-21T10:00:00.0000000Z",
       "severity": "critical | error | warning | information | verbose | unknown",
-      "source": "...", "eventId": null, "channel": null,
+      "source": "...", "unit": null, "eventId": null, "channel": null,
       "message": "...", "messageTruncated": false,
       "processId": null, "processName": null
     }
@@ -79,6 +79,8 @@ Deterministic JSON, newest first (ties broken by source, channel, event id and m
 - `truncated` is true when the limit, the byte budget or the scan ceiling cut the result. `complete` is
   true only when `status` is `complete` and `truncated` is false, so a reader can trust an empty `events`
   only when `complete` is true.
+- `unit` is the systemd unit (Linux only, `null` on Windows). `source` is the Windows provider or the Linux syslog identifier, then the
+  unit when there is no identifier, then the process name, then the literal `unknown`.
 - Unknown levels and providers stay explicit (`unknown`, the raw provider name) rather than guessed.
 - Not returned: raw Windows event XML, the journald field bag, or any native metadata beyond the fields
   above. Messages are bounded to 2000 characters, per-field strings to their own limits.
@@ -91,7 +93,11 @@ built from validated values; time, level, provider and event id are filtered nat
 after `FormatDescription`. Only channels the current identity can read are queried; a denied or missing
 channel is a source with status `unavailable` (`notApplicable` for a default channel that does not
 exist). There is no elevation, no identity switch, no PowerShell and no `wevtutil`. A record that cannot
-be read or formatted is skipped and makes its source `partial`. Cancellation calls `CancelReading`.
+be read or formatted is skipped and makes its source `partial`. A provider that registers no message text on
+this machine gives its data values as the message, and an event with neither has an empty message rather than an
+invented one. A native provider filter is case-sensitive, so `source` is first matched to the spelling the provider
+registered; a provider that is not registered here is filtered afterwards by the shared, case-insensitive filter.
+Cancellation calls `CancelReading`, and a 20-second bound (shorter than the runner default tool timeout of 30 seconds) stops a read that does not finish and marks it `partial`.
 
 ### Linux collection
 
@@ -104,7 +110,7 @@ returns to the fields the tool uses. Source and text are matched by the shared f
 because journald combines matches for different fields with AND and a "unit or identifier" test would
 need a disjunction that does not compose with the other matches.
 
-A scan ceiling (10,000 records) bounds the work; hitting it with a filter still unsatisfied makes the
+A scan ceiling (10,000 records per source) bounds the work; hitting it with a filter still unsatisfied makes the
 result truncated. Standard output is read line by line and stops at the ceiling, the child is killed on
 cancellation or timeout, and standard error is read up to a small cap. A missing executable, a non-zero
 exit or an unreadable journal is `unavailable`. When journald says the identity does not see other users'

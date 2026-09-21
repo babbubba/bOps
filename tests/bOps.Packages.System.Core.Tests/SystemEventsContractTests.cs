@@ -178,6 +178,7 @@ public sealed class SystemEventsContractTests
     [InlineData("source", "user@1000.service")]
     [InlineData("source", "Microsoft-Windows-Kernel-Power")]
     [InlineData("source", "systemd-journald.service")]
+    [InlineData("source", "Print Spooler (v2)")]
     [InlineData("eventId", "7036")]
     [InlineData("eventId", "ab12cd34ef56ab12cd34ef56ab12cd34")]
     [InlineData("channel", "Microsoft-Windows-Kernel-Power/Thermal-Operational")]
@@ -460,6 +461,35 @@ public sealed class SystemEventsContractTests
     }
 
     [Fact]
+    public void TheMessageLimit_IsExactlyTwoThousandCharacters()
+    {
+        var json = Format(Snapshot([Event(minutesAgo: 1, message: new string('a', 2000)), Event(minutesAgo: 2, message: new string('b', 2001))]));
+        var events = json["events"]!.AsArray();
+
+        Assert.False(events[0]!["messageTruncated"]!.GetValue<bool>());
+        Assert.Equal(2000, events[0]!["message"]!.GetValue<string>().Length);
+        Assert.True(events[1]!["messageTruncated"]!.GetValue<bool>());
+        Assert.Equal(2000, events[1]!["message"]!.GetValue<string>().Length);
+    }
+
+    [Fact]
+    public void AResultThatFitsTheByteBudgetExactly_IsNotTruncated_OneByteLessDropsAnEvent()
+    {
+        var snapshot = Snapshot(Enumerable.Range(1, 6).Select(i => Event(minutesAgo: i, message: new string('x', 900 + i))));
+        var full = SystemEventFormatting.Format(snapshot, Query(), 100, 65_536);
+        var size = global::System.Text.Encoding.UTF8.GetByteCount(full);
+        Assert.InRange(size, 4_096, 65_536);
+
+        var exact = JsonNode.Parse(SystemEventFormatting.Format(snapshot, Query(), 100, size))!.AsObject();
+        var tighter = JsonNode.Parse(SystemEventFormatting.Format(snapshot, Query(), 100, size - 1))!.AsObject();
+
+        Assert.False(exact["truncated"]!.GetValue<bool>());
+        Assert.Equal(6, exact["returnedEvents"]!.GetValue<int>());
+        Assert.True(tighter["truncated"]!.GetValue<bool>());
+        Assert.Equal(5, tighter["returnedEvents"]!.GetValue<int>());
+    }
+
+    [Fact]
     public void TheFormatterAppliesTheQueryAgain_SoACollectorThatReturnedTooMuchCannotWidenTheAnswer()
     {
         var query = Query(q => q with { MinSeverity = SystemEventSeverity.Error, Source = "svc" });
@@ -622,6 +652,16 @@ public sealed class SystemEventsContractTests
         Assert.Equal("test.source", summary["sources"]![0]!["name"]!.GetValue<string>());
         Assert.Equal("available", summary["sources"]![0]!["status"]!.GetValue<string>());
         Assert.Null(summary["sources"]![0]!["detail"]);
+    }
+
+    [Fact]
+    public void TheAuditSummary_ForAFailedResult_IsNullEvenWhenItCarriesOutput()
+    {
+        var tool = new FakeEventsTool(Snapshot([]));
+        var valid = SystemEventFormatting.Format(Snapshot([Event()]), Query(), 100, 32_768);
+
+        Assert.Null(tool.CreateAuditSummary(Args(), new ToolCallResult(ToolOutcome.Failure, valid, "failed")));
+        Assert.NotNull(tool.CreateAuditSummary(Args(), ToolCallResult.Success(valid)));
     }
 
     [Fact]

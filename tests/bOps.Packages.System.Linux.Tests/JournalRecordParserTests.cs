@@ -46,6 +46,17 @@ public sealed class JournalRecordParserTests
         Assert.Equal(expected, JournalRecordParser.ToSeverity(priority));
 
     [Fact]
+    public void TheLatestRepresentableInstant_IsAccepted_OneMicrosecondLaterIsMalformed()
+    {
+        var latest = """{"__REALTIME_TIMESTAMP":"253402300799000000","MESSAGE":"m","SYSLOG_IDENTIFIER":"x"}""";
+        var beyond = """{"__REALTIME_TIMESTAMP":"253402300799000001","MESSAGE":"m","SYSLOG_IDENTIFIER":"x"}""";
+
+        Assert.Equal(JournalRecordParser.LineKind.Record, JournalRecordParser.TryParse(latest, out var record));
+        Assert.Equal(new DateTimeOffset(9999, 12, 31, 23, 59, 59, TimeSpan.Zero), record!.TimestampUtc);
+        Assert.Equal(JournalRecordParser.LineKind.Malformed, JournalRecordParser.TryParse(beyond, out _));
+    }
+
+    [Fact]
     public void AMissingPriority_IsAnExplicitUnknownSeverity()
     {
         var line = """{"__REALTIME_TIMESTAMP":"1790000000000000","MESSAGE":"m","SYSLOG_IDENTIFIER":"x"}""";
