@@ -160,6 +160,14 @@ public sealed class WindowsSystemEventsTests
         });
     }
 
+    [Fact]
+    public void AMessage_IsCappedOneCharacterAboveTheResultLimit_SoTheFilterSeesWhatTheResultCanShow()
+    {
+        Assert.Equal(new string('a', 2_001), WindowsSystemEventsTool.CapMessage(new string('a', 2_001)));
+        Assert.Equal(new string('a', 2_001), WindowsSystemEventsTool.CapMessage(new string('a', 50_000)));
+        Assert.Equal("short", WindowsSystemEventsTool.CapMessage("short"));
+    }
+
     [WindowsOnlyFact]
     public async Task TheTextFilter_IsACaseInsensitiveSubstringOfTheRealMessage()
     {

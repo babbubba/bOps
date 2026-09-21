@@ -17,7 +17,7 @@ snapshots under `agentic/obsolete/`.
 | 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
 | 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
 | 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Complete — A to M implemented and release gate closed | molto alto, split A–M |
-| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Implemented — PR #32, CI green** | alto |
+| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Implemented — PR #32** | alto |
 | 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | Future | molto alto |
 | 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | Future | medio |
 | 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | Future | medio |

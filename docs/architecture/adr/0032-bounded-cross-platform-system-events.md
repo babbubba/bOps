@@ -38,7 +38,7 @@ Every argument is optional, and an out-of-range value is rejected, never clamped
 | `source` | String, up to 128 characters | Windows: the provider name. Linux: the syslog identifier or the systemd unit. Exact, case-insensitive. |
 | `eventId` | String, up to 64 characters | Windows: the numeric event id. Linux: the 32-hex-digit `MESSAGE_ID`. |
 | `channel` | String, up to 256 characters | Windows: a channel name (default: `System` and `Application`). Linux: the journal transport (`kernel`, `journal`, `syslog`, `stdout`, `driver`, `audit`; default: all). |
-| `text` | String, up to 256 characters | Case-insensitive substring of the message. |
+| `text` | String, up to 256 characters | Case-insensitive substring of the first 2000 characters of the message (what the result can show, on both platforms). |
 | `limit` | Integer, 1 to 500, default 50 | Events returned. |
 | `maxOutputBytes` | Integer, 4096 to 65536, default 32768 | UTF-8 size of the result. |
 

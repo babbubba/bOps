@@ -20,7 +20,7 @@ Every argument is optional. A value out of range is rejected with the reason, ne
 | `source` | Exact, case-insensitive. Windows: the provider name (`Service Control Manager`). Linux: the syslog identifier or the systemd unit (`nginx` or `nginx.service`). |
 | `eventId` | Windows: the event id (`7036`). Linux: the 32-digit hexadecimal `MESSAGE_ID`. |
 | `channel` | Windows: a channel such as `Microsoft-Windows-Kernel-Power/Thermal-Operational` (default: `System` and `Application`). Linux: a journal transport: `kernel`, `journal`, `syslog`, `stdout`, `driver` or `audit` (default: all). |
-| `text` | Case-insensitive text the message must contain, up to 256 characters. |
+| `text` | Case-insensitive text the message must contain, up to 256 characters. It is matched against the first 2000 characters of the message, the same part the result can show. |
 | `limit` | Events to return, 1 to 500 (default 50). |
 | `maxOutputBytes` | Size of the result, 4096 to 65536 (default 32768). |
 

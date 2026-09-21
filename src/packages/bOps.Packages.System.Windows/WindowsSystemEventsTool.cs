@@ -172,7 +172,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
                 record.ProviderName,
                 record.Id.ToString(CultureInfo.InvariantCulture),
                 record.LogName,
-                Message(record),
+                CapMessage(Message(record)),
                 record.ProcessId,
                 null);
             return true;
@@ -182,6 +182,13 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
             return false;
         }
     }
+
+    /// <summary>
+    /// Keeps one character more than the result can carry, so the text filter sees exactly what the result can show (as on Linux) and
+    /// the formatter can still tell that the message was cut.
+    /// </summary>
+    internal static string CapMessage(string message) =>
+        message.Length > SystemEventsLimits.MessageCharacters + 1 ? message[..(SystemEventsLimits.MessageCharacters + 1)] : message;
 
     /// <summary>
     /// The event's own description when its provider registers one; otherwise the event's data values, which are what the description
