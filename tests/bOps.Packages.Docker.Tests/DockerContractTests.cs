@@ -228,6 +228,23 @@ public sealed class DockerContractTests
         Assert.Equal(["local", "custom"], new DockerVolumeOptions { Drivers = ["local", "custom", "local"] }.AllowedDrivers);
     }
 
+    [Fact]
+    public void TheVolumeListDefaultsAreWhatTheManifestSays()
+    {
+        var limit = Tool("docker.volumes").Manifest.Parameters.Single(parameter => parameter.Name == "limit");
+
+        Assert.Contains("Defaults to 100.", limit.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnImageWithAnEmptyVariant_ReportsNoVariant()
+    {
+        var json = DockerImageOutput.Present(
+            "x:1", new global::Docker.DotNet.Models.ImageInspectResponse { ID = "sha256:abc", Variant = string.Empty, RepoTags = [], RepoDigests = [] });
+
+        Assert.Null(JsonNode.Parse(json)!["variant"]);
+    }
+
     // ---- verification, decided from what docker.image.inspect / docker.volume.inspect said ----
 
     private const string ImageAbsent = """{"schemaVersion":1,"exists":false,"reference":"x:1"}""";

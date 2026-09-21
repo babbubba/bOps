@@ -213,6 +213,8 @@ public sealed class DockerImageReferenceTests
     [Fact]
     public void APlatformIsBoundedInLength()
     {
+        Assert.True(DockerNames.TryValidatePlatform("linux/" + new string('a', 26), out _));
+        Assert.False(DockerNames.TryValidatePlatform("linux/" + new string('a', 27), out _));
         Assert.False(DockerNames.TryValidatePlatform("linux/" + new string('a', 30), out _));
         Assert.False(DockerNames.TryValidatePlatform(null, out _));
     }

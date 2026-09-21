@@ -176,6 +176,29 @@ public sealed class DockerBuildContextTests : IDisposable
     }
 
     [Fact]
+    public async Task AContextPathIsBoundedAtExactlyOneThousandTwentyFourCharacters()
+    {
+        var prefix = Path.Combine(Allowed, "x") + Path.DirectorySeparatorChar;
+        await using var atLimit = await PrepareAsync(Options(), prefix + new string('a', 1_024 - prefix.Length));
+        await using var over = await PrepareAsync(Options(), prefix + new string('a', 1_025 - prefix.Length));
+
+        Assert.DoesNotContain("malformed", atLimit.Error, StringComparison.Ordinal);
+        Assert.Contains("malformed", over.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BlankEntriesInTheAllowedList_AreIgnored_NeverAllowEverything_NorThrow()
+    {
+        var context = Context();
+
+        await using var onlyBlank = await PrepareAsync(Options(100, 1_000_000, "", "   "), context);
+        await using var blankAndAllowed = await PrepareAsync(Options(100, 1_000_000, "", Allowed), context);
+
+        Assert.Contains("Docker:Build:Contexts", onlyBlank.Error, StringComparison.Ordinal);
+        Assert.Null(blankAndAllowed.Error);
+    }
+
+    [Fact]
     public async Task AContextThatDoesNotExist_IsRefused()
     {
         await using var prepared = await PrepareAsync(Options(), Path.Combine(Allowed, "missing"));

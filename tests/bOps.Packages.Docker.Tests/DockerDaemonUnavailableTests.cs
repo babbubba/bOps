@@ -95,6 +95,19 @@ public sealed class DockerDaemonUnavailableTests
     }
 
     [Fact]
+    public async Task ABuildTaggedWithADigest_IsRefusedBeforeTheContextOrTheDaemonIsTouched()
+    {
+        var tool = new DockerBuildTool(
+            new NothingListeningFactory(), new DockerBuildOptions { Contexts = [Path.GetFullPath(Directory.GetCurrentDirectory())] });
+
+        var result = await tool.ExecuteAsync(
+            Args(("context", Path.GetFullPath(Directory.GetCurrentDirectory())), ("image", "app@sha256:" + new string('a', 64))));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("not a digest", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ANonIntegerVolumeListArgument_IsRefused()
     {
         var result = await new DockerVolumesTool(new NothingListeningFactory()).ExecuteAsync(Args(("limit", "many")));
