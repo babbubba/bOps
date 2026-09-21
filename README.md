@@ -355,7 +355,9 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.3-C–K` | Process, network, storage, filesystem, service/scheduler, identity/time, firewall, TLS/certificates, updates/crashes/drivers |
 | `V1.3-L` | Senior-operator diagnostic integration gate and evidence baseline for future Skills |
 | `V1.3-M` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
-| `V1.4` | Outbound secure node protocol and private Control Plane foundation |
+| `V1.4-A–C` | Outbound secure node protocol, private Coordinator and PostgreSQL+pgvector persistence baseline |
+| `V1.4-D` | Semantic Knowledge Store + tenant-private Operational Memory + versioned Knowledge/Experience Packs |
+| `V1.4-E` | Official packaging and signed application/knowledge-pack distribution |
 | `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
 | `V2.0` | Enterprise GA, recovery, compatibility, security and release readiness |
 
@@ -441,6 +443,8 @@ real tools, a crash and resume, and the frozen 1.0 surface kept by a permanent t
 | [`docs/agents/delegation.md`](docs/agents/delegation.md) | Delegated runs: roles, authority reduction, approval, resume, and what they do not do |
 | [`docs/agents/delegation-policy.md`](docs/agents/delegation-policy.md) | Turning delegation on in `policy.yaml`, with a working example |
 | [`docs/agents/delegations-api.md`](docs/agents/delegations-api.md) | The `/api/delegations` endpoints and their roles |
+| [`docs/knowledge/knowledge-pack-format.md`](docs/knowledge/knowledge-pack-format.md) | V1.4-D normative format for signed/versioned Knowledge and Experience Packs |
+| [`docs/knowledge/experience-pack-authoring.md`](docs/knowledge/experience-pack-authoring.md) | How to create reusable incidents without customer data and release independent pack updates |
 
 ## License
 
