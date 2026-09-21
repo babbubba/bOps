@@ -350,7 +350,9 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3-A` | Bounded cross-platform `system.events`: Windows Event Log + Linux journald |
 | `V1.3-B` | Docker image/build/volume management; existing start/stop/restart remain the container lifecycle baseline |
-| `V1.3-C` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
+| `V1.3-C–K` | Process, network, storage, filesystem, service/scheduler, identity/time, firewall, TLS/certificates, updates/crashes/drivers |
+| `V1.3-L` | Senior-operator diagnostic integration gate and evidence baseline for future Skills |
+| `V1.3-M` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
 | `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
 | `V2.0` | Enterprise GA, recovery, compatibility, security and release readiness |
