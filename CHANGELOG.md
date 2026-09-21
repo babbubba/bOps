@@ -12,6 +12,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
   Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
 
+### Fixed
+
+- The UI no longer stalls on a running task with "HTTP 429". The task watcher retries transient failures (429, 502–504, no answer)
+  with exponential backoff and `Retry-After` instead of stopping at the first one, and polls every 2 s instead of 500 ms. The API's
+  rate limiter now keeps the strict 120-token bucket for mutations and unauthenticated calls, and gives authenticated `GET`/`HEAD`
+  reads their own 600-token bucket (300/min), so the UI's read-only polling cannot exhaust the budget that protects writes.
+
 ### Added
 
 - Multilingual UI (Italian and English): a dependency-free translation service with two typed catalogues (`en.ts` is the shape, `it.ts`
