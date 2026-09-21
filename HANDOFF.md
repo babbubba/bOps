@@ -258,9 +258,12 @@ V1.2-M is implemented: `V12ReleaseGateTests` (real tools, real policy, real stor
 outcome and resumed by a new one) and `PublicSurfaceSnapshotTests` (the frozen 1.0 surface, permanently). The local gate is closed: Release
 build with 0 warnings, 1521 non-live tests passed (32 skipped, named in the M task), the Angular build and 91 tests, and the SDK packed as
 `1.2.0-preview.8`. The operator authorized the tag and the release once the gate was green: `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`), its artifacts were checked (checksums and attestations) and it is published as a GitHub pre-release. No NuGet publication.
-Next action: V1.3-A, the bounded cross-platform `system.events` reader. After it closes,
-V1.3-B extends Docker with governed image/build/volume management while preserving the existing
-container start/stop/restart baseline; V1.3-C then delivers entitlement/plugin lifecycle.
+Next action: V1.3-A, the bounded cross-platform `system.events` reader. V1.3 now has an ordered
+A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
+service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
+a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent
+is that V1.4 transports an already-complete local diagnostic surface and future PostgreSQL/
+SQL Server Skills add only domain-specific evidence/remediation.
 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists the completed V1.2 sub-tasks A–M).
 The formal release gate is closed via `v1.1.0-preview.2`.
 
