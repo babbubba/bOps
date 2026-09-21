@@ -19,10 +19,20 @@ snapshots under `agentic/obsolete/`.
 | 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Complete — A to M implemented and release gate closed | molto alto, split A–M |
 | 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Future — next** | alto |
 | 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | Future | molto alto |
-| 12 | [`V1.3-C OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
-| 13 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
-| 14 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
-| 15 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+| 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | Future | medio |
+| 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | Future | medio |
+| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | Future | medio |
+| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | Future | medio |
+| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | Future | medio |
+| 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | Future | medio |
+| 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | Future | medio |
+| 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | Future | medio |
+| 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | Future | medio |
+| 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | Future | medio |
+| 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
+| 23 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
+| 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
+| 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
