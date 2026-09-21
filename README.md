@@ -112,6 +112,9 @@ below it for what's coming and, deliberately, what never will.
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
 | **Web** | `web.search` `web.fetch` |
 
+V1.3-A (`system.events`) and V1.3-B (additional Docker image/build/volume tools) are planned work
+and are intentionally not listed in the registered-today table until their implementation gates pass.
+
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
 native sources and explicit completeness semantics are documented in
@@ -345,7 +348,9 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
-| `V1.3` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
+| `V1.3-A` | Bounded cross-platform `system.events`: Windows Event Log + Linux journald |
+| `V1.3-B` | Docker image/build/volume management; existing start/stop/restart remain the container lifecycle baseline |
+| `V1.3-C` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4` | Outbound secure node protocol and private Control Plane foundation |
 | `V1.5–V1.9` | Private commercial PostgreSQL/SQL Server Skills and enterprise Portal |
 | `V2.0` | Enterprise GA, recovery, compatibility, security and release readiness |

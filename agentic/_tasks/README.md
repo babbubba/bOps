@@ -16,14 +16,16 @@ snapshots under `agentic/obsolete/`.
 | 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Complete | medio |
 | 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
 | 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
-| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | **Active — A to M implemented (C1 to C3, the orchestrator, its budgets, durable state, separation of duties, audit provenance, the CLI, the API, the UI, the documentation and the release gate)**; sub-tasks A–M | molto alto, split A–M |
-| 10 | [`V1.3 OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
-| 11 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
-| 12 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
-| 13 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Complete — A to M implemented and release gate closed | molto alto, split A–M |
+| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Future — next** | alto |
+| 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | Future | molto alto |
+| 12 | [`V1.3-C OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
+| 13 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
+| 14 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
+| 15 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
 
-Private V1.3–V2.0 implementation tasks belong in `bOps.Commercial`. The private coordination root
+Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
 
 ## Execution rules
