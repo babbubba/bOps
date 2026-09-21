@@ -33,6 +33,28 @@ public sealed class WindowsProcessActionToolsTests
         }
     }
 
+    private static async Task<bool> WaitForMainWindowAsync(Process process, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            process.Refresh();
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            if (process.MainWindowHandle != IntPtr.Zero)
+            {
+                return true;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return false;
+    }
+
     // A console process with no window: CreateNoWindow means CloseMainWindow() has nothing to
     // close, exercising process.stop's honest "no graceful mechanism" failure path.
     private static Process StartWindowlessProcess()
@@ -110,8 +132,11 @@ public sealed class WindowsProcessActionToolsTests
     public async Task ProcessStop_Succeeds_ForAProcessWithAMainWindow()
     {
         using var process = StartWindowedProcess();
-        // Give the window time to actually appear before CloseMainWindow() looks for it.
-        process.WaitForInputIdle(TimeSpan.FromSeconds(10));
+        // CloseMainWindow() needs the window to exist. WaitForInputIdle returns after a fixed time whether or not one has appeared, and on a
+        // loaded CI runner mshta can take longer than that, so wait for the window itself.
+        Assert.True(
+            await WaitForMainWindowAsync(process, TimeSpan.FromSeconds(60)),
+            "The test process never showed a main window, so process.stop had nothing to close.");
         var tool = new WindowsProcessStopTool();
 
         try
