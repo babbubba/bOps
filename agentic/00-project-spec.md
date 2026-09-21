@@ -105,7 +105,7 @@ not to pull the work forward.
 ## Explicitly out of scope, permanently or until a stated gate
 
 - Multi-agent supervision until V1.2, with privilege isolation designed in from the start.
-- Vector stores and semantic memory over past tasks — not scheduled.
+- Vector-backed semantic knowledge and operational memory are Coordinator-side only and are gated to **V1.4-D**, after the private Coordinator has PostgreSQL+pgvector persistence and before V1.5 commercial Skills. Managed Agents and the public core never depend on a vector store. See `agentic/_plans/2026-09-21-v1.4-d-semantic-knowledge-operational-memory.md`.
 - Remote execution transport (the *contract* accommodates it from V0.1; the transport arrives at
   V1.4, node-initiated only, never an inbound admin path).
 - macOS platform packages — possible later as a package (rule A8), never scheduled.
