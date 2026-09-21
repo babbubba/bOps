@@ -84,10 +84,13 @@ release-candidate workflow has not run from a tag.
 
 **The authoritative backlog and actual status are in
 [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md).** This
-file remains authoritative for product rules. V1.1 is the current milestone and closes the Skill
-SDK plus the accepted system inventory, filesystem inventory/deletion, Web, plugin catalog and
-secure Settings batches before V1.2 begins. V1.2–V2.0 retain multi-agent, entitlement, private
-Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core boundary.
+file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone.
+A–L complete the local senior-system-administrator evidence surface before remote transport:
+events, Docker, process, network, storage, filesystem, service/scheduler, identity/time/reboot,
+firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M then adds the
+neutral entitlement and local plugin-lifecycle boundary. V1.4–V2.0 retain remote transport,
+private Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core
+boundary.
 The public `bOps` repository never contains commercial Skills, knowledge, entitlement providers,
 Control Plane or Portal source.
 

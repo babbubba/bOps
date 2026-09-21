@@ -2,8 +2,8 @@
 
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
-Current implementation milestone: **V1.2** (V1.1 batches A–H complete; preview tag `v1.1.0-preview.2` released)
-Next implementation batch: **V1.3 — entitlement boundary and local plugin lifecycle** (V1.2-A through V1.2-M are implemented and the V1.2 gate is closed)
+Current implementation milestone: **V1.3** (V1.2-A through V1.2-M are complete and `v1.2.0-preview.8` is released as a pre-release)
+Next implementation batch: **V1.3-A — bounded cross-platform system events**; V1.3 then completes the local senior-operator diagnostic surface through V1.3-L before V1.3-M entitlement/plugin lifecycle
 
 ## 1. Authority and precedence
 
@@ -54,7 +54,8 @@ dependency isolation rather than a security sandbox.
 | V1.0 formal release | Closed via `v1.1.0-preview.2` | The release workflow was proven on tag `v1.1.0-preview.2` (`c81ffab`, run `35383901325`) with verified archives, package, SBOMs, checksums and attestations. No stable `v1.0.x` tag exists or will be created; the first stable tag is decided at V1.1 GA. |
 | V1.1 | Complete (preview tag `v1.1.0-preview.2`) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). The preview artifacts are workflow artifacts only, not a GitHub Release or NuGet publication. |
 | V1.2 | Complete (preview) | Sub-tasks A–M are implemented, each with its pull request green on Windows and Linux CI: contracts, authority reduction, the orchestrator, budgets, durable state, separation of duties, audit provenance, CLI, API, dashboard view and documentation. M (integration and release gate) is closed: Release build with zero warnings, the non-live suite, the Angular build and tests, the SDK pack, an end-to-end objective with real tools and a crash-and-resume scenario, and a permanent snapshot of the frozen 1.0 surface. Tag `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`) and is published as a GitHub pre-release, not a NuGet publication or a stable release. |
-| V1.3–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
+| V1.3 | Not started | Ordered public batches A–L complete the senior-operator local diagnostic surface; M adds the neutral entitlement boundary and local plugin lifecycle. |
+| V1.4–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
 formally released until its release gate is satisfied.
@@ -106,7 +107,19 @@ V1.1-A Skill SDK completion
   -> V1.1-G writable secure Settings
   -> V1.1-H integration and release gate
   -> V1.2 multi-agent
-  -> V1.3 entitlement + local plugin lifecycle UI
+  -> V1.3-A bounded cross-platform system events
+  -> V1.3-B Docker image/build/volume management
+  -> V1.3-C advanced process diagnostics
+  -> V1.3-D sockets/routes/network diagnostics
+  -> V1.3-E storage topology/latency/health
+  -> V1.3-F filesystem troubleshooting helpers
+  -> V1.3-G service configuration + scheduler
+  -> V1.3-H identity + time + reboot state
+  -> V1.3-I firewall diagnostics
+  -> V1.3-J TLS + certificate diagnostics
+  -> V1.3-K updates + crashes + drivers/modules
+  -> V1.3-L senior-operator diagnostic integration gate
+  -> V1.3-M entitlement + local plugin lifecycle UI
   -> V1.4 secure node transport + Control Plane foundation
   -> V1.5 PostgreSQL read-only
   -> V1.6 PostgreSQL remediation
@@ -338,45 +351,65 @@ isolation.
 **Task.** `agentic/_tasks/2026-09-16-v1.2-multi-agent.md` — effort **molto alto** for planning and the
 security-boundary sub-tasks; split into sub-tasks A–M with individual efforts (basso to molto alto).
 
-## 10. V1.3 — generic entitlement and local plugin lifecycle
+## 10. V1.3 — senior-operator local diagnostics and entitlement/plugin lifecycle
 
-The public repository adds a product-neutral `IEntitlementService`, serializable requests/
-decisions and fail-closed enforcement. The contract evaluates concrete grants and constraints over
-subject, installation, feature, Skill, capability, resource/limit, node/target, validity and reason
-code. It contains no Community/commercial tier, price, SKU, payment provider, vendor token format or
-private product identity. The existing standalone OSS mode remains usable without registration or
-commercial entitlement. `ISkillEntitlementService` has not shipped and is therefore replaced in
-the future plan rather than introduced and later adapted.
+V1.3 is completed locally before remote-node work: the node should already expose the typed,
+bounded evidence expected from an experienced Windows/Linux administrator. Closed milestones are
+not reopened.
 
-The private companion track, created only after public V1.2 and the private governance/legal gates
-close, owns the signed entitlement format/provider, Coordinator installation identity, one-active-
-Coordinator activation/transfer, the 90-day Community validity plus 30-day grace rules, commercial
-offline import/export and the minimum Account Portal activation surface. It consumes the generic
-public contract and never forks it. Community and commercial behavior is data-driven through grants
-and limits rather than hard-coded product bundles. During grace, heartbeat/visibility and permitted
-remote read diagnostics may continue, but no new remote mutation starts; the entitlement ADR must
-define what happens to work already executing when state changes.
+### V1.3-A — system events
+Windows Event Log + Linux journald through one bounded read-only `system.events`.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-a-system-events.md` — **alto**.
 
-The Account Portal receives only account, activation, entitlement and download data by default —
-not node hostnames/IPs, prompts, tool output, database names, filesystem paths or operational audit.
-Product telemetry is separate, opt-in and disabled by default; marketing consent is never a
-technical prerequisite for a Community account.
+### V1.3-B — Docker management
+Preserve existing container lifecycle and add governed image/build/volume operations.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-b-docker-management.md` — **molto alto**.
 
-The OSS companion track adds authenticated plugin enable/disable/upload APIs and UI. Upload is a
-staged install pipeline with size/type limits, manifest parsing, compatibility checks, detached
-signature verification, publisher trust evaluation, atomic activation and rollback. Mutations are
-administrator-only and completely audited. In-process plugins remain trusted code.
+### V1.3-C — process diagnostics
+Additive process inspection plus metrics/tree/modules; no environment dump or process start.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-c-process-diagnostics.md` — **medio**.
 
-**Public Definition of Done.** Neutral entitlement denial is enforced at the execution point after
-approval validation and before execution; stale grants, resource/node limit breaches and provider
-failure fail closed without disabling unrelated standalone OSS capabilities. Read-only plugin
-discovery remains available when entitlement denies execution; upload or lifecycle failure cannot
-replace the active package or bypass trust.
+### V1.3-D — network diagnostics
+PID-owned sockets, complete routes, neighbors, interface stats, DNS query, traceroute, NTP probe.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-d-network-diagnostics.md` — **medio**.
 
-**Public task.** `agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md` — effort
-**molto alto**. Private implementation tasks belong only in `bOps.Commercial`, use effort
-**molto alto**, and are not created or started while that repository's bootstrap says product
-implementation is blocked.
+### V1.3-E — storage diagnostics
+Disks, partitions, mounts, IOPS/latency/queue/utilization and health/SMART evidence.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md` — **medio**.
+
+### V1.3-F — filesystem troubleshooting
+grep/tail/permissions/locks plus verified single-file copy and mkdir under existing path policy.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md` — **medio**.
+
+### V1.3-G — service configuration and scheduler
+Service config/dependencies/enable-state plus Task Scheduler/systemd timers/cron diagnostics.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md` — **medio**.
+
+### V1.3-H — identity, time and reboot state
+Local principals/groups/sessions, system time/sync state and pending-reboot evidence.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md` — **medio**.
+
+### V1.3-I — firewall diagnostics
+Read-only host firewall status and normalized rules; mutation deferred.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md` — **medio**.
+
+### V1.3-J — TLS and certificates
+Handshake-only TLS probe and local X.509 list/inspect; no private-key export or install/remove.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md` — **medio**.
+
+### V1.3-K — updates, crashes and drivers/modules
+Read-only pending updates/history, crash metadata and loaded drivers/modules.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md` — **medio**.
+
+### V1.3-L — senior-operator integration gate
+End-to-end troubleshooting scenarios and the stable OSS evidence baseline future commercial Skills
+consume.
+**Task.** `agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md` — **medio**.
+
+### V1.3-M — entitlement and local plugin lifecycle
+The previously planned neutral entitlement boundary and administrator-safe plugin lifecycle follows
+the operational-completeness gate. Commercial identities/providers remain private.
+**Public task.** `agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md` — **molto alto**.
 
 ## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport
 
@@ -536,6 +569,8 @@ structural drift.
 
 | Source requirement | Normalized destination | State |
 |---|---|---|
+| Historical Windows EventLog / Linux journald capability | V1.3-A | Planned; restored as one bounded cross-platform `system.events` tool rather than reopening V0.11. |
+| Docker image/build/volume management | V1.3-B | Planned; existing start/stop/restart and image listing remain baseline, with typed verified extensions. |
 | SPEC-001 writable Settings/API keys | V1.1-G | Planned; encrypted local vault selected. |
 | SPEC-002 rename package to Skill | None | Rejected; package and Skill remain distinct concepts. |
 | SPEC-003 README alignment/bilingual docs | Every batch + post-V2.0 task | Ongoing; bilingual delivery gated after V2.0. |
