@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
   </ItemGroup>
 
