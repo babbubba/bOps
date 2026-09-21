@@ -120,7 +120,11 @@ V1.1-A Skill SDK completion
   -> V1.3-K updates + crashes + drivers/modules
   -> V1.3-L senior-operator diagnostic integration gate
   -> V1.3-M entitlement + local plugin lifecycle UI
-  -> V1.4 secure node transport + Control Plane foundation
+  -> V1.4-A secure Managed Agent / Coordinator protocol
+  -> V1.4-B private Coordinator core + tenant/RBAC/enrollment
+  -> V1.4-C private PostgreSQL+pgvector persistence baseline
+  -> V1.4-D Semantic Knowledge Store + Semantic Operational Memory
+  -> V1.4-E official packaging + signed update/pack distribution
   -> V1.5 PostgreSQL read-only
   -> V1.6 PostgreSQL remediation
   -> V1.7 SQL Server read-only
@@ -438,7 +442,13 @@ idempotent synchronization.
 
 The private repository owns the Community Coordinator, enrollment authority, Account integration,
 Control Plane storage/identity/RBAC, Coordinator-side providers/Skills, PostgreSQL plus pgvector,
-Operations Portal, entitlement refresh and Coordinator-mediated update distribution. Community is
+Operations Portal, entitlement refresh and Coordinator-mediated update distribution. V1.4 is split
+into ordered private/public companion batches: **A** public Managed Agent/protocol, **B** private
+Coordinator core and tenant/RBAC/enrollment, **C** private PostgreSQL+pgvector persistence baseline,
+**D** Semantic Knowledge Store + Semantic Operational Memory + versioned Knowledge/Experience Pack
+lifecycle, and **E** official packaging plus signed application/pack distribution. V1.4-D is the
+first point at which semantic memory may be implemented because it requires the authenticated
+Coordinator and the V1.4-C persistence baseline. Community is
 data-driven but initially grants one active Coordinator installation, at most three enrolled
 `Remote` nodes, and one Coordinator-assigned `Local` Agent excluded from that remote count. An Agent
 cannot self-assert `Local`; node removal/revocation immediately releases a remote slot. Agents
@@ -459,11 +469,15 @@ pseudo-local/cross-account enrollment and reuses a slot immediately after remote
 Coordinator has no dependency path that permits direct operational execution.
 
 **Public task.** `agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md` — effort
-**molto alto**. Private sub-batches, created only after its gates close, cover entitlement/account
-activation, Coordinator core, enrollment and node limits, PostgreSQL/pgvector plus Operations Portal,
-official packaging, and update distribution/cross-platform integration. They belong only in
-`bOps.Commercial` and use effort **molto alto**. Cross-repository pinning and compatibility evidence
-belong only in `bOps.Workspace`.
+**molto alto**. Private sub-batches, created only after their gates close, cover entitlement/account
+activation, Coordinator core, enrollment/node limits, PostgreSQL/pgvector + Operations Portal,
+semantic knowledge/operational memory, and official packaging/update distribution. The semantic
+sub-batch is specified by `agentic/_plans/2026-09-21-v1.4-d-semantic-knowledge-operational-memory.md`
+and its normative pack/authoring documents under `docs/knowledge/`. V1.4-D must close **before
+V1.5 PostgreSQL read-only starts**, so the first commercial Skill consumes semantic knowledge from
+day one rather than adding it retrospectively. Executable private tasks belong only in
+`bOps.Commercial`; cross-repository pinning and compatibility evidence belong only in
+`bOps.Workspace`.
 
 ## 12. V1.5–V1.9 — private commercial delivery
 
