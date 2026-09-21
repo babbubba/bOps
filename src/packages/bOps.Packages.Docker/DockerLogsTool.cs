@@ -53,5 +53,9 @@ public sealed class DockerLogsTool(IDockerClientFactory clientFactory) : ITool
         {
             return ToolCallResult.Failure($"Could not read logs for '{container}': {ex.Message}");
         }
+        catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
+        {
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+        }
     }
 }

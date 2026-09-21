@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
   </ItemGroup>
 

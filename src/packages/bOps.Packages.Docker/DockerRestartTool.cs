@@ -42,6 +42,10 @@ public sealed class DockerRestartTool(IDockerClientFactory clientFactory) : IVer
         {
             return ToolCallResult.Failure($"Could not restart container '{container}': {ex.Message}");
         }
+        catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
+        {
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+        }
     }
 
     public Task<VerificationOutcome> EvaluateVerificationAsync(
