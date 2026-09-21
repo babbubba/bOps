@@ -48,17 +48,35 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Two buckets per caller. Mutating requests (POST/PUT/DELETE…) and anything unauthenticated keep the strict
+    // bucket. Authenticated safe reads (GET/HEAD) get their own, larger one: the UI legitimately polls several
+    // read-only endpoints (task, task list, approvals, delegations) and must not starve — or be starved by — the
+    // writes that matter. Reads stay bounded per caller, and the authentication scheme runs before this middleware.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
-        RateLimitPartition.GetTokenBucketLimiter(
-            http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new TokenBucketRateLimiterOptions
+    {
+        var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isRead = userId is not null
+            && (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method));
+        var key = userId ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        return isRead
+            ? RateLimitPartition.GetTokenBucketLimiter($"read:{key}", _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = 600,
+                TokensPerPeriod = 300,
+                ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            })
+            : RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
             {
                 TokenLimit = 120,
                 TokensPerPeriod = 60,
                 ReplenishmentPeriod = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true,
-            }));
+            });
+    });
 });
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
