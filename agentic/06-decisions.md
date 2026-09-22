@@ -652,3 +652,33 @@ the context.* *Build arguments and secrets* (need their own threat model). *Prun
 
 **Consequences.** Building needs one line of configuration and a longer tool timeout. Contexts with links or a `.dockerignore` are
 prepared by the operator. Growing the surface later (prune, credentials, build arguments) is a new ADR each time.
+
+### D-030 — V1.3-C: three new `Read` process tools, an additive `process.inspect`, WMI for what `Process` cannot see
+
+**Decision.** Five choices made while implementing V1.3-C (ADR-0034). (1) `process.inspect` gains ten nullable fields and keeps
+every existing one; three tools are added — `process.metrics`, `process.tree`, `process.modules` — and all four stay
+`RiskLevel.Read` with no `VerificationSpec`, which is the convention every read-only `system.*`/`process.*` tool already follows
+and which the conformance suite already asserts. (2) Windows reads the parent PID, executable path, command line and owner from
+`Win32_Process` through `System.Management`, added to the Windows package only; Linux reads `/proc` directly. (3) CPU is
+host-normalized across every processor, a process that exits between the two samples is `exists:false, partial:true`, and a rate
+is never negative. (4) The tree is a depth-first walk with children in PID order, bounded in depth and rows, and a `rootPid` that
+is not running is `rootFound:false`, never an empty tree. (5) Neither the environment of a process nor a `process.start` exists,
+here or later.
+
+**Reason.** Verification confirms an effect; an observation has none, and a read tool that declared one would be asserting that
+reading a live machine twice gives the same answer. `Win32_Process` is the only supported way to read another process's parent,
+command line and owner without a toolhelp snapshot that would give neither the command line nor the owner; it is the managed CIM
+client, not a command surface. Normalizing CPU across processors makes 100 mean the machine rather than one core. An environment
+block routinely carries credentials, and a redaction list is a blacklist whose one miss is the one that matters.
+
+**Rejected.** *A generic `process.start` or a shell running `ps`/`tasklist`* (rule S1; this batch exists to make it unnecessary).
+*Returning a redacted environment.* *A toolhelp snapshot instead of WMI* (revisit if WMI's per-call cost dominates).
+*`NtQueryInformationProcess` and a PEB walk* (undocumented, and one field from the environment block). *Separate
+`process.parent`/`process.children` tools.* *Folding sampling into `process.inspect`*, which verifies `process.stop` and
+`process.kill` and must stay instantaneous. *Clamping out-of-range arguments* (D-028). *A `maxOutputBytes` on `process.tree`*,
+which the task's contract did not name.
+
+**Consequences.** The Windows package gains one Windows-only NuGet dependency. `process.tree` costs one WMI query plus one owner
+lookup per returned row, which is what the default 200-row bound keeps inside the tool timeout. On Linux an unprivileged host
+reports `null` I/O and executable path for other users' processes, and `privateMemoryMb` is `null` on kernels without `RssAnon`.
+No change to the abstractions, policy, runtime, persistence or audit.
