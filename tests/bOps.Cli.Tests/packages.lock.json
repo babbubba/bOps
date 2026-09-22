@@ -454,6 +454,11 @@
           "SQLitePCLRaw.core": "3.0.3"
         }
       },
+      "System.CodeDom": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "QWERdKi/tQAx+MbrPxTGcpchqMANnVXNiv2r2tILBBB38E74buD+fABSUhozZ1G9kjbadFB0m+HPFMkhJPeFvA=="
+      },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",
         "resolved": "10.0.0",
@@ -474,6 +479,14 @@
         "contentHash": "ZnhizmMstYa05UNuwiMew7EsGApEy6qBcvBBSxoUcaX8WvkE2pb+iQyRWyQZ8E0mq7PlPBjwVh4+6ie+B6oeZA==",
         "dependencies": {
           "System.Configuration.ConfigurationManager": "10.0.0"
+        }
+      },
+      "System.Management": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "LE3rDZoPzulou78Tsq+3ALhUs4vatQ03v2QWbYVIenVPneUH/+LTUmHyyl098OxIFLQI6sNkZs8YHbUnT/sm3A==",
+        "dependencies": {
+          "System.CodeDom": "10.0.0"
         }
       },
       "System.Security.Cryptography.ProtectedData": {
@@ -692,6 +705,7 @@
         "type": "Project",
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
+          "System.Management": "[10.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
