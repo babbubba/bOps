@@ -3,6 +3,8 @@
 
 using bOps.Packages.Service.Conformance;
 using bOps.Packages.Service.Windows;
+using System.Text.Json.Nodes;
+using bOps.Abstractions;
 
 namespace bOps.Packages.Service.Windows.Tests;
 
@@ -31,11 +33,31 @@ public sealed class WindowsServiceToolsTests
         ServiceToolConformance.AssertServiceStatusReportsMissingAsync(
             new WindowsServiceStatusTool(), "windows", "bops-this-service-definitely-does-not-exist");
 
+    [WindowsOnlyFact]
+    public async Task Config_ReportsExistingServiceAndNullWorkingDirectory()
+    {
+        var result = await new WindowsServiceConfigTool().ExecuteAsync(NameArgs(KnownServiceName));
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var json = JsonNode.Parse(result.Output!)!.AsObject();
+        Assert.True(json["exists"]!.GetValue<bool>());
+        Assert.Null(json["workingDirectory"]);
+    }
+
+    [WindowsOnlyFact]
+    public async Task Config_ReportsMissingServiceAsDefiniteAbsence()
+    {
+        var result = await new WindowsServiceConfigTool().ExecuteAsync(NameArgs("bops-this-service-definitely-does-not-exist"));
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.False(JsonNode.Parse(result.Output!)!["exists"]!.GetValue<bool>());
+    }
+
+    private static ToolArguments NameArgs(string name) => ToolArguments.FromJson(new JsonObject { ["name"] = name });
+
     [Fact]
-    public void ToolProvider_ContributesExactlyTheFiveServiceTools()
+    public void ToolProvider_ContributesExactlyTheNineServiceTools()
     {
         var names = new WindowsServiceToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
-        Assert.Equal(["service.list", "service.status", "service.start", "service.stop", "service.restart"], names);
+        Assert.Equal(["service.list", "service.status", "service.start", "service.stop", "service.restart", "service.config", "service.dependencies", "service.enable", "service.disable"], names);
     }
 }
