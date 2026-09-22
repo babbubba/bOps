@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Plain net10.0, not net10.0-windows: bOps.Cli references both the Windows and Linux
+         native network packages and selects one at runtime by OS, which a Windows-specific TFM
+         would forbid. Platform intent is declared with [assembly: SupportedOSPlatform("windows")]
+         instead, matching bOps.Packages.System.Windows. -->
+    <RootNamespace>bOps.Packages.Network.Native.Windows</RootNamespace>
+    <AssemblyName>bOps.Packages.Network.Native.Windows</AssemblyName>
+    <Description>network.sockets, network.routes, network.neighbors and network.interface_stats for Windows, via GetExtendedTcpTable/GetExtendedUdpTable, GetIpForwardTable2 and GetIpNetTable2 (V1.3-D, ADR-0035).</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Network.Native.Core\bOps.Packages.Network.Native.Core.csproj" />
+  </ItemGroup>
+
+</Project>
