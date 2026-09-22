@@ -46,6 +46,7 @@
     <Project Path="src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Linux/bOps.Packages.System.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Windows/bOps.Packages.System.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.Scheduler.Core/bOps.Packages.Scheduler.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/bOps.Api.Tests/bOps.Api.Tests.csproj" />
@@ -74,6 +75,8 @@
     <Project Path="tests/bOps.Packages.System.Core.Tests/bOps.Packages.System.Core.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Scheduler.Conformance/bOps.Packages.Scheduler.Conformance.csproj" />
+    <Project Path="tests/bOps.Packages.Scheduler.Core.Tests/bOps.Packages.Scheduler.Core.Tests.csproj" />
     <Project Path="tests/bOps.PluginHost.Tests/bOps.PluginHost.Tests.csproj" />
     <Project Path="tests/bOps.Policy.Tests/bOps.Policy.Tests.csproj" />
     <Project Path="tests/bOps.Runtime.Tests/bOps.Runtime.Tests.csproj" />

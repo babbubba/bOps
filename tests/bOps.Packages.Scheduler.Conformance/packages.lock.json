@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "xunit.assert": {
+        "type": "Direct",
+        "requested": "[2.9.3, )",
+        "resolved": "2.9.3",
+        "contentHash": "/Kq28fCE7MjOV42YLVRAJzRF0WmEqsmflm0cfpMjGtzQ2lR5mYVj1/i0Y8uDAOLczkL3/jArrwehfMD0YogMAA=="
+      },
+      "bops.abstractions": {
+        "type": "Project"
+      },
+      "bops.packages.scheduler.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      }
+    }
+  }
+}
