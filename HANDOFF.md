@@ -271,7 +271,22 @@ three kernel32 counters; Linux reads `/proc` directly. There is still no `proces
 environment, and a new `NoGenericExecutionToolTests` in `bOps.Architecture.Tests` now enforces both over the whole source tree.
 This is a Windows development machine, so the Linux tools' 55 platform-gated tests skip here and the `ubuntu-latest` CI job is
 their evidence; the `/proc` parsers they depend on are covered by 8 platform-independent tests that do run everywhere.
-Next action: V1.3-D, network diagnostics. V1.3 has an ordered
+V1.3-D is implemented (2026-09-22): `network.sockets`, `network.routes`, `network.neighbors`,
+`network.interface_stats`, `network.dns_query`, `network.traceroute` and `network.ntp_probe` on both
+systems -- ADR-0035, decision D-031 and `docs/network-diagnostics.md`. The existing
+`bOps.Packages.Network` package and its six tools are unchanged; a new `bOps.Packages.Network.Native.{Core,Windows,Linux}`
+family is registered alongside it. Windows reads `GetExtendedTcpTable`/`GetExtendedUdpTable` (owner-PID
+sockets) and `GetIpForwardTable2`/`GetIpNetTable2` (routes/neighbors) via `iphlpapi.dll`, parsed by fixed
+byte offset because both route and neighbor rows embed a `SOCKADDR_INET` union with no single C#
+`StructLayout`; interface counters use `NetworkInterface.GetIPStatistics()`. Linux reads `/proc/net/*`
+directly and runs exactly two fixed, argument-listed `ip -j route|neighbor show[/-6]` invocations, no
+shell, no model-supplied argument. `network.dns_query`, `network.traceroute` and `network.ntp_probe`
+need no OS-specific collection at all (system resolver / a minimal typed UDP DNS client, `Ping` with
+increasing TTL, a minimal SNTP client) and are concrete classes shared by both platform packages. Real
+loopback TCP/UDP sockets proved exact PID/port ownership on this Windows machine (2206 tests, 0
+failures, 88 skipped -- the 11 new Linux-only tests, skipped visibly here, are the `ubuntu-latest` CI
+job's evidence).
+Next action: V1.3-E, storage diagnostics. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
 a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent

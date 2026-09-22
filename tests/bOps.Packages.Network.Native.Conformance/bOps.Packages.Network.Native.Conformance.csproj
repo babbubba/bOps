@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>bOps.Packages.Network.Native.Conformance</RootNamespace>
+    <Description>
+      Shared assertions any native network.* implementation must satisfy, regardless of OS
+      (agentic/04-testing-rules.md — "The conformance suite for platform packages"). Referenced by
+      bOps.Packages.Network.Native.Windows.Tests and bOps.Packages.Network.Native.Linux.Tests, each
+      of which runs it against its own tools.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.assert" Version="2.9.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Network.Native.Core\bOps.Packages.Network.Native.Core.csproj" />
+  </ItemGroup>
+
+</Project>

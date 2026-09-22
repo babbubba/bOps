@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Network.Native.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.Network.Native.Core</AssemblyName>
+    <Description>Shared manifests, argument validation, result shapes and output formatting for the native network.* tools (V1.3-D, ADR-0035). Not itself a package — referenced by the Windows and Linux native network packages so the tool shell is written once (agentic/01-architecture-rules.md, rule A8). Also hosts network.dns_query, network.traceroute and network.ntp_probe, which need no OS-specific collection.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

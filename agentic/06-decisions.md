@@ -682,3 +682,41 @@ which the task's contract did not name.
 lookup per returned row, which is what the default 200-row bound keeps inside the tool timeout. On Linux an unprivileged host
 reports `null` I/O and executable path for other users' processes, and `privateMemoryMb` is `null` on kernels without `RssAnon`.
 No change to the abstractions, policy, runtime, persistence or audit.
+
+### D-031 — V1.3-D: sockets/routes/neighbors as a sibling native package, three tools needing no OS split
+
+**Decision.** Seven new `Read` tools (ADR-0035): `network.sockets`, `network.routes`, `network.neighbors`,
+`network.interface_stats`, `network.dns_query`, `network.traceroute`, `network.ntp_probe`, contributed by new
+`bOps.Packages.Network.Native.Core`/`.Windows`/`.Linux` packages, registered alongside the existing, unchanged
+`bOps.Packages.Network`. All seven stay `RiskLevel.Read` with no `VerificationSpec`, following the same convention
+D-030 restates for `process.*`. `network.dns_query`, `network.traceroute` and `network.ntp_probe` need no
+OS-specific collection (system resolver / a minimal typed UDP DNS client, `Ping` with increasing TTL, a minimal
+SNTP client) and are concrete classes in `.Core` rather than abstract bases — new for this codebase, called out
+explicitly in the ADR. Windows reads socket/route/neighbor tables via `GetExtendedTcpTable`/`GetExtendedUdpTable`/
+`GetIpForwardTable2`/`GetIpNetTable2`, parsed by fixed byte offset because both route and neighbor rows embed a
+`SOCKADDR_INET` union with no single C# `StructLayout`. Linux reads `/proc/net/{tcp,tcp6,udp,udp6}` plus a bounded
+`/proc/<pid>/fd` scan for socket-to-PID mapping, `/proc/net/dev` + `/sys/class/net` for interface counters, and
+exactly two fixed, argument-listed invocations — `ip -j route show`/`-6` and `ip -j neighbor show`/`-6` — the task
+spec explicitly permits, via `ProcessStartInfo.ArgumentList`, no shell, no model-supplied argument ever appended.
+
+**Reason.** `bOps.Packages.Network`'s own doc comment already states the BCL abstracts routing/interfaces "well
+enough" for its existing six tools' shape, but owner-PID socket mapping and the full routing/neighbor tables need
+native APIs the BCL does not expose, so this is additive rather than a rework of a package with tools already in
+production use. `SOCKADDR_INET`'s union shape cannot be marshalled as one struct without runtime branching on the
+family field either way, so fixed-offset reads are the explicit version of what an `[StructLayout(Explicit)]`
+attempt would still need to do. `network.route`'s existing default-gateway/connected-subnet summary answers a
+cheaper, different question than `network.routes`' full table and is kept, not deprecated.
+
+**Rejected.** *A generic `network.exec` or shelling to `netstat`/`ss`/`route`/`arp`/`tracert`* (rule S1). *Reworking
+`bOps.Packages.Network` in place* (breaking change to six shipped tools). *`GetIfEntry2` via a second P/Invoke
+struct family for interface stats* (the task spec allows "equivalent BCL counters";
+`NetworkInterface.GetIPStatistics()` already covers it). *A full DNS/NTP client dependency* (exposes a raw query
+surface this task explicitly excludes). *Multiple probes per traceroute hop* (task specifies one probe per hop in
+the first version). *Treating NTP stratum 16 as a valid-with-warning reading* (an unsynchronized server's offset is
+not a fact worth reporting as trustworthy).
+
+**Consequences.** `bOps.Packages.Network.Native.Windows` P/Invokes `iphlpapi.dll` directly, no new NuGet dependency.
+`bOps.Packages.Network.Native.Linux` runs exactly the two named `ip` invocations and nothing else. An unprivileged
+Linux host cannot map every socket to a PID (another user's `/proc/<pid>/fd` is unreadable), reported as
+`pidMappingComplete: false`, never a silent zero. No change to the abstractions, policy, runtime, persistence or
+audit.
