@@ -259,6 +259,7 @@ public sealed class FsToolsTests : IDisposable
             [
                 "fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash", "fs.move", "fs.size",
                 "fs.delete_tree.prepare", "fs.delete_tree.verify", "fs.delete_tree",
+                "fs.grep", "fs.tail", "fs.permissions", "fs.locks", "fs.copy.verify", "fs.copy", "fs.mkdir",
             ], names);
     }
 
