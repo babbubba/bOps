@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Packages.Service.Linux.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\bOps.Packages.Service.Core\bOps.Packages.Service.Core.csproj" />
   </ItemGroup>
