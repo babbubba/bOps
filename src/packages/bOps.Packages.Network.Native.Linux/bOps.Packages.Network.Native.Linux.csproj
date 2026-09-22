@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Network.Native.Linux</RootNamespace>
+    <AssemblyName>bOps.Packages.Network.Native.Linux</AssemblyName>
+    <Description>network.sockets, network.routes, network.neighbors and network.interface_stats for Linux, reading /proc directly and, for routes and neighbors, the two fixed "ip -j route ..."/"ip -j neighbor ..." invocations the task explicitly permits (V1.3-D, ADR-0035).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Network.Native.Core\bOps.Packages.Network.Native.Core.csproj" />
+  </ItemGroup>
+
+</Project>
