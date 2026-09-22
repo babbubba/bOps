@@ -1,13 +1,16 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-using System.ComponentModel;
 using System.Diagnostics;
 using bOps.Packages.Sys.Core;
 
 namespace bOps.Packages.Sys.Windows;
 
-/// <summary>Collects <c>process.inspect</c> data on Windows via <see cref="Process"/>.</summary>
+/// <summary>
+/// Collects <c>process.inspect</c> data on Windows via <see cref="Process"/>, <c>Win32_Process</c>
+/// and two kernel32 counters. Every field is read independently: one that this identity may not
+/// read becomes <c>null</c> and the rest of the observation still stands (ADR-0034).
+/// </summary>
 public sealed class WindowsProcessInspectTool() : ProcessInspectToolBase("windows")
 {
     private const int BytesPerMb = 1024 * 1024;
@@ -26,65 +29,28 @@ public sealed class WindowsProcessInspectTool() : ProcessInspectToolBase("window
 
         using (process)
         {
+            ct.ThrowIfCancellationRequested();
+            var identity = WindowsProcessInformation.TryRead(pid);
             var result = new ProcessInspectResult(
                 pid,
                 Exists: true,
-                SafeName(process),
-                SafeWorkingSetMb(process),
-                SafeThreadCount(process),
-                SafeStartTimeUtc(process));
+                WindowsProcessCounters.Text(() => process.ProcessName),
+                WindowsProcessCounters.Value(() => process.WorkingSet64 / BytesPerMb),
+                WindowsProcessCounters.Value(() => process.Threads.Count),
+                WindowsProcessCounters.Value(() => (DateTimeOffset)process.StartTime.ToUniversalTime()))
+            {
+                ParentPid = identity?.ParentPid,
+                ExecutablePath = identity?.ExecutablePath,
+                CommandLine = identity?.CommandLine,
+                User = WindowsProcessInformation.TryReadOwner(pid),
+                PrivateMemoryMb = WindowsProcessCounters.Value(() => process.PrivateMemorySize64 / BytesPerMb),
+                VirtualMemoryMb = WindowsProcessCounters.Value(() => process.VirtualMemorySize64 / BytesPerMb),
+                HandleOrFdCount = WindowsProcessCounters.HandleCount(process),
+                CpuTotalMs = WindowsProcessCounters.Value(() => (long)process.TotalProcessorTime.TotalMilliseconds),
+                IoReadBytes = WindowsProcessCounters.ReadTransferBytes(process),
+                IoWriteBytes = WindowsProcessCounters.WriteTransferBytes(process),
+            };
             return Task.FromResult(result);
-        }
-    }
-
-    // A process can exit, or be another user's / a protected system process, between
-    // GetProcessById() and reading its properties — degrade the affected field to null rather
-    // than losing the whole observation (mirrors WindowsProcessListTool's SafeXxx helpers).
-    private static string? SafeName(Process process)
-    {
-        try
-        {
-            return process.ProcessName;
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    private static long? SafeWorkingSetMb(Process process)
-    {
-        try
-        {
-            return process.WorkingSet64 / BytesPerMb;
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    private static int? SafeThreadCount(Process process)
-    {
-        try
-        {
-            return process.Threads.Count;
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
-        {
-            return null;
-        }
-    }
-
-    private static DateTimeOffset? SafeStartTimeUtc(Process process)
-    {
-        try
-        {
-            return process.StartTime.ToUniversalTime();
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            return null;
         }
     }
 }

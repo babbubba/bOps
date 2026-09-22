@@ -2,11 +2,55 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace bOps.Packages.Sys.Windows;
 
 internal static partial class NativeMethods
 {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessMemoryCounters
+    {
+        public uint Size;
+        public uint PageFaultCount;
+        public nuint PeakWorkingSetSize;
+        public nuint WorkingSetSize;
+        public nuint QuotaPeakPagedPoolUsage;
+        public nuint QuotaPagedPoolUsage;
+        public nuint QuotaPeakNonPagedPoolUsage;
+        public nuint QuotaNonPagedPoolUsage;
+        public nuint PagefileUsage;
+        public nuint PeakPagefileUsage;
+    }
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessIoCounters(SafeProcessHandle process, out IoCounters counters);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessHandleCount(SafeProcessHandle process, out uint handleCount);
+
+    // K32GetProcessMemoryInfo is the kernel32 forwarder of psapi's GetProcessMemoryInfo; using it
+    // keeps every native call in this package inside System32's kernel32.
+    [LibraryImport("kernel32.dll", EntryPoint = "K32GetProcessMemoryInfo", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessMemoryInfo(SafeProcessHandle process, out ProcessMemoryCounters counters, uint size);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct MemoryStatusEx
     {
