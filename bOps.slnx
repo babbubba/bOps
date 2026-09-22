@@ -37,6 +37,9 @@
     <Project Path="src/packages/bOps.Packages.Network.Native.Core/bOps.Packages.Network.Native.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Network.Native.Linux/bOps.Packages.Network.Native.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Network.Native.Windows/bOps.Packages.Network.Native.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.Storage.Core/bOps.Packages.Storage.Core.csproj" />
+    <Project Path="src/packages/bOps.Packages.Storage.Linux/bOps.Packages.Storage.Linux.csproj" />
+    <Project Path="src/packages/bOps.Packages.Storage.Windows/bOps.Packages.Storage.Windows.csproj" />
     <Project Path="src/packages/bOps.Packages.Service.Core/bOps.Packages.Service.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Service.Linux/bOps.Packages.Service.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Service.Windows/bOps.Packages.Service.Windows.csproj" />
@@ -57,6 +60,10 @@
     <Project Path="tests/bOps.Packages.Network.Native.Linux.Tests/bOps.Packages.Network.Native.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Windows.Tests/bOps.Packages.Network.Native.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Storage.Conformance/bOps.Packages.Storage.Conformance.csproj" />
+    <Project Path="tests/bOps.Packages.Storage.Core.Tests/bOps.Packages.Storage.Core.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Storage.Linux.Tests/bOps.Packages.Storage.Linux.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Storage.Windows.Tests/bOps.Packages.Storage.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Web.Tests/bOps.Packages.Web.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Providers.Anthropic.Tests/bOps.Packages.Providers.Anthropic.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Providers.OpenAiCompatible.Tests/bOps.Packages.Providers.OpenAiCompatible.Tests.csproj" />

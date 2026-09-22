@@ -85,7 +85,7 @@ producing `system.cpu` must produce the *same shape*. Formatting therefore lives
 `.Core`, and both packages must pass the shared conformance suite
 (see [`04-testing-rules.md`](04-testing-rules.md)).
 
-The same pattern applies to `Service`, `Network`, `Process` and `Filesystem`.
+The same pattern applies to `Service`, `Network`, `Process`, `Filesystem` and `Storage`.
 
 **C# namespace is `bOps.Packages.Sys.*`, not `bOps.Packages.System.*`.** A namespace segment
 literally named `System` breaks every unqualified `System.*` reference inside it (the compiler
