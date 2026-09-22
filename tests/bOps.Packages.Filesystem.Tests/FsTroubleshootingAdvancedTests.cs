@@ -120,31 +120,45 @@ public sealed class FsTroubleshootingAdvancedTests : IDisposable
     [SymlinkCapableFact]
     public async Task Grep_DoesNotFollowASymlinkedFile()
     {
-        var secretDir = Directory.CreateDirectory(Path.Combine(_root.FullName, "secret-outside"));
-        var secretFile = Path.Combine(secretDir.FullName, "secret.log");
-        await File.WriteAllTextAsync(secretFile, "ERROR leaked");
-        var link = Path.Combine(_root.FullName, "link.log");
-        File.CreateSymbolicLink(link, secretFile);
-        var tool = new FsGrepTool(Policy(read: true, write: false));
+        var outside = Directory.CreateTempSubdirectory("bops-fs-advanced-outside-");
+        try
+        {
+            var secretFile = Path.Combine(outside.FullName, "secret.log");
+            await File.WriteAllTextAsync(secretFile, "ERROR leaked");
+            var link = Path.Combine(_root.FullName, "link.log");
+            File.CreateSymbolicLink(link, secretFile);
+            var tool = new FsGrepTool(Policy(read: true, write: false));
 
-        var result = await tool.ExecuteAsync(Args(("path", link), ("pattern", "ERROR")));
+            var result = await tool.ExecuteAsync(Args(("path", link), ("pattern", "ERROR")));
 
-        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+            Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        }
+        finally
+        {
+            outside.Delete(recursive: true);
+        }
     }
 
     [SymlinkCapableFact]
     public async Task Grep_DoesNotTraverseASymlinkedDirectory()
     {
-        var secretDir = Directory.CreateDirectory(Path.Combine(_root.FullName, "secret-outside"));
-        await File.WriteAllTextAsync(Path.Combine(secretDir.FullName, "secret.log"), "ERROR leaked");
-        var linkedDir = Path.Combine(_root.FullName, "linked");
-        Directory.CreateSymbolicLink(linkedDir, secretDir.FullName);
-        var tool = new FsGrepTool(Policy(read: true, write: false));
+        var outside = Directory.CreateTempSubdirectory("bops-fs-advanced-outside-");
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(outside.FullName, "secret.log"), "ERROR leaked");
+            var linkedDir = Path.Combine(_root.FullName, "linked");
+            Directory.CreateSymbolicLink(linkedDir, outside.FullName);
+            var tool = new FsGrepTool(Policy(read: true, write: false));
 
-        var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("pattern", "ERROR"), ("recursive", true)));
+            var result = await tool.ExecuteAsync(Args(("path", _root.FullName), ("pattern", "ERROR"), ("recursive", true)));
 
-        Assert.True(result.Succeeded);
-        Assert.DoesNotContain("leaked", result.Output, StringComparison.Ordinal);
+            Assert.True(result.Succeeded);
+            Assert.DoesNotContain("leaked", result.Output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            outside.Delete(recursive: true);
+        }
     }
 
     // ---------------------------------------------------------------- fs.tail

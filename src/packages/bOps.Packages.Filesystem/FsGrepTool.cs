@@ -39,6 +39,12 @@ public sealed class FsGrepTool(FilesystemPathPolicy pathPolicy) : ITool
     {
         ArgumentNullException.ThrowIfNull(arguments);
         var requestedPath = arguments.GetRequired<string>("path");
+        var requestedFullPath = Path.GetFullPath(requestedPath);
+        if ((File.Exists(requestedFullPath) || Directory.Exists(requestedFullPath)) && IsLinkOrReparsePoint(requestedFullPath))
+        {
+            return ToolCallResult.Failure($"fs.grep does not follow a symlink or reparse point at the requested path: {requestedPath}");
+        }
+
         var root = FilesystemPathPolicy.Resolve(requestedPath);
         if (!pathPolicy.AllowsRead(root))
         {
