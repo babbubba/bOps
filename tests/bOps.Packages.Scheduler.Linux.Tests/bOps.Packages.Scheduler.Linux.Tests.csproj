@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><RootNamespace>bOps.Packages.Scheduler.Linux.Tests</RootNamespace><IsPackable>false</IsPackable><NoWarn>CA1416;CA1707</NoWarn></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" /><PackageReference Include="xunit" Version="2.9.3" /><PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" /><ProjectReference Include="..\..\src\packages\bOps.Packages.Scheduler.Core\bOps.Packages.Scheduler.Core.csproj" /><ProjectReference Include="..\..\src\packages\bOps.Packages.Scheduler.Linux\bOps.Packages.Scheduler.Linux.csproj" /><ProjectReference Include="..\bOps.Packages.Scheduler.Conformance\bOps.Packages.Scheduler.Conformance.csproj" />
+  </ItemGroup><ItemGroup><Using Include="Xunit" /></ItemGroup>
+</Project>
