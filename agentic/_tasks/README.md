@@ -46,3 +46,23 @@ tracks cross-repository sequencing after it exists; it must not duplicate these 
 - External mutations — repository creation, push, tag, publication or release — require explicit
   operator authorization at execution time.
 - Keep README, CHANGELOG, HANDOFF and the selected task aligned with validated results.
+
+## V1.3 coding-agent packet map
+
+From V1.3-G onward, use the conservative execution strategy in
+[`../_plans/2026-09-22-v1.3-coding-agent-execution.md`](../_plans/2026-09-22-v1.3-coding-agent-execution.md).
+The functional task remains authoritative for scope; its execution-packet companion removes local
+design/exploration work so a smaller coding model can execute one bounded unit at a time.
+
+| Batch | Execution packets | Default model guidance |
+|---|---|---|
+| G | [G1–G7](2026-09-22-v1.3-g-execution-packets.md) | Luna Medium; Low for bounded shared/docs work |
+| H | [H1–H5](2026-09-22-v1.3-h-execution-packets.md) | Luna Low/Medium |
+| I | [I1–I5](2026-09-22-v1.3-i-execution-packets.md) | Luna Medium |
+| J | [J1–J5](2026-09-22-v1.3-j-execution-packets.md) | Luna Medium; optional Sol Low security review |
+| K | [K1–K8](2026-09-22-v1.3-k-execution-packets.md) | Luna Medium |
+| L | [L0–L9](2026-09-22-v1.3-l-execution-packets.md) | Luna Medium; Sol Low only for final unresolved review |
+| M | [M1–M8](2026-09-22-v1.3-m-execution-packets.md) | Terra Medium while available for ADR design, Luna Medium implementation, Sol Low review |
+
+Model escalation is never automatic. Stop after two reasoned attempts on the same blocker and hand
+off precise evidence rather than consuming the remainder of a usage window.

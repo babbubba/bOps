@@ -93,6 +93,24 @@ Every executable task declares one recommended model effort:
 An agent starts only the first task whose dependencies and operator gates are satisfied. It updates
 the checklist with evidence as work completes and does not pre-check future work.
 
+### V1.3 coding-agent packetization
+
+For V1.3-G through V1.3-M, the functional tasks are supplemented by bounded execution packets under
+`agentic/_tasks/2026-09-22-v1.3-*-execution-packets.md`, governed by
+`agentic/_plans/2026-09-22-v1.3-coding-agent-execution.md`.
+
+This packetization does not change milestone scope or precedence. It moves already-settled local
+implementation choices, repository anchors, failure/completeness semantics, test matrices and stop
+conditions into the task material so a coding agent does not spend a large reasoning window
+rediscovering them. One agent session executes one packet only. Architecture/security gates remain
+separate packets where required, especially V1.3-M.
+
+The default implementation profile is conservative: Luna Low/Medium first, Terra Medium while
+available for isolated hard cross-platform/native work or M architecture, and Sol Low only for
+narrow unresolved architecture/security review. Model escalation is not an implementation gate and
+never authorizes scope expansion.
+
+
 ## 6. Delivery chain
 
 ```text
