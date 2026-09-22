@@ -61,14 +61,25 @@ public sealed class FsPermissionsTool(FilesystemPathPolicy pathPolicy) : ITool
         }
     }
 
+    private const int MaximumAclEntries = 200;
+
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static string WindowsPermissions(string path)
     {
-        var security = new FileInfo(path).GetAccessControl();
+        var isDirectory = Directory.Exists(path);
+        // A directory's ACL must be read through DirectorySecurity, not FileSecurity — calling
+        // FileInfo.GetAccessControl on a directory path silently returns the wrong (or throws
+        // an unhelpful) result instead of the directory's own security descriptor.
+        AccessControlSections sections = AccessControlSections.Access | AccessControlSections.Owner;
+        FileSystemSecurity security = isDirectory
+            ? new DirectoryInfo(path).GetAccessControl(sections)
+            : new FileInfo(path).GetAccessControl(sections);
         var owner = security.GetOwner(typeof(NTAccount))?.Value;
-        var entries = security.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(NTAccount))
+        var allRules = security.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(NTAccount))
             .Cast<FileSystemAccessRule>()
-            .Take(200)
+            .ToList();
+        var entries = allRules
+            .Take(MaximumAclEntries)
             .Select(rule => new
             {
                 identity = rule.IdentityReference.Value,
@@ -76,11 +87,12 @@ public sealed class FsPermissionsTool(FilesystemPathPolicy pathPolicy) : ITool
                 rights = rule.FileSystemRights.ToString(),
                 inherited = rule.IsInherited,
             });
+        var truncated = allRules.Count > MaximumAclEntries;
         return JsonSerializer.Serialize(new
         {
-            path, exists = true, type = Directory.Exists(path) ? "directory" : "file", owner, group = (string?)null,
+            path, exists = true, type = isDirectory ? "directory" : "file", owner, group = (string?)null,
             unixMode = (string?)null, aclEntries = entries, readOnly = (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0,
-            source = "windows-acl", complete = true,
+            source = "windows-acl", complete = !truncated,
         });
     }
 

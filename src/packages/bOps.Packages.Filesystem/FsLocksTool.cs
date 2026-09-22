@@ -46,19 +46,32 @@ public sealed class FsLocksTool(FilesystemPathPolicy pathPolicy) : ITool
         var complete = true;
         try
         {
-            foreach (var processDirectory in Directory.EnumerateDirectories("/proc").Take(MaximumProcesses))
+            var processDirectories = Directory.EnumerateDirectories("/proc").ToArray();
+            if (processDirectories.Length > MaximumProcesses) complete = false;
+            foreach (var processDirectory in processDirectories.Take(MaximumProcesses))
             {
                 ct.ThrowIfCancellationRequested();
                 if (!int.TryParse(Path.GetFileName(processDirectory), out var pid)) continue;
                 var descriptorDirectory = Path.Combine(processDirectory, "fd");
                 try
                 {
-                    foreach (var descriptor in Directory.EnumerateFileSystemEntries(descriptorDirectory).Take(MaximumDescriptorsPerProcess))
+                    var descriptors = Directory.EnumerateFileSystemEntries(descriptorDirectory).ToArray();
+                    if (descriptors.Length > MaximumDescriptorsPerProcess) complete = false;
+                    foreach (var descriptor in descriptors.Take(MaximumDescriptorsPerProcess))
                     {
-                        var target = new FileInfo(descriptor).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
-                        if (!string.Equals(target, path, StringComparison.Ordinal)) continue;
+                        FileSystemInfo? target;
+                        try { target = new FileInfo(descriptor).ResolveLinkTarget(returnFinalTarget: true); }
+                        catch (IOException) { continue; }
+                        catch (UnauthorizedAccessException) { continue; }
+                        if (!string.Equals(target?.FullName, path, StringComparison.Ordinal)) continue;
                         rows.Add(new { pid, processName = ProcessName(pid), user = (string?)null, accessKind = "file-descriptor", source = "procfs" });
-                        if (rows.Count >= limit) return ToolCallResult.Success(JsonSerializer.Serialize(new { rows, complete }));
+                        if (rows.Count >= limit)
+                        {
+                            // The row limit is the caller's own ceiling, not a restriction on the
+                            // scan itself, but stopping early still means the scan was not
+                            // exhaustive: report it honestly rather than implying completeness.
+                            return ToolCallResult.Success(JsonSerializer.Serialize(new { rows, complete = false }));
+                        }
                     }
                 }
                 catch (UnauthorizedAccessException) { complete = false; }
@@ -72,9 +85,10 @@ public sealed class FsLocksTool(FilesystemPathPolicy pathPolicy) : ITool
 
     private static ToolCallResult Windows(string path, int limit)
     {
-        var rows = WindowsRestartManager.Find(path, limit)
+        var (found, complete) = WindowsRestartManager.Find(path, limit);
+        var rows = found
             .Select(row => new { pid = row.ProcessId, processName = row.ProcessName, user = (string?)null, accessKind = "restart-manager", source = "restart-manager" });
-        return ToolCallResult.Success(JsonSerializer.Serialize(new { rows, complete = true }));
+        return ToolCallResult.Success(JsonSerializer.Serialize(new { rows, complete }));
     }
 
     private static string? ProcessName(int pid)

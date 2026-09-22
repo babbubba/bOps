@@ -43,7 +43,9 @@ public sealed class FsTailTool(FilesystemPathPolicy pathPolicy) : ITool
         try
         {
             await using var stream = File.OpenRead(path);
-            var bytesToRead = (int)Math.Min(stream.Length, maxBytes);
+            var totalLength = stream.Length;
+            var bytesToRead = (int)Math.Min(totalLength, maxBytes);
+            var truncatedFromStart = bytesToRead < totalLength;
             stream.Seek(-bytesToRead, SeekOrigin.End);
             var bytes = new byte[bytesToRead];
             var read = 0;
@@ -54,18 +56,43 @@ public sealed class FsTailTool(FilesystemPathPolicy pathPolicy) : ITool
                 read += chunk;
             }
 
-            if (bytes.AsSpan(0, read).IndexOf((byte)0) >= 0) return ToolCallResult.Failure("Unsupported or binary encoding; fs.tail supports UTF-8 text only.");
-            var text = Encoding.UTF8.GetString(bytes, 0, read);
+            var span = bytes.AsSpan(0, read);
+            if (span.IndexOf((byte)0) >= 0) return ToolCallResult.Failure("Unsupported or binary encoding; fs.tail supports UTF-8 text only.");
+
+            var offset = 0;
+            if (truncatedFromStart)
+            {
+                // The read window started mid-file, so the first partial "line" may also begin
+                // mid multi-byte UTF-8 sequence. Drop everything up to (and including) the first
+                // newline, mirroring POSIX tail's own handling of a partial first line, so a valid
+                // boundary split is never misreported as invalid encoding.
+                var newline = span.IndexOf((byte)'\n');
+                offset = newline >= 0 ? newline + 1 : span.Length;
+            }
+            else if (span.Length >= 3 && span[0] == 0xEF && span[1] == 0xBB && span[2] == 0xBF)
+            {
+                offset = 3; // UTF-8 byte-order mark, only meaningful at the true start of the file.
+            }
+
+            string text;
+            try
+            {
+                // Strict decoding: throwOnInvalidBytes rejects malformed sequences instead of
+                // silently substituting U+FFFD, so binary or non-UTF-8 content is caught reliably.
+                var strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+                text = strictUtf8.GetString(span[offset..]);
+            }
+            catch (DecoderFallbackException)
+            {
+                return ToolCallResult.Failure("Unsupported or binary encoding; fs.tail supports UTF-8 text only.");
+            }
+
             var allLines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
             var lineCount = allLines.Length > 0 && allLines[^1].Length == 0 ? allLines.Length - 1 : allLines.Length;
             var start = Math.Max(0, lineCount - lines);
             var output = string.Join('\n', allLines[start..lineCount]);
-            if (stream.Length > maxBytes) output = "... [truncated by maxBytes] ...\n" + output;
+            if (truncatedFromStart) output = "... [truncated by maxBytes] ...\n" + output;
             return ToolCallResult.Success(output);
-        }
-        catch (DecoderFallbackException)
-        {
-            return ToolCallResult.Failure("Unsupported encoding; fs.tail supports UTF-8 text only.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

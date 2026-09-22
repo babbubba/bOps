@@ -52,8 +52,23 @@ public sealed class FsMkdirTool(FilesystemPathPolicy pathPolicy) : IVerifiableTo
     }
 
     public Task<VerificationOutcome> EvaluateVerificationAsync(
-        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default) =>
-        Task.FromResult(verificationToolResult is not null && FsStatOutput.TryReadExists(verificationToolResult.Output) is true
-            ? new VerificationOutcome(VerificationStatus.Confirmed, null)
-            : new VerificationOutcome(VerificationStatus.Refuted, "fs.stat did not confirm the directory exists."));
+        ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(verificationToolResult);
+
+        if (!verificationToolResult.Succeeded)
+        {
+            return Task.FromResult(new VerificationOutcome(
+                VerificationStatus.Inconclusive, $"Could not confirm the directory: {verificationToolResult.ErrorMessage}"));
+        }
+
+        // exists:true alone is not enough evidence: a race could have replaced the freshly
+        // created directory with a non-directory before fs.stat ran, so the type must be checked.
+        return Task.FromResult(FsStatOutput.TryReadIsDirectory(verificationToolResult.Output) switch
+        {
+            true => new VerificationOutcome(VerificationStatus.Confirmed, null),
+            false => new VerificationOutcome(VerificationStatus.Refuted, "fs.stat did not confirm the path exists as a directory."),
+            null => new VerificationOutcome(VerificationStatus.Inconclusive, "fs.stat's output could not be read."),
+        });
+    }
 }
