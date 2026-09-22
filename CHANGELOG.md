@@ -21,6 +21,19 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-C advanced process diagnostics (ADR-0034): `process.inspect` additionally reports `parentPid`, `executablePath`,
+  `commandLine`, `user`, `privateMemoryMb`, `virtualMemoryMb`, `handleOrFdCount`, `cpuTotalMs`, `ioReadBytes` and
+  `ioWriteBytes`, each nullable, so one counter this identity may not read costs its own field and not the observation. Three
+  read-only tools join it on both systems: `process.metrics` (two samples over 200–5000 ms, default 500; host-normalized
+  `cpuPercent`, memory, threads, handles or file descriptors, I/O and page-fault rates, `partial` when anything was unreadable and
+  `exists:false, partial:true` when the process exits mid-sample), `process.tree` (depth-first from a `rootPid` or from every
+  visible root, `maxDepth` default 4/max 16, `limit` default 200/max 2000, with `skipped`, `truncated` and `complete`, and a
+  missing root reported as `rootFound:false` rather than an empty machine) and `process.modules` (unique by path, `limit` default
+  200/max 1000, `maxOutputBytes` default 32768/max 131072, with a refused read reported as `status:"unavailable"` rather than an
+  empty list). Windows reads `Win32_Process` through `System.Management` plus three kernel32 counters; Linux reads `/proc`
+  directly and resolves UIDs from the local `/etc/passwd` only. No `process.start`, no shell, and no environment variables
+  anywhere — both remain permanent non-goals, now also enforced by an architecture test over the whole source tree. See
+  [`docs/process-diagnostics.md`](docs/process-diagnostics.md).
 - V1.3-B Docker image, build and volume management (ADR-0033): nine typed tools next to the existing eight, which are unchanged:
   `docker.image.inspect`, `docker.volumes` and `docker.volume.inspect` (read; a missing image or volume is `exists: false`, and
   volumes never show their mount point), `docker.image.pull`, `docker.image.tag` and `docker.volume.create` (verified), and

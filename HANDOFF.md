@@ -1,4 +1,4 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3 next
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3 in progress (A, B and C implemented)
 
 ## V1.1-H status (2026-09-18) — closed
 
@@ -264,7 +264,14 @@ container, so the hosted CI run is the remaining evidence.
 V1.3-B is implemented (2026-09-21): nine typed Docker tools for image inspect, pull, tag and removal, bounded local builds and
 volumes, ADR-0033, decision D-029 and `docs/docker-management.md`. `docker.build` is off until `Docker:Build:Contexts` lists a
 directory; the runner tool timeout (30 seconds) is short for a pull or a build and is the operator's to raise.
-Next action: V1.3-C, advanced process diagnostics. V1.3 has an ordered
+V1.3-C is implemented (2026-09-22): `process.inspect` extended additively with ten nullable fields plus three read-only tools,
+`process.metrics`, `process.tree` and `process.modules`, on both systems — ADR-0034, decision D-030 and
+`docs/process-diagnostics.md`. Windows reads `Win32_Process` through `System.Management` (a new Windows-only dependency) and
+three kernel32 counters; Linux reads `/proc` directly. There is still no `process.start` and no way to read a process
+environment, and a new `NoGenericExecutionToolTests` in `bOps.Architecture.Tests` now enforces both over the whole source tree.
+This is a Windows development machine, so the Linux tools' 55 platform-gated tests skip here and the `ubuntu-latest` CI job is
+their evidence; the `/proc` parsers they depend on are covered by 8 platform-independent tests that do run everywhere.
+Next action: V1.3-D, network diagnostics. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
 a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent
