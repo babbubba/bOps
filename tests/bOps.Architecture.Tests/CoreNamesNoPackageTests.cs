@@ -40,6 +40,8 @@ public sealed class CoreNamesNoPackageTests
         "process.list", "process.inspect", "process.stop", "process.kill",
         "process.metrics", "process.tree", "process.modules",
         "system.events", "system.apps", "system.devices",
+        "network.sockets", "network.routes", "network.neighbors", "network.interface_stats",
+        "network.dns_query", "network.traceroute", "network.ntp_probe",
     ];
 
     public static TheoryData<string, Type> CoreAssemblyMarkers => new()

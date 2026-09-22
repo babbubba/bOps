@@ -8,6 +8,8 @@ using bOps.Memory;
 using bOps.Packages.Docker;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
+using bOps.Packages.Network.Native.Linux;
+using bOps.Packages.Network.Native.Windows;
 using bOps.Packages.Providers.Anthropic;
 using bOps.Packages.Providers.DeepSeek;
 using bOps.Packages.Providers.LlamaCpp;
@@ -286,6 +288,22 @@ var networkPackageId = new PackageId("bops.packages.network");
 foreach (var tool in new NetworkToolProvider().GetTools())
 {
     toolRegistry.Register(networkPackageId, tool);
+}
+
+// V1.3-D (ADR-0035): sockets, routes, neighbors and interface counters need real native APIs, so
+// unlike bops.packages.network above they follow the System family's OS-split pattern — exactly
+// one native package registered alongside the cross-platform one.
+IToolProvider networkNativeToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsNetworkNativeToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxNetworkNativeToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
+
+var networkNativePackageId = new PackageId($"bops.packages.network.native.{CurrentPlatform.Id}");
+foreach (var tool in networkNativeToolProvider.GetTools())
+{
+    toolRegistry.Register(networkNativePackageId, tool);
 }
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check

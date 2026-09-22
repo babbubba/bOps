@@ -560,6 +560,8 @@
           "bOps.Packages.Docker": "[1.0.0, )",
           "bOps.Packages.Filesystem": "[1.0.0, )",
           "bOps.Packages.Network": "[1.0.0, )",
+          "bOps.Packages.Network.Native.Linux": "[1.0.0, )",
+          "bOps.Packages.Network.Native.Windows": "[1.0.0, )",
           "bOps.Packages.Providers.Anthropic": "[1.0.0, )",
           "bOps.Packages.Providers.DeepSeek": "[1.0.0, )",
           "bOps.Packages.Providers.LlamaCpp": "[1.0.0, )",
@@ -612,6 +614,26 @@
         "type": "Project",
         "dependencies": {
           "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.network.native.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.network.native.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Network.Native.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.network.native.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Network.Native.Core": "[1.0.0, )"
         }
       },
       "bops.packages.providers.anthropic": {
