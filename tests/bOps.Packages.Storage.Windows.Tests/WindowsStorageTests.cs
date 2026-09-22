@@ -10,7 +10,7 @@ public sealed class WindowsStorageTests
     [Fact]
     public void Provider_Conforms() => StorageConformance.AssertProvider(new WindowsStorageToolProvider(), "windows");
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task RealWindowsSources_ProduceContractShapes() => await StorageConformance.AssertShapesAsync(new WindowsStorageToolProvider());
 
     [Fact]
