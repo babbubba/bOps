@@ -630,3 +630,25 @@ are attacker-influenceable text, so they stay data inside the delimited tool res
 **Consequences.** `complete` is the only signal that an empty result can be trusted. Linux source and text filtering runs after a
 10,000-record scan ceiling, so a rare source in a long window can be reported truncated. No change to the abstractions, policy,
 runtime or persistence.
+
+### D-029 — V1.3-B: nine Docker tools, builds only from allowed directories, no `.dockerignore`, no links
+
+**Decision.** Five choices made while implementing V1.3-B (ADR-0033). (1) Nine typed tools are added and the existing eight are left
+alone; removal of an image, removal of a volume and `docker.build` are High risk and always need a human, whatever the policy says.
+(2) `docker.build` builds only from directories listed in `Docker:Build:Contexts`, which is empty by default and hides the tool
+until it is set. (3) A build context containing any symbolic link or a `.dockerignore` is refused; bOps does not apply
+`.dockerignore`. (4) Nothing is forced or pruned, an existing tag is never moved, registry credentials and build arguments do not
+exist, and volumes never show their mount point or options. (5) Verification arguments keep the verifier's names, so the tag tool
+takes `source` and `image`.
+
+**Reason.** A build runs instructions and sends a directory to the daemon, and a volume removal destroys data: each needs an explicit
+human decision and a narrow contract. A half-implemented `.dockerignore` would send files the operator meant to exclude, and links
+would make the context depend on what the daemon does with them. The runtime carries verification arguments by name and this batch
+does not change the runtime.
+
+**Rejected.** *A generic Engine API or a `docker` CLI process.* *Honouring `.dockerignore` now* (deferred). *Following links inside
+the context.* *Build arguments and secrets* (need their own threat model). *Prune, push, Compose, container create and exec.*
+*Extending `docker.images`* (a frozen tool).
+
+**Consequences.** Building needs one line of configuration and a longer tool timeout. Contexts with links or a `.dockerignore` are
+prepared by the operator. Growing the surface later (prune, credentials, build arguments) is a new ADR each time.

@@ -21,6 +21,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-B Docker image, build and volume management (ADR-0033): nine typed tools next to the existing eight, which are unchanged:
+  `docker.image.inspect`, `docker.volumes` and `docker.volume.inspect` (read; a missing image or volume is `exists: false`, and
+  volumes never show their mount point), `docker.image.pull`, `docker.image.tag` and `docker.volume.create` (verified), and
+  `docker.image.remove`, `docker.volume.remove` and `docker.build` (High risk, always approved, verified). A build runs only from
+  directories listed in `Docker:Build:Contexts` (empty by default, and the tool is hidden until it is set), refuses links and a
+  `.dockerignore`, and bounds files and bytes while the archive is written. Nothing is forced or pruned, there are no build
+  arguments or registry credentials, and an unreachable daemon is a failed result in every Docker tool. See
+  [`docs/docker-management.md`](docs/docker-management.md).
 - V1.3-A `system.events`: one read-only tool over the Windows Event Log (`EventLogReader`) and journald (`journalctl` run
   directly, with fixed switches and values as separate arguments), with the same arguments and result on both systems: a
   time window, minimum severity, source, event id, channel and message text, newest first, bounded in events, bytes and

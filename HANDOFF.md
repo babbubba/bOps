@@ -261,7 +261,10 @@ build with 0 warnings, 1521 non-live tests passed (32 skipped, named in the M ta
 V1.3-A is implemented (2026-09-21): `system.events` on Windows (Event Log) and Linux (journald), ADR-0032, decision D-028 and
 `docs/system-events.md`. The pull request is merged only when the operator asks; the Linux real-journald tests were verified in a
 container, so the hosted CI run is the remaining evidence.
-Next action: V1.3-B, Docker image/build/volume management. V1.3 has an ordered
+V1.3-B is implemented (2026-09-21): nine typed Docker tools for image inspect, pull, tag and removal, bounded local builds and
+volumes, ADR-0033, decision D-029 and `docs/docker-management.md`. `docker.build` is off until `Docker:Build:Contexts` lists a
+directory; the runner tool timeout (30 seconds) is short for a pull or a build and is the operator's to raise.
+Next action: V1.3-C, advanced process diagnostics. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
 a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent

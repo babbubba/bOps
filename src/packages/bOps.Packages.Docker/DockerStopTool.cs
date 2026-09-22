@@ -42,6 +42,10 @@ public sealed class DockerStopTool(IDockerClientFactory clientFactory) : IVerifi
         {
             return ToolCallResult.Failure($"Could not stop container '{container}': {ex.Message}");
         }
+        catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
+        {
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+        }
     }
 
     public Task<VerificationOutcome> EvaluateVerificationAsync(

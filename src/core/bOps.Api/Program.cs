@@ -292,13 +292,18 @@ foreach (var tool in new NetworkToolProvider().GetTools())
 // here, before the first RefreshCapabilitiesAsync, is what makes an absent daemon remove every
 // docker.* tool from what the planner sees instead of failing only once one is called.
 var dockerClientFactory = new DockerClientFactory(builder.Configuration["Docker:Endpoint"]);
+// V1.3-B (ADR-0033): where docker.build may build from (empty by default: nothing can be built and the tool stays hidden) and
+// which volume drivers docker.volume.create accepts. Both are the Docker package's own settings.
+var dockerBuildOptions = builder.Configuration.GetSection("Docker:Build").Get<DockerBuildOptions>() ?? new DockerBuildOptions();
+var dockerVolumeOptions = builder.Configuration.GetSection("Docker:Volumes").Get<DockerVolumeOptions>() ?? new DockerVolumeOptions();
 if (app.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe cachingCapabilityProbe)
 {
     cachingCapabilityProbe.RegisterCheck(DockerCapability.Name, ct => DockerCapability.IsAvailableAsync(dockerClientFactory, ct));
+    cachingCapabilityProbe.RegisterCheck(DockerCapability.BuildContexts, _ => DockerCapability.IsBuildConfiguredAsync(dockerBuildOptions));
 }
 
 var dockerPackageId = new PackageId("bops.packages.docker");
-foreach (var tool in new DockerToolProvider(dockerClientFactory).GetTools())
+foreach (var tool in new DockerToolProvider(dockerClientFactory, dockerBuildOptions, dockerVolumeOptions).GetTools())
 {
     toolRegistry.Register(dockerPackageId, tool);
 }

@@ -40,6 +40,10 @@ public sealed class DockerContainersTool(IDockerClientFactory clientFactory) : I
         {
             return ToolCallResult.Failure($"Could not list containers: {ex.Message}");
         }
+        catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
+        {
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+        }
     }
 
     private static string ShortId(string id) => id.Length <= 12 ? id : id[..12];

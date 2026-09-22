@@ -40,6 +40,10 @@ public sealed class DockerImagesTool(IDockerClientFactory clientFactory) : ITool
         {
             return ToolCallResult.Failure($"Could not list images: {ex.Message}");
         }
+        catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
+        {
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+        }
     }
 
     private static string ShortId(string id)

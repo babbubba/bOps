@@ -109,13 +109,13 @@ below it for what's coming and, deliberately, what never will.
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
-| **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` |
+| **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` `docker.image.inspect` `docker.image.pull` `docker.image.tag` `docker.image.remove` `docker.build` `docker.volumes` `docker.volume.inspect` `docker.volume.create` `docker.volume.remove` |
 | **Web** | `web.search` `web.fetch` |
 
 `system.events` (V1.3-A) reads recent Windows Event Log or journald events as bounded, newest-first JSON
-that says whether it is complete (see [`docs/system-events.md`](docs/system-events.md)). V1.3-B (additional Docker
-image/build/volume tools) is planned work and is intentionally not listed in the registered-today table until its
-implementation gate passes.
+that says whether it is complete (see [`docs/system-events.md`](docs/system-events.md)). V1.3-B adds Docker image, build and
+volume management: nine typed tools, removal and build always needing approval, and `docker.build` off until you list the
+directories it may build from (see [`docs/docker-management.md`](docs/docker-management.md)).
 
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
