@@ -175,6 +175,9 @@ builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<IConfiguration>().GetSection("Filesystem:Inventory").Get<FilesystemInventoryOptions>()
         ?? new FilesystemInventoryOptions());
 builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IConfiguration>().GetSection("Filesystem:Operations").Get<FilesystemOperationsOptions>()
+        ?? new FilesystemOperationsOptions());
+builder.Services.AddSingleton(sp =>
 {
     var section = sp.GetRequiredService<IConfiguration>().GetSection("Filesystem");
     return new FilesystemPathPolicy(

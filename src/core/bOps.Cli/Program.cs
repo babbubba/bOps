@@ -172,9 +172,11 @@ var pathPolicy = new FilesystemPathPolicy(
     filesystemSection.GetSection("WritePatterns").Get<string[]>() ?? []);
 var filesystemInventoryOptions = filesystemSection.GetSection("Inventory").Get<FilesystemInventoryOptions>()
     ?? new FilesystemInventoryOptions();
+var filesystemOperationsOptions = filesystemSection.GetSection("Operations").Get<FilesystemOperationsOptions>()
+    ?? new FilesystemOperationsOptions();
 
 var filesystemPackageId = new PackageId("bops.packages.filesystem");
-foreach (var tool in new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions).GetTools())
+foreach (var tool in new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions, filesystemOperationsOptions).GetTools())
 {
     toolRegistry.Register(filesystemPackageId, tool);
 }

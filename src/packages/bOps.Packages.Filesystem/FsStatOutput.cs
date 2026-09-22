@@ -62,4 +62,42 @@ internal static class FsStatOutput
             return null;
         }
     }
+
+    /// <summary>
+    /// Reads whether the stat call's own output reports the path as an existing directory —
+    /// <c>exists:true</c> alone is not enough evidence for <c>fs.mkdir</c>'s verification: a race
+    /// could have replaced the freshly created directory with a non-directory before <c>fs.stat</c>
+    /// ran, and <c>exists:true</c> would still be true for that. <c>null</c> means the output could
+    /// not be read as this shape at all.
+    /// </summary>
+    public static bool? TryReadIsDirectory(string? output)
+    {
+        if (string.IsNullOrEmpty(output))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (JsonNode.Parse(output) is not JsonObject json || json["exists"] is not JsonNode existsNode)
+            {
+                return null;
+            }
+
+            if (!existsNode.GetValue<bool>())
+            {
+                return false;
+            }
+
+            return json["type"] is JsonNode typeNode && string.Equals(typeNode.GetValue<string>(), "directory", StringComparison.Ordinal);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 }

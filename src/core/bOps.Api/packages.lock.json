@@ -128,6 +128,11 @@
           "System.Configuration.ConfigurationManager": "10.0.0"
         }
       },
+      "System.IO.FileSystem.AccessControl": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "SxHB3nuNrpptVk+vZ/F+7OHEpoHUIKKMl02bUmYHQr1r+glbZQxs7pRtsf4ENO29TVm2TH3AEeep2fJcy92oYw=="
+      },
       "System.Management": {
         "type": "Transitive",
         "resolved": "10.0.0",
@@ -175,6 +180,7 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
+          "System.IO.FileSystem.AccessControl": "[5.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )"
         }
       },

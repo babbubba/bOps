@@ -12,6 +12,7 @@ public sealed class FilesystemToolProvider : IToolProvider
     private readonly FilesystemInventoryOptions _inventoryOptions;
     private readonly FilesystemInventoryService _inventory;
     private readonly FilesystemDeletionService _deletion;
+    private readonly FilesystemOperationsOptions _operationsOptions;
 
     public FilesystemToolProvider(FilesystemPathPolicy pathPolicy)
         : this(pathPolicy, new FilesystemInventoryOptions())
@@ -19,10 +20,20 @@ public sealed class FilesystemToolProvider : IToolProvider
     }
 
     public FilesystemToolProvider(FilesystemPathPolicy pathPolicy, FilesystemInventoryOptions inventoryOptions)
+        : this(pathPolicy, inventoryOptions, new FilesystemOperationsOptions())
+    {
+    }
+
+    public FilesystemToolProvider(
+        FilesystemPathPolicy pathPolicy,
+        FilesystemInventoryOptions inventoryOptions,
+        FilesystemOperationsOptions operationsOptions)
     {
         _pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
         _inventoryOptions = inventoryOptions ?? throw new ArgumentNullException(nameof(inventoryOptions));
         _inventoryOptions.Validate();
+        _operationsOptions = operationsOptions ?? throw new ArgumentNullException(nameof(operationsOptions));
+        _operationsOptions.Validate();
         var store = new SqliteFilesystemManifestStore(_inventoryOptions.ManifestStorePath);
         _inventory = new FilesystemInventoryService(_pathPolicy, _inventoryOptions, store);
         var deletionStore = new SqliteDeletionManifestStore(_inventoryOptions.ManifestStorePath);
@@ -46,5 +57,12 @@ public sealed class FilesystemToolProvider : IToolProvider
         new FsDeleteTreePrepareTool(_deletion, _inventoryOptions),
         new FsDeleteTreeVerifyTool(_deletion),
         new FsDeleteTreeTool(_deletion),
+        new FsGrepTool(_pathPolicy),
+        new FsTailTool(_pathPolicy),
+        new FsPermissionsTool(_pathPolicy),
+        new FsLocksTool(_pathPolicy),
+        new FsCopyVerifyTool(_pathPolicy),
+        new FsCopyTool(_pathPolicy, _operationsOptions),
+        new FsMkdirTool(_pathPolicy),
     ];
 }

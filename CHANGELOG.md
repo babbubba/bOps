@@ -21,6 +21,20 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-F filesystem troubleshooting: bounded, no-link `fs.grep` and `fs.tail`; cross-platform
+  permission and visible-lock evidence via `fs.permissions` and `fs.locks`; and the governed
+  `fs.copy`/`fs.copy.verify` and idempotent `fs.mkdir` operations. Copy is limited by
+  `Filesystem:Operations:MaxCopyBytes`, never overwrites, re-resolves policy-protected endpoints
+  immediately before I/O, stages through an invocation-owned temporary sibling, and verifies
+  length/SHA-256. `fs.tail` decodes strictly (rejecting malformed UTF-8 instead of silently
+  substituting it) and correctly handles a `maxBytes` window that starts mid multi-byte character.
+  `fs.locks` and `fs.permissions` report `complete:false` whenever their diagnostic source failed,
+  was restricted, or was truncated by a process/descriptor/row/entry cap — never a partial scan
+  presented as trustworthy. Windows `fs.permissions` reads a directory's ACL via `DirectorySecurity`
+  rather than the file API. `fs.mkdir` verification confirms the path is a directory, not merely
+  that something exists there. See
+  [`docs/filesystem-troubleshooting.md`](docs/filesystem-troubleshooting.md).
+
 - V1.3-E storage diagnostics: five bounded read-only tools in the new
   `bOps.Packages.Storage.{Core,Windows,Linux}` family. `storage.disks`, `storage.partitions` and
   `storage.mounts` correlate physical topology with filesystem bytes/inodes; `storage.io` samples twice over
