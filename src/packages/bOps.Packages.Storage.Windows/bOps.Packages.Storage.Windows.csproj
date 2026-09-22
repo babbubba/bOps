@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Storage.Windows</RootNamespace>
+    <AssemblyName>bOps.Packages.Storage.Windows</AssemblyName>
+    <Description>Read-only storage diagnostics for Windows through WMI/CIM performance and storage classes.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Storage.Core\bOps.Packages.Storage.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+</Project>

@@ -108,6 +108,7 @@ below it for what's coming and, deliberately, what never will.
 | **Process** | `process.list` `process.inspect` `process.metrics` `process.tree` `process.modules` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` `network.sockets` `network.routes` `network.neighbors` `network.interface_stats` `network.dns_query` `network.traceroute` `network.ntp_probe` |
+| **Storage** | `storage.disks` `storage.partitions` `storage.mounts` `storage.io` `storage.health` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` `docker.image.inspect` `docker.image.pull` `docker.image.tag` `docker.image.remove` `docker.build` `docker.volumes` `docker.volume.inspect` `docker.volume.create` `docker.volume.remove` |
 | **Web** | `web.search` `web.fetch` |
@@ -125,7 +126,11 @@ bounded ancestry and loaded modules — read-only, on both systems, with no `pro
 error rates as live rates, and `network.dns_query`, `network.traceroute` and `network.ntp_probe` add a deliberate DNS lookup, a
 `Ping`-based hop trace and a clock-offset probe — all read-only, contributed by a new `bOps.Packages.Network.Native.*` package
 family alongside the unchanged `bOps.Packages.Network` (see
-[`docs/network-diagnostics.md`](docs/network-diagnostics.md)).
+[`docs/network-diagnostics.md`](docs/network-diagnostics.md)). V1.3-E adds a dedicated Storage family for
+physical disks, partitions, mounts/capacity/inodes, sampled IOPS/throughput/latency/queue/utilization and
+normalized hardware health. Windows uses WMI/CIM storage and performance classes; Linux reads sysfs/procfs,
+uses `statvfs`, and optionally invokes `smartctl` with a fixed argument list against an enumerated block device
+(see [`docs/storage-diagnostics.md`](docs/storage-diagnostics.md)).
 
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported

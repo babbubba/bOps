@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using bOps.Abstractions;
 using bOps.Api;
 using bOps.Audit;
@@ -16,6 +18,8 @@ using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
 using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
+using bOps.Packages.Storage.Linux;
+using bOps.Packages.Storage.Windows;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Packages.Web;
@@ -27,8 +31,6 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
-using System.Security.Claims;
-using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
@@ -304,6 +306,20 @@ var networkNativePackageId = new PackageId($"bops.packages.network.native.{Curre
 foreach (var tool in networkNativeToolProvider.GetTools())
 {
     toolRegistry.Register(networkNativePackageId, tool);
+}
+
+// V1.3-E: register exactly one OS-specific storage evidence package.
+IToolProvider storageToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsStorageToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxStorageToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
+
+var storagePackageId = new PackageId($"bops.packages.storage.{CurrentPlatform.Id}");
+foreach (var tool in storageToolProvider.GetTools())
+{
+    toolRegistry.Register(storagePackageId, tool);
 }
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check

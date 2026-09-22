@@ -251,6 +251,27 @@
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
         }
       },
+      "bops.packages.storage.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.storage.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Storage.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.storage.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.Management": "[10.0.0, )",
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Storage.Core": "[1.0.0, )"
+        }
+      },
       "bops.packages.system.core": {
         "type": "Project",
         "dependencies": {

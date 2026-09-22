@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Storage.Linux</RootNamespace>
+    <AssemblyName>bOps.Packages.Storage.Linux</AssemblyName>
+    <Description>Read-only Linux storage diagnostics through sysfs, procfs, statvfs and optional bounded smartctl JSON.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Storage.Core\bOps.Packages.Storage.Core.csproj" />
+  </ItemGroup>
+</Project>

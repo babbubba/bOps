@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Storage.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.Storage.Core</AssemblyName>
+    <Description>Shared manifests, validation, result shapes and formatting for storage diagnostics.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

@@ -21,6 +21,15 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-E storage diagnostics: five bounded read-only tools in the new
+  `bOps.Packages.Storage.{Core,Windows,Linux}` family. `storage.disks`, `storage.partitions` and
+  `storage.mounts` correlate physical topology with filesystem bytes/inodes; `storage.io` samples twice over
+  500–5000 ms and reports IOPS, throughput, latency, queue and utilization without fabricating unavailable
+  values; `storage.health` normalizes health to healthy/warning/critical/unknown and exposes selected SMART
+  evidence only. Windows uses WMI/CIM storage and raw performance-counter classes, rejecting ambiguous
+  instance-to-disk mappings. Linux reads sysfs/procfs and `statvfs`; optional `smartctl` runs directly with
+  fixed arguments on an enumerated `/dev` block device, never through a shell, and raw SMART/WMI payloads are
+  never returned. See [`docs/storage-diagnostics.md`](docs/storage-diagnostics.md).
 - V1.3-C advanced process diagnostics (ADR-0034): `process.inspect` additionally reports `parentPid`, `executablePath`,
   `commandLine`, `user`, `privateMemoryMb`, `virtualMemoryMb`, `handleOrFdCount`, `cpuTotalMs`, `ioReadBytes` and
   `ioWriteBytes`, each nullable, so one counter this identity may not read costs its own field and not the observation. Three

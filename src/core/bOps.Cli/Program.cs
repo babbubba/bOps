@@ -18,6 +18,8 @@ using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Service.Linux;
 using bOps.Packages.Service.Windows;
+using bOps.Packages.Storage.Linux;
+using bOps.Packages.Storage.Windows;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Packages.Web;
@@ -197,6 +199,21 @@ var networkNativePackageId = new PackageId($"bops.packages.network.native.{Curre
 foreach (var tool in networkNativeToolProvider.GetTools())
 {
     toolRegistry.Register(networkNativePackageId, tool);
+}
+
+// V1.3-E: storage topology, filesystem capacity/inodes, sampled I/O and bounded health evidence
+// follow the same OS-split package boundary as System and native Network.
+IToolProvider storageToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsStorageToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxStorageToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
+
+var storagePackageId = new PackageId($"bops.packages.storage.{CurrentPlatform.Id}");
+foreach (var tool in storageToolProvider.GetTools())
+{
+    toolRegistry.Register(storagePackageId, tool);
 }
 
 // V0.11 (ADR-0021): mirrors the System family's own OS split above — Windows via

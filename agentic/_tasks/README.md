@@ -21,8 +21,8 @@ snapshots under `agentic/obsolete/`.
 | 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | **Implemented — PR open** | molto alto |
 | 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | **Implemented — PR open** | medio |
 | 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | **Implemented — PR open** | medio |
-| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Future — next** | medio |
-| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | Future | medio |
+| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Implemented locally — CI pending** | medio |
+| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | **Future — next** | medio |
 | 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | Future | medio |
 | 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | Future | medio |
 | 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | Future | medio |
