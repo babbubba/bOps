@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bops.local/schemas/milestone-quality.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "milestone", "targetCommit", "baseReference", "weights", "efficiency", "criteria"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "milestone": { "type": "string" },
+    "targetCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "baseReference": { "type": "string", "minLength": 1 },
+    "weights": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0 } },
+    "efficiency": { "type": "object" },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "requirement", "hardGate", "evidence", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "category": { "type": "string" },
+          "requirement": { "type": "string", "minLength": 1 },
+          "hardGate": { "type": "boolean" },
+          "evidence": { "type": "object" },
+          "status": { "enum": ["PASS", "FAIL", "PENDING", "SKIP"] }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

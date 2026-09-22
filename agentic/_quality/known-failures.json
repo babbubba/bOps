@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "entries": [
+    {
+      "test": "bOps.Api.Tests.AgentsAndApprovalsEndpointsTests.ApprovalFlow_BlocksThenExecutes_WhenAnOperatorRespondsThroughARequest",
+      "classification": "pre-existing-environment-timing-sensitive",
+      "evidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+      "introducedBefore": "V1.3-F",
+      "isolatedExpectedToPass": true,
+      "testProject": "tests/bOps.Api.Tests/bOps.Api.Tests.csproj"
+    },
+    {
+      "test": "bOps.Packages.Filesystem.Tests.FsSizeTests.FsSize_StreamsTenThousandFiles_WithBoundedResponse",
+      "classification": "pre-existing-environment-timing-sensitive",
+      "evidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+      "introducedBefore": "V1.3-F",
+      "isolatedExpectedToPass": true,
+      "testProject": "tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj"
+    },
+    {
+      "test": "bOps.Packages.Filesystem.Tests.FsDeleteTreeTests.PrepareAndPage_TenThousandFiles_WithoutReturningOneUnboundedList",
+      "classification": "pre-existing-environment-timing-sensitive",
+      "evidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+      "introducedBefore": "V1.3-F",
+      "isolatedExpectedToPass": true,
+      "testProject": "tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj"
+    }
+  ]
+}
