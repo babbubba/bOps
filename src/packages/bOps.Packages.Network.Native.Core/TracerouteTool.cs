@@ -75,6 +75,13 @@ public sealed class TracerouteTool(string platform) : ITool
 
                 continue;
             }
+            catch (PlatformNotSupportedException ex)
+            {
+                // Setting a hop limit needs a raw socket on Linux (CAP_NET_RAW), which an unprivileged process may not have.
+                // That is an environment limitation, not a hop-by-hop failure, so the tool reports it once and stops.
+                return ToolCallResult.Failure(
+                    $"This host cannot set a per-hop TTL without elevated privilege: {ex.Message}");
+            }
 
             hops.Add(reply.Status switch
             {
