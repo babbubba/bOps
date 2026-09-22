@@ -37,6 +37,80 @@ public abstract class ServiceStatusToolBase(string platform) : ITool
     }
 }
 
+public abstract class ServiceConfigToolBase(string platform) : ITool
+{
+    public ToolManifest Manifest { get; } = ServiceToolManifests.Config(platform);
+    protected abstract Task<ServiceConfigResult> CollectAsync(string name, CancellationToken ct);
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        return ToolCallResult.Success(ServiceToolFormatting.Format(await CollectAsync(arguments.GetRequired<string>("name"), ct)));
+    }
+}
+
+public abstract class ServiceDependenciesToolBase(string platform) : ITool
+{
+    public ToolManifest Manifest { get; } = ServiceToolManifests.Dependencies(platform);
+    protected abstract Task<ServiceDependenciesResult> CollectAsync(string name, string direction, int limit, CancellationToken ct);
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var name = arguments.GetRequired<string>("name");
+        var direction = arguments.TryGet<string>("direction", out var requested) ? requested : "both";
+        if (direction is not ("both" or "requires" or "dependents")) return ToolCallResult.Failure("direction must be one of: both, requires, dependents.");
+        var limit = arguments.TryGet<int>("limit", out var requestedLimit) ? requestedLimit : 100;
+        if (limit is < 1 or > 1000) return ToolCallResult.Failure("limit must be an integer between 1 and 1000.");
+        var result = await CollectAsync(name, direction, limit, ct);
+        return ToolCallResult.Success(ServiceToolFormatting.Format(ServiceDependencyResults.Bound(result, limit)));
+    }
+}
+
+public abstract class ServiceEnableToolBase(string platform) : IVerifiableTool
+{
+    public ToolManifest Manifest { get; } = ServiceToolManifests.Enable(platform);
+    protected abstract Task<ToolCallResult> EnableAsync(string name, CancellationToken ct);
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        return EnableAsync(arguments.GetRequired<string>("name"), ct);
+    }
+    public Task<VerificationOutcome> EvaluateVerificationAsync(ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(verificationToolResult);
+        return ServiceConfigVerification.Evaluate(verificationToolResult, true, "enable");
+    }
+}
+
+public abstract class ServiceDisableToolBase(string platform) : IVerifiableTool
+{
+    public ToolManifest Manifest { get; } = ServiceToolManifests.Disable(platform);
+    protected abstract Task<ToolCallResult> DisableAsync(string name, CancellationToken ct);
+    public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        return DisableAsync(arguments.GetRequired<string>("name"), ct);
+    }
+    public Task<VerificationOutcome> EvaluateVerificationAsync(ToolArguments originalArguments, ToolCallResult verificationToolResult, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(verificationToolResult);
+        return ServiceConfigVerification.Evaluate(verificationToolResult, false, "disable");
+    }
+}
+
+internal static class ServiceConfigVerification
+{
+    public static Task<VerificationOutcome> Evaluate(ToolCallResult result, bool expected, string action)
+    {
+        if (!result.Succeeded) return Task.FromResult(new VerificationOutcome(VerificationStatus.Inconclusive, $"Could not confirm the {action}: {result.ErrorMessage}"));
+        bool? enabled = ServiceConfigOutput.TryReadEnabled(result.Output);
+        return Task.FromResult(enabled is null
+            ? new VerificationOutcome(VerificationStatus.Inconclusive, "service.config's output could not be read or did not contain definite enablement evidence.")
+            : enabled == expected
+                ? new VerificationOutcome(VerificationStatus.Confirmed, null)
+                : new VerificationOutcome(VerificationStatus.Refuted, $"service.config reports enabled={enabled.Value}, not {expected}."));
+    }
+}
+
 /// <summary>
 /// The tool shell for <c>service.start</c>, verified via <c>service.status</c> afterward. Both
 /// platforms expect the same fact (status is <c>"running"</c>), so the verification evaluation is

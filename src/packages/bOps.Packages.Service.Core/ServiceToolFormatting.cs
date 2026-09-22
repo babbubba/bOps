@@ -39,4 +39,32 @@ public static class ServiceToolFormatting
         };
         return json.ToJsonString();
     }
+
+    public static string Format(ServiceConfigResult config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return new JsonObject
+        {
+        ["exists"] = config.Exists, ["name"] = config.Name, ["displayName"] = config.DisplayName,
+        ["description"] = config.Description, ["executable"] = config.Executable, ["arguments"] = config.Arguments,
+        ["workingDirectory"] = config.WorkingDirectory, ["user"] = config.User, ["startupType"] = config.StartupType,
+        ["enabled"] = config.Enabled, ["enablementState"] = config.EnablementState, ["restartPolicy"] = config.RestartPolicy,
+        ["dependencies"] = new JsonArray(config.Dependencies.Select(value => JsonValue.Create(value)).ToArray()),
+        ["dependents"] = new JsonArray(config.Dependents.Select(value => JsonValue.Create(value)).ToArray()),
+        ["source"] = config.Source, ["complete"] = config.Complete,
+        }.ToJsonString();
+    }
+
+    public static string Format(ServiceDependenciesResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new JsonObject
+        {
+        ["relations"] = new JsonArray(result.Relations.Select(r => new JsonObject
+        {
+            ["relation"] = r.Relation, ["serviceName"] = r.ServiceName, ["status"] = r.Status,
+        }).ToArray()),
+        ["count"] = result.Count, ["truncated"] = result.Truncated, ["complete"] = result.Complete, ["source"] = result.Source,
+        }.ToJsonString();
+    }
 }
