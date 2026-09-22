@@ -286,7 +286,7 @@ increasing TTL, a minimal SNTP client) and are concrete classes shared by both p
 loopback TCP/UDP sockets proved exact PID/port ownership on this Windows machine (2206 tests, 0
 failures, 88 skipped -- the 11 new Linux-only tests, skipped visibly here, are the `ubuntu-latest` CI
 job's evidence).
-V1.3-E is implemented locally (2026-09-22): the new
+V1.3-E is implemented in PR #37 (2026-09-22): the new
 `bOps.Packages.Storage.{Core,Windows,Linux}` family contributes `storage.disks`,
 `storage.partitions`, `storage.mounts`, `storage.io` and `storage.health`. Windows uses WMI/CIM
 disk, partition, logical-disk, raw performance and physical-disk health classes; an ambiguous
@@ -294,7 +294,8 @@ performance instance is never guessed. Linux reads sysfs, mountinfo, statvfs and
 optionally runs fixed `smartctl -j -a -- <enumerated-device>` arguments with bounded JSON capture.
 Every tool is read-only, output is bounded, unavailable health stays unknown, and raw SMART/WMI
 payloads never leave the package. Local Release build is clean and the complete non-live suite is
-green (2,133 passed, 90 skipped); Linux real-source evidence is pending CI.
+green (2,133 passed, 90 skipped). CI run `35752253682` is green on both Ubuntu and Windows,
+including Linux real-source sysfs/procfs/statvfs coverage and the Windows WMI/CIM source test.
 
 Next action: V1.3-F, filesystem troubleshooting. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,

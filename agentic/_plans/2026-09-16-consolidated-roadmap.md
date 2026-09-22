@@ -383,7 +383,7 @@ PID-owned sockets, complete routes, neighbors, interface stats, DNS query, trace
 
 ### V1.3-E — storage diagnostics
 Disks, partitions, mounts, IOPS/latency/queue/utilization and health/SMART evidence.
-**Status.** Implemented locally; the task file holds validation and CI evidence.
+**Status.** Implemented in PR #37; Windows/Linux CI is green (run `35752253682`).
 **Task.** `agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md` — **medio**.
 
 ### V1.3-F — filesystem troubleshooting
