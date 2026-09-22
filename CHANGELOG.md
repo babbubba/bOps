@@ -42,6 +42,20 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   `.dockerignore`, and bounds files and bytes while the archive is written. Nothing is forced or pruned, there are no build
   arguments or registry credentials, and an unreachable daemon is a failed result in every Docker tool. See
   [`docs/docker-management.md`](docs/docker-management.md).
+- V1.3-D sockets, routes and network diagnostics (ADR-0035): seven new read-only tools contributed by a new
+  `bOps.Packages.Network.Native.{Core,Windows,Linux}` package family, registered alongside the existing, unchanged
+  `bOps.Packages.Network`. `network.sockets` maps TCP/UDP sockets to owning PID and process name (`protocol`, `state`, `pid`,
+  `localPort` filters, `limit` default 500/max 5000; UDP rows report no remote endpoint or state; a PID this identity could not
+  map stays `null` with `pidMappingComplete:false`). `network.routes` and `network.neighbors` report the full routing table and
+  ARP/NDP cache (`network.route` is unchanged). `network.interface_stats` samples every interface twice (`sampleMilliseconds`
+  100–5000, default 500) and reports per-second byte/packet/error/drop rates, link speed and operational status, with an
+  unsupported counter `null` rather than zero. `network.dns_query` resolves A/AAAA/PTR via the system resolver or, with an
+  explicit `server`, a minimal typed UDP DNS client (no raw query type, class or option). `network.traceroute` traces a path
+  with `Ping` and an increasing TTL/hop-limit — no `tracert`/`traceroute` executable. `network.ntp_probe` sends one SNTP
+  request and reports offset, round-trip time, stratum and version, rejecting an unsynchronized or kiss-of-death reply as
+  `valid:false` rather than a trustworthy-looking offset. Windows P/Invokes `iphlpapi.dll` directly; Linux reads `/proc`
+  directly and runs exactly two fixed, argument-listed `ip -j route|neighbor show[/-6]` invocations, no shell, no
+  model-supplied argument. See [`docs/network-diagnostics.md`](docs/network-diagnostics.md).
 - V1.3-A `system.events`: one read-only tool over the Windows Event Log (`EventLogReader`) and journald (`journalctl` run
   directly, with fixed switches and values as separate arguments), with the same arguments and result on both systems: a
   time window, minimum severity, source, event id, channel and message text, newest first, bounded in events, bytes and
