@@ -28,7 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +51,31 @@ jobs:
 
       - name: Test
         run: dotnet test bOps.slnx --no-build --configuration Release --filter "Category!=LiveModel"
+
+      - name: Collect quality platform evidence
+        if: always()
+        shell: pwsh
+        env:
+          QUALITY_PLATFORM: ${{ matrix.platform }}
+          QUALITY_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          $active = Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json
+          $output = "quality-platform-$env:QUALITY_PLATFORM.json"
+          ./scripts/Test-MilestoneQuality.ps1 `
+            -CollectPlatformEvidence `
+            -Platform $env:QUALITY_PLATFORM `
+            -Manifest $active.manifest `
+            -SourceCommit $env:QUALITY_SOURCE_COMMIT `
+            -Output $output
+
+      - name: Upload quality platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-platform-${{ matrix.platform }}
+          path: quality-platform-${{ matrix.platform }}.json
+          if-no-files-found: error
+          retention-days: 30
 
       - uses: actions/setup-node@v4
         with:
@@ -90,5 +119,57 @@ jobs:
         with:
           name: bops-sbom-${{ github.sha }}
           path: artifacts/sbom/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  quality-aggregate:
+    if: needs.build-and-test.result == 'success'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: quality-platform-windows
+          path: ${{ runner.temp }}/quality-platform-windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: quality-platform-linux
+          path: ${{ runner.temp }}/quality-platform-linux
+
+      - name: Aggregate quality evidence
+        shell: pwsh
+        env:
+          QUALITY_RUN_ID: ${{ github.run_id }}
+          QUALITY_COMMIT: ${{ github.sha }}
+        run: |
+          $active = Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json
+          $output = Join-Path $env:RUNNER_TEMP 'quality-ci'
+          ./scripts/Test-MilestoneQuality.ps1 `
+            -AggregateCiEvidence `
+            -Manifest $active.manifest `
+            -LocalReport $active.localReport `
+            -PlatformEvidence @(
+              (Join-Path $env:RUNNER_TEMP 'quality-platform-windows/quality-platform-windows.json'),
+              (Join-Path $env:RUNNER_TEMP 'quality-platform-linux/quality-platform-linux.json')
+            ) `
+            -CiRunId $env:QUALITY_RUN_ID `
+            -CiCommit $env:QUALITY_COMMIT `
+            -OutputDirectory $output
+          $report = Get-Content -Raw (Join-Path $output "$($active.slug).ci.json") | ConvertFrom-Json
+          "## Quality aggregate" >> $env:GITHUB_STEP_SUMMARY
+          "- Milestone: $($report.milestone)" >> $env:GITHUB_STEP_SUMMARY
+          "- Quality status: $($report.qualityStatus)" >> $env:GITHUB_STEP_SUMMARY
+          "- Final/provisional score: $($report.finalQualityScore) / $($report.provisionalScore)" >> $env:GITHUB_STEP_SUMMARY
+          "- Pending platform criteria: $([string]::Join(', ', $report.pendingEvidence))" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload CI quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-ci
+          path: ${{ runner.temp }}/quality-ci
           if-no-files-found: error
           retention-days: 30
