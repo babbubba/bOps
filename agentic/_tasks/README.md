@@ -23,7 +23,7 @@ snapshots under `agentic/obsolete/`.
 | 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | **Implemented — PR open** | medio |
 | 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Implemented — PR #37, CI green** | medio |
 | 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | **Implemented locally — PR not yet opened** | medio |
-| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | Future | medio |
+| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | **Implemented locally — PR/CI pending** | medio |
 | 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | Future | medio |
 | 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | Future | medio |
 | 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | Future | medio |

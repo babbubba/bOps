@@ -283,6 +283,8 @@
           "bOps.Packages.Providers.Ollama": "[1.0.0, )",
           "bOps.Packages.Providers.OpenAi": "[1.0.0, )",
           "bOps.Packages.Providers.OpenRouter": "[1.0.0, )",
+          "bOps.Packages.Scheduler.Linux": "[1.0.0, )",
+          "bOps.Packages.Scheduler.Windows": "[1.0.0, )",
           "bOps.Packages.Storage.Linux": "[1.0.0, )",
           "bOps.Packages.Storage.Windows": "[1.0.0, )",
           "bOps.Packages.System.Linux": "[1.0.0, )",
@@ -394,6 +396,26 @@
         "dependencies": {
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.Providers.OpenAiCompatible": "[1.0.0, )"
+        }
+      },
+      "bops.packages.scheduler.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.scheduler.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Scheduler.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.scheduler.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Scheduler.Core": "[1.0.0, )"
         }
       },
       "bops.packages.storage.core": {

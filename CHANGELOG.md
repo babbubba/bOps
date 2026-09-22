@@ -21,6 +21,12 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-G service and scheduler diagnostics: native service configuration and dependencies,
+  nullable enablement semantics, governed enable/disable with verification, Windows Task Scheduler
+  support, Linux systemd timers, read-only cron inventory with deterministic observation ids,
+  bounded history, and no execution of scheduled target commands. Local integration is complete;
+  Windows/Linux CI remains pending and is not claimed green.
+
 - V1.3-F filesystem troubleshooting: bounded, no-link `fs.grep` and `fs.tail`; cross-platform
   permission and visible-lock evidence via `fs.permissions` and `fs.locks`; and the governed
   `fs.copy`/`fs.copy.verify` and idempotent `fs.mkdir` operations. Copy is limited by
