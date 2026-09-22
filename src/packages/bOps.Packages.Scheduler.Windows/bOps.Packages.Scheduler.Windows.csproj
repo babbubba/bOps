@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Scheduler.Windows</RootNamespace>
+    <AssemblyName>bOps.Packages.Scheduler.Windows</AssemblyName>
+    <Description>scheduler.* tools for Windows Task Scheduler 2.0.</Description>
+    <NoWarn>CA1711;CA1062;CA1031;CA1512</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Scheduler.Core\bOps.Packages.Scheduler.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.0" />
+  </ItemGroup>
+</Project>
