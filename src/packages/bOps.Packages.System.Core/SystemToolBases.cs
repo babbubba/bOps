@@ -178,8 +178,189 @@ public abstract class ProcessInspectToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var pid = arguments.GetRequired<int>("pid");
+        if (!ProcessDiagnosticsArguments.TryReadPid(arguments, out var pid, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(pid, ct)));
+    }
+}
+
+/// <summary>
+/// The tool shell for <c>process.metrics</c> (ADR-0034). Each OS package contributes one
+/// instantaneous reading of a process's cumulative counters; the interval, the difference and the
+/// host normalization of CPU are computed here, so both platforms report the same numbers the same
+/// way (agentic/01-architecture-rules.md, rule A8).
+/// </summary>
+public abstract class ProcessMetricsToolBase : ITool
+{
+    private const int BytesPerMb = 1024 * 1024;
+
+    private readonly TimeProvider clock;
+
+    /// <summary>Creates the shell for <paramref name="platform"/>; <paramref name="clock"/> defaults to the system clock.</summary>
+    protected ProcessMetricsToolBase(string platform, TimeProvider? clock = null)
+    {
+        Manifest = SystemToolManifests.ProcessMetrics(platform);
+        this.clock = clock ?? TimeProvider.System;
+    }
+
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; }
+
+    /// <summary>
+    /// Reads this process's cumulative counters once. A counter this identity may not read is
+    /// <c>null</c>; a process that is gone is <see cref="ProcessSample.Exists"/> <c>false</c>.
+    /// </summary>
+    protected abstract Task<ProcessSample> SampleAsync(int pid, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!ProcessDiagnosticsArguments.TryReadMetrics(arguments, out var pid, out var sampleMilliseconds, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var first = await SampleAsync(pid, ct);
+        var startedAt = clock.GetTimestamp();
+        await Task.Delay(TimeSpan.FromMilliseconds(sampleMilliseconds), clock, ct);
+        var second = await SampleAsync(pid, ct);
+        var elapsed = clock.GetElapsedTime(startedAt);
+
+        return ToolCallResult.Success(ProcessDiagnosticsFormatting.Format(
+            Compute(pid, sampleMilliseconds, first, second, elapsed)));
+    }
+
+    internal static ProcessMetricsResult Compute(
+        int pid, int sampleMilliseconds, ProcessSample first, ProcessSample second, TimeSpan elapsed)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
+        if (!first.Exists || !second.Exists)
+        {
+            // A process that appeared or disappeared between the samples has no rate at all: two
+            // readings of different things are not a difference.
+            return new ProcessMetricsResult
+            {
+                Pid = pid,
+                Exists = false,
+                SampleMilliseconds = sampleMilliseconds,
+                Partial = true,
+            };
+        }
+
+        var seconds = elapsed.TotalSeconds;
+        var cpuPercent = first.CpuTotal is { } before && second.CpuTotal is { } after && seconds > 0
+            ? Math.Clamp((after - before).TotalSeconds / seconds / Environment.ProcessorCount * 100.0, 0, 100)
+            : (double?)null;
+
+        var result = new ProcessMetricsResult
+        {
+            Pid = pid,
+            Exists = true,
+            SampleMilliseconds = sampleMilliseconds,
+            CpuPercent = cpuPercent,
+            WorkingSetMb = second.WorkingSetBytes / BytesPerMb,
+            PrivateMemoryMb = second.PrivateMemoryBytes / BytesPerMb,
+            VirtualMemoryMb = second.VirtualMemoryBytes / BytesPerMb,
+            ThreadCount = second.ThreadCount,
+            HandleOrFdCount = second.HandleOrFdCount,
+            ReadBytesPerSec = Rate(first.ReadBytes, second.ReadBytes, seconds),
+            WriteBytesPerSec = Rate(first.WriteBytes, second.WriteBytes, seconds),
+            PageFaultsPerSec = Rate(first.PageFaults, second.PageFaults, seconds),
+            Partial = false,
+        };
+
+        return result with { Partial = IsPartial(result) };
+    }
+
+    private static bool IsPartial(ProcessMetricsResult result) =>
+        result.CpuPercent is null
+        || result.WorkingSetMb is null
+        || result.PrivateMemoryMb is null
+        || result.VirtualMemoryMb is null
+        || result.ThreadCount is null
+        || result.HandleOrFdCount is null
+        || result.ReadBytesPerSec is null
+        || result.WriteBytesPerSec is null
+        || result.PageFaultsPerSec is null;
+
+    // A cumulative counter never decreases, but two reads of a counter the kernel updates per-thread
+    // can arrive out of order; a negative rate is a reading artefact, not a fact about the process.
+    private static double? Rate(long? before, long? after, double seconds) =>
+        before is { } start && after is { } end && seconds > 0 ? Math.Max(0, (end - start) / seconds) : null;
+}
+
+/// <summary>
+/// The tool shell for <c>process.tree</c> (ADR-0034). The OS package observes parents and names;
+/// the walk, its bounds, its order and its completeness are decided here. Users are resolved only
+/// for the rows that are actually returned, because on Windows that is a separate query per
+/// process and the whole point of the bound is not to make hundreds of them.
+/// </summary>
+public abstract class ProcessTreeToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.ProcessTree(platform);
+
+    /// <summary>Observes every process this identity can see, with its parent and name.</summary>
+    protected abstract Task<ProcessTreeSnapshot> CollectAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Resolves the owning identity of each of <paramref name="pids"/>. A PID that is gone, or
+    /// whose owner this identity may not read, is absent from the result or maps to <c>null</c>.
+    /// </summary>
+    protected abstract Task<IReadOnlyDictionary<int, string?>> ResolveUsersAsync(IReadOnlyList<int> pids, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!ProcessDiagnosticsArguments.TryReadTree(arguments, out var rootPid, out var maxDepth, out var limit, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var snapshot = await CollectAsync(ct);
+        var selection = ProcessTreeBuilder.Build(snapshot, rootPid, maxDepth, limit);
+        var users = selection.Rows.Count == 0
+            ? new Dictionary<int, string?>()
+            : await ResolveUsersAsync(selection.Rows.Select(row => row.Pid).ToArray(), ct);
+
+        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatTree(selection, snapshot, rootPid, maxDepth, users));
+    }
+}
+
+/// <summary>The tool shell for <c>process.modules</c> (ADR-0034).</summary>
+public abstract class ProcessModulesToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.ProcessModules(platform);
+
+    /// <summary>
+    /// Reads the modules of <paramref name="pid"/>, examining at most
+    /// <paramref name="collectionLimit"/> native records. A read this identity may not perform is
+    /// an explicit status, never an empty list.
+    /// </summary>
+    protected abstract Task<ProcessModuleSnapshot> CollectAsync(int pid, int collectionLimit, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!ProcessDiagnosticsArguments.TryReadModules(arguments, out var pid, out var limit, out var maxOutputBytes, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var snapshot = await CollectAsync(pid, ProcessDiagnosticsLimits.ModuleScanCeiling, ct);
+        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatModules(snapshot, pid, limit, maxOutputBytes));
     }
 }
 
