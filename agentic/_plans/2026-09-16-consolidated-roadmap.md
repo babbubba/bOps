@@ -388,6 +388,8 @@ Disks, partitions, mounts, IOPS/latency/queue/utilization and health/SMART evide
 
 ### V1.3-F — filesystem troubleshooting
 grep/tail/permissions/locks plus verified single-file copy and mkdir under existing path policy.
+**Status.** Implemented locally on `feat/v13-F_partial`; Release build and the local non-live
+suite are green. PR not yet opened.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md` — **medio**.
 
 ### V1.3-G — service configuration and scheduler

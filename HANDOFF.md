@@ -1,4 +1,4 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3 in progress (A–E implemented locally)
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3 in progress (A–F implemented locally)
 
 ## V1.1-H status (2026-09-18) — closed
 
@@ -297,7 +297,30 @@ payloads never leave the package. Local Release build is clean and the complete 
 green (2,133 passed, 90 skipped). CI run `35752253682` is green on both Ubuntu and Windows,
 including Linux real-source sysfs/procfs/statvfs coverage and the Windows WMI/CIM source test.
 
-Next action: V1.3-F, filesystem troubleshooting. V1.3 has an ordered
+V1.3-F is implemented locally on `feat/v13-F_partial` (2026-09-22), extending the existing
+`bOps.Packages.Filesystem` family with `fs.grep`, `fs.tail`, `fs.permissions`, `fs.locks`,
+`fs.copy`/`fs.copy.verify` and `fs.mkdir`. All seven never bypass `FilesystemPathPolicy`
+(S11): `fs.grep`/`fs.tail` never follow symlinks or reparse points, `fs.copy` re-resolves both
+endpoints immediately before I/O and stages through an invocation-owned temporary sibling, and
+`fs.mkdir`'s `fs.stat` verification confirms the path is actually a directory, not merely that
+something exists there. `fs.locks` and `fs.permissions` report `complete:false` whenever the
+underlying diagnostic source failed, was restricted, or was truncated by a row/entry cap, rather
+than ever presenting a partial scan as trustworthy evidence — this closed three review findings:
+Windows `fs.locks` previously folded a Restart Manager API failure into the same empty result as
+"no holders", Linux `fs.locks` did not flag truncation at the process/descriptor ceilings or the
+row limit, and Windows `fs.permissions` read a directory's ACL through the file API instead of
+`DirectorySecurity`, plus its 200-entry cap did not flag truncation. `fs.tail` also moved from a
+non-strict `Encoding.UTF8.GetString` (which silently replaces invalid bytes) to a strict decoder
+that rejects malformed UTF-8, correctly drops a partial first line when a `maxBytes` window starts
+mid multi-byte character, and strips a BOM only at the true start of the file. Local Release build
+is clean (0 warnings, 0 errors) and the Filesystem test project is green, including new limits/
+encoding/binary/timeout, real Windows ACL and Restart Manager, and copy/mkdir coverage; see the
+task file's local validation evidence for exact counts. PR not yet opened; Linux-specific paths
+(`fs.locks`/`fs.permissions` real sources) are exercised by this suite's Linux-only tests but were
+only verified by inspection here, not executed, since this machine is Windows.
+
+Next action: open the V1.3-F pull request and get Windows/Linux CI green, then V1.3-G,
+service/scheduler. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
 a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent
