@@ -102,6 +102,16 @@ public static class SystemToolFormatting
             ["workingSetMb"] = process.WorkingSetMb,
             ["threadCount"] = process.ThreadCount,
             ["startTimeUtc"] = process.StartTimeUtc,
+            ["parentPid"] = process.ParentPid,
+            ["executablePath"] = SystemInventoryFormatting.Bounded(process.ExecutablePath, ProcessDiagnosticsLimits.PathCharacters),
+            ["commandLine"] = SystemInventoryFormatting.Bounded(process.CommandLine, ProcessDiagnosticsLimits.CommandLineCharacters),
+            ["user"] = SystemInventoryFormatting.Bounded(process.User, ProcessDiagnosticsLimits.UserCharacters),
+            ["privateMemoryMb"] = process.PrivateMemoryMb,
+            ["virtualMemoryMb"] = process.VirtualMemoryMb,
+            ["handleOrFdCount"] = process.HandleOrFdCount,
+            ["cpuTotalMs"] = process.CpuTotalMs,
+            ["ioReadBytes"] = process.IoReadBytes,
+            ["ioWriteBytes"] = process.IoWriteBytes,
         };
         return json.ToJsonString();
     }

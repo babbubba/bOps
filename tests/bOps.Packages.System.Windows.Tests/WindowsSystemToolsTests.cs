@@ -63,14 +63,15 @@ public sealed class WindowsSystemToolsTests
         SystemToolConformance.AssertProcessInspectReportsMissingAsync(new WindowsProcessInspectTool());
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheThirteenSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheSixteenSystemAndProcessTools()
     {
         var names = new WindowsSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
                 "system.info", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
-                "system.swap", "system.io", "process.inspect", "process.stop", "process.kill",
+                "system.swap", "system.io", "process.inspect", "process.metrics", "process.tree", "process.modules",
+                "process.stop", "process.kill",
             ],
             names);
     }

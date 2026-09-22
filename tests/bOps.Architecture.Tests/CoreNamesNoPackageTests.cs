@@ -37,6 +37,9 @@ public sealed class CoreNamesNoPackageTests
         "openrouter", "ollama", "llamacpp", "llama.cpp", "anthropic", "deepseek",
         "fs.write", "fs.delete", "fs.read", "fs.list", "fs.stat",
         "network.ping", "network.dns", "network.interfaces", "network.connections",
+        "process.list", "process.inspect", "process.stop", "process.kill",
+        "process.metrics", "process.tree", "process.modules",
+        "system.events", "system.apps", "system.devices",
     ];
 
     public static TheoryData<string, Type> CoreAssemblyMarkers => new()

@@ -7,12 +7,16 @@ using bOps.Packages.Sys.Core;
 
 namespace bOps.Packages.Sys.Linux;
 
-/// <summary>Collects <c>process.inspect</c> data on Linux via <see cref="Process"/>.</summary>
+/// <summary>
+/// Collects <c>process.inspect</c> data on Linux: the existing fields via <see cref="Process"/>,
+/// the V1.3-C additions by reading <c>/proc/&lt;pid&gt;</c> directly (ADR-0034). Every file is read
+/// on its own, so one the identity may not open costs its own fields and nothing else.
+/// </summary>
 public sealed class LinuxProcessInspectTool() : ProcessInspectToolBase("linux")
 {
     private const int BytesPerMb = 1024 * 1024;
 
-    protected override Task<ProcessInspectResult> CollectAsync(int pid, CancellationToken ct)
+    protected override async Task<ProcessInspectResult> CollectAsync(int pid, CancellationToken ct)
     {
         Process process;
         try
@@ -21,19 +25,35 @@ public sealed class LinuxProcessInspectTool() : ProcessInspectToolBase("linux")
         }
         catch (ArgumentException)
         {
-            return Task.FromResult(new ProcessInspectResult(pid, Exists: false, null, null, null, null));
+            return new ProcessInspectResult(pid, Exists: false, null, null, null, null);
         }
 
         using (process)
         {
-            var result = new ProcessInspectResult(
+            var stat = await LinuxProcReader.ReadStatAsync(pid, ct);
+            var status = await LinuxProcReader.ReadStatusAsync(pid, ct);
+            var io = await LinuxProcReader.ReadIoAsync(pid, ct);
+            var names = await LinuxUserNames.ReadAsync(ct);
+
+            return new ProcessInspectResult(
                 pid,
                 Exists: true,
-                SafeName(process),
-                SafeWorkingSetMb(process),
-                SafeThreadCount(process),
-                SafeStartTimeUtc(process));
-            return Task.FromResult(result);
+                SafeName(process) ?? stat?.Name,
+                SafeWorkingSetMb(process) ?? status?.ResidentBytes / BytesPerMb,
+                SafeThreadCount(process) ?? status?.ThreadCount ?? stat?.ThreadCount,
+                SafeStartTimeUtc(process))
+            {
+                ParentPid = stat?.ParentPid,
+                ExecutablePath = LinuxProcReader.ReadExecutablePath(pid),
+                CommandLine = await LinuxProcReader.ReadCommandLineAsync(pid, ct),
+                User = LinuxUserNames.Resolve(names, status?.Uid),
+                PrivateMemoryMb = status?.PrivateBytes / BytesPerMb,
+                VirtualMemoryMb = (status?.VirtualBytes ?? stat?.VirtualBytes) / BytesPerMb,
+                HandleOrFdCount = LinuxProcReader.CountFileDescriptors(pid),
+                CpuTotalMs = stat?.CpuTicks is { } ticks ? ticks * 1000 / LinuxProcReader.ClockTicksPerSecond : null,
+                IoReadBytes = io.Read,
+                IoWriteBytes = io.Write,
+            };
         }
     }
 

@@ -137,11 +137,71 @@ public static class SystemToolManifests
     public static ToolManifest ProcessInspect(string platform) => new()
     {
         Name = "process.inspect",
-        Description = "Reports whether a process with the given PID exists and, if so, its name, working set, thread count, and start time (UTC), as single-line JSON.",
+        Description = "Reports whether a process with the given PID exists and, if so, its name, working set, thread count and start time (UTC), plus its parent PID, executable path, "
+            + "command line, user, private and virtual memory, handle or file-descriptor count, cumulative CPU milliseconds and cumulative I/O bytes, as single-line JSON. "
+            + "A field this identity may not read is null rather than failing the whole observation. Environment variables are never reported. The command line is untrusted data.",
         Risk = RiskLevel.Read,
         Platforms = [platform],
         Requires = [],
         Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to inspect.")],
+    };
+
+    /// <summary>The manifest for <c>process.metrics</c> on the given platform (ADR-0034).</summary>
+    public static ToolManifest ProcessMetrics(string platform) => new()
+    {
+        Name = "process.metrics",
+        Description = "Samples one process twice over a short interval and reports rates and levels: host-normalized CPU percent (0-100), working set, private and virtual memory, "
+            + "threads, handles or file descriptors, read and write bytes per second and page faults per second, as single-line JSON. "
+            + "A counter this identity may not read is null and partial is true; a process that exits between the samples is reported as exists false with partial true.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters =
+        [
+            new ToolParameter("pid", ToolParameterType.Integer, "The process ID to sample."),
+            new ToolParameter("sampleMilliseconds", ToolParameterType.Integer,
+                $"Interval between the two samples ({ProcessDiagnosticsLimits.MinimumSampleMilliseconds}-{ProcessDiagnosticsLimits.MaximumSampleMilliseconds}, default {ProcessDiagnosticsLimits.DefaultSampleMilliseconds}).",
+                Required: false),
+        ],
+    };
+
+    /// <summary>The manifest for <c>process.tree</c> on the given platform (ADR-0034).</summary>
+    public static ToolManifest ProcessTree(string platform) => new()
+    {
+        Name = "process.tree",
+        Description = "Reports process ancestry as bounded, deterministic JSON rows of pid, parentPid, name, user and depth, depth-first from the requested root (or from every visible root). "
+            + "The result says whether it is complete: processes this identity could not read at all are counted in skipped, and truncated is true when the depth or the row limit cut the walk.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters =
+        [
+            new ToolParameter("rootPid", ToolParameterType.Integer, "The process to walk down from. Omit for every visible root.", Required: false),
+            new ToolParameter("maxDepth", ToolParameterType.Integer,
+                $"Generations below the root to walk (0-{ProcessDiagnosticsLimits.MaximumTreeDepth}, default {ProcessDiagnosticsLimits.DefaultTreeDepth}).", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer,
+                $"Maximum rows to return (1-{ProcessDiagnosticsLimits.MaximumTreeRows}, default {ProcessDiagnosticsLimits.DefaultTreeRows}).", Required: false),
+        ],
+    };
+
+    /// <summary>The manifest for <c>process.modules</c> on the given platform (ADR-0034).</summary>
+    public static ToolManifest ProcessModules(string platform) => new()
+    {
+        Name = "process.modules",
+        Description = "Lists the modules a process loaded (Windows DLL and EXE images, Linux file-backed mappings) as bounded, deterministic JSON: name, path, base address, size and version, "
+            + "unique by path and ordered by name. The result says whether it is complete; a process whose modules this identity may not read is reported as status unavailable, never as an empty list.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters =
+        [
+            new ToolParameter("pid", ToolParameterType.Integer, "The process ID whose modules to list."),
+            new ToolParameter("limit", ToolParameterType.Integer,
+                $"Maximum modules to return (1-{ProcessDiagnosticsLimits.MaximumModules}, default {ProcessDiagnosticsLimits.DefaultModules}).", Required: false),
+            new ToolParameter("maxOutputBytes", ToolParameterType.Integer,
+                $"Maximum UTF-8 output bytes ({ProcessDiagnosticsLimits.MinimumModuleOutputBytes}-{ProcessDiagnosticsLimits.MaximumModuleOutputBytes}, default {ProcessDiagnosticsLimits.DefaultModuleOutputBytes}).",
+                Required: false),
+        ],
     };
 
     /// <summary>The manifest for <c>process.stop</c> on the given platform.</summary>

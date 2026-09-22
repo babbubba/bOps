@@ -105,7 +105,7 @@ below it for what's coming and, deliberately, what never will.
 | Package | Tools |
 |---|---|
 | **System** | `system.info` `system.apps` `system.devices` `system.events` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
-| **Process** | `process.list` `process.inspect` `process.stop` `process.kill` |
+| **Process** | `process.list` `process.inspect` `process.metrics` `process.tree` `process.modules` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
@@ -115,7 +115,11 @@ below it for what's coming and, deliberately, what never will.
 `system.events` (V1.3-A) reads recent Windows Event Log or journald events as bounded, newest-first JSON
 that says whether it is complete (see [`docs/system-events.md`](docs/system-events.md)). V1.3-B adds Docker image, build and
 volume management: nine typed tools, removal and build always needing approval, and `docker.build` off until you list the
-directories it may build from (see [`docs/docker-management.md`](docs/docker-management.md)).
+directories it may build from (see [`docs/docker-management.md`](docs/docker-management.md)). V1.3-C completes the process
+surface: `process.inspect` additionally reports the parent PID, executable, command line, user, private/virtual memory, handle or
+file-descriptor count and cumulative CPU and I/O, and `process.metrics`, `process.tree` and `process.modules` add sampled rates,
+bounded ancestry and loaded modules — read-only, on both systems, with no `process.start` and no environment variables anywhere
+(see [`docs/process-diagnostics.md`](docs/process-diagnostics.md)).
 
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
@@ -171,6 +175,11 @@ S1). None of these are gaps; they're explicit non-goals.
   this tool reports that honestly as a failure rather than silently escalating to a forced kill.
   On Linux, `process.stop` sends a real `SIGTERM`, which always applies. `process.kill` (forced,
   `TerminateProcess`/`SIGKILL`) works identically on both platforms.
+- The V1.3-C process tools ask for no extra privilege. What the host account cannot read is reported as
+  `null` or as an explicit `unavailable` status, never as a zero or an empty list: on Windows, a protected
+  process's module list needs `SeDebugPrivilege`, which bOps never requests; on Linux, `/proc/<pid>/io`,
+  `/proc/<pid>/exe` and `/proc/<pid>/fd` are readable only by the owner, and `privateMemoryMb` needs a
+  kernel that reports `RssAnon` (4.5 or newer). See [`docs/process-diagnostics.md`](docs/process-diagnostics.md).
 - `service.start`/`stop`/`restart` on Linux are exercised for real in CI against `systemctl`
   (via the same code path `service.list`/`status` already prove works); the full elevated
   create→start→stop→delete lifecycle is exercised for real only on Windows CI, which runs

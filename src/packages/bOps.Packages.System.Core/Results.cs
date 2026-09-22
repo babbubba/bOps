@@ -42,6 +42,45 @@ public sealed record IoUsageResult(string DeviceName, double ReadKbPerSec, doubl
 /// of a negative fact, not a failure. A field is <c>null</c> when the process exists but that one
 /// property could not be read (exited mid-read, another user's process, a protected system
 /// process) rather than losing the whole observation.
+/// <para>
+/// The environment of a process is never part of this shape and never will be: an environment
+/// block routinely carries credentials, and an unfiltered environment dump is permanently out of
+/// scope (agentic/00-project-spec.md; rule S1's sibling).
+/// </para>
 /// </summary>
 public sealed record ProcessInspectResult(
-    int Pid, bool Exists, string? Name, long? WorkingSetMb, int? ThreadCount, DateTimeOffset? StartTimeUtc);
+    int Pid, bool Exists, string? Name, long? WorkingSetMb, int? ThreadCount, DateTimeOffset? StartTimeUtc)
+{
+    /// <summary>The parent's process id (V1.3-C, ADR-0034).</summary>
+    public int? ParentPid { get; init; }
+
+    /// <summary>The full path of the executable image.</summary>
+    public string? ExecutablePath { get; init; }
+
+    /// <summary>
+    /// The command line the process was started with. Untrusted text: it can carry anything the
+    /// launcher chose to put there, and it is bounded before it reaches the model.
+    /// </summary>
+    public string? CommandLine { get; init; }
+
+    /// <summary>The identity the process runs as.</summary>
+    public string? User { get; init; }
+
+    /// <summary>Private (non-shared) committed memory, in megabytes.</summary>
+    public long? PrivateMemoryMb { get; init; }
+
+    /// <summary>Reserved virtual address space, in megabytes.</summary>
+    public long? VirtualMemoryMb { get; init; }
+
+    /// <summary>Open kernel handles (Windows) or file descriptors (Linux).</summary>
+    public int? HandleOrFdCount { get; init; }
+
+    /// <summary>Cumulative processor time across every thread since the process started, in milliseconds.</summary>
+    public long? CpuTotalMs { get; init; }
+
+    /// <summary>Cumulative bytes read since the process started.</summary>
+    public long? IoReadBytes { get; init; }
+
+    /// <summary>Cumulative bytes written since the process started.</summary>
+    public long? IoWriteBytes { get; init; }
+}
