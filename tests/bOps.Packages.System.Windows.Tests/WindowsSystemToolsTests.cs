@@ -16,6 +16,10 @@ namespace bOps.Packages.System.Windows.Tests;
 [Trait("Platform", "Windows")]
 public sealed class WindowsSystemToolsTests
 {
+    [Fact] public void RebootDetectorsReadRegistryEvidenceForPresentAbsentAndDeniedStates() { Assert.Equal(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending", WindowsRebootPendingTool.CbsKey); Assert.Equal(@"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired", WindowsRebootPendingTool.WindowsUpdateKey); var absent = WindowsRebootDetector.Observe(new RegistryFixture(false, false, false, "host", "host", null)); Assert.True(absent.Complete); Assert.False(absent.Pending); var present = WindowsRebootDetector.Observe(new RegistryFixture(true, true, true, "old-host", "new-host", "contoso")); Assert.True(present.Complete); Assert.Equal(["windows.cbs", "windows.pending-computer-rename", "windows.pending-domain-change", "windows.pending-file-rename", "windows.update"], present.Reasons); var denied = WindowsRebootDetector.Observe(new RegistryFixture(null, null, null, null, null, null)); Assert.False(denied.Complete); Assert.False(denied.Pending); var missingComputerName = WindowsRebootDetector.Observe(new RegistryFixture(false, false, false, null, null, null)); Assert.False(missingComputerName.Complete); }
+    [Theory] [InlineData("NoSync", false)] [InlineData("NTP", true)] [InlineData("NT5DS", true)] [InlineData("AllSync", true)] [InlineData("unknown", null)] [InlineData(null, null)]
+    public void W32TimeConfigurationTypeHasDocumentedSemantics(string? type, bool? expected) => Assert.Equal(expected, WindowsTimeConfiguration.ParseType(type));
+    [Fact] public void W32TimeMissingOrDeniedConfigurationIsUnknownAndIncomplete() { var missing = WindowsTimeConfiguration.Evaluate(null, true, false); Assert.Null(missing.Configured); Assert.False(missing.Complete); var denied = WindowsTimeConfiguration.Evaluate(null, false, false); Assert.Null(denied.Configured); Assert.False(denied.Complete); }
     [WindowsOnlyFact]
     public Task SystemInfo_Conforms() =>
         SystemToolConformance.AssertSystemInfoConformsAsync(new WindowsSystemInfoTool(), "windows");
@@ -97,5 +101,12 @@ public sealed class WindowsSystemToolsTests
                 "process.stop", "process.kill",
             ],
             names);
+    }
+
+    private sealed class RegistryFixture(bool? cbs, bool? update, bool? pendingFileRename, string? activeName, string? pendingName, string? joinDomain) : IWindowsRegistryReader
+    {
+        public bool? HasSubKey(string path) => path == WindowsRebootPendingTool.CbsKey ? cbs : update;
+        public bool? HasMultiString(string path, string name) => pendingFileRename;
+        public WindowsRegistryString ReadString(string path, string name) => path.EndsWith("ActiveComputerName", StringComparison.Ordinal) ? new(true, activeName) : path.EndsWith("ComputerName", StringComparison.Ordinal) ? new(true, pendingName) : new(true, joinDomain);
     }
 }
