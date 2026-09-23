@@ -90,13 +90,13 @@ public sealed class WindowsSystemToolsTests
     }
 
     [Fact]
-    public void ToolProvider_ContributesExactlyTheEighteenSystemAndProcessTools()
+    public void ToolProvider_ContributesSystemUpdatesAndTheExistingSystemAndProcessTools()
     {
         var names = new WindowsSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
-                "system.info", "system.time", "system.reboot_pending", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.time", "system.reboot_pending", "system.updates", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.metrics", "process.tree", "process.modules",
                 "process.stop", "process.kill",
             ],

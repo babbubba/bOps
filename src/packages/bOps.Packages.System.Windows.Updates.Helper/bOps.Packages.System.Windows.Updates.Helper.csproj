@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.Packages.Sys.Windows.Updates.Helper</RootNamespace>
+    <AssemblyName>bOps.Packages.System.Windows.Updates.Helper</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
+  </ItemGroup>
+</Project>

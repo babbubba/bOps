@@ -58,6 +58,11 @@
     <ItemGroup><_FirewallHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.Firewall.Windows.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.Firewall.Windows.Helper.*" /></ItemGroup>
     <Copy SourceFiles="@(_FirewallHelper)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
+  <Target Name="CopyWindowsUpdatesHelper" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bOps.Packages.System.Windows.Updates.Helper.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <ItemGroup><_UpdatesHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.System.Windows.Updates.Helper.*" /></ItemGroup>
+    <Copy SourceFiles="@(_UpdatesHelper)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup>
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
