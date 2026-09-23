@@ -51,7 +51,7 @@ public sealed class TlsProbeTool : ITool
             {
                 await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = targetHost, EnabledSslProtocols = protocols, CertificateRevocationCheckMode = X509RevocationMode.NoCheck }, linked.Token);
             }
-            catch (AuthenticationException ex)
+            catch (Exception ex) when (ex is AuthenticationException or IOException)
             {
                 return ToolCallResult.Failure($"TLS handshake with '{host}:{port}' failed: {SecurityContracts.Bound(ex.Message)}");
             }
@@ -61,7 +61,14 @@ public sealed class TlsProbeTool : ITool
             using (observedChain)
             {
                 var chainStatuses = observedChain?.ChainStatus ?? [];
-                var chainValid = policyErrors == SslPolicyErrors.None && chainStatuses.Length == 0;
+                using var localChain = new X509Chain();
+                localChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                var locallyValid = localChain.Build(observedCertificate);
+                if (chainStatuses.Length == 0)
+                {
+                    chainStatuses = localChain.ChainStatus;
+                }
+                var chainValid = policyErrors == SslPolicyErrors.None && locallyValid;
                 var output = new JsonObject { ["schemaVersion"] = 1, ["host"] = host, ["resolvedAddress"] = address.ToString(), ["port"] = port, ["tcpConnectMs"] = tcp.ElapsedMilliseconds, ["tlsHandshakeMs"] = handshake.ElapsedMilliseconds, ["protocol"] = stream.SslProtocol.ToString(), ["cipherSuite"] = stream.NegotiatedCipherSuite.ToString(), ["alpn"] = stream.NegotiatedApplicationProtocol.Protocol.Length == 0 ? null : stream.NegotiatedApplicationProtocol.ToString(), ["certificate"] = SecurityContracts.Certificate(observedCertificate), ["chainValid"] = chainValid, ["policyErrors"] = policyErrors.ToString(), ["chainStatuses"] = SecurityContracts.ChainStatuses(chainStatuses), ["complete"] = true };
                 return ToolCallResult.Success(output.ToJsonString());
             }
