@@ -27,6 +27,7 @@
   </ItemGroup>
 
   <Target Name="CopyLinuxTestChildRuntimeFiles" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\bOps.Packages.System.Linux.TestChild\bOps.Packages.System.Linux.TestChild.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
     <PropertyGroup>
       <_TestChildOutput>$(MSBuildThisFileDirectory)..\bOps.Packages.System.Linux.TestChild\bin\$(Configuration)\net10.0</_TestChildOutput>
     </PropertyGroup>
