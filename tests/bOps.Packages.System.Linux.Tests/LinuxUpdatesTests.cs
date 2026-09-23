@@ -123,13 +123,110 @@ public sealed class LinuxUpdatesTests
     }
 
     [Fact]
-    public void LocalHistoryParsers_PreserveUnknownAndRejectIncompleteTransactions()
+    public void DebianHistoryRegression_PreservesUnknownAndRejectsIncompleteTransactions()
     {
         var apt = LinuxUpdateHistoryParser.Parse("debian", "Start-Date: 2026-09-23 10:00:00\nUpgrade: demo (1.0, 2.0)\nEnd-Date: 2026-09-23 10:01:00\n", "linux.apt-history");
         Assert.True(apt.Valid); Assert.Single(apt.Items); Assert.Equal("unknown", apt.Items[0].Result); Assert.Equal("2.0", apt.Items[0].Version);
         Assert.False(LinuxUpdateHistoryParser.Parse("debian", "Start-Date: 2026-09-23 10:00:00\nUpgrade: demo (1.0, 2.0)\n", "linux.apt-history").Valid);
-        Assert.False(LinuxUpdateHistoryParser.Parse("zypper", "malformed", "linux.zypper-history").Valid);
     }
+
+    [Fact]
+    public void DnfHistory_MapsTransactionsResultsAndNullVersion()
+    {
+        var parsed = LinuxUpdateHistoryParser.Parse("dnf", Dnf(" 3 | install kernel core | 2026-09-22 10:30 | Install | 2 ", " 4 | update demo | 2026-09-23 10:30 | Upgrade | 1 * ", " 5 | update another | 2026-09-23 11:30 | Upgrade | 1 # ", " 6 | update warned | 2026-09-23 12:30 | Upgrade | 1 E ", " 7 | update rpmdb | 2026-09-23 13:30 | Upgrade | 1 >< "), "dnf-history");
+
+        Assert.True(parsed.Valid);
+        Assert.Equal(["success", "failure", "failure", "success", "success"], parsed.Items.Select(item => item.Result));
+        Assert.All(parsed.Items, item => { Assert.StartsWith("dnf:", item.Id, StringComparison.Ordinal); Assert.Null(item.Version); Assert.Equal("dnf-history", item.Source); });
+        Assert.Equal("install kernel core", parsed.Items[0].Name);
+    }
+
+    [Fact]
+    public void DnfHistory_RejectsMalformedHeaderRowsAndAmbiguousMarkers()
+    {
+        Assert.False(LinuxUpdateHistoryParser.Parse("dnf", "ID | Command line | Date and time\n", "dnf-history").Valid);
+        Assert.False(LinuxUpdateHistoryParser.Parse("dnf", Dnf("bad | update demo | 2026-09-23 10:30 | Upgrade | 1"), "dnf-history").Valid);
+        var ambiguous = LinuxUpdateHistoryParser.Parse("dnf", Dnf("1 | update demo | 2026-09-23 10:30 | Upgrade | 1 ?"), "dnf-history");
+        Assert.True(ambiguous.Valid); Assert.Equal("unknown", ambiguous.Items.Single().Result);
+    }
+
+    [Fact]
+    public void DnfHistory_EmptySucceededTableIsCompleteAndSerializedDeterministically()
+    {
+        var parsed = LinuxUpdateHistoryParser.Parse("dnf", Dnf(), "dnf-history");
+        Assert.True(parsed.Valid); Assert.Empty(parsed.Items);
+        var empty = JsonNode.Parse(SystemMaintenanceFormatting.History(new(parsed.Items, [new("dnf-history", InventorySourceStatus.Available)]), 1))!.AsObject();
+        Assert.True(empty["complete"]!.GetValue<bool>()); Assert.Empty(empty["items"]!.AsArray());
+
+        var rows = LinuxUpdateHistoryParser.Parse("dnf", Dnf("2 | update zulu | 2026-09-22 10:30 | Upgrade | 1", "1 | update alpha | 2026-09-23 10:30 | Upgrade | 1"), "dnf-history").Items;
+        var first = SystemMaintenanceFormatting.History(new(rows, [new("dnf-history", InventorySourceStatus.Available)]), 1);
+        var second = SystemMaintenanceFormatting.History(new(rows.Reverse().ToArray(), [new("dnf-history", InventorySourceStatus.Available)]), 1);
+        Assert.Equal(first, second);
+        var json = JsonNode.Parse(first)!.AsObject(); Assert.True(json["truncated"]!.GetValue<bool>()); Assert.False(json["complete"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void DnfHistory_SinceDaysCanBeAppliedAfterUtcParsing()
+    {
+        var rows = LinuxUpdateHistoryParser.Parse("dnf", Dnf("1 | update old | 2020-01-01 00:00 | Upgrade | 1", "2 | update current | 2026-09-23 10:30 | Upgrade | 1"), "dnf-history").Items;
+        var cutoff = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        var current = Assert.Single(rows, row => row.TimestampUtc >= cutoff);
+        Assert.Equal("update current", current.Name);
+    }
+
+    [Fact]
+    public void DnfHistory_CommandUnavailableAndNonZeroExitAreSerializedAsIncomplete()
+    {
+        var arguments = new MaintenanceArguments(null, 30, null, 200);
+        var unavailable = LinuxUpdateHistoryTool.CreateDnfHistorySnapshot(new(false, false, false, 0, null, null, null), arguments);
+        var failedExit = LinuxUpdateHistoryTool.CreateDnfHistorySnapshot(new(true, false, true, 1, 1, Dnf(), "failure"), arguments);
+
+        foreach (var snapshot in new[] { unavailable, failedExit })
+        {
+            var json = JsonNode.Parse(SystemMaintenanceFormatting.History(snapshot, arguments.Limit))!.AsObject();
+            Assert.False(json["complete"]!.GetValue<bool>()); Assert.Equal("unavailable", json["status"]!.GetValue<string>()); Assert.Empty(json["items"]!.AsArray());
+        }
+    }
+
+    [Fact]
+    public void ZyppHistory_MapsCommittedPackageRecordsAndIgnoresComments()
+    {
+        const string fixture = "# zypp history\n2026-09-22 10:30:00|install|demo|1.2.3|x86_64|repo\n2026-09-23 10:30:00|remove|old-demo|0.9|x86_64|repo\n";
+        var parsed = LinuxUpdateHistoryParser.Parse("zypper", fixture, "zypp-history");
+
+        Assert.True(parsed.Valid); Assert.Empty(parsed.Warnings); Assert.Equal(2, parsed.Items.Count);
+        Assert.Equal("demo", parsed.Items[0].Name); Assert.Equal("1.2.3", parsed.Items[0].Version); Assert.Equal("success", parsed.Items[0].Result);
+        Assert.StartsWith("zypp:1:", parsed.Items[0].Id, StringComparison.Ordinal); Assert.Equal("zypp-history", parsed.Items[0].Source);
+        Assert.True(parsed.Items[0].TimestampUtc <= parsed.Items[1].TimestampUtc);
+    }
+
+    [Fact]
+    public void ZyppHistory_MalformedAndUnknownRecordsRemainIncompleteEvidence()
+    {
+        Assert.False(LinuxUpdateHistoryParser.Parse("zypper", "2026-09-23 10:30:00|install|demo\n", "zypp-history").Valid);
+        Assert.False(LinuxUpdateHistoryParser.Parse("zypper", "malformed", "zypp-history").Valid);
+        var unknown = LinuxUpdateHistoryParser.Parse("zypper", "2026-09-23 10:30:00|mystery|demo|1.0\n", "zypp-history");
+        Assert.True(unknown.Valid); Assert.NotEmpty(unknown.Warnings);
+        var serialized = JsonNode.Parse(SystemMaintenanceFormatting.History(new(unknown.Items, [new("zypp-history", InventorySourceStatus.Partial)], unknown.Warnings), 200))!.AsObject();
+        Assert.False(serialized["complete"]!.GetValue<bool>()); Assert.Contains(serialized["warnings"]!.AsArray(), warning => warning!.GetValue<string>().Contains("unrecognized", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ZyppHistory_RotatedAndMissingSourcesAreExplicitlyIncomplete()
+    {
+        var rotated = JsonNode.Parse(SystemMaintenanceFormatting.History(new(
+            LinuxUpdateHistoryParser.Parse("zypper", "2026-09-23 10:30:00|install|demo|1.0\n", "zypp-history").Items,
+            [new("zypp-history", InventorySourceStatus.Partial)],
+            ["Older rotated ZYpp history was not read; returned evidence may be incomplete."]), 200))!.AsObject();
+        Assert.False(rotated["complete"]!.GetValue<bool>()); Assert.Contains(rotated["warnings"]!.AsArray(), warning => warning!.GetValue<string>().Contains("rotated", StringComparison.Ordinal));
+        var missing = JsonNode.Parse(SystemMaintenanceFormatting.History(new(Array.Empty<UpdateHistoryRecord>(), [new("zypp-history", InventorySourceStatus.Unavailable)]), 200))!.AsObject();
+        Assert.False(missing["complete"]!.GetValue<bool>());
+    }
+
+    private static string Dnf(params string[] rows) => string.Join('\n', [
+        "ID | Command line | Date and time | Action(s) | Altered",
+        "-----------------------------------------------------",
+        .. rows]);
 
     private static string DotNetHostPath => Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
 

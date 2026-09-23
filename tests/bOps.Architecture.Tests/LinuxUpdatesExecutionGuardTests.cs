@@ -18,7 +18,10 @@ public sealed class LinuxUpdatesExecutionGuardTests
         Assert.Contains("\"--just-print\", \"upgrade\"", source, StringComparison.Ordinal);
         Assert.Contains("\"check-update\", \"--cacheonly\"", source, StringComparison.Ordinal);
         Assert.Contains("\"--xmlout\", \"list-updates\"", source, StringComparison.Ordinal);
-        foreach (var forbidden in new[] { "sh -c", "bash -c", "apt update", "apt-get update", "dnf upgrade", "dnf update", "dnf install", "zypper refresh", "zypper update", "zypper install", "UseShellExecute = true" })
+        Assert.Contains("\"history\", \"list\", \"--reverse\"", source, StringComparison.Ordinal);
+        Assert.Contains("psi.Environment[\"LC_ALL\"] = \"C\"", source, StringComparison.Ordinal);
+        Assert.Contains("psi.Environment[\"LANG\"] = \"C\"", source, StringComparison.Ordinal);
+        foreach (var forbidden in new[] { "sh -c", "bash -c", "apt update", "apt-get update", "dnf upgrade", "dnf update", "dnf install", "dnf history undo", "dnf history redo", "dnf history rollback", "history.sqlite", "zypper refresh", "zypper update", "zypper install", "UseShellExecute = true" })
             Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("new ProcessStartInfo(arguments", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ArgumentList.Add(arguments", source, StringComparison.Ordinal);
