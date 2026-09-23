@@ -96,7 +96,7 @@ public sealed class WindowsSystemToolsTests
 
         Assert.Equal(
             [
-                "system.info", "system.time", "system.reboot_pending", "system.updates", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.time", "system.reboot_pending", "system.updates", "system.update_history", "system.crashes", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.metrics", "process.tree", "process.modules",
                 "process.stop", "process.kill",
             ],

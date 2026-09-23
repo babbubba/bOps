@@ -46,6 +46,24 @@ public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
     }
 }
 
+/// <summary>Shared shell for bounded, read-only crash-evidence collection.</summary>
+public abstract class SystemCrashesToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Crashes(platform);
+
+    /// <summary>Collects only normalized crash metadata after bounded arguments are validated.</summary>
+    protected abstract Task<MaintenanceSnapshot<CrashRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
 /// <summary>
 /// The tool shell for <c>system.info</c>: manifest and result formatting shared, data
 /// collection left to the OS package (agentic/01-architecture-rules.md, rule A8).
