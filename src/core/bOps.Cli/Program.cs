@@ -250,6 +250,17 @@ foreach (var tool in schedulerToolProvider.GetTools())
     toolRegistry.Register(schedulerPackageId, tool);
 }
 
+IToolProvider identityToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsIdentityToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxIdentityToolProvider()
+        : throw new PlatformNotSupportedException("bOps supports Windows and Linux only.");
+var identityPackageId = new PackageId($"bops.packages.identity.{CurrentPlatform.Id}");
+foreach (var tool in identityToolProvider.GetTools())
+{
+    toolRegistry.Register(identityPackageId, tool);
+}
+
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check
 // here, before the first RefreshCapabilitiesAsync, is what makes an absent daemon remove every
 // docker.* tool from what the planner sees instead of failing only once one is called. The

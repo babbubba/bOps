@@ -31,6 +31,8 @@
     <ProjectReference Include="..\..\packages\bOps.Packages.Storage.Linux\bOps.Packages.Storage.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Scheduler.Windows\bOps.Packages.Scheduler.Windows.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Scheduler.Linux\bOps.Packages.Scheduler.Linux.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Identity.Windows\bOps.Packages.Identity.Windows.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Identity.Linux\bOps.Packages.Identity.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Web\bOps.Packages.Web.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Providers.OpenRouter\bOps.Packages.Providers.OpenRouter.csproj" />
