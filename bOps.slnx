@@ -40,6 +40,7 @@
     <Project Path="src/packages/bOps.Packages.Firewall.Core/bOps.Packages.Firewall.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Firewall.Linux/bOps.Packages.Firewall.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Firewall.Windows/bOps.Packages.Firewall.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.Firewall.Windows.Helper/bOps.Packages.Firewall.Windows.Helper.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Core/bOps.Packages.Storage.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Linux/bOps.Packages.Storage.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Windows/bOps.Packages.Storage.Windows.csproj" />
