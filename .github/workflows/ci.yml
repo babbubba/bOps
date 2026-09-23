@@ -106,15 +106,17 @@ jobs:
         run: |
           $active = Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json
           $output = "quality-platform-$env:QUALITY_PLATFORM.json"
-          $arguments = @(
-            '-CollectPlatformEvidence',
-            '-Platform', $env:QUALITY_PLATFORM,
-            '-Manifest', $active.manifest,
-            '-SourceCommit', $env:QUALITY_SOURCE_COMMIT,
-            '-Output', $output
-          )
-          if ($env:QUALITY_TRUSTED_MAIN -eq '1') { $arguments += '-ApplyManifestEnvironment' }
-          & ./scripts/Test-MilestoneQuality.ps1 @arguments
+          $params = @{
+            CollectPlatformEvidence = $true
+            Platform                = $env:QUALITY_PLATFORM
+            Manifest                = $active.manifest
+            SourceCommit            = $env:QUALITY_SOURCE_COMMIT
+            Output                  = $output
+          }
+          if ($env:QUALITY_TRUSTED_MAIN -eq '1') {
+            $params.ApplyManifestEnvironment = $true
+          }
+          & ./scripts/Test-MilestoneQuality.ps1 @params
 
       - name: Upload quality platform evidence
         uses: actions/upload-artifact@v4
