@@ -6,10 +6,9 @@ namespace bOps.Packages.System.Linux.Tests;
 
 public sealed class LinuxIdentitySmokeTests
 {
-    [Fact]
+    [LinuxOnlyFact]
     public async Task LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles()
     {
-        if (!OperatingSystem.IsLinux()) return;
         var tools = new LinuxIdentityToolProvider().GetTools().ToDictionary(x => x.Manifest.Name, StringComparer.Ordinal);
         var users = await tools["identity.users"].ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["limit"] = 20 }));
         var groups = await tools["identity.groups"].ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["limit"] = 20 }));

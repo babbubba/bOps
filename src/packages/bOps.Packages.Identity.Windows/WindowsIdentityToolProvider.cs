@@ -38,8 +38,10 @@ internal static class WindowsNetApi
     [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetUserEnum(string? servername, int level, int filter, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resumeHandle);
     [DllImport("Netapi32.dll")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetApiBufferFree(IntPtr buffer);
     [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetLocalGroupEnum(string? servername, int level, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resumeHandle);
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetLocalGroupGetMembers(string? servername, string localgroupname, int level, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resumeHandle);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] private struct UserInfo1 { public IntPtr Name; public IntPtr Password; public int PasswordAge; public int Priv; public IntPtr HomeDir; public IntPtr Comment; public int Flags; public IntPtr ScriptPath; }
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] private struct GroupInfo0 { public IntPtr Name; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] private struct GroupMemberInfo0 { public IntPtr DomainAndName; }
     internal static IReadOnlyList<IdentityUser> ReadUsers()
     {
         var rows = new List<IdentityUser>(); var resume = 0;
@@ -49,8 +51,40 @@ internal static class WindowsNetApi
     internal static IReadOnlyList<IdentityGroup> ReadGroups()
     {
         var rows = new List<IdentityGroup>(); var resume = 0;
-        try { do { var rc = NetLocalGroupEnum(null, 0, out var buffer, MaxPreferred, out var read, out _, ref resume); if (rc != NerrSuccess && rc != ErrorMoreData) return rows; try { var size = Marshal.SizeOf<GroupInfo0>(); for (var i = 0; i < read; i++) { var item = Marshal.PtrToStructure<GroupInfo0>(buffer + i * size); var name = Marshal.PtrToStringUni(item.Name); if (!string.IsNullOrWhiteSpace(name)) rows.Add(new IdentityGroup(name, null, null, [], false)); } } finally { if (buffer != IntPtr.Zero) _ = NetApiBufferFree(buffer); } } while (resume != 0); } catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
+        try { do { var rc = NetLocalGroupEnum(null, 0, out var buffer, MaxPreferred, out var read, out _, ref resume); if (rc != NerrSuccess && rc != ErrorMoreData) return rows; try { var size = Marshal.SizeOf<GroupInfo0>(); for (var i = 0; i < read; i++) { var item = Marshal.PtrToStructure<GroupInfo0>(buffer + i * size); var name = Marshal.PtrToStringUni(item.Name); if (!string.IsNullOrWhiteSpace(name)) { var members = ReadMembers(name); rows.Add(new IdentityGroup(name, null, members.memberCount, members.members, members.truncated)); } } } finally { if (buffer != IntPtr.Zero) _ = NetApiBufferFree(buffer); } } while (resume != 0); } catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
         return rows;
+    }
+
+    private static (IReadOnlyList<string> members, int? memberCount, bool truncated) ReadMembers(string groupName)
+    {
+        var members = new List<string>(); var resume = 0; var total = 0; var more = false;
+        try
+        {
+            do
+            {
+                var rc = NetLocalGroupGetMembers(null, groupName, 0, out var buffer, MaxPreferred, out var read, out var totalEntries, ref resume);
+                if (rc != NerrSuccess && rc != ErrorMoreData) return ([], null, false);
+                total = Math.Max(total, totalEntries);
+                try
+                {
+                    var size = Marshal.SizeOf<GroupMemberInfo0>();
+                    for (var i = 0; i < read; i++)
+                    {
+                        if (members.Count >= 101) { more = true; break; }
+                        var item = Marshal.PtrToStructure<GroupMemberInfo0>(buffer + i * size);
+                        var value = Marshal.PtrToStringUni(item.DomainAndName);
+                        if (!string.IsNullOrWhiteSpace(value)) members.Add(value);
+                    }
+                }
+                finally { if (buffer != IntPtr.Zero) _ = NetApiBufferFree(buffer); }
+                if (members.Count >= 101) { more = true; break; }
+            } while (resume != 0);
+        }
+        catch (DllNotFoundException) { return ([], null, false); }
+        catch (EntryPointNotFoundException) { return ([], null, false); }
+        var ordered = members.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var count = total > 0 ? total : ordered.Length;
+        return (ordered.Take(100).ToArray(), count, more || count > 100);
     }
 }
 public sealed class WindowsSessionsTool() : IdentitySessionsToolBase("windows")
@@ -69,9 +103,24 @@ internal static class WindowsSessionsNative
     internal static IReadOnlyList<IdentitySession> Read()
     {
         var rows = new List<IdentitySession>();
-        try { if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var buffer, out var count)) return rows; try { var size = Marshal.SizeOf<SessionInfo>(); for (var i = 0; i < count && i < 500; i++) { var item = Marshal.PtrToStructure<SessionInfo>(buffer + i * size); var user = Query(item.SessionId, WtsInfoClass.UserName); var station = Query(item.SessionId, WtsInfoClass.WinStationName) ?? Marshal.PtrToStringUni(item.WinStationName); var remote = Query(item.SessionId, WtsInfoClass.ClientName); rows.Add(new IdentitySession(item.SessionId.ToString(CultureInfo.InvariantCulture), string.IsNullOrWhiteSpace(user) ? null : user, item.State.ToString(), null, remote is not null, remote, station, "windows.wts")); } } finally { WTSFreeMemory(buffer); } } catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
+        try { if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var buffer, out var count)) return rows; try { var size = Marshal.SizeOf<SessionInfo>(); for (var i = 0; i < count && i < 500; i++) { var item = Marshal.PtrToStructure<SessionInfo>(buffer + i * size); var user = QueryText(item.SessionId, WtsInfoClass.UserName); var station = QueryText(item.SessionId, WtsInfoClass.WinStationName) ?? Marshal.PtrToStringUni(item.WinStationName); var clientName = QueryText(item.SessionId, WtsInfoClass.ClientName); var clientAddress = QueryAddress(item.SessionId); rows.Add(new IdentitySession(item.SessionId.ToString(CultureInfo.InvariantCulture), string.IsNullOrWhiteSpace(user) ? null : user, item.State.ToString(), null, clientAddress is not null || !string.IsNullOrWhiteSpace(clientName), clientAddress, station, "windows.wts")); } } finally { WTSFreeMemory(buffer); } } catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
         return rows;
     }
-    private static string? Query(int id, WtsInfoClass info)
+    private static string? QueryText(int id, WtsInfoClass info)
     { try { if (!WTSQuerySessionInformation(IntPtr.Zero, id, info, out var buffer, out _)) return null; try { return Marshal.PtrToStringUni(buffer); } finally { WTSFreeMemory(buffer); } } catch (DllNotFoundException) { return null; } }
+    private static string? QueryAddress(int id)
+    {
+        try
+        {
+            if (!WTSQuerySessionInformation(IntPtr.Zero, id, WtsInfoClass.ClientAddress, out var buffer, out var bytes) || bytes < 6) return null;
+            try
+            {
+                var family = Marshal.ReadInt16(buffer);
+                var address = new byte[20]; Marshal.Copy(buffer + 2, address, 0, Math.Min(20, bytes - 2));
+                return family == 2 ? new System.Net.IPAddress(address.Take(4).ToArray()).ToString() : null;
+            }
+            finally { WTSFreeMemory(buffer); }
+        }
+        catch (DllNotFoundException) { return null; }
+    }
 }
