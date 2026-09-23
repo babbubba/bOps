@@ -216,6 +216,11 @@
         "resolved": "10.0.0",
         "contentHash": "qy6C3gQRTrfhFfuiIYU1jNwWfFdJpBVo1BARW7jgMm1zTEm3LRzLLyOLJGaAuKE+nZCGkEP71y4rj9NWjqLGdQ=="
       },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "PaFmFQXX/qL1vl0CfdJUMPMYT8TOEHlcdEiOZtd4LV2rcaS/WDQM4bpECcbRM4BrD+DWkWd/jtb6iPOqAX9TWA=="
+      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -274,6 +279,8 @@
           "bOps.Memory": "[1.0.0, )",
           "bOps.Packages.Docker": "[1.0.0, )",
           "bOps.Packages.Filesystem": "[1.0.0, )",
+          "bOps.Packages.Identity.Linux": "[1.0.0, )",
+          "bOps.Packages.Identity.Windows": "[1.0.0, )",
           "bOps.Packages.Network": "[1.0.0, )",
           "bOps.Packages.Network.Native.Linux": "[1.0.0, )",
           "bOps.Packages.Network.Native.Windows": "[1.0.0, )",
@@ -323,6 +330,24 @@
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "System.IO.FileSystem.AccessControl": "[5.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.identity.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.identity.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.identity.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
         }
       },
       "bops.packages.network": {
@@ -457,6 +482,7 @@
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
           "System.Management": "[10.0.0, )",
+          "System.ServiceProcess.ServiceController": "[10.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }

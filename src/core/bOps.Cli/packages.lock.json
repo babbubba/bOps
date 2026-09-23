@@ -704,6 +704,7 @@
         "dependencies": {
           "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
           "System.Management": "[10.0.0, )",
+          "System.ServiceProcess.ServiceController": "[10.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }

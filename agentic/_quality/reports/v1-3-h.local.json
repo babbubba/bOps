@@ -1,0 +1,439 @@
+{
+  "milestone": "V1.3-H",
+  "targetCommit": "169c8fc",
+  "baseReference": "169c8fc",
+  "localStatus": "PASS",
+  "qualityStatus": "VERIFIED",
+  "repositoryHealth": "HEALTHY",
+  "milestoneRegressionStatus": "PASS",
+  "infrastructureErrors": [],
+  "hardGateFailures": [],
+  "pendingEvidence": [],
+  "knownFailuresObserved": [],
+  "newFailures": [],
+  "knownFailuresUnconfirmed": [],
+  "criteria": [
+    {
+      "id": "contract-identity-current",
+      "category": "contractCoverage",
+      "requirement": "identity.current exposes bounded user, uid/SID, elevation, service-account, groups and authentication fields.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
+        "testName": "IdentityContractTests"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "contract-identity-users",
+      "category": "contractCoverage",
+      "requirement": "identity.users preserves nullable enabled and deterministic bounded rows.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
+        "testName": "Users_UnknownEnabledRemainsWhenFilteringDisabled"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "contract-identity-groups",
+      "category": "contractCoverage",
+      "requirement": "identity.groups bounds direct members and reports truncation without recursive expansion.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
+        "testName": "Groups_AreBoundedAndExplicitlyTruncated"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "contract-identity-sessions",
+      "category": "contractCoverage",
+      "requirement": "identity.sessions has bounded deterministic session rows.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.Identity.Core/IdentityResults.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "contract-system-time",
+      "category": "contractCoverage",
+      "requirement": "system.time exposes timezone-safe wall-clock and completeness fields.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.System.Core/TimeResults.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "contract-system-reboot",
+      "category": "contractCoverage",
+      "requirement": "system.reboot_pending exposes pending reasons, source and completeness.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.System.Core/TimeResults.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "bounds-and-truncation",
+      "category": "negativeBoundaryCoverage",
+      "requirement": "Identity limits and group truncation are enforced at the shared boundary.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
+        "testName": "Users_RejectsOutOfRangeLimit"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "unknown-enabled-semantics",
+      "category": "negativeBoundaryCoverage",
+      "requirement": "includeDisabled=false removes only enabled=false and retains enabled=null.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
+        "testName": "Users_UnknownEnabledRemainsWhenFilteringDisabled"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "unsupported-reboot-source",
+      "category": "negativeBoundaryCoverage",
+      "requirement": "Unsupported Linux reboot evidence is incomplete rather than false certainty.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.System.Linux/LinuxTimeTools.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "read-only-safety",
+      "category": "verificationMutationSafety",
+      "requirement": "H introduces only Read-risk diagnostic tools and no mutation or verification capability.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.Identity.Core/IdentityToolManifests.cs",
+          "src/packages/bOps.Packages.System.Core/SystemToolManifests.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "no-shadow-credentials",
+      "category": "architectureSecurity",
+      "requirement": "No shadow, password hash, credential, token, environment or AD crawl is exposed.",
+      "hardGate": true,
+      "evidence": {
+        "type": "exact automated test",
+        "testProject": "tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj",
+        "testName": "LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "core-no-os-calls",
+      "category": "architectureSecurity",
+      "requirement": "Identity.Core and System.Core contain contracts and shells only; OS calls remain platform-specific.",
+      "hardGate": true,
+      "evidence": {
+        "type": "architecture test",
+        "testProject": "tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj",
+        "testName": "NoGenericExecutionToolTests"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "fixed-process-boundaries",
+      "category": "architectureSecurity",
+      "requirement": "Linux loginctl and timedatectl use fixed executables and bounded ArgumentList calls.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.Identity.Linux/LinuxIdentityTools.cs",
+          "src/packages/bOps.Packages.System.Linux/LinuxTimeTools.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "platform-composition",
+      "category": "architectureSecurity",
+      "requirement": "CLI and API compose exactly one OS-specific identity and system provider.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "src/core/bOps.Cli/Program.cs",
+          "src/core/bOps.Api/Program.cs"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "regression-release-build",
+      "category": "regressionEvidence",
+      "requirement": "Release solution build completes without new errors or warnings.",
+      "hardGate": true,
+      "evidence": {
+        "type": "deterministic command/build",
+        "command": "dotnet build bOps.slnx --configuration Release"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "regression-full-non-live",
+      "category": "regressionEvidence",
+      "requirement": "Full non-live solution suite is executed once by the quality runner.",
+      "hardGate": true,
+      "evidence": {
+        "type": "deterministic command/build",
+        "command": "dotnet test bOps.slnx --configuration Release --no-build --filter Category!=LiveModel"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "regression-architecture-gate",
+      "category": "regressionEvidence",
+      "requirement": "Architecture gate is included in the final quality evidence.",
+      "hardGate": true,
+      "evidence": {
+        "type": "deterministic command/build",
+        "testProject": "tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj",
+        "testName": "project gate"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "identity-linux-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Linux local identity evidence is collected when the Linux target executes it.",
+      "hardGate": false,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj",
+        "testName": "bOps.Packages.System.Linux.Tests.LinuxIdentitySmokeTests.LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles",
+        "platform": "Linux"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "Passed"
+      }
+    },
+    {
+      "id": "traceability-parent-packets",
+      "category": "traceability",
+      "requirement": "Parent H and H1-H5 packet requirements are mapped to this manifest.",
+      "hardGate": false,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md",
+          "agentic/_tasks/2026-09-22-v1.3-h-execution-packets.md"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "traceability-quality-lifecycle",
+      "category": "traceability",
+      "requirement": "Local quality remains provisional when required platform evidence is unavailable.",
+      "hardGate": true,
+      "evidence": {
+        "type": "static repository assertion",
+        "files": [
+          "agentic/_quality/README.md",
+          "scripts/Test-MilestoneQuality.ps1"
+        ]
+      },
+      "status": "PASS"
+    }
+  ],
+  "requirementCoverage": {
+    "total": 20,
+    "PASS": 20,
+    "FAIL": 0,
+    "PENDING": 0,
+    "SKIP": 0
+  },
+  "categoryScores": {
+    "contractCoverage": {
+      "passed": 6,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 30.0
+    },
+    "negativeBoundaryCoverage": {
+      "passed": 3,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 20.0
+    },
+    "verificationMutationSafety": {
+      "passed": 1,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 15.0
+    },
+    "architectureSecurity": {
+      "passed": 4,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 15.0
+    },
+    "regressionEvidence": {
+      "passed": 4,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 15.0
+    },
+    "traceability": {
+      "passed": 2,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 0,
+      "score": 100.0,
+      "weight": 5.0
+    }
+  },
+  "provisionalScore": 100.0,
+  "finalQualityScore": 100.0,
+  "testExecution": {
+    "build": {
+      "completed": true,
+      "exitCode": 0,
+      "timedOut": null,
+      "command": "reused build evidence"
+    },
+    "fullSuite": {
+      "completed": true,
+      "exitCode": 0,
+      "timedOut": null,
+      "command": "reused full-suite evidence"
+    },
+    "trxFiles": [
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_05_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_05_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_07_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_07_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_08_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_08_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_09_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_18_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_19_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_23_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_30_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_30_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_32_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_39_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_41_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_43_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_47_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_48_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_52_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_52_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_54_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_55_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_57_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_59_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_05_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_05_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_08_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_11_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_58_net10.0.trx"
+    ],
+    "counts": {
+      "total": 2334,
+      "passed": 2235,
+      "failed": 0,
+      "skipped": 99
+    },
+    "evidenceDirectory": "artifacts/quality/<milestone>"
+  },
+  "platformEvidencePending": [],
+  "efficiency": {
+    "workflowMode": "autonomous-milestone",
+    "packetCount": 5,
+    "quotaWindowPercent": null,
+    "humanInterventions": null,
+    "elapsedMinutes": null,
+    "reworkCommits": null,
+    "modelProfile": "Luna Medium"
+  }
+}

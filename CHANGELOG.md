@@ -21,6 +21,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-H read-only identity, session, timezone/time-service and reboot-pending diagnostics for
+  Windows and Linux, with bounded output, nullable Linux account enablement, fixed process
+  boundaries and explicit incomplete-source semantics. Local integration is complete; platform
+  CI evidence remains pending.
+
 - V1.3-G service and scheduler diagnostics: native service configuration and dependencies,
   nullable enablement semantics, governed enable/disable with verification, Windows Task Scheduler
   support, Linux systemd timers, read-only cron inventory with deterministic observation ids,

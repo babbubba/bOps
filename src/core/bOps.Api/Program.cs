@@ -8,6 +8,8 @@ using bOps.Api;
 using bOps.Audit;
 using bOps.Memory;
 using bOps.Packages.Docker;
+using bOps.Packages.Identity.Linux;
+using bOps.Packages.Identity.Windows;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
 using bOps.Packages.Network.Native.Linux;

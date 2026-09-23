@@ -1,5 +1,6 @@
 using System.Security.Principal;
 using System.Runtime.InteropServices;
+using System.Globalization;
 using bOps.Abstractions;
 using bOps.Packages.Identity.Core;
 
@@ -54,5 +55,23 @@ internal static class WindowsNetApi
 }
 public sealed class WindowsSessionsTool() : IdentitySessionsToolBase("windows")
 {
-    protected override Task<IReadOnlyList<IdentitySession>> CollectAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IdentitySession>>([]);
+    protected override Task<IReadOnlyList<IdentitySession>> CollectAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IdentitySession>>(WindowsSessionsNative.Read());
+}
+
+internal static class WindowsSessionsNative
+{
+    private enum WtsInfoClass { InitialProgram, ApplicationName, WorkingDirectory, OemId, SessionId, UserName, WinStationName, DomainName, ConnectState, ClientName, ClientDirectory, ClientBuildNumber, ClientProductId, ClientHardwareId, ClientAddress, ClientDisplay, ClientProtocolType, IdleTime, LogonTime }
+    private enum WtsState { Active, Connected, ConnectQuery, Shadow, Disconnected, Idle, Listen, Reset, Down, Init }
+    [StructLayout(LayoutKind.Sequential)] private struct SessionInfo { public int SessionId; public IntPtr WinStationName; public WtsState State; }
+    [DllImport("wtsapi32.dll")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern bool WTSEnumerateSessions(IntPtr server, int reserved, int version, out IntPtr sessions, out int count);
+    [DllImport("wtsapi32.dll")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern bool WTSQuerySessionInformation(IntPtr server, int sessionId, WtsInfoClass infoClass, out IntPtr buffer, out int bytes);
+    [DllImport("wtsapi32.dll")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern void WTSFreeMemory(IntPtr memory);
+    internal static IReadOnlyList<IdentitySession> Read()
+    {
+        var rows = new List<IdentitySession>();
+        try { if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var buffer, out var count)) return rows; try { var size = Marshal.SizeOf<SessionInfo>(); for (var i = 0; i < count && i < 500; i++) { var item = Marshal.PtrToStructure<SessionInfo>(buffer + i * size); var user = Query(item.SessionId, WtsInfoClass.UserName); var station = Query(item.SessionId, WtsInfoClass.WinStationName) ?? Marshal.PtrToStringUni(item.WinStationName); var remote = Query(item.SessionId, WtsInfoClass.ClientName); rows.Add(new IdentitySession(item.SessionId.ToString(CultureInfo.InvariantCulture), string.IsNullOrWhiteSpace(user) ? null : user, item.State.ToString(), null, remote is not null, remote, station, "windows.wts")); } } finally { WTSFreeMemory(buffer); } } catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
+        return rows;
+    }
+    private static string? Query(int id, WtsInfoClass info)
+    { try { if (!WTSQuerySessionInformation(IntPtr.Zero, id, info, out var buffer, out _)) return null; try { return Marshal.PtrToStringUni(buffer); } finally { WTSFreeMemory(buffer); } } catch (DllNotFoundException) { return null; } }
 }
