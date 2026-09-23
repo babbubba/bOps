@@ -25,6 +25,7 @@ jobs:
       - uses: actions/dependency-review-action@v4
 
   build-and-test:
+    name: build-and-test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
