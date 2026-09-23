@@ -25,6 +25,8 @@ public sealed class NoGenericExecutionToolTests
         "powershell.invoke", "powershell.run", "cmd.run", "bash.run",
         "process.start", "process.exec", "process.run", "process.launch", "process.spawn",
         "process.env", "process.environ", "process.environment",
+        "firewall.add", "firewall.remove", "firewall.delete", "firewall.modify", "firewall.change",
+        "firewall.enable", "firewall.disable", "firewall.apply", "firewall.evaluate", "firewall.raw",
     ];
 
     /// <summary>
@@ -46,6 +48,13 @@ public sealed class NoGenericExecutionToolTests
         Assert.True(
             offending.Count == 0,
             "agentic/03-security-rules.md S1 — there is no generic execution tool and no process.start:\n" + string.Join('\n', offending));
+    }
+
+    [Fact]
+    public void NoSourceFile_IntroducesFirewallMutationOrRawEvaluation()
+    {
+        var offending = Scan(ForbiddenToolNames.Where(name => name.StartsWith("firewall.", StringComparison.Ordinal)).ToArray(), quoted: true).ToList();
+        Assert.True(offending.Count == 0, "V1.3-I is read-only firewall diagnostics:\n" + string.Join('\n', offending));
     }
 
     [Fact]

@@ -24,6 +24,8 @@
     <ProjectReference Include="..\..\packages\bOps.Packages.Network\bOps.Packages.Network.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Network.Native.Windows\bOps.Packages.Network.Native.Windows.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Network.Native.Linux\bOps.Packages.Network.Native.Linux.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Firewall.Windows\bOps.Packages.Firewall.Windows.csproj" />
+    <ProjectReference Include="..\..\packages\bOps.Packages.Firewall.Linux\bOps.Packages.Firewall.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Storage.Windows\bOps.Packages.Storage.Windows.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Storage.Linux\bOps.Packages.Storage.Linux.csproj" />
     <ProjectReference Include="..\..\packages\bOps.Packages.Service.Windows\bOps.Packages.Service.Windows.csproj" />

@@ -9,6 +9,8 @@ using bOps.Packages.Docker;
 using bOps.Packages.Identity.Linux;
 using bOps.Packages.Identity.Windows;
 using bOps.Packages.Filesystem;
+using bOps.Packages.Firewall.Linux;
+using bOps.Packages.Firewall.Windows;
 using bOps.Packages.Network;
 using bOps.Packages.Network.Native.Linux;
 using bOps.Packages.Network.Native.Windows;
@@ -205,6 +207,14 @@ var networkNativePackageId = new PackageId($"bops.packages.network.native.{Curre
 foreach (var tool in networkNativeToolProvider.GetTools())
 {
     toolRegistry.Register(networkNativePackageId, tool);
+}
+
+IToolProvider firewallToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsFirewallToolProvider()
+    : new LinuxFirewallToolProvider();
+foreach (var tool in firewallToolProvider.GetTools())
+{
+    toolRegistry.Register(new PackageId($"bops.packages.firewall.{CurrentPlatform.Id}"), tool);
 }
 
 // V1.3-E: storage topology, filesystem capacity/inodes, sampled I/O and bounded health evidence

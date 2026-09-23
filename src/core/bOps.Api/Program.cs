@@ -14,6 +14,8 @@ using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
 using bOps.Packages.Network.Native.Linux;
 using bOps.Packages.Network.Native.Windows;
+using bOps.Packages.Firewall.Linux;
+using bOps.Packages.Firewall.Windows;
 using bOps.Packages.Providers.Anthropic;
 using bOps.Packages.Providers.DeepSeek;
 using bOps.Packages.Providers.LlamaCpp;
@@ -313,6 +315,14 @@ var networkNativePackageId = new PackageId($"bops.packages.network.native.{Curre
 foreach (var tool in networkNativeToolProvider.GetTools())
 {
     toolRegistry.Register(networkNativePackageId, tool);
+}
+
+IToolProvider firewallToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsFirewallToolProvider()
+    : new LinuxFirewallToolProvider();
+foreach (var tool in firewallToolProvider.GetTools())
+{
+    toolRegistry.Register(new PackageId($"bops.packages.firewall.{CurrentPlatform.Id}"), tool);
 }
 
 // V1.3-E: register exactly one OS-specific storage evidence package.
