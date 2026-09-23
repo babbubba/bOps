@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -13,7 +12,6 @@ namespace bOps.Packages.Sys.Linux;
 /// <summary>Reads pending update evidence through the distro's fixed, read-only package-manager query.</summary>
 public sealed class LinuxUpdatesTool : SystemUpdatesToolBase
 {
-    private const int MaxOutput = 1_048_576;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
     public LinuxUpdatesTool() : base("linux") { }
@@ -31,26 +29,18 @@ public sealed class LinuxUpdatesTool : SystemUpdatesToolBase
         };
         try
         {
-            using var p = new Process { StartInfo = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 } };
-            foreach (var a in args) p.StartInfo.ArgumentList.Add(a);
-            p.StartInfo.Environment.Clear(); p.StartInfo.Environment["PATH"] = "/usr/sbin:/usr/bin:/sbin:/bin"; p.StartInfo.Environment["LC_ALL"] = "C"; p.StartInfo.Environment["LANG"] = "C"; p.StartInfo.Environment["HOME"] = "/";
-            if (!p.Start()) return Snapshot([], InventorySourceStatus.Unavailable, source + ".unavailable", "Expected package manager could not be started.");
-            p.StandardInput.Close();
-            using var timeout = new CancellationTokenSource(Timeout);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
-            var stdout = ReadBounded(p.StandardOutput, MaxOutput, linked.Token);
-            var stderr = ReadBounded(p.StandardError, 16_384, linked.Token);
-            try { await p.WaitForExitAsync(linked.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch (InvalidOperationException) { } await p.WaitForExitAsync(CancellationToken.None); if (ct.IsCancellationRequested) throw; return Snapshot([], InventorySourceStatus.Partial, source + ".timeout", "Package-manager query timed out; process tree was terminated."); }
-            var output = await stdout; var error = await stderr;
+            var result = await LinuxUpdatesProcessRunner.RunAsync(exe, args, Timeout, ct, psi =>
+            {
+                psi.Environment.Clear(); psi.Environment["PATH"] = "/usr/sbin:/usr/bin:/sbin:/bin"; psi.Environment["LC_ALL"] = "C"; psi.Environment["LANG"] = "C"; psi.Environment["HOME"] = "/";
+            });
+            if (!result.Started) return Snapshot([], InventorySourceStatus.Unavailable, source + ".unavailable", "Expected package manager could not be started.");
+            if (result.TimedOut) return CreateProcessFailureSnapshot(source);
+            var output = result.StandardOutput; var error = result.StandardError;
             if (output is null || error is null) return Snapshot([], InventorySourceStatus.Partial, source + ".oversized", "Package-manager output exceeded the bounded capture size.");
-            var parsed = LinuxUpdateParser.Parse(distro, output, p.ExitCode);
+            var parsed = LinuxUpdateParser.Parse(distro, output, result.ExitCode!.Value);
             if (!parsed.Valid) return Snapshot([], InventorySourceStatus.Partial, source + ".malformed", "Package-manager output was malformed or incomplete.");
-            var warnings = new List<string> { "Local package metadata age is unknown; no reliable catalog timestamp is exposed by this query." };
-            if (parsed.KeptBack) warnings.Add("Some packages are held back and are not reported as normally applicable updates.");
-            if (!string.IsNullOrWhiteSpace(error)) warnings.Add("Package manager emitted diagnostics on stderr.");
             var rows = parsed.Items.Where(x => arguments.Kind == "all" || x.Kind == arguments.Kind).OrderBy(x => x.Name, StringComparer.Ordinal).ThenBy(x => x.Id, StringComparer.Ordinal).Take(arguments.Limit).ToArray();
-            return new(rows, [new(source, InventorySourceStatus.Available)], warnings, parsed.Items.Count > arguments.Limit, null);
+            return CreateSnapshot(rows, source, parsed.KeptBack, !string.IsNullOrWhiteSpace(error), parsed.Items.Count > arguments.Limit);
         }
         catch (Exception ex) when (ex is Win32Exception or FileNotFoundException or InvalidOperationException)
         {
@@ -58,7 +48,18 @@ public sealed class LinuxUpdatesTool : SystemUpdatesToolBase
         }
     }
 
-    private static async Task<string?> ReadBounded(StreamReader reader, int max, CancellationToken ct)
+    internal static MaintenanceSnapshot<UpdateRecord> CreateSnapshot(IReadOnlyList<UpdateRecord> rows, string source, bool keptBack = false, bool hasDiagnostics = false, bool truncated = false)
+    {
+        var warnings = new List<string> { "Local package metadata age is unknown; no reliable catalog timestamp is exposed by this query." };
+        if (keptBack) warnings.Add("Some packages are held back and are not reported as normally applicable updates.");
+        if (hasDiagnostics) warnings.Add("Package manager emitted diagnostics on stderr.");
+        return new(rows, [new(source, InventorySourceStatus.Available)], warnings, truncated, null);
+    }
+
+    internal static MaintenanceSnapshot<UpdateRecord> CreateProcessFailureSnapshot(string source) =>
+        Snapshot([], InventorySourceStatus.Partial, source + ".timeout", "Package-manager query timed out; process tree was terminated.");
+
+    internal static async Task<string?> ReadBounded(StreamReader reader, int max, CancellationToken ct)
     {
         var b = new StringBuilder(); var buf = new char[4096];
         while (true) { var n = await reader.ReadAsync(buf.AsMemory(), ct); if (n == 0) return b.ToString(); if (b.Length + n > max) return null; b.Append(buf, 0, n); }

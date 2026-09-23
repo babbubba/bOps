@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Linux\bOps.Packages.System.Linux.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Identity.Linux\bOps.Packages.Identity.Linux.csproj" />
     <ProjectReference Include="..\bOps.Packages.System.Conformance\bOps.Packages.System.Conformance.csproj" />
+    <ProjectReference Include="..\bOps.Packages.System.Linux.TestChild\bOps.Packages.System.Linux.TestChild.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>
