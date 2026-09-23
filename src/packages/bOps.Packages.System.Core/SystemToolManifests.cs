@@ -13,6 +13,8 @@ namespace bOps.Packages.Sys.Core;
 /// </summary>
 public static class SystemToolManifests
 {
+    public static ToolManifest Time(string platform) => new() { Name = "system.time", Description = "Reports bounded wall-clock, timezone and time-service evidence.", Risk = RiskLevel.Read, Platforms = [platform], Requires = [], Parameters = [] };
+    public static ToolManifest RebootPending(string platform) => new() { Name = "system.reboot_pending", Description = "Reports whether supported operating-system reboot markers are pending.", Risk = RiskLevel.Read, Platforms = [platform], Requires = [], Parameters = [] };
     /// <summary>The manifest for <c>system.info</c> on the given platform.</summary>
     public static ToolManifest Info(string platform) => new()
     {
