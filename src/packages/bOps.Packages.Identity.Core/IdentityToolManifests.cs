@@ -7,7 +7,7 @@ public static class IdentityToolManifests
     public static ToolManifest Current(string platform) => new()
     {
         Name = "identity.current", Description = "Reports the effective local identity without tokens, privileges, environment or credentials.", Risk = RiskLevel.Read,
-        Platforms = [platform], Requires = [], Parameters = []
+        Platforms = [platform], Requires = [], Parameters = [new ToolParameter("limit", ToolParameterType.Integer, "Maximum supplementary groups, 1-500, default 100.", false)]
     };
     public static ToolManifest Users(string platform) => new()
     {

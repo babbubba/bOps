@@ -36,3 +36,6 @@ manual PR creation.
 
 The committed report is intentionally deterministic: no machine name, username, absolute path,
 random identifier, or scoring timestamp is used.
+
+Repository source checks used as traceability evidence are static assertions only. They confirm that
+expected source patterns are present; they do not establish runtime behavior or semantic correctness.

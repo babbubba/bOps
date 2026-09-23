@@ -4,41 +4,31 @@
   "baseReference": "169c8fc1471eb29a71ba2b9a16d28c855eccc247",
   "localStatus": "PASS",
   "qualityStatus": "PROVISIONAL",
-  "repositoryHealth": "DEGRADED_KNOWN_FAILURES",
+  "repositoryHealth": "HEALTHY",
   "milestoneRegressionStatus": "PASS",
   "infrastructureErrors": [],
   "hardGateFailures": [],
   "pendingEvidence": [
+    "contract-identity-users",
+    "contract-identity-groups",
+    "bounds-and-truncation",
+    "unknown-enabled-semantics",
+    "core-no-os-calls",
     "identity-linux-platform-evidence"
   ],
-  "knownFailuresObserved": [
-    {
-      "test": "bOps.Packages.Filesystem.Tests.FsDeleteTreeTests.PrepareAndPage_TenThousandFiles_WithoutReturningOneUnboundedList",
-      "classification": "KNOWN_FAILURE_CONFIRMED",
-      "sourceEvidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
-      "fullSuiteResult": "Failed",
-      "isolatedVerificationResult": "PASS"
-    },
-    {
-      "test": "bOps.Packages.Filesystem.Tests.FsSizeTests.FsSize_StreamsTenThousandFiles_WithBoundedResponse",
-      "classification": "KNOWN_FAILURE_CONFIRMED",
-      "sourceEvidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
-      "fullSuiteResult": "Failed",
-      "isolatedVerificationResult": "PASS"
-    }
-  ],
+  "knownFailuresObserved": [],
   "newFailures": [],
   "knownFailuresUnconfirmed": [],
   "criteria": [
     {
       "id": "contract-identity-current",
       "category": "contractCoverage",
-      "requirement": "identity.current exposes bounded user, uid/SID, elevation, service-account, groups and authentication fields.",
+      "requirement": "identity.current enforces the 100 default and 500 hard group limits.",
       "hardGate": true,
       "evidence": {
         "type": "exact automated test",
         "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
-        "testName": "IdentityContractTests"
+        "testName": "bOps.Packages.Identity.Core.Tests.IdentityContractTests.Current_DefaultGroupsLimitIs100And500IsAccepted"
       },
       "status": "PASS",
       "result": {
@@ -58,12 +48,12 @@
         "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
         "testName": "Users_UnknownEnabledRemainsWhenFilteringDisabled"
       },
-      "status": "PASS",
+      "status": "PENDING",
       "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
+        "exists": false,
+        "ran": false,
+        "passed": false,
+        "outcome": "NOT_FOUND"
       }
     },
     {
@@ -76,12 +66,12 @@
         "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
         "testName": "Groups_AreBoundedAndExplicitlyTruncated"
       },
-      "status": "PASS",
+      "status": "PENDING",
       "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
+        "exists": false,
+        "ran": false,
+        "passed": false,
+        "outcome": "NOT_FOUND"
       }
     },
     {
@@ -133,12 +123,12 @@
         "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
         "testName": "Users_RejectsOutOfRangeLimit"
       },
-      "status": "PASS",
+      "status": "PENDING",
       "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
+        "exists": false,
+        "ran": false,
+        "passed": false,
+        "outcome": "NOT_FOUND"
       }
     },
     {
@@ -151,12 +141,12 @@
         "testProject": "tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj",
         "testName": "Users_UnknownEnabledRemainsWhenFilteringDisabled"
       },
-      "status": "PASS",
+      "status": "PENDING",
       "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
+        "exists": false,
+        "ran": false,
+        "passed": false,
+        "outcome": "NOT_FOUND"
       }
     },
     {
@@ -211,12 +201,12 @@
         "testProject": "tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj",
         "testName": "NoGenericExecutionToolTests"
       },
-      "status": "PASS",
+      "status": "PENDING",
       "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
+        "exists": false,
+        "ran": false,
+        "passed": false,
+        "outcome": "NOT_FOUND"
       }
     },
     {
@@ -426,24 +416,24 @@
   ],
   "requirementCoverage": {
     "total": 25,
-    "PASS": 24,
+    "PASS": 19,
     "FAIL": 0,
-    "PENDING": 1,
+    "PENDING": 6,
     "SKIP": 0
   },
   "categoryScores": {
     "contractCoverage": {
-      "passed": 6,
+      "passed": 4,
       "failed": 0,
-      "pending": 0,
+      "pending": 2,
       "skipped": 0,
       "score": 100.0,
       "weight": 30.0
     },
     "negativeBoundaryCoverage": {
-      "passed": 3,
+      "passed": 1,
       "failed": 0,
-      "pending": 0,
+      "pending": 2,
       "skipped": 0,
       "score": 100.0,
       "weight": 20.0
@@ -457,9 +447,9 @@
       "weight": 15.0
     },
     "architectureSecurity": {
-      "passed": 4,
+      "passed": 3,
       "failed": 0,
-      "pending": 0,
+      "pending": 1,
       "skipped": 0,
       "score": 100.0,
       "weight": 15.0
@@ -492,47 +482,47 @@
     },
     "fullSuite": {
       "completed": true,
-      "exitCode": 1,
+      "exitCode": 0,
       "timedOut": null,
       "command": "reused full-suite evidence"
     },
     "trxFiles": [
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_35_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0[2].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_39_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_40_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_42_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_50_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_59_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_59_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_04_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_04_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_15_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_17_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_29_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_31_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_32_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_42_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_43_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_43_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_44_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_47_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_55_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_55_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_56_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_09_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_10_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_14_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_26_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_27_18_net10.0.trx"
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_49_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_49_net10.0[1].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_49_net10.0[2].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_49_net10.0[3].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_51_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_51_net10.0[1].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_58_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_40_58_net10.0[1].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_02_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_03_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_07_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_07_net10.0[1].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_12_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_14_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_21_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_22_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_24_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_28_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_29_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_34_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_36_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_37_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_37_net10.0[1].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_37_net10.0[2].trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_44_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_45_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_46_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_41_53_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_42_00_net10.0.trx",
+      "artifacts/quality/v1-3-h-hardening/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_11_42_45_net10.0.trx"
     ],
     "counts": {
-      "total": 2341,
-      "passed": 2239,
-      "failed": 2,
-      "skipped": 100
+      "total": 2394,
+      "passed": 2292,
+      "failed": 0,
+      "skipped": 102
     },
     "evidenceDirectory": "artifacts/quality/<milestone>"
   },
