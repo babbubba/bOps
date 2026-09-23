@@ -6,6 +6,8 @@ namespace bOps.Packages.System.Linux.Tests;
 
 public sealed class LinuxIdentitySmokeTests
 {
+    private static readonly char[] UidSeparators = [' ', '\t', ':'];
+
     [LinuxOnlyFact]
     public async Task LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles()
     {
@@ -22,5 +24,5 @@ public sealed class LinuxIdentitySmokeTests
     }
     [LinuxOnlyFact]
     public async Task CurrentUsesEffectiveUidAndPosixSupplementaryGroups()
-    { var result = await new LinuxCurrentIdentityTool().ExecuteAsync(ToolArguments.Empty); Assert.True(result.Succeeded); var json = JsonNode.Parse(result.Output!)!; var status = await File.ReadAllTextAsync("/proc/self/status"); var euid = uint.Parse(status.Split('\n').Single(x => x.StartsWith("Uid:", StringComparison.Ordinal)).Split(' ', StringSplitOptions.RemoveEmptyEntries)[2]); Assert.Equal(euid == 0, json["elevated"]!.GetValue<bool>()); Assert.InRange(json["groups"]!.AsArray().Count, 0, 100); Assert.Null(json["serviceAccount"]); }
+    { var result = await new LinuxCurrentIdentityTool().ExecuteAsync(ToolArguments.Empty); Assert.True(result.Succeeded); var json = JsonNode.Parse(result.Output!)!; var status = await File.ReadAllTextAsync("/proc/self/status"); var euid = uint.Parse(status.Split('\n').Single(x => x.StartsWith("Uid:", StringComparison.Ordinal)).Split(UidSeparators, StringSplitOptions.RemoveEmptyEntries)[2]); Assert.Equal(euid == 0, json["elevated"]!.GetValue<bool>()); Assert.InRange(json["groups"]!.AsArray().Count, 0, 100); Assert.Null(json["serviceAccount"]); }
 }
