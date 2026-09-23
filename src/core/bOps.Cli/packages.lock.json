@@ -664,6 +664,12 @@
           "bOps.Packages.Scheduler.Core": "[1.0.0, )"
         }
       },
+      "bops.packages.security": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
       "bops.packages.service.core": {
         "type": "Project",
         "dependencies": {

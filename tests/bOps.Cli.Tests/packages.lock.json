@@ -579,6 +579,7 @@
           "bOps.Packages.Providers.OpenRouter": "[1.0.0, )",
           "bOps.Packages.Scheduler.Linux": "[1.0.0, )",
           "bOps.Packages.Scheduler.Windows": "[1.0.0, )",
+          "bOps.Packages.Security": "[1.0.0, )",
           "bOps.Packages.Service.Linux": "[1.0.0, )",
           "bOps.Packages.Service.Windows": "[1.0.0, )",
           "bOps.Packages.Storage.Linux": "[1.0.0, )",
@@ -760,6 +761,12 @@
           "System.Diagnostics.EventLog": "[10.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.Scheduler.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.security": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
         }
       },
       "bops.packages.service.core": {

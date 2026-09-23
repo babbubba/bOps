@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Security</RootNamespace>
+    <AssemblyName>bOps.Packages.Security</AssemblyName>
+    <Description>Read-only TLS and certificate-store diagnostics using only the .NET BCL.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
