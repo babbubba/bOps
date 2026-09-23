@@ -35,11 +35,11 @@ public sealed class WindowsGroupsTool() : IdentityGroupsToolBase("windows")
 internal static class WindowsNetApi
 {
     private const int NerrSuccess = 0; private const int ErrorMoreData = 234; private const int PageBytes = 16_384; internal const int MembersInfoLevel = 3;
-    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetUserEnum(string? servername, int level, int filter, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resumeHandle);
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetUserEnum(string? servername, int level, int filter, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref UIntPtr resumeHandle);
     [DllImport("Netapi32.dll")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetApiBufferFree(IntPtr buffer);
-    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetLocalGroupEnum(string? servername, int level, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resumeHandle);
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetLocalGroupEnum(string? servername, int level, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref UIntPtr resumeHandle);
     [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int NetLocalGroupGetMembers(string? servername, string localgroupname, int level, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref UIntPtr resumeHandle);
-    [StructLayout(LayoutKind.Sequential)] internal struct DomainRoleInfo { public int MachineRole; public int Flags; public IntPtr DomainNameFlat; public IntPtr DomainNameDns; public IntPtr DomainForest; public Guid DomainGuid; public IntPtr DomainSid; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] internal struct DomainRoleInfo { public int MachineRole; public int Flags; public IntPtr DomainNameFlat; public IntPtr DomainNameDns; public IntPtr DomainForest; public Guid DomainGuid; }
     [DllImport("Netapi32.dll", CharSet = CharSet.Unicode, EntryPoint = "DsRoleGetPrimaryDomainInformation")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern int DsRoleGetPrimaryDomainInformation(string? server, int level, out IntPtr buffer);
     [DllImport("Netapi32.dll", EntryPoint = "DsRoleFreeMemory")][DefaultDllImportSearchPaths(DllImportSearchPath.System32)] private static extern void DsRoleFreeMemory(IntPtr buffer);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] private struct UserInfo1 { public IntPtr Name; public IntPtr Password; public int PasswordAge; public int Priv; public IntPtr HomeDir; public IntPtr Comment; public int Flags; public IntPtr ScriptPath; }
@@ -57,7 +57,7 @@ internal static class WindowsNetApi
     internal static IdentityObservation<T> ReadUsersForRole<T>(bool isDomainController, Func<IdentityObservation<T>> enumerate) => isDomainController ? new([], false, "windows.domain-controller.unsupported") : enumerate();
     private static IdentityObservation<IdentityUser> ReadUsersMemberServer()
     {
-        var rows = new List<IdentityUser>(); var resume = 0; var complete = true;
+        var rows = new List<IdentityUser>(); var resume = UIntPtr.Zero; var complete = true;
         try
         {
             do
@@ -70,8 +70,8 @@ internal static class WindowsNetApi
                     for (var i = 0; i < read; i++) { var item = Marshal.PtrToStructure<UserInfo1>(buffer + i * size); var name = Marshal.PtrToStringUni(item.Name); if (!string.IsNullOrWhiteSpace(name)) rows.Add(new IdentityUser(name, null, (item.Flags & 2) != 0 ? false : true, true, Marshal.PtrToStringUni(item.HomeDir), Marshal.PtrToStringUni(item.ScriptPath), null, "windows.netapi32")); }
                 }
                 finally { if (buffer != IntPtr.Zero) _ = NetApiBufferFree(buffer); }
-            } while (resume != 0 && rows.Count < 2000);
-            if (resume != 0) complete = false;
+            } while (resume != UIntPtr.Zero && rows.Count < 2000);
+            if (resume != UIntPtr.Zero) complete = false;
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { return new(rows, false, "windows.netapi32.unavailable"); }
         if (rows.Count > 2000) { rows.RemoveRange(2000, rows.Count - 2000); complete = false; }
@@ -86,7 +86,7 @@ internal static class WindowsNetApi
     internal static IdentityObservation<T> ReadGroupsForRole<T>(bool isDomainController, Func<IdentityObservation<T>> enumerate) => isDomainController ? new([], false, "windows.domain-controller.unsupported") : enumerate();
     private static IdentityObservation<IdentityGroup> ReadGroupsMemberServer()
     {
-        var rows = new List<IdentityGroup>(); var resume = 0; var complete = true;
+        var rows = new List<IdentityGroup>(); var resume = UIntPtr.Zero; var complete = true;
         try
         {
             do
@@ -99,8 +99,8 @@ internal static class WindowsNetApi
                     for (var i = 0; i < read; i++) { var item = Marshal.PtrToStructure<GroupInfo0>(buffer + i * size); var name = Marshal.PtrToStringUni(item.Name); if (!string.IsNullOrWhiteSpace(name)) { var members = ReadMembers(name); rows.Add(new IdentityGroup(name, null, members.memberCount, members.members, members.truncated)); } }
                 }
                 finally { if (buffer != IntPtr.Zero) _ = NetApiBufferFree(buffer); }
-            } while (resume != 0 && rows.Count < 2000);
-            if (resume != 0) complete = false;
+            } while (resume != UIntPtr.Zero && rows.Count < 2000);
+            if (resume != UIntPtr.Zero) complete = false;
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { return new(rows, false, "windows.netapi32.unavailable"); }
         if (rows.Any(x => x.MemberCount is null)) complete = false;

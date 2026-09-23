@@ -25,21 +25,44 @@ public sealed class WindowsRebootPendingTool() : RebootPendingToolBase("windows"
     internal const string ComputerNameKey = @"SYSTEM\CurrentControlSet\Control\ComputerName";
     internal const string NetlogonParametersKey = @"SYSTEM\CurrentControlSet\Services\Netlogon\Parameters";
     protected override Task<RebootPendingResult> CollectAsync(CancellationToken ct)
+        => Task.FromResult(WindowsRebootDetector.Observe(new WindowsRegistryReader()));
+}
+
+internal sealed record WindowsRegistryString(bool? Readable, string? Value);
+
+internal interface IWindowsRegistryReader
+{
+    bool? HasSubKey(string path);
+    bool? HasMultiString(string path, string name);
+    WindowsRegistryString ReadString(string path, string name);
+}
+
+internal sealed class WindowsRegistryReader : IWindowsRegistryReader
+{
+    public bool? HasSubKey(string path) { try { using var key = Registry.LocalMachine.OpenSubKey(path); return key is not null; } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
+    public bool? HasMultiString(string path, string name) { try { using var key = Registry.LocalMachine.OpenSubKey(path); if (key is null) return null; return key.GetValue(name) switch { null => false, string[] values => values.Length > 0, _ => null }; } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
+    public WindowsRegistryString ReadString(string path, string name) { try { using var key = Registry.LocalMachine.OpenSubKey(path); return key is null ? new(false, null) : new(true, key.GetValue(name) as string); } catch (System.Security.SecurityException) { return new(null, null); } catch (UnauthorizedAccessException) { return new(null, null); } }
+}
+
+internal static class WindowsRebootDetector
+{
+    internal static RebootPendingResult Observe(IWindowsRegistryReader registry)
     {
+        ArgumentNullException.ThrowIfNull(registry);
+        var active = registry.ReadString(WindowsRebootPendingTool.ComputerNameKey + @"\ActiveComputerName", "ComputerName");
+        var pending = registry.ReadString(WindowsRebootPendingTool.ComputerNameKey + @"\ComputerName", "ComputerName");
+        var computerRename = active is { Readable: true, Value: not null } && pending is { Readable: true, Value: not null } ? !string.Equals(active.Value, pending.Value, StringComparison.OrdinalIgnoreCase) : (bool?)null;
+        var joinDomain = registry.ReadString(WindowsRebootPendingTool.NetlogonParametersKey, "JoinDomain");
         var evidence = new Dictionary<string, bool?>
         {
-            ["windows.cbs"] = ReadSubKey(CbsKey),
-            ["windows.update"] = ReadSubKey(WindowsUpdateKey),
-            ["windows.pending-file-rename"] = ReadMultiString(PendingFileRenameKey, "PendingFileRenameOperations"),
-            ["windows.pending-computer-rename"] = ReadComputerRename(),
-            ["windows.pending-domain-change"] = ReadJoinDomain()
+            ["windows.cbs"] = registry.HasSubKey(WindowsRebootPendingTool.CbsKey),
+            ["windows.update"] = registry.HasSubKey(WindowsRebootPendingTool.WindowsUpdateKey),
+            ["windows.pending-file-rename"] = registry.HasMultiString(WindowsRebootPendingTool.PendingFileRenameKey, "PendingFileRenameOperations"),
+            ["windows.pending-computer-rename"] = computerRename,
+            ["windows.pending-domain-change"] = joinDomain.Readable == true ? !string.IsNullOrWhiteSpace(joinDomain.Value) : null
         };
-        return Task.FromResult(WindowsRebootEvidence.Combine(evidence));
+        return WindowsRebootEvidence.Combine(evidence);
     }
-    private static bool? ReadSubKey(string path) { try { using var key = Registry.LocalMachine.OpenSubKey(path); return key is not null; } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
-    private static bool? ReadMultiString(string path, string name) { try { using var key = Registry.LocalMachine.OpenSubKey(path); if (key is null) return null; return key.GetValue(name) switch { null => false, string[] values => values.Length > 0, _ => null }; } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
-    private static bool? ReadComputerRename() { try { using var key = Registry.LocalMachine.OpenSubKey(ComputerNameKey); using var active = key?.OpenSubKey("ActiveComputerName"); using var pending = key?.OpenSubKey("ComputerName"); if (active?.GetValue("ComputerName") is not string activeName || pending?.GetValue("ComputerName") is not string pendingName) return null; return !string.Equals(activeName, pendingName, StringComparison.OrdinalIgnoreCase); } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
-    private static bool? ReadJoinDomain() { try { using var key = Registry.LocalMachine.OpenSubKey(NetlogonParametersKey); if (key is null) return null; return key.GetValue("JoinDomain") is string value && !string.IsNullOrWhiteSpace(value); } catch (System.Security.SecurityException) { return null; } catch (UnauthorizedAccessException) { return null; } }
 }
 
 internal static class WindowsRebootEvidence

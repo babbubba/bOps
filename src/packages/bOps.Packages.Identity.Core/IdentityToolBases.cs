@@ -56,7 +56,7 @@ public abstract class IdentityGroupsToolBase(string platform) : ITool
         var limit = arguments.TryGet<int>("limit", out var requested) ? requested : 200;
         if (limit is < 1 or > 2000) return ToolCallResult.Failure("limit must be between 1 and 2000.");
         var collection = await CollectObservationAsync(ct);
-        var rows = collection.Rows.Select(x => x with { Members = x.Members.Take(100).ToArray(), MembersTruncated = x.MembersTruncated || x.Members.Count > 100, MemberCount = x.MemberCount ?? x.Members.Count }).OrderBy(x => x.Name, StringComparer.Ordinal).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
+        var rows = collection.Rows.Select(x => x with { Members = x.Members.Take(100).ToArray(), MembersTruncated = x.MembersTruncated || x.Members.Count > 100 }).OrderBy(x => x.Name, StringComparer.Ordinal).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
         return ToolCallResult.Success(JsonSerializer.Serialize(new { groups = rows.Take(limit), observedCount = rows.Length, truncated = rows.Length > limit, complete = collection.Complete, source = collection.Source }, IdentityJson.Options));
     }
 }
