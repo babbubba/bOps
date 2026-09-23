@@ -11,8 +11,8 @@ public sealed class LinuxUpdatesExecutionGuardTests
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "bOps.slnx"))) root = root.Parent;
         Assert.NotNull(root);
-        var file = Path.Combine(root!.FullName, "src", "packages", "bOps.Packages.System.Linux", "LinuxUpdatesTool.cs");
-        var source = File.ReadAllText(file);
+        var directory = Path.Combine(root!.FullName, "src", "packages", "bOps.Packages.System.Linux");
+        var source = string.Join('\n', File.ReadAllText(Path.Combine(directory, "LinuxUpdatesTool.cs")), File.ReadAllText(Path.Combine(directory, "LinuxUpdatesProcessRunner.cs")), File.ReadAllText(Path.Combine(directory, "LinuxUpdateHistoryTool.cs")));
         Assert.Contains("UseShellExecute = false", source, StringComparison.Ordinal);
         Assert.Contains("ArgumentList.Add", source, StringComparison.Ordinal);
         Assert.Contains("\"--just-print\", \"upgrade\"", source, StringComparison.Ordinal);
@@ -22,5 +22,6 @@ public sealed class LinuxUpdatesExecutionGuardTests
             Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("new ProcessStartInfo(arguments", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ArgumentList.Add(arguments", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProcessStartInfo", File.ReadAllText(Path.Combine(directory, "LinuxUpdateHistoryTool.cs")), StringComparison.Ordinal);
     }
 }

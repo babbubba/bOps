@@ -122,6 +122,15 @@ public sealed class LinuxUpdatesTests
         Assert.Contains("timeout", json["sources"]![0]!["detail"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void LocalHistoryParsers_PreserveUnknownAndRejectIncompleteTransactions()
+    {
+        var apt = LinuxUpdateHistoryParser.Parse("debian", "Start-Date: 2026-09-23 10:00:00\nUpgrade: demo (1.0, 2.0)\nEnd-Date: 2026-09-23 10:01:00\n", "linux.apt-history");
+        Assert.True(apt.Valid); Assert.Single(apt.Items); Assert.Equal("unknown", apt.Items[0].Result); Assert.Equal("2.0", apt.Items[0].Version);
+        Assert.False(LinuxUpdateHistoryParser.Parse("debian", "Start-Date: 2026-09-23 10:00:00\nUpgrade: demo (1.0, 2.0)\n", "linux.apt-history").Valid);
+        Assert.False(LinuxUpdateHistoryParser.Parse("zypper", "malformed", "linux.zypper-history").Valid);
+    }
+
     private static string DotNetHostPath => Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
 
     private static bool IsRunning(int processId)

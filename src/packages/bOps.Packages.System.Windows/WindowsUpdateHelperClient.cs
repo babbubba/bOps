@@ -10,7 +10,7 @@ using bOps.Packages.Sys.Core;
 namespace bOps.Packages.Sys.Windows;
 
 /// <summary>Runs the fixed WUA read in a child process because WUA search has no reliable cancellation boundary.</summary>
-internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector
+internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector, IWindowsUpdateHistoryCollector
 {
     internal const string HelperFileName = "bOps.Packages.System.Windows.Updates.Helper.exe";
     internal const int TimeoutSeconds = 20;
@@ -21,10 +21,18 @@ internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector
     internal static string HelperPath => Path.Combine(AppContext.BaseDirectory, HelperFileName);
 
     public async Task<MaintenanceSnapshot<UpdateRecord>> CollectAsync(string kind, int limit, CancellationToken ct)
+        => await RunAsync("pending-updates", [kind, limit.ToString(System.Globalization.CultureInfo.InvariantCulture)], ct).ConfigureAwait(false) is var response
+        && response is MaintenanceSnapshot<UpdateRecord> updates ? updates : Failure("windows-update-agent.helper-invalid-response");
+
+    public async Task<MaintenanceSnapshot<UpdateHistoryRecord>> CollectHistoryAsync(int sinceDays, int limit, CancellationToken ct)
+        => await RunAsync("update-history", [sinceDays.ToString(System.Globalization.CultureInfo.InvariantCulture), limit.ToString(System.Globalization.CultureInfo.InvariantCulture)], ct).ConfigureAwait(false) is var response
+        && response is MaintenanceSnapshot<UpdateHistoryRecord> history ? history : HistoryFailure("windows-update-agent.helper-invalid-response");
+
+    private static async Task<object?> RunAsync(string operation, IReadOnlyList<string> arguments, CancellationToken ct)
     {
         if (!File.Exists(HelperPath))
         {
-            return Failure("windows-update-agent.helper-unavailable");
+            return null;
         }
 
         using var process = new Process
@@ -37,13 +45,12 @@ internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector
                 RedirectStandardError = true,
             },
         };
-        process.StartInfo.ArgumentList.Add("pending-updates");
-        process.StartInfo.ArgumentList.Add(kind);
-        process.StartInfo.ArgumentList.Add(limit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        process.StartInfo.ArgumentList.Add(operation);
+        foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
 
         try
         {
-            if (!process.Start()) return Failure("windows-update-agent.helper-start-failed");
+            if (!process.Start()) return null;
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
             var output = ReadBoundedAsync(process.StandardOutput, MaximumOutputBytes, deadline.Token);
@@ -55,26 +62,26 @@ internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector
             catch (OperationCanceledException)
             {
                 KillAndWait(process);
-                return Failure("windows-update-agent.timeout");
+                return null;
             }
 
             var stdout = await output.ConfigureAwait(false);
             var stderr = await error.ConfigureAwait(false);
-            if (stdout is null || stderr is null) return Failure("windows-update-agent.helper-response-too-large");
-            if (process.ExitCode != 0) return Failure("windows-update-agent.helper-failed");
+            if (stdout is null || stderr is null || process.ExitCode != 0) return null;
             try
             {
-                var snapshot = JsonSerializer.Deserialize<MaintenanceSnapshot<UpdateRecord>>(stdout, JsonOptions);
-                return snapshot is null ? Failure("windows-update-agent.helper-invalid-response") : snapshot;
+                return operation == "pending-updates"
+                    ? JsonSerializer.Deserialize<MaintenanceSnapshot<UpdateRecord>>(stdout, JsonOptions)
+                    : JsonSerializer.Deserialize<MaintenanceSnapshot<UpdateHistoryRecord>>(stdout, JsonOptions);
             }
             catch (JsonException)
             {
-                return Failure("windows-update-agent.helper-invalid-response");
+                return null;
             }
         }
         catch (Win32Exception)
         {
-            return Failure("windows-update-agent.helper-start-failed");
+            return null;
         }
     }
 
@@ -99,6 +106,8 @@ internal sealed class WindowsUpdateHelperClient : IWindowsUpdateCollector
     }
 
     private static MaintenanceSnapshot<UpdateRecord> Failure(string warning) =>
+        new([], [new("windows-update-agent", InventorySourceStatus.Unavailable, warning)], [warning]);
+    private static MaintenanceSnapshot<UpdateHistoryRecord> HistoryFailure(string warning) =>
         new([], [new("windows-update-agent", InventorySourceStatus.Unavailable, warning)], [warning]);
 
     private static void KillAndWait(Process process)

@@ -18,14 +18,61 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        if (args.Length != 3 || args[0] != "pending-updates" || !SystemMaintenanceArguments.UpdateKinds.Contains(args[1], StringComparer.Ordinal) || !int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var limit) || limit is < 1 or > SystemMaintenanceLimits.MaximumUpdates)
+        if (args.Length == 3 && args[0] == "pending-updates" && SystemMaintenanceArguments.UpdateKinds.Contains(args[1], StringComparer.Ordinal) && int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var limit) && limit is >= 1 and <= SystemMaintenanceLimits.MaximumUpdates)
         {
-            Console.Error.WriteLine("Only the fixed pending-updates operation with normalized kind and limit is supported.");
+            Console.Out.Write(JsonSerializer.Serialize(Collect(args[1], limit), JsonOptions));
+            return 0;
+        }
+        if (args.Length == 3 && args[0] == "update-history" && int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out var sinceDays) && sinceDays is >= 1 and <= SystemMaintenanceLimits.MaximumSinceDays && int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var historyLimit) && historyLimit is >= 1 and <= SystemMaintenanceLimits.MaximumHistory)
+        {
+            Console.Out.Write(JsonSerializer.Serialize(CollectHistory(sinceDays, historyLimit), JsonOptions));
+            return 0;
+        }
+        else
+        {
+            Console.Error.WriteLine("Only fixed WUA operations with normalized bounded arguments are supported.");
             return 2;
         }
+    }
 
-        Console.Out.Write(JsonSerializer.Serialize(Collect(args[1], limit), JsonOptions));
-        return 0;
+    private static MaintenanceSnapshot<UpdateHistoryRecord> CollectHistory(int sinceDays, int limit)
+    {
+        object? session = null; object? searcher = null; object? entries = null;
+        try
+        {
+            session = Activator.CreateInstance(Type.GetTypeFromProgID("Microsoft.Update.Session") ?? throw new InvalidOperationException("Windows Update Agent is not registered."));
+            searcher = Invoke(session!, "CreateUpdateSearcher");
+            var total = Convert.ToInt32(Invoke(searcher!, "GetTotalHistoryCount"), CultureInfo.InvariantCulture);
+            var count = Math.Min(total, SystemMaintenanceLimits.MaximumHistory);
+            entries = Invoke(searcher!, "QueryHistory", 0, count);
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-sinceDays);
+            var rows = new List<UpdateHistoryRecord>();
+            var truncated = total > count;
+            for (var index = 0; index < count; index++)
+            {
+                object? entry = null; object? identity = null;
+                try
+                {
+                    entry = Property(entries!, "Item", index); identity = Property(entry!, "UpdateIdentity");
+                    var timestamp = new DateTimeOffset(((DateTime)Property(entry!, "Date")!).ToUniversalTime());
+                    if (timestamp < cutoff) continue;
+                    var updateId = (string?)Property(identity!, "UpdateID") ?? "unknown";
+                    var revision = Convert.ToInt32(Property(identity!, "RevisionNumber"), CultureInfo.InvariantCulture);
+                    var resultCode = Convert.ToInt32(Property(entry!, "ResultCode"), CultureInfo.InvariantCulture);
+                    // WUA OperationResultCode: 2=Succeeded, 4=Failed; every other code is not success evidence.
+                    var result = resultCode switch { 2 => "success", 4 => "failure", _ => "unknown" };
+                    rows.Add(new(timestamp, updateId + ":" + revision.ToString(CultureInfo.InvariantCulture), (string?)Property(entry!, "Title") ?? string.Empty, null, result, "windows-update-agent"));
+                }
+                finally { Release(identity); Release(entry); }
+            }
+            return new(rows, [new("windows-update-agent", InventorySourceStatus.Available)], CollectionTruncated: truncated);
+        }
+        catch (Exception exception) when (exception is COMException or InvalidOperationException or MissingMethodException or UnauthorizedAccessException or System.Reflection.TargetInvocationException)
+        {
+            const string warning = "windows-update-agent.history-unavailable";
+            return new([], [new("windows-update-agent", InventorySourceStatus.Unavailable, warning)], [warning]);
+        }
+        finally { Release(entries); Release(searcher); Release(session); }
     }
 
     private static MaintenanceSnapshot<UpdateRecord> Collect(string kind, int limit)

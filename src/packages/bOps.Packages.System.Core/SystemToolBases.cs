@@ -28,6 +28,24 @@ public abstract class SystemUpdatesToolBase(string platform) : ITool
     }
 }
 
+/// <summary>Shared shell for bounded, read-only update-history evidence.</summary>
+public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.UpdateHistory(platform);
+
+    /// <summary>Collects normalized local or native history after validation.</summary>
+    protected abstract Task<MaintenanceSnapshot<UpdateHistoryRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
 /// <summary>
 /// The tool shell for <c>system.info</c>: manifest and result formatting shared, data
 /// collection left to the OS package (agentic/01-architecture-rules.md, rule A8).

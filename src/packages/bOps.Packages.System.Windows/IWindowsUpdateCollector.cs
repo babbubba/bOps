@@ -10,3 +10,9 @@ internal interface IWindowsUpdateCollector
 {
     Task<MaintenanceSnapshot<UpdateRecord>> CollectAsync(string kind, int limit, CancellationToken ct);
 }
+
+/// <summary>Internal boundary between the history tool and its isolated WUA collector.</summary>
+internal interface IWindowsUpdateHistoryCollector
+{
+    Task<MaintenanceSnapshot<UpdateHistoryRecord>> CollectHistoryAsync(int sinceDays, int limit, CancellationToken ct);
+}

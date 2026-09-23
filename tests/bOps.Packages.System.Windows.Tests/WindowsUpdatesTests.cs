@@ -129,6 +129,24 @@ public sealed class WindowsUpdatesTests
         Assert.DoesNotContain("Search(args", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task History_MapsResultsFiltersBoundsAndKeepsUnknownVersionNull()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rows = new[]
+        {
+            new UpdateHistoryRecord(now, "success", "Success", null, "success", "windows-update-agent"),
+            new UpdateHistoryRecord(now.AddMinutes(-1), "failed", "Failed", null, "failure", "windows-update-agent"),
+            new UpdateHistoryRecord(now.AddMinutes(-2), "other", "Other", null, "not-a-wua-code", "windows-update-agent"),
+        };
+        var result = await new WindowsUpdateHistoryTool(new FakeHistoryCollector(new(rows, [new("windows-update-agent", InventorySourceStatus.Available)], CollectionTruncated: true)))
+            .ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["sinceDays"] = 30, ["limit"] = 2 }));
+        var json = Json(result);
+        Assert.False(json["complete"]!.GetValue<bool>()); Assert.True(json["truncated"]!.GetValue<bool>());
+        Assert.Equal("success", json["items"]![0]!["result"]!.GetValue<string>()); Assert.Null(json["items"]![0]!["version"]);
+        Assert.Equal("failure", json["items"]![1]!["result"]!.GetValue<string>());
+    }
+
     private static WindowsUpdatesTool Tool(string kind, IReadOnlyList<UpdateRecord> rows, InventorySourceStatus status = InventorySourceStatus.Available, string? detail = null, bool truncated = false) =>
         new(new FakeCollector(new MaintenanceSnapshot<UpdateRecord>(rows, [new("windows-update-agent", status, detail)], detail is null ? null : [detail], truncated)));
 
@@ -141,5 +159,9 @@ public sealed class WindowsUpdatesTests
     private sealed class FakeCollector(MaintenanceSnapshot<UpdateRecord> snapshot) : IWindowsUpdateCollector
     {
         public Task<MaintenanceSnapshot<UpdateRecord>> CollectAsync(string kind, int limit, CancellationToken ct) => Task.FromResult(snapshot);
+    }
+    private sealed class FakeHistoryCollector(MaintenanceSnapshot<UpdateHistoryRecord> snapshot) : IWindowsUpdateHistoryCollector
+    {
+        public Task<MaintenanceSnapshot<UpdateHistoryRecord>> CollectHistoryAsync(int sinceDays, int limit, CancellationToken ct) => Task.FromResult(snapshot);
     }
 }

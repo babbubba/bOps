@@ -18,6 +18,7 @@ public sealed class LinuxSystemToolProvider : IToolProvider
         new LinuxDeviceInventoryTool(),
         new LinuxSystemEventsTool(),
         new LinuxUpdatesTool(),
+        new LinuxUpdateHistoryTool(),
         new LinuxCpuUsageTool(),
         new LinuxMemoryUsageTool(),
         new LinuxDiskUsageTool(),
