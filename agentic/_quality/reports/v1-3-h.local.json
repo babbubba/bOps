@@ -1,15 +1,32 @@
 {
   "milestone": "V1.3-H",
-  "targetCommit": "169c8fc",
-  "baseReference": "169c8fc",
+  "targetCommit": "96c621057fd4222bc09bdb4cf7b5b8c1358c0433",
+  "baseReference": "169c8fc1471eb29a71ba2b9a16d28c855eccc247",
   "localStatus": "PASS",
-  "qualityStatus": "VERIFIED",
-  "repositoryHealth": "HEALTHY",
+  "qualityStatus": "PROVISIONAL",
+  "repositoryHealth": "DEGRADED_KNOWN_FAILURES",
   "milestoneRegressionStatus": "PASS",
   "infrastructureErrors": [],
   "hardGateFailures": [],
-  "pendingEvidence": [],
-  "knownFailuresObserved": [],
+  "pendingEvidence": [
+    "identity-linux-platform-evidence"
+  ],
+  "knownFailuresObserved": [
+    {
+      "test": "bOps.Packages.Filesystem.Tests.FsDeleteTreeTests.PrepareAndPage_TenThousandFiles_WithoutReturningOneUnboundedList",
+      "classification": "KNOWN_FAILURE_CONFIRMED",
+      "sourceEvidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+      "fullSuiteResult": "Failed",
+      "isolatedVerificationResult": "PASS"
+    },
+    {
+      "test": "bOps.Packages.Filesystem.Tests.FsSizeTests.FsSize_StreamsTenThousandFiles_WithBoundedResponse",
+      "classification": "KNOWN_FAILURE_CONFIRMED",
+      "sourceEvidence": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+      "fullSuiteResult": "Failed",
+      "isolatedVerificationResult": "PASS"
+    }
+  ],
   "newFailures": [],
   "knownFailuresUnconfirmed": [],
   "criteria": [
@@ -175,17 +192,14 @@
       "requirement": "No shadow, password hash, credential, token, environment or AD crawl is exposed.",
       "hardGate": true,
       "evidence": {
-        "type": "exact automated test",
-        "testProject": "tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj",
-        "testName": "LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles"
+        "type": "static repository assertion",
+        "files": [
+          "src/packages/bOps.Packages.Identity.Linux/LinuxIdentityTools.cs",
+          "src/packages/bOps.Packages.Identity.Windows/WindowsIdentityToolProvider.cs",
+          "src/packages/bOps.Packages.Identity.Core/IdentityResults.cs"
+        ]
       },
-      "status": "PASS",
-      "result": {
-        "exists": true,
-        "ran": true,
-        "passed": true,
-        "outcome": "Passed"
-      }
+      "status": "PASS"
     },
     {
       "id": "core-no-os-calls",
@@ -271,19 +285,114 @@
       "id": "identity-linux-platform-evidence",
       "category": "regressionEvidence",
       "requirement": "Real Linux local identity evidence is collected when the Linux target executes it.",
-      "hardGate": false,
+      "hardGate": true,
       "evidence": {
         "type": "platform evidence",
         "testProject": "tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj",
         "testName": "bOps.Packages.System.Linux.Tests.LinuxIdentitySmokeTests.LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles",
         "platform": "Linux"
       },
+      "status": "PENDING",
+      "result": {
+        "exists": true,
+        "ran": false,
+        "passed": false,
+        "outcome": "HOST_MISMATCH"
+      }
+    },
+    {
+      "id": "identity-windows-current-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Windows identity.current evidence executes through WindowsIdentity and WindowsPrincipal.",
+      "hardGate": true,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.Identity.Windows.Tests/bOps.Packages.Identity.Windows.Tests.csproj",
+        "testName": "bOps.Packages.Identity.Windows.Tests.WindowsIdentityNativeTests.Current_UsesRealWindowsIdentityWithoutSensitiveFields",
+        "platform": "Windows"
+      },
       "status": "PASS",
       "result": {
         "exists": true,
         "ran": true,
         "passed": true,
-        "outcome": "Passed"
+        "outcome": "PASS"
+      }
+    },
+    {
+      "id": "identity-windows-users-groups-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Windows local users and direct local group members are enumerated with bounded output.",
+      "hardGate": true,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.Identity.Windows.Tests/bOps.Packages.Identity.Windows.Tests.csproj",
+        "testName": "bOps.Packages.Identity.Windows.Tests.WindowsIdentityNativeTests.Groups_EnumeratesDirectMembersWithBounds",
+        "platform": "Windows"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "PASS"
+      }
+    },
+    {
+      "id": "identity-windows-sessions-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Windows session evidence executes through the bounded WTS path.",
+      "hardGate": true,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.Identity.Windows.Tests/bOps.Packages.Identity.Windows.Tests.csproj",
+        "testName": "bOps.Packages.Identity.Windows.Tests.WindowsIdentityNativeTests.Sessions_UsesWtsAndKeepsNormalizedRowsBounded",
+        "platform": "Windows"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "PASS"
+      }
+    },
+    {
+      "id": "system-windows-time-reboot-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Windows system.time and system.reboot_pending smoke tests execute with environment-independent assertions.",
+      "hardGate": true,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj",
+        "testName": "bOps.Packages.System.Windows.Tests.WindowsSystemToolsTests.SystemTime_RealSmoke_IsTimezoneSafe",
+        "platform": "Windows"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "PASS"
+      }
+    },
+    {
+      "id": "system-windows-reboot-platform-evidence",
+      "category": "regressionEvidence",
+      "requirement": "Real Windows reboot-pending detector evidence is bounded and does not expose raw registry values.",
+      "hardGate": true,
+      "evidence": {
+        "type": "platform evidence",
+        "testProject": "tests/bOps.Packages.System.Windows.Tests/bOps.Packages.System.Windows.Tests.csproj",
+        "testName": "bOps.Packages.System.Windows.Tests.WindowsSystemToolsTests.RebootPending_RealSmoke_IsBounded",
+        "platform": "Windows"
+      },
+      "status": "PASS",
+      "result": {
+        "exists": true,
+        "ran": true,
+        "passed": true,
+        "outcome": "PASS"
       }
     },
     {
@@ -316,10 +425,10 @@
     }
   ],
   "requirementCoverage": {
-    "total": 20,
-    "PASS": 20,
+    "total": 25,
+    "PASS": 24,
     "FAIL": 0,
-    "PENDING": 0,
+    "PENDING": 1,
     "SKIP": 0
   },
   "categoryScores": {
@@ -356,9 +465,9 @@
       "weight": 15.0
     },
     "regressionEvidence": {
-      "passed": 4,
+      "passed": 8,
       "failed": 0,
-      "pending": 0,
+      "pending": 1,
       "skipped": 0,
       "score": 100.0,
       "weight": 15.0
@@ -373,7 +482,7 @@
     }
   },
   "provisionalScore": 100.0,
-  "finalQualityScore": 100.0,
+  "finalQualityScore": null,
   "testExecution": {
     "build": {
       "completed": true,
@@ -383,50 +492,53 @@
     },
     "fullSuite": {
       "completed": true,
-      "exitCode": 0,
+      "exitCode": 1,
       "timedOut": null,
       "command": "reused full-suite evidence"
     },
     "trxFiles": [
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_05_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_05_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_07_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_07_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_08_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_08_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_09_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_18_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_19_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_23_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_30_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_30_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_32_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_39_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_41_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_43_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_47_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_48_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_52_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_52_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_54_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_55_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_57_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_28_59_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_05_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_05_net10.0[1].trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_08_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_11_net10.0.trx",
-      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_03_29_58_net10.0.trx"
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_35_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_38_net10.0[2].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_39_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_40_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_42_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_50_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_59_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_24_59_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_04_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_04_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_15_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_17_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_29_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_31_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_32_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_42_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_43_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_43_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_44_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_47_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_55_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_55_net10.0[1].trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_25_56_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_09_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_10_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_14_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_26_26_net10.0.trx",
+      "artifacts/quality/v1-3-h/trx/full/Babbubba_NB-BABBUBBA_2026-09-23_09_27_18_net10.0.trx"
     ],
     "counts": {
-      "total": 2334,
-      "passed": 2235,
-      "failed": 0,
-      "skipped": 99
+      "total": 2341,
+      "passed": 2239,
+      "failed": 2,
+      "skipped": 100
     },
     "evidenceDirectory": "artifacts/quality/<milestone>"
   },
-  "platformEvidencePending": [],
+  "platformEvidencePending": [
+    "identity-linux-platform-evidence"
+  ],
   "efficiency": {
     "workflowMode": "autonomous-milestone",
     "packetCount": 5,

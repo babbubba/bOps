@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0",
   "milestone": "V1.3-H",
-  "targetCommit": "169c8fc",
-  "baseReference": "169c8fc",
+  "targetCommit": "96c621057fd4222bc09bdb4cf7b5b8c1358c0433",
+  "baseReference": "169c8fc1471eb29a71ba2b9a16d28c855eccc247",
   "weights": { "contractCoverage": 30, "negativeBoundaryCoverage": 20, "verificationMutationSafety": 15, "architectureSecurity": 15, "regressionEvidence": 15, "traceability": 5 },
   "efficiency": { "workflowMode": "autonomous-milestone", "packetCount": 5, "quotaWindowPercent": null, "humanInterventions": null, "elapsedMinutes": null, "reworkCommits": null, "modelProfile": "Luna Medium" },
   "criteria": [
@@ -16,7 +16,7 @@
     { "id":"unknown-enabled-semantics", "category":"negativeBoundaryCoverage", "requirement":"includeDisabled=false removes only enabled=false and retains enabled=null.", "hardGate":true, "evidence":{"type":"exact automated test","testProject":"tests/bOps.Packages.Identity.Core.Tests/bOps.Packages.Identity.Core.Tests.csproj","testName":"Users_UnknownEnabledRemainsWhenFilteringDisabled"}, "status":"PENDING" },
     { "id":"unsupported-reboot-source", "category":"negativeBoundaryCoverage", "requirement":"Unsupported Linux reboot evidence is incomplete rather than false certainty.", "hardGate":true, "evidence":{"type":"static repository assertion","files":["src/packages/bOps.Packages.System.Linux/LinuxTimeTools.cs"]}, "status":"PASS" },
     { "id":"read-only-safety", "category":"verificationMutationSafety", "requirement":"H introduces only Read-risk diagnostic tools and no mutation or verification capability.", "hardGate":true, "evidence":{"type":"static repository assertion","files":["src/packages/bOps.Packages.Identity.Core/IdentityToolManifests.cs","src/packages/bOps.Packages.System.Core/SystemToolManifests.cs"]}, "status":"PASS" },
-    { "id":"no-shadow-credentials", "category":"architectureSecurity", "requirement":"No shadow, password hash, credential, token, environment or AD crawl is exposed.", "hardGate":true, "evidence":{"type":"exact automated test","testProject":"tests/bOps.Packages.System.Linux.Tests/bOps.Packages.System.Linux.Tests.csproj","testName":"LocalIdentitySourcesAreBoundedAndDoNotExposeCredentialFiles"}, "status":"PENDING" },
+    { "id":"no-shadow-credentials", "category":"architectureSecurity", "requirement":"No shadow, password hash, credential, token, environment or AD crawl is exposed.", "hardGate":true, "evidence":{"type":"static repository assertion","files":["src/packages/bOps.Packages.Identity.Linux/LinuxIdentityTools.cs","src/packages/bOps.Packages.Identity.Windows/WindowsIdentityToolProvider.cs","src/packages/bOps.Packages.Identity.Core/IdentityResults.cs"]}, "status":"PASS" },
     { "id":"core-no-os-calls", "category":"architectureSecurity", "requirement":"Identity.Core and System.Core contain contracts and shells only; OS calls remain platform-specific.", "hardGate":true, "evidence":{"type":"architecture test","testProject":"tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj","testName":"NoGenericExecutionToolTests"}, "status":"PENDING" },
     { "id":"fixed-process-boundaries", "category":"architectureSecurity", "requirement":"Linux loginctl and timedatectl use fixed executables and bounded ArgumentList calls.", "hardGate":true, "evidence":{"type":"static repository assertion","files":["src/packages/bOps.Packages.Identity.Linux/LinuxIdentityTools.cs","src/packages/bOps.Packages.System.Linux/LinuxTimeTools.cs"]}, "status":"PASS" },
     { "id":"platform-composition", "category":"architectureSecurity", "requirement":"CLI and API compose exactly one OS-specific identity and system provider.", "hardGate":true, "evidence":{"type":"static repository assertion","files":["src/core/bOps.Cli/Program.cs","src/core/bOps.Api/Program.cs"]}, "status":"PASS" },
