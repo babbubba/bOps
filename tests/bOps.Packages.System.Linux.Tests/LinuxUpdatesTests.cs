@@ -91,6 +91,8 @@ public sealed class LinuxUpdatesTests
     [Fact]
     public async Task ProcessBoundaryTimesOutKillsAndConfirmsChildExit()
     {
+        Assert.True(File.Exists(TestChild), $"Test child was not deployed to {AppContext.BaseDirectory}.");
+        Assert.True(File.Exists(Path.ChangeExtension(TestChild, ".runtimeconfig.json")), "Test child runtime configuration was not deployed.");
         var result = await LinuxUpdatesProcessRunner.RunAsync(DotNetHostPath, [TestChild, "sleep", "30000"], TimeSpan.FromMilliseconds(700), CancellationToken.None);
 
         Assert.True(result.Started);

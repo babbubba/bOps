@@ -165,6 +165,10 @@ public sealed class WindowsCrashEvidenceTool : SystemCrashesToolBase
         {
             return new(rows, new(sourceName, InventorySourceStatus.Unavailable, "The current identity cannot read the Application Event Log."), [], false);
         }
+        catch (PlatformNotSupportedException)
+        {
+            return new(rows, new(sourceName, InventorySourceStatus.NotApplicable, "Windows Event Log is unavailable on this runtime."), [], false);
+        }
         catch (EventLogException exception)
         {
             return new(rows, new(sourceName, InventorySourceStatus.Unavailable, Bounded(exception.Message)), [], false);

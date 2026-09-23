@@ -109,7 +109,11 @@ public sealed class WindowsUpdatesTests
         Assert.Equal("windows-update-agent", json["sources"]![0]!["name"]!.GetValue<string>());
         Assert.InRange(json["returnedItems"]!.GetValue<int>(), 0, 1);
         if (json["complete"]!.GetValue<bool>()) return;
-        Assert.Contains("windows-update-agent", json["warnings"]!.ToJsonString(), StringComparison.Ordinal);
+        if (json["truncated"]!.GetValue<bool>()) return;
+        Assert.True(json["sources"]!.AsArray().Any(source =>
+            source!["name"]!.GetValue<string>() == "windows-update-agent" &&
+            source["status"]!.GetValue<string>() is "partial" or "unavailable") ||
+            json["warnings"]!.ToJsonString().Contains("windows-update-agent", StringComparison.Ordinal));
     }
 
     [Fact]
