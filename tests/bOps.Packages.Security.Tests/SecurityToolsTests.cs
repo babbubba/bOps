@@ -137,7 +137,26 @@ public sealed class SecurityToolsTests
         public static Task<TlsServer> StartAsync(X509Certificate2 certificate, SslProtocols protocols)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(); string? sni = null;
-            var observation = Task.Run(async () => { using var client = await listener.AcceptTcpClientAsync(); using var stream = new SslStream(client.GetStream(), false); await stream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { EnabledSslProtocols = protocols, ServerCertificateSelectionCallback = (_, serverName) => { sni = serverName; return certificate; } }); var buffer = new byte[1]; using var cts = new CancellationTokenSource(500); try { return (await stream.ReadAsync(buffer, cts.Token) == 0, sni); } catch (OperationCanceledException) { return (true, sni); } });
+            var observation = Task.Run(async () =>
+            {
+                using var client = await listener.AcceptTcpClientAsync();
+                using var stream = new SslStream(client.GetStream(), false);
+                await stream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { EnabledSslProtocols = protocols, ServerCertificateSelectionCallback = (_, serverName) => { sni = serverName; return certificate; } });
+                var buffer = new byte[1];
+                using var cts = new CancellationTokenSource(500);
+                try
+                {
+                    // Any application byte remains a semantic failure, even if the peer then resets.
+                    return (await stream.ReadAsync(buffer, cts.Token) == 0, sni);
+                }
+                catch (OperationCanceledException) { return (true, sni); }
+                catch (IOException ex) when (ex.InnerException is SocketException { SocketErrorCode: SocketError.ConnectionReset })
+                {
+                    // Windows may report an abrupt TLS peer close as reset after handshake.
+                    // This is treated as close only because ReadAsync observed no application byte.
+                    return (true, sni);
+                }
+            });
             return Task.FromResult(new TlsServer(listener, certificate, observation));
         }
         public async ValueTask DisposeAsync() { listener.Stop(); await observation; certificate.Dispose(); }
