@@ -12,6 +12,7 @@ using bOps.Packages.Filesystem;
 using bOps.Packages.Firewall.Linux;
 using bOps.Packages.Firewall.Windows;
 using bOps.Packages.Network;
+using bOps.Packages.Security;
 using bOps.Packages.Network.Native.Linux;
 using bOps.Packages.Network.Native.Windows;
 using bOps.Packages.Providers.Anthropic;
@@ -191,6 +192,12 @@ var networkPackageId = new PackageId("bops.packages.network");
 foreach (var tool in new NetworkToolProvider().GetTools())
 {
     toolRegistry.Register(networkPackageId, tool);
+}
+
+var securityPackageId = new PackageId("bops.packages.security");
+foreach (var tool in new SecurityToolProvider().GetTools())
+{
+    toolRegistry.Register(securityPackageId, tool);
 }
 
 // V1.3-D (ADR-0035): sockets, routes, neighbors and interface counters need real native APIs, so
