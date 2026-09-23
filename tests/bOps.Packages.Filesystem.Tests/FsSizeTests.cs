@@ -301,7 +301,8 @@ public sealed class FsSizeTests : IDisposable
             using var stream = File.Create(Path.Combine(Root, $"f-{index:D5}.txt"));
         }
 
-        var (tool, _, _) = CreateTool();
+        // Scale coverage asserts counts and bounded output; duration behavior has its own clock-driven test.
+        var (tool, _, _) = CreateTool(new IncrementingTimeProvider(TimeSpan.Zero));
         var result = await tool.ExecuteAsync(Args(
             ("path", Root),
             ("maxEntries", 10_001),
@@ -316,11 +317,11 @@ public sealed class FsSizeTests : IDisposable
         Assert.True(Encoding.UTF8.GetByteCount(result.Output!) <= 32 * 1024);
     }
 
-    private (FsSizeTool Tool, SqliteFilesystemManifestStore Store, FilesystemInventoryService Service) CreateTool()
+    private (FsSizeTool Tool, SqliteFilesystemManifestStore Store, FilesystemInventoryService Service) CreateTool(TimeProvider? timeProvider = null)
     {
         var options = Options();
         var store = new SqliteFilesystemManifestStore(StorePath);
-        var service = new FilesystemInventoryService(Policy(), options, store);
+        var service = new FilesystemInventoryService(Policy(), options, store, timeProvider);
         return (new FsSizeTool(service, options), store, service);
     }
 

@@ -398,6 +398,37 @@ public sealed class FsDeleteTreeTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Prepare_EnforcesMaxDurationDuringEnumeration(bool exceedDuration)
+    {
+        Directory.CreateDirectory(Root);
+        await File.WriteAllTextAsync(Path.Combine(Root, "file.txt"), string.Empty);
+        var clock = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var (_, service, _) = CreateServices(clock, entryObserved: count =>
+        {
+            if (exceedDuration && count == 1)
+            {
+                // The root was observed: advance after the inventory deadline has started.
+                clock.Advance(TimeSpan.FromMilliseconds(51));
+            }
+        });
+        var request = Request([Root]) with { MaxDuration = TimeSpan.FromMilliseconds(50) };
+
+        if (exceedDuration)
+        {
+            var error = await Assert.ThrowsAsync<FilesystemDeletionException>(() => service.PrepareAsync(request, Context()));
+            Assert.Contains("incomplete; no deletion manifest was created", error.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            var summary = await service.PrepareAsync(request, Context());
+            Assert.Equal(DeletionManifestStatus.Ready, summary.Status);
+            Assert.Equal(2, summary.EntryCount);
+        }
+    }
+
     [Fact]
     [Trait("Category", "Scale")]
     public async Task PrepareAndPage_TenThousandFiles_WithoutReturningOneUnboundedList()
@@ -408,7 +439,8 @@ public sealed class FsDeleteTreeTests : IDisposable
             await File.WriteAllTextAsync(Path.Combine(Root, $"f-{index:D5}.txt"), string.Empty);
         }
 
-        var (_, service, _) = CreateServices();
+        // Scale/paging is independent of elapsed host time; duration and expiry have separate clock-driven coverage.
+        var (_, service, _) = CreateServices(new MutableTimeProvider(DateTimeOffset.UnixEpoch));
         var summary = await service.PrepareAsync(Request([Root]) with
         {
             MaxEntries = 10_001,
@@ -425,7 +457,8 @@ public sealed class FsDeleteTreeTests : IDisposable
     private (SqliteDeletionManifestStore Store, FilesystemDeletionService Service, FilesystemInventoryOptions Options) CreateServices(
         TimeProvider? timeProvider = null,
         string? additionalPolicyPath = null,
-        Func<int, CancellationToken, Task>? beforeDelete = null)
+        Func<int, CancellationToken, Task>? beforeDelete = null,
+        Action<int>? entryObserved = null)
     {
         var options = new FilesystemInventoryOptions
         {
@@ -444,7 +477,7 @@ public sealed class FsDeleteTreeTests : IDisposable
 
         var policy = new FilesystemPathPolicy(readPatterns, readPatterns);
         var inventoryStore = new SqliteFilesystemManifestStore(StorePath);
-        var inventory = new FilesystemInventoryService(policy, options, inventoryStore, timeProvider ?? TimeProvider.System);
+        var inventory = new FilesystemInventoryService(policy, options, inventoryStore, timeProvider ?? TimeProvider.System, entryObserved);
         var deletionStore = new SqliteDeletionManifestStore(StorePath);
         var service = beforeDelete is null
             ? new FilesystemDeletionService(
