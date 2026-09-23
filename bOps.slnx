@@ -37,6 +37,10 @@
     <Project Path="src/packages/bOps.Packages.Network.Native.Core/bOps.Packages.Network.Native.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Network.Native.Linux/bOps.Packages.Network.Native.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Network.Native.Windows/bOps.Packages.Network.Native.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.Firewall.Core/bOps.Packages.Firewall.Core.csproj" />
+    <Project Path="src/packages/bOps.Packages.Firewall.Linux/bOps.Packages.Firewall.Linux.csproj" />
+    <Project Path="src/packages/bOps.Packages.Firewall.Windows/bOps.Packages.Firewall.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.Firewall.Windows.Helper/bOps.Packages.Firewall.Windows.Helper.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Core/bOps.Packages.Storage.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Linux/bOps.Packages.Storage.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.Storage.Windows/bOps.Packages.Storage.Windows.csproj" />
@@ -63,6 +67,9 @@
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Conformance/bOps.Packages.Network.Native.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Core.Tests/bOps.Packages.Network.Native.Core.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Core.Tests/bOps.Packages.Firewall.Core.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Linux.Tests/bOps.Packages.Firewall.Linux.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Windows.Tests/bOps.Packages.Firewall.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Linux.Tests/bOps.Packages.Network.Native.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Windows.Tests/bOps.Packages.Network.Native.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />

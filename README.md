@@ -108,6 +108,7 @@ below it for what's coming and, deliberately, what never will.
 | **Process** | `process.list` `process.inspect` `process.metrics` `process.tree` `process.modules` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` `fs.grep` `fs.tail` `fs.permissions` `fs.locks` `fs.copy.verify` `fs.copy` `fs.mkdir` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` `network.sockets` `network.routes` `network.neighbors` `network.interface_stats` `network.dns_query` `network.traceroute` `network.ntp_probe` |
+| **Firewall** | `firewall.status` `firewall.rules` `firewall.rule.inspect` (read-only local evidence; no packet evaluator or mutation) |
 | **Storage** | `storage.disks` `storage.partitions` `storage.mounts` `storage.io` `storage.health` |
 | **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` `service.config` `service.dependencies` `service.enable` `service.disable` (Windows via native Service Control Manager, Linux via fixed `systemctl` boundaries) |
 | **Scheduler** | `scheduler.list` `scheduler.inspect` `scheduler.history` `scheduler.enable` `scheduler.disable` (Windows Task Scheduler 2.0; Linux systemd timers and read-only cron inventory) |

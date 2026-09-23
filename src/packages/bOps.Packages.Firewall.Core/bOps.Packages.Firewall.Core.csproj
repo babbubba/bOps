@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Firewall.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.Firewall.Core</AssemblyName>
+    <Description>Shared read-only firewall diagnostic contracts, validation and formatting.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" /></ItemGroup>
+</Project>

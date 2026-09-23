@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.Packages.Firewall.Windows.Helper</RootNamespace>
+    <AssemblyName>bOps.Packages.Firewall.Windows.Helper</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\bOps.Packages.Firewall.Core\bOps.Packages.Firewall.Core.csproj" /></ItemGroup>
+</Project>

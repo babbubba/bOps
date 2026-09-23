@@ -564,6 +564,8 @@
           "bOps.Memory": "[1.0.0, )",
           "bOps.Packages.Docker": "[1.0.0, )",
           "bOps.Packages.Filesystem": "[1.0.0, )",
+          "bOps.Packages.Firewall.Linux": "[1.0.0, )",
+          "bOps.Packages.Firewall.Windows": "[1.0.0, )",
           "bOps.Packages.Identity.Linux": "[1.0.0, )",
           "bOps.Packages.Identity.Windows": "[1.0.0, )",
           "bOps.Packages.Network": "[1.0.0, )",
@@ -620,6 +622,26 @@
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
           "System.IO.FileSystem.AccessControl": "[5.0.0, )",
           "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.firewall.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.firewall.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Firewall.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.firewall.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )",
+          "bOps.Packages.Firewall.Core": "[1.0.0, )"
         }
       },
       "bops.packages.identity.core": {
