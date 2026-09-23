@@ -20,6 +20,7 @@ public sealed class LinuxSystemToolProvider : IToolProvider
         new LinuxUpdatesTool(),
         new LinuxUpdateHistoryTool(),
         new LinuxCrashEvidenceTool(),
+        new LinuxDriverEvidenceTool(),
         new LinuxCpuUsageTool(),
         new LinuxMemoryUsageTool(),
         new LinuxDiskUsageTool(),

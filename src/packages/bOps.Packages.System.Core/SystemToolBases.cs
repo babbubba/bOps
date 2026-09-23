@@ -64,6 +64,24 @@ public abstract class SystemCrashesToolBase(string platform) : ITool
     }
 }
 
+/// <summary>Shared shell for bounded, read-only loaded-driver or kernel-module evidence.</summary>
+public abstract class SystemDriversToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Drivers(platform);
+
+    /// <summary>Collects normalized loaded-driver evidence after the caller's limit was validated.</summary>
+    protected abstract Task<MaintenanceSnapshot<DriverRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
 /// <summary>
 /// The tool shell for <c>system.info</c>: manifest and result formatting shared, data
 /// collection left to the OS package (agentic/01-architecture-rules.md, rule A8).
