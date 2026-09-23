@@ -70,8 +70,13 @@ jobs:
             -ReportsDirectory (Join-Path $PWD 'agentic/_quality/reports') `
             -Index (Join-Path $PWD 'agentic/_quality/reports/index.json') 2>&1
           $output | ForEach-Object { $_.ToString() } | Add-Content $env:GITHUB_STEP_SUMMARY
-          $nowTarget = if (Test-Path $before) { (Get-Content -Raw $before | ConvertFrom-Json).milestoneTargetCommit } else { $null }
-          if ($nowTarget -eq $env:SOURCE_COMMIT -and $oldTarget -ne $nowTarget) { "eligible=true" >> $env:GITHUB_OUTPUT } else { "eligible=false" >> $env:GITHUB_OUTPUT }
+          $generated = if (Test-Path $before) { Get-Content -Raw $before | ConvertFrom-Json } else { $null }
+          $eligible = $null -ne $generated -and
+            $oldTarget -ne $ci.milestoneTargetCommit -and
+            $generated.milestoneTargetCommit -eq $ci.milestoneTargetCommit -and
+            $generated.verifiedRepositoryCommit -eq $env:SOURCE_COMMIT -and
+            $generated.qualityStatus -eq 'VERIFIED'
+          if ($eligible) { "eligible=true" >> $env:GITHUB_OUTPUT } else { "eligible=false" >> $env:GITHUB_OUTPUT }
 
       - name: Verify generated diff
         if: steps.finalize.outputs.eligible == 'true'
