@@ -102,6 +102,18 @@
       "bops.abstractions": {
         "type": "Project"
       },
+      "bops.packages.identity.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.identity.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
       "bops.packages.system.conformance": {
         "type": "Project",
         "dependencies": {
