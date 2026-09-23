@@ -66,6 +66,9 @@
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Conformance/bOps.Packages.Network.Native.Conformance.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Core.Tests/bOps.Packages.Network.Native.Core.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Core.Tests/bOps.Packages.Firewall.Core.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Linux.Tests/bOps.Packages.Firewall.Linux.Tests.csproj" />
+    <Project Path="tests/bOps.Packages.Firewall.Windows.Tests/bOps.Packages.Firewall.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Linux.Tests/bOps.Packages.Network.Native.Linux.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Native.Windows.Tests/bOps.Packages.Network.Native.Windows.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Network.Tests/bOps.Packages.Network.Tests.csproj" />
