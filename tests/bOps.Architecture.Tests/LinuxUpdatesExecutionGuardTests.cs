@@ -6,6 +6,23 @@ namespace bOps.Architecture.Tests;
 public sealed class LinuxUpdatesExecutionGuardTests
 {
     [Fact]
+    public void WindowsUpdateEvidenceUsesReadOnlySearchWithoutMutationOperations()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "bOps.slnx"))) root = root.Parent;
+        Assert.NotNull(root);
+        var packages = Path.Combine(root!.FullName, "src", "packages");
+        var source = string.Join('\n',
+            File.ReadAllText(Path.Combine(packages, "bOps.Packages.System.Windows", "WindowsUpdatesTool.cs")),
+            File.ReadAllText(Path.Combine(packages, "bOps.Packages.System.Windows", "WindowsUpdateHistoryTool.cs")),
+            File.ReadAllText(Path.Combine(packages, "bOps.Packages.System.Windows", "WindowsUpdateHelperClient.cs")),
+            File.ReadAllText(Path.Combine(packages, "bOps.Packages.System.Windows.Updates.Helper", "Program.cs")));
+        foreach (var forbidden in new[] { "Install(", "Download(", "AcceptEula(", "Remove(", "Upgrade(", "PowerShell", "winget", "UsoClient", "wuauclt" })
+            Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Search", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LinuxUpdateCollectorUsesOnlyFixedReadOnlyCommandsWithoutShell()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
