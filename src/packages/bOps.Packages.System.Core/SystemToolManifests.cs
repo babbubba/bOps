@@ -34,6 +34,19 @@ public static class SystemToolManifests
     public static ToolManifest Devices(string platform) => Inventory(
         platform, "system.devices", "Reports a bounded hardware/device inventory with explicit source completeness.");
 
+    /// <summary>Read-only maintenance evidence contracts.</summary>
+    public static ToolManifest Updates(string platform) => Maintenance(platform, "system.updates", [
+        new ToolParameter("kind", ToolParameterType.Enum, "Update classification (default all).", Required: false, AllowedValues: SystemMaintenanceArguments.UpdateKinds),
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumUpdates}, default {SystemMaintenanceLimits.DefaultUpdates}).", Required: false)]);
+    public static ToolManifest UpdateHistory(string platform) => Maintenance(platform, "system.update_history", [
+        new ToolParameter("sinceDays", ToolParameterType.Integer, $"History window in days (1-{SystemMaintenanceLimits.MaximumSinceDays}, default {SystemMaintenanceLimits.DefaultSinceDays}).", Required: false),
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumHistory}, default {SystemMaintenanceLimits.DefaultHistory}).", Required: false)]);
+    public static ToolManifest Crashes(string platform) => Maintenance(platform, "system.crashes", [
+        new ToolParameter("sinceMinutes", ToolParameterType.Integer, $"Crash window in minutes (1-{SystemMaintenanceLimits.MaximumSinceMinutes}, default {SystemMaintenanceLimits.DefaultSinceMinutes}).", Required: false),
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumCrashes}, default {SystemMaintenanceLimits.DefaultCrashes}).", Required: false)]);
+    public static ToolManifest Drivers(string platform) => Maintenance(platform, "system.drivers", [
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumDrivers}, default {SystemMaintenanceLimits.DefaultDrivers}).", Required: false)]);
+
     /// <summary>The manifest for <c>system.events</c> on the given platform (ADR-0032).</summary>
     public static ToolManifest Events(string platform) => new()
     {
@@ -228,6 +241,16 @@ public static class SystemToolManifests
         Requires = [],
         Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to terminate.")],
         Verification = new VerificationSpec("process.inspect", ["pid"], "Confirms the process no longer exists afterward."),
+    };
+
+    private static ToolManifest Maintenance(string platform, string name, IReadOnlyList<ToolParameter> parameters) => new()
+    {
+        Name = name,
+        Description = "Reports bounded, read-only operating-system maintenance metadata with explicit source completeness and warnings. Paths are metadata only.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [],
+        Parameters = parameters,
     };
 
     private static ToolManifest Inventory(string platform, string name, string description) => new()

@@ -21,6 +21,7 @@ namespace bOps.Packages.Sys.Conformance;
 public static partial class SystemToolConformance
 {
     private static readonly string[] InventoryStatuses = ["complete", "partial", "unavailable"];
+    private static readonly string[] MaintenanceStatuses = ["complete", "partial", "unavailable"];
     private static readonly string[] InventorySourceStatuses = ["available", "partial", "unavailable", "unsupported", "notApplicable"];
 
     /// <summary>Checks that a manifest is well-formed for the given platform and tool name, and that a <c>system.*</c> tool is <see cref="RiskLevel.Read"/> with no verification to declare.</summary>
@@ -33,6 +34,29 @@ public static partial class SystemToolConformance
         Assert.Equal(RiskLevel.Read, manifest.Risk);
         Assert.Contains(expectedPlatform, manifest.Platforms);
         Assert.Null(manifest.Verification);
+    }
+
+    /// <summary>Checks the serialized shared maintenance evidence envelope, including unavailable and truncated semantics.</summary>
+    public static JsonObject AssertMaintenanceEnvelope(string output, IReadOnlyList<string> rowFields, int maximumRows)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(rowFields);
+        var root = JsonNode.Parse(output)!.AsObject();
+        Assert.Equal(1, root["schemaVersion"]!.GetValue<int>());
+        var status = root["status"]!.GetValue<string>();
+        Assert.Contains(status, MaintenanceStatuses);
+        var complete = root["complete"]!.GetValue<bool>();
+        var truncated = root["truncated"]!.GetValue<bool>();
+        Assert.False(truncated && complete);
+        Assert.False(status == "unavailable" && complete);
+        Assert.InRange(root["returnedItems"]!.GetValue<int>(), 0, maximumRows);
+        Assert.True(root["observedItems"]!.GetValue<int>() >= root["returnedItems"]!.GetValue<int>());
+        Assert.NotNull(root["sources"]);
+        Assert.NotNull(root["warnings"]);
+        Assert.True(root["warnings"]!.AsArray().Count <= 32);
+        foreach (var item in root["items"]!.AsArray())
+            Assert.Equal(rowFields, item!.AsObject().Select(pair => pair.Key).ToArray());
+        return root;
     }
 
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.info</c> output shape.</summary>
