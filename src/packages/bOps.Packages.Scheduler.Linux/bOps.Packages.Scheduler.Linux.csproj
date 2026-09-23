@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Scheduler.Linux</RootNamespace>
+    <AssemblyName>bOps.Packages.Scheduler.Linux</AssemblyName>
+    <Description>scheduler.* tools for Linux systemd timers and cron inventory.</Description>
+    <NoWarn>CA1031;CA1062;CA1510;CA2007</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Packages.Scheduler.Core\bOps.Packages.Scheduler.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -3,6 +3,8 @@
 
 using bOps.Abstractions;
 using bOps.Packages.Service.Linux;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace bOps.Packages.Service.Linux.Tests;
 
@@ -21,6 +23,7 @@ namespace bOps.Packages.Service.Linux.Tests;
 [Trait("Platform", "Linux")]
 public sealed class LinuxServiceActionToolsTests
 {
+    private static readonly string[] AllowedDisabledStates = ["disabled", "static", "indirect", "", "not-found"];
     [Theory]
     [InlineData("service.start", "running")]
     [InlineData("service.stop", "stopped")]
@@ -52,5 +55,57 @@ public sealed class LinuxServiceActionToolsTests
         var result = await tool.ExecuteAsync(arguments);
 
         Assert.Equal(ToolOutcome.Failure, result.Outcome);
+    }
+
+    [RealSystemdFact]
+    [Trait("Platform", "Linux")]
+    public void RealSystemdServiceEnableDisableLifecycle()
+    {
+        var unit = $"bops-quality-{Guid.NewGuid():N}.service";
+        var path = $"/etc/systemd/system/{unit}";
+        File.WriteAllText(path, "[Unit]\nDescription=bOps quality test-owned service\n[Service]\nType=oneshot\nExecStart=/bin/true\n[Install]\nWantedBy=multi-user.target\n");
+        try
+        {
+            Run("systemctl", "daemon-reload");
+            Run("systemctl", "enable", unit);
+            Assert.Equal("enabled", Run("systemctl", "is-enabled", unit).Trim());
+            Run("systemctl", "disable", unit);
+            Assert.Contains(RunCore("systemctl", ["is-enabled", unit], true).Trim(), AllowedDisabledStates, StringComparer.OrdinalIgnoreCase);
+            Run("systemctl", "enable", unit);
+            Assert.Equal("enabled", Run("systemctl", "is-enabled", unit).Trim());
+        }
+        finally
+        {
+            RunCore("systemctl", ["disable", unit], true);
+            File.Delete(path);
+            RunCore("systemctl", ["daemon-reload"], true);
+        }
+    }
+
+    private sealed class RealSystemdFactAttribute : FactAttribute
+    {
+        public RealSystemdFactAttribute()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Skip = "Requires Linux.";
+            else if (Environment.GetEnvironmentVariable("BOPS_RUN_REAL_SYSTEMD_TESTS") != "1") Skip = "Requires explicit real-systemd opt-in.";
+            else if (!string.Equals(Environment.UserName, "root", StringComparison.Ordinal)) Skip = "Requires root.";
+            else if (!File.Exists("/run/systemd/system")) Skip = "Requires systemd.";
+        }
+    }
+
+    private static string Run(string executable, params string[] arguments)
+        => RunCore(executable, arguments, false);
+
+    private static string RunCore(string executable, string[] arguments, bool allowFailure)
+    {
+        var startInfo = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+        using var process = Process.Start(startInfo);
+        if (process is null) throw new InvalidOperationException($"Could not start {executable}.");
+        process.WaitForExit();
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        if (!allowFailure && process.ExitCode != 0) throw new InvalidOperationException($"{executable} failed ({process.ExitCode}): {error}");
+        return output;
     }
 }

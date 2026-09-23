@@ -109,7 +109,8 @@ below it for what's coming and, deliberately, what never will.
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` `fs.grep` `fs.tail` `fs.permissions` `fs.locks` `fs.copy.verify` `fs.copy` `fs.mkdir` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` `network.sockets` `network.routes` `network.neighbors` `network.interface_stats` `network.dns_query` `network.traceroute` `network.ntp_probe` |
 | **Storage** | `storage.disks` `storage.partitions` `storage.mounts` `storage.io` `storage.health` |
-| **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` (Windows via `ServiceController`, Linux via a fixed `systemctl` invocation — ADR-0021) |
+| **Service** | `service.list` `service.status` `service.start` `service.stop` `service.restart` `service.config` `service.dependencies` `service.enable` `service.disable` (Windows via native Service Control Manager, Linux via fixed `systemctl` boundaries) |
+| **Scheduler** | `scheduler.list` `scheduler.inspect` `scheduler.history` `scheduler.enable` `scheduler.disable` (Windows Task Scheduler 2.0; Linux systemd timers and read-only cron inventory) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` `docker.image.inspect` `docker.image.pull` `docker.image.tag` `docker.image.remove` `docker.build` `docker.volumes` `docker.volume.inspect` `docker.volume.create` `docker.volume.remove` |
 | **Web** | `web.search` `web.fetch` |
 
@@ -136,6 +137,11 @@ V1.3-F adds bounded filesystem troubleshooting: `fs.grep` and `fs.tail` never fo
 `fs.permissions` and `fs.locks` expose evidence rather than inferred effective access, and
 `fs.copy`/`fs.mkdir` remain governed operations under the existing deny-by-default path policy
 (see [`docs/filesystem-troubleshooting.md`](docs/filesystem-troubleshooting.md)).
+
+V1.3-G adds native service configuration, bounded dependencies, governed enablement and
+verification, plus bounded scheduled-work diagnostics. Windows uses Task Scheduler 2.0; Linux
+uses systemd timers and a read-only cron inventory. Cron observations have deterministic ids and
+scheduled target commands are never executed.
 
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported

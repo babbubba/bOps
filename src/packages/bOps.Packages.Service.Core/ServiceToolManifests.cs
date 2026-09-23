@@ -11,6 +11,32 @@ namespace bOps.Packages.Service.Core;
 /// </summary>
 public static class ServiceToolManifests
 {
+    public static ToolManifest Config(string platform) => new()
+    {
+        Name = "service.config", Description = "Reports normalized service configuration.", Risk = RiskLevel.Read,
+        Platforms = [platform], Requires = [], Parameters = [new ToolParameter("name", ToolParameterType.String, "The service name to inspect.")],
+    };
+
+    public static ToolManifest Dependencies(string platform) => new()
+    {
+        Name = "service.dependencies", Description = "Reports normalized service dependencies.", Risk = RiskLevel.Read,
+        Platforms = [platform], Requires = [], Parameters = [
+            new ToolParameter("name", ToolParameterType.String, "The service name to inspect."),
+            new ToolParameter("direction", ToolParameterType.String, "both, requires, or dependents. Defaults to both.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, "Maximum relations, from 1 to 1000. Defaults to 100.", Required: false),
+        ],
+    };
+
+    public static ToolManifest Enable(string platform) => Mutation("service.enable", "Enables a service.", platform, "enable");
+    public static ToolManifest Disable(string platform) => Mutation("service.disable", "Disables a service.", platform, "disable");
+
+    private static ToolManifest Mutation(string name, string description, string platform, string action) => new()
+    {
+        Name = name, Description = description, Risk = RiskLevel.Medium, Platforms = [platform], Requires = [],
+        Parameters = [new ToolParameter("name", ToolParameterType.String, $"The service name to {action}.")],
+        Verification = new VerificationSpec("service.config", ["name"], $"Confirms the service is {action}d through service.config."),
+    };
+
     /// <summary>The manifest for <c>service.list</c> on the given platform.</summary>
     public static ToolManifest List(string platform) => new()
     {

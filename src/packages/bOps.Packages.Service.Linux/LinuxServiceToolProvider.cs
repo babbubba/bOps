@@ -16,5 +16,9 @@ public sealed class LinuxServiceToolProvider : IToolProvider
         new LinuxServiceStartTool(),
         new LinuxServiceStopTool(),
         new LinuxServiceRestartTool(),
+        new LinuxServiceConfigTool(),
+        new LinuxServiceDependenciesTool(),
+        new LinuxServiceEnableTool(),
+        new LinuxServiceDisableTool(),
     ];
 }

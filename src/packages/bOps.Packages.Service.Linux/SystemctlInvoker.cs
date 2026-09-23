@@ -13,7 +13,20 @@ namespace bOps.Packages.Service.Linux;
 /// </summary>
 internal static class SystemctlInvoker
 {
+    internal sealed record ExecutionResult(int ExitCode, string StandardOutput, string StandardError);
+
     public static async Task<string> RunAsync(IReadOnlyList<string> arguments, CancellationToken ct)
+    {
+        var result = await RunDetailedAsync(arguments, ct);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"systemctl exited with code {result.ExitCode}: {result.StandardError}");
+        }
+
+        return result.StandardOutput;
+    }
+
+    public static async Task<ExecutionResult> RunDetailedAsync(IReadOnlyList<string> arguments, CancellationToken ct)
     {
         var startInfo = new ProcessStartInfo("systemctl")
         {
@@ -31,14 +44,6 @@ internal static class SystemctlInvoker
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
-        var stdout = await stdoutTask;
-
-        if (process.ExitCode != 0)
-        {
-            var stderr = await stderrTask;
-            throw new InvalidOperationException($"systemctl exited with code {process.ExitCode}: {stderr}");
-        }
-
-        return stdout;
+        return new ExecutionResult(process.ExitCode, await stdoutTask, await stderrTask);
     }
 }

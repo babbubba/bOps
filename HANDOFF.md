@@ -1,4 +1,16 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3 in progress (A–F implemented locally)
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-G implemented locally (A–G)
+
+## V1.3-G local integration gate — 2026-09-23
+
+G1–G6 were implemented in the preceding commits. G7 adds the Scheduler.Windows/Linux composition
+to CLI and API, verifies the existing solution/project references and package locks through restore,
+and closes the local documentation and integration gate. Targeted validation and the full local
+non-live gate passed on Windows; real Windows Task Scheduler lifecycle coverage is explicitly
+skipped unless the host is provisioned, and Linux systemd/cron integration remains platform-gated
+for Linux CI. Windows/Linux CI is required before G is closed definitively.
+
+Next action: push the branch, open the PR and wait for Windows/Linux CI. Do not start V1.3-H until
+G is merged and green according to the repository workflow.
 
 ## V1.1-H status (2026-09-18) — closed
 

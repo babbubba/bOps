@@ -19,3 +19,32 @@ public sealed record ServiceSummary(string Name, string Status);
 /// V0.11's second tranche (<c>service.start</c>/<c>stop</c>/<c>restart</c>), per ADR-0021.
 /// </summary>
 public sealed record ServiceStatusResult(string Name, bool Exists, string Status, string? Description);
+
+public sealed record ServiceConfigResult(
+    bool Exists, string Name, string? DisplayName, string? Description, string? Executable,
+    string? Arguments, string? WorkingDirectory, string? User, string StartupType, bool? Enabled,
+    string? EnablementState, string? RestartPolicy, IReadOnlyList<string> Dependencies,
+    IReadOnlyList<string> Dependents, string? Source, bool Complete);
+
+public sealed record ServiceDependencyRelation(string Relation, string ServiceName, string? Status);
+
+public sealed record ServiceDependenciesResult(
+    IReadOnlyList<ServiceDependencyRelation> Relations, int Count, bool Truncated, bool Complete, string? Source);
+
+public static class ServiceDependencyResults
+{
+    public static ServiceDependenciesResult Bound(ServiceDependenciesResult result, int limit)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (limit is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(limit));
+
+        var ordered = result.Relations
+            .OrderBy(relation => relation.Relation, StringComparer.Ordinal)
+            .ThenBy(relation => relation.ServiceName, StringComparer.Ordinal)
+            .ThenBy(relation => relation.Status, StringComparer.Ordinal)
+            .ToArray();
+        var truncated = ordered.Length > limit;
+        var bounded = truncated ? ordered.Take(limit).ToArray() : ordered;
+        return new ServiceDependenciesResult(bounded, bounded.Length, truncated ? true : result.Truncated, truncated ? false : result.Complete, result.Source);
+    }
+}

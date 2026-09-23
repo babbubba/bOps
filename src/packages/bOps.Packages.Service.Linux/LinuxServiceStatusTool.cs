@@ -19,7 +19,7 @@ public sealed class LinuxServiceStatusTool() : ServiceStatusToolBase("linux")
         }
 
         var output = await SystemctlInvoker.RunAsync(
-            ["show", name, "--property=LoadState,ActiveState,SubState,Description", "--no-pager"], ct);
+            ["show", "--property=LoadState,ActiveState,SubState,Description", "--no-pager", "--", name], ct);
 
         var properties = ParseProperties(output);
         if (!properties.TryGetValue("LoadState", out var loadState) || string.Equals(loadState, "not-found", StringComparison.Ordinal))

@@ -18,7 +18,8 @@ internal static partial class ServiceUnitName
     /// with an optional <c>.service</c> suffix that <c>systemctl</c> itself would otherwise
     /// append.
     /// </summary>
-    public static bool IsPlausible(string name) => UnitNamePattern().IsMatch(name);
+    public static bool IsPlausible(string name) =>
+        !string.IsNullOrEmpty(name) && name[0] != '-' && UnitNamePattern().IsMatch(name);
 
     [GeneratedRegex(@"^[A-Za-z0-9:_.@-]+$")]
     private static partial Regex UnitNamePattern();

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Scheduler.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.Scheduler.Core</AssemblyName>
+    <Description>Shared scheduler contracts, cron parsing and verification. No OS access.</Description>
+    <NoWarn>CA1711;CA1062;CA1725;CA1031;CA1512</NoWarn>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" /></ItemGroup>
+</Project>

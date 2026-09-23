@@ -104,6 +104,27 @@ public sealed class WindowsServiceActionToolsTests
         Assert.Equal(ToolOutcome.Failure, result.Outcome);
     }
 
+    [RequiresElevationFact]
+    public async Task ServiceEnableDisable_ChangeOnlyEnablementAndVerifyConfiguration()
+    {
+        using var service = new ThrowawayWindowsService();
+        var args = NameArgs(service.Name);
+
+        var enable = await new WindowsServiceEnableTool().ExecuteAsync(args);
+        Assert.True(enable.Succeeded, enable.ErrorMessage);
+        var enabled = await new WindowsServiceConfigTool().ExecuteAsync(args);
+        Assert.True(enabled.Succeeded, enabled.ErrorMessage);
+        Assert.True(JsonNode.Parse(enabled.Output!)!["enabled"]!.GetValue<bool>());
+        Assert.Equal("manual", JsonNode.Parse(enabled.Output!)!["startupType"]!.GetValue<string>());
+
+        var disable = await new WindowsServiceDisableTool().ExecuteAsync(args);
+        Assert.True(disable.Succeeded, disable.ErrorMessage);
+        var disabled = await new WindowsServiceConfigTool().ExecuteAsync(args);
+        Assert.True(disabled.Succeeded, disabled.ErrorMessage);
+        Assert.False(JsonNode.Parse(disabled.Output!)!["enabled"]!.GetValue<bool>());
+        Assert.Equal("disabled", JsonNode.Parse(disabled.Output!)!["startupType"]!.GetValue<string>());
+    }
+
     [Theory]
     [InlineData("service.start", "running")]
     [InlineData("service.stop", "stopped")]

@@ -1,0 +1,151 @@
+name: Quality finalize
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  finalize:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted CI commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Download CI quality artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-ci
+          path: ${{ runner.temp }}/quality-ci
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate and finalize verified report
+        id: finalize
+        shell: pwsh
+        env:
+          SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          $active = Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json
+          if ($active.slug -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') { throw 'Unsafe active milestone slug.' }
+          foreach ($path in @($active.manifest, $active.localReport)) {
+            if ([IO.Path]::IsPathRooted($path) -or -not (Test-Path $path)) { throw "Invalid active milestone path: $path" }
+          }
+          $ciPath = Get-ChildItem -LiteralPath $env:RUNNER_TEMP/quality-ci -Filter '*.ci.json' -Recurse | Select-Object -First 1
+          if (-not $ciPath) { throw 'quality-ci artifact contains no CI report.' }
+          $ci = Get-Content -Raw -LiteralPath $ciPath.FullName | ConvertFrom-Json
+          if ($ci.sourceCommit -ne $env:SOURCE_COMMIT -or
+              $ci.milestone -ne $active.milestone -or
+              $ci.slug -ne $active.slug -or
+              $ci.qualityStatus -ne 'VERIFIED' -or
+              $null -eq $ci.finalQualityScore -or
+              @($ci.pendingEvidence).Count -ne 0 -or
+              @($ci.hardGateFailures).Count -ne 0 -or
+              @($ci.infrastructureErrors).Count -ne 0) {
+            "Quality finalization skipped: report is not VERIFIED or identity checks failed." >> $env:GITHUB_STEP_SUMMARY
+            "eligible=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $before = Join-Path $PWD "agentic/_quality/reports/$($active.slug).verified.json"
+          $oldTarget = $null
+          if (Test-Path $before) { $oldTarget = (Get-Content -Raw $before | ConvertFrom-Json).milestoneTargetCommit }
+          $output = & ./scripts/Test-MilestoneQuality.ps1 `
+            -FinalizeVerified `
+            -CiReport $ciPath.FullName `
+            -ExpectedCommit $env:SOURCE_COMMIT `
+            -ReportsDirectory (Join-Path $PWD 'agentic/_quality/reports') `
+            -Index (Join-Path $PWD 'agentic/_quality/reports/index.json') 2>&1
+          $output | ForEach-Object { $_.ToString() } | Add-Content $env:GITHUB_STEP_SUMMARY
+          $generated = if (Test-Path $before) { Get-Content -Raw $before | ConvertFrom-Json } else { $null }
+          $eligible = $null -ne $generated -and
+            $oldTarget -ne $ci.milestoneTargetCommit -and
+            $generated.milestoneTargetCommit -eq $ci.milestoneTargetCommit -and
+            $generated.verifiedRepositoryCommit -eq $env:SOURCE_COMMIT -and
+            $generated.qualityStatus -eq 'VERIFIED'
+          if ($eligible) { "eligible=true" >> $env:GITHUB_OUTPUT } else { "eligible=false" >> $env:GITHUB_OUTPUT }
+
+      - name: Verify generated diff
+        if: steps.finalize.outputs.eligible == 'true'
+        shell: pwsh
+        run: |
+          $allowed = @(
+            'agentic/_quality/reports/' + (Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json).slug + '.verified.json',
+            'agentic/_quality/reports/' + (Get-Content -Raw agentic/_quality/active-milestone.json | ConvertFrom-Json).slug + '.verified.md',
+            'agentic/_quality/reports/index.json'
+          )
+          $changed = @(git status --porcelain | ForEach-Object { $_.Substring(3) })
+          if (@($changed | Where-Object { $allowed -notcontains $_ }).Count -gt 0) { throw 'Finalizer changed a file outside the verified report allowlist.' }
+
+      - name: Create quality branch and commit
+        if: steps.finalize.outputs.eligible == 'true'
+        id: branch
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          slug=$(python -c "import json; print(json.load(open('agentic/_quality/active-milestone.json'))['slug'])")
+          branch="quality/${slug}-verified-${SOURCE_COMMIT:0:7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add "agentic/_quality/reports/${slug}.verified.json" "agentic/_quality/reports/${slug}.verified.md" agentic/_quality/reports/index.json
+          git diff --cached --exit-code && { echo "No verified report changes."; exit 1; } || true
+          git commit -m "test(quality): record ${slug} verified evidence"
+          git push --set-upstream origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Create verification PR
+        if: steps.finalize.outputs.eligible == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          QUALITY_BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          slug=$(python -c "import json; print(json.load(open('agentic/_quality/active-milestone.json'))['slug'])")
+          title="test(quality): record ${slug} verified evidence"
+          body=$(cat <<EOF
+          Generated automatically from CI run ${SOURCE_RUN_ID}.
+
+          - verifiedRepositoryCommit: ${SOURCE_COMMIT}
+          - milestone: ${slug}
+          - platform evidence: complete
+          - generated automatically; requires manual merge
+
+          Auto-merge and approval are intentionally not enabled.
+          EOF
+          )
+          if ! gh pr create --base main --head "$QUALITY_BRANCH" --title "$title" --body "$body"; then
+            {
+              echo "## Quality finalization"
+              echo "Branch created: ${QUALITY_BRANCH}"
+              echo "Verified report generated. PR creation blocked by repository policy; operator must open the PR manually."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload verified report fallback
+        if: steps.finalize.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-verified-generated
+          path: |
+            agentic/_quality/reports/*.verified.json
+            agentic/_quality/reports/*.verified.md
+            agentic/_quality/reports/index.json
+          if-no-files-found: error
+          retention-days: 30

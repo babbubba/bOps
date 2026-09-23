@@ -20,6 +20,8 @@ using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
 using bOps.Packages.Storage.Linux;
 using bOps.Packages.Storage.Windows;
+using bOps.Packages.Scheduler.Linux;
+using bOps.Packages.Scheduler.Windows;
 using bOps.Packages.Sys.Linux;
 using bOps.Packages.Sys.Windows;
 using bOps.Packages.Web;
@@ -323,6 +325,21 @@ var storagePackageId = new PackageId($"bops.packages.storage.{CurrentPlatform.Id
 foreach (var tool in storageToolProvider.GetTools())
 {
     toolRegistry.Register(storagePackageId, tool);
+}
+
+// V1.3-G: exactly one OS-specific scheduler provider is composed; Scheduler.Core has no
+// independent provider or package identity.
+IToolProvider schedulerToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsSchedulerToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxSchedulerToolProvider()
+        : throw new PlatformNotSupportedException(
+            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
+
+var schedulerPackageId = new PackageId($"bops.packages.scheduler.{CurrentPlatform.Id}");
+foreach (var tool in schedulerToolProvider.GetTools())
+{
+    toolRegistry.Register(schedulerPackageId, tool);
 }
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check
