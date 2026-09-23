@@ -23,6 +23,20 @@
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Linux\bOps.Packages.System.Linux.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Identity.Linux\bOps.Packages.Identity.Linux.csproj" />
     <ProjectReference Include="..\bOps.Packages.System.Conformance\bOps.Packages.System.Conformance.csproj" />
+    <ProjectReference Include="..\bOps.Packages.System.Linux.TestChild\bOps.Packages.System.Linux.TestChild.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="CopyLinuxTestChildRuntimeFiles" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\bOps.Packages.System.Linux.TestChild\bOps.Packages.System.Linux.TestChild.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <PropertyGroup>
+      <_TestChildOutput>$(MSBuildThisFileDirectory)..\bOps.Packages.System.Linux.TestChild\bin\$(Configuration)\net10.0</_TestChildOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TestChildRuntimeFile Include="$(_TestChildOutput)\bOps.Packages.System.Linux.TestChild.dll" />
+      <_TestChildRuntimeFile Include="$(_TestChildOutput)\bOps.Packages.System.Linux.TestChild.deps.json" />
+      <_TestChildRuntimeFile Include="$(_TestChildOutput)\bOps.Packages.System.Linux.TestChild.runtimeconfig.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TestChildRuntimeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

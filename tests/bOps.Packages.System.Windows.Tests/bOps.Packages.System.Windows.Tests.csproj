@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Identity.Windows\bOps.Packages.Identity.Windows.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Windows.Updates.Helper\bOps.Packages.System.Windows.Updates.Helper.csproj" />
     <ProjectReference Include="..\bOps.Packages.System.Conformance\bOps.Packages.System.Conformance.csproj" />
   </ItemGroup>
 

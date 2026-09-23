@@ -185,6 +185,12 @@
           "bOps.Abstractions": "[1.2.0-preview.8, )",
           "bOps.Packages.System.Core": "[1.0.0, )"
         }
+      },
+      "bops.packages.system.windows.updates.helper": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.System.Windows": "[1.0.0, )"
+        }
       }
     }
   }

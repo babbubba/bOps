@@ -51,6 +51,7 @@
     <Project Path="src/packages/bOps.Packages.System.Core/bOps.Packages.System.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Linux/bOps.Packages.System.Linux.csproj" />
     <Project Path="src/packages/bOps.Packages.System.Windows/bOps.Packages.System.Windows.csproj" />
+    <Project Path="src/packages/bOps.Packages.System.Windows.Updates.Helper/bOps.Packages.System.Windows.Updates.Helper.csproj" />
     <Project Path="src/packages/bOps.Packages.Scheduler.Core/bOps.Packages.Scheduler.Core.csproj" />
     <Project Path="src/packages/bOps.Packages.Scheduler.Windows/bOps.Packages.Scheduler.Windows.csproj" />
     <Project Path="src/packages/bOps.Packages.Scheduler.Linux/bOps.Packages.Scheduler.Linux.csproj" />

@@ -69,4 +69,17 @@ internal static partial class NativeMethods
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
+
+    [LibraryImport("psapi.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EnumDeviceDrivers([Out] IntPtr[] imageBases, uint cb, out uint bytesNeeded);
+
+    [LibraryImport("psapi.dll", EntryPoint = "GetDeviceDriverBaseNameW", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static unsafe partial uint GetDeviceDriverBaseName(IntPtr imageBase, char* name, uint size);
+
+    [LibraryImport("psapi.dll", EntryPoint = "GetDeviceDriverFileNameW", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static unsafe partial uint GetDeviceDriverFileName(IntPtr imageBase, char* path, uint size);
 }

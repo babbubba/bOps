@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Packages.System.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
     <!-- V1.3-C (ADR-0034): Win32_Process is the only supported way to read another process's
          parent PID, image path, command line and owner without a toolhelp snapshot. It is the

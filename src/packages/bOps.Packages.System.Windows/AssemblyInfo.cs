@@ -9,3 +9,4 @@ using System.Runtime.Versioning;
 // Windows-specific TargetFramework — see the note in the .csproj.
 [assembly: SupportedOSPlatform("windows")]
 [assembly: InternalsVisibleTo("bOps.Packages.System.Windows.Tests")]
+[assembly: InternalsVisibleTo("bOps.Packages.System.Windows.Updates.Helper")]

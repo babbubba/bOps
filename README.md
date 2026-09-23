@@ -104,7 +104,7 @@ below it for what's coming and, deliberately, what never will.
 
 | Package | Tools |
 |---|---|
-| **System** | `system.info` `system.apps` `system.devices` `system.events` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
+| **System** | `system.info` `system.apps` `system.devices` `system.events` `system.updates` `system.update_history` `system.crashes` `system.drivers` `system.cpu` `system.memory` `system.disk` `system.swap` `system.io` |
 | **Process** | `process.list` `process.inspect` `process.metrics` `process.tree` `process.modules` `process.stop` `process.kill` |
 | **Filesystem** | `fs.list` `fs.stat` `fs.read` `fs.write` `fs.delete` `fs.search` `fs.hash` `fs.move` `fs.size` `fs.delete_tree.prepare` `fs.delete_tree` `fs.delete_tree.verify` `fs.grep` `fs.tail` `fs.permissions` `fs.locks` `fs.copy.verify` `fs.copy` `fs.mkdir` |
 | **Network** | `network.interfaces` `network.connections` `network.dns` `network.ping` `network.port_check` `network.route` `network.sockets` `network.routes` `network.neighbors` `network.interface_stats` `network.dns_query` `network.traceroute` `network.ntp_probe` |
@@ -115,6 +115,13 @@ below it for what's coming and, deliberately, what never will.
 | **Scheduler** | `scheduler.list` `scheduler.inspect` `scheduler.history` `scheduler.enable` `scheduler.disable` (Windows Task Scheduler 2.0; Linux systemd timers and read-only cron inventory) |
 | **Docker** | `docker.containers` `docker.inspect` `docker.logs` `docker.images` `docker.networks` `docker.start` `docker.stop` `docker.restart` `docker.image.inspect` `docker.image.pull` `docker.image.tag` `docker.image.remove` `docker.build` `docker.volumes` `docker.volume.inspect` `docker.volume.create` `docker.volume.remove` |
 | **Web** | `web.search` `web.fetch` |
+
+`system.updates`, `system.update_history`, `system.crashes` and `system.drivers` provide bounded,
+read-only maintenance evidence: Windows uses WUA pending/history, WER/Event Log crash metadata and
+`EnumDeviceDrivers`; Linux uses apt/dnf/zypper pending evidence, local package history,
+`coredumpctl`/`core_pattern` and `/proc/modules` with `/sys/module` metadata. These tools never
+install or mutate updates, load/unload drivers or modules, or read/extract dump contents. Unavailable
+or stale sources produce incomplete evidence (see [`docs/system-maintenance.md`](docs/system-maintenance.md)).
 
 `system.events` (V1.3-A) reads recent Windows Event Log or journald events as bounded, newest-first JSON
 that says whether it is complete (see [`docs/system-events.md`](docs/system-events.md)). V1.3-B adds Docker image, build and

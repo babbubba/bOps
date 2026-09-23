@@ -5,6 +5,83 @@ using bOps.Abstractions;
 
 namespace bOps.Packages.Sys.Core;
 
+/// <summary>Shared shell for read-only pending-update evidence.</summary>
+public abstract class SystemUpdatesToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Updates(platform);
+
+    /// <summary>Collects normalized evidence after the caller's bounded arguments have been validated.</summary>
+    protected abstract Task<MaintenanceSnapshot<UpdateRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadUpdates(arguments, out var query, out var error))
+        {
+            return ToolCallResult.Failure(error!);
+        }
+
+        var snapshot = await CollectAsync(query, ct).ConfigureAwait(false);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.Updates(snapshot, query.Limit));
+    }
+}
+
+/// <summary>Shared shell for bounded, read-only update-history evidence.</summary>
+public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.UpdateHistory(platform);
+
+    /// <summary>Collects normalized local or native history after validation.</summary>
+    protected abstract Task<MaintenanceSnapshot<UpdateHistoryRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
+/// <summary>Shared shell for bounded, read-only crash-evidence collection.</summary>
+public abstract class SystemCrashesToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Crashes(platform);
+
+    /// <summary>Collects only normalized crash metadata after bounded arguments are validated.</summary>
+    protected abstract Task<MaintenanceSnapshot<CrashRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
+/// <summary>Shared shell for bounded, read-only loaded-driver or kernel-module evidence.</summary>
+public abstract class SystemDriversToolBase(string platform) : ITool
+{
+    /// <inheritdoc />
+    public ToolManifest Manifest { get; } = SystemToolManifests.Drivers(platform);
+
+    /// <summary>Collects normalized loaded-driver evidence after the caller's limit was validated.</summary>
+    protected abstract Task<MaintenanceSnapshot<DriverRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+
+    /// <inheritdoc />
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
+        return ToolCallResult.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+    }
+}
+
 /// <summary>
 /// The tool shell for <c>system.info</c>: manifest and result formatting shared, data
 /// collection left to the OS package (agentic/01-architecture-rules.md, rule A8).

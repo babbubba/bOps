@@ -13,4 +13,8 @@
     <ProjectReference Include="..\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Packages.System.Linux.Tests" />
+  </ItemGroup>
+
 </Project>
