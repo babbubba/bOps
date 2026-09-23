@@ -526,6 +526,24 @@
           "bOps.Abstractions": "[1.2.0-preview.8, )"
         }
       },
+      "bops.packages.identity.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.2.0-preview.8, )"
+        }
+      },
+      "bops.packages.identity.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.identity.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
       "bops.packages.network": {
         "type": "Project",
         "dependencies": {
