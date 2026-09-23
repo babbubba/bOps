@@ -23,6 +23,7 @@
          parent PID, image path, command line and owner without a toolhelp snapshot. It is the
          managed CIM client, not a command surface — there is no PowerShell and no wmic.exe. -->
     <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

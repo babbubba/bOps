@@ -1,6 +1,6 @@
 {
-  "milestone": "V1.3-G",
-  "slug": "v1-3-g",
-  "manifest": "agentic/_quality/manifests/v1.3-g.json",
-  "localReport": "agentic/_quality/reports/v1-3-g.local.json"
+  "milestone": "V1.3-H",
+  "slug": "v1-3-h",
+  "manifest": "agentic/_quality/manifests/v1.3-h.json",
+  "localReport": "agentic/_quality/reports/v1-3-h.local.json"
 }

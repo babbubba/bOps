@@ -3,6 +3,8 @@
 
 using bOps.Packages.Sys.Conformance;
 using bOps.Packages.Sys.Windows;
+using System.Text.Json.Nodes;
+using bOps.Abstractions;
 
 namespace bOps.Packages.System.Windows.Tests;
 
@@ -62,14 +64,35 @@ public sealed class WindowsSystemToolsTests
     public Task ProcessInspect_ReportsMissing_ForAnUnlikelyPid() =>
         SystemToolConformance.AssertProcessInspectReportsMissingAsync(new WindowsProcessInspectTool());
 
+    [WindowsOnlyFact]
+    public async Task SystemTime_RealSmoke_IsTimezoneSafe()
+    {
+        var result = await new WindowsSystemTimeTool().ExecuteAsync(ToolArguments.Empty);
+        Assert.True(result.Succeeded);
+        var json = JsonNode.Parse(result.Output!)!.AsObject();
+        Assert.NotEqual(default, json["utcNow"]!.GetValue<DateTimeOffset>());
+        Assert.False(string.IsNullOrWhiteSpace(json["localNow"]!.GetValue<DateTimeOffset>().ToString()));
+        Assert.False(string.IsNullOrWhiteSpace(json["timeZoneId"]!.GetValue<string>()));
+    }
+
+    [WindowsOnlyFact]
+    public async Task RebootPending_RealSmoke_IsBounded()
+    {
+        var result = await new WindowsRebootPendingTool().ExecuteAsync(ToolArguments.Empty);
+        Assert.True(result.Succeeded);
+        var json = JsonNode.Parse(result.Output!)!.AsObject();
+        Assert.InRange(json["reasons"]!.AsArray().Count, 0, 10);
+        Assert.DoesNotContain("PendingFileRenameOperations", result.Output!, StringComparison.Ordinal);
+    }
+
     [Fact]
-    public void ToolProvider_ContributesExactlyTheSixteenSystemAndProcessTools()
+    public void ToolProvider_ContributesExactlyTheEighteenSystemAndProcessTools()
     {
         var names = new WindowsSystemToolProvider().GetTools().Select(t => t.Manifest.Name).ToList();
 
         Assert.Equal(
             [
-                "system.info", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
+                "system.info", "system.time", "system.reboot_pending", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "process.list",
                 "system.swap", "system.io", "process.inspect", "process.metrics", "process.tree", "process.modules",
                 "process.stop", "process.kill",
             ],

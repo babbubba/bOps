@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>bOps.Packages.Identity.Core</RootNamespace>
+    <AssemblyName>bOps.Packages.Identity.Core</AssemblyName>
+    <Description>Shared identity contracts and bounded tool shells; no operating-system calls.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" /></ItemGroup>
+</Project>

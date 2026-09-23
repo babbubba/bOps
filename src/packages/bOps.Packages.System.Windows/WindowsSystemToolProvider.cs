@@ -12,6 +12,8 @@ public sealed class WindowsSystemToolProvider : IToolProvider
     public IEnumerable<ITool> GetTools() =>
     [
         new WindowsSystemInfoTool(),
+        new WindowsSystemTimeTool(),
+        new WindowsRebootPendingTool(),
         new WindowsApplicationInventoryTool(),
         new WindowsDeviceInventoryTool(),
         new WindowsSystemEventsTool(),

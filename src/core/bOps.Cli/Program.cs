@@ -6,6 +6,8 @@ using bOps.Audit;
 using bOps.Cli;
 using bOps.Memory;
 using bOps.Packages.Docker;
+using bOps.Packages.Identity.Linux;
+using bOps.Packages.Identity.Windows;
 using bOps.Packages.Filesystem;
 using bOps.Packages.Network;
 using bOps.Packages.Network.Native.Linux;
@@ -248,6 +250,17 @@ var schedulerPackageId = new PackageId($"bops.packages.scheduler.{CurrentPlatfor
 foreach (var tool in schedulerToolProvider.GetTools())
 {
     toolRegistry.Register(schedulerPackageId, tool);
+}
+
+IToolProvider identityToolProvider = OperatingSystem.IsWindows()
+    ? new WindowsIdentityToolProvider()
+    : OperatingSystem.IsLinux()
+        ? new LinuxIdentityToolProvider()
+        : throw new PlatformNotSupportedException("bOps supports Windows and Linux only.");
+var identityPackageId = new PackageId($"bops.packages.identity.{CurrentPlatform.Id}");
+foreach (var tool in identityToolProvider.GetTools())
+{
+    toolRegistry.Register(identityPackageId, tool);
 }
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check

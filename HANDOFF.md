@@ -1,4 +1,10 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-G implemented locally (A–G)
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-H implemented locally (A–H)
+
+## V1.3-H local integration gate — 2026-09-23
+
+H1–H5 implement bounded read-only identity, sessions, time and reboot diagnostics for Windows and
+Linux. Local quality evidence is provisional until the required platform tests execute in CI.
+No push, PR or merge was performed by the coding agent.
 
 ## V1.3-G local integration gate — 2026-09-23
 

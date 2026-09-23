@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><RootNamespace>bOps.Packages.Identity.Linux</RootNamespace><AssemblyName>bOps.Packages.Identity.Linux</AssemblyName></PropertyGroup><ItemGroup><ProjectReference Include="..\bOps.Packages.Identity.Core\bOps.Packages.Identity.Core.csproj" /></ItemGroup></Project>

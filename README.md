@@ -143,6 +143,10 @@ verification, plus bounded scheduled-work diagnostics. Windows uses Task Schedul
 uses systemd timers and a read-only cron inventory. Cron observations have deterministic ids and
 scheduled target commands are never executed.
 
+V1.3-H adds read-only identity, session, time and reboot diagnostics. Identity data is bounded and
+deterministic; Linux keeps account enablement nullable and never reads `/etc/shadow`. Time and
+reboot evidence explicitly reports incomplete or unsupported sources.
+
 V0.11 is fully registered. `system.apps`, `system.devices`, `fs.size`, governed permanent recursive
 deletion and the Web package are implemented for the V1.1 preview; their bounded output, supported
 native sources and explicit completeness semantics are documented in
