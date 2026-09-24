@@ -168,19 +168,22 @@ selects a specific rotation of that publisher's key. Then validate and install:
 bops plugin validate ./bin/Release/net10.0/    # validates manifest, digest, signature and local trust
 bops plugin install ./bin/Release/net10.0/     # re-verifies staged bytes and installs disabled
 bops plugin list                               # confirm it is there
-bops plugin enable acme.sample-plugin          # re-verifies installed bytes, then activates
+bops plugin enable acme.sample-plugin --confirm-version 1.0.0   # re-verifies installed bytes, then activates
 ```
 
 There is no remote install and no auto-enable: a discovered plugin stays disabled until you
-enable it explicitly (rule S8), and only a local directory is a valid install source. An unsigned
-package or one signed by an unknown key can still be installed for inspection, but enablement
-fails closed. Modification after signing or installation invalidates its digest and blocks
-activation.
+enable it explicitly (rule S8) and name the exact version that will execute in-process
+(`--confirm-version`). `bops plugin` uses the same lifecycle service as the API (ADR-0037): install
+admits a local directory or `.zip` only when it is signed by a locally trusted key, recovery runs
+before every mutation, and a stale `--expected-version` is refused. Modification after signing or
+installation invalidates its digest and blocks activation.
 
 ```bash
 bops plugin disable acme.sample-plugin   # unload it; its files stay on disk
-bops plugin remove acme.sample-plugin    # disable (if enabled) and delete it
 ```
+
+`bops plugin remove` is refused: ADR-0037 defines no removal transaction, and deleting a
+generation the lifecycle metadata still names would leave it inconsistent.
 
 ## What isolation actually means here
 

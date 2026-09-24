@@ -267,11 +267,11 @@ deadline exceeded, `6` verification did not confirm, `10` not finished, `130` ca
 ```bash
 bops audit verify [audit-file]   # verify the complete append-only audit hash chain
 
-bops plugin install <directory>   # install a local plugin build — disabled until you enable it
-bops plugin list                  # every installed plugin, enabled or not
-bops plugin enable <id>           # activate now, and on every future run, until disabled
-bops plugin disable <id>          # unload it; its files stay on disk
-bops plugin remove <id>           # disable (if enabled) and delete it
+bops plugin install <directory|archive.zip> [--expected-version <n>]   # verified install through the lifecycle service — disabled until you enable it
+bops plugin list                  # every installed plugin: state and lifecycle revision
+bops plugin enable <id> --confirm-version <version> [--expected-version <n>]   # explicit confirmation that this version will execute in-process
+bops plugin disable <id> [--expected-version <n>]   # unload it; its files stay on disk
+bops plugin remove <id>           # refused: the lifecycle defines no removal transaction (ADR-0037)
 bops plugin validate <directory>  # check a bops-plugin.json without installing anything
 bops plugin sign <directory> <publisher> <key-id> <private-key.pem>
 ```
