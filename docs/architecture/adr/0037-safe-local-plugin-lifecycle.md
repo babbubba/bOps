@@ -26,8 +26,10 @@ administrator-only. API/backend authorization is authoritative; the UI and archi
 
 M5 extends the existing atomically written `PluginStore` record additively. The record retains
 the manifest snapshot and verified provenance, and gains an opaque monotonic lifecycle version
-(ETag), current generation/digest, previous-LKG generation reference, lifecycle state, and a
-bounded sanitized failure stage/reason.
+(ETag), `CurrentGeneration`, `ActivationLkgGeneration`, lifecycle state, and a bounded sanitized
+failure stage/reason. An active lifecycle transaction also records its
+`TransactionRollbackGeneration` and `CandidateGeneration` in its recovery marker; these are
+transaction roles, not aliases for activation LKG.
 
 | Persisted state | Meaning |
 |---|---|
@@ -66,8 +68,8 @@ platform limit when lower.
 
 The configured plugin root owns a same-volume lifecycle work area, for example
 `<plugin-root>/.lifecycle/{uploads,staging,quarantine,lkg}`. Temporary archive, staging,
-quarantine, LKG, and journal material are lifecycle-owned and restrictive to the host owner where
-supported. M5 proves work and install roots are on the same volume before promotion. If atomic
+quarantine, activation-LKG, transaction-rollback, and journal material are lifecycle-owned and
+restrictive to the host owner where supported. M5 proves work and install roots are on the same volume before promotion. If atomic
 rename cannot be guaranteed, it fails safely; it never substitutes copy-and-delete replacement.
 
 Before creating an extracted path, M5 enumerates and canonicalizes every entry. It rejects:
@@ -137,30 +139,65 @@ be explicitly disabled. This keeps the existing single-active-generation load-co
 prevents silent execution of the new version, and avoids unsupported force unload/simultaneous
 versions.
 
-### Atomic install, LKG, and recovery
+### Atomic install, generation roles, and recovery
 
 The atomically replaced `PluginStore` record is the authoritative commit marker. A committed
-record references final generation path, digest, state, and generation id. A lifecycle journal,
-atomically written before each non-idempotent rename, records operation id, plugin id,
-generations/digests, and phase (`oldMoved`, `candidatePromoted`, `storeCommitted`). It is
-removed only after store commit. This is a local recovery journal, not a distributed transaction.
+record references final generation path, digest, state, and generation id. The generation roles
+are distinct:
+
+- `CurrentGeneration` is the generation committed as the installed version. It can be enabled,
+  disabled, activation-failed, or in recovery state; current does not imply it ever activated.
+- `ActivationLkgGeneration` is the most recent generation that successfully completed the accepted
+  activation boundary through the existing registry. It changes only after successful activation;
+  validation, installation, commit, disable, or an activation failure do not make a generation
+  activation LKG.
+- `TransactionRollbackGeneration` is a transient reference/location for one install/replace
+  transaction. It identifies the generation that was `CurrentGeneration` immediately before the
+  replacement commit began, solely to restore that pre-transaction current generation if the
+  transaction fails or is interrupted before successful commit reconciliation.
+- `CandidateGeneration` is the validated staging/promotion candidate for that transaction.
+
+A lifecycle journal, atomically written before each non-idempotent rename, records operation id,
+plugin id, each generation/digest with its explicit role, and phase (`oldMoved`,
+`candidatePromoted`, `storeCommitted`). It is removed only after store commit. This local recovery
+journal is not a distributed transaction, and M5 never infers generation roles from directory
+timestamps or version numbers.
 
 For first install: atomically rename validated staging into the final install path, then atomically
 write `InstalledDisabled` into the store. Failure before store commit leaves unreferenced material
 that recovery deletes/quarantines; it never activates it.
 
-For replacement: validate completely; acquire lock and recheck ETag; atomically rename old final
-directory into bounded LKG; atomically rename candidate to final; atomically write the new
-`InstalledDisabled` record with the previous LKG reference. Cleanup is subsequent. Failure before
-candidate promotion restores/keeps old final. Failure after candidate promotion but before store
-commit restores LKG and treats candidate uncommitted; if restoration cannot be proved, mark
-`RecoveryRequired` and register neither. Failure after store commit leaves the new generation
-committed and disabled. A successful install/replace never enables.
+For replacement: validate completely; acquire lock and recheck ETag; record the old final as
+`TransactionRollbackGeneration`; atomically move it to the transaction rollback location;
+atomically promote `CandidateGeneration` to final; then atomically write the new
+`InstalledDisabled` record with that candidate as `CurrentGeneration`. Cleanup is subsequent.
+Failure before candidate promotion restores/keeps `TransactionRollbackGeneration` as current.
+Failure after candidate promotion but before store commit restores
+`TransactionRollbackGeneration`, treats `CandidateGeneration` as uncommitted, and preserves
+`ActivationLkgGeneration`; if restoration cannot be proved, mark `RecoveryRequired` and register
+neither. Failure after store commit leaves the new generation committed and disabled. A successful
+install/replace never enables or promotes the candidate to activation LKG.
 
-Last-known-good (LKG) means the most recent prior generation completely committed **and
-successfully activated** through the existing registry boundary. It is not merely signature-valid
-or installed. Current verified-install status and activation-good status are separate. Retain one
-LKG generation for 30 days; do not delete it until a later generation activated successfully and
+After a successful replacement commit, `CurrentGeneration` is the candidate and
+`ActivationLkgGeneration` remains unchanged until that current generation activates successfully.
+The completed transaction's `TransactionRollbackGeneration` is no longer authoritative and is
+cleanup-eligible under the bounded retention/recovery rules. On a later successful activation,
+`CurrentGeneration` and `ActivationLkgGeneration` both name that generation; the prior activation
+LKG then becomes cleanup-eligible when retention permits, without deleting material needed by an
+active transaction or recovery state.
+
+For example, let A be the previously successfully activated `ActivationLkgGeneration`, B be a
+later installed but disabled and never-activated `CurrentGeneration`, and C be a replacement
+candidate. Before B -> C promotion, current is B, activation LKG is A, and transaction rollback
+is B. If C promotion or metadata commit fails, recovery restores current B, preserves activation
+LKG A, and discards, quarantines, or cleans C under the normal failure semantics. It must not
+restore A merely because A is activation LKG.
+
+Retention is bounded to the logical roles of current committed generation, activation LKG when
+distinct, one active transaction rollback generation, and one active candidate/staging generation.
+A single physical generation may satisfy more than one logical role (for example,
+`CurrentGeneration == ActivationLkgGeneration`) and does not require duplicate copies. Retain an
+activation LKG for 30 days; do not delete it until a later generation activated successfully and
 retention permits.
 
 At startup and before any new mutation, M5 serializes recovery with that plugin's lock:
@@ -169,8 +206,8 @@ At startup and before any new mutation, M5 serializes recovery with that plugin'
 |---|---|
 | Unreferenced old upload/staging | Delete or bounded-quarantine; never load. |
 | Final directory matching store digest/generation | Current committed install; normal startup considers only persisted `Enabled` for activation. |
-| LKG exists but no committed current marker | Restore it as `InstalledDisabled`; do not auto-enable. |
-| Candidate final exists but store names previous current/LKG | Restore store-named material; delete/quarantine candidate. |
+| Interrupted replacement journal with no committed current marker | Restore `TransactionRollbackGeneration` as `InstalledDisabled`; preserve `ActivationLkgGeneration`; do not auto-enable. |
+| Candidate final exists while the journal/store identifies a prior current | Restore `TransactionRollbackGeneration`; delete/quarantine `CandidateGeneration`; preserve `ActivationLkgGeneration`. |
 | Store references absent/mismatched material or two plausible currents | `RecoveryRequired`; preserve bounded evidence; register neither. |
 | Store committed before activation completed | `InstalledDisabled`; activation needs a fresh explicit enable. |
 
@@ -189,18 +226,19 @@ it returns sanitized refusal and keeps it enabled rather than lying.
 If construction, discovery, registration, or activation persistence fails, the existing activation
 path unregisters every plugin-owned tool/Skill it added, unloads the context, records sanitized
 `ActivationFailed`, increments ETag, and never reports enabled. There is no automatic re-enable
-of LKG: it would execute code without fresh confirmation. Explicit administrator recovery restores
-the selected LKG as `InstalledDisabled`; a separate explicit enable is required.
+of the activation LKG: it would execute code without fresh confirmation. Explicit administrator
+recovery restores the selected `ActivationLkgGeneration` as `InstalledDisabled`; a separate
+explicit enable is required.
 
 | Operation | Preconditions | Result |
 |---|---|---|
 | Install | Valid candidate; absent id; creation precondition | `InstalledDisabled` |
-| Replace | Valid same id/publisher continuity; target not enabled; matching ETag | New `InstalledDisabled`, LKG retained |
+| Replace | Valid same id/publisher continuity; target not enabled; matching ETag | New `InstalledDisabled`, activation LKG retained |
 | Enable | Disabled verified compatible generation; matching ETag; confirmation | `Enabled` or `ActivationFailed` |
 | Disable | Matching ETag | `InstalledDisabled` |
 | Enable already enabled | Matching ETag, same generation | Idempotent success; no reload |
 | Disable already disabled | Matching ETag | Idempotent success |
-| Recover | Failed/recovery state; matching ETag; confirmation | LKG restored disabled |
+| Recover | Failed/recovery state; matching ETag; confirmation | Activation LKG restored disabled |
 
 ### Concurrency, ETag, and idempotency
 
@@ -217,19 +255,55 @@ activation. Stale/missing required preconditions fail with deterministic conflic
 response, delete/quarantine the already-validated staging candidate, and make no mutation,
 promotion, or activation.
 
-M6 reuses the API idempotency pattern, adding a durable lifecycle operation record scoped by actor,
-plugin id where known, operation kind, and key. Its canonical request digest includes intent,
-target ETag, confirmation, and archive digest for install/replace. Same key/same request returns
-original terminal/in-progress result without duplicate installation; same key/different payload or
-intent conflicts. Existing 128-character key bound remains. Concurrent duplicate calls join the
-same keyed operation. Already-enabled/disabled success does no duplicate registry work.
+M6 reuses the API idempotency pattern, adding a durable lifecycle operation record atomically
+reserved by the provisional uniqueness scope `(NodeId, ActorIdentity, IdempotencyKey)`. Plugin id
+and operation kind are intent, not key uniqueness: within the configured bounded idempotency
+retention window, one actor/node/key identifies one logical lifecycle mutation. The existing
+128-character key bound remains; records do not create permanent actor-global reservations.
+
+At request admission, before archive parsing or plugin identity discovery, the backend reserves
+that one record in bounded `Pending`/`InProgress` state. Only its owner executes the mutation.
+Any concurrent request with the same scope joins, waits for, or replays that operation according
+to the existing API idempotency infrastructure and never begins a second lifecycle transaction.
+
+The record stores a deterministic canonical intent fingerprint. It includes operation kind,
+route/request plugin identity when already known, expected ETag/version or `If-Match`
+precondition when semantically part of the mutation, activation confirmation where applicable,
+and normalized mutation-body fields. For upload/install it also includes a cryptographic digest of
+the received archive bytes and, after safe manifest parsing, the validated canonical manifest
+plugin identity/version. The archive digest is a request-identity fingerprint, not a signature and
+not a substitute for artifact signature verification; raw archive bytes are not retained for
+idempotency comparison.
+
+The same record transitions as follows: reserve `(NodeId, ActorIdentity, IdempotencyKey)`; record
+immediately-known intent; compute the archive digest during bounded upload; then atomically bind
+the canonical intent after safe manifest parsing. It is never moved to a plugin-scoped key.
+Same scoped key plus the same canonical intent joins or replays the one logical result, with no
+duplicate staging, commit, activation, or state transition. The same scoped key with a different
+operation kind, archive digest, plugin identity/version, ETag/precondition, activation intent, or
+other canonical mutation input is a deterministic idempotency conflict and performs no second
+lifecycle mutation. Thus the same actor/node/key cannot be reused for Enable after Upload merely
+because the operation differs.
+
+If a follower arrives while an upload owner is still receiving or parsing its archive and the full
+fingerprint is unknown, it still joins/waits on the in-progress reservation and starts no mutation.
+Once the owner's intent and result are known, a matching follower replays that result and a
+different follower receives deterministic conflict. If comparison requires consuming a follower
+body, M6 may bound and hash it, but it must not start a second backend mutation.
+
+ETag optimistic concurrency and idempotency are separate controls. An ETag asks whether a mutation
+is based on current plugin state; idempotency asks whether this logical request was submitted
+already. A same-key, same-intent replay returns the original logical result under these semantics.
+A new key with stale `If-Match` fails normal optimistic concurrency; idempotency does not bypass an
+unrelated stale-state mutation.
 
 ### Cleanup and audit
 
 Cleanup removes temporary archives after extraction outcome, staging after commit/rejection,
-quarantine after 24 hours/ten candidates, and obsolete backup only after LKG retention. Cleanup
-failure does not un-install a committed generation or change its state; it is observable/auditable
-for retry. Retention caps prevent accumulation.
+quarantine after 24 hours/ten candidates, and obsolete role material only after the applicable
+activation-LKG or transaction/recovery retention permits. Cleanup failure does not un-install a
+committed generation or change its state; it is observable/auditable for retry. Retention caps
+prevent accumulation.
 
 Audit records upload/install attempt, validation stage/result, signature/trust result,
 install/replace commit, enable, disable, activation failure, recovery, stale precondition refusal,
@@ -287,7 +361,7 @@ private provider, private Skill, or business distribution rule.
 | SDK/dependency confusion | Compatibility/declared-dependency validation; no resolver |
 | Privilege/risk widening | Host-assigned identity; unchanged policy/trust/envelope boundaries |
 | Lifecycle race/stale ETag | Keyed lock, in-lock condition, journal |
-| Idempotency replay/conflict | Canonical request digest and durable operation record |
+| Idempotency replay/conflict | Provisional actor/node/key reservation, canonical intent fingerprint, and durable operation record |
 | Crash during install | Atomic same-volume renames, journal, store marker, recovery |
 | Partial activation | Existing unregister/unload cleanup and failed state |
 | Malicious trusted code | Explicit confirmation and host-privilege warning |
@@ -301,7 +375,7 @@ private provider, private Skill, or business distribution rule.
   code without explicit administrator action.
 - In-place replacement of enabled plugin: rejected because current registry/load-context behavior
   does not safely promise it. Explicit disable first is deterministic.
-- Automatic LKG re-enable after failure: rejected because it executes code without fresh
+- Automatic activation-LKG re-enable after failure: rejected because it executes code without fresh
   confirmation.
 - Permanent rejected-archive storage: rejected as unbounded hostile-content retention.
 - Validating paths only after extraction: rejected because unsafe writes may already occur.
@@ -311,7 +385,7 @@ private provider, private Skill, or business distribution rule.
 M5 implements only the lifecycle service as an extension of `PluginManager`/`PluginStore` and
 the current manifest, signature, trust, registry, and load-context boundaries. It implements this
 state model, lifecycle-owned same-volume paths, exact validation sequence and numeric limits,
-metadata-only structural inspection, atomic promotion/journal/store marker, LKG/recovery rules,
+metadata-only structural inspection, atomic promotion/journal/store marker, generation-role/recovery rules,
 per-id locking, ETag/idempotency behavior, transition table, cleanup, and failure behavior.
 
 It does not implement M6/M7, remote sources, deletion, a new signing/trust format, generic
