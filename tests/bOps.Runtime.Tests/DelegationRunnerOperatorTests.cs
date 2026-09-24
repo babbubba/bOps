@@ -32,7 +32,7 @@ public sealed partial class DelegationRunnerTests
         Assert.Equal(granted.AllowedTargets, shown.AllowedTargets);
         Assert.Equal(granted.AllowedEnvironments, shown.AllowedEnvironments);
         Assert.Equal(granted.Budget.MaxSteps, shown.Budget.MaxSteps);
-        Assert.Equal(["service.restart"], shown.AllowedTools);
+        Assert.Equal(["service.restart", "test.read"], shown.AllowedTools);
     }
 
     // ---- a stored run that contradicts itself ----

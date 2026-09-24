@@ -59,7 +59,7 @@ public sealed partial class DelegationRunnerTests
         ]);
 
     private static Dictionary<AgentRoleKind, RoleProfile> ProfilesForBothTools() =>
-        ProfilesWith(Profile(AgentRoleKind.Remediation, tools: ["service.restart", "service.stop"]));
+        ProfilesWith(Profile(AgentRoleKind.Remediation, tools: ["service.restart", "service.stop", "test.read"]));
 
     // ---- approvals are human only, at every step ----
 

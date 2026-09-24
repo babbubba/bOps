@@ -42,7 +42,9 @@ public sealed partial class DelegationRunnerTests
             AllowedCapabilities: usesSkills ? capabilities ?? ["sample.remediate"] : [],
             AllowedTools: tools ?? role switch
             {
-                AgentRoleKind.Remediation => ["service.restart"],
+                // Runtime-mandated post-action verification runs under the remediation envelope,
+                // so its declared verifier must be included alongside the mutation it checks.
+                AgentRoleKind.Remediation => ["service.restart", "test.read"],
                 AgentRoleKind.Verification => ["test.read"],
                 _ => ["host.info"],
             },

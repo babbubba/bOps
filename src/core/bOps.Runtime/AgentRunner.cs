@@ -48,7 +48,8 @@ public sealed class AgentRunner(
     TimeProvider timeProvider,
     ILogger<AgentRunner> logger,
     AgentRunnerOptions options,
-    ISkillRegistry? skillRegistry = null)
+    ISkillRegistry? skillRegistry = null,
+    IEntitlementService? entitlementService = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -1438,8 +1439,8 @@ public sealed class AgentRunner(
         SkillExecutionScope? skillScope = null,
         DelegatedExecutionScope? delegation = null)
     {
-        var tool = registry.Resolve(call.ToolName);
-        if (tool is null)
+        var registration = registry.ResolveForExecution(call.ToolName);
+        if (registration is null)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
@@ -1447,6 +1448,7 @@ public sealed class AgentRunner(
             return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool, null);
         }
 
+        var tool = registration.Tool;
         var manifest = tool.Manifest;
         var executionContext = new ToolExecutionContext(NodeId.Local, taskId, actor);
 
@@ -1493,7 +1495,7 @@ public sealed class AgentRunner(
         // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
         // package loaded today is first-party, shipped in this repository, and there is no real
         // per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003).
-        var policyContext = new PolicyContext(NodeId.Local, manifest.Package, registry.GetTrust(manifest.Package), manifest, call.Arguments, actor)
+        var policyContext = new PolicyContext(NodeId.Local, registration.Package, registration.Trust, manifest, call.Arguments, actor)
         {
             SkillId = skillScope?.SkillId,
             CapabilityName = skillScope?.CapabilityName,
@@ -1614,6 +1616,14 @@ public sealed class AgentRunner(
             }
         }
 
+        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, skillScope, ct);
+        if (!entitlement.Allowed)
+        {
+            var rejected = await RejectAsync(taskId, stepIndex, actor, call, registration.Package, manifest.Risk,
+                AuthorizationKind.EntitlementDenied, entitlement.Detail, planRevision, ct, skillScope, delegation);
+            return (rejected.Step, rejected.Observation, AuthorizationKind.EntitlementDenied, null);
+        }
+
         using var toolActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.tool");
         toolActivity?.SetTag("bops.tool", manifest.Name);
         toolActivity?.SetTag("bops.package", manifest.Package.Value);
@@ -1676,7 +1686,7 @@ public sealed class AgentRunner(
         // arguments, not against how the original call reported itself. Registration (rule B3)
         // guarantees a non-Read tool implements IVerifiableTool and declares a VerificationSpec.
         VerificationOutcome? verificationOutcome = manifest.Risk != RiskLevel.Read
-            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, ct)
+            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, actor, skillScope, delegation, ct)
             : null;
 
         if (verificationOutcome is not null)
@@ -1713,13 +1723,23 @@ public sealed class AgentRunner(
         VerificationSpec spec,
         ModelToolCall call,
         ToolExecutionContext executionContext,
+        ActorIdentity actor,
+        SkillExecutionScope? skillScope,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct)
     {
         using var verificationActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.verification");
         verificationActivity?.SetTag("bops.tool", call.ToolName);
         verificationActivity?.SetTag("bops.verification_tool", spec.VerifyToolName);
 
-        var verificationResult = await ExecuteVerificationToolAsync(spec, call.Arguments, executionContext, ct);
+        var verification = await ExecuteVerificationToolAsync(spec, call.Arguments, executionContext, actor, skillScope, delegation, ct);
+        if (verification.PreInvocationDenial is not null)
+        {
+            verificationActivity?.SetTag("bops.verification", VerificationStatus.Inconclusive.ToString());
+            return new VerificationOutcome(VerificationStatus.Inconclusive, verification.PreInvocationDenial);
+        }
+
+        var verificationResult = verification.Result!;
         verificationActivity?.SetTag("bops.verification_tool_outcome", verificationResult.Outcome.ToString());
 
         VerificationOutcome outcome;
@@ -1748,29 +1768,116 @@ public sealed class AgentRunner(
     /// itself failing (rule S4): <see cref="IVerifiableTool.EvaluateVerificationAsync"/> is the
     /// one place that turns "could not verify" into <see cref="VerificationStatus.Inconclusive"/>.
     /// </summary>
-    private async Task<ToolCallResult> ExecuteVerificationToolAsync(
+    private async Task<VerificationInvocation> ExecuteVerificationToolAsync(
         VerificationSpec spec,
         ToolArguments originalArguments,
         ToolExecutionContext executionContext,
+        ActorIdentity actor,
+        SkillExecutionScope? skillScope,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct)
     {
-        var verifyTool = registry.Resolve(spec.VerifyToolName);
-        if (verifyTool is null)
+        var registration = registry.ResolveForExecution(spec.VerifyToolName);
+        if (registration is null)
         {
-            return ToolCallResult.Failure(
-                $"Verification tool '{spec.VerifyToolName}' is not registered, or not available on this platform.");
+            return new VerificationInvocation(ToolCallResult.Failure(
+                $"Verification tool '{spec.VerifyToolName}' is not registered, or not available on this platform."), null);
         }
+
+        var verifyTool = registration.Tool;
 
         var verificationArguments = ExtractVerificationArguments(originalArguments, spec.ArgumentsFrom);
         if (ValidateArguments(verifyTool.Manifest, verificationArguments) is { } validationError)
         {
-            return ToolCallResult.Failure(
-                $"Could not build a valid call to verification tool '{spec.VerifyToolName}': {validationError}");
+            return new VerificationInvocation(ToolCallResult.Failure(
+                $"Could not build a valid call to verification tool '{spec.VerifyToolName}': {validationError}"), null);
+        }
+
+        if (delegation is not null
+            && EnvelopeEnforcer.CheckStep(delegation, actor, verifyTool.Manifest, skillScope, timeProvider.GetUtcNow()) is { } envelopeRefusal)
+        {
+            return new VerificationInvocation(null, $"Verification authorization prevented the read: {envelopeRefusal.Reason}");
+        }
+
+        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, skillScope, ct);
+        if (!entitlement.Allowed)
+        {
+            return new VerificationInvocation(null, $"Verification authorization prevented the read: {entitlement.Detail}");
         }
 
         var verificationCall = new ModelToolCall("verification", spec.VerifyToolName, verificationArguments);
-        return await ExecuteWithTimeoutAsync(verifyTool, verificationCall, executionContext, ct);
+        return new VerificationInvocation(await ExecuteWithTimeoutAsync(verifyTool, verificationCall, executionContext, ct), null);
     }
+
+    private async Task<EntitlementEvaluation> EvaluateEntitlementAsync(
+        ToolExecutionRegistration registration,
+        ToolExecutionContext executionContext,
+        SkillExecutionScope? skillScope,
+        CancellationToken ct)
+    {
+        if (registration.Entitlement is null || registration.Entitlement.Applicability != EntitlementApplicability.Governed)
+        {
+            return registration.Entitlement?.Applicability == EntitlementApplicability.NotGoverned
+                ? new EntitlementEvaluation(true, "Entitlement is not governed for this operation.")
+                : new EntitlementEvaluation(false, "The host entitlement requirement is invalid.");
+        }
+
+        if (entitlementService is null)
+        {
+            return new EntitlementEvaluation(false, "A required entitlement service is not configured.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var binding = new RequestBinding(Guid.NewGuid().ToString("N"));
+        var request = new EntitlementRequest(
+            binding,
+            $"{executionContext.Actor.Kind}:{executionContext.Actor.Id}",
+            executionContext.Node.Value,
+            registration.Package.Value,
+            skillScope?.SkillId,
+            null,
+            skillScope?.CapabilityName ?? registration.Tool.Manifest.Name,
+            null,
+            executionContext.Node,
+            skillScope?.Target,
+            new EntitlementValidityRequest(now, TimeSpan.Zero),
+            null);
+
+        EntitlementDecision decision;
+        try
+        {
+            decision = await entitlementService.EvaluateAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Entitlement evaluation failed for tool {Tool}", registration.Tool.Manifest.Name);
+            return new EntitlementEvaluation(false, "The entitlement service could not evaluate this operation.");
+        }
+
+        if (decision is null
+            || string.IsNullOrWhiteSpace(decision.Binding.Value)
+            || decision.Binding != binding
+            || !Enum.IsDefined(decision.Result)
+            || !Enum.IsDefined(decision.Reason)
+            || !Enum.IsDefined(decision.Source)
+            || string.IsNullOrWhiteSpace(decision.AuthorityId)
+            || decision.ValidFrom == default
+            || decision.ValidUntil == default
+            || decision.ValidFrom > decision.ValidUntil
+            || now < decision.ValidFrom
+            || now > decision.ValidUntil)
+        {
+            return new EntitlementEvaluation(false, "The entitlement decision was unusable for this operation.");
+        }
+
+        return decision.Result == EntitlementDecisionKind.Allowed
+            ? new EntitlementEvaluation(true, "Entitlement allowed the operation.")
+            : new EntitlementEvaluation(false, "The entitlement decision denied this operation.");
+    }
+
+    private sealed record EntitlementEvaluation(bool Allowed, string Detail);
+
+    private sealed record VerificationInvocation(ToolCallResult? Result, string? PreInvocationDenial);
 
     private static ToolArguments ExtractVerificationArguments(ToolArguments originalArguments, IReadOnlyList<string> argumentsFrom)
     {
