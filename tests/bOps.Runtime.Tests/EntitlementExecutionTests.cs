@@ -146,12 +146,46 @@ public sealed class EntitlementExecutionTests
     {
         var mutation = new ApprovalBoundHighRiskTool();
         var service = new RecordingEntitlementService(request => Denied(request.Binding));
-        var (runner, _) = Create(mutation, service, PolicyMode.Automatic);
+        var (runner, audit) = Create(mutation, service, PolicyMode.Automatic);
 
         var result = await runner.RunAsync("perform governed work", Actor);
 
         Assert.Equal(0, mutation.ExecutionCount);
         Assert.Equal(2, result.Plans.Count);
+        var denied = Assert.Single(audit.Events.OfType<ToolCallAuditEvent>());
+        Assert.Equal(AuthorizationKind.EntitlementDenied, denied.Authorization);
+        Assert.Equal(ToolOutcome.Denied, denied.Outcome);
+        Assert.NotEqual(AuthorizationKind.PolicyDenied, denied.Authorization);
+        Assert.NotEqual(AuthorizationKind.UserRejected, denied.Authorization);
+        Assert.NotEqual(ToolOutcome.Failure, denied.Outcome);
+        Assert.Contains(audit.Events, e => e is EntitlementDecisionAuditEvent { Result: EntitlementDecisionKind.Denied });
+    }
+
+    [Fact]
+    public async Task RepeatedGovernedDenial_StopsAtConfiguredConsecutiveDenialGuard()
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Denied(request.Binding));
+        const int denialLimit = 2;
+        var call = new ModelToolCall("repeated-denial", mutation.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 2));
+        var registry = Registry(mutation, EntitlementApplicability.Governed);
+        registry.Register(new PackageId("test.package"), new FakeReadTool());
+        var audit = new RecordingAuditSink();
+        var runner = new AgentRunner(model, registry, new StubPolicyEngine(PolicyMode.Automatic), new StubApprovalProvider(true),
+            audit, new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
+            new AgentRunnerOptions { MaxSteps = 10, MaxConsecutivePolicyDenials = denialLimit }, entitlementService: service);
+
+        var result = await runner.RunAsync("perform governed work", Actor);
+
+        Assert.Equal(AgentTaskStatus.PolicyBlocked, result.Status);
+        Assert.Equal(denialLimit, result.Steps.Count);
+        Assert.Equal(2, service.Requests.Count);
+        Assert.All(audit.Events.OfType<ToolCallAuditEvent>(), e => Assert.Equal(AuthorizationKind.EntitlementDenied, e.Authorization));
+        Assert.Equal(0, mutation.ExecutionCount);
     }
 
     [Fact]
@@ -186,17 +220,34 @@ public sealed class EntitlementExecutionTests
     {
         var entitled = true;
         var mutation = new ApprovalBoundHighRiskTool();
-        var service = new RecordingEntitlementService(request => entitled ? Allowed(request.Binding) : Denied(request.Binding));
+        var observedState = new List<bool>();
+        var decisions = new List<EntitlementDecisionKind>();
+        var service = new RecordingEntitlementService(request =>
+        {
+            observedState.Add(entitled);
+            var decision = entitled ? Allowed(request.Binding) : Denied(request.Binding);
+            decisions.Add(decision.Result);
+            return decision;
+        });
         var approval = new RevokingApprovalProvider(() => entitled = false);
         var registry = Registry(mutation, EntitlementApplicability.Governed);
+        var audit = new RecordingAuditSink();
         var runner = new AgentRunner(ModelFor(mutation.Manifest.Name), registry, new StubPolicyEngine(PolicyMode.Approval), approval,
-            new RecordingAuditSink(), new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
+            audit, new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
             new AgentRunnerOptions(), entitlementService: service);
 
-        await runner.RunAsync("perform governed work", Actor);
+        var result = await runner.RunAsync("perform governed work", Actor);
 
         Assert.True(approval.Called);
         Assert.Single(service.Requests);
+        Assert.False(Assert.Single(observedState));
+        Assert.Equal(EntitlementDecisionKind.Denied, Assert.Single(decisions));
+        var denied = Assert.Single(audit.Events.OfType<ToolCallAuditEvent>());
+        Assert.Equal(AuthorizationKind.EntitlementDenied, denied.Authorization);
+        Assert.Equal(ToolOutcome.Denied, denied.Outcome);
+        Assert.Contains(audit.Events, e => e is ApprovalAuditEvent { Approved: true });
+        Assert.Contains(audit.Events, e => e is EntitlementDecisionAuditEvent { Result: EntitlementDecisionKind.Denied });
+        Assert.Contains(result.Steps, step => step.Observation?.Contains("entitlement decision denied", StringComparison.OrdinalIgnoreCase) == true);
         Assert.Equal(0, mutation.ExecutionCount);
     }
 
