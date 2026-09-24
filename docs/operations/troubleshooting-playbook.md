@@ -200,13 +200,45 @@ The TLS probe sends no application data, so successful TLS is not evidence of ap
 Partial, unavailable, or truncated certificate/time evidence remains UNKNOWN, not a complete normal
 result.
 
+## Scheduled job did not run
+
+This is diagnosis only: bOps never executes the scheduled target, invokes its script, creates a test schedule, enables or disables the item, changes an identity or ACL, or starts/restarts a service as part of this investigation.
+
+```text
+scheduler.inspect
+  item disabled -> OBSERVED: scheduler configuration/state is disabled.
+                   Do not infer a failed execution or target failure.
+  item enabled/configured -> scheduler.history
+    matching failed attempt -> OBSERVED: execution was attempted; retain timestamp/result/source.
+                               Do not invent the internal failure cause.
+    history unavailable/partial/not supported -> UNKNOWN: execution history cannot be established.
+                                               This is not evidence that the task never ran or succeeded.
+    complete queried window with no matching execution -> OBSERVED: no matching run in that bounded window.
+                                                        Do not claim the task never ran universally.
+  then identity.current/users/groups/sessions where the configured execution identity makes them relevant
+    incomplete source -> UNKNOWN: no account absence, missing group membership, or session conclusion.
+    complete not-found result -> OBSERVED: the bounded identity result did not find the identity.
+  then service.status/config where the scheduled action represents a target/dependent service
+    stopped/failed/disabled -> OBSERVED: target-service state is separately non-operational.
+                               It does not mean the scheduler is broken.
+  then system.events
+    event matching the task/time/result -> CORRELATION: strengthens the observed scheduler/target evidence;
+                                       temporal proximity alone does not establish cause.
+  then fs.permissions where a relevant configured executable, script, config, or file is represented
+    denied access -> OBSERVED: permission/access evidence; correlate to the execution identity only when established.
+                     POSSIBLE EXPLANATORY CONDITION unless history/events establish the access failure.
+  no established causal evidence -> UNKNOWN: host evidence does not establish why it failed/did not execute;
+                                   obtain domain/application-specific evidence as appropriate.
+```
+
+Scheduler configuration, enabled/disabled state, and execution history are separate evidence dimensions: enabled does not mean ran, disabled does not mean a failed execution, and a history failure record does not mean the item is disabled. An empty complete history result is materially different from unavailable history. Likewise, incomplete identity enumeration is not proof that an account or group membership is absent. Permission evidence is not a proven execution cause without a matching history or event record.
+
 ## Remaining scenario stubs
 
-The L6-L8 packets fill these decision trees without changing this structure.
+The L7-L8 packets fill these decision trees without changing this structure.
 
-1. Scheduled job did not run
-2. Reboot/update regression
-3. Docker-hosted service failure
+1. Reboot/update regression
+2. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 
