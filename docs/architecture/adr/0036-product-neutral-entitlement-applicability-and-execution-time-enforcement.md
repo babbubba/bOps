@@ -1,7 +1,8 @@
 # ADR-0036 — Product-neutral entitlement applicability and execution-time enforcement
 
-Status: Proposed
+Status: Accepted
 Date: 2026-09-24
+Accepted: 2026-09-24 by the operator
 Amends: ADR-0016 only for pre-invocation runtime authorization denial of required verification
 
 ## Context

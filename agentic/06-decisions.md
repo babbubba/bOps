@@ -720,3 +720,25 @@ not a fact worth reporting as trustworthy).
 Linux host cannot map every socket to a PID (another user's `/proc/<pid>/fd` is unreadable), reported as
 `pidMappingComplete: false`, never a silent zero. No change to the abstractions, policy, runtime, persistence or
 audit.
+
+### D-032 — V1.3-M1: product-neutral entitlement boundary (ADR-0036)
+
+**Decision.** Entitlement applicability is explicit, trusted-host-owned and product-neutral. Provider absence or failure
+fails closed only for governed operations; unrelated standalone OSS remains usable. Policy, approval, the delegated Tools
+envelope and entitlement are independent, monotonic restrictions. The runtime freshly evaluates entitlement immediately
+before every governed tool invocation, using a fresh opaque `RequestBinding` echoed by the provider; authorization cannot
+be reused across retry, resume, replan or delegation. Post-action verification stays within the applicable delegated
+Tools envelope and entitlement boundary. If runtime authorization prevents invoking verification, Runtime returns
+Inconclusive without invoking the package evaluator; when verification executes, the package evaluator alone interprets
+its result. M2 adds `AuthorizationKind.EntitlementDenied = 5`, preserving existing numeric enum values, and entitlement
+denial stops prepared or delegated plan execution. No commercial tier, SKU, vendor token or business logic enters public
+bOps.
+
+**Reason.** A host-owned applicability boundary keeps provider health from disabling unrelated OSS operations, while a
+fresh provider-bound request at each invocation prevents stale authorization from crossing execution or verification
+boundaries. Verification remains governed by the existing envelope and evaluator responsibilities in ADR-0016 and
+ADR-0031.
+
+**Consequences.** M2 can add neutral public contracts and execution enforcement under ADR-0036 without redesigning the
+architecture or amending prior accepted ADRs. Provider details and commercial entitlement rules remain outside public
+bOps.
