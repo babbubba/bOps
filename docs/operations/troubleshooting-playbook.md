@@ -233,12 +233,52 @@ scheduler.inspect
 
 Scheduler configuration, enabled/disabled state, and execution history are separate evidence dimensions: enabled does not mean ran, disabled does not mean a failed execution, and a history failure record does not mean the item is disabled. An empty complete history result is materially different from unavailable history. Likewise, incomplete identity enumeration is not proof that an account or group membership is absent. Permission evidence is not a proven execution cause without a matching history or event record.
 
-## Remaining scenario stubs
+## Reboot/update regression
 
-The L7-L8 packets fill these decision trees without changing this structure.
+This is diagnostic-only. It does not install, remove, roll back, refresh, or schedule updates; reboot the host; or load, unload, reload, or update a driver/module. The evidence order is:
 
-1. Reboot/update regression
-2. Docker-hosted service failure
+```text
+system.reboot_pending
+  pending=true -> OBSERVED: a reboot is pending according to the reported source.
+                  This does not prove root cause or that rebooting will fix the symptom.
+  pending=false, complete -> no reboot-pending conclusion; keep independent later evidence.
+  incomplete -> UNKNOWN: reboot-pending state cannot be established.
+then system.update_history
+  recent result=success -> OBSERVED: a recent installed update, with timestamp/result/source.
+  recent result=failure -> OBSERVED: a failed update attempt, distinct from an installed update.
+  complete empty queried window -> OBSERVED: no relevant recent update history in that window.
+  partial/unavailable/truncated -> UNKNOWN: installed/failed history cannot be fully established;
+                                 do not infer no recent updates from absent rows.
+then system.updates
+  available/pending rows -> OBSERVED: currently known pending changes, not installed history.
+                          They do not explain an already-observed regression.
+  complete empty inventory -> OBSERVED: no pending update observed at this time.
+  partial/unavailable/truncated -> UNKNOWN: pending inventory/catalog completeness or age prevents
+                                 an up-to-date conclusion.
+then system.events
+  event with matching update/reboot/driver identity and time -> SUPPORTING / CORRELATED evidence.
+  unrelated nearby event -> retain as an event observation; do not make it a root cause.
+  incomplete -> UNKNOWN: matching event evidence cannot be ruled out.
+then system.drivers
+  loaded driver/module -> OBSERVED: current state only, not historical change evidence.
+  explicit update-history/event reference to that driver/module + compatible time -> CORRELATED /
+    plausible investigation lead; further symptom-specific evidence is required for causality.
+  no relevant complete evidence across this path -> INFERENCE: No update/reboot/driver-related
+    explanation was established from the available host evidence in the queried window.
+```
+
+Temporal proximity is correlation, not proof that an update, failed update, reboot requirement, event,
+or driver caused the regression. A pending reboot is neither root-cause proof nor a guarantee that a reboot
+will correct the symptom. `system.update_history` is past observed change evidence; `system.updates` is the
+current pending/available inventory, so neither implies the other. `system.drivers` describes current loaded
+driver/module state and is not a change log. Preserve source completeness, truncation, and catalog-age caveats:
+a complete empty source supports only its bounded negative observation, while an incomplete source remains
+UNKNOWN. If causality is not explicitly established by a source, report a plausible investigation lead rather
+than a proven cause.
+
+## Remaining scenario stub
+
+1. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 
