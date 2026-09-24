@@ -104,15 +104,53 @@ The final handoff is to a future commercial DB Skill using typed DB-native evide
 `sqlserver.wait_stats`, `sqlserver.blocking`, and `sqlserver.query_store`. These are future-boundary
 examples only: bOps registers no SQL, DB credentials, DB connection logic, or DB tool here.
 
+## File cannot be replaced/deleted
+
+This is diagnostic-only. It does not delete or replace a file, close handles, terminate a process,
+alter permissions or ownership, or unload a module. Keep permission evidence, lock evidence,
+process correlation, module context, state races, and unknowns separate.
+
+```text
+fs.stat
+  absent initially -> OBSERVED: target is absent at this instant.
+                      UNKNOWN: why it is absent; do not invent a prior lock or permission cause.
+  present -> fs.permissions
+    later target absent/changed -> OBSERVED: state changed/raced after initial stat.
+                                  Reconsider the requested operation against current state.
+                                  Do not call this bOps remediation or say the target never existed.
+    access/ACL/mode evidence denies the current identity -> INFERENCE: permission/access may
+      explain the symptom. This is not a file-lock conclusion; effective access limitations stay visible.
+    otherwise -> fs.locks
+      partial/unavailable/truncated -> UNKNOWN: lock visibility is incomplete. Do not conclude
+        that the file is unlocked or that no process is using it.
+      complete, no relevant holder -> OBSERVED: no relevant lock was observed by this source.
+        UNKNOWN: replacement/deletion can still fail because of a race or filesystem semantics.
+      complete holder PID -> OBSERVED: lock evidence associates that PID with this target.
+        process.inspect
+          PID absent/unavailable -> OBSERVED: earlier lock evidence remains.
+            UNKNOWN: the process exited before inspection; current identity cannot be confirmed.
+          PID present -> process.tree -> process.modules
+            tree -> contextual ancestry only; incomplete visibility remains unknown.
+            target/related mapped module -> OBSERVED: module context.
+              A mapped module is not equivalent to a proven write/delete lock; only fs.locks
+              establishes the holder association.
+```
+
+Do not turn a lock-holder observation into a claim that the process is malicious, broken, or must
+be terminated. An operator may investigate the observed process identity, ancestry, and module
+context, but bOps does not automatically terminate processes or alter permissions. A complete empty
+lock query is materially different from an incomplete query: the former reports no relevant lock
+observed by that source; the latter leaves lock ownership unknown. If no host-side explanation is
+established, retain that unknown rather than fabricating a permission or process cause.
+
 ## Remaining scenario stubs
 
-The L4-L8 packets fill these decision trees without changing this structure.
+The L5-L8 packets fill these decision trees without changing this structure.
 
-1. File cannot be replaced/deleted
-2. TLS connection fails
-3. Scheduled job did not run
-4. Reboot/update regression
-5. Docker-hosted service failure
+1. TLS connection fails
+2. Scheduled job did not run
+3. Reboot/update regression
+4. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 
