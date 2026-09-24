@@ -395,6 +395,93 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         Assert.Equal("2.0.0", FinalManifestVersion());
     }
 
+    // ---- Advisory status projection: lifecycleFailure and recoveryAvailable (V1.3-M6 review M-1/M-2) -------
+
+    [Fact]
+    public async Task GetStatus_NormalStates_HaveNoFailureAndNoRecoveryAvailable_AndReadingDoesNotChangeTheRevision()
+    {
+        var host = NewHost();
+        var installed = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        var disabled = host.Service.GetStatus(Id)!;
+        var enabled = await host.Service.EnableAsync(Ctx(), Id, installed.LifecycleVersion, "1.0.0");
+        var enabledStatus = host.Service.GetStatus(Id)!;
+
+        Assert.Equal(PluginLifecycleState.InstalledDisabled, disabled.State);
+        Assert.False(disabled.RecoveryAvailable);
+        Assert.Null(disabled.LifecycleFailure);
+        Assert.Equal(PluginLifecycleState.Enabled, enabledStatus.State);
+        Assert.False(enabledStatus.RecoveryAvailable);
+        Assert.Null(enabledStatus.LifecycleFailure);
+        Assert.Equal(enabled.LifecycleVersion, enabledStatus.LifecycleVersion);
+        Assert.Equal(enabled.LifecycleVersion, host.Service.GetStatus(Id)!.LifecycleVersion);
+    }
+
+    [Fact]
+    public async Task GetStatus_ActivationFailedOverAnActivationLkg_ExposesTheStoredSanitizedFailure_AndRecoveryAvailable()
+    {
+        var (host, aId, _, failed) = await ActivationFailedBOverLkgA();
+        Assert.NotNull(aId);
+
+        var status = host.Service.GetStatus(Id)!;
+
+        Assert.Equal(PluginLifecycleState.ActivationFailed, status.State);
+        Assert.True(status.RecoveryAvailable);
+        Assert.False(string.IsNullOrWhiteSpace(status.LifecycleFailure));
+        Assert.Equal(Lc().SanitizedFailure, status.LifecycleFailure);
+        Assert.Equal(failed.LifecycleVersion, status.LifecycleVersion);
+        Assert.DoesNotContain(aId, status.LifecycleFailure, StringComparison.Ordinal);
+        Assert.DoesNotContain(PluginsRoot, status.LifecycleFailure, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", status.LifecycleFailure, StringComparison.Ordinal);
+
+        // A fresh read (no in-process state involved) reports the same persisted failure; nothing changed by reading.
+        var again = NewHost().Service.GetStatus(Id)!;
+        Assert.Equal(status.LifecycleFailure, again.LifecycleFailure);
+        Assert.Equal(status.LifecycleVersion, again.LifecycleVersion);
+    }
+
+    [Fact]
+    public async Task GetStatus_FirstEverActivationFailure_HasNoActivationLkg_SoRecoveryIsNotAvailable()
+    {
+        var host = NewHost();
+        var installed = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        host.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var failed = await host.Service.EnableAsync(Ctx(), Id, installed.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+        ReleaseFailedActivationContext();
+        Assert.Null(Lc().ActivationLkgGenerationId);
+
+        var status = host.Service.GetStatus(Id)!;
+
+        Assert.Equal(PluginLifecycleState.ActivationFailed, status.State);
+        Assert.False(status.RecoveryAvailable);
+        Assert.False(string.IsNullOrWhiteSpace(status.LifecycleFailure));
+
+        // Advisory only: the backend still refuses, deterministically.
+        var recover = await host.Service.RecoverAsync(Ctx(), Id, status.LifecycleVersion, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, recover.Category);
+    }
+
+    [Fact]
+    public async Task GetStatus_RecoveryRequiredWithActivationLkg_IsAvailable_ButNotWhileAJournalIsPending()
+    {
+        var (_, markedVersion, _) = await RecoveryRequiredBReplacedByInterruptedC("AfterPromotion");
+        Assert.NotNull(new PluginStore(StorePath).GetJournal(Id));
+
+        // Journal still pending (recovery has not run yet): never advertised.
+        var pending = NewHost().Service.GetStatus(Id)!;
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, pending.State);
+        Assert.False(pending.RecoveryAvailable);
+
+        var rebooted = NewHost();
+        await rebooted.Service.RecoverAllAsync();
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
+
+        var settled = rebooted.Service.GetStatus(Id)!;
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, settled.State);
+        Assert.Equal(markedVersion, settled.LifecycleVersion);
+        Assert.True(settled.RecoveryAvailable);
+    }
+
     /// <summary>B is Current == ActivationLkg, its committed material is gone (RecoveryRequired), and a replacement C dies after promotion.</summary>
     private async Task<(string BId, long MarkedVersion, string CId)> RecoveryRequiredBReplacedByInterruptedC(string point)
     {

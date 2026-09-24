@@ -714,6 +714,101 @@ public sealed class PluginLifecycleEndpointsTests
         Assert.Equal("ActivationFailed", (await harness.StatusAsync()).GetProperty("lifecycleState").GetString());
     }
 
+    [Fact]
+    public async Task FailedEnable_ExposesThePersistedSanitizedFailure_OnANewRead_WithoutRelyingOnLoadError()
+    {
+        using var harness = new PluginLifecycleApiHarness();
+        var installed = await harness.InstallAsync(throwOnActivate: true);
+        using (var response = await EnableAsync(harness.Client, Id, installed, "1.0.0"))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        }
+
+        // The API-triggered failure never populates StartupLoadErrors: loadError cannot be the source.
+        Assert.Empty(harness.Manager.StartupLoadErrors);
+        var stored = harness.Lifecycle.GetStatus(Id)!;
+        var etagBefore = stored.ETag;
+
+        using var read = await harness.Client.GetAsync(new Uri($"/api/plugins/{Id}", UriKind.Relative));
+        var raw = await read.Content.ReadAsStringAsync();
+        using var entry = JsonDocument.Parse(raw);
+
+        Assert.Equal("ActivationFailed", entry.RootElement.GetProperty("lifecycleState").GetString());
+        Assert.Equal(JsonValueKind.Null, entry.RootElement.GetProperty("loadError").ValueKind);
+        var failure = entry.RootElement.GetProperty("lifecycleFailure").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(failure));
+        Assert.Equal(stored.LifecycleFailure, failure);
+        harness.AssertSanitized(raw);
+        Assert.DoesNotContain("SanitizedFailure", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("generation", raw, StringComparison.OrdinalIgnoreCase);
+
+        // First-ever activation failure has no activation LKG: Recover would deterministically fail.
+        Assert.False(entry.RootElement.GetProperty("recoveryAvailable").GetBoolean());
+
+        // Reading (single and list) is side-effect free.
+        using var list = await harness.Client.GetAsync(new Uri("/api/plugins", UriKind.Relative));
+        using var page = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var listed = page.RootElement.GetProperty("entries")[0];
+        Assert.Equal(failure, listed.GetProperty("lifecycleFailure").GetString());
+        Assert.False(listed.GetProperty("recoveryAvailable").GetBoolean());
+        Assert.Equal(etagBefore, harness.Lifecycle.GetStatus(Id)!.ETag);
+    }
+
+    [Fact]
+    public async Task RecoveryAvailable_IsAdvisory_ReflectsTheActivationLkg_AndClearsAfterRecovery()
+    {
+        using var harness = new PluginLifecycleApiHarness();
+        var etag = await harness.InstallAsync("1.0.0");
+        using (var enabled = await EnableAsync(harness.Client, Id, etag, "1.0.0"))
+        {
+            etag = enabled.Headers.ETag!.Tag;
+        }
+
+        var enabledEntry = await harness.StatusAsync();
+        Assert.False(enabledEntry.GetProperty("recoveryAvailable").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, enabledEntry.GetProperty("lifecycleFailure").ValueKind);
+
+        using (var disabled = await ActionAsync(harness.Client, Id, "disable", etag))
+        {
+            etag = disabled.Headers.ETag!.Tag;
+        }
+
+        using (var replaced = await UploadForIdAsync(harness.Client, Id, harness.Archive("2.0.0", throwOnActivate: true), etag))
+        {
+            etag = replaced.Headers.ETag!.Tag;
+        }
+
+        using (var failed = await EnableAsync(harness.Client, Id, etag, "2.0.0"))
+        {
+            Assert.Equal("activation_failed", await CategoryAsync(failed));
+        }
+
+        ReleasePluginContexts();
+        var entry = await harness.StatusAsync();
+        var failedETag = entry.GetProperty("lifecycleETag").GetString()!;
+        Assert.Equal("ActivationFailed", entry.GetProperty("lifecycleState").GetString());
+        Assert.True(entry.GetProperty("recoveryAvailable").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(entry.GetProperty("lifecycleFailure").GetString()));
+
+        // The projection is not authority: a stale ETag is still refused by the backend, and nothing changes.
+        using (var stale = await RecoverAsync(harness.Client, Id, etag))
+        {
+            Assert.Equal(HttpStatusCode.PreconditionFailed, stale.StatusCode);
+        }
+
+        Assert.Equal(failedETag, harness.Lifecycle.GetStatus(Id)!.ETag);
+
+        using (var recovered = await RecoverAsync(harness.Client, Id, failedETag))
+        {
+            Assert.Equal(HttpStatusCode.OK, recovered.StatusCode);
+        }
+
+        var after = await harness.StatusAsync();
+        Assert.Equal("InstalledDisabled", after.GetProperty("lifecycleState").GetString());
+        Assert.False(after.GetProperty("recoveryAvailable").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, after.GetProperty("lifecycleFailure").ValueKind);
+    }
+
     // ---- Disable ---------------------------------------------------------------------------------------
 
     [Fact]

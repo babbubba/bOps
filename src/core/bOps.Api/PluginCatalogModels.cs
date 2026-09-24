@@ -36,7 +36,9 @@ internal sealed record PluginCatalogEntry(
     string? LoadError,
     [property: JsonConverter(typeof(JsonStringEnumConverter<PluginLifecycleState>))]
     PluginLifecycleState? LifecycleState = null,
-    string? LifecycleETag = null);
+    string? LifecycleETag = null,
+    string? LifecycleFailure = null,
+    bool RecoveryAvailable = false);
 
 /// <summary>One informational dependency, as shown to an operator — name and version only, matching <see cref="bOps.Abstractions.PluginDependency"/>.</summary>
 internal sealed record PluginCatalogDependency(string Name, string Version);

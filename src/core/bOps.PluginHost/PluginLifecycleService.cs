@@ -65,7 +65,22 @@ public sealed partial class PluginLifecycleService
     {
         var document = _store.Read();
         var record = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
-        return record is null ? null : ResultFor(PluginLifecycleResultCategory.Succeeded, record, Lifecycle(document, record));
+        if (record is null)
+        {
+            return null;
+        }
+
+        // One coherent snapshot: state, LKG role and journal all come from the same document read.
+        var lifecycle = Lifecycle(document, record);
+        var journalPending = document.Journals.ContainsKey(record.Id) || lifecycle.TransactionPhase != PluginTransactionPhase.None;
+        var recoveryAvailable = lifecycle.State is PluginLifecycleState.ActivationFailed or PluginLifecycleState.RecoveryRequired &&
+            lifecycle.ActivationLkgGenerationId is not null &&
+            !journalPending;
+        return ResultFor(PluginLifecycleResultCategory.Succeeded, record, lifecycle) with
+        {
+            LifecycleFailure = lifecycle.SanitizedFailure,
+            RecoveryAvailable = recoveryAvailable,
+        };
     }
 
     /// <summary>Reads the durable, monotonic lifecycle version used for M6's ETag projection.</summary>

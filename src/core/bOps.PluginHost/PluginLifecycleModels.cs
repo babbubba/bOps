@@ -140,6 +140,8 @@ public sealed record PluginLifecycleRequestContext(
 /// <param name="LifecycleVersion">The authoritative lifecycle revision after the operation (0 when the plugin does not exist).</param>
 /// <param name="Stage">The validation/transaction stage that produced a non-success category.</param>
 /// <param name="Replayed">Whether this result replays an earlier logical operation for the same idempotency scope.</param>
+/// <param name="LifecycleFailure">Status reads only: the persisted, already-sanitized lifecycle failure, or <c>null</c> when none is current.</param>
+/// <param name="RecoveryAvailable">Status reads only: advisory flag that Recover is currently an applicable operator action. Never authority; <c>RecoverAsync</c> revalidates everything.</param>
 public sealed record PluginLifecycleResult(
     PluginLifecycleResultCategory Category,
     string? PluginId,
@@ -147,7 +149,9 @@ public sealed record PluginLifecycleResult(
     PluginLifecycleState? State,
     long LifecycleVersion,
     string? Stage = null,
-    bool Replayed = false)
+    bool Replayed = false,
+    string? LifecycleFailure = null,
+    bool RecoveryAvailable = false)
 {
     /// <summary>Opaque strong ETag projection of <see cref="LifecycleVersion"/> for M6.</summary>
     public string ETag => PluginLifecycleETag.Format(LifecycleVersion);

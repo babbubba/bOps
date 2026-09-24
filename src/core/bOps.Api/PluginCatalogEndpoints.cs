@@ -96,7 +96,9 @@ internal static class PluginCatalogEndpoints
             effectiveMaxRisk,
             loadError,
             status?.State,
-            status?.ETag);
+            status?.ETag,
+            status?.LifecycleFailure,
+            status?.RecoveryAvailable ?? false);
     }
 
     /// <summary>
