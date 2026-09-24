@@ -31,17 +31,54 @@ network.dns_query
 
 Partial, unavailable, or truncated firewall evidence is an evidence gap, never proof that the firewall is open. bOps cannot infer remote firewall state from local host evidence. A reachable TCP port does not prove DB health; when the symptom persists, a future commercial DB Skill must collect DB-native evidence such as PostgreSQL `stat_activity`/locks/vacuum or SQL Server `wait_stats`/blocking/query_store.
 
-## Scenario stubs
+## Service keeps crashing
 
-The L2-L8 packets fill these decision trees without changing this structure.
+Use this tree to diagnose the operational symptom. It does not authorize a restart, process termination,
+or dump-content inspection. Keep **CAUSE**, **CORRELATION**, and **UNKNOWN** separate in the verdict.
 
-1. Service keeps crashing
-2. DB/application became slow
-3. File cannot be replaced/deleted
-4. TLS connection fails
-5. Scheduled job did not run
-6. Reboot/update regression
-7. Docker-hosted service failure
+```text
+service.status -> service.config -> service.dependencies
+  target failed/stopped -> OBSERVED: current service state/configuration.
+  required dependency failed/stopped/unavailable -> OBSERVED: dependency state;
+    INFERENCE: it may explain target startup/runtime failure.
+    UNKNOWN: target binary crash unless target-specific event/crash evidence exists.
+  dependency running -> no dependency-failure inference.
+  then system.events -> system.crashes
+    complete sources with time/process/service identity match -> CORRELATION:
+      strong evidence of abnormal target termination; internal application cause remains unknown.
+    complete sources without a specific cause -> UNKNOWN: host evidence does not establish root cause.
+    partial/unavailable/truncated source -> UNKNOWN: confirmation is incomplete;
+      never treat as empty-but-complete or conclude no crash occurred.
+  then process.tree -> process.metrics
+    prior process not found/exited, or metrics unavailable -> UNKNOWN: live metrics unavailable
+      because process is no longer observable; missing values are not zero or normal.
+      Preserve earlier service/event/crash evidence.
+  then storage.io
+    elevated latency/queue/pressure in the observation window -> CORRELATION / possible
+      contributing condition only. Timing does not establish storage as crash cause.
+  then system.memory -> system.swap
+    pressure -> CORRELATION / possible contributing host condition only.
+      Do not claim OOM-kill without explicit matching event/crash evidence.
+  no specific host cause after complete evidence -> UNKNOWN: hand off to application/domain-specific
+    logs or Skills; do not invent an exception or internal cause.
+```
+
+**CAUSE** requires a source that explicitly establishes causality. Matching event/crash records support
+correlation when their identity and time align; they do not by themselves identify the internal cause.
+Storage and memory/swap pressure remain correlated host evidence even when observed in the same window
+as a failure. Missing process samples, missing crash records, and incomplete event/crash sources remain
+UNKNOWN. An unavailable source is never equivalent to an empty complete source.
+
+## Remaining scenario stubs
+
+The L3-L8 packets fill these decision trees without changing this structure.
+
+1. DB/application became slow
+2. File cannot be replaced/deleted
+3. TLS connection fails
+4. Scheduled job did not run
+5. Reboot/update regression
+6. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 

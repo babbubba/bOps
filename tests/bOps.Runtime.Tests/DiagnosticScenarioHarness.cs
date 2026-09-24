@@ -16,6 +16,8 @@ internal sealed class DiagnosticScenarioHarness
 
     public IReadOnlyList<string> RequestedCapabilities => _requested;
 
+    public bool HasNext(string capability) => _evidence.TryPeek(out var next) && next.Capability == capability;
+
     public DiagnosticEvidence Request(string capability)
     {
         _requested.Add(capability);
