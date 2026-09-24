@@ -1,4 +1,14 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-H implemented locally (A–H)
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-A–L complete and merged
+
+## Current handoff — 2026-09-24
+
+V1.3-A through V1.3-L are complete and merged. The V1.3-L senior-operator diagnostic integration
+gate merged through PR #47 with Windows/Linux CI green; canonical first-party tool composition and
+L0–L8 semantic integration coverage are complete. Boundedness evidence remains PARTIAL.
+Repository-topology is complete and remains a satisfied V1.3 gate.
+
+Next action: **V1.3-M1 entitlement ADR architecture gate.** V1.3-M is not implemented, and M1 has
+not started: its prior branch attempt created no artifact.
 
 ## V1.3-H local integration gate — 2026-09-23
 
@@ -15,8 +25,8 @@ non-live gate passed on Windows; real Windows Task Scheduler lifecycle coverage 
 skipped unless the host is provisioned, and Linux systemd/cron integration remains platform-gated
 for Linux CI. Windows/Linux CI is required before G is closed definitively.
 
-Next action: push the branch, open the PR and wait for Windows/Linux CI. Do not start V1.3-H until
-G is merged and green according to the repository workflow.
+Historical next action at that time: push the branch, open the PR and wait for Windows/Linux CI.
+Do not start V1.3-H until G is merged and green according to the repository workflow.
 
 ## V1.1-H status (2026-09-18) — closed
 
@@ -337,7 +347,7 @@ task file's local validation evidence for exact counts. PR not yet opened; Linux
 (`fs.locks`/`fs.permissions` real sources) are exercised by this suite's Linux-only tests but were
 only verified by inspection here, not executed, since this machine is Windows.
 
-Next action: open the V1.3-F pull request and get Windows/Linux CI green, then V1.3-G,
+Historical next action at that time: open the V1.3-F pull request and get Windows/Linux CI green, then V1.3-G,
 service/scheduler. V1.3 has an ordered
 A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
 service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
