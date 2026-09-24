@@ -294,6 +294,144 @@ public sealed class EntitlementExecutionTests
         Assert.DoesNotContain(secret, System.Text.Json.JsonSerializer.Serialize(audit.Events.OfType<EntitlementDecisionAuditEvent>()), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task GovernedAllow_ExecutesOnce_WithARequestBoundToTheHostOperation()
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Allowed(request.Binding));
+        var (runner, audit) = Create(mutation, service, PolicyMode.Approval);
+
+        await runner.RunAsync("perform governed work", Actor);
+
+        var request = Assert.Single(service.Requests);
+        Assert.Equal("test.package", request.Feature);
+        Assert.Equal(mutation.Manifest.Name, request.Capability);
+        Assert.Equal(1, mutation.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is EntitlementDecisionAuditEvent { Result: EntitlementDecisionKind.Allowed });
+        Assert.DoesNotContain(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.EntitlementDenied });
+    }
+
+    public static TheoryData<string> UnusableDecisions() => new()
+    {
+        "future", "expired", "missing-valid-from", "missing-valid-until", "inverted-window", "missing-authority", "undefined-result",
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableDecisions))]
+    public async Task GovernedUnusableDecision_FailsClosedWithoutExecuting(string defect)
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Defective(request.Binding, defect));
+        var (runner, audit) = Create(mutation, service, PolicyMode.Automatic);
+
+        await runner.RunAsync("perform governed work", Actor);
+
+        Assert.Equal(0, mutation.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.EntitlementDenied, Outcome: ToolOutcome.Denied });
+        Assert.Contains(audit.Events, e => e is EntitlementDecisionAuditEvent
+        {
+            Result: EntitlementDecisionKind.Denied,
+            Reason: EntitlementReasonCode.InvalidRequest,
+        });
+    }
+
+    [Fact]
+    public async Task PolicyForbidden_NeverConsultsEntitlement_EvenWhenItWouldAllow()
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Allowed(request.Binding));
+        var (runner, audit) = Create(mutation, service, PolicyMode.Forbidden);
+
+        await runner.RunAsync("perform governed work", Actor);
+
+        Assert.Empty(service.Requests);
+        Assert.Equal(0, mutation.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.PolicyDenied });
+    }
+
+    [Fact]
+    public async Task ApprovalRejected_NeverConsultsEntitlement_EvenWhenItWouldAllow()
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Allowed(request.Binding));
+        var registry = Registry(mutation, EntitlementApplicability.Governed);
+        var audit = new RecordingAuditSink();
+        var runner = new AgentRunner(ModelFor(mutation.Manifest.Name), registry, new StubPolicyEngine(PolicyMode.Approval), new StubApprovalProvider(false),
+            audit, new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance, new AgentRunnerOptions(), entitlementService: service);
+
+        await runner.RunAsync("perform governed work", Actor);
+
+        Assert.Empty(service.Requests);
+        Assert.Equal(0, mutation.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.UserRejected });
+    }
+
+    [Fact]
+    public async Task GovernedVerificationAllowed_InvokesTheVerifierAndThePackageEvaluator()
+    {
+        var mutation = new CountingVerifiableTool("test.mutation", "test.verify");
+        var verifier = new RecordingReadTool("test.verify", []);
+        var service = new RecordingEntitlementService(request => Allowed(request.Binding));
+
+        var runner = VerificationRunner(mutation, verifier, service, out var audit);
+        var result = await runner.RunAsync("mutate", Actor);
+
+        Assert.Equal(1, mutation.ExecutionCount);
+        Assert.Equal(1, verifier.ExecutionCount);
+        Assert.Equal(1, mutation.EvaluationCount);
+        Assert.DoesNotContain(result.Steps, step => step.Observation?.Contains("Verification authorization prevented", StringComparison.Ordinal) == true);
+        Assert.Contains(audit.Events, e => e is EntitlementDecisionAuditEvent { Tool: "test.verify", Result: EntitlementDecisionKind.Allowed });
+    }
+
+    [Theory]
+    [InlineData("provider-failure")]
+    [InlineData("wrong-binding")]
+    [InlineData("expired")]
+    [InlineData("future")]
+    public async Task GovernedVerificationWithoutAUsableDecision_IsInconclusive_AndSkipsTheVerifierAndEvaluator(string defect)
+    {
+        var mutation = new CountingVerifiableTool("test.mutation", "test.verify");
+        var verifier = new RecordingReadTool("test.verify", []);
+        var service = new RecordingEntitlementService(request => defect == "provider-failure"
+            ? throw new InvalidOperationException("provider unavailable")
+            : Defective(defect == "wrong-binding" ? new RequestBinding("stale-binding") : request.Binding, defect == "wrong-binding" ? "none" : defect));
+
+        var runner = VerificationRunner(mutation, verifier, service, out _);
+        var result = await runner.RunAsync("mutate", Actor);
+
+        Assert.Equal(1, mutation.ExecutionCount);
+        Assert.Equal(0, verifier.ExecutionCount);
+        Assert.Equal(0, mutation.EvaluationCount);
+        Assert.Contains(result.Steps, step => step.Observation?.Contains("Inconclusive", StringComparison.Ordinal) == true);
+    }
+
+    private static AgentRunner VerificationRunner(
+        CountingVerifiableTool mutation, RecordingReadTool verifier, IEntitlementService service, out RecordingAuditSink audit)
+    {
+        var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+        registry.Register(new PackageId("test.package"), PackageTrustLevel.Official,
+            new EntitlementRequirement(EntitlementApplicability.NotGoverned), mutation);
+        registry.Register(new PackageId("test.package"), PackageTrustLevel.Official,
+            new EntitlementRequirement(EntitlementApplicability.Governed), verifier);
+        audit = new RecordingAuditSink();
+        return new AgentRunner(ModelFor(mutation.Manifest.Name), registry, new StubPolicyEngine(PolicyMode.Automatic),
+            new NeverCalledApprovalProvider(), audit, new InMemoryTaskStore(), new FakeTimeProvider(Now),
+            NullLogger<AgentRunner>.Instance, new AgentRunnerOptions(), entitlementService: service);
+    }
+
+    private static EntitlementDecision Defective(RequestBinding binding, string defect) => defect switch
+    {
+        "future" => Allowed(binding) with { ValidFrom = Now.AddMinutes(1), ValidUntil = Now.AddMinutes(2) },
+        "expired" => Allowed(binding) with { ValidFrom = Now.AddMinutes(-2), ValidUntil = Now.AddMinutes(-1) },
+        "missing-valid-from" => Allowed(binding) with { ValidFrom = default },
+        "missing-valid-until" => Allowed(binding) with { ValidUntil = default },
+        "inverted-window" => Allowed(binding) with { ValidFrom = Now.AddMinutes(1), ValidUntil = Now.AddMinutes(-1) },
+        "missing-authority" => Allowed(binding) with { AuthorityId = " " },
+        "undefined-result" => Allowed(binding) with { Result = (EntitlementDecisionKind)99 },
+        "none" => Allowed(binding),
+        _ => throw new ArgumentOutOfRangeException(nameof(defect), defect, null),
+    };
+
     private static (AgentRunner Runner, RecordingAuditSink Audit) Create(
         ApprovalBoundHighRiskTool mutation, IEntitlementService? service, PolicyMode policy)
     {
