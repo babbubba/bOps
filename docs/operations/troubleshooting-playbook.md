@@ -69,16 +69,50 @@ Storage and memory/swap pressure remain correlated host evidence even when obser
 as a failure. Missing process samples, missing crash records, and incomplete event/crash sources remain
 UNKNOWN. An unavailable source is never equivalent to an empty complete source.
 
+## DB/application became slow
+
+This is a host-pressure decision tree, not a database diagnosis. Host telemetry can identify CPU,
+memory, storage, or interface pressure, but cannot by itself diagnose DB-native waits, locks,
+blocking, query plans, vacuum activity, or application-specific causes.
+
+```text
+system.cpu
+  sustained/high pressure -> OBSERVED: host CPU pressure; possible host-side contributor, not proven cause.
+  then system.memory -> system.swap
+    low available memory, pressure, or swap activity -> OBSERVED: memory/swap pressure;
+      possible contributor only. Missing swap data remains UNKNOWN, not unused swap.
+  then process.metrics
+    relevant high CPU/memory -> CORRELATED: strengthens the matching host-pressure evidence.
+    process exited/unavailable -> UNKNOWN: live process data is not zero or healthy.
+  then storage.io -> storage.health
+    latency/queue pressure -> OBSERVED: storage performance pressure; possible contributor only.
+    healthy/no-fault health evidence -> device health observation; it does not erase I/O pressure.
+    unavailable health -> UNKNOWN: device health cannot be ruled out.
+  then system.events
+    relevant matching host event -> CORRELATED: can strengthen timing/identity evidence, never causal proof.
+    empty complete result != unavailable events source.
+  then network.interface_stats
+    local errors/drops -> OBSERVED: interface degradation; correlated/possible contributor only.
+    incomplete counters -> UNKNOWN: network-interface degradation cannot be ruled out.
+  complete evidence with no material pressure across all domains ->
+    INFERENCE: No host-side bottleneck was established by the available evidence.
+    HANDOFF: do not call the host healthy or identify DB/application root cause.
+```
+
+The final handoff is to a future commercial DB Skill using typed DB-native evidence: PostgreSQL
+`postgres.stat_activity`, `postgres.locks`, and `postgres.vacuum`; or SQL Server
+`sqlserver.wait_stats`, `sqlserver.blocking`, and `sqlserver.query_store`. These are future-boundary
+examples only: bOps registers no SQL, DB credentials, DB connection logic, or DB tool here.
+
 ## Remaining scenario stubs
 
-The L3-L8 packets fill these decision trees without changing this structure.
+The L4-L8 packets fill these decision trees without changing this structure.
 
-1. DB/application became slow
-2. File cannot be replaced/deleted
-3. TLS connection fails
-4. Scheduled job did not run
-5. Reboot/update regression
-6. Docker-hosted service failure
+1. File cannot be replaced/deleted
+2. TLS connection fails
+3. Scheduled job did not run
+4. Reboot/update regression
+5. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 
