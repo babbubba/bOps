@@ -415,6 +415,32 @@ public sealed class DelegationContractsTests
     }
 
     [Fact]
+    public void EntitlementDecisionAuditEvent_RoundTripsThroughReflectionAndSourceGeneratedAuditSerialization()
+    {
+        var value = new EntitlementDecisionAuditEvent
+        {
+            TimestampUtc = T0, Node = Node, TaskId = DelegationId, StepIndex = 3, Actor = Operator,
+            Delegation = SampleCorrelation(), Package = new PackageId("package"), Tool = "sample.write",
+            Applicability = EntitlementApplicability.Governed, Result = EntitlementDecisionKind.Allowed,
+            Source = EntitlementSourceCategory.Local, Reason = EntitlementReasonCode.Permitted,
+            Binding = new RequestBinding("opaque-attempt"), AuthorityId = "authority",
+            ValidFrom = T0, ValidUntil = T0.AddMinutes(5),
+            Constraints = new EntitlementConstraints(new Dictionary<string, string> { ["remaining"] = "2" }),
+        };
+
+        var result = Assert.IsType<EntitlementDecisionAuditEvent>(RoundTripBoth((AuditEvent)value, DelegationContractsJsonContext.Default.AuditEvent));
+
+        Assert.Equal(value.Result, result.Result);
+        Assert.Equal(value.Source, result.Source);
+        Assert.Equal(value.Reason, result.Reason);
+        Assert.Equal(value.Binding, result.Binding);
+        Assert.Equal(value.ValidFrom, result.ValidFrom);
+        Assert.Equal(value.ValidUntil, result.ValidUntil);
+        Assert.Equal("2", result.Constraints!.Values["remaining"]);
+        Assert.Equal(value.Delegation, result.Delegation);
+    }
+
+    [Fact]
     public void DelegationLifecycleAuditEvent_RoundTrips_AsItsBaseType()
     {
         AuditEvent value = new DelegationLifecycleAuditEvent

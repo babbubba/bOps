@@ -4,6 +4,19 @@ bOps.Abstractions.EntitlementApplicability | enum-value NotGoverned = 1
 bOps.Abstractions.EntitlementApplicability | kind enum
 bOps.Abstractions.EntitlementConstraints | kind sealed class
 bOps.Abstractions.EntitlementDecision | kind sealed class
+bOps.Abstractions.EntitlementDecisionAuditEvent | base bOps.Abstractions.AuditEvent
+bOps.Abstractions.EntitlementDecisionAuditEvent | kind sealed class
+bOps.Abstractions.EntitlementDecisionAuditEvent | property bOps.Abstractions.EntitlementApplicability Applicability() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property bOps.Abstractions.EntitlementConstraints Constraints() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<bOps.Abstractions.EntitlementDecisionKind> Result() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<bOps.Abstractions.EntitlementReasonCode> Reason() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<bOps.Abstractions.EntitlementSourceCategory> Source() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property bOps.Abstractions.PackageId Package() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<bOps.Abstractions.RequestBinding> Binding() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<System.DateTimeOffset> ValidFrom() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.Nullable`1<System.DateTimeOffset> ValidUntil() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.String AuthorityId() {get;set;}
+bOps.Abstractions.EntitlementDecisionAuditEvent | property System.String Tool() {get;set;}
 bOps.Abstractions.EntitlementDecisionKind | enum-value Allowed = 1
 bOps.Abstractions.EntitlementDecisionKind | enum-value Denied = 0
 bOps.Abstractions.EntitlementDecisionKind | kind enum

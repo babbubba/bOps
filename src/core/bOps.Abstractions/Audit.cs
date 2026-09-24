@@ -45,6 +45,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(DelegationEnvelopeAuditEvent), "delegationEnvelope")]
 [JsonDerivedType(typeof(DelegationJournalAuditEvent), "delegationJournal")]
 [JsonDerivedType(typeof(DelegationReconciliationAuditEvent), "delegationReconciliation")]
+[JsonDerivedType(typeof(EntitlementDecisionAuditEvent), "entitlementDecision")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -71,6 +72,49 @@ public abstract record AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DelegationCorrelation? Delegation { get; init; }
+}
+
+/// <summary>
+/// Neutral evidence of the host applicability result or entitlement evaluation for one tool invocation.
+/// This record is audit evidence only and must never be reused as execution authority.
+/// </summary>
+public sealed record EntitlementDecisionAuditEvent : AuditEvent
+{
+    /// <summary>The package that contributed the evaluated tool.</summary>
+    public required PackageId Package { get; init; }
+
+    /// <summary>The tool invocation to which this evaluation belongs.</summary>
+    public required string Tool { get; init; }
+
+    /// <summary>Host-owned applicability stamped on the execution registration.</summary>
+    public required EntitlementApplicability Applicability { get; init; }
+
+    /// <summary>The governed evaluation result; null when applicability is <see cref="EntitlementApplicability.NotGoverned"/>.</summary>
+    public EntitlementDecisionKind? Result { get; init; }
+
+    /// <summary>Neutral evaluator source category, when a governed evaluation was attempted.</summary>
+    public EntitlementSourceCategory? Source { get; init; }
+
+    /// <summary>Neutral result reason, including <see cref="EntitlementReasonCode.Unavailable"/> for a fail-closed provider failure.</summary>
+    public EntitlementReasonCode? Reason { get; init; }
+
+    /// <summary>
+    /// Opaque correlation evidence for the evaluation attempt. It is not a credential, token, proof of current entitlement,
+    /// or reusable execution authority.
+    /// </summary>
+    public RequestBinding? Binding { get; init; }
+
+    /// <summary>Non-secret authority/freshness correlation identifier, when supplied by the evaluator.</summary>
+    public string? AuthorityId { get; init; }
+
+    /// <summary>Beginning of the accepted validity envelope, when supplied by the evaluator.</summary>
+    public DateTimeOffset? ValidFrom { get; init; }
+
+    /// <summary>End of the accepted validity envelope, when supplied by the evaluator.</summary>
+    public DateTimeOffset? ValidUntil { get; init; }
+
+    /// <summary>Neutral effective limits/constraints or accepted constraint result metadata.</summary>
+    public EntitlementConstraints? Constraints { get; init; }
 }
 
 /// <summary>

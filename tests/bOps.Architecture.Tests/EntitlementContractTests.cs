@@ -90,13 +90,75 @@ public sealed class EntitlementContractTests
     }
 
     [Fact]
+    public void EntitlementDecisionAuditEvent_RoundTripsNeutralEvidenceAndBaseCorrelation()
+    {
+        var value = new EntitlementDecisionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.Parse("2026-09-24T10:00:00Z"),
+            Node = new NodeId("node-1"), TaskId = Guid.Parse("a604b480-4282-4438-b74a-8daeed857e3b"), StepIndex = 7,
+            Actor = new ActorIdentity("operator", "operator-1", "Operator"),
+            Delegation = new DelegationCorrelation(Guid.Parse("c889111a-c035-4c08-96cd-7991cfad5644"), "envelope-hash",
+                new AgentIdentity(new AgentId(Guid.Parse("6b50273b-8379-4e0f-b911-f0b7485dbdc7")), AgentRoleKind.Verification)),
+            Package = new PackageId("package-1"), Tool = "sample.write",
+            Applicability = EntitlementApplicability.Governed,
+            Result = EntitlementDecisionKind.Denied, Source = EntitlementSourceCategory.Remote,
+            Reason = EntitlementReasonCode.Unavailable, Binding = new RequestBinding("opaque-attempt-1"),
+            AuthorityId = "authority-1", ValidFrom = DateTimeOffset.Parse("2026-09-24T09:59:00Z"),
+            ValidUntil = DateTimeOffset.Parse("2026-09-24T10:04:00Z"),
+            Constraints = new EntitlementConstraints(new Dictionary<string, string> { ["limit"] = "denied" }),
+        };
+
+        var roundTrip = Assert.IsType<EntitlementDecisionAuditEvent>(JsonSerializer.Deserialize<AuditEvent>(JsonSerializer.Serialize<AuditEvent>(value), JsonOptions));
+
+        Assert.Equal(value.Node, roundTrip.Node);
+        Assert.Equal(value.TaskId, roundTrip.TaskId);
+        Assert.Equal(value.StepIndex, roundTrip.StepIndex);
+        Assert.Equal(value.Actor, roundTrip.Actor);
+        Assert.Equal(value.Delegation, roundTrip.Delegation);
+        Assert.Equal(value.Package, roundTrip.Package);
+        Assert.Equal(value.Tool, roundTrip.Tool);
+        Assert.Equal(value.Applicability, roundTrip.Applicability);
+        Assert.Equal(value.Result, roundTrip.Result);
+        Assert.Equal(value.Source, roundTrip.Source);
+        Assert.Equal(value.Reason, roundTrip.Reason);
+        Assert.Equal(value.Binding, roundTrip.Binding);
+        Assert.Equal(value.ValidFrom, roundTrip.ValidFrom);
+        Assert.Equal(value.ValidUntil, roundTrip.ValidUntil);
+        Assert.Equal("denied", roundTrip.Constraints!.Values["limit"]);
+    }
+
+    [Fact]
+    public void NotGovernedEntitlementAuditEvent_RecordsHostApplicabilityWithoutDecision()
+    {
+        var value = new EntitlementDecisionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = new NodeId("node-1"), TaskId = Guid.NewGuid(), StepIndex = 0,
+            Actor = new ActorIdentity("operator", "operator-1", "Operator"), Package = new PackageId("package-1"), Tool = "sample.read",
+            Applicability = EntitlementApplicability.NotGoverned,
+        };
+        var roundTrip = Assert.IsType<EntitlementDecisionAuditEvent>(JsonSerializer.Deserialize<AuditEvent>(JsonSerializer.Serialize<AuditEvent>(value), JsonOptions));
+        Assert.Equal(EntitlementApplicability.NotGoverned, roundTrip.Applicability);
+        Assert.Null(roundTrip.Result);
+    }
+
+    [Fact]
+    public void EntitlementDecisionAuditEvent_ExposesNoRawOrCommercialEscapeHatches()
+    {
+        var properties = typeof(EntitlementDecisionAuditEvent).GetProperties();
+        var forbidden = new[] { "rawtoken", "licensetoken", "secret", "credential", "providerpayload", "vendorpayload", "payment", "price", "sku", "subscription" };
+        Assert.DoesNotContain(properties, property => forbidden.Any(term => property.Name.Contains(term.Replace(" ", ""), StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(properties, property => typeof(System.Collections.IDictionary).IsAssignableFrom(property.PropertyType));
+        Assert.DoesNotContain(properties, property => property.PropertyType == typeof(Exception) || property.PropertyType.FullName == "System.Text.Json.Nodes.JsonObject");
+    }
+
+    [Fact]
     public void PublicSurface_ContainsTheAdditiveEntitlementContractsAndService()
     {
         var surface = PublicSurface.Describe(typeof(NodeId).Assembly);
 
         Assert.Contains("bOps.Abstractions.AuthorizationKind | enum-value EntitlementDenied = 5", surface);
         Assert.Contains(surface, line => line.StartsWith("bOps.Abstractions.IEntitlementService |", StringComparison.Ordinal));
-        foreach (var name in new[] { "EntitlementApplicability", "EntitlementRequirement", "EntitlementRequest", "EntitlementDecision",
+        foreach (var name in new[] { "EntitlementApplicability", "EntitlementRequirement", "EntitlementRequest", "EntitlementDecision", "EntitlementDecisionAuditEvent",
                      "RequestBinding", "EntitlementValidityRequest", "EntitlementConstraints", "EntitlementResourceRequest", "ToolExecutionRegistration" })
             Assert.Contains(surface, line => line.StartsWith($"bOps.Abstractions.{name} |", StringComparison.Ordinal));
 
