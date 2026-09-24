@@ -143,14 +143,70 @@ lock query is materially different from an incomplete query: the former reports 
 observed by that source; the latter leaves lock ownership unknown. If no host-side explanation is
 established, retain that unknown rather than fabricating a permission or process cause.
 
+## TLS connection fails
+
+Use the requested hostname and port throughout the observation. Keep name resolution, routing,
+transport, TLS negotiation, trust, endpoint identity, validity dates, and local time as separate
+evidence layers. The sequence is:
+
+```text
+network.dns_query
+  failed / unavailable -> OBSERVED: name resolution was not established.
+                          UNKNOWN: route, TCP, TLS, certificate, and application state.
+  resolved -> network.routes
+    no usable route / incomplete -> OBSERVED: routing evidence is absent, unusable, or incomplete.
+                                    UNKNOWN: endpoint reachability and later layers.
+    route evidence usable -> network.port_check
+      refused / unreachable -> OBSERVED: TCP transport connection failed.
+        TLS handshake was not established. Do not report certificate, trust, or hostname failure.
+      reachable -> OBSERVED: TCP is reachable at this observation time.
+        network.tls_probe
+          handshake failure -> TLS negotiation failed after TCP success.
+            A generic handshake failure does not establish trust failure.
+          handshake success -> inspect reported trust and identity independently.
+            chainValid=false / chain status -> TRUST FAILURE evidence; TCP remains reachable.
+            identity mismatch -> HOSTNAME / endpoint identity mismatch for the requested hostname.
+              This does not mean the certificate fails for every hostname.
+            then certificate.inspect (when certificate can be identified in an allowed local store)
+              partial / unavailable / not found -> UNKNOWN: certificate-specific metadata is incomplete.
+              complete validity dates + system.time UTC time
+                NotAfter < observed time -> EXPIRED validity-window evidence.
+                NotBefore > observed time -> NOT-YET-VALID validity-window evidence.
+                dates cover observed time -> no date-based validity symptom observed.
+              Dates alone do not prove the local clock is wrong.
+            then system.time -> network.ntp_probe
+              incomplete / unavailable -> UNKNOWN: clock concern cannot be ruled in or out.
+              material offset or unsynchronized status -> OBSERVED: local time-sync concern.
+                Only when consistent with an observed validity symptom, time evidence may explain
+                or contribute to it; it does not prove that the clock caused the TLS failure.
+              normal synchronized time + validity symptom -> do not conclude clock caused it.
+        TLS success + acceptable reported trust/identity + dates valid at observed time ->
+          INFERENCE: TLS connectivity is established at observation time.
+          UNKNOWN: application, DB, HTTP/API request, and authentication health.
+```
+
+**TRUST FAILURE != TCP FAILURE.** A successful `network.port_check` followed by a TLS-reported
+chain validation failure means TCP is reachable and trust validation failed. A handshake failure
+without explicit trust evidence is not a trust conclusion. `certificate.inspect` reads public
+metadata and local chain evidence for a thumbprint in an allowed local store; the TLS probe itself
+provides peer metadata and trust evidence. Do not invent chain details, revocation status, local
+trust-store contents, or private-key facts that the typed result did not expose.
+
+Time evidence is explanatory context, never a root-cause oracle. Expired or not-yet-valid dates do
+not by themselves prove a bad clock. NTP drift does not by itself prove it caused TLS failure; require
+a matching certificate validity symptom and describe the time evidence as a possible explanation or
+contributor. No certificate, trust-store, private-key, or system-clock mutation is part of diagnosis.
+The TLS probe sends no application data, so successful TLS is not evidence of application health.
+Partial, unavailable, or truncated certificate/time evidence remains UNKNOWN, not a complete normal
+result.
+
 ## Remaining scenario stubs
 
-The L5-L8 packets fill these decision trees without changing this structure.
+The L6-L8 packets fill these decision trees without changing this structure.
 
-1. TLS connection fails
-2. Scheduled job did not run
-3. Reboot/update regression
-4. Docker-hosted service failure
+1. Scheduled job did not run
+2. Reboot/update regression
+3. Docker-hosted service failure
 
 ## Completeness and remediation boundaries
 
