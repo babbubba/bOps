@@ -1,7 +1,8 @@
 # ADR-0037 — Safe local plugin lifecycle
 
-Status: Proposed
+Status: Accepted
 Date: 2026-09-24
+Accepted: 2026-09-24 by the operator
 Builds on: ADR-0020
 
 ## Context
