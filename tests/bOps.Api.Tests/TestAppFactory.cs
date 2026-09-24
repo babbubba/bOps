@@ -46,6 +46,9 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 
     public IReadOnlyList<string> Roles { get; init; } = ["viewer", "operator", "approver"];
 
+    /// <summary>Extra configuration applied after the defaults (for example a smaller <c>Plugins:Archive</c> limit).</summary>
+    public IReadOnlyDictionary<string, string?>? ExtraConfiguration { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -80,6 +83,10 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
             };
 
             config.AddInMemoryCollection(settings);
+            if (ExtraConfiguration is not null)
+            {
+                config.AddInMemoryCollection(ExtraConfiguration);
+            }
         });
 
         builder.ConfigureServices(services =>
@@ -124,7 +131,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
             {
                 Directory.Delete(TempDirectory, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Best-effort cleanup only — a file still briefly locked by SQLite's pooled
                 // connection teardown must never fail the test that already passed.
