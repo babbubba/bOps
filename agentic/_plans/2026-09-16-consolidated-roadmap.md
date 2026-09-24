@@ -3,7 +3,7 @@
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
 Current implementation milestone: **V1.3** (V1.2-A through V1.2-M are complete and `v1.2.0-preview.8` is released as a pre-release)
-Next implementation batch: **V1.3-F — filesystem troubleshooting** (V1.3-A through V1.3-E are implemented); V1.3 then completes the local senior-operator diagnostic surface through V1.3-L before V1.3-M entitlement/plugin lifecycle
+Next implementation batch: **V1.3-M — entitlement/plugin lifecycle** (V1.3-A through V1.3-L are complete and merged); M remains not started and is gated by its M1/M4 ADR sequence
 
 ## 1. Authority and precedence
 
@@ -54,7 +54,7 @@ dependency isolation rather than a security sandbox.
 | V1.0 formal release | Closed via `v1.1.0-preview.2` | The release workflow was proven on tag `v1.1.0-preview.2` (`c81ffab`, run `35383901325`) with verified archives, package, SBOMs, checksums and attestations. No stable `v1.0.x` tag exists or will be created; the first stable tag is decided at V1.1 GA. |
 | V1.1 | Complete (preview tag `v1.1.0-preview.2`) | V1.1-A through V1.1-H are complete; the H gate is green on Windows/Linux CI (runs `35365098294`, `35372748588`). The preview artifacts are workflow artifacts only, not a GitHub Release or NuGet publication. |
 | V1.2 | Complete (preview) | Sub-tasks A–M are implemented, each with its pull request green on Windows and Linux CI: contracts, authority reduction, the orchestrator, budgets, durable state, separation of duties, audit provenance, CLI, API, dashboard view and documentation. M (integration and release gate) is closed: Release build with zero warnings, the non-live suite, the Angular build and tests, the SDK pack, an end-to-end objective with real tools and a crash-and-resume scenario, and a permanent snapshot of the frozen 1.0 surface. Tag `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`) and is published as a GitHub pre-release, not a NuGet publication or a stable release. |
-| V1.3 | In progress | V1.3-A through V1.3-E are implemented: system events, Docker management, advanced process diagnostics, sockets/routes/network diagnostics and storage diagnostics. Ordered public batches A–L complete the senior-operator local diagnostic surface; M adds the neutral entitlement boundary and local plugin lifecycle. |
+| V1.3 | In progress | V1.3-A through V1.3-L are complete and merged, including the senior-operator diagnostic integration gate. V1.3-M remains not started and adds the neutral entitlement boundary and local plugin lifecycle. |
 | V1.4–V2.0 | Not started | They remain gated by completion of all preceding milestones. |
 
 The state above describes the repository, not a production endorsement. A milestone is not
@@ -406,38 +406,44 @@ Disks, partitions, mounts, IOPS/latency/queue/utilization and health/SMART evide
 
 ### V1.3-F — filesystem troubleshooting
 grep/tail/permissions/locks plus verified single-file copy and mkdir under existing path policy.
-**Status.** Implemented locally on `feat/v13-F_partial`; Release build and the local non-live
-suite are green. PR not yet opened.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md` — **medio**.
 
 ### V1.3-G — service configuration and scheduler
 Service config/dependencies/enable-state plus Task Scheduler/systemd timers/cron diagnostics.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md` — **medio**.
 
 ### V1.3-H — identity, time and reboot state
 Local principals/groups/sessions, system time/sync state and pending-reboot evidence.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md` — **medio**.
 
 ### V1.3-I — firewall diagnostics
 Read-only host firewall status and normalized rules; mutation deferred.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md` — **medio**.
 
 ### V1.3-J — TLS and certificates
 Handshake-only TLS probe and local X.509 list/inspect; no private-key export or install/remove.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md` — **medio**.
 
 ### V1.3-K — updates, crashes and drivers/modules
 Read-only pending updates/history, crash metadata and loaded drivers/modules.
+**Status.** Complete and merged.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md` — **medio**.
 
 ### V1.3-L — senior-operator integration gate
 End-to-end troubleshooting scenarios and the stable OSS evidence baseline future commercial Skills
 consume.
+**Status.** Complete and merged through PR #47; Windows/Linux CI is green.
 **Task.** `agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md` — **medio**.
 
 ### V1.3-M — entitlement and local plugin lifecycle
 The previously planned neutral entitlement boundary and administrator-safe plugin lifecycle follows
 the operational-completeness gate. Commercial identities/providers remain private.
+**Status.** Not started; gated by the M1/M4 ADR sequence.
 **Public task.** `agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md` — **molto alto**.
 
 ## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport

@@ -84,10 +84,10 @@ release-candidate workflow has not run from a tag.
 
 **The authoritative backlog and actual status are in
 [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md).** This
-file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone (V1.3-A, `system.events`, V1.3-B, Docker management, V1.3-C, advanced process diagnostics, V1.3-D, sockets/routes/network diagnostics, and V1.3-E, storage diagnostics, are implemented).
+file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone: V1.3-A through V1.3-L are complete and merged.
 A–L complete the local senior-system-administrator evidence surface before remote transport:
 events, Docker, process, network, storage, filesystem, service/scheduler, identity/time/reboot,
-firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M then adds the
+firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M is next and not started; it then adds the
 neutral entitlement and local plugin-lifecycle boundary. V1.4–V2.0 retain remote transport,
 private Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core
 boundary.

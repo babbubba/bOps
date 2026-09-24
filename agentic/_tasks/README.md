@@ -17,18 +17,18 @@ snapshots under `agentic/obsolete/`.
 | 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
 | 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
 | 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Complete — A to M implemented and release gate closed | molto alto, split A–M |
-| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Implemented — PR #32, CI green** | alto |
-| 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | **Implemented — PR open** | molto alto |
-| 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | **Implemented — PR open** | medio |
-| 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | **Implemented — PR open** | medio |
-| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Implemented — PR #37, CI green** | medio |
-| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | **Implemented locally — PR not yet opened** | medio |
-| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | **Implemented locally — PR/CI pending** | medio |
-| 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | **Implemented locally — PR/CI pending** | medio |
-| 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | Future | medio |
-| 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | Future | medio |
-| 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | Future | medio |
-| 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | Future | medio |
+| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Complete and merged — PR #32, CI green** | alto |
+| 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | **Complete and merged — PR #33** | molto alto |
+| 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | **Complete and merged — PR #35** | medio |
+| 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | **Complete and merged — PR #36** | medio |
+| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Complete and merged — PR #37, CI green** | medio |
+| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | **Complete and merged — PR #38** | medio |
+| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | **Complete and merged — PR #40** | medio |
+| 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | **Complete and merged — PR #42** | medio |
+| 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | **Complete and merged — PR #43** | medio |
+| 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | **Complete and merged — PR #44** | medio |
+| 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | **Complete and merged — PR #45** | medio |
+| 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | **Complete and merged — PR #47; integration gate complete, Windows/Linux CI green** | medio |
 | 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
 | 23 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |

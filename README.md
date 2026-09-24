@@ -394,11 +394,8 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.1-G` *(complete)* | Writable Settings backed by an encrypted local vault (ADR-0029) |
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
-| `V1.3-A` *(implemented)* | Bounded cross-platform `system.events`: Windows Event Log + Linux journald |
-| `V1.3-B` | Docker image/build/volume management; existing start/stop/restart remain the container lifecycle baseline |
-| `V1.3-C–K` | Process, network, storage, filesystem, service/scheduler, identity/time, firewall, TLS/certificates, updates/crashes/drivers |
-| `V1.3-L` | Senior-operator diagnostic integration gate and evidence baseline for future Skills |
-| `V1.3-M` | Neutral entitlement boundary and safe local plugin enable/disable/upload |
+| `V1.3-A–L` *(complete and merged)* | Senior-operator local diagnostic surface, including the PR #47 integration gate and evidence baseline for future Skills |
+| `V1.3-M` *(next; not started)* | Neutral entitlement boundary and safe local plugin enable/disable/upload |
 | `V1.4-A–C` | Outbound secure node protocol, private Coordinator and PostgreSQL+pgvector persistence baseline |
 | `V1.4-D` | Semantic Knowledge Store + tenant-private Operational Memory + versioned Knowledge/Experience Packs |
 | `V1.4-E` | Official packaging and signed application/knowledge-pack distribution |
