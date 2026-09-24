@@ -2,6 +2,7 @@
 
 Status: Proposed
 Date: 2026-09-24
+Amends: ADR-0016 only for pre-invocation runtime authorization denial of required verification
 
 ## Context
 
@@ -89,12 +90,13 @@ public Runtime abstraction. M3 may use one shared internal entitlement-evaluatio
 existing execution paths.
 
 M3 applies the routine at both currently known Runtime call sites: (1) ordinary governed tool
-execution in `AgentRunner.ExecuteStepAsync`, after argument validation, delegation-envelope
-enforcement, policy evaluation, required approval, and approval binding, but before durable
+execution in `AgentRunner.ExecuteStepAsync`, after delegation-envelope enforcement, argument
+validation, policy evaluation, required approval, and approval binding, but before durable
 side-effect intent and before `ExecuteWithTimeoutAsync`; and (2) an explicitly governed
 runtime-mandated verification invocation in `EvaluateVerificationAsync` /
-`ExecuteVerificationToolAsync`, immediately before it ultimately invokes the verification tool
-through `ExecuteWithTimeoutAsync`. M3 must apply the same boundary to any other existing M3-scope
+`ExecuteVerificationToolAsync`, after the applicable delegated envelope permits that verification
+read and immediately before it ultimately invokes the verification tool through
+`ExecuteWithTimeoutAsync`. M3 must apply the same boundary to any other existing M3-scope
 Runtime-owned path that can directly invoke a governed `ITool`; focused inspection identifies no
 other such path. Prepared-plan, delegated, evidence, resume, retry, and replan paths that route
 through `ExecuteStepAsync` use the ordinary integration point.
@@ -103,6 +105,21 @@ For a governed request, only a newly obtained, binding-matched, currently usable
 permits execution. Therefore approval followed by entitlement revocation produces no governed tool
 execution. Entitlement never replaces policy or approval: a governed side effect requires every
 applicable gate to pass, and a policy denial remains final.
+
+For an ordinary delegated invocation, the envelope must permit the call, policy must permit it,
+required approval must be valid, and entitlement must allow it when governed. For runtime-mandated
+post-action verification, the applicable delegated envelope must permit the verification tool and
+entitlement must allow it when governed. An entitlement `Allowed` decision cannot override an
+envelope denial. Policy and human approval are intentionally absent from this verification branch:
+ADR-0016 defines it as runtime-mandated infrastructure, not a model-proposed action.
+
+An entitlement denial of an ordinary invocation is `AuthorizationKind.EntitlementDenied`, distinct
+from `PolicyDenied`. The denied tool does not execute. In a prepared or delegated plan, it is a
+terminal denial for that plan execution path: the existing stop set (`PolicyDenied`, `UnknownTool`,
+`UserRejected`) gains `EntitlementDenied`; the plan becomes `Stopped` with
+`StoppedBy = AuthorizationKind.EntitlementDenied`, and no later dependent step executes. A
+model-driven call denied by entitlement is surfaced as a denied-action deviation for replanning,
+consistent with the existing denial behavior. This adds no global task status.
 
 ### Time, cache and resource semantics
 
@@ -140,20 +157,41 @@ effect remains meaningful and must be attempted as ADR-0016 requires.
 
 ### Reads and verification
 
-ADR-0016 remains unchanged: verification applies after an executed non-`Read` call, and a failed
-verification can never become confirmed success. If a governed mutation is denied before it
-executes, it has no executed effect requiring post-action verification; independent diagnostics may
-still run according to their own applicability. A mutation that executes while entitled still has
-its required verification.
+ADR-0016 still requires verification after every executed non-`Read` call, whether the tool reports
+success, failure or timeout. If a governed mutation is denied before it executes, it has no executed
+effect requiring post-action verification; independent diagnostics may still run according to their
+own applicability. A mutation that executes while entitled still has its required verification.
+
+This ADR **amends ADR-0016 in one narrow case**: Runtime authorization prevents the required
+verification tool from being invoked at all. A denied delegated envelope, a governed entitlement
+denial, a missing or failing governed provider, or an invalid entitlement binding or validity
+decision are such pre-invocation authorization denials. The verification tool is not called and
+`IVerifiableTool.EvaluateVerificationAsync` is not called. Runtime directly returns
+`VerificationStatus.Inconclusive` with bounded neutral detail saying which runtime authorization
+boundary prevented verification. It never reports the original effect as `Confirmed` or treats the
+denial as `Refuted`; it claims neither success nor failure of that effect and does not automatically
+roll back an effect that already occurred. There is no result from an *executed* verification tool
+for the package to interpret. Passing a manufactured `Failure` to an arbitrary evaluator is unsafe:
+the evaluator can ignore it and return `Confirmed`.
+
+Everywhere else, ADR-0016's interpretation rule remains: when the verification tool actually
+executes, its actual `ToolCallResult` goes to the package evaluator, which remains the sole
+interpreter even when that result is `Failure`. Runtime accepts the evaluator's `Confirmed` result;
+it does not override the package merely because it dislikes the result. ADR-0016's existing handling
+of a verification tool that cannot resolve or whose arguments fail validation also remains outside
+this authorization-denial amendment.
 
 A verification `Read` that is not governed proceeds normally. A `Read` is governed only when its
 own explicit applicability requirement says so; mutation entitlement neither silently propagates to
-it nor exempts every `Read`. For an explicitly governed verification `Read`, Runtime evaluates
-entitlement freshly immediately before that verification invocation. If entitlement is denied,
-unavailable, failing, malformed, or binding-mismatched, the verification tool does not execute, the
-mutation is not reported as verified success, and ADR-0016's unknown/inconclusive outcome is
-preserved. Runtime does not reuse the mutation decision or roll back an already-completed operating
-system mutation unless the actual tool supports rollback.
+it nor exempts every `Read`. For post-action verification in a delegated execution, Runtime checks
+the applicable envelope of the execution context in which that verification occurs, including its
+Tools dimension; this enforces ADR-0030/0031 authority rather than granting new entitlement
+authority. Runtime resolves the verification tool, constructs and validates its arguments, checks
+that envelope, then evaluates entitlement freshly if the verification invocation is governed. It
+invokes the verification tool and passes its actual result to the package evaluator only after all
+applicable gates permit it. The separate ADR-0030 Verification role gathers independent Read
+evidence under its own envelope through the ordinary step path; it is not this automatic post-action
+verification invocation. Runtime does not reuse the mutation's entitlement decision.
 
 ### Audit and public/private boundary
 
@@ -162,9 +200,14 @@ the request binding where useful as neutral correlation metadata, decision, sour
 code, relevant non-sensitive constraints/limits and validity state.
 It must never include raw license/token material, provider payloads, credentials, signatures or
 unnecessary fingerprints. Verification entitlement decisions use the same neutral audit rules. A
-denial after a mutation distinguishes effect executed, verification authorization denied, and
-verification unknown/inconclusive without leaking provider data. Existing policy, approval, tool
-outcome and verification records remain separate, preserving their meanings.
+denial after a mutation distinguishes the original effect executed, the verification tool not
+executed, the runtime boundary that prevented it, and final verification status `Inconclusive`,
+without leaking provider data. Runtime-mandated verification does not acquire a peer
+model-requested `ToolCallAuditEvent`. `AuthorizationKind.EntitlementDenied` identifies which gate
+denied an ordinary tool invocation; the separate neutral entitlement record explains applicability,
+source category, reason, validity, constraints and request binding. Raw provider material does not
+enter `ToolCallAuditEvent`. Existing policy, approval, tool outcome and verification records remain
+separate, preserving their meanings.
 
 The public surface owns only neutral contracts and generic enforcement. Product-specific business
 rules, provider implementations, credential formats, activation rules and product-specific Skills
@@ -177,12 +220,13 @@ remain outside this repository. Runtime names none of them.
 | Missing provider locks all OSS | Explicit not-governed applicability bypasses provider lookup. |
 | Provider failure becomes not-applicable | Governed failure is denied; only trusted structural assignment can be not-applicable. |
 | Verification bypasses entitlement | The same semantic boundary applies before an explicitly governed verification invocation. |
-| Verification denial becomes success | Denied governed verification does not execute and remains unknown/inconclusive, never verified success. |
+| Verification authorization denial becomes success | A pre-invocation runtime denial skips both the verification tool and package evaluator; Runtime records `Inconclusive`. |
 | Stale allow, cache replay or indefinite cache | Fresh per-attempt binding, bounded UTC validity and rollback invalidation. |
 | Runtime reinterprets entitlement | Provider evaluates entitlement dimensions; Runtime validates structure, binding and usability only. |
 | Revocation after approval | Check occurs after approval binding and immediately before invocation. |
 | Resume, retry or replan bypass | No decision persists as authority; every attempt re-evaluates. |
-| Delegation bypass | Shared `ExecuteStepAsync` enforcement after envelope reduction. |
+| Delegation bypass | Ordinary steps use `ExecuteStepAsync`; runtime-mandated post-action verification also checks its applicable delegated envelope before invocation. |
+| Entitlement-denied plan step is followed by dependent steps | `EntitlementDenied` stops prepared and delegated plan execution before any later step. |
 | Verification accidentally blocked | Mutation denial does not govern verification reads; separately governed reads become inconclusive. |
 | Audit secret leakage | Audit only neutral outcome metadata; exclude raw provider material and credentials. |
 | Ambiguous applicability authorizes execution | Missing/ambiguous governed assignment fails closed. |
@@ -219,12 +263,30 @@ M2 adds the dependency-free, serializable host-stamped applicability/requirement
 request-binding, decision, validity/constraint, source-category, reason-code and node-scoped service
 contracts; it also adds public-surface and round-trip tests with no provider implementation. The
 public request and decision contracts must include the neutral binding field: Runtime creates it for
-the request and the provider decision returns it unchanged.
+the request and the provider decision returns it unchanged. M2 also appends the public enum value
+`AuthorizationKind.EntitlementDenied = 5`. Existing numeric values stay frozen:
+`Automatic = 0`, `UserApproved = 1`, `UserRejected = 2`, `PolicyDenied = 3`, and `UnknownTool = 4`.
+M2 updates public-surface, version-compatibility tests and snapshots to prove this additive change;
+it does not reuse `PolicyDenied` or redesign the authorization contract.
 
 M3 registers the service through the host, adds a shared internal evaluation routine, and applies it
 at both known execution paths: ordinary governed invocation from `ExecuteStepAsync`, and governed
 runtime-mandated verification immediately before `ExecuteVerificationToolAsync` invokes its tool.
-It adds neutral audit records without a generic invoker redesign.
+The required semantic sequences are:
+
+1. **Ordinary tool invocation:** applicable delegated envelope, argument validation, policy,
+   required approval and approval binding, fresh entitlement evaluation if governed, durable intent
+   where already required, tool execution, required post-action verification, audit and journal
+   completion.
+2. **Runtime-mandated post-action verification:** resolve and construct the verification call,
+   validate its arguments, check the applicable delegated envelope, obtain a fresh entitlement
+   decision if governed, execute the verification tool, then call the package evaluator with its
+   actual result. If a runtime authorization boundary denies the invocation, skip both execution
+   and the evaluator and return `Inconclusive`. Do not add Policy or Approval to this branch.
+
+M3 adds separate neutral audit records without a generic invoker redesign. It treats
+`EntitlementDenied` as a stopped prepared/delegated plan step and a model-driven denied-action
+deviation, without changing existing policy or approval meaning.
 
 M3 acceptance tests must cover: valid allow; expired, future and revoked authority; resource
 exhaustion; provider missing/failure; cache/offline; clock rollback; post-approval revocation;
@@ -234,15 +296,28 @@ asserting a returned status. They must explicitly prove:
 
 | Scenario | Required outcome |
 |---|---|
+| Envelope denies ordinary step | No execution. |
+| Entitlement allows but envelope denies ordinary step | No execution; entitlement cannot widen the envelope. |
+| Policy denies but entitlement would allow | No execution. |
+| Approval rejects or expires but entitlement would allow | No execution. |
+| Earlier gates allow but entitlement denies | `EntitlementDenied`; no execution. |
+| Prepared or delegated plan step denied by entitlement | Plan is `Stopped`, `StoppedBy` is `EntitlementDenied`, and later steps do not execute. |
 | Mutation allowed; verification ungoverned | Verification executes. |
 | Mutation allowed; governed verification allowed | Verification executes. |
-| Entitlement revoked before governed verification | Verification does not execute; outcome is unknown/inconclusive. |
-| Governed verification provider failure | No verified-success result. |
-| Governed verification wrong request binding | Fail closed; no verified-success result. |
+| Mutation executes; delegated envelope denies its post-action verification tool | Verification tool and evaluator are not called; Runtime returns `Inconclusive`. |
+| Entitlement revoked before governed post-action verification | Verification tool and evaluator are not called; Runtime returns `Inconclusive`. |
+| Governed post-action verification provider failure | Verification tool and evaluator are not called; Runtime returns `Inconclusive`. |
+| Governed post-action verification wrong request binding or invalid validity | Verification tool and evaluator are not called; Runtime returns `Inconclusive`. |
+| Verification tool executes and returns `Failure` | Package evaluator remains the sole interpreter under ADR-0016. |
+| Verification tool executes and package evaluator returns `Confirmed` | Runtime accepts that package interpretation. |
 | Ordinary governed execution wrong request binding | Fail closed; tool does not execute. |
 | Retry, resume, or delegation | Each receives a fresh request binding. |
 | Cached provider source | It returns a fresh decision bound to the current request binding. |
 
-This proposal preserves dependency-free Abstractions, package isolation, runtime product neutrality,
-the model-proposes/runtime-decides boundary, independent policy and approval authority, post-action
-verification, and non-bypassable delegated execution.
+Cross-ADR composition: ADR-0016 is preserved except for the explicit pre-invocation runtime
+authorization-denial amendment above. ADR-0025's restricted and internal invocations still cross
+applicable entitlement enforcement. ADR-0030/0031 delegated authority remains monotonic, including
+the applicable Tools envelope for post-action verification reads. Policy and Approval remain
+independent and unchanged. This proposal preserves dependency-free Abstractions, package isolation,
+runtime product neutrality, the model-proposes/runtime-decides boundary, post-action verification,
+and non-bypassable delegated execution.
