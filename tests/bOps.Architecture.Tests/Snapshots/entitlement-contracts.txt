@@ -1,0 +1,17 @@
+bOps.Abstractions.AuthorizationKind | enum-value EntitlementDenied = 5
+bOps.Abstractions.EntitlementApplicability | enum-value Governed = 0
+bOps.Abstractions.EntitlementApplicability | enum-value NotGoverned = 1
+bOps.Abstractions.EntitlementApplicability | kind enum
+bOps.Abstractions.EntitlementConstraints | kind sealed class
+bOps.Abstractions.EntitlementDecision | kind sealed class
+bOps.Abstractions.EntitlementDecisionKind | enum-value Allowed = 1
+bOps.Abstractions.EntitlementDecisionKind | enum-value Denied = 0
+bOps.Abstractions.EntitlementDecisionKind | kind enum
+bOps.Abstractions.EntitlementReasonCode | kind enum
+bOps.Abstractions.EntitlementRequest | kind sealed class
+bOps.Abstractions.EntitlementRequirement | kind sealed class
+bOps.Abstractions.EntitlementResourceRequest | kind sealed class
+bOps.Abstractions.EntitlementSourceCategory | kind enum
+bOps.Abstractions.EntitlementValidityRequest | kind sealed class
+bOps.Abstractions.IEntitlementService | kind interface
+bOps.Abstractions.RequestBinding | kind struct

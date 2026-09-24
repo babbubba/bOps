@@ -23,6 +23,9 @@ public enum AuthorizationKind
 
     /// <summary>The model requested a tool name that does not resolve to any registered tool.</summary>
     UnknownTool,
+
+    /// <summary>An entitlement decision denied the call.</summary>
+    EntitlementDenied,
 }
 
 /// <summary>
