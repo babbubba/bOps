@@ -312,7 +312,7 @@ public sealed class AgentRunner(
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
             // retry it until MaxSteps — a Forbidden decision must be a dead end, not a suggestion
             // the model can simply repeat.
-            if (authorization == AuthorizationKind.PolicyDenied)
+            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.EntitlementDenied)
             {
                 consecutivePolicyDenials = string.Equals(lastPolicyDeniedTool, primaryCall.ToolName, StringComparison.Ordinal)
                     ? consecutivePolicyDenials + 1
@@ -360,7 +360,7 @@ public sealed class AgentRunner(
             // back Inconclusive is excluded for the same reason: it is real information handed to
             // the model, not proof the plan's assumption was wrong (rule S4: Inconclusive is
             // never success, but it is also not evidence of failure).
-            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected
+            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
                 || step.Result?.Outcome == ToolOutcome.Timeout
                 || verification == VerificationStatus.Refuted;
 
@@ -514,7 +514,7 @@ public sealed class AgentRunner(
             // Rule A5 / ADR-0024: a plan is not a checklist of independent actions — a denial or
             // an unresolved tool means whatever comes next in the plan likely assumed this step
             // succeeded, so this stops here rather than attempting the rest anyway.
-            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected)
+            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied)
             {
                 stoppedBy = authorization;
                 break;
@@ -1031,7 +1031,7 @@ public sealed class AgentRunner(
         var evidenceCall = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
         var (step, _, authorization, _) = await ExecuteStepAsync(
             taskId, stepIndex, actor, evidenceCall, planRevision: -1, ct, scope, delegation);
-        if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.UnknownTool)
+        if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.UnknownTool or AuthorizationKind.EntitlementDenied)
         {
             return new ToolCallResult(ToolOutcome.Denied, null, step.Result?.ErrorMessage ?? "Evidence invocation was denied.");
         }
@@ -1616,7 +1616,7 @@ public sealed class AgentRunner(
             }
         }
 
-        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, skillScope, ct);
+        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, stepIndex, skillScope, delegation, ct);
         if (!entitlement.Allowed)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, registration.Package, manifest.Risk,
@@ -1686,7 +1686,7 @@ public sealed class AgentRunner(
         // arguments, not against how the original call reported itself. Registration (rule B3)
         // guarantees a non-Read tool implements IVerifiableTool and declares a VerificationSpec.
         VerificationOutcome? verificationOutcome = manifest.Risk != RiskLevel.Read
-            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, actor, skillScope, delegation, ct)
+            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, stepIndex, actor, skillScope, delegation, ct)
             : null;
 
         if (verificationOutcome is not null)
@@ -1723,6 +1723,7 @@ public sealed class AgentRunner(
         VerificationSpec spec,
         ModelToolCall call,
         ToolExecutionContext executionContext,
+        int stepIndex,
         ActorIdentity actor,
         SkillExecutionScope? skillScope,
         DelegatedExecutionScope? delegation,
@@ -1732,7 +1733,7 @@ public sealed class AgentRunner(
         verificationActivity?.SetTag("bops.tool", call.ToolName);
         verificationActivity?.SetTag("bops.verification_tool", spec.VerifyToolName);
 
-        var verification = await ExecuteVerificationToolAsync(spec, call.Arguments, executionContext, actor, skillScope, delegation, ct);
+        var verification = await ExecuteVerificationToolAsync(spec, call.Arguments, executionContext, stepIndex, actor, skillScope, delegation, ct);
         if (verification.PreInvocationDenial is not null)
         {
             verificationActivity?.SetTag("bops.verification", VerificationStatus.Inconclusive.ToString());
@@ -1772,6 +1773,7 @@ public sealed class AgentRunner(
         VerificationSpec spec,
         ToolArguments originalArguments,
         ToolExecutionContext executionContext,
+        int stepIndex,
         ActorIdentity actor,
         SkillExecutionScope? skillScope,
         DelegatedExecutionScope? delegation,
@@ -1799,7 +1801,7 @@ public sealed class AgentRunner(
             return new VerificationInvocation(null, $"Verification authorization prevented the read: {envelopeRefusal.Reason}");
         }
 
-        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, skillScope, ct);
+        var entitlement = await EvaluateEntitlementAsync(registration, executionContext, stepIndex, skillScope, delegation, ct);
         if (!entitlement.Allowed)
         {
             return new VerificationInvocation(null, $"Verification authorization prevented the read: {entitlement.Detail}");
@@ -1812,7 +1814,9 @@ public sealed class AgentRunner(
     private async Task<EntitlementEvaluation> EvaluateEntitlementAsync(
         ToolExecutionRegistration registration,
         ToolExecutionContext executionContext,
+        int stepIndex,
         SkillExecutionScope? skillScope,
+        DelegatedExecutionScope? delegation,
         CancellationToken ct)
     {
         if (registration.Entitlement is null || registration.Entitlement.Applicability != EntitlementApplicability.Governed)
@@ -1824,6 +1828,9 @@ public sealed class AgentRunner(
 
         if (entitlementService is null)
         {
+            await WriteEntitlementAuditAsync(registration, executionContext, stepIndex, skillScope, delegation,
+                EntitlementDecisionKind.Denied, EntitlementSourceCategory.Unknown, EntitlementReasonCode.Unavailable,
+                null, null, null, null, null, ct);
             return new EntitlementEvaluation(false, "A required entitlement service is not configured.");
         }
 
@@ -1851,9 +1858,13 @@ public sealed class AgentRunner(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Entitlement evaluation failed for tool {Tool}", registration.Tool.Manifest.Name);
+            await WriteEntitlementAuditAsync(registration, executionContext, stepIndex, skillScope, delegation,
+                EntitlementDecisionKind.Denied, EntitlementSourceCategory.Unknown, EntitlementReasonCode.Unavailable,
+                binding, null, null, null, null, ct);
             return new EntitlementEvaluation(false, "The entitlement service could not evaluate this operation.");
         }
 
+        var evaluatedAt = timeProvider.GetUtcNow();
         if (decision is null
             || string.IsNullOrWhiteSpace(decision.Binding.Value)
             || decision.Binding != binding
@@ -1864,16 +1875,57 @@ public sealed class AgentRunner(
             || decision.ValidFrom == default
             || decision.ValidUntil == default
             || decision.ValidFrom > decision.ValidUntil
-            || now < decision.ValidFrom
-            || now > decision.ValidUntil)
+            || evaluatedAt < decision.ValidFrom
+            || evaluatedAt > decision.ValidUntil)
         {
+            await WriteEntitlementAuditAsync(registration, executionContext, stepIndex, skillScope, delegation,
+                EntitlementDecisionKind.Denied, EntitlementSourceCategory.Unknown, EntitlementReasonCode.InvalidRequest,
+                binding, null, null, null, null, ct);
             return new EntitlementEvaluation(false, "The entitlement decision was unusable for this operation.");
         }
 
+        await WriteEntitlementAuditAsync(registration, executionContext, stepIndex, skillScope, delegation,
+            decision.Result, decision.Source, decision.Reason, binding, decision.AuthorityId,
+            decision.ValidFrom, decision.ValidUntil, decision.Constraints, ct);
         return decision.Result == EntitlementDecisionKind.Allowed
             ? new EntitlementEvaluation(true, "Entitlement allowed the operation.")
             : new EntitlementEvaluation(false, "The entitlement decision denied this operation.");
     }
+
+    private Task WriteEntitlementAuditAsync(
+        ToolExecutionRegistration registration,
+        ToolExecutionContext executionContext,
+        int stepIndex,
+        SkillExecutionScope? skillScope,
+        DelegatedExecutionScope? delegation,
+        EntitlementDecisionKind result,
+        EntitlementSourceCategory source,
+        EntitlementReasonCode reason,
+        RequestBinding? binding,
+        string? authorityId,
+        DateTimeOffset? validFrom,
+        DateTimeOffset? validUntil,
+        EntitlementConstraints? constraints,
+        CancellationToken ct) =>
+        WriteAuditAsync(new EntitlementDecisionAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = executionContext.Node,
+            TaskId = executionContext.TaskId,
+            StepIndex = stepIndex,
+            Actor = executionContext.Actor,
+            Package = registration.Package,
+            Tool = registration.Tool.Manifest.Name,
+            Applicability = EntitlementApplicability.Governed,
+            Result = result,
+            Source = source,
+            Reason = reason,
+            Binding = binding,
+            AuthorityId = authorityId,
+            ValidFrom = validFrom,
+            ValidUntil = validUntil,
+            Constraints = constraints,
+        }, delegation, ct);
 
     private sealed record EntitlementEvaluation(bool Allowed, string Detail);
 
@@ -1971,7 +2023,9 @@ public sealed class AgentRunner(
             Actor = actor,
             Package = package,
             Tool = call.ToolName,
-            Arguments = call.Arguments.ToJson(),
+            Arguments = registry.ResolveForExecution(call.ToolName)?.Tool.Manifest is { } manifest
+                ? call.Arguments.Redact(manifest.Parameters.Where(parameter => parameter.Sensitive).Select(parameter => parameter.Name))
+                : call.Arguments.ToJson(),
             Risk = risk,
             Authorization = authorization,
             Outcome = ToolOutcome.Denied,
