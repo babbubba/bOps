@@ -303,9 +303,8 @@ var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
 // bOps.Cli already does — this host runs its own AgentRunner (AgentsEndpoints/AgentTaskLauncher)
 // and needs the same plugin-contributed tools/Skills visible to it. Before
 // RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured by the same refresh.
-var pluginManager = app.Services.GetRequiredService<PluginManager>();
-await app.Services.GetRequiredService<PluginLifecycleService>().RecoverAllAsync();
-var pluginStartupErrors = pluginManager.LoadAllEnabled();
+// ADR-0037: reconcile first, then activate enabled plugins; a failed startup activation is persisted as ActivationFailed.
+var pluginStartupErrors = await app.Services.GetRequiredService<PluginLifecycleService>().ActivateEnabledAsync();
 if (pluginStartupErrors.Count > 0)
 {
     var pluginLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Api.Plugins");

@@ -75,6 +75,28 @@ public sealed class PluginLifecycleCompositionTests
         Assert.False(manager.List().Single().Enabled);
     }
 
+    [Fact]
+    public void StartupActivationFailure_IsPersistedAsActivationFailed_ByTheCanonicalHostSequence()
+    {
+        using var factory = new TestAppFactory();
+        // Persisted enabled intent over material that exists but can never activate (no valid signature).
+        Seed(factory, enabled: true, createInstallDirectory: true);
+        using var client = factory.CreateClient();
+
+        var lifecycle = factory.Services.GetRequiredService<PluginLifecycleService>();
+        var manager = factory.Services.GetRequiredService<PluginManager>();
+
+        var status = lifecycle.GetStatus(PluginId);
+        Assert.NotNull(status);
+        Assert.Equal(PluginLifecycleState.ActivationFailed, status.State);
+        Assert.Equal(1, status.LifecycleVersion);
+        Assert.False(manager.IsActivated(PluginId));
+        Assert.True(manager.List().Single().Enabled); // operator intent is kept; the lifecycle state carries the failure
+        var error = Assert.Single(manager.StartupLoadErrors);
+        Assert.Equal(PluginId, error.Key);
+        Assert.DoesNotContain(factory.TempDirectory, error.Value, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void Seed(TestAppFactory factory, bool enabled, bool createInstallDirectory)
     {
         var installPath = Path.Combine(factory.TempDirectory, "plugins", PluginId);

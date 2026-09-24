@@ -143,6 +143,56 @@ public sealed partial class PluginLifecycleService
     public void RecoverAll() => RecoverAllAsync().GetAwaiter().GetResult();
 
     /// <summary>
+    /// Canonical host-startup sequence (ADR-0037): reconcile every journal first, then activate each plugin whose
+    /// lifecycle state is <see cref="PluginLifecycleState.Enabled"/> through the existing loader, and persist
+    /// <see cref="PluginLifecycleState.ActivationFailed"/> (sanitized) for every plugin that did not activate. The
+    /// failure never stays only in memory, is never retried silently by the next start, and never touches the
+    /// generation roles: recovery to the activation LKG remains an explicit administrator action.
+    /// </summary>
+    /// <returns>Plugin id to a sanitized failure reason (the same projection as <see cref="PluginManager.StartupLoadErrors"/>).</returns>
+    public async Task<IReadOnlyDictionary<string, string>> ActivateEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        await RecoverAllAsync(cancellationToken);
+        var before = _store.Read();
+        var carried = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var record in before.Plugins)
+        {
+            var current = Lifecycle(before, record);
+            if (record.Enabled && current.State == PluginLifecycleState.ActivationFailed && current.SanitizedFailure is not null)
+            {
+                carried[record.Id] = current.SanitizedFailure;
+            }
+        }
+
+        // Only an authoritatively Enabled generation is activated; an already persisted ActivationFailed is reported, never retried.
+        var errors = _manager.LoadEnabled(record => Lifecycle(before, record).State == PluginLifecycleState.Enabled, carried);
+        foreach (var (pluginId, reason) in errors)
+        {
+            if (carried.ContainsKey(pluginId))
+            {
+                continue;
+            }
+
+            using var _ = await _locks.AcquireAsync(pluginId, cancellationToken);
+            var document = _store.Read();
+            var record = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+            if (record is null || Lifecycle(document, record).State != PluginLifecycleState.Enabled || _manager.IsActivated(pluginId))
+            {
+                continue;
+            }
+
+            TryDeactivate(pluginId);
+            var prior = Lifecycle(document, record).State;
+            PersistActivationFailed(pluginId, BoundFailure(reason), keepEnabledIntent: true);
+            var after = _store.Read();
+            var failed = after.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+            await AuditAsync(null, "startup", "activation", nameof(PluginLifecycleResultCategory.ActivationFailed), pluginId, failed.Manifest.Version, prior, PluginLifecycleState.ActivationFailed, Lifecycle(after, failed).LifecycleVersion, null, replay: false);
+        }
+
+        return errors;
+    }
+
+    /// <summary>
     /// Reconciles every journal, verifies committed material, drops interrupted idempotency
     /// reservations, deletes orphan upload/staging material, and applies retention. Safe to repeat.
     /// </summary>
@@ -154,13 +204,13 @@ public sealed partial class PluginLifecycleService
         {
             using var _ = await _locks.AcquireAsync(id, cancellationToken);
             await RecoverCoreAsync(id, null);
-            Sweep(id);
+            await SweepAsync(id, null);
         }
 
         DropInterruptedIdempotencyReservations();
         if (Volatile.Read(ref _inFlightMutations) == 0)
         {
-            SweepOrphans();
+            await SweepOrphansAsync();
         }
     }
 
@@ -218,19 +268,7 @@ public sealed partial class PluginLifecycleService
             // Activation already unregistered everything it added; repeat defensively for a failure raised
             // before its own cleanup ran (idempotent, plugin-owned registrations only).
             TryDeactivate(pluginId);
-            var failure = SanitizeFailure(ex, record.InstallPath);
-            _store.Mutate(d =>
-            {
-                var index = d.Plugins.FindIndex(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
-                var current = d.Lifecycles[pluginId];
-                d.Plugins[index] = d.Plugins[index] with { Enabled = false };
-                d.Lifecycles[pluginId] = current with
-                {
-                    LifecycleVersion = checked(current.LifecycleVersion + 1),
-                    State = PluginLifecycleState.ActivationFailed,
-                    SanitizedFailure = failure,
-                };
-            });
+            PersistActivationFailed(pluginId, SanitizeFailure(ex, record.InstallPath));
             var failed = _store.Read();
             var failedRecord = failed.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
             return await Finish(context, "enable", "activation", ResultFor(PluginLifecycleResultCategory.ActivationFailed, failedRecord, Lifecycle(failed, failedRecord), "activation"), lifecycle.State);
@@ -262,7 +300,7 @@ public sealed partial class PluginLifecycleService
             throw;
         }
 
-        Sweep(pluginId);
+        await SweepAsync(pluginId, context);
         var committed = _store.Read();
         var committedRecord = committed.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
         return await Finish(context, "enable", "activation", ResultFor(PluginLifecycleResultCategory.Succeeded, committedRecord, Lifecycle(committed, committedRecord)), lifecycle.State);
@@ -284,6 +322,12 @@ public sealed partial class PluginLifecycleService
         }
 
         var lifecycle = Lifecycle(document, record);
+        if (document.Journals.ContainsKey(pluginId))
+        {
+            // A cleanup that must still be retried leaves material that is not a committed generation: never recover over it.
+            return await Finish(context, "recover", "recovery", ResultFor(PluginLifecycleResultCategory.RecoveryRequired, record, lifecycle, "recovery"), lifecycle.State);
+        }
+
         if (expected != lifecycle.LifecycleVersion)
         {
             return await Finish(context, "recover", "precondition", ResultFor(PluginLifecycleResultCategory.StaleVersion, record, lifecycle, "precondition"), lifecycle.State);
@@ -325,6 +369,13 @@ public sealed partial class PluginLifecycleService
             return await Finish(context, "recover", "lkg", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "lkg"), lifecycle.State);
         }
 
+        // Trust proves who signed the bytes; only the generation digest proves they ARE the recorded LKG generation.
+        var recorded = lifecycle.Generations.FirstOrDefault(g => g.GenerationId == lkgId);
+        if (recorded is null || !string.Equals(recorded.PackageDigestSha256, provenance.PackageDigestSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Finish(context, "recover", "integrity", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "integrity"), lifecycle.State);
+        }
+
         try
         {
             if (lkgIsCurrent)
@@ -359,7 +410,7 @@ public sealed partial class PluginLifecycleService
             return await Finish(context, "recover", "commit", ResultFor(PluginLifecycleResultCategory.InternalFailure, current, Lifecycle(rolledBack, current), "commit"), lifecycle.State);
         }
 
-        Sweep(pluginId);
+        await SweepAsync(pluginId, context);
         var committed = _store.Read();
         var committedRecord = committed.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
         return await Finish(context, "recover", "commit", ResultFor(PluginLifecycleResultCategory.Succeeded, committedRecord, Lifecycle(committed, committedRecord)), lifecycle.State);
@@ -388,6 +439,20 @@ public sealed partial class PluginLifecycleService
 
         if (lifecycle.State != PluginLifecycleState.Enabled && !_manager.IsActivated(pluginId))
         {
+            if (record.Enabled)
+            {
+                // A startup activation failure kept the enabled intent; an explicit disable withdraws it (a durable change).
+                _store.Mutate(d =>
+                {
+                    var index = d.Plugins.FindIndex(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+                    d.Plugins[index] = d.Plugins[index] with { Enabled = false };
+                    d.Lifecycles[pluginId] = d.Lifecycles[pluginId] with { LifecycleVersion = checked(d.Lifecycles[pluginId].LifecycleVersion + 1) };
+                });
+                var withdrawn = _store.Read();
+                var withdrawnRecord = withdrawn.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+                return await Finish(context, "disable", "deactivation", ResultFor(PluginLifecycleResultCategory.Succeeded, withdrawnRecord, Lifecycle(withdrawn, withdrawnRecord)), lifecycle.State);
+            }
+
             // Already disabled (or never running): idempotent, no revision change.
             return await Finish(context, "disable", "deactivation", ResultFor(PluginLifecycleResultCategory.Succeeded, record, lifecycle), lifecycle.State);
         }
@@ -442,6 +507,31 @@ public sealed partial class PluginLifecycleService
         }
     }
 
+    /// <summary>
+    /// Records an activation failure as the authoritative lifecycle state; generation roles are untouched. A startup
+    /// failure keeps the operator's persisted enabled intent (<see cref="PluginRecord.Enabled"/>), which the catalog reports
+    /// separately from the lifecycle state; an explicit enable that failed never established that intent.
+    /// </summary>
+    private void PersistActivationFailed(string pluginId, string failure, bool keepEnabledIntent = false) =>
+        _store.Mutate(d =>
+        {
+            var index = d.Plugins.FindIndex(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+            var current = d.Lifecycles[pluginId];
+            d.Plugins[index] = d.Plugins[index] with { Enabled = keepEnabledIntent && d.Plugins[index].Enabled };
+            d.Lifecycles[pluginId] = current with
+            {
+                LifecycleVersion = checked(current.LifecycleVersion + 1),
+                State = PluginLifecycleState.ActivationFailed,
+                SanitizedFailure = failure,
+            };
+        });
+
+    private string BoundFailure(string reason)
+    {
+        var text = reason.Replace(_root, "<plugins-root>", StringComparison.Ordinal);
+        return text.Length > MaximumFailureLength ? text[..MaximumFailureLength] : text;
+    }
+
     /// <summary>A bounded reason that never carries a local path or a raw exception: only host-authored message types pass through.</summary>
     private string SanitizeFailure(Exception exception, string installPath)
     {
@@ -458,6 +548,31 @@ public sealed partial class PluginLifecycleService
     {
         await AuditAsync(context, operation, stage, result.Category.ToString(), result.PluginId, result.PluginVersion, priorState, result.State, result.LifecycleVersion, trust, replay: false);
         return result;
+    }
+
+    /// <summary>
+    /// Makes a failed, retryable cleanup observable. The stage is a neutral material category; no path, exception
+    /// text or stack is ever recorded, and the committed lifecycle state is left exactly as it was.
+    /// </summary>
+    private async Task AuditCleanupFailureAsync(PluginLifecycleRequestContext? context, string? pluginId, string materialCategory)
+    {
+        PluginLifecycleState? state = null;
+        var version = 0L;
+        string? pluginVersion = null;
+        if (pluginId is not null)
+        {
+            var document = _store.Read();
+            var record = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+            if (record is not null)
+            {
+                var lifecycle = Lifecycle(document, record);
+                state = lifecycle.State;
+                version = lifecycle.LifecycleVersion;
+                pluginVersion = record.Manifest.Version;
+            }
+        }
+
+        await AuditAsync(context, "cleanup", materialCategory, "RetryRequired", pluginId, pluginVersion, state, state, version, null, replay: false);
     }
 
     private async Task AuditAsync(

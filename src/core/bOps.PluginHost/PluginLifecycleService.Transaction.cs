@@ -119,6 +119,16 @@ public sealed partial class PluginLifecycleService
             using var lockHandle = await _locks.AcquireAsync(manifest.Id, ct);
             await Hook("LockAcquired");
             await RecoverCoreAsync(manifest.Id, context);
+            if (HasPendingTransaction(manifest.Id))
+            {
+                // A blocked cleanup of an uncommitted candidate left its bytes in place: never install over them.
+                var pending = _store.Read();
+                var pendingRecord = pending.Plugins.FirstOrDefault(item => string.Equals(item.Id, manifest.Id, StringComparison.Ordinal));
+                var refused = pendingRecord is null
+                    ? new PluginLifecycleResult(PluginLifecycleResultCategory.RecoveryRequired, manifest.Id, manifest.Version, null, 0, "recovery")
+                    : ResultFor(PluginLifecycleResultCategory.RecoveryRequired, pendingRecord, Lifecycle(pending, pendingRecord), "recovery");
+                return await Finish(context, "install", "recovery", refused, refused.State, trustName);
+            }
 
             var document = _store.Read();
             var existing = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, manifest.Id, StringComparison.Ordinal));
@@ -183,7 +193,7 @@ public sealed partial class PluginLifecycleService
                 return await Finish(context, "install", "commit", failure, priorState, trustName);
             }
 
-            Sweep(manifest.Id);
+            await SweepAsync(manifest.Id, context);
             var committed = _store.Read();
             var committedRecord = committed.Plugins.First(item => string.Equals(item.Id, manifest.Id, StringComparison.Ordinal));
             return await Finish(context, "install", "commit", ResultFor(PluginLifecycleResultCategory.Succeeded, committedRecord, Lifecycle(committed, committedRecord)), priorState, trustName);
@@ -458,14 +468,25 @@ public sealed partial class PluginLifecycleService
                 {
                     Directory.Move(FinalPath(id), home);
                 }
+
+                ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.RecoveryRequired, removeCandidate: false);
+                outcome = "CandidateDiscarded";
+            }
+            else if (TryDiscardUncommittedCandidate(home, FinalPath(id)))
+            {
+                // No pre-transaction material was captured, so whatever sits at the final path is the promoted,
+                // never-committed candidate. It is deleted, never adopted as Current or the activation LKG.
+                ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.RecoveryRequired, removeCandidate: true);
+                outcome = "CandidateDiscarded";
             }
             else
             {
-                DeleteDirectory(home);
+                // Fail closed: the journal, the candidate role and RecoveryRequired stay until the deletion can be retried,
+                // so the uncommitted bytes can neither be mistaken for a committed generation nor be replaced over.
+                KeepRecoveryRequiredPending(id, "An uncommitted candidate could not be removed; recovery will retry.");
+                await AuditCleanupFailureAsync(context, id, "uncommitted-candidate");
+                outcome = "CleanupRetryRequired";
             }
-
-            ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.RecoveryRequired, removeCandidate: !journal.CandidateFromRetained);
-            outcome = "CandidateDiscarded";
         }
         else if (TryRestoreRollback(journal, id))
         {
@@ -564,6 +585,43 @@ public sealed partial class PluginLifecycleService
             d.Journals.Remove(id);
         });
 
+    /// <summary>Deletes the staged and the promoted copies of an uncommitted candidate. Returns false (never throws) when deletion is blocked.</summary>
+    private static bool TryDiscardUncommittedCandidate(string home, string finalPath)
+    {
+        try
+        {
+            DeleteDirectory(home);
+            DeleteDirectory(finalPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Ensures the plugin is RecoveryRequired without closing its journal or candidate role, so recovery retries the cleanup.</summary>
+    private void KeepRecoveryRequiredPending(string id, string reason) =>
+        _store.Mutate(d =>
+        {
+            var index = d.Plugins.FindIndex(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+            if (index < 0 || !d.Lifecycles.TryGetValue(id, out var current) || current.State == PluginLifecycleState.RecoveryRequired)
+            {
+                return;
+            }
+
+            d.Plugins[index] = d.Plugins[index] with { Enabled = false };
+            d.Lifecycles[id] = current with
+            {
+                LifecycleVersion = checked(current.LifecycleVersion + 1),
+                State = PluginLifecycleState.RecoveryRequired,
+                SanitizedFailure = reason,
+            };
+        });
+
+    /// <summary>True while a journal survived recovery (a cleanup that must be retried): no new transaction may start over its material.</summary>
+    private bool HasPendingTransaction(string id) => _store.Read().Journals.ContainsKey(id);
+
     /// <summary>
     /// Registers neither generation. The unproven rollback/candidate material is preserved as bounded
     /// evidence under the activation-LKG retention clock and the transaction marker is closed.
@@ -610,7 +668,7 @@ public sealed partial class PluginLifecycleService
     /// former activation LKG until its 30-day retention has elapsed. A failed deletion never changes state and
     /// is retried by the next sweep.
     /// </summary>
-    private void Sweep(string id)
+    private async Task SweepAsync(string id, PluginLifecycleRequestContext? context)
     {
         var document = _store.Read();
         if (!document.Lifecycles.TryGetValue(id, out var lifecycle))
@@ -620,6 +678,7 @@ public sealed partial class PluginLifecycleService
 
         var now = _manager.Clock.GetUtcNow();
         var kept = new List<PluginGeneration>();
+        var failedCategories = new List<string>();
         var changed = false;
         foreach (var generation in lifecycle.Generations)
         {
@@ -641,6 +700,11 @@ public sealed partial class PluginLifecycleService
                 continue;
             }
 
+            if (eligible)
+            {
+                failedCategories.Add(generation.WasActivationLkg ? "retired-activation-lkg" : "superseded-generation");
+            }
+
             kept.Add(generation.WasActivationLkg && generation.RetiredAtUtc is null ? generation with { RetiredAtUtc = now } : generation);
             changed |= generation.WasActivationLkg && generation.RetiredAtUtc is null;
         }
@@ -654,6 +718,11 @@ public sealed partial class PluginLifecycleService
                     d.Lifecycles[id] = current with { Generations = kept };
                 }
             });
+        }
+
+        foreach (var category in failedCategories)
+        {
+            await AuditCleanupFailureAsync(context, id, category);
         }
     }
 
@@ -672,7 +741,7 @@ public sealed partial class PluginLifecycleService
     }
 
     /// <summary>Deletes lifecycle-owned material that no journal or generation references. Startup only, never during a mutation.</summary>
-    private void SweepOrphans()
+    private async Task SweepOrphansAsync()
     {
         var document = _store.Read();
         var referenced = new HashSet<string>(StringComparer.Ordinal);
@@ -687,43 +756,55 @@ public sealed partial class PluginLifecycleService
             if (journal.RollbackGenerationId is not null) referenced.Add(journal.RollbackGenerationId);
         }
 
-        DeleteAllIn(Path.Combine(_lifecycleRoot, "uploads"), _ => false);
-        DeleteAllIn(Path.Combine(_lifecycleRoot, "staging"), name => referenced.Contains(name));
-        DeleteAllIn(Path.Combine(_lifecycleRoot, "lkg"), name => referenced.Contains(name));
+        var failures = 0;
+        failures += DeleteAllIn(Path.Combine(_lifecycleRoot, "uploads"), _ => false);
+        failures += DeleteAllIn(Path.Combine(_lifecycleRoot, "staging"), name => referenced.Contains(name));
+        failures += DeleteAllIn(Path.Combine(_lifecycleRoot, "lkg"), name => referenced.Contains(name));
         if (Directory.Exists(_root))
         {
             foreach (var legacy in Directory.EnumerateDirectories(_root, ".staging-*"))
             {
-                TryDelete(legacy);
+                failures += TryDelete(legacy) ? 0 : 1;
             }
+        }
+
+        for (var index = 0; index < failures; index++)
+        {
+            await AuditCleanupFailureAsync(null, null, "orphan-material");
         }
     }
 
-    private static void DeleteAllIn(string directory, Func<string, bool> keep)
+    /// <summary>Deletes every unreferenced entry; returns how many could not be deleted (retried by the next startup sweep).</summary>
+    private static int DeleteAllIn(string directory, Func<string, bool> keep)
     {
         if (!Directory.Exists(directory))
         {
-            return;
+            return 0;
         }
 
+        var failures = 0;
         foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
         {
-            if (!keep(Path.GetFileName(entry)))
+            if (!keep(Path.GetFileName(entry)) && !TryDelete(entry))
             {
-                TryDelete(entry);
+                failures++;
             }
         }
+
+        return failures;
     }
 
-    private static void TryDelete(string path)
+    private static bool TryDelete(string path)
     {
         try
         {
             DeleteDirectory(path);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Cleanup failure never changes committed state; the next sweep retries.
+            // Cleanup failure never changes committed state; the caller audits it and the next sweep retries.
+            return false;
         }
     }
 

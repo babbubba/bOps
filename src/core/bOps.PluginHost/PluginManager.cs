@@ -150,22 +150,29 @@ public sealed class PluginManager(
     /// digest that no longer matches what was recorded at install time) must not take every other
     /// enabled plugin down with it — this isolates each activation and collects failures instead
     /// (agentic/02-coding-standards.md's error model: convert a specific exception into a logged
-    /// outcome, never a silent swallow and never an unrelated crash). Only the two exception types
+    /// outcome, never a silent swallow and never an unrelated crash). Only the three exception types (operation, validation, and a tool-registration collision)
     /// this path is documented to throw are caught; anything else is a broken invariant and still
     /// propagates.
     /// </remarks>
     /// <returns>Plugin id to a sanitized failure reason, for every enabled plugin that failed to activate. Empty when every enabled plugin activated cleanly.</returns>
-    public IReadOnlyDictionary<string, string> LoadAllEnabled()
-    {
-        var errors = new Dictionary<string, string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> LoadAllEnabled() => LoadEnabled(_ => true, null);
 
-        foreach (var record in store.List().Where(r => r.Enabled))
+    /// <summary>
+    /// The startup loader behind <see cref="LoadAllEnabled"/>. The lifecycle service narrows it to plugins whose
+    /// authoritative state is still <see cref="PluginLifecycleState.Enabled"/> and carries earlier persisted failures
+    /// into the same diagnostics projection, so a plugin already recorded as failed is never silently retried.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> LoadEnabled(Func<PluginRecord, bool> eligible, IReadOnlyDictionary<string, string>? carriedFailures)
+    {
+        var errors = new Dictionary<string, string>(carriedFailures ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+
+        foreach (var record in store.List().Where(r => r.Enabled && eligible(r)))
         {
             try
             {
                 Activate(record);
             }
-            catch (Exception ex) when (ex is PluginOperationException or PluginValidationException)
+            catch (Exception ex) when (ex is PluginOperationException or PluginValidationException or ToolRegistrationException)
             {
                 errors[record.Id] = Sanitize(ex.Message, record.InstallPath);
             }

@@ -395,6 +395,64 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         Assert.Equal("2.0.0", FinalManifestVersion());
     }
 
+    /// <summary>B is Current == ActivationLkg, its committed material is gone (RecoveryRequired), and a replacement C dies after promotion.</summary>
+    private async Task<(string BId, long MarkedVersion, string CId)> RecoveryRequiredBReplacedByInterruptedC(string point)
+    {
+        var host = NewHost();
+        await InstallActivateDisableA(host);
+        var bId = Lc().CurrentGenerationId;
+        Assert.Equal(bId, Lc().ActivationLkgGenerationId);
+        Directory.Delete(Path.Combine(PluginsRoot, Id), recursive: true);
+        await NewHost().Service.RecoverAllAsync();
+        var marked = Lc();
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, marked.State);
+
+        var replacing = NewHost();
+        replacing.Service.Checkpoint = name => name == point ? Task.FromException(new PluginLifecycleInterruptedException()) : Task.CompletedTask;
+        await Assert.ThrowsAsync<PluginLifecycleInterruptedException>(
+            () => replacing.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("2.0.0")), marked.LifecycleVersion));
+        var journal = new PluginStore(StorePath).GetJournal(Id);
+        Assert.NotNull(journal);
+        Assert.Null(journal.RollbackGenerationId);
+        Assert.Equal("2.0.0", FinalManifestVersion());
+        return (bId, marked.LifecycleVersion, journal.CandidateGenerationId!);
+    }
+
+    [Theory]
+    [InlineData("AfterPromotion")]
+    [InlineData("BeforeMetadataCommit")]
+    public async Task RecoveryRequiredReplacement_InterruptedAfterPromotion_NeverLetsTheUncommittedCandidateBecomeAuthoritative(string point)
+    {
+        var (bId, markedVersion, cId) = await RecoveryRequiredBReplacedByInterruptedC(point);
+
+        var rebooted = NewHost();
+        await rebooted.Service.RecoverAllAsync();
+
+        var after = Lc();
+        Assert.Equal(bId, after.CurrentGenerationId);
+        Assert.Equal(bId, after.ActivationLkgGenerationId);
+        Assert.NotEqual(cId, after.CurrentGenerationId);
+        Assert.NotEqual(cId, after.ActivationLkgGenerationId);
+        Assert.DoesNotContain(after.Generations, g => g.GenerationId == cId);
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, after.State);
+        Assert.Equal(markedVersion, after.LifecycleVersion);
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
+        Assert.False(Directory.Exists(Path.Combine(PluginsRoot, Id)));
+        Assert.Empty(Entries("staging"));
+        Assert.Equal("1.0.0", new PluginStore(StorePath).Find(Id)!.Manifest.Version);
+
+        // The administrator cannot be tricked into adopting C either: B's bytes are genuinely unavailable.
+        var recover = await rebooted.Service.RecoverAsync(Ctx(), Id, after.LifecycleVersion, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, recover.Category);
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, Lc().State);
+        Assert.Equal(bId, Lc().CurrentGenerationId);
+        Assert.Equal("1.0.0", new PluginStore(StorePath).Find(Id)!.Manifest.Version);
+        var enable = await rebooted.Service.EnableAsync(Ctx(), Id, after.LifecycleVersion, "2.0.0");
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, enable.Category);
+        Assert.False(rebooted.Manager.IsActivated(Id));
+        Assert.Null(rebooted.Tools.Resolve("sample.echo"));
+    }
+
     // ---- Validation and replacement eligibility --------------------------------------------------------
 
     [Fact]
@@ -926,6 +984,206 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         Assert.Equal(first.LifecycleVersion + 1, Lc().LifecycleVersion);
     }
 
+    [Fact]
+    public async Task CleanupFailure_IsAuditedWithoutPathsOrExceptions_AndTheRetryRemovesItWithoutTouchingTheGenerationRoles()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            // Only Windows can hold a file open against deletion without privileges; the audit path is platform-neutral.
+            return;
+        }
+
+        var audit = new RecordingAudit();
+        var host = NewHost(audit);
+        var first = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        var previous = Lc().CurrentGenerationId;
+        var locks = new List<FileStream>();
+        host.Service.Checkpoint = name =>
+        {
+            if (name == "AfterMetadataCommit")
+            {
+                locks.Add(new FileStream(
+                    Path.Combine(PluginsRoot, ".lifecycle", "lkg", previous, "bops-plugin.json"), FileMode.Open, FileAccess.Read, FileShare.None));
+            }
+
+            return Task.CompletedTask;
+        };
+        try
+        {
+            var replaced = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("2.0.0")), first.LifecycleVersion);
+            Assert.Equal(PluginLifecycleResultCategory.Succeeded, replaced.Category);
+        }
+        finally
+        {
+            foreach (var handle in locks)
+            {
+                await handle.DisposeAsync();
+            }
+        }
+
+        var committed = Lc();
+        var failure = Assert.Single(audit.Events.OfType<PluginLifecycleAuditEvent>(), e => e.Operation == "cleanup");
+        Assert.Equal("superseded-generation", failure.Stage);
+        Assert.Equal("RetryRequired", failure.Outcome);
+        Assert.Equal(Id, failure.PluginId);
+        Assert.Equal("InstalledDisabled", failure.NewState);
+        Assert.Equal(committed.LifecycleVersion, failure.LifecycleVersion);
+        Assert.Equal("corr-1", failure.CorrelationId);
+        Assert.Equal(Admin, failure.Actor);
+        Assert.Equal([previous], Entries("lkg"));
+        var serialized = string.Join('\n', audit.Events.Select(e => JsonSerializer.Serialize<AuditEvent>(e)));
+        Assert.Contains("\"cleanup\"", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain(_work.FullName, serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("IOException", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("used by another process", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("   at ", serialized, StringComparison.Ordinal);
+
+        await NewHost(audit).Service.RecoverAllAsync();
+
+        var after = Lc();
+        Assert.Empty(Entries("lkg"));
+        Assert.Equal(committed.CurrentGenerationId, after.CurrentGenerationId);
+        Assert.Equal(committed.ActivationLkgGenerationId, after.ActivationLkgGenerationId);
+        Assert.Equal(committed.LifecycleVersion, after.LifecycleVersion);
+        Assert.Equal(PluginLifecycleState.InstalledDisabled, after.State);
+        Assert.Single(audit.Events.OfType<PluginLifecycleAuditEvent>(), e => e.Operation == "cleanup");
+    }
+
+    [Fact]
+    public async Task RecoveryRequiredReplacement_WhenUncommittedCandidateCannotBeDeleted_FailsClosedAndAudits_ThenRetries()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var (bId, markedVersion, cId) = await RecoveryRequiredBReplacedByInterruptedC("AfterPromotion");
+        var audit = new RecordingAudit();
+        var blocked = NewHost(audit);
+        var locked = new FileStream(Path.Combine(PluginsRoot, Id, "bops-plugin.json"), FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            await blocked.Service.RecoverAllAsync();
+
+            var pending = Lc();
+            Assert.Equal(PluginLifecycleState.RecoveryRequired, pending.State);
+            Assert.Equal(bId, pending.CurrentGenerationId);
+            Assert.Equal(bId, pending.ActivationLkgGenerationId);
+            Assert.Equal(cId, pending.CandidateGenerationId);
+            Assert.Equal(markedVersion, pending.LifecycleVersion);
+            Assert.NotNull(new PluginStore(StorePath).GetJournal(Id));
+            Assert.True(Directory.Exists(Path.Combine(PluginsRoot, Id)));
+            var cleanup = Assert.Single(audit.Events.OfType<PluginLifecycleAuditEvent>(), e => e.Operation == "cleanup");
+            Assert.Equal("uncommitted-candidate", cleanup.Stage);
+            Assert.Equal("RetryRequired", cleanup.Outcome);
+            Assert.Equal(Id, cleanup.PluginId);
+            Assert.Equal("RecoveryRequired", cleanup.NewState);
+            var serialized = string.Join('\n', audit.Events.Select(e => JsonSerializer.Serialize<AuditEvent>(e)));
+            Assert.DoesNotContain(_work.FullName, serialized, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("IOException", serialized, StringComparison.Ordinal);
+
+            // The candidate's bytes are present and even trusted, yet no administrative path may adopt or replace over them.
+            var recover = await blocked.Service.RecoverAsync(Ctx(), Id, pending.LifecycleVersion, confirmed: true);
+            Assert.Equal(PluginLifecycleResultCategory.RecoveryRequired, recover.Category);
+            var install = await blocked.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("3.0.0")), pending.LifecycleVersion);
+            Assert.Equal(PluginLifecycleResultCategory.RecoveryRequired, install.Category);
+            var enable = await blocked.Service.EnableAsync(Ctx(), Id, pending.LifecycleVersion, "2.0.0");
+            Assert.Equal(PluginLifecycleResultCategory.StateConflict, enable.Category);
+            Assert.Equal(bId, Lc().CurrentGenerationId);
+            Assert.Equal(bId, Lc().ActivationLkgGenerationId);
+            Assert.Equal("1.0.0", new PluginStore(StorePath).Find(Id)!.Manifest.Version);
+            Assert.False(blocked.Manager.IsActivated(Id));
+            Assert.Null(blocked.Tools.Resolve("sample.echo"));
+        }
+        finally
+        {
+            await locked.DisposeAsync();
+        }
+
+        await NewHost(audit).Service.RecoverAllAsync();
+
+        var after = Lc();
+        Assert.False(Directory.Exists(Path.Combine(PluginsRoot, Id)));
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
+        Assert.Equal(PluginLifecycleState.RecoveryRequired, after.State);
+        Assert.Equal(bId, after.CurrentGenerationId);
+        Assert.Equal(bId, after.ActivationLkgGenerationId);
+        Assert.Null(after.CandidateGenerationId);
+        Assert.DoesNotContain(after.Generations, g => g.GenerationId == cId);
+        Assert.Equal(markedVersion, after.LifecycleVersion);
+    }
+
+    // ---- Startup activation ------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task StartupActivationFailure_IsPersistedAsActivationFailed_AfterRecovery_AndRestartIsDeterministic()
+    {
+        var audit = new RecordingAudit();
+        var first = NewHost();
+        var installed = await first.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        var enabled = await first.Service.EnableAsync(Ctx(), Id, installed.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleState.Enabled, enabled.State);
+        var generation = Lc().CurrentGenerationId;
+        Assert.True(new PluginStore(StorePath).Find(Id)!.Enabled);
+        var orphan = Directory.CreateDirectory(Path.Combine(PluginsRoot, ".lifecycle", "uploads", "orphan-upload")).FullName;
+
+        // A new host process: persisted enabled intent, but this activation now fails deterministically.
+        var restarted = NewHost(audit);
+        restarted.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var errors = await restarted.Service.ActivateEnabledAsync();
+
+        Assert.False(Directory.Exists(orphan));
+        var failed = Lc();
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+        Assert.Equal(enabled.LifecycleVersion + 1, failed.LifecycleVersion);
+        Assert.Equal(generation, failed.CurrentGenerationId);
+        Assert.Equal(generation, failed.ActivationLkgGenerationId);
+        Assert.Null(failed.TransactionRollbackGenerationId);
+        Assert.Null(failed.CandidateGenerationId);
+        Assert.True(new PluginStore(StorePath).Find(Id)!.Enabled); // the operator's enabled intent is kept apart from the lifecycle state
+        Assert.False(restarted.Manager.IsActivated(Id));
+        Assert.Null(restarted.Tools.Resolve("sample.echo"));
+        var reason = Assert.Single(errors);
+        Assert.Equal(Id, reason.Key);
+        Assert.Same(errors, restarted.Manager.StartupLoadErrors);
+        Assert.False(string.IsNullOrWhiteSpace(failed.SanitizedFailure));
+        Assert.DoesNotContain(_work.FullName, failed.SanitizedFailure, StringComparison.OrdinalIgnoreCase);
+        Assert.True(failed.SanitizedFailure!.Length <= 240);
+        var events = audit.Events.OfType<PluginLifecycleAuditEvent>().ToList();
+        var startup = Assert.Single(events, e => e.Operation == "startup");
+        Assert.Equal("ActivationFailed", startup.Outcome);
+        Assert.Equal("Enabled", startup.PriorState);
+        Assert.Equal("ActivationFailed", startup.NewState);
+        Assert.Equal(ActorIdentity.RuntimeSystem, startup.Actor);
+        Assert.DoesNotContain(_work.FullName, JsonSerializer.Serialize<AuditEvent>(startup), StringComparison.OrdinalIgnoreCase);
+
+        // Restart again: the persisted state is read as-is; nothing is retried silently and nothing is mutated.
+        var settled = await File.ReadAllTextAsync(StorePath);
+        var again = NewHost();
+        var againErrors = await again.Service.ActivateEnabledAsync();
+        var carried = Assert.Single(againErrors);
+        Assert.Equal(Id, carried.Key);
+        Assert.Equal(failed.SanitizedFailure, carried.Value);
+        Assert.Equal(settled, await File.ReadAllTextAsync(StorePath));
+        Assert.False(again.Manager.IsActivated(Id));
+        Assert.Null(again.Tools.Resolve("sample.marker.create"));
+        Assert.Equal(PluginLifecycleState.ActivationFailed, again.Service.GetStatus(Id)!.State);
+
+        // An explicit disable withdraws the kept intent without pretending the failure was cleared.
+        var withdrawn = await again.Service.DisableAsync(Ctx(), Id, failed.LifecycleVersion);
+        Assert.Equal(PluginLifecycleResultCategory.Succeeded, withdrawn.Category);
+        Assert.Equal(PluginLifecycleState.ActivationFailed, withdrawn.State);
+        Assert.Equal(failed.LifecycleVersion + 1, withdrawn.LifecycleVersion);
+        Assert.False(new PluginStore(StorePath).Find(Id)!.Enabled);
+        Assert.Empty(await NewHost().Service.ActivateEnabledAsync());
+
+        // The administrator can still recover explicitly; the activation LKG here is the same generation.
+        var recovered = await again.Service.RecoverAsync(Ctx(), Id, withdrawn.LifecycleVersion, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.Succeeded, recovered.Category);
+        Assert.Equal(PluginLifecycleState.InstalledDisabled, recovered.State);
+        Assert.Equal(generation, Lc().CurrentGenerationId);
+    }
+
     // ---- Explicit administrator recovery (restore Activation LKG) ---------------------------------------
 
     /// <summary>A is the activation LKG; B is Current, installed later, and failed activation (the tool-name collision).</summary>
@@ -1024,6 +1282,42 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         Assert.Equal(PluginLifecycleState.ActivationFailed, Lc().State);
         var unknown = await host.Service.RecoverAsync(Ctx(), "acme.unknown", 0, confirmed: true);
         Assert.Equal(PluginLifecycleResultCategory.NotFound, unknown.Category);
+    }
+
+    [Fact]
+    public async Task Recover_RefusesFinalPathBytesWhoseDigestIsNotTheRecordedLkgGeneration_EvenWhenSignedAndTrusted()
+    {
+        var host = NewHost();
+        var a = await InstallActivateDisableA(host);
+        var bId = Lc().CurrentGenerationId;
+        host.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var failed = await host.Service.EnableAsync(Ctx(), Id, a.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+        ReleaseFailedActivationContext();
+        Assert.Equal(bId, Lc().ActivationLkgGenerationId);
+        var recordedDigest = Lc().Generations.Single(g => g.GenerationId == bId).PackageDigestSha256;
+
+        // A different, validly signed and trusted artifact C now sits where B's bytes were recorded.
+        var final = Path.Combine(PluginsRoot, Id);
+        Directory.Delete(final, recursive: true);
+        await ZipFile.ExtractToDirectoryAsync(new MemoryStream(ArchiveBytes("2.0.0")), final);
+        var settled = await File.ReadAllTextAsync(StorePath);
+
+        var result = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: true);
+
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, result.Category);
+        Assert.Equal("integrity", result.Stage);
+        Assert.Equal(PluginLifecycleState.ActivationFailed, result.State);
+        Assert.Equal(failed.LifecycleVersion, Lc().LifecycleVersion);
+        Assert.Equal(PluginLifecycleState.ActivationFailed, Lc().State);
+        Assert.Equal(bId, Lc().CurrentGenerationId);
+        Assert.Equal(bId, Lc().ActivationLkgGenerationId);
+        Assert.Equal(recordedDigest, Lc().Generations.Single(g => g.GenerationId == bId).PackageDigestSha256);
+        Assert.Equal("1.0.0", new PluginStore(StorePath).Find(Id)!.Manifest.Version);
+        Assert.Equal(settled, await File.ReadAllTextAsync(StorePath));
+        Assert.False(host.Manager.IsActivated(Id));
+        Assert.Null(host.Tools.Resolve("sample.echo"));
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
     }
 
     [Theory]
