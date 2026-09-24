@@ -120,6 +120,25 @@ public sealed partial class PluginLifecycleService
         return ExecuteAsync(context, intent, null, (_, token) => DisableCoreAsync(context, pluginId, expectedLifecycleVersion, token), cancellationToken);
     }
 
+    /// <summary>
+    /// Explicit administrator recovery: restores the activation-LKG generation as the committed
+    /// <see cref="PluginLifecycleState.InstalledDisabled"/> generation. Valid only from
+    /// <see cref="PluginLifecycleState.ActivationFailed"/> or <see cref="PluginLifecycleState.RecoveryRequired"/>.
+    /// Nothing executes and nothing is re-enabled: a separate explicit enable is required.
+    /// </summary>
+    public Task<PluginLifecycleResult> RecoverAsync(
+        PluginLifecycleRequestContext context,
+        string pluginId,
+        long? expectedLifecycleVersion,
+        bool confirmed,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
+        var intent = new Intent("recover", pluginId, expectedLifecycleVersion, confirmed ? "confirmed" : null, null);
+        return ExecuteAsync(context, intent, null, (_, token) => RecoverLkgCoreAsync(context, pluginId, expectedLifecycleVersion, confirmed, token), cancellationToken);
+    }
+
     /// <summary>Runs deterministic startup reconciliation before any persisted enabled intent is activated.</summary>
     public void RecoverAll() => RecoverAllAsync().GetAwaiter().GetResult();
 
@@ -247,6 +266,103 @@ public sealed partial class PluginLifecycleService
         var committed = _store.Read();
         var committedRecord = committed.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
         return await Finish(context, "enable", "activation", ResultFor(PluginLifecycleResultCategory.Succeeded, committedRecord, Lifecycle(committed, committedRecord)), lifecycle.State);
+    }
+
+    private async Task<PluginLifecycleResult> RecoverLkgCoreAsync(
+        PluginLifecycleRequestContext context, string pluginId, long? expected, bool confirmed, CancellationToken ct)
+    {
+        await Hook("BeforeLockWait");
+        using var _ = await _locks.AcquireAsync(pluginId, ct);
+        await Hook("LockAcquired");
+        await RecoverCoreAsync(pluginId, context);
+
+        var document = _store.Read();
+        var record = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+        if (record is null)
+        {
+            return await Finish(context, "recover", "lookup", new PluginLifecycleResult(PluginLifecycleResultCategory.NotFound, pluginId, null, null, 0, "lookup"), null);
+        }
+
+        var lifecycle = Lifecycle(document, record);
+        if (expected != lifecycle.LifecycleVersion)
+        {
+            return await Finish(context, "recover", "precondition", ResultFor(PluginLifecycleResultCategory.StaleVersion, record, lifecycle, "precondition"), lifecycle.State);
+        }
+
+        if (lifecycle.State is not (PluginLifecycleState.ActivationFailed or PluginLifecycleState.RecoveryRequired))
+        {
+            return await Finish(context, "recover", "state", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "state"), lifecycle.State);
+        }
+
+        if (!confirmed)
+        {
+            return await Finish(context, "recover", "confirmation", ResultFor(PluginLifecycleResultCategory.ActivationConfirmationRequired, record, lifecycle, "confirmation"), lifecycle.State);
+        }
+
+        var lkgId = lifecycle.ActivationLkgGenerationId;
+        if (lkgId is null)
+        {
+            return await Finish(context, "recover", "lkg", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "lkg"), lifecycle.State);
+        }
+
+        // The LKG must still be a provable, verifiably signed generation of this plugin before it becomes Current.
+        var lkgIsCurrent = lkgId == lifecycle.CurrentGenerationId;
+        var lkgDirectory = lkgIsCurrent ? FinalPath(pluginId) : RetainedPath(lkgId);
+        PluginManifest manifest;
+        PluginProvenance provenance;
+        try
+        {
+            manifest = PluginManager.ReadCandidateManifest(lkgDirectory);
+            provenance = _manager.VerifyCandidate(lkgDirectory, manifest);
+        }
+        catch (Exception ex) when (ex is PluginValidationException or PluginOperationException or IOException)
+        {
+            return await Finish(context, "recover", "lkg", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "lkg"), lifecycle.State);
+        }
+
+        if (!string.Equals(manifest.Id, pluginId, StringComparison.Ordinal) || !provenance.Verified || provenance.Trust == PackageTrustLevel.Unverified)
+        {
+            return await Finish(context, "recover", "lkg", ResultFor(PluginLifecycleResultCategory.StateConflict, record, lifecycle, "lkg"), lifecycle.State);
+        }
+
+        try
+        {
+            if (lkgIsCurrent)
+            {
+                _store.Mutate(d =>
+                {
+                    var index = d.Plugins.FindIndex(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+                    var current = d.Lifecycles[pluginId];
+                    d.Plugins[index] = d.Plugins[index] with { Enabled = false, Manifest = manifest, Provenance = provenance };
+                    d.Lifecycles[pluginId] = current with
+                    {
+                        LifecycleVersion = checked(current.LifecycleVersion + 1),
+                        State = PluginLifecycleState.InstalledDisabled,
+                        SanitizedFailure = null,
+                    };
+                });
+            }
+            else
+            {
+                await RestoreLkgAsync(pluginId, record, lifecycle, manifest, provenance);
+            }
+        }
+        catch (PluginLifecycleInterruptedException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            await RecoverCoreAsync(pluginId, context);
+            var rolledBack = _store.Read();
+            var current = rolledBack.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+            return await Finish(context, "recover", "commit", ResultFor(PluginLifecycleResultCategory.InternalFailure, current, Lifecycle(rolledBack, current), "commit"), lifecycle.State);
+        }
+
+        Sweep(pluginId);
+        var committed = _store.Read();
+        var committedRecord = committed.Plugins.First(item => string.Equals(item.Id, pluginId, StringComparison.Ordinal));
+        return await Finish(context, "recover", "commit", ResultFor(PluginLifecycleResultCategory.Succeeded, committedRecord, Lifecycle(committed, committedRecord)), lifecycle.State);
     }
 
     private async Task<PluginLifecycleResult> DisableCoreAsync(

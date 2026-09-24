@@ -333,6 +333,67 @@ public sealed partial class PluginLifecycleService
         });
     }
 
+    /// <summary>
+    /// Explicit administrator recovery transaction: swaps the activation-LKG generation (retained material)
+    /// in as the committed Current, as InstalledDisabled. It reuses the journaled promotion phases; the
+    /// candidate lives in retained storage, so recovery un-promotes it rather than deleting it. The current
+    /// generation becomes the transaction rollback and is cleanup-eligible only after commit.
+    /// </summary>
+    private async Task RestoreLkgAsync(string id, PluginRecord existing, PluginLifecycleMetadata before, PluginManifest manifest, PluginProvenance provenance)
+    {
+        var final = FinalPath(id);
+        var lkgId = before.ActivationLkgGenerationId!;
+        var lkgPath = RetainedPath(lkgId);
+        var currentRetained = RetainedPath(before.CurrentGenerationId);
+        var hasFinal = Directory.Exists(final);
+        var rollbackId = hasFinal ? before.CurrentGenerationId : null;
+        var record = new PluginRecord(id, final, manifest, Enabled: false, existing.InstalledAtUtc, provenance);
+        var journal = new PluginLifecycleJournal(
+            Guid.NewGuid().ToString("N"), id, PluginTransactionPhase.CandidatePrepared, rollbackId, lkgId, rollbackId, lkgId, CandidateFromRetained: true);
+
+        _store.Mutate(d =>
+        {
+            d.Lifecycles[id] = d.Lifecycles[id] with
+            {
+                TransactionRollbackGenerationId = rollbackId,
+                CandidateGenerationId = lkgId,
+                TransactionPhase = PluginTransactionPhase.CandidatePrepared,
+            };
+            d.Journals[id] = journal;
+        });
+        if (rollbackId is not null)
+        {
+            await Hook("BeforeRollbackCapture");
+            Directory.Move(final, currentRetained);
+            await Hook("AfterRollbackCapture");
+            SetPhase(id, journal, PluginTransactionPhase.RollbackCaptured, rollbackId, Relative(currentRetained));
+        }
+
+        await Hook("BeforePromotion");
+        Directory.Move(lkgPath, final);
+        await Hook("AfterPromotion");
+        SetPhase(id, journal, PluginTransactionPhase.CandidatePromoted, null, null);
+        await Hook("BeforeMetadataCommit");
+        _store.Mutate(d =>
+        {
+            var current = d.Lifecycles[id];
+            var index = d.Plugins.FindIndex(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+            d.Plugins[index] = record;
+            d.Lifecycles[id] = current with
+            {
+                LifecycleVersion = checked(current.LifecycleVersion + 1),
+                State = PluginLifecycleState.InstalledDisabled,
+                CurrentGenerationId = lkgId,
+                TransactionPhase = PluginTransactionPhase.Committed,
+                SanitizedFailure = null,
+                Generations = current.Generations.Select(g => g.GenerationId == lkgId ? g with { RelativePath = id, RetiredAtUtc = null } : g).ToList(),
+            };
+            d.Journals[id] = journal with { Phase = PluginTransactionPhase.Committed };
+        });
+        await Hook("AfterMetadataCommit");
+        FinalizeCommitted(id);
+    }
+
     // ---- Recovery --------------------------------------------------------------------------------------
 
     /// <summary>
@@ -390,13 +451,26 @@ public sealed partial class PluginLifecycleService
         }
         else if (journal.RollbackGenerationId is null)
         {
-            DeleteDirectory(StagingPath(journal.CandidateGenerationId!));
-            ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.RecoveryRequired);
+            var home = CandidateHome(journal);
+            if (journal.CandidateFromRetained)
+            {
+                if (Directory.Exists(FinalPath(id)) && !Directory.Exists(home))
+                {
+                    Directory.Move(FinalPath(id), home);
+                }
+            }
+            else
+            {
+                DeleteDirectory(home);
+            }
+
+            ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.RecoveryRequired, removeCandidate: !journal.CandidateFromRetained);
             outcome = "CandidateDiscarded";
         }
         else if (TryRestoreRollback(journal, id))
         {
-            ClearTransaction(id, journal.CandidateGenerationId!, PluginLifecycleState.InstalledDisabled);
+            // An archive replacement restores as InstalledDisabled (ADR-0037); an LKG restore changed nothing durable, so its prior state stands.
+            ClearTransaction(id, journal.CandidateGenerationId!, journal.CandidateFromRetained ? null : PluginLifecycleState.InstalledDisabled, removeCandidate: !journal.CandidateFromRetained);
             outcome = "RollbackRestored";
         }
         else
@@ -423,6 +497,7 @@ public sealed partial class PluginLifecycleService
         var final = FinalPath(id);
         var retained = RetainedPath(journal.RollbackGenerationId!);
         var stage = StagingPath(journal.CandidateGenerationId!);
+        var candidateHome = CandidateHome(journal);
         var retainedExists = Directory.Exists(retained);
         var finalExists = Directory.Exists(final);
 
@@ -436,7 +511,15 @@ public sealed partial class PluginLifecycleService
             _store.Mutate(d => d.Journals[id] = journal with { Phase = PluginTransactionPhase.Restoring });
             if (finalExists)
             {
-                DeleteDirectory(final);
+                // A candidate that came from retained material (an LKG restore) is un-promoted, never deleted.
+                if (journal.CandidateFromRetained)
+                {
+                    Directory.Move(final, candidateHome);
+                }
+                else
+                {
+                    DeleteDirectory(final);
+                }
             }
 
             Directory.Move(retained, final);
@@ -446,15 +529,24 @@ public sealed partial class PluginLifecycleService
             return false;
         }
 
-        DeleteDirectory(stage);
+        if (!journal.CandidateFromRetained)
+        {
+            DeleteDirectory(stage);
+        }
+
         return true;
     }
 
-    private void ClearTransaction(string id, string candidateId, PluginLifecycleState state) =>
+    /// <summary>Where a not-yet-promoted candidate lives: staging for an archive install, retained storage for an LKG restore.</summary>
+    private string CandidateHome(PluginLifecycleJournal journal) =>
+        journal.CandidateFromRetained ? RetainedPath(journal.CandidateGenerationId!) : StagingPath(journal.CandidateGenerationId!);
+
+    private void ClearTransaction(string id, string candidateId, PluginLifecycleState? requestedState, bool removeCandidate = true) =>
         _store.Mutate(d =>
         {
             var index = d.Plugins.FindIndex(item => string.Equals(item.Id, id, StringComparison.Ordinal));
             var current = d.Lifecycles[id];
+            var state = requestedState ?? current.State;
             var changed = current.State != state;
             d.Plugins[index] = d.Plugins[index] with { Enabled = false };
             d.Lifecycles[id] = current with
@@ -464,8 +556,10 @@ public sealed partial class PluginLifecycleService
                 TransactionRollbackGenerationId = null,
                 CandidateGenerationId = null,
                 TransactionPhase = PluginTransactionPhase.None,
-                SanitizedFailure = state == PluginLifecycleState.RecoveryRequired ? "Recovery could not establish a committed generation." : null,
-                Generations = current.Generations.Where(g => g.GenerationId != candidateId).ToList(),
+                SanitizedFailure = requestedState is null
+                    ? current.SanitizedFailure
+                    : state == PluginLifecycleState.RecoveryRequired ? "Recovery could not establish a committed generation." : null,
+                Generations = removeCandidate ? current.Generations.Where(g => g.GenerationId != candidateId).ToList() : current.Generations,
             };
             d.Journals.Remove(id);
         });

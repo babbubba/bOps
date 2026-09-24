@@ -50,7 +50,8 @@ internal sealed record PluginLifecycleJournal(
     string? CurrentGenerationId,
     string? ActivationLkgGenerationId,
     string? RollbackGenerationId,
-    string? CandidateGenerationId);
+    string? CandidateGenerationId,
+    bool CandidateFromRetained = false);
 
 internal static class PluginLifecycleTransitions
 {

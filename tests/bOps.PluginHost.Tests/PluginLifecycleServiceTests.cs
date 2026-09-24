@@ -875,6 +875,207 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         Assert.Equal(PluginLifecycleResultCategory.NotFound, unknown.Category);
     }
 
+    [Fact]
+    public async Task CleanupFailure_NeverChangesCommittedState_AndIsRetriedByTheNextSweep()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            // Only Windows can hold a file open against deletion without privileges; the retry logic is platform-neutral.
+            return;
+        }
+
+        var host = NewHost();
+        var first = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        var previous = Lc().CurrentGenerationId;
+        FileStream? locked = null;
+        host.Service.Checkpoint = name =>
+        {
+            if (name == "AfterMetadataCommit")
+            {
+                // The transaction is committed; hold the rollback material open so its cleanup cannot delete it.
+                locked = new FileStream(
+                    Path.Combine(PluginsRoot, ".lifecycle", "lkg", previous, "bops-plugin.json"), FileMode.Open, FileAccess.Read, FileShare.None);
+            }
+
+            return Task.CompletedTask;
+        };
+        try
+        {
+            var replaced = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("2.0.0")), first.LifecycleVersion);
+
+            Assert.Equal(PluginLifecycleResultCategory.Succeeded, replaced.Category);
+            var committed = Lc();
+            Assert.Equal(PluginLifecycleState.InstalledDisabled, committed.State);
+            Assert.Equal(first.LifecycleVersion + 1, committed.LifecycleVersion);
+            Assert.Equal("2.0.0", FinalManifestVersion());
+            Assert.Equal([previous], Entries("lkg"));
+            Assert.Contains(committed.Generations, g => g.GenerationId == previous && g.RetiredAtUtc == _clock.Now);
+        }
+        finally
+        {
+            if (locked is not null)
+            {
+                await locked.DisposeAsync();
+            }
+        }
+
+        await NewHost().Service.RecoverAllAsync();
+
+        Assert.Empty(Entries("lkg"));
+        Assert.DoesNotContain(Lc().Generations, g => g.GenerationId == previous);
+        Assert.Equal(first.LifecycleVersion + 1, Lc().LifecycleVersion);
+    }
+
+    // ---- Explicit administrator recovery (restore Activation LKG) ---------------------------------------
+
+    /// <summary>A is the activation LKG; B is Current, installed later, and failed activation (the tool-name collision).</summary>
+    private async Task<(Host Host, string AId, string BId, PluginLifecycleResult Failed)> ActivationFailedBOverLkgA()
+    {
+        var host = NewHost();
+        var a = await InstallActivateDisableA(host);
+        var aId = Lc().CurrentGenerationId;
+        var b = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("2.0.0")), a.LifecycleVersion);
+        var bId = Lc().CurrentGenerationId;
+        host.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var failed = await host.Service.EnableAsync(Ctx(), Id, b.LifecycleVersion, "2.0.0");
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+        ReleaseFailedActivationContext();
+        return (host, aId, bId, failed);
+    }
+
+    [Fact]
+    public async Task Recover_RestoresTheActivationLkgAsDisabled_RequiresConfirmation_AndExecutesNothing()
+    {
+        var (host, aId, bId, failed) = await ActivationFailedBOverLkgA();
+
+        var stale = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion + 1, confirmed: true);
+        var unconfirmed = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: false);
+        Assert.Equal(PluginLifecycleResultCategory.StaleVersion, stale.Category);
+        Assert.Equal(PluginLifecycleResultCategory.ActivationConfirmationRequired, unconfirmed.Category);
+        Assert.Equal(bId, Lc().CurrentGenerationId);
+        Assert.Equal("2.0.0", FinalManifestVersion());
+
+        var recovered = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: true);
+
+        Assert.Equal(PluginLifecycleResultCategory.Succeeded, recovered.Category);
+        Assert.Equal(PluginLifecycleState.InstalledDisabled, recovered.State);
+        Assert.Equal(failed.LifecycleVersion + 1, recovered.LifecycleVersion);
+        var lifecycle = Lc();
+        Assert.Equal(aId, lifecycle.CurrentGenerationId);
+        Assert.Equal(aId, lifecycle.ActivationLkgGenerationId);
+        Assert.Null(lifecycle.TransactionRollbackGenerationId);
+        Assert.Null(lifecycle.CandidateGenerationId);
+        Assert.Null(lifecycle.SanitizedFailure);
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
+        Assert.Equal("1.0.0", FinalManifestVersion());
+        Assert.Equal("1.0.0", new PluginStore(StorePath).Find(Id)!.Manifest.Version);
+        Assert.False(new PluginStore(StorePath).Find(Id)!.Enabled);
+        Assert.Empty(Entries("lkg"));
+        Assert.DoesNotContain(lifecycle.Generations, g => g.GenerationId == bId);
+        Assert.False(host.Manager.IsActivated(Id));
+        Assert.Equal(["sample.marker.create"], host.Tools.GetAvailableManifests().Select(m => m.Name).ToArray());
+
+        // Recovery never re-enables: a fresh explicit enable is still required, and it now works.
+        var again = await host.Service.RecoverAsync(Ctx(), Id, recovered.LifecycleVersion, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, again.Category);
+        var fresh = NewHost();
+        var enabled = await fresh.Service.EnableAsync(Ctx(), Id, recovered.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleResultCategory.Succeeded, enabled.Category);
+        await fresh.Service.DisableAsync(Ctx(), Id, enabled.LifecycleVersion);
+    }
+
+    [Fact]
+    public async Task Recover_WhenTheLkgIsAlreadyCurrent_OnlyClearsTheFailedState()
+    {
+        var host = NewHost();
+        var a = await InstallActivateDisableA(host);
+        var aId = Lc().CurrentGenerationId;
+        host.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var failed = await host.Service.EnableAsync(Ctx(), Id, a.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+
+        var recovered = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: true);
+
+        Assert.Equal(PluginLifecycleState.InstalledDisabled, recovered.State);
+        Assert.Equal(failed.LifecycleVersion + 1, recovered.LifecycleVersion);
+        Assert.Equal(aId, Lc().CurrentGenerationId);
+        Assert.Equal(aId, Lc().ActivationLkgGenerationId);
+        Assert.Null(Lc().SanitizedFailure);
+        Assert.Equal("1.0.0", FinalManifestVersion());
+    }
+
+    [Fact]
+    public async Task Recover_RefusesWithoutAnActivationLkg_OrOutsideAFailedState()
+    {
+        var host = NewHost();
+        var installed = await host.Service.InstallArchiveAsync(Ctx(), Zip(ArchiveBytes("1.0.0")));
+        var notFailed = await host.Service.RecoverAsync(Ctx(), Id, installed.LifecycleVersion, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, notFailed.Category);
+        Assert.Equal("state", notFailed.Stage);
+
+        host.Tools.Register(new PackageId("other.package"), new ConflictingTool());
+        var failed = await host.Service.EnableAsync(Ctx(), Id, installed.LifecycleVersion, "1.0.0");
+        Assert.Equal(PluginLifecycleState.ActivationFailed, failed.State);
+        var noLkg = await host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: true);
+
+        Assert.Equal(PluginLifecycleResultCategory.StateConflict, noLkg.Category);
+        Assert.Equal("lkg", noLkg.Stage);
+        Assert.Equal(failed.LifecycleVersion, Lc().LifecycleVersion);
+        Assert.Equal(PluginLifecycleState.ActivationFailed, Lc().State);
+        var unknown = await host.Service.RecoverAsync(Ctx(), "acme.unknown", 0, confirmed: true);
+        Assert.Equal(PluginLifecycleResultCategory.NotFound, unknown.Category);
+    }
+
+    [Theory]
+    [MemberData(nameof(ReplacementFaultPoints))]
+    public async Task RecoverInterruption_NeverLosesTheLkgOrTheCurrentGeneration(string point)
+    {
+        var (host, aId, bId, failed) = await ActivationFailedBOverLkgA();
+        host.Service.Checkpoint = name => name == point ? Task.FromException(new PluginLifecycleInterruptedException()) : Task.CompletedTask;
+        await Assert.ThrowsAsync<PluginLifecycleInterruptedException>(
+            () => host.Service.RecoverAsync(Ctx(), Id, failed.LifecycleVersion, confirmed: true));
+        var journal = new PluginStore(StorePath).GetJournal(Id);
+        Assert.NotNull(journal);
+        Assert.True(journal.CandidateFromRetained);
+        Assert.Equal(aId, journal.CandidateGenerationId);
+        Assert.Equal(bId, journal.RollbackGenerationId);
+
+        var rebooted = NewHost();
+        await rebooted.Service.RecoverAllAsync();
+
+        var after = Lc();
+        Assert.Null(after.TransactionRollbackGenerationId);
+        Assert.Null(after.CandidateGenerationId);
+        Assert.Equal(PluginTransactionPhase.None, after.TransactionPhase);
+        Assert.Equal(aId, after.ActivationLkgGenerationId);
+        Assert.Null(new PluginStore(StorePath).GetJournal(Id));
+        Assert.Empty(Entries("staging"));
+        if (point == "AfterMetadataCommit")
+        {
+            Assert.Equal(aId, after.CurrentGenerationId);
+            Assert.Equal(PluginLifecycleState.InstalledDisabled, after.State);
+            Assert.Equal(failed.LifecycleVersion + 1, after.LifecycleVersion);
+            Assert.Equal("1.0.0", FinalManifestVersion());
+            Assert.Empty(Entries("lkg"));
+        }
+        else
+        {
+            // Nothing durable changed: the failed Current is restored, and the LKG bytes are back in retained storage.
+            Assert.Equal(bId, after.CurrentGenerationId);
+            Assert.Equal(PluginLifecycleState.ActivationFailed, after.State);
+            Assert.Equal(failed.LifecycleVersion, after.LifecycleVersion);
+            Assert.NotNull(after.SanitizedFailure);
+            Assert.Equal("2.0.0", FinalManifestVersion());
+            Assert.Equal([aId], Entries("lkg"));
+        }
+
+        Assert.False(rebooted.Manager.IsActivated(Id));
+        Assert.Null(rebooted.Tools.Resolve("sample.echo"));
+        var settled = await File.ReadAllTextAsync(StorePath);
+        await NewHost().Service.RecoverAllAsync();
+        Assert.Equal(settled, await File.ReadAllTextAsync(StorePath));
+    }
+
     // ---- Audit -----------------------------------------------------------------------------------------
 
     [Fact]
@@ -947,6 +1148,20 @@ public sealed class PluginLifecycleServiceTests : IDisposable
         var disabled = await host.Service.DisableAsync(Ctx(), Id, enabled.LifecycleVersion);
         Assert.Equal(PluginLifecycleResultCategory.Succeeded, disabled.Category);
         return disabled;
+    }
+
+    /// <summary>
+    /// A failed activation unloads its collectible context but the CLR frees the mapped assembly (and so the
+    /// files) only after a GC; production cleanup simply retries on the next sweep. Tests that assert
+    /// immediate cleanup release it deterministically first.
+    /// </summary>
+    private static void ReleaseFailedActivationContext()
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
     }
 
     private static PluginLifecycleRequestContext Ctx(string? key = null, ActorIdentity? actor = null, string node = "local") =>
