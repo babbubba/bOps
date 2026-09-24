@@ -276,9 +276,58 @@ a complete empty source supports only its bounded negative observation, while an
 UNKNOWN. If causality is not explicitly established by a source, report a plausible investigation lead rather
 than a proven cause.
 
-## Remaining scenario stub
+## Docker-hosted service failure
 
-1. Docker-hosted service failure
+This path is diagnostic-only. It never uses `docker exec`, creates a container, runs Compose,
+prunes Docker resources, builds/pulls/removes an image, mutates a volume, or starts, stops, or
+restarts a container. Preserve daemon availability, container existence/state, configuration/image,
+logs, listener, storage, and host-event evidence as separate dimensions.
+
+```text
+docker.containers
+  daemon/backend unavailable, partial, or truncated -> UNKNOWN: Docker runtime state cannot be
+    established. This is not an empty query: do not conclude no containers/images, target absent,
+    or target stopped. Continue with independent host storage/event evidence where available.
+  complete query, target absent -> OBSERVED: target container was not observed in this query.
+    Do not say it was deleted or create it.
+  target stopped/exited/not running -> OBSERVED: container state. This is neither daemon failure,
+    target absence, nor a proven application crash; continue to inspect/log context.
+  target running -> OBSERVED: container state only; running != application listening or healthy.
+    Then docker.inspect + docker.logs
+      inspect -> retain reported configured image, state, and supported port/config facts.
+        Configuration/image reference is distinct from current container/application behavior.
+      logs -> matching startup/error evidence is OBSERVED with its timestamp/source/completeness.
+        Generic error text does not itself establish an internal root cause.
+        complete bounded logs with no match -> OBSERVED: no matching error in that query.
+        partial/unavailable logs -> UNKNOWN: do not say there were no application errors.
+      then docker.images
+        matching configured image -> OBSERVED: inventory correlation only; image exists != correct,
+          healthy, secure, or application-working image.
+        missing/incomplete inventory -> preserve UNKNOWN; do not assert corruption or wrong image.
+      then network.sockets
+        expected listener absent while container running -> OBSERVED: no matching local listener.
+          Do not call the container stopped, infer a process crash, or infer remote reachability.
+        listener present -> OBSERVED: local host listener. listener present != application healthy,
+          API success, DB health, authentication, or protocol-level health.
+      then storage.io
+        latency/queue/pressure -> CORRELATED / possible contributing host condition only.
+          Storage pressure does not prove a Docker daemon or application failure cause.
+      then system.events
+        matching container/daemon/storage/host event -> CORRELATED supporting evidence only;
+          nearby unrelated events and temporal coincidence are not root cause.
+        incomplete source -> UNKNOWN: relevant event evidence cannot be ruled out.
+      running + listener present + compatible inspect/image/log/storage/event evidence ->
+        INFERENCE: No Docker/host-side root cause was established by the available evidence.
+        This does not mean the application, API, network path, database, or authentication is healthy.
+```
+
+**Docker daemon unavailable != complete empty container query.** A complete query that does not
+contain the expected target establishes only its bounded absence from that observation; unavailable
+Docker evidence leaves runtime/container/image state UNKNOWN. **Container running != application
+healthy**, **container running != listener present**, and **listener present != application health**.
+Likewise, stopped/exited does not prove an application crash unless exit, log, or event evidence
+supports abnormal termination. Treat `storage.io` and `system.events` as independently collected host
+evidence: correlation remains correlation until a source explicitly establishes cause.
 
 ## Completeness and remediation boundaries
 
