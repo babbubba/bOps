@@ -32,6 +32,9 @@ public sealed class PluginManager(
     private readonly Dictionary<string, PluginKind> _activatedKinds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _startupLoadErrors = new(StringComparer.Ordinal);
 
+    // ADR-0037 composition seam. It remains internal: M6 owns public lifecycle transport.
+    internal PluginStore LifecycleStore => store;
+
     /// <summary>Every installed plugin, enabled or not.</summary>
     public IReadOnlyList<PluginRecord> List() => store.List();
 

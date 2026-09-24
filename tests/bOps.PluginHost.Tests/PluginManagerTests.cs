@@ -151,7 +151,7 @@ public sealed class PluginManagerTests : IDisposable
     {
         var manager = CreateManager();
         manager.Install(StageSamplePluginSource());
-        var store = JsonNode.Parse(File.ReadAllText(StorePath))!.AsArray();
+        var store = JsonNode.Parse(File.ReadAllText(StorePath))!["Plugins"]!.AsArray();
         store[0]!["Id"] = "evil.relabelled-plugin";
         File.WriteAllText(StorePath, store.ToJsonString());
 
@@ -343,7 +343,7 @@ public sealed class PluginManagerTests : IDisposable
         // second real plugin fixture. Appended directly to the on-disk store, mirroring how
         // Enable_RejectsAStoreIdentityThatDoesNotMatchTheSignedInstalledManifest edits it above.
         var missingInstallPath = Path.Combine(PluginsRoot, "acme.bogus-plugin");
-        var store = JsonNode.Parse(File.ReadAllText(StorePath))!.AsArray();
+        var store = JsonNode.Parse(File.ReadAllText(StorePath))!["Plugins"]!.AsArray();
         var bogusRecord = JsonNode.Parse(store[0]!.ToJsonString())!.AsObject();
         bogusRecord["Id"] = "acme.bogus-plugin";
         bogusRecord["InstallPath"] = missingInstallPath;

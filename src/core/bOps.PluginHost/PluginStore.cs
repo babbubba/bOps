@@ -5,74 +5,101 @@ using System.Text.Json;
 
 namespace bOps.PluginHost;
 
-/// <summary>
-/// Tracks installed plugins in a single JSON file (ADR-0020). Every write goes to a temp file
-/// first and is atomically renamed into place, so a process killed mid-write leaves the previous,
-/// valid state rather than a half-written file the next read would fail to parse. A rejected
-/// operation (a duplicate id, an unknown id) never touches disk at all — validation happens
-/// entirely in memory before any write is attempted.
-/// </summary>
+/// <summary>The sole atomically-written lifecycle authority. Legacy record arrays migrate idempotently on mutation.</summary>
 public sealed class PluginStore(string storeFilePath)
 {
-    /// <summary>Every installed plugin, enabled or not.</summary>
-    public IReadOnlyList<PluginRecord> List() => LoadAll();
+    private const int CurrentSchemaVersion = 1;
 
-    /// <summary>The installed plugin with this id, or <c>null</c> if none is installed.</summary>
-    public PluginRecord? Find(string id) =>
-        LoadAll().FirstOrDefault(record => string.Equals(record.Id, id, StringComparison.Ordinal));
+    public IReadOnlyList<PluginRecord> List() => Load().Plugins;
+    public PluginRecord? Find(string id) => Load().Plugins.FirstOrDefault(record => string.Equals(record.Id, id, StringComparison.Ordinal));
 
-    /// <summary>Records a newly installed plugin. Throws if its id is already installed.</summary>
     public void Add(PluginRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-
-        var all = LoadAll();
-        if (all.Any(existing => string.Equals(existing.Id, record.Id, StringComparison.Ordinal)))
+        Mutate(document =>
         {
-            throw new PluginOperationException($"A plugin with id '{record.Id}' is already installed.");
-        }
-
-        all.Add(record);
-        SaveAll(all);
+            if (document.Plugins.Any(existing => string.Equals(existing.Id, record.Id, StringComparison.Ordinal)))
+                throw new PluginOperationException($"A plugin with id '{record.Id}' is already installed.");
+            document.Plugins.Add(record);
+            document.Lifecycles[record.Id] = CreateInitialLifecycle(record);
+        });
     }
 
-    /// <summary>Flips the enabled flag for an installed plugin. Throws if the id is not installed.</summary>
     public void SetEnabled(string id, bool enabled)
     {
-        var all = LoadAll();
-        var index = all.FindIndex(record => string.Equals(record.Id, id, StringComparison.Ordinal));
-        if (index < 0)
+        Mutate(document =>
         {
-            throw new PluginOperationException($"No installed plugin with id '{id}'.");
-        }
-
-        all[index] = all[index] with { Enabled = enabled };
-        SaveAll(all);
+            var index = document.Plugins.FindIndex(record => string.Equals(record.Id, id, StringComparison.Ordinal));
+            if (index < 0) throw new PluginOperationException($"No installed plugin with id '{id}'.");
+            var lifecycle = RequireLifecycle(document, document.Plugins[index]);
+            document.Plugins[index] = document.Plugins[index] with { Enabled = enabled };
+            document.Lifecycles[id] = lifecycle with
+            {
+                LifecycleVersion = checked(lifecycle.LifecycleVersion + 1),
+                State = enabled ? PluginLifecycleState.Enabled : PluginLifecycleState.InstalledDisabled,
+                ActivationLkgGenerationId = enabled ? lifecycle.CurrentGenerationId : lifecycle.ActivationLkgGenerationId,
+                TransactionRollbackGenerationId = null,
+                CandidateGenerationId = null,
+                TransactionPhase = PluginTransactionPhase.None,
+                SanitizedFailure = null,
+            };
+        });
     }
 
-    /// <summary>Drops an installed plugin's record. Throws if the id is not installed.</summary>
-    public void Remove(string id)
+    public void Remove(string id) => Mutate(document =>
     {
-        var all = LoadAll();
-        if (all.RemoveAll(record => string.Equals(record.Id, id, StringComparison.Ordinal)) == 0)
-        {
+        if (document.Plugins.RemoveAll(record => string.Equals(record.Id, id, StringComparison.Ordinal)) == 0)
             throw new PluginOperationException($"No installed plugin with id '{id}'.");
-        }
+        document.Lifecycles.Remove(id);
+        document.Journals.Remove(id);
+    });
 
-        SaveAll(all);
+    internal PluginLifecycleMetadata GetLifecycle(string id)
+    {
+        var document = Load();
+        var record = document.Plugins.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal))
+            ?? throw new PluginOperationException($"No installed plugin with id '{id}'.");
+        return RequireLifecycle(document, record);
     }
 
-    private List<PluginRecord> LoadAll()
-    {
-        if (!File.Exists(storeFilePath))
-        {
-            return [];
-        }
+    internal PluginLifecycleJournal? GetJournal(string id) => Load().Journals.GetValueOrDefault(id);
+    internal IReadOnlyList<string> GetJournalPluginIds() => Load().Journals.Keys.ToArray();
 
+    internal void SetLifecycle(string id, PluginLifecycleMetadata lifecycle, PluginLifecycleJournal? journal = null) => Mutate(document =>
+    {
+        if (!document.Plugins.Any(record => string.Equals(record.Id, id, StringComparison.Ordinal)))
+            throw new PluginOperationException($"No installed plugin with id '{id}'.");
+        document.Lifecycles[id] = lifecycle;
+        if (journal is null) document.Journals.Remove(id); else document.Journals[id] = journal;
+    });
+
+    private void Mutate(Action<PluginLifecycleDocument> mutation)
+    {
+        var document = Load();
+        EnsureLifecycleDefaults(document);
+        mutation(document);
+        document.SchemaVersion = CurrentSchemaVersion;
+        Save(document);
+    }
+
+    private PluginLifecycleDocument Load()
+    {
+        if (!File.Exists(storeFilePath)) return new PluginLifecycleDocument();
         try
         {
             var json = File.ReadAllText(storeFilePath);
-            return JsonSerializer.Deserialize(json, PluginStoreJsonContext.Default.ListPluginRecord) ?? [];
+            if (json.TrimStart().StartsWith('['))
+            {
+                var records = JsonSerializer.Deserialize(json, PluginStoreJsonContext.Default.ListPluginRecord) ?? [];
+                var migrated = new PluginLifecycleDocument { Plugins = records };
+                EnsureLifecycleDefaults(migrated);
+                return migrated;
+            }
+
+            var document = JsonSerializer.Deserialize(json, PluginStoreJsonContext.Default.PluginLifecycleDocument)
+                ?? throw new JsonException("The lifecycle document is empty.");
+            EnsureLifecycleDefaults(document);
+            return document;
         }
         catch (JsonException ex)
         {
@@ -80,21 +107,43 @@ public sealed class PluginStore(string storeFilePath)
         }
     }
 
-    private void SaveAll(List<PluginRecord> records)
+    private static void EnsureLifecycleDefaults(PluginLifecycleDocument document)
+    {
+        document.Plugins ??= [];
+        document.Lifecycles ??= new(StringComparer.Ordinal);
+        document.Journals ??= new(StringComparer.Ordinal);
+        document.Operations ??= [];
+        foreach (var record in document.Plugins) document.Lifecycles.TryAdd(record.Id, CreateInitialLifecycle(record));
+    }
+
+    private static PluginLifecycleMetadata RequireLifecycle(PluginLifecycleDocument document, PluginRecord record) =>
+        document.Lifecycles.TryGetValue(record.Id, out var lifecycle) ? lifecycle : CreateInitialLifecycle(record);
+
+    private static PluginLifecycleMetadata CreateInitialLifecycle(PluginRecord record)
+    {
+        var generationId = Guid.NewGuid().ToString("N");
+        var generation = new PluginGeneration(generationId, record.InstallPath, record.Provenance?.PackageDigestSha256 ?? "legacy-unknown", record.InstalledAtUtc);
+        return new PluginLifecycleMetadata(0, record.Enabled ? PluginLifecycleState.Enabled : PluginLifecycleState.InstalledDisabled,
+            generationId, record.Enabled ? generationId : null, null, null, PluginTransactionPhase.None, [generation]);
+    }
+
+    private void Save(PluginLifecycleDocument document)
     {
         var directory = Path.GetDirectoryName(storeFilePath);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var json = JsonSerializer.Serialize(records, PluginStoreJsonContext.Default.ListPluginRecord);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         var tempPath = $"{storeFilePath}.tmp-{Guid.NewGuid():N}";
-        File.WriteAllText(tempPath, json);
+        using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using (var writer = new StreamWriter(stream)) { writer.Write(JsonSerializer.Serialize(document, PluginStoreJsonContext.Default.PluginLifecycleDocument)); writer.Flush(); stream.Flush(flushToDisk: true); }
         File.Move(tempPath, storeFilePath, overwrite: true);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(storeFilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(storeFilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
+}
+
+internal sealed class PluginLifecycleDocument
+{
+    public int SchemaVersion { get; set; }
+    public List<PluginRecord> Plugins { get; set; } = [];
+    public Dictionary<string, PluginLifecycleMetadata> Lifecycles { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, PluginLifecycleJournal> Journals { get; set; } = new(StringComparer.Ordinal);
+    public List<PluginIdempotencyOperation> Operations { get; set; } = [];
 }
