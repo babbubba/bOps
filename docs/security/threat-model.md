@@ -94,6 +94,42 @@ against mistakes, tampering and publisher impersonation; they do not protect aga
 code from a trusted publisher. Real isolation requires out-of-process execution and is not claimed
 by V1.0.
 
+### Administrator plugin lifecycle and upload (V1.3-M, ADR-0037)
+
+An uploaded archive is untrusted until it has been validated completely. It is received against a byte limit that counts
+the bytes actually read, not a declared length, then checked before any entry is written: entry count, declared and
+actual uncompressed size, per-entry size, compression ratio, path depth and length, rooted or traversing names,
+case-insensitive duplicates, host-reserved names, and link or device entries are all refused, and a rejected archive
+leaves nothing in the staging or upload areas. Validation reads assembly metadata only and never loads the candidate. The
+existing signature and publisher-trust path remains the only trust authority, and the loader remains the only code that
+loads a plugin.
+
+Every mutation goes through one lifecycle service and is administrator-only over the API, authenticated by an explicit
+bearer credential (ambient cookies never authenticate a mutation). A mutation carries a lifecycle ETag precondition
+(`If-Match` to replace, `If-None-Match: *` to create), may carry an `Idempotency-Key` scoped to node, actor and key, and is
+serialized per plugin. Install and replacement are journaled so an interruption at any step is reconciled at start-up,
+and a failed install or activation never replaces the last known-good generation. Install and replacement never enable;
+enabling requires the operator to name the exact installed version. Recover restores the last successfully activated
+generation as disabled and never enables it. There is no delete. Audit records carry neutral categories, identifiers and
+lifecycle states only: never archive bytes, signatures, keys, credentials, idempotency keys, stack traces or local paths.
+
+What this does not change: an enabled plugin runs in the host process with the host's privileges, is not sandboxed, and a
+trusted publisher's malicious code is not stopped. The UI says so before enabling.
+
+### Entitlement boundary (V1.3-M, ADR-0036)
+
+The public repository contains only a neutral hook. The trusted host decides, per operation, whether entitlement governs
+it; a model, plugin argument or provider cannot change that. For a governed operation the runtime asks an
+`IEntitlementService` with a fresh request binding after policy and approval and immediately before execution, and it
+asks again for a governed verification read. It executes only when the returned decision echoes that binding, states a
+usable UTC validity window that contains the runtime's own clock reading, and allows. A missing service, an exception, a
+malformed, expired, future or mismatched decision, or a denial fails closed, is audited as `EntitlementDenied` and is
+never retried with an earlier decision, so retries, re-plans and delegated steps each obtain a new one. Governed
+verification that cannot be authorized yields `Inconclusive` rather than an interpreted result. Audit records the neutral
+outcome only, never token or licence material. Providers, account rules, tiers, prices, SKUs and token formats belong to
+the private repository; an architecture test rejects such identifiers in the public trees, and operations the host does
+not govern are unaffected.
+
 ### Filesystem traversal and time-of-check/time-of-use
 
 Filesystem packages resolve paths, symlinks and `..` immediately before use and deny paths that do
@@ -274,5 +310,7 @@ currently authenticated approver. This is safer than making an old approval repl
 
 - Protection from an administrator, kernel compromise or debugger attached to the process.
 - Sandboxing malicious in-process plugins.
-- Remote node transport, multi-tenant authorization, entitlement or commercial Skills.
+- Remote node transport, multi-tenant authorization, entitlement providers or commercial Skills. Only the neutral
+  entitlement hook exists in this repository (see the V1.3-M section below).
+
 - Generic shell/process/SQL execution; these remain permanently prohibited.

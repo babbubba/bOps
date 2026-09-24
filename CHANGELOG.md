@@ -21,6 +21,22 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-M neutral entitlement boundary and safe local plugin lifecycle (ADR-0036, ADR-0037), implemented on a feature branch
+  and not yet merged or released; Windows/Linux CI evidence is pending. `bOps.Abstractions` `1.3.0-preview.1` adds, without
+  removing or changing any 1.0 member, the product-neutral `IEntitlementService`, request/decision/binding contracts and the
+  `EntitlementDecisionAuditEvent` and `PluginLifecycleAuditEvent` audit records. The host, never the model, marks each
+  operation entitlement-governed or not; a governed operation (and its governed verification read) runs only on a decision
+  bound to that attempt's fresh request binding and inside its UTC validity window, evaluated after policy and approval and
+  immediately before execution. A missing service, provider failure, or an invalid, expired, future, mismatched or denying
+  decision fails closed as `EntitlementDenied`; operations the host does not govern are unaffected, so standalone OSS keeps
+  working. No tier, price, SKU, payment provider or vendor token format exists in the public repository, and an
+  architecture test scans the public trees for them. The plugin lifecycle adds a transactional, crash-recoverable service for
+  bounded ZIP install and replacement, version-confirmed enable, disable and an explicit Recover that restores the last
+  successfully activated generation as disabled: validation never executes candidate code, install never enables, a failed
+  install or activation never replaces the last known-good generation, and there is no delete. `bops plugin`, the
+  administrator API and the Angular Plugins page all use that one service. Enabled plugins still run in the host process
+  with the host's privileges; nothing here sandboxes them. See [`docs/security/threat-model.md`](docs/security/threat-model.md).
+
 - V1.3-M6 administrator plugin lifecycle API over the ADR-0037 backend: archive install/replace (raw `application/zip`,
   bounded by the configured compressed-archive limit), version-confirmed enable, disable and activation-LKG recovery under
   `/api/plugins`, all administrator-only, with `If-Match`/`If-None-Match` lifecycle ETags, optional `Idempotency-Key`, one

@@ -1,6 +1,24 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-A–L complete and merged
+# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-A–L complete and merged; V1.3-M implemented on a feature branch
 
-## Current handoff — 2026-09-24
+## Current handoff — 2026-09-25 (V1.3-M8 local release gate)
+
+V1.3-M1–M8 are implemented on branch `feat/v13-m1-entitlement-adr` and **have not been pushed, reviewed as a PR, merged or tagged**. The M8
+gate ran locally on Windows and its result is **LOCAL GATE PASS — EXTERNAL/CI EVIDENCE PENDING**; the full record, the
+acceptance table and the skip audit are in
+[`agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md`](agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md).
+
+- Release build 0 warnings; Angular 172/172; Architecture 68, Runtime 897, PluginHost 125, Cli 84, Audit 11, Api 160 (alone) all passing.
+  One complete .NET run had two load-sensitive failures (a known Api approval-poll timing test and a real-Docker-daemon timeout);
+  both pass alone and are recorded, not hidden.
+- Still pending and required before V1.3 is called released: Windows/Linux CI on the branch, the 83 Linux-gated tests, the
+  elevated-Windows service and Task Scheduler tests, and symbolic-link privilege for 15 link tests.
+- M8 added evidence only (a public-tree leak scan, plugin-lifecycle boundary guards, archive attack limits and the missing
+  ADR-0036 matrix rows); no production code changed and no version was bumped (`bOps.Abstractions` is `1.3.0-preview.1`).
+- The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
+
+Next action: push the branch and open the PR only when the operator authorizes it, then wait for Windows/Linux CI.
+
+## Handoff — 2026-09-24 (historical)
 
 V1.3-A through V1.3-L are complete and merged. The V1.3-L senior-operator diagnostic integration
 gate merged through PR #47 with Windows/Linux CI green; canonical first-party tool composition and
