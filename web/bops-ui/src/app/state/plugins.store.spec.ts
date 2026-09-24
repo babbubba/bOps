@@ -4,6 +4,7 @@
 import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { PluginCatalogEntry } from '../core/api/models';
+import { AuthService } from '../core/auth/auth.service';
 import { PluginsStore } from './plugins.store';
 
 function plugin(id: string, overrides: Partial<PluginCatalogEntry> = {}): PluginCatalogEntry {
@@ -36,7 +37,7 @@ describe('PluginsStore', () => {
     api.listPlugins.and.resolveTo({ entries: [], totalCount: 0 });
 
     TestBed.configureTestingModule({
-      providers: [PluginsStore, { provide: BOpsApiClient, useValue: api }],
+      providers: [PluginsStore, { provide: BOpsApiClient, useValue: api }, { provide: AuthService, useValue: { identity: () => null } }],
     });
   });
 
