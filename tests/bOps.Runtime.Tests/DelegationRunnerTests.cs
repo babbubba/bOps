@@ -120,6 +120,8 @@ public sealed partial class DelegationRunnerTests
     {
         private int _reads;
 
+        public int ExecutionCount => _reads;
+
         public ToolManifest Manifest { get; } = new()
         {
             Name = name,
@@ -209,12 +211,21 @@ public sealed partial class DelegationRunnerTests
         Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null,
         IDelegationStore? store = null,
         int maximumResumes = DelegationRunner.DefaultMaximumResumes,
-        IAuditSink? sink = null)
+        IAuditSink? sink = null,
+        IEntitlementService? entitlementService = null,
+        EntitlementRequirement? verifyReadEntitlement = null)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
         registry.Register(SamplePackage, new FakeReadTool("host.info", discoveryOutput));
-        registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
+        if (verifyReadEntitlement is null)
+        {
+            registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
+        }
+        else
+        {
+            registry.Register(SamplePackage, PackageTrustLevel.Official, verifyReadEntitlement, verifyRead ?? new FakeReadTool("test.read", "service is running"));
+        }
         registry.Register(SamplePackage, restartTool);
         registry.Register(SamplePackage, stop ?? new RestartTool("service.stop"));
 
@@ -253,7 +264,7 @@ public sealed partial class DelegationRunnerTests
         var agentRunner = new AgentRunner(
             model ?? fakeModel, registry, policy ?? new StubPolicyEngine(PolicyMode.Automatic), stepApproval ?? new NeverCalledApprovalProvider(), audit,
             new InMemoryTaskStore(), time, NullLogger<AgentRunner>.Instance,
-            options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills);
+            options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills, entitlementService: entitlementService);
         var planApproval = approval ?? new RecordingPlanApproval();
         var runner = new DelegationRunner(
             agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance,

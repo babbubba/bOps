@@ -142,6 +142,85 @@ public sealed class EntitlementExecutionTests
     }
 
     [Fact]
+    public async Task GovernedModelCallDenial_EntersTheExistingReplanPathWithoutExecuting()
+    {
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => Denied(request.Binding));
+        var (runner, _) = Create(mutation, service, PolicyMode.Automatic);
+
+        var result = await runner.RunAsync("perform governed work", Actor);
+
+        Assert.Equal(0, mutation.ExecutionCount);
+        Assert.Equal(2, result.Plans.Count);
+    }
+
+    [Fact]
+    public async Task GovernedRetry_UsesAFreshBinding_AndDoesNotReuseTheFirstAllow()
+    {
+        var tool = new CountingHangingTool();
+        var registry = Registry(tool, EntitlementApplicability.Governed);
+        var requests = new List<EntitlementRequest>();
+        var service = new RecordingEntitlementService(request =>
+        {
+            requests.Add(request);
+            return requests.Count == 1 ? Allowed(request.Binding) : Denied(request.Binding);
+        });
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 2), new ModelResponse("done", [], true, null));
+        var runner = new AgentRunner(model, registry, new StubPolicyEngine(PolicyMode.Automatic), new NeverCalledApprovalProvider(),
+            new RecordingAuditSink(), new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
+            new AgentRunnerOptions { DefaultToolTimeout = TimeSpan.FromMilliseconds(25), MaxReplans = 3 }, entitlementService: service);
+
+        await runner.RunAsync("retry governed work", Actor);
+
+        Assert.Equal(2, requests.Count);
+        Assert.NotEqual(requests[0].Binding, requests[1].Binding);
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task GovernedApprovalThenRevocation_EvaluatesEntitlementAfterApproval()
+    {
+        var entitled = true;
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new RecordingEntitlementService(request => entitled ? Allowed(request.Binding) : Denied(request.Binding));
+        var approval = new RevokingApprovalProvider(() => entitled = false);
+        var registry = Registry(mutation, EntitlementApplicability.Governed);
+        var runner = new AgentRunner(ModelFor(mutation.Manifest.Name), registry, new StubPolicyEngine(PolicyMode.Approval), approval,
+            new RecordingAuditSink(), new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
+            new AgentRunnerOptions(), entitlementService: service);
+
+        await runner.RunAsync("perform governed work", Actor);
+
+        Assert.True(approval.Called);
+        Assert.Single(service.Requests);
+        Assert.Equal(0, mutation.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task GovernedDecisionThatExpiresWhileProviderIsInFlight_DoesNotExecute()
+    {
+        var clock = new FakeTimeProvider(Now);
+        var mutation = new ApprovalBoundHighRiskTool();
+        var service = new InFlightEntitlementService();
+        var registry = Registry(mutation, EntitlementApplicability.Governed);
+        var runner = new AgentRunner(ModelFor(mutation.Manifest.Name), registry, new StubPolicyEngine(PolicyMode.Automatic),
+            new StubApprovalProvider(true), new RecordingAuditSink(), new InMemoryTaskStore(), clock,
+            NullLogger<AgentRunner>.Instance, new AgentRunnerOptions(), entitlementService: service);
+
+        var run = runner.RunAsync("perform governed work", Actor);
+        await service.Started.Task;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        service.Release.SetResult(Allowed(service.Request!.Binding) with { ValidUntil = Now.AddMinutes(1) });
+        await run;
+
+        Assert.Equal(0, mutation.ExecutionCount);
+    }
+
+    [Fact]
     public async Task GovernedDeniedCall_RedactsSensitiveArgumentsBeforeAudit()
     {
         const string secret = "entitlement-denial-secret-sentinel";
@@ -222,6 +301,50 @@ public sealed class EntitlementExecutionTests
             Called = true;
             clock.Advance(TimeSpan.FromMinutes(2));
             return Task.FromResult(decide(request));
+        }
+    }
+
+    private sealed class RevokingApprovalProvider(Action revoke) : IApprovalProvider
+    {
+        public bool Called { get; private set; }
+
+        public Task<ApprovalDecision> RequestApprovalAsync(
+            ToolManifest manifest, ToolArguments arguments, VerificationSpec? verification, string reason, CancellationToken ct = default)
+        {
+            Called = true;
+            revoke();
+            return Task.FromResult(new ApprovalDecision(true, Actor, null));
+        }
+    }
+
+    private sealed class InFlightEntitlementService : IEntitlementService
+    {
+        public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<EntitlementDecision> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public EntitlementRequest? Request { get; private set; }
+
+        public Task<EntitlementDecision> EvaluateAsync(EntitlementRequest request, CancellationToken ct = default)
+        {
+            Request = request;
+            Started.TrySetResult(true);
+            return Release.Task;
+        }
+    }
+
+    private sealed class CountingHangingTool : ITool
+    {
+        public int ExecutionCount { get; private set; }
+        public ToolManifest Manifest { get; } = new()
+        {
+            Name = "test.governed-retry", Description = "Times out once.", Risk = RiskLevel.Read,
+            Platforms = [CurrentPlatform.Id], Requires = [], Parameters = [],
+        };
+
+        public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+        {
+            ExecutionCount++;
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("Unreachable.");
         }
     }
 

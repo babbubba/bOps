@@ -314,6 +314,38 @@ public sealed partial class DelegationRunnerTests
         Assert.Equal("verification-1", Assert.Single(report.Evidence).Id);
     }
 
+    [Fact]
+    public async Task VerifyPlanAsync_EntitlementDeniedRead_IsInconclusiveWithoutCallingThePackageEvaluator()
+    {
+        var entitlement = new VerificationEntitlementService();
+        var read = new CountingReadTool("test.read");
+        var restart = new RestartTool();
+        var h = Create(
+            restart: restart,
+            verifyRead: read,
+            entitlementService: entitlement,
+            verifyReadEntitlement: new EntitlementRequirement(EntitlementApplicability.Governed));
+        var plan = new ExecutionPlan("sample.remediate", "1.0.0", "Restart.",
+            [new ExecutionPlanStep(0, "service.restart", ToolArguments.Empty, "Restart.")]);
+        var verifier = new AgentIdentity(AgentId.New(), AgentRoleKind.Verification);
+        var envelope = RoleEnvelope(remediation: false) with { AllowedTools = ["test.read"] };
+        var scope = DelegatedExecutionScope.For(Guid.NewGuid(), verifier, envelope);
+
+        var report = await h.Agent.VerifyPlanAsync(Guid.NewGuid(), Operator, plan, ExecutionPlanHasher.ComputeHash(plan), scope);
+
+        Assert.Equal(0, read.ExecutionCount);
+        Assert.Empty(restart.VerificationReads);
+        Assert.Equal(VerificationStatus.Inconclusive, report.Status);
+    }
+
+    private sealed class VerificationEntitlementService : IEntitlementService
+    {
+        public Task<EntitlementDecision> EvaluateAsync(EntitlementRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new EntitlementDecision(
+                request.Binding, EntitlementDecisionKind.Denied, EntitlementReasonCode.NotEntitled,
+                EntitlementSourceCategory.Local, "test", Start.AddMinutes(-1), Start.AddMinutes(1), null));
+    }
+
     // ---- what a run may end as ----
 
     [Theory]

@@ -894,7 +894,7 @@ public sealed class AgentRunner(
                 taskId, planStep.Index, actor, call, planRevision: -1, ct, skillScope: null, delegation);
 
             VerificationOutcome outcome;
-            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected
+            if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
                 || readStep.Result is null)
             {
                 // The verifier was not allowed to take the reading, or could not: it cannot confirm anything.
