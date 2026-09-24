@@ -97,8 +97,10 @@ public sealed class EntitlementContractTests
         Assert.Contains("bOps.Abstractions.AuthorizationKind | enum-value EntitlementDenied = 5", surface);
         Assert.Contains(surface, line => line.StartsWith("bOps.Abstractions.IEntitlementService |", StringComparison.Ordinal));
         foreach (var name in new[] { "EntitlementApplicability", "EntitlementRequirement", "EntitlementRequest", "EntitlementDecision",
-                     "RequestBinding", "EntitlementValidityRequest", "EntitlementConstraints", "EntitlementResourceRequest" })
+                     "RequestBinding", "EntitlementValidityRequest", "EntitlementConstraints", "EntitlementResourceRequest", "ToolExecutionRegistration" })
             Assert.Contains(surface, line => line.StartsWith($"bOps.Abstractions.{name} |", StringComparison.Ordinal));
+
+        Assert.Contains(surface, line => line.StartsWith("bOps.Abstractions.IToolRegistry | method fixed bOps.Abstractions.ToolExecutionRegistration ResolveForExecution(System.String)", StringComparison.Ordinal));
 
         var snapshot = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "Snapshots", "entitlement-contracts.txt"));
         Assert.All(snapshot, line => Assert.Contains(line, surface));
@@ -118,6 +120,7 @@ public sealed class EntitlementContractTests
     {
         Assert.DoesNotContain(typeof(EntitlementRequest).GetProperties(), property => property.Name == "Applicability");
         Assert.DoesNotContain(typeof(EntitlementDecision).GetProperties(), property => property.Name == "Applicability");
+        Assert.DoesNotContain(typeof(ToolManifest).GetProperties(), property => property.Name.Contains("Entitlement", StringComparison.Ordinal));
         Assert.Equal(EntitlementApplicability.Governed, default(EntitlementApplicability));
         Assert.Equal(EntitlementDecisionKind.Denied, default(EntitlementDecisionKind));
     }

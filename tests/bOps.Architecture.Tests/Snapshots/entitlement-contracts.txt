@@ -14,4 +14,7 @@ bOps.Abstractions.EntitlementResourceRequest | kind sealed class
 bOps.Abstractions.EntitlementSourceCategory | kind enum
 bOps.Abstractions.EntitlementValidityRequest | kind sealed class
 bOps.Abstractions.IEntitlementService | kind interface
+bOps.Abstractions.IToolRegistry | method fixed System.Void Register(bOps.Abstractions.PackageId, bOps.Abstractions.PackageTrustLevel, bOps.Abstractions.EntitlementRequirement, bOps.Abstractions.ITool)
+bOps.Abstractions.IToolRegistry | method fixed bOps.Abstractions.ToolExecutionRegistration ResolveForExecution(System.String)
 bOps.Abstractions.RequestBinding | kind struct
+bOps.Abstractions.ToolExecutionRegistration | kind sealed class
