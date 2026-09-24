@@ -21,6 +21,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- V1.3-M6 administrator plugin lifecycle API over the ADR-0037 backend: archive install/replace (raw `application/zip`,
+  bounded by the configured compressed-archive limit), version-confirmed enable, disable and activation-LKG recovery under
+  `/api/plugins`, all administrator-only, with `If-Match`/`If-None-Match` lifecycle ETags, optional `Idempotency-Key`, one
+  deterministic sanitized error mapping, and additive `lifecycleState`/`lifecycleETag` on the existing plugin catalog.
+
 - V1.3-H read-only identity, session, timezone/time-service and reboot-pending diagnostics for
   Windows and Linux, with bounded output, nullable Linux account enablement, fixed process
   boundaries and explicit incomplete-source semantics. Local integration is complete; platform

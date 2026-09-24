@@ -202,10 +202,16 @@ builder.Services.AddSingleton(sp => new PluginManager(
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ICapabilityProbe>()));
 // ADR-0037: M6 consumes this same backend; it does not compose a second plugin authority.
+// V1.3-M6: the archive limits are configuration (ADR-0037: defaults, with hard ceilings enforced by the backend). The HTTP upload
+// bound is derived from the same compressed-archive limit, so the two can never be configured apart.
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IConfiguration>().GetSection("Plugins:Archive").Get<PluginArchiveLimits>() ?? new PluginArchiveLimits());
+builder.Services.AddSingleton(sp => PluginUploadOptions.For(sp.GetRequiredService<PluginArchiveLimits>()));
 builder.Services.AddSingleton(sp => new PluginLifecycleService(
     sp.GetRequiredService<PluginManager>(),
     sp.GetRequiredService<IConfiguration>()["Plugins:RootPath"] ?? "plugins",
-    auditSink: sp.GetRequiredService<IAuditSink>()));
+    sp.GetRequiredService<PluginArchiveLimits>(),
+    sp.GetRequiredService<IAuditSink>()));
 
 // ADR-0029: non-secret provider profiles and the active-provider selection are always available;
 // the encrypted vault (provider API keys) only activates when a master key is actually configured
@@ -331,6 +337,7 @@ app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
 app.MapFilesystemDeletionEndpoints();
 app.MapPluginCatalogEndpoints();
+app.MapPluginLifecycleEndpoints();
 if (app.Services.GetService<VaultStore>() is not null)
 {
     app.MapSettingsEndpoints();

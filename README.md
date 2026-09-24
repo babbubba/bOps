@@ -170,8 +170,11 @@ loopback/private/link-local/metadata network destinations by default; see
 The Angular UI's **Plugins** page (`GET /api/plugins`, `GET /api/plugins/{id}`) is a read-only
 catalog of installed plugins — id, version, publisher, signature/trust, installed/enabled/loaded/
 compatible state (kept distinct, never merged into one "status"), declared capabilities and
-dependencies, and declared-vs-effective maximum risk. Enable, disable, install and remove stay
-`bops plugin *`-only; no mutation path exists through the API in this batch. `bOps.Api` now
+dependencies, declared-vs-effective maximum risk, and (V1.3-M6) the authoritative lifecycle state and ETag. The
+UI itself stays read-only; the API additionally exposes the administrator-only lifecycle operations of ADR-0037
+(`POST /api/plugins/archives`, `PUT /api/plugins/{id}/archive`, `POST /api/plugins/{id}/enable|disable|recover`; raw
+`application/zip` upload, `If-Match`/`If-None-Match` ETag preconditions, optional `Idempotency-Key`), which never delete
+a plugin and never enable one as a side effect of install. `bOps.Api` now
 activates the operator's already-enabled plugins at start-up exactly like `bOps.Cli` always has —
 it runs its own `AgentRunner` for tasks started from the dashboard and needs the same
 plugin-contributed tools/Skills.
