@@ -28,6 +28,10 @@
     <ProjectReference Include="..\..\src\core\bOps.Policy\bOps.Policy.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Hosting\bOps.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Filesystem\bOps.Packages.Filesystem.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Web\bOps.Packages.Web.csproj" />
   </ItemGroup>
 
 </Project>

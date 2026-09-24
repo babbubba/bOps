@@ -1,9 +1,16 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using bOps.Abstractions;
+using bOps.Hosting;
+using bOps.Packages.Docker;
+using bOps.Packages.Filesystem;
+using bOps.Packages.Web;
+using bOps.Runtime;
+
 namespace bOps.Architecture.Tests;
 
-/// <summary>Stable L0 inventory of the first-party V1.3 host-diagnostic manifests.</summary>
+/// <summary>Stable L0 inventory of the raw first-party V1.3 host-diagnostic registrations.</summary>
 public sealed class V13DiagnosticSurfaceTests
 {
     private static readonly string[] Expected =
@@ -19,18 +26,63 @@ public sealed class V13DiagnosticSurfaceTests
         "firewall.status", "firewall.rules", "firewall.rule.inspect",
         "network.tls_probe", "certificate.list", "certificate.inspect",
         "docker.containers", "docker.images", "docker.networks", "docker.inspect", "docker.logs", "docker.start", "docker.stop", "docker.restart", "docker.image.inspect", "docker.image.pull", "docker.image.tag", "docker.image.remove", "docker.build", "docker.volumes", "docker.volume.inspect", "docker.volume.create", "docker.volume.remove",
+        "web.search", "web.fetch",
     ];
 
     [Fact]
-    public void ExpectedV13DiagnosticManifests_ArePresentExactlyOnceInTheManifestSources()
+    public void RawFirstPartyRegistrations_MatchTheExpectedV13DiagnosticSurfaceExactly()
     {
-        var source = string.Join('\n', SourceFiles().Select(File.ReadAllText));
+        var registrations = CreateRawRegistrations();
+        var actual = registrations.Select(registration => registration.Tool.Manifest.Name).ToArray();
+        var comparison = Compare(Expected, actual);
 
         Assert.Equal(Expected.Length, Expected.Distinct(StringComparer.Ordinal).Count());
-        foreach (var name in Expected)
+        Assert.True(comparison.IsExact, comparison.ToDiagnosticMessage());
+        Assert.Equal(Expected.Order(StringComparer.Ordinal), actual.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void RawFirstPartyRegistrations_HaveUniqueToolNamesBeforeSetComparison()
+    {
+        var duplicates = CreateRawRegistrations()
+            .GroupBy(registration => registration.Tool.Manifest.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() != 1)
+            .Select(group => $"{group.Key} ({group.Count()})")
+            .ToArray();
+
+        Assert.True(duplicates.Length == 0, $"Duplicate raw first-party registrations: {string.Join(", ", duplicates)}");
+    }
+
+    [Fact]
+    public void CanonicalComposition_RegistersTheRawSequenceWithoutAvailabilityFiltering()
+    {
+        var registrations = CreateRawRegistrations();
+        var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+
+        FirstPartyToolComposition.Register(registry, registrations);
+
+        foreach (var registration in registrations)
         {
-            Assert.Contains($"\"{name}\"", source, StringComparison.Ordinal);
+            Assert.Equal(registration.PackageId, registration.Tool.Manifest.Package);
         }
+    }
+
+    [Fact]
+    public void Comparison_RejectsAnUnexpectedRegistration()
+    {
+        var comparison = Compare(["diagnostic.expected"], ["diagnostic.expected", "diagnostic.fake"]);
+
+        Assert.False(comparison.IsExact);
+        Assert.Equal(["diagnostic.fake"], comparison.Unexpected);
+    }
+
+    [Fact]
+    public void Comparison_RejectsAMissingRegistration()
+    {
+        var comparison = Compare(["diagnostic.expected"], []);
+
+        Assert.False(comparison.IsExact);
+        Assert.Equal(["diagnostic.expected"], comparison.Missing);
     }
 
     [Fact]
@@ -42,11 +94,38 @@ public sealed class V13DiagnosticSurfaceTests
         Assert.Empty(offending);
     }
 
-    private static IEnumerable<string> SourceFiles()
+    private static IReadOnlyList<FirstPartyToolRegistration> CreateRawRegistrations()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "bOps.slnx"))) root = root.Parent;
-        return root is null ? [] : Directory.EnumerateFiles(Path.Combine(root.FullName, "src", "packages"), "*.cs", SearchOption.AllDirectories)
-            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+        var filesystemProvider = new FilesystemToolProvider(new FilesystemPathPolicy([], []));
+        using var webProvider = new WebToolProvider(new WebFetchOptions(), new WebSearchOptions());
+
+        return FirstPartyToolComposition.Create(new FirstPartyToolCompositionOptions(
+            filesystemProvider,
+            webProvider,
+            new DockerClientFactory(),
+            new DockerBuildOptions(),
+            new DockerVolumeOptions()));
+    }
+
+    private static SurfaceComparison Compare(IEnumerable<string> expected, IEnumerable<string> actual)
+    {
+        var expectedNames = expected.Order(StringComparer.Ordinal).ToArray();
+        var actualNames = actual.Order(StringComparer.Ordinal).ToArray();
+        return new SurfaceComparison(
+            expectedNames.Except(actualNames, StringComparer.Ordinal).ToArray(),
+            actualNames.Except(expectedNames, StringComparer.Ordinal).ToArray());
+    }
+
+    private sealed record SurfaceComparison(IReadOnlyList<string> Missing, IReadOnlyList<string> Unexpected)
+    {
+        public bool IsExact => Missing.Count == 0 && Unexpected.Count == 0;
+
+        public string ToDiagnosticMessage() =>
+            $"Missing: {string.Join(", ", Missing)}{Environment.NewLine}Unexpected: {string.Join(", ", Unexpected)}";
+    }
+
+    private sealed class AlwaysAvailableCapabilityProbe : ICapabilityProbe
+    {
+        public Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default) => Task.FromResult(true);
     }
 }
