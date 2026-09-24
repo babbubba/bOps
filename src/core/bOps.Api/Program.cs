@@ -204,7 +204,8 @@ builder.Services.AddSingleton(sp => new PluginManager(
 // ADR-0037: M6 consumes this same backend; it does not compose a second plugin authority.
 builder.Services.AddSingleton(sp => new PluginLifecycleService(
     sp.GetRequiredService<PluginManager>(),
-    sp.GetRequiredService<IConfiguration>()["Plugins:RootPath"] ?? "plugins"));
+    sp.GetRequiredService<IConfiguration>()["Plugins:RootPath"] ?? "plugins",
+    auditSink: sp.GetRequiredService<IAuditSink>()));
 
 // ADR-0029: non-secret provider profiles and the active-provider selection are always available;
 // the encrypted vault (provider API keys) only activates when a master key is actually configured
@@ -303,7 +304,7 @@ var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
 // and needs the same plugin-contributed tools/Skills visible to it. Before
 // RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured by the same refresh.
 var pluginManager = app.Services.GetRequiredService<PluginManager>();
-app.Services.GetRequiredService<PluginLifecycleService>().RecoverAll();
+await app.Services.GetRequiredService<PluginLifecycleService>().RecoverAllAsync();
 var pluginStartupErrors = pluginManager.LoadAllEnabled();
 if (pluginStartupErrors.Count > 0)
 {

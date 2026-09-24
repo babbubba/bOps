@@ -154,6 +154,38 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAsync_ChainsPluginLifecycleEvents_AndRoundTripsTheirNeutralFields()
+    {
+        // ADR-0037: the additive lifecycle event serializes through the real sink into the same chain,
+        // and carries only neutral categories (no path, payload, key or stack field exists to leak).
+        var lifecycle = new PluginLifecycleAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.Empty, StepIndex = -1, Actor = Actor,
+            Operation = "enable", Stage = "activation", Outcome = "ActivationFailed", PluginId = "acme.sample-plugin", PluginVersion = "2.0.0",
+            PriorState = "InstalledDisabled", NewState = "ActivationFailed", LifecycleVersion = 4, PublisherTrust = "Community",
+            CorrelationId = "corr-1", IdempotencyKeyPresent = true, IdempotentReplay = false,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(SampleEvent(0));
+            await sink.WriteAsync(lifecycle);
+        }
+
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var eventJson = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        var node = JsonNode.Parse(eventJson)!.AsObject();
+        Assert.Equal("pluginLifecycle", node["eventType"]!.GetValue<string>());
+        Assert.Equal("enable", node["Operation"]!.GetValue<string>());
+        Assert.Equal("ActivationFailed", node["Outcome"]!.GetValue<string>());
+        Assert.Equal(4, node["LifecycleVersion"]!.GetValue<int>());
+        Assert.Equal("Community", node["PublisherTrust"]!.GetValue<string>());
+        var restored = System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(eventJson);
+        Assert.Equal(lifecycle, Assert.IsType<PluginLifecycleAuditEvent>(restored));
+    }
+
+    [Fact]
     public void VerifyFile_ReturnsValid_ForAFileThatDoesNotExist()
     {
         var result = AuditChainVerifier.VerifyFile(_filePath);

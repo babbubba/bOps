@@ -32,14 +32,39 @@ public sealed class PluginManager(
     private readonly Dictionary<string, PluginKind> _activatedKinds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _startupLoadErrors = new(StringComparer.Ordinal);
 
-    // ADR-0037 composition seam. It remains internal: M6 owns public lifecycle transport.
+    // Guards the two in-process activation dictionaries so different plugins can activate/disable
+    // concurrently. Activation itself (assembly load, construction, registry writes) runs outside it.
+    private readonly object _runtimeGate = new();
+
+    // ADR-0037 composition seams. They remain internal: M6 owns public lifecycle transport.
     internal PluginStore LifecycleStore => store;
+    internal TimeProvider Clock => timeProvider;
+    internal string PluginsRoot => Path.GetFullPath(pluginsRootDirectory);
+
+    /// <summary>Reads and validates a staged candidate's manifest through the existing validator; never loads code.</summary>
+    internal static PluginManifest ReadCandidateManifest(string candidateDirectory)
+    {
+        var manifest = PluginManifestValidator.ReadManifest(candidateDirectory);
+        PluginManifestValidator.Validate(manifest, candidateDirectory);
+        return manifest;
+    }
+
+    /// <summary>Verifies a staged candidate through the existing signature and local publisher trust boundary.</summary>
+    internal PluginProvenance VerifyCandidate(string candidateDirectory, PluginManifest manifest) =>
+        PluginPackageSignature.Verify(
+            candidateDirectory, manifest, new PluginPublisherTrustStore(configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json"));
 
     /// <summary>Every installed plugin, enabled or not.</summary>
     public IReadOnlyList<PluginRecord> List() => store.List();
 
     /// <summary>Whether a plugin's tools/Skills/model provider are currently registered in this process, distinct from <see cref="PluginRecord.Enabled"/> (the persisted operator intent).</summary>
-    public bool IsActivated(string id) => _activatedKinds.ContainsKey(id);
+    public bool IsActivated(string id)
+    {
+        lock (_runtimeGate)
+        {
+            return _activatedKinds.ContainsKey(id);
+        }
+    }
 
     /// <summary>Per-plugin activation failures from the most recent <see cref="LoadAllEnabled"/> call, keyed by plugin id. Empty until <see cref="LoadAllEnabled"/> has run at least once.</summary>
     public IReadOnlyDictionary<string, string> StartupLoadErrors => _startupLoadErrors;
@@ -151,7 +176,7 @@ public sealed class PluginManager(
     }
 
     /// <summary>Replaces every occurrence of the plugin's own install path with a fixed placeholder, so a caught exception message never leaks a local filesystem layout to an operator-facing surface.</summary>
-    private static string Sanitize(string message, string installPath) =>
+    internal static string Sanitize(string message, string installPath) =>
         message.Replace(installPath, "<plugin-install-dir>", StringComparison.Ordinal);
 
     /// <summary>Activates an installed, currently-disabled plugin now, and persists that it should activate on every future start-up.</summary>
@@ -191,24 +216,38 @@ public sealed class PluginManager(
             throw new PluginOperationException($"Plugin '{id}' is already disabled.");
         }
 
-        if (_activatedKinds.TryGetValue(id, out var kind) && kind == PluginKind.ModelProvider)
+        Deactivate(id);
+        store.SetEnabled(id, false);
+    }
+
+    /// <summary>
+    /// Releases a plugin's in-process registrations and load context through the existing
+    /// plugin-owned unregistration path. Refuses (without side effects) when the plugin registered
+    /// a model provider, which cannot be retracted.
+    /// </summary>
+    internal void Deactivate(string id)
+    {
+        PluginLoadContext? context;
+        lock (_runtimeGate)
         {
-            throw new PluginOperationException(
-                $"Plugin '{id}' registered a chat model provider. IChatModelRegistry has no way to unregister " +
-                "one, so it cannot be genuinely disabled in this process — restart the host without enabling " +
-                "it instead.");
+            if (_activatedKinds.TryGetValue(id, out var kind) && kind == PluginKind.ModelProvider)
+            {
+                throw new PluginOperationException(
+                    $"Plugin '{id}' registered a chat model provider. IChatModelRegistry has no way to unregister " +
+                    "one, so it cannot be genuinely disabled in this process — restart the host without enabling " +
+                    "it instead.");
+            }
+
+            toolRegistry.Unregister(new PackageId(id));
+            skillRegistry.Unregister(new PackageId(id));
+            _activatedKinds.Remove(id);
+            _loadContexts.Remove(id, out context);
         }
 
-        toolRegistry.Unregister(new PackageId(id));
-        skillRegistry.Unregister(new PackageId(id));
-        _activatedKinds.Remove(id);
-
-        if (_loadContexts.Remove(id, out var context))
+        if (context is not null)
         {
             UnloadAndWaitForCollection(context);
         }
-
-        store.SetEnabled(id, false);
     }
 
     /// <summary>Disables (if enabled) and permanently deletes an installed plugin.</summary>
@@ -224,7 +263,8 @@ public sealed class PluginManager(
         store.Remove(id);
     }
 
-    private void Activate(PluginRecord record)
+    /// <summary>Activates a committed generation through the sole loader. On failure every registration it added is removed and its context unloaded.</summary>
+    internal void Activate(PluginRecord record)
     {
         if (record.Provenance is not { Verified: true } provenance || provenance.Trust == PackageTrustLevel.Unverified)
         {
@@ -317,7 +357,10 @@ public sealed class PluginManager(
                 throw;
             }
 
-            _activatedKinds[record.Id] = PluginKind.SkillProvider;
+            lock (_runtimeGate)
+            {
+                _activatedKinds[record.Id] = PluginKind.SkillProvider;
+            }
         }
         else if (isToolProvider)
         {
@@ -335,12 +378,18 @@ public sealed class PluginManager(
                 throw;
             }
 
-            _activatedKinds[record.Id] = PluginKind.ToolProvider;
+            lock (_runtimeGate)
+            {
+                _activatedKinds[record.Id] = PluginKind.ToolProvider;
+            }
         }
         else if (isModelProvider)
         {
             chatModelRegistry.Register(packageId, (IModelProviderPackage)instance);
-            _activatedKinds[record.Id] = PluginKind.ModelProvider;
+            lock (_runtimeGate)
+            {
+                _activatedKinds[record.Id] = PluginKind.ModelProvider;
+            }
         }
         else
         {
@@ -349,7 +398,10 @@ public sealed class PluginManager(
                 $"Entry type '{manifest.EntryType}' implements neither {nameof(IToolProvider)} nor {nameof(IModelProviderPackage)}.");
         }
 
-        _loadContexts[record.Id] = loadContext;
+        lock (_runtimeGate)
+        {
+            _loadContexts[record.Id] = loadContext;
+        }
     }
 
     /// <summary>

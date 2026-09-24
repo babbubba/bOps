@@ -17,7 +17,15 @@ internal sealed class PluginArchiveStager(string lifecycleRoot, PluginArchiveLim
 {
     private const int BufferSize = 64 * 1024;
 
-    public async Task<string> StageAsync(Stream archive, CancellationToken cancellationToken = default)
+    public async Task<string> StageAsync(Stream archive, CancellationToken cancellationToken = default) =>
+        (await StageWithDigestAsync(archive, null, cancellationToken)).Directory;
+
+    /// <summary>
+    /// Stages an archive and reports the SHA-256 of the received bytes. The digest is request identity
+    /// only (ADR-0037); it never substitutes for signature or trust verification. <paramref name="onDigest"/>
+    /// runs as soon as the bounded upload is fully received, before any parsing or extraction.
+    /// </summary>
+    public async Task<StagedArchive> StageWithDigestAsync(Stream archive, Func<string, Task>? onDigest, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(archive);
         limits.Validate();
@@ -32,13 +40,18 @@ internal sealed class PluginArchiveStager(string lifecycleRoot, PluginArchiveLim
 
         try
         {
-            await CopyBoundedAsync(archive, uploadPath, cancellationToken);
+            var digest = await CopyBoundedAsync(archive, uploadPath, cancellationToken);
+            if (onDigest is not null)
+            {
+                await onDigest(digest);
+            }
+
             using var file = new FileStream(uploadPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var zip = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: false);
             var entries = ValidateEntries(zip);
             Directory.CreateDirectory(operationDirectory);
             await ExtractAsync(entries, operationDirectory, cancellationToken);
-            return operationDirectory;
+            return new StagedArchive(operationDirectory, digest);
         }
         catch (InvalidDataException)
         {
@@ -56,9 +69,10 @@ internal sealed class PluginArchiveStager(string lifecycleRoot, PluginArchiveLim
         }
     }
 
-    private async Task CopyBoundedAsync(Stream source, string target, CancellationToken cancellationToken)
+    private async Task<string> CopyBoundedAsync(Stream source, string target, CancellationToken cancellationToken)
     {
         await using var destination = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
         var buffer = new byte[BufferSize];
         long total = 0;
         while (true)
@@ -66,8 +80,11 @@ internal sealed class PluginArchiveStager(string lifecycleRoot, PluginArchiveLim
             var read = await source.ReadAsync(buffer, cancellationToken);
             if (read == 0)
             {
-                return;
+                await destination.FlushAsync(cancellationToken);
+                return Convert.ToHexStringLower(hash.GetHashAndReset());
             }
+
+            hash.AppendData(buffer, 0, read);
 
             total = checked(total + read);
             if (total > limits.MaximumCompressedBytes)
@@ -238,5 +255,6 @@ internal sealed class PluginArchiveStager(string lifecycleRoot, PluginArchiveLim
     private static PluginArchiveValidationException Limit(string limit) => new(PluginLifecycleResultCategory.ArchiveLimitExceeded, $"The plugin archive exceeds the {limit} limit.");
     private static PluginArchiveValidationException Invalid(string message) => new(PluginLifecycleResultCategory.ArchiveInvalid, message);
     private static void DeleteIfPresent(string path) { if (File.Exists(path)) File.Delete(path); else if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+    internal sealed record StagedArchive(string Directory, string ArchiveDigestSha256);
     private sealed record ApprovedEntry(ZipArchiveEntry Entry, string RelativePath, bool IsDirectory);
 }

@@ -46,6 +46,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(DelegationJournalAuditEvent), "delegationJournal")]
 [JsonDerivedType(typeof(DelegationReconciliationAuditEvent), "delegationReconciliation")]
 [JsonDerivedType(typeof(EntitlementDecisionAuditEvent), "entitlementDecision")]
+[JsonDerivedType(typeof(PluginLifecycleAuditEvent), "pluginLifecycle")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -72,6 +73,54 @@ public abstract record AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DelegationCorrelation? Delegation { get; init; }
+}
+
+/// <summary>
+/// A local plugin lifecycle action (ADR-0037): archive install/replace attempt, validation or trust
+/// result, commit, enable, disable, activation failure, recovery, stale-precondition refusal, or
+/// idempotent replay/conflict. Every field is a neutral category or identifier. It never carries
+/// archive bytes, signatures, keys, trust-store content, credentials, stacks, or local paths. Like
+/// <see cref="SettingsChangedAuditEvent"/>, it is produced by an administrator acting directly, so
+/// <see cref="AuditEvent.TaskId"/> and <see cref="AuditEvent.StepIndex"/> are the documented sentinels
+/// (<see cref="Guid.Empty"/> and <c>-1</c>).
+/// </summary>
+public sealed record PluginLifecycleAuditEvent : AuditEvent
+{
+    /// <summary>The lifecycle operation, for example <c>install</c>, <c>enable</c>, <c>disable</c> or <c>recover</c>.</summary>
+    public required string Operation { get; init; }
+
+    /// <summary>The validation/transaction stage the event describes, for example <c>signature</c>, <c>commit</c> or <c>idempotency</c>.</summary>
+    public required string Stage { get; init; }
+
+    /// <summary>Neutral outcome category, for example <c>Succeeded</c>, <c>StaleVersion</c> or <c>IdempotencyConflict</c>.</summary>
+    public required string Outcome { get; init; }
+
+    /// <summary>The manifest plugin id, once known.</summary>
+    public string? PluginId { get; init; }
+
+    /// <summary>The manifest plugin version, once known.</summary>
+    public string? PluginVersion { get; init; }
+
+    /// <summary>The persisted lifecycle state before the action, when the plugin existed.</summary>
+    public string? PriorState { get; init; }
+
+    /// <summary>The persisted lifecycle state after the action, when the plugin exists.</summary>
+    public string? NewState { get; init; }
+
+    /// <summary>The authoritative lifecycle revision after the action (0 when the plugin does not exist).</summary>
+    public long LifecycleVersion { get; init; }
+
+    /// <summary>The publisher trust level category (<c>Verified</c>, <c>Community</c>, <c>Unverified</c>...) for trust results; never key material.</summary>
+    public string? PublisherTrust { get; init; }
+
+    /// <summary>Caller-supplied correlation identifier, when present.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Whether an idempotency key accompanied the request.</summary>
+    public bool IdempotencyKeyPresent { get; init; }
+
+    /// <summary>Whether the result replays an earlier logical operation for the same idempotency scope.</summary>
+    public bool IdempotentReplay { get; init; }
 }
 
 /// <summary>
