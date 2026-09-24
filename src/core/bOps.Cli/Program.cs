@@ -5,30 +5,15 @@ using bOps.Abstractions;
 using bOps.Audit;
 using bOps.Cli;
 using bOps.Memory;
+using bOps.Hosting;
 using bOps.Packages.Docker;
-using bOps.Packages.Identity.Linux;
-using bOps.Packages.Identity.Windows;
 using bOps.Packages.Filesystem;
-using bOps.Packages.Firewall.Linux;
-using bOps.Packages.Firewall.Windows;
-using bOps.Packages.Network;
-using bOps.Packages.Security;
-using bOps.Packages.Network.Native.Linux;
-using bOps.Packages.Network.Native.Windows;
 using bOps.Packages.Providers.Anthropic;
 using bOps.Packages.Providers.DeepSeek;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Packages.Providers.Ollama;
 using bOps.Packages.Providers.OpenAi;
 using bOps.Packages.Providers.OpenRouter;
-using bOps.Packages.Service.Linux;
-using bOps.Packages.Service.Windows;
-using bOps.Packages.Scheduler.Linux;
-using bOps.Packages.Scheduler.Windows;
-using bOps.Packages.Storage.Linux;
-using bOps.Packages.Storage.Windows;
-using bOps.Packages.Sys.Linux;
-using bOps.Packages.Sys.Windows;
 using bOps.Packages.Web;
 using bOps.PluginHost;
 using bOps.Policy;
@@ -150,29 +135,6 @@ builder.Services.AddOpenTelemetry()
 using var host = builder.Build();
 
 var toolRegistry = host.Services.GetRequiredService<IToolRegistry>();
-
-// Rule A8: each OS package contributes its own complete tools; the registry's platform filter
-// (not this code) is what actually decides visibility — this just picks which package to load.
-// OperatingSystem.IsWindows()/IsLinux() (not CurrentPlatform.Id) because the platform-compat
-// analyzer (CA1416) only recognizes these specific guards for a [SupportedOSPlatform] type.
-IToolProvider platformToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsSystemToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxSystemToolProvider()
-        : throw new PlatformNotSupportedException(
-            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
-
-var systemPackageId = new PackageId($"bops.packages.system.{CurrentPlatform.Id}");
-foreach (var tool in platformToolProvider.GetTools())
-{
-    toolRegistry.Register(systemPackageId, tool);
-}
-
-// V0.5: fs.* and network.* are cross-platform via System.IO / System.Net.NetworkInformation, so
-// unlike the System family there is no per-OS package to pick between (agentic/01-architecture-
-// rules.md, rule A8 does not require an OS split when the BCL already abstracts the difference).
-// fs.write and fs.delete are the first non-Read tools this repository ships for real — everything
-// V0.3 (policy/approval) and V0.4 (verification) built now has a real tool to exercise it.
 var filesystemSection = builder.Configuration.GetSection("Filesystem");
 var pathPolicy = new FilesystemPathPolicy(
     filesystemSection.GetSection("ReadPatterns").Get<string[]>() ?? [],
@@ -181,104 +143,6 @@ var filesystemInventoryOptions = filesystemSection.GetSection("Inventory").Get<F
     ?? new FilesystemInventoryOptions();
 var filesystemOperationsOptions = filesystemSection.GetSection("Operations").Get<FilesystemOperationsOptions>()
     ?? new FilesystemOperationsOptions();
-
-var filesystemPackageId = new PackageId("bops.packages.filesystem");
-foreach (var tool in new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions, filesystemOperationsOptions).GetTools())
-{
-    toolRegistry.Register(filesystemPackageId, tool);
-}
-
-var networkPackageId = new PackageId("bops.packages.network");
-foreach (var tool in new NetworkToolProvider().GetTools())
-{
-    toolRegistry.Register(networkPackageId, tool);
-}
-
-var securityPackageId = new PackageId("bops.packages.security");
-foreach (var tool in new SecurityToolProvider().GetTools())
-{
-    toolRegistry.Register(securityPackageId, tool);
-}
-
-// V1.3-D (ADR-0035): sockets, routes, neighbors and interface counters need real native APIs, so
-// unlike bops.packages.network above they follow the System family's OS-split pattern — exactly
-// one native package registered alongside the cross-platform one.
-IToolProvider networkNativeToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsNetworkNativeToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxNetworkNativeToolProvider()
-        : throw new PlatformNotSupportedException(
-            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
-
-var networkNativePackageId = new PackageId($"bops.packages.network.native.{CurrentPlatform.Id}");
-foreach (var tool in networkNativeToolProvider.GetTools())
-{
-    toolRegistry.Register(networkNativePackageId, tool);
-}
-
-IToolProvider firewallToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsFirewallToolProvider()
-    : new LinuxFirewallToolProvider();
-foreach (var tool in firewallToolProvider.GetTools())
-{
-    toolRegistry.Register(new PackageId($"bops.packages.firewall.{CurrentPlatform.Id}"), tool);
-}
-
-// V1.3-E: storage topology, filesystem capacity/inodes, sampled I/O and bounded health evidence
-// follow the same OS-split package boundary as System and native Network.
-IToolProvider storageToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsStorageToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxStorageToolProvider()
-        : throw new PlatformNotSupportedException(
-            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
-
-var storagePackageId = new PackageId($"bops.packages.storage.{CurrentPlatform.Id}");
-foreach (var tool in storageToolProvider.GetTools())
-{
-    toolRegistry.Register(storagePackageId, tool);
-}
-
-// V0.11 (ADR-0021): mirrors the System family's own OS split above — Windows via
-// ServiceController, Linux via a fixed, non-composable systemctl invocation.
-IToolProvider serviceToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsServiceToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxServiceToolProvider()
-        : throw new PlatformNotSupportedException(
-            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
-
-var servicePackageId = new PackageId($"bops.packages.service.{CurrentPlatform.Id}");
-foreach (var tool in serviceToolProvider.GetTools())
-{
-    toolRegistry.Register(servicePackageId, tool);
-}
-
-// V1.3-G: exactly one OS-specific scheduler provider is composed; Scheduler.Core has no
-// independent provider or package identity.
-IToolProvider schedulerToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsSchedulerToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxSchedulerToolProvider()
-        : throw new PlatformNotSupportedException(
-            "bOps supports Windows and Linux only (agentic/00-project-spec.md).");
-
-var schedulerPackageId = new PackageId($"bops.packages.scheduler.{CurrentPlatform.Id}");
-foreach (var tool in schedulerToolProvider.GetTools())
-{
-    toolRegistry.Register(schedulerPackageId, tool);
-}
-
-IToolProvider identityToolProvider = OperatingSystem.IsWindows()
-    ? new WindowsIdentityToolProvider()
-    : OperatingSystem.IsLinux()
-        ? new LinuxIdentityToolProvider()
-        : throw new PlatformNotSupportedException("bOps supports Windows and Linux only.");
-var identityPackageId = new PackageId($"bops.packages.identity.{CurrentPlatform.Id}");
-foreach (var tool in identityToolProvider.GetTools())
-{
-    toolRegistry.Register(identityPackageId, tool);
-}
 
 // V0.6: docker.* declares Requires: ["docker"] on every tool (rule B4) — registering the check
 // here, before the first RefreshCapabilitiesAsync, is what makes an absent daemon remove every
@@ -295,12 +159,6 @@ if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityPro
     cachingCapabilityProbe.RegisterCheck(DockerCapability.BuildContexts, _ => DockerCapability.IsBuildConfiguredAsync(dockerBuildOptions));
 }
 
-var dockerPackageId = new PackageId("bops.packages.docker");
-foreach (var tool in new DockerToolProvider(dockerClientFactory, dockerBuildOptions, dockerVolumeOptions).GetTools())
-{
-    toolRegistry.Register(dockerPackageId, tool);
-}
-
 // web.search declares Requires: ["web.searxng"] (rule A8) — an unconfigured instance removes it
 // from what the planner sees, the same pattern docker.* uses for an absent daemon.
 var webSearchOptions = host.Services.GetRequiredService<WebSearchOptions>();
@@ -309,11 +167,13 @@ if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityPro
     webCapabilityProbe.RegisterCheck(WebCapabilities.Searxng, ct => WebCapabilities.IsSearxngConfiguredAsync(webSearchOptions, ct));
 }
 
-var webPackageId = new PackageId("bops.packages.web");
-foreach (var tool in host.Services.GetRequiredService<WebToolProvider>().GetTools())
-{
-    toolRegistry.Register(webPackageId, tool);
-}
+var firstPartyRegistrations = FirstPartyToolComposition.Create(new FirstPartyToolCompositionOptions(
+    new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions, filesystemOperationsOptions),
+    host.Services.GetRequiredService<WebToolProvider>(),
+    dockerClientFactory,
+    dockerBuildOptions,
+    dockerVolumeOptions));
+FirstPartyToolComposition.Register(toolRegistry, firstPartyRegistrations);
 
 var chatModelRegistry = host.Services.GetRequiredService<IChatModelRegistry>();
 var skillRegistry = host.Services.GetRequiredService<ISkillRegistry>();

@@ -22,6 +22,7 @@
     <Project Path="src/core/bOps.Api/bOps.Api.csproj" />
     <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
     <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
+    <Project Path="src/core/bOps.Hosting/bOps.Hosting.csproj" />
     <Project Path="src/core/bOps.Memory/bOps.Memory.csproj" />
     <Project Path="src/core/bOps.PluginHost/bOps.PluginHost.csproj" />
     <Project Path="src/core/bOps.Policy/bOps.Policy.csproj" />
