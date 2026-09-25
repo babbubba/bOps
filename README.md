@@ -7,7 +7,7 @@
 **An open-source agent runtime for safely operating Windows and Linux machines
 through declarative tools, policies, planning and verification.**
 
-[![Status](https://img.shields.io/badge/status-v1.1%20preview-orange)](#status)
+[![Status](https://img.shields.io/badge/status-v1.3%20preview-orange)](#status)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-informational)](#)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -402,7 +402,7 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3-A–L` *(complete and merged)* | Senior-operator local diagnostic surface, including the PR #47 integration gate and evidence baseline for future Skills |
-| `V1.3-M` *(implemented on a feature branch; not merged)* | Neutral entitlement boundary (ADR-0036) and safe local plugin install/enable/disable/recover (ADR-0037). M8 local release gate passed on Windows; Linux/CI evidence is pending and no push, PR, merge or tag has been made |
+| `V1.3-M` *(complete and merged, PR #50)* | Neutral entitlement boundary (ADR-0036) and safe local plugin lifecycle — install, replace, enable, disable, recover (ADR-0037) — with matching administrator API and Angular UI operations. Green on Windows and Linux CI; no `v1.3` tag or GitHub Release exists yet |
 | `V1.4-A–C` | Outbound secure node protocol, private Coordinator and PostgreSQL+pgvector persistence baseline |
 | `V1.4-D` | Semantic Knowledge Store + tenant-private Operational Memory + versioned Knowledge/Experience Packs |
 | `V1.4-E` | Official packaging and signed application/knowledge-pack distribution |
@@ -471,7 +471,24 @@ this is not yet a production endorsement.
 implemented, each sub-task passed Windows and Linux CI, and the integration and release gate is closed (a real objective end to end with
 real tools, a crash and resume, and the frozen 1.0 surface kept by a permanent test). Treat the feature as a preview: the public SDK is
 `1.2.0-preview.8`, and what it does not do is stated in
-[`docs/agents/delegation.md`](docs/agents/delegation.md).
+[`docs/agents/delegation.md`](docs/agents/delegation.md). The UI's two operator surfaces stay
+distinct: **Dashboard** runs a task directly and interactively; **Delegations** runs the same kind
+of request through the governed Discovery → Diagnostic → Remediation → Verification workflow, with
+reduced-authority roles and an approved plan hash before any change.
+
+**V1.3 is implemented and merged into `main`, but not yet tagged or released.** The neutral
+entitlement boundary (ADR-0036) checks feature/capability/resource applicability before a governed
+operation executes and fails closed when it applies and is not satisfied; where entitlement does
+not apply, standalone OSS use is unaffected. The safe local plugin lifecycle (ADR-0037) — install,
+replace, enable, disable, recover — never enables a plugin automatically after install or recovery,
+and defines no removal transaction (`bops plugin remove` is refused, not a no-op). `bops plugin
+*`, the `/api/plugins/*` administrator endpoints and the Angular UI's Plugins page share the same
+lifecycle backend; a non-administrator still sees the page read-only. An enabled plugin runs
+in-process with the host's own privileges — `AssemblyLoadContext` isolation remains dependency
+isolation, not a security sandbox, and a valid signature establishes provenance and integrity, not
+safety. This landed via PR #50 with a follow-up lockfile synchronization fix in PR #51; both are
+green on Windows and Linux CI on `main`, `bOps.Abstractions` is versioned `1.3.0-preview.1`, and no
+`v1.3` tag or GitHub Release has been cut yet.
 
 ## Documentation
 
