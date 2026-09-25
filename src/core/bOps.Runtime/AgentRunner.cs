@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
@@ -306,7 +307,13 @@ public sealed class AgentRunner(
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
             var (step, observation, authorization, verification) = await ExecuteStepAsync(
                 taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
-            step = step with { ModelCalls = stepCalls };
+            // ADR-0038: what the model emitted after the executed call is kept on the step, so its turn can be
+            // rebuilt exactly (live and on resume) without reading any provider-specific payload.
+            step = step with
+            {
+                ModelCalls = stepCalls,
+                UnexecutedToolCalls = response.ToolCalls.Count > 1 ? response.ToolCalls.Skip(1).ToList() : null,
+            };
             steps.Add(step);
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
@@ -333,14 +340,7 @@ public sealed class AgentRunner(
                 consecutivePolicyDenials = 0;
             }
 
-            history.Add(ChatTurn.FromAssistantToolCalls([primaryCall]));
-            history.Add(ChatTurn.FromToolResult(primaryCall.Id, observation));
-
-            foreach (var unexecuted in response.ToolCalls.Skip(1))
-            {
-                history.Add(ChatTurn.FromToolResult(unexecuted.Id, WrapToolOutput(
-                    "Not executed: only one tool call is executed per step. Ask again next step if still needed.")));
-            }
+            AddToolCallTurns(history, primaryCall, step.UnexecutedToolCalls, observation);
 
             BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
 
@@ -1220,23 +1220,49 @@ public sealed class AgentRunner(
                 continue;
             }
 
-            history.Add(ChatTurn.FromAssistantToolCalls([step.ToolCall]));
-            history.Add(ChatTurn.FromToolResult(step.ToolCall.Id, WrapToolOutput(step.Observation ?? string.Empty)));
+            AddToolCallTurns(history, step.ToolCall, step.UnexecutedToolCalls, WrapToolOutput(step.Observation ?? string.Empty));
         }
 
         return history;
     }
+
+    /// <summary>
+    /// The model-facing record of one tool-calling turn, built the same way live and on resume (ADR-0038): the
+    /// assistant turn carries every call the model emitted, the executed call is answered with its real observation,
+    /// and each call bOps deliberately did not execute (one tool call per step, D-007) is answered truthfully as not
+    /// executed, so every tool result refers to a call in the turn before it.
+    /// </summary>
+    private static void AddToolCallTurns(
+        List<ChatTurn> history, ModelToolCall executed, IReadOnlyList<ModelToolCall>? unexecuted, string executedObservation)
+    {
+        List<ModelToolCall> emitted = [executed];
+        if (unexecuted is { Count: > 0 })
+        {
+            emitted.AddRange(unexecuted);
+        }
+
+        history.Add(ChatTurn.FromAssistantToolCalls(emitted));
+        history.Add(ChatTurn.FromToolResult(executed.Id, executedObservation));
+
+        foreach (var call in unexecuted ?? [])
+        {
+            history.Add(ChatTurn.FromToolResult(call.Id, WrapToolOutput(NotExecutedObservation)));
+        }
+    }
+
+    private const string NotExecutedObservation =
+        "Not executed: only one tool call is executed per step. Ask again next step if still needed.";
 
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>
     private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(
         Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
-        var systemPrompt = $"{SystemPrompt}\n\n{PlanningInstructions}";
+        var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, delegation);
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, calls, ct);
+            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
@@ -1251,7 +1277,7 @@ public sealed class AgentRunner(
         planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, ToolViewFor(delegation)), delegation, calls, ct);
+            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
@@ -1273,7 +1299,7 @@ public sealed class AgentRunner(
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
         CancellationToken ct)
     {
-        var systemPrompt = $"{SystemPrompt}\n\n{ReplanningInstructions}";
+        var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, delegation);
         var replanHistory = new List<ChatTurn>
         {
             ChatTurn.FromUser(goal),
@@ -1284,7 +1310,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, calls, ct);
+            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct);
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
@@ -1296,7 +1322,7 @@ public sealed class AgentRunner(
         replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, ToolViewFor(delegation)), delegation, calls, ct);
+            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct);
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
@@ -1439,12 +1465,17 @@ public sealed class AgentRunner(
         SkillExecutionScope? skillScope = null,
         DelegatedExecutionScope? delegation = null)
     {
-        var registration = registry.ResolveForExecution(call.ToolName);
+        // ADR-0038: a name the provider adapter could not map to a tool offered in the request is never looked up,
+        // even when it happens to equal a registered tool's name.
+        var registration = call.ToolNameError is null ? registry.ResolveForExecution(call.ToolName) : null;
         if (registration is null)
         {
             var rejected = await RejectAsync(taskId, stepIndex, actor, call, PackageId.Unknown, RiskLevel.Read,
                 AuthorizationKind.UnknownTool,
-                $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.", planRevision, ct, skillScope, delegation);
+                call.ToolNameError is { } nameError
+                    ? $"Unknown tool: {nameError}"
+                    : $"Unknown tool '{call.ToolName}': it is not registered, or not available on this platform.",
+                planRevision, ct, skillScope, delegation);
             return (rejected.Step, rejected.Observation, AuthorizationKind.UnknownTool, null);
         }
 
@@ -1485,7 +1516,12 @@ public sealed class AgentRunner(
             return (refused.Step, refused.Observation, AuthorizationKind.PolicyDenied, null);
         }
 
-        if (ValidateArguments(manifest, call.Arguments) is { } validationError)
+        // ADR-0038: arguments the provider adapter reported as malformed are a validation failure the model can see,
+        // never a call with substituted defaults; this is before policy, so policy never judges arguments nobody sent.
+        var validationError = call.ArgumentsError is { } argumentsError
+            ? $"Invalid arguments for '{manifest.Name}': {argumentsError}. Send the arguments as one JSON object."
+            : ValidateArguments(manifest, call.Arguments);
+        if (validationError is not null)
         {
             var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, ToolCallResult.Failure(validationError),
                 AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope, delegation);
@@ -2227,6 +2263,52 @@ public sealed class AgentRunner(
         var roleCap = RoleRequirements.RiskCap(agent.Role);
         var ceiling = envelope.MaxRisk < roleCap ? envelope.MaxRisk : roleCap;
         return [.. all.Where(m => m.Risk != RiskLevel.Critical && m.Risk <= ceiling && envelope.AllowedTools.Contains(m.Name, StringComparer.Ordinal))];
+    }
+
+    /// <summary>What a plan or replan call offers as native tools: nothing (ADR-0038, amending ADR-0014). The reply is a JSON plan, never a tool call.</summary>
+    private static readonly IReadOnlyList<ToolManifest> NoNativeTools = [];
+
+    private const int MaxCatalogSummaryCharacters = 120;
+
+    /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
+    private string BuildPlanningSystemPrompt(string instructions, DelegatedExecutionScope? delegation) =>
+        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(ToolViewFor(delegation))}";
+
+    /// <summary>
+    /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level and the first
+    /// sentence of the description. Parameter schemas are left out; the step call that follows carries them. This is
+    /// not an executable surface, so a planning reply cannot call a tool.
+    /// </summary>
+    internal static string DescribeToolCatalog(IReadOnlyList<ToolManifest> tools)
+    {
+        if (tools.Count == 0)
+        {
+            return "No tools are available for later steps, so leave \"expectedTool\" null.";
+        }
+
+        var builder = new StringBuilder(
+            "Tools available in later steps. Name one in \"expectedTool\" only if it fits; you cannot call a tool in this reply.\n");
+        foreach (var manifest in tools.OrderBy(manifest => manifest.Name, StringComparer.Ordinal))
+        {
+            builder.Append("- ").Append(manifest.Name).Append(" [").Append(manifest.Risk).Append("]: ")
+                .Append(SummarizeDescription(manifest.Description)).Append('\n');
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string SummarizeDescription(string description)
+    {
+        var flat = string.Join(' ', description.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var end = flat.IndexOf(". ", StringComparison.Ordinal);
+        var sentence = end >= 0 ? flat[..(end + 1)] : flat;
+        if (sentence.Length <= MaxCatalogSummaryCharacters)
+        {
+            return sentence;
+        }
+
+        var keep = char.IsHighSurrogate(sentence[MaxCatalogSummaryCharacters - 1]) ? MaxCatalogSummaryCharacters - 1 : MaxCatalogSummaryCharacters;
+        return $"{sentence[..keep]}…";
     }
 
     /// <summary>Wraps data that must reach a model as data, never as an instruction, and neutralizes any delimiter inside it (rule S5). The one place this is done, also for what one role hands the next.</summary>

@@ -57,7 +57,7 @@ state takes part:
    escape, so two distinct non-verbatim names can never receive the same injective alias. A name that is
    already wire-safe keeps itself, so `a.b` and `a_b` in one request become `a_2Eb` and `a_b`.
 4. The finished map is verified: every alias matches the regex and is at most 64 characters, and all
-   aliases are distinct. Otherwise building the request **fails closed** with an internal exception that
+   aliases are distinct. Otherwise building the request **fails closed** with a `ModelProtocolException` that
    names the canonical names involved; nothing is sent. This covers the residual pathological cases (an
    over-long or empty name, or a tool literally named `a_2Eb` colliding with an injective alias).
 

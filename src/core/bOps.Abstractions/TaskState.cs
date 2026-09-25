@@ -156,6 +156,9 @@ public sealed record PlanStep
 
     /// <summary>The calls made to the model to obtain this step, oldest first: normally one, more when an empty reply was asked for again. <c>null</c> for a step recorded before calls were kept, or one that needed no model call.</summary>
     public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
+
+    /// <summary>The tool calls the model emitted in the same turn after <see cref="ToolCall"/> and that bOps deliberately did not execute (one call per step), in emission order. Kept so the model's turn can be rebuilt exactly (ADR-0038); <c>null</c> when there were none, and in every step recorded before this was kept.</summary>
+    public IReadOnlyList<ModelToolCall>? UnexecutedToolCalls { get; init; }
 }
 
 /// <summary>

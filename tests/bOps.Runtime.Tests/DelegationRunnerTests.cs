@@ -460,8 +460,19 @@ public sealed partial class DelegationRunnerTests
 
         await h.Runner.StartAsync(Request(), Operator);
 
-        // The registry also holds service.restart, service.stop and test.read; a role never even sees them.
-        Assert.All(h.Model.Requests, r => Assert.Equal(["host.info"], r.AvailableTools.Select(t => t.Name)));
+        // The registry also holds service.restart, service.stop and test.read; a role never even sees them, neither as a
+        // native tool on a step call nor in the text catalog a plan call carries instead (ADR-0038).
+        Assert.All(h.Model.Requests, r =>
+        {
+            Assert.All(r.AvailableTools, t => Assert.Equal("host.info", t.Name));
+            Assert.DoesNotContain("service.restart", r.SystemPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("service.stop", r.SystemPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("test.read", r.SystemPrompt, StringComparison.Ordinal);
+        });
+        Assert.Contains(h.Model.Requests, r => r.AvailableTools.Count == 1);
+        Assert.All(
+            h.Model.Requests.Where(r => r.AvailableTools.Count == 0),
+            r => Assert.Contains("- host.info [", r.SystemPrompt, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1046,8 +1057,15 @@ public sealed partial class DelegationRunnerTests
 
         await h.Runner.StartAsync(Request(), Operator);
 
-        // The first request is Discovery's planning call. The listed high-risk tool is hidden by the Read cap of its role.
-        Assert.Equal(["host.info"], h.Model.Requests[0].AvailableTools.Select(t => t.Name));
+        // The first request is Discovery's planning call: no native tools (ADR-0038), and its text catalog hides the
+        // listed high-risk tool by the Read cap of its role.
+        var planning = h.Model.Requests[0];
+        Assert.Empty(planning.AvailableTools);
+        Assert.Contains("- host.info [", planning.SystemPrompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("service.restart", planning.SystemPrompt, StringComparison.Ordinal);
+
+        // The step call that follows offers the same view natively.
+        Assert.Equal(["host.info"], h.Model.Requests.First(r => r.AvailableTools.Count > 0).AvailableTools.Select(t => t.Name));
     }
 
     [Fact]
