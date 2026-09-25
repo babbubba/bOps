@@ -1,7 +1,9 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
 using bOps.Abstractions;
+using bOps.PluginHost;
 
 namespace bOps.Api;
 
@@ -12,6 +14,8 @@ namespace bOps.Api;
 /// act on. <c>enabled</c> (persisted intent) and <c>loaded</c> (actually registered in this
 /// process right now) are kept as two distinct fields on purpose — a plugin can be enabled but not
 /// loaded (see <see cref="LoadError"/>), and must never be presented as one merged "status".
+/// <see cref="LifecycleState"/> and <see cref="LifecycleETag"/> (V1.3-M6) are additive: the authoritative
+/// ADR-0037 lifecycle state and the opaque ETag a mutation must present in <c>If-Match</c>.
 /// </summary>
 internal sealed record PluginCatalogEntry(
     string Id,
@@ -29,7 +33,12 @@ internal sealed record PluginCatalogEntry(
     IReadOnlyList<PluginCatalogDependency> Dependencies,
     RiskLevel? DeclaredMaxRisk,
     RiskLevel? EffectiveMaxRisk,
-    string? LoadError);
+    string? LoadError,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<PluginLifecycleState>))]
+    PluginLifecycleState? LifecycleState = null,
+    string? LifecycleETag = null,
+    string? LifecycleFailure = null,
+    bool RecoveryAvailable = false);
 
 /// <summary>One informational dependency, as shown to an operator — name and version only, matching <see cref="bOps.Abstractions.PluginDependency"/>.</summary>
 internal sealed record PluginCatalogDependency(string Name, string Version);

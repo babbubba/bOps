@@ -16,6 +16,7 @@ import {
   PendingApproval,
   PluginCatalogEntry,
   PluginCatalogPage,
+  PluginLifecycleResponse,
   ProvidersResponse,
   SetProviderProfileRequest,
   SettingsView,
@@ -115,7 +116,56 @@ export class BOpsApiClient {
   }
 
   getPlugin(id: string): Promise<PluginCatalogEntry> {
-    return firstValueFrom(this.http.get<PluginCatalogEntry>(`/api/plugins/${id}`));
+    return firstValueFrom(this.http.get<PluginCatalogEntry>(`/api/plugins/${encodeURIComponent(id)}`));
+  }
+
+  // ---- Plugin lifecycle (V1.3-M6 routes). Every precondition/idempotency header is built here and only here. ----
+
+  /** Create-only install of an archive whose identity is unknown to the client; the backend reads the identity from the manifest. */
+  installPluginArchive(archive: Blob, idempotencyKey: string): Promise<PluginLifecycleResponse> {
+    return firstValueFrom(
+      this.http.post<PluginLifecycleResponse>('/api/plugins/archives', archive, {
+        headers: { 'Content-Type': 'application/zip', 'If-None-Match': '*', 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  }
+
+  replacePluginArchive(id: string, archive: Blob, etag: string, idempotencyKey: string): Promise<PluginLifecycleResponse> {
+    return firstValueFrom(
+      this.http.put<PluginLifecycleResponse>(`/api/plugins/${encodeURIComponent(id)}/archive`, archive, {
+        headers: { 'Content-Type': 'application/zip', 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+  }
+
+  enablePlugin(id: string, confirmedVersion: string, etag: string, idempotencyKey: string): Promise<PluginLifecycleResponse> {
+    return firstValueFrom(
+      this.http.post<PluginLifecycleResponse>(
+        `/api/plugins/${encodeURIComponent(id)}/enable`,
+        { confirmedVersion },
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey } },
+      ),
+    );
+  }
+
+  disablePlugin(id: string, etag: string, idempotencyKey: string): Promise<PluginLifecycleResponse> {
+    return firstValueFrom(
+      this.http.post<PluginLifecycleResponse>(
+        `/api/plugins/${encodeURIComponent(id)}/disable`,
+        {},
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey } },
+      ),
+    );
+  }
+
+  recoverPlugin(id: string, etag: string, idempotencyKey: string): Promise<PluginLifecycleResponse> {
+    return firstValueFrom(
+      this.http.post<PluginLifecycleResponse>(
+        `/api/plugins/${encodeURIComponent(id)}/recover`,
+        { confirmed: true },
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey } },
+      ),
+    );
   }
 
   getSettings(): Promise<SettingsView> {

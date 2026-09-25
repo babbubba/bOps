@@ -7,9 +7,9 @@ using bOps.PluginHost;
 namespace bOps.Api;
 
 /// <summary>
-/// Maps <c>/api/plugins</c> — read-only plugin catalog (V1.1-F). No enable, disable, install or
-/// upload here; those stay operator-console-only (<c>bops plugin ...</c>) until a later batch
-/// deliberately adds a mutating path with its own approval story.
+/// Maps the read-only <c>GET /api/plugins</c> catalog (V1.1-F). It projects the authoritative lifecycle
+/// state and ETag (V1.3-M6) but never mutates; the administrator-only install/replace/enable/disable/
+/// recover operations live in <see cref="PluginLifecycleEndpoints"/> under the same prefix.
 /// </summary>
 internal static class PluginCatalogEndpoints
 {
@@ -26,6 +26,7 @@ internal static class PluginCatalogEndpoints
             int? limit,
             int? offset,
             PluginManager pluginManager,
+            PluginLifecycleService lifecycle,
             IToolRegistry toolRegistry) =>
         {
             var boundedLimit = Math.Clamp(limit ?? DefaultLimit, 1, MaximumLimit);
@@ -38,22 +39,32 @@ internal static class PluginCatalogEndpoints
                 .ToList();
 
             var page = filtered.Skip(boundedOffset).Take(boundedLimit)
-                .Select(record => Project(record, pluginManager, toolRegistry))
+                .Select(record => Project(record, pluginManager, lifecycle, toolRegistry))
                 .ToList();
 
             return Results.Ok(new PluginCatalogPage(page, filtered.Count));
         });
 
-        group.MapGet("/{id}", (string id, PluginManager pluginManager, IToolRegistry toolRegistry) =>
+        group.MapGet("/{id}", (string id, PluginManager pluginManager, PluginLifecycleService lifecycle, IToolRegistry toolRegistry, HttpContext http) =>
         {
             var record = pluginManager.List().FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
-            return record is null
-                ? Results.NotFound(new { message = $"No installed plugin with id '{id}'." })
-                : Results.Ok(Project(record, pluginManager, toolRegistry));
+            if (record is null)
+            {
+                return Results.NotFound(new { message = $"No installed plugin with id '{id}'." });
+            }
+
+            var entry = Project(record, pluginManager, lifecycle, toolRegistry);
+            if (entry.LifecycleETag is not null)
+            {
+                // The validator a mutation of this plugin must present in If-Match.
+                http.Response.Headers.ETag = entry.LifecycleETag;
+            }
+
+            return Results.Ok(entry);
         });
     }
 
-    private static PluginCatalogEntry Project(PluginRecord record, PluginManager pluginManager, IToolRegistry toolRegistry)
+    private static PluginCatalogEntry Project(PluginRecord record, PluginManager pluginManager, PluginLifecycleService lifecycle, IToolRegistry toolRegistry)
     {
         var loaded = pluginManager.IsActivated(record.Id);
         var effectiveMaxRisk = loaded
@@ -65,6 +76,7 @@ internal static class PluginCatalogEndpoints
             : null;
 
         var loadError = pluginManager.StartupLoadErrors.TryGetValue(record.Id, out var startupError) ? startupError : null;
+        var status = lifecycle.GetStatus(record.Id);
 
         return new PluginCatalogEntry(
             record.Id,
@@ -82,7 +94,11 @@ internal static class PluginCatalogEndpoints
             [.. record.Manifest.Dependencies.Select(dependency => new PluginCatalogDependency(dependency.Name, dependency.Version))],
             record.Manifest.MaxDeclaredRisk,
             effectiveMaxRisk,
-            loadError);
+            loadError,
+            status?.State,
+            status?.ETag,
+            status?.LifecycleFailure,
+            status?.RecoveryAvailable ?? false);
     }
 
     /// <summary>

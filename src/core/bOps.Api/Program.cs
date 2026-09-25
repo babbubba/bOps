@@ -201,6 +201,17 @@ builder.Services.AddSingleton(sp => new PluginManager(
     sp.GetRequiredService<IHttpClientFactory>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ICapabilityProbe>()));
+// ADR-0037: M6 consumes this same backend; it does not compose a second plugin authority.
+// V1.3-M6: the archive limits are configuration (ADR-0037: defaults, with hard ceilings enforced by the backend). The HTTP upload
+// bound is derived from the same compressed-archive limit, so the two can never be configured apart.
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<IConfiguration>().GetSection("Plugins:Archive").Get<PluginArchiveLimits>() ?? new PluginArchiveLimits());
+builder.Services.AddSingleton(sp => PluginUploadOptions.For(sp.GetRequiredService<PluginArchiveLimits>()));
+builder.Services.AddSingleton(sp => new PluginLifecycleService(
+    sp.GetRequiredService<PluginManager>(),
+    sp.GetRequiredService<IConfiguration>()["Plugins:RootPath"] ?? "plugins",
+    sp.GetRequiredService<PluginArchiveLimits>(),
+    sp.GetRequiredService<IAuditSink>()));
 
 // ADR-0029: non-secret provider profiles and the active-provider selection are always available;
 // the encrypted vault (provider API keys) only activates when a master key is actually configured
@@ -298,8 +309,8 @@ var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
 // bOps.Cli already does — this host runs its own AgentRunner (AgentsEndpoints/AgentTaskLauncher)
 // and needs the same plugin-contributed tools/Skills visible to it. Before
 // RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured by the same refresh.
-var pluginManager = app.Services.GetRequiredService<PluginManager>();
-var pluginStartupErrors = pluginManager.LoadAllEnabled();
+// ADR-0037: reconcile first, then activate enabled plugins; a failed startup activation is persisted as ActivationFailed.
+var pluginStartupErrors = await app.Services.GetRequiredService<PluginLifecycleService>().ActivateEnabledAsync();
 if (pluginStartupErrors.Count > 0)
 {
     var pluginLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Api.Plugins");
@@ -326,6 +337,7 @@ app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
 app.MapFilesystemDeletionEndpoints();
 app.MapPluginCatalogEndpoints();
+app.MapPluginLifecycleEndpoints();
 if (app.Services.GetService<VaultStore>() is not null)
 {
     app.MapSettingsEndpoints();

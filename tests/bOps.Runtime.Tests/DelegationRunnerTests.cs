@@ -42,7 +42,9 @@ public sealed partial class DelegationRunnerTests
             AllowedCapabilities: usesSkills ? capabilities ?? ["sample.remediate"] : [],
             AllowedTools: tools ?? role switch
             {
-                AgentRoleKind.Remediation => ["service.restart"],
+                // Runtime-mandated post-action verification runs under the remediation envelope,
+                // so its declared verifier must be included alongside the mutation it checks.
+                AgentRoleKind.Remediation => ["service.restart", "test.read"],
                 AgentRoleKind.Verification => ["test.read"],
                 _ => ["host.info"],
             },
@@ -117,6 +119,8 @@ public sealed partial class DelegationRunnerTests
     private sealed class CountingReadTool(string name) : ITool
     {
         private int _reads;
+
+        public int ExecutionCount => _reads;
 
         public ToolManifest Manifest { get; } = new()
         {
@@ -207,13 +211,30 @@ public sealed partial class DelegationRunnerTests
         Func<IToolInvoker, CancellationToken, Task>? evidenceCalls = null,
         IDelegationStore? store = null,
         int maximumResumes = DelegationRunner.DefaultMaximumResumes,
-        IAuditSink? sink = null)
+        IAuditSink? sink = null,
+        IEntitlementService? entitlementService = null,
+        EntitlementRequirement? verifyReadEntitlement = null,
+        EntitlementRequirement? restartEntitlement = null)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
         registry.Register(SamplePackage, new FakeReadTool("host.info", discoveryOutput));
-        registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
-        registry.Register(SamplePackage, restartTool);
+        if (verifyReadEntitlement is null)
+        {
+            registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
+        }
+        else
+        {
+            registry.Register(SamplePackage, PackageTrustLevel.Official, verifyReadEntitlement, verifyRead ?? new FakeReadTool("test.read", "service is running"));
+        }
+        if (restartEntitlement is null)
+        {
+            registry.Register(SamplePackage, restartTool);
+        }
+        else
+        {
+            registry.Register(SamplePackage, PackageTrustLevel.Official, restartEntitlement, restartTool);
+        }
         registry.Register(SamplePackage, stop ?? new RestartTool("service.stop"));
 
         var skills = new SkillRegistry();
@@ -251,7 +272,7 @@ public sealed partial class DelegationRunnerTests
         var agentRunner = new AgentRunner(
             model ?? fakeModel, registry, policy ?? new StubPolicyEngine(PolicyMode.Automatic), stepApproval ?? new NeverCalledApprovalProvider(), audit,
             new InMemoryTaskStore(), time, NullLogger<AgentRunner>.Instance,
-            options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills);
+            options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills, entitlementService: entitlementService);
         var planApproval = approval ?? new RecordingPlanApproval();
         var runner = new DelegationRunner(
             agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance,
@@ -1099,7 +1120,7 @@ public sealed partial class DelegationRunnerTests
         new(
             Operator, Depth: 1,
             remediation ? ["sample.skill"] : [], remediation ? ["sample.remediate"] : [],
-            remediation ? ["service.restart"] : ["host.info"],
+            remediation ? ["service.restart", "service.stop"] : ["host.info"],
             remediation ? RiskLevel.High : RiskLevel.Read, BlastRadius.Single, ["local"], ["test"],
             new DelegationBudget(10, 100_000, Start.AddHours(1)));
 
@@ -1154,5 +1175,36 @@ public sealed partial class DelegationRunnerTests
         Assert.Equal(PlanExecutionStatus.Stopped, stopped.Status);
         Assert.Equal(AuthorizationKind.PolicyDenied, stopped.StoppedBy);
         Assert.Equal(0, forbidden.Restart.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task ExecuteDelegatedPlanAsync_EntitlementDenialStopsBeforeDependentStep()
+    {
+        var dependent = new RestartTool("service.stop");
+        var h = Create(
+            plan: () => new ExecutionPlan("sample.remediate", "1.0.0", "Run dependent actions.",
+            [
+                new ExecutionPlanStep(0, "service.restart", ToolArguments.Empty, "Governed first step."),
+                new ExecutionPlanStep(1, "service.stop", ToolArguments.Empty, "Dependent step."),
+            ]),
+            stop: dependent,
+            restartEntitlement: new EntitlementRequirement(EntitlementApplicability.Governed),
+            entitlementService: new DenyingEntitlementService());
+        var (prepared, scope) = await PrepareAsync(h);
+        var approval = new ExecutionPlanApproval(prepared.PlanHash!, new ApprovalDecision(true, Approver, null));
+
+        var result = await h.Agent.ExecuteDelegatedPlanAsync(Guid.NewGuid(), Operator, prepared, approval, scope);
+
+        Assert.Equal(PlanExecutionStatus.Stopped, result.Status);
+        Assert.Equal(AuthorizationKind.EntitlementDenied, result.StoppedBy);
+        Assert.Equal(0, h.Restart.ExecutionCount);
+        Assert.Equal(0, dependent.ExecutionCount);
+    }
+
+    private sealed class DenyingEntitlementService : IEntitlementService
+    {
+        public Task<EntitlementDecision> EvaluateAsync(EntitlementRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new EntitlementDecision(request.Binding, EntitlementDecisionKind.Denied,
+                EntitlementReasonCode.NotEntitled, EntitlementSourceCategory.Local, "test", Start.AddMinutes(-1), Start.AddMinutes(1), null));
     }
 }

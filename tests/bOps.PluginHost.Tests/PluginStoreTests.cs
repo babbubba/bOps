@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using System.Text.Json;
 
 namespace bOps.PluginHost.Tests;
 
@@ -123,5 +124,54 @@ public sealed class PluginStoreTests : IDisposable
 
         var ex = Assert.Throws<PluginOperationException>(() => new PluginStore(StorePath).List());
         Assert.Contains("plugins.json", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LegacyArray_MigratesIdempotentlyToOneLifecycleAuthority()
+    {
+        var record = SampleRecord(enabled: true);
+        File.WriteAllText(StorePath, JsonSerializer.Serialize(new[] { record }));
+        var store = new PluginStore(StorePath);
+
+        // A legacy read is non-destructive; its next mutation commits the versioned document.
+        Assert.Single(store.List());
+        store.SetEnabled(record.Id, true);
+
+        var lifecycle = new PluginStore(StorePath).GetLifecycle(record.Id);
+        Assert.Equal(1, lifecycle.LifecycleVersion);
+        Assert.Equal(PluginLifecycleState.Enabled, lifecycle.State);
+        Assert.Equal(lifecycle.CurrentGenerationId, lifecycle.ActivationLkgGenerationId);
+        Assert.Single(lifecycle.Generations);
+    }
+
+    [Fact]
+    public void LifecycleMetadata_PersistsDistinctCurrentAndActivationLkgRoles()
+    {
+        var store = new PluginStore(StorePath);
+        store.Add(SampleRecord());
+        var initial = store.GetLifecycle("acme.sample");
+        var activated = initial with
+        {
+            CurrentGenerationId = "generation-b",
+            ActivationLkgGenerationId = "generation-a",
+            TransactionRollbackGenerationId = "generation-b",
+            CandidateGenerationId = "generation-c",
+            TransactionPhase = PluginTransactionPhase.RollbackCaptured,
+            Generations =
+            [
+                new PluginGeneration("generation-a", "/plugins/a", "a", DateTimeOffset.UtcNow),
+                new PluginGeneration("generation-b", "/plugins/b", "b", DateTimeOffset.UtcNow),
+                new PluginGeneration("generation-c", "/plugins/c", "c", DateTimeOffset.UtcNow),
+            ],
+        };
+
+        store.SetLifecycle("acme.sample", activated, new PluginLifecycleJournal("op", "acme.sample",
+            PluginTransactionPhase.RollbackCaptured, "generation-b", "generation-a", "generation-b", "generation-c"));
+
+        var reopened = new PluginStore(StorePath).GetLifecycle("acme.sample");
+        Assert.Equal("generation-b", reopened.CurrentGenerationId);
+        Assert.Equal("generation-a", reopened.ActivationLkgGenerationId);
+        Assert.Equal("generation-b", reopened.TransactionRollbackGenerationId);
+        Assert.Equal("generation-c", reopened.CandidateGenerationId);
     }
 }

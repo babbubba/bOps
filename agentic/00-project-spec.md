@@ -87,8 +87,9 @@ release-candidate workflow has not run from a tag.
 file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone: V1.3-A through V1.3-L are complete and merged.
 A–L complete the local senior-system-administrator evidence surface before remote transport:
 events, Docker, process, network, storage, filesystem, service/scheduler, identity/time/reboot,
-firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M is next and not started; it then adds the
-neutral entitlement and local plugin-lifecycle boundary. V1.4–V2.0 retain remote transport,
+firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M adds the
+neutral entitlement and local plugin-lifecycle boundary; it is implemented on a feature branch that passed its local M8 gate and
+is not yet merged, with Windows/Linux CI evidence pending. V1.4–V2.0 retain remote transport,
 private Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core
 boundary.
 The public `bOps` repository never contains commercial Skills, knowledge, entitlement providers,

@@ -29,7 +29,7 @@ snapshots under `agentic/obsolete/`.
 | 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | **Complete and merged — PR #44** | medio |
 | 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | **Complete and merged — PR #45** | medio |
 | 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | **Complete and merged — PR #47; integration gate complete, Windows/Linux CI green** | medio |
-| 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Future | molto alto |
+| 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | Implemented on `feat/v13-m1-entitlement-adr`; local M8 gate passed; not merged, CI pending | molto alto |
 | 23 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |

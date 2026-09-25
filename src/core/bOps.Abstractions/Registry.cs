@@ -28,6 +28,16 @@ public interface IToolRegistry
     void Register(PackageId package, PackageTrustLevel trust, ITool tool);
 
     /// <summary>
+    /// Registers a tool with all host-owned execution metadata. The entitlement requirement is
+    /// stamped by the host and cannot be supplied by the package or the tool.
+    /// </summary>
+    /// <param name="package">The package contributing the tool.</param>
+    /// <param name="trust">Trust established by the host, never self-declared by the package.</param>
+    /// <param name="entitlement">The host-established requirement for this tool's execution.</param>
+    /// <param name="tool">The tool to register.</param>
+    void Register(PackageId package, PackageTrustLevel trust, EntitlementRequirement entitlement, ITool tool);
+
+    /// <summary>
     /// Re-probes every capability required by a registered tool and updates the availability
     /// snapshot that <see cref="GetAvailableManifests"/> reads. <see cref="GetAvailableManifests"/>
     /// stays synchronous — the planner calls it every step — so this is the explicit,
@@ -42,6 +52,13 @@ public interface IToolRegistry
     /// <summary>Resolves a tool by name, or <c>null</c> if unknown or disabled.</summary>
     /// <param name="toolName">The tool's name, as it appears in its manifest.</param>
     ITool? Resolve(string toolName);
+
+    /// <summary>
+    /// Resolves a visible tool and all host-owned metadata required to execute it as one coherent
+    /// registry snapshot, or <c>null</c> if the tool is unknown or not visible.
+    /// </summary>
+    /// <param name="toolName">The tool's name, as it appears in its manifest.</param>
+    ToolExecutionRegistration? ResolveForExecution(string toolName);
 
     /// <summary>Returns the host-assigned trust level for a registered package, or <see cref="PackageTrustLevel.Unverified"/> when unknown.</summary>
     PackageTrustLevel GetTrust(PackageId package);
@@ -61,6 +78,20 @@ public interface IToolRegistry
     /// <param name="package">The package whose tools to remove entirely.</param>
     void Unregister(PackageId package);
 }
+
+/// <summary>
+/// The immutable host-owned registration metadata for one visible tool execution. This is a
+/// snapshot: changing it cannot change the registry's authority.
+/// </summary>
+/// <param name="Tool">The resolved executable tool.</param>
+/// <param name="Package">The package identity assigned by the host.</param>
+/// <param name="Trust">The package trust level assigned by the host.</param>
+/// <param name="Entitlement">The entitlement requirement assigned by the host.</param>
+public sealed record ToolExecutionRegistration(
+    ITool Tool,
+    PackageId Package,
+    PackageTrustLevel Trust,
+    EntitlementRequirement Entitlement);
 
 /// <summary>
 /// Probes whether a named capability is available on this node (for example, whether a Docker

@@ -36,6 +36,68 @@ public sealed class ToolRegistryTests
     }
 
     [Fact]
+    public void LegacyRegisterOverloads_StampExplicitNotGovernedRequirements()
+    {
+        var registry = CreateRegistry();
+        registry.Register(new PackageId("test.default"), new FakeReadTool("test.default"));
+        registry.Register(new PackageId("test.trusted"), PackageTrustLevel.Community, new FakeReadTool("test.trusted"));
+
+        Assert.Equal(EntitlementApplicability.NotGoverned, registry.ResolveForExecution("test.default")!.Entitlement.Applicability);
+        Assert.Equal(EntitlementApplicability.NotGoverned, registry.ResolveForExecution("test.trusted")!.Entitlement.Applicability);
+    }
+
+    [Fact]
+    public void ResolveForExecution_ReturnsTheHostStampedExecutionSnapshot()
+    {
+        var registry = CreateRegistry();
+        var package = new PackageId("host.governed");
+        var tool = new FakeReadTool();
+        var requirement = new EntitlementRequirement(EntitlementApplicability.Governed);
+
+        registry.Register(package, PackageTrustLevel.Community, requirement, tool);
+
+        var resolved = Assert.IsType<ToolExecutionRegistration>(registry.ResolveForExecution("test.read"));
+        Assert.Same(tool, resolved.Tool);
+        Assert.Equal(package, resolved.Package);
+        Assert.Equal(PackageTrustLevel.Community, resolved.Trust);
+        Assert.Equal(requirement, resolved.Entitlement);
+        Assert.Same(tool, registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void ResolveForExecution_KeepsRequirementsScopedToEachHostRegistration()
+    {
+        var registry = CreateRegistry();
+        registry.Register(new PackageId("host.governed"), PackageTrustLevel.Official,
+            new EntitlementRequirement(EntitlementApplicability.Governed), new FakeReadTool("test.governed"));
+        registry.Register(new PackageId("host.oss"), PackageTrustLevel.Community,
+            new EntitlementRequirement(EntitlementApplicability.NotGoverned), new FakeReadTool("test.oss"));
+
+        Assert.Equal(EntitlementApplicability.Governed, registry.ResolveForExecution("test.governed")!.Entitlement.Applicability);
+        Assert.Equal(EntitlementApplicability.NotGoverned, registry.ResolveForExecution("test.oss")!.Entitlement.Applicability);
+    }
+
+    [Fact]
+    public void ResolveForExecution_ReturnsImmutableMetadataSnapshot()
+    {
+        var registry = CreateRegistry();
+        var package = new PackageId("host.governed");
+        registry.Register(package, PackageTrustLevel.Community,
+            new EntitlementRequirement(EntitlementApplicability.Governed), new FakeReadTool());
+
+        var changedCopy = registry.ResolveForExecution("test.read")! with
+        {
+            Entitlement = new EntitlementRequirement(EntitlementApplicability.NotGoverned),
+            Trust = PackageTrustLevel.Unverified,
+        };
+
+        Assert.Equal(EntitlementApplicability.NotGoverned, changedCopy.Entitlement.Applicability);
+        var resolvedAgain = registry.ResolveForExecution("test.read")!;
+        Assert.Equal(EntitlementApplicability.Governed, resolvedAgain.Entitlement.Applicability);
+        Assert.Equal(PackageTrustLevel.Community, resolvedAgain.Trust);
+    }
+
+    [Fact]
     public void Register_AcceptsANonReadTool_WithVerificationSpecAndIVerifiableTool()
     {
         var registry = CreateRegistry();
@@ -109,6 +171,20 @@ public sealed class ToolRegistryTests
         registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifestForOtherPlatform));
 
         Assert.DoesNotContain(registry.GetAvailableManifests(), m => m.Name == tool.Manifest.Name);
+        Assert.Null(registry.ResolveForExecution(tool.Manifest.Name));
+    }
+
+    [Fact]
+    public async Task ResolveForExecution_ExcludesCapabilityInvisibleTools()
+    {
+        var registry = new ToolRegistry(new UnavailableCapabilityProbe());
+        var tool = new FakeReadTool();
+        var manifest = tool.Manifest with { Requires = ["test.capability"] };
+        registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest));
+
+        await registry.RefreshCapabilitiesAsync();
+
+        Assert.Null(registry.ResolveForExecution("test.read"));
     }
 
     [Fact]
@@ -121,6 +197,7 @@ public sealed class ToolRegistryTests
         registry.SetEnabled(package, false);
 
         Assert.Null(registry.Resolve("test.read"));
+        Assert.Null(registry.ResolveForExecution("test.read"));
     }
 
     [Fact]
@@ -133,6 +210,7 @@ public sealed class ToolRegistryTests
         registry.Unregister(package);
 
         Assert.Null(registry.Resolve("test.read"));
+        Assert.Null(registry.ResolveForExecution("test.read"));
         Assert.DoesNotContain(registry.GetAvailableManifests(), m => m.Name == "test.read");
     }
 
@@ -168,5 +246,10 @@ public sealed class ToolRegistryTests
 
         public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
             Task.FromResult(ToolCallResult.Success(null));
+    }
+
+    private sealed class UnavailableCapabilityProbe : ICapabilityProbe
+    {
+        public Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default) => Task.FromResult(false);
     }
 }

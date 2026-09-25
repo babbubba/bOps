@@ -167,11 +167,18 @@ complete hash-bound manifest and explicit approval; see
 loopback/private/link-local/metadata network destinations by default; see
 [`docs/security/web-network-policy.md`](docs/security/web-network-policy.md).
 
-The Angular UI's **Plugins** page (`GET /api/plugins`, `GET /api/plugins/{id}`) is a read-only
+The Angular UI's **Plugins** page (`GET /api/plugins`, `GET /api/plugins/{id}`) is a
 catalog of installed plugins — id, version, publisher, signature/trust, installed/enabled/loaded/
 compatible state (kept distinct, never merged into one "status"), declared capabilities and
-dependencies, and declared-vs-effective maximum risk. Enable, disable, install and remove stay
-`bops plugin *`-only; no mutation path exists through the API in this batch. `bOps.Api` now
+dependencies, declared-vs-effective maximum risk, and (V1.3-M6) the authoritative lifecycle state and ETag. To a
+non-administrator the page stays read-only. The API exposes the administrator-only lifecycle operations of ADR-0037
+(`POST /api/plugins/archives`, `PUT /api/plugins/{id}/archive`, `POST /api/plugins/{id}/enable|disable|recover`; raw
+`application/zip` upload, `If-Match`/`If-None-Match` ETag preconditions, optional `Idempotency-Key`), which never delete
+a plugin and never enable one as a side effect of install, and (V1.3-M7) the page gives an administrator the matching
+controls: install or replace from a `.zip`, enable only after confirming the exact version and reading the warning that
+an enabled plugin runs in the host process with the host's privileges and is not sandboxed, disable, and Recover, which
+restores the last successfully activated generation as disabled and never enables it. The UI displays the backend's
+trust, compatibility, risk and lifecycle decisions; it does not make them. `bOps.Api` now
 activates the operator's already-enabled plugins at start-up exactly like `bOps.Cli` always has —
 it runs its own `AgentRunner` for tasks started from the dashboard and needs the same
 plugin-contributed tools/Skills.
@@ -267,11 +274,11 @@ deadline exceeded, `6` verification did not confirm, `10` not finished, `130` ca
 ```bash
 bops audit verify [audit-file]   # verify the complete append-only audit hash chain
 
-bops plugin install <directory>   # install a local plugin build — disabled until you enable it
-bops plugin list                  # every installed plugin, enabled or not
-bops plugin enable <id>           # activate now, and on every future run, until disabled
-bops plugin disable <id>          # unload it; its files stay on disk
-bops plugin remove <id>           # disable (if enabled) and delete it
+bops plugin install <directory|archive.zip> [--expected-version <n>]   # verified install through the lifecycle service — disabled until you enable it
+bops plugin list                  # every installed plugin: state and lifecycle revision
+bops plugin enable <id> --confirm-version <version> [--expected-version <n>]   # explicit confirmation that this version will execute in-process
+bops plugin disable <id> [--expected-version <n>]   # unload it; its files stay on disk
+bops plugin remove <id>           # refused: the lifecycle defines no removal transaction (ADR-0037)
 bops plugin validate <directory>  # check a bops-plugin.json without installing anything
 bops plugin sign <directory> <publisher> <key-id> <private-key.pem>
 ```
@@ -395,7 +402,7 @@ V1.2 (multi-agent orchestration) is implemented as a preview: its sub-tasks A–
 | `V1.1-H` *(complete)* | Cross-platform integration, documentation and release gate |
 | `V1.2` *(complete, preview)* | In-process multi-agent orchestration with privilege-reducing delegation |
 | `V1.3-A–L` *(complete and merged)* | Senior-operator local diagnostic surface, including the PR #47 integration gate and evidence baseline for future Skills |
-| `V1.3-M` *(next; not started)* | Neutral entitlement boundary and safe local plugin enable/disable/upload |
+| `V1.3-M` *(implemented on a feature branch; not merged)* | Neutral entitlement boundary (ADR-0036) and safe local plugin install/enable/disable/recover (ADR-0037). M8 local release gate passed on Windows; Linux/CI evidence is pending and no push, PR, merge or tag has been made |
 | `V1.4-A–C` | Outbound secure node protocol, private Coordinator and PostgreSQL+pgvector persistence baseline |
 | `V1.4-D` | Semantic Knowledge Store + tenant-private Operational Memory + versioned Knowledge/Experience Packs |
 | `V1.4-E` | Official packaging and signed application/knowledge-pack distribution |

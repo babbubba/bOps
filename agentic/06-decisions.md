@@ -720,3 +720,31 @@ not a fact worth reporting as trustworthy).
 Linux host cannot map every socket to a PID (another user's `/proc/<pid>/fd` is unreadable), reported as
 `pidMappingComplete: false`, never a silent zero. No change to the abstractions, policy, runtime, persistence or
 audit.
+
+### D-032 — V1.3-M1: product-neutral entitlement boundary (ADR-0036)
+
+**Decision.** Entitlement applicability is explicit, trusted-host-owned and product-neutral. Provider absence or failure
+fails closed only for governed operations; unrelated standalone OSS remains usable. Policy, approval, the delegated Tools
+envelope and entitlement are independent, monotonic restrictions. The runtime freshly evaluates entitlement immediately
+before every governed tool invocation, using a fresh opaque `RequestBinding` echoed by the provider; authorization cannot
+be reused across retry, resume, replan or delegation. Post-action verification stays within the applicable delegated
+Tools envelope and entitlement boundary. If runtime authorization prevents invoking verification, Runtime returns
+Inconclusive without invoking the package evaluator; when verification executes, the package evaluator alone interprets
+its result. M2 adds `AuthorizationKind.EntitlementDenied = 5`, preserving existing numeric enum values, and entitlement
+denial stops prepared or delegated plan execution. No commercial tier, SKU, vendor token or business logic enters public
+bOps.
+
+**Reason.** A host-owned applicability boundary keeps provider health from disabling unrelated OSS operations, while a
+fresh provider-bound request at each invocation prevents stale authorization from crossing execution or verification
+boundaries. Verification remains governed by the existing envelope and evaluator responsibilities in ADR-0016 and
+ADR-0031.
+
+**Consequences.** M2 can add neutral public contracts and execution enforcement under ADR-0036 without redesigning the
+architecture or amending prior accepted ADRs. Provider details and commercial entitlement rules remain outside public
+bOps.
+
+### D-033 — V1.3-M4: safe local plugin lifecycle (ADR-0037)
+
+**Decision.** Uploaded plugin archives remain untrusted until bounded validation completes; no plugin code executes during upload, staging or validation. Reuse the existing `PluginManager`/`PluginHost` and signature/trust infrastructure. Bound extraction and reject traversal, rooted paths, symlink/reparse entries and collisions. Keep installation separate from activation; install/replace uses staging, atomic promotion and deterministic crash recovery. Persist distinct `Current`, `Activation LKG`, `Transaction Rollback` and `Candidate` generation roles: failed replacement restores pre-transaction `Current` while preserving the true Activation LKG, and only successful activation advances Activation LKG. Enable requires explicit administrator action and activation confirmation. Enabled plugin code runs in-process with host privileges and is not sandboxed. Serialize same-plugin lifecycle mutations and protect them with ETag optimistic concurrency. Reserve idempotency before plugin identity is known at the accepted Node/Actor/IdempotencyKey boundary; operation kind, plugin identity, archive digest and other intent fields form canonical intent, so reuse with different intent conflicts. Invalid or failed candidates never replace the last safe generation. API/UI are non-authoritative for trust and transition legality; the public lifecycle stays product-neutral and contains no commercial/business logic.
+
+**Consequences.** ADR-0037 (Accepted 2026-09-24) governs the V1.3-M plugin lifecycle architecture. M5 implementation and M6 review can proceed without redesign; enabled plugins execute with host privileges.

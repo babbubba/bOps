@@ -7,4 +7,5 @@ namespace bOps.PluginHost;
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(List<PluginRecord>))]
+[JsonSerializable(typeof(PluginLifecycleDocument))]
 internal sealed partial class PluginStoreJsonContext : JsonSerializerContext;

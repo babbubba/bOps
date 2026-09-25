@@ -19,11 +19,17 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     private readonly ConcurrentDictionary<string, bool> _capabilitySnapshot = new(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public void Register(PackageId package, ITool tool) => Register(package, PackageTrustLevel.Official, tool);
+    public void Register(PackageId package, ITool tool) =>
+        Register(package, PackageTrustLevel.Official, new EntitlementRequirement(EntitlementApplicability.NotGoverned), tool);
 
     /// <inheritdoc />
-    public void Register(PackageId package, PackageTrustLevel trust, ITool tool)
+    public void Register(PackageId package, PackageTrustLevel trust, ITool tool) =>
+        Register(package, trust, new EntitlementRequirement(EntitlementApplicability.NotGoverned), tool);
+
+    /// <inheritdoc />
+    public void Register(PackageId package, PackageTrustLevel trust, EntitlementRequirement entitlement, ITool tool)
     {
+        ArgumentNullException.ThrowIfNull(entitlement);
         ArgumentNullException.ThrowIfNull(tool);
 
         var manifest = tool.Manifest;
@@ -48,7 +54,7 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
         // Rule A11: the package identity is assigned here, by the registry — never by the package itself.
         manifest.Package = package;
 
-        var registered = new RegisteredTool(tool, package, trust);
+        var registered = new RegisteredTool(tool, package, trust, entitlement);
         if (!_tools.TryAdd(manifest.Name, registered))
         {
             throw new ToolRegistrationException(manifest.Name, "a tool with this name is already registered.");
@@ -81,6 +87,12 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     public ITool? Resolve(string toolName) =>
         _tools.TryGetValue(toolName, out var registered) && IsVisible(registered)
             ? registered.Tool
+            : null;
+
+    /// <inheritdoc />
+    public ToolExecutionRegistration? ResolveForExecution(string toolName) =>
+        _tools.TryGetValue(toolName, out var registered) && IsVisible(registered)
+            ? new ToolExecutionRegistration(registered.Tool, registered.Package, registered.Trust, registered.Entitlement)
             : null;
 
     /// <inheritdoc />
@@ -123,5 +135,9 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
             || manifest.Requires.All(capability => _capabilitySnapshot.GetValueOrDefault(capability, false));
     }
 
-    private sealed record RegisteredTool(ITool Tool, PackageId Package, PackageTrustLevel Trust);
+    private sealed record RegisteredTool(
+        ITool Tool,
+        PackageId Package,
+        PackageTrustLevel Trust,
+        EntitlementRequirement Entitlement);
 }

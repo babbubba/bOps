@@ -181,8 +181,11 @@ var skillRegistry = host.Services.GetRequiredService<ISkillRegistry>();
 // V0.10 (ADR-0020): every plugin the operator has already enabled (via `bops plugin enable`)
 // activates on every run, exactly like a first-party package — there is no separate "plugin
 // mode." Before RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured too.
+// ADR-0037: the same lifecycle backend as the API reconciles first, then activates; a failed startup activation is persisted.
 var pluginManager = CreatePluginManager(builder.Configuration, host.Services, toolRegistry, chatModelRegistry);
-var pluginStartupErrors = pluginManager.LoadAllEnabled();
+var pluginLifecycle = new PluginLifecycleService(
+    pluginManager, builder.Configuration["Plugins:RootPath"] ?? "plugins", auditSink: host.Services.GetRequiredService<IAuditSink>());
+var pluginStartupErrors = await pluginLifecycle.ActivateEnabledAsync();
 if (pluginStartupErrors.Count > 0)
 {
     var pluginLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Plugins");
@@ -356,19 +359,9 @@ static PluginManager CreatePluginManager(
 
 static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
 {
-    const string PluginUsageMessage = """
-        Usage: bops plugin install <directory>
-               bops plugin list
-               bops plugin enable <id>
-               bops plugin disable <id>
-               bops plugin remove <id>
-               bops plugin validate <directory>
-               bops plugin sign <directory> <publisher> <key-id> <private-key-pem-file>
-        """;
-
     if (pluginArgs.Length == 0)
     {
-        await Console.Error.WriteLineAsync(PluginUsageMessage);
+        await Console.Error.WriteLineAsync(PluginCommand.Usage);
         return 1;
     }
 
@@ -390,75 +383,13 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
         pluginHost.Services.GetRequiredService<IToolRegistry>(),
         pluginHost.Services.GetRequiredService<IChatModelRegistry>());
 
-    var command = pluginArgs[0];
-    var rest = pluginArgs[1..];
-
-    try
-    {
-        switch (command.ToLowerInvariant())
-        {
-            case "install" when rest.Length == 1:
-                var installed = manager.Install(rest[0]);
-                var provenance = installed.Provenance?.Verified == true
-                    ? $"verified ({installed.Provenance.Publisher}/{installed.Provenance.KeyId}, {installed.Provenance.Trust})"
-                    : $"unverified ({installed.Provenance?.FailureReason ?? "no provenance"})";
-                Console.WriteLine($"Installed '{installed.Id}' v{installed.Manifest.Version} (disabled, {provenance}).");
-                return 0;
-
-            case "list":
-                foreach (var record in manager.List())
-                {
-                    Console.WriteLine($"{record.Id}\t{(record.Enabled ? "enabled" : "disabled")}\tv{record.Manifest.Version}\t{record.Manifest.Publisher}\t{record.Provenance?.Trust ?? PackageTrustLevel.Unverified}");
-                }
-
-                return 0;
-
-            case "enable" when rest.Length == 1:
-                manager.Enable(rest[0]);
-                Console.WriteLine($"Enabled '{rest[0]}'.");
-                return 0;
-
-            case "disable" when rest.Length == 1:
-                manager.Disable(rest[0]);
-                Console.WriteLine($"Disabled '{rest[0]}'.");
-                return 0;
-
-            case "remove" when rest.Length == 1:
-                manager.Remove(rest[0]);
-                Console.WriteLine($"Removed '{rest[0]}'.");
-                return 0;
-
-            case "validate" when rest.Length == 1:
-                var manifest = PluginManifestValidator.ReadManifest(rest[0]);
-                PluginManifestValidator.Validate(manifest, rest[0]);
-                var verified = PluginPackageSignature.Verify(
-                    rest[0], manifest,
-                    new PluginPublisherTrustStore(pluginBuilder.Configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json"));
-                Console.WriteLine($"'{rest[0]}' is a valid manifest for '{manifest.Id}' v{manifest.Version}; provenance: " +
-                    $"{(verified.Verified ? $"verified ({verified.Trust})" : $"unverified ({verified.FailureReason})")}.");
-                return 0;
-
-            case "sign" when rest.Length == 4:
-                var privateKeyPem = await File.ReadAllTextAsync(rest[3]);
-                PluginPackageSignature.Sign(rest[0], rest[1], rest[2], privateKeyPem);
-                Console.WriteLine($"Signed plugin package '{rest[0]}' as publisher '{rest[1]}' with key '{rest[2]}'.");
-                return 0;
-
-            default:
-                await Console.Error.WriteLineAsync(PluginUsageMessage);
-                return 1;
-        }
-    }
-    catch (PluginValidationException ex)
-    {
-        await Console.Error.WriteLineAsync($"Validation failed: {ex.Message}");
-        return 1;
-    }
-    catch (PluginOperationException ex)
-    {
-        await Console.Error.WriteLineAsync($"Operation failed: {ex.Message}");
-        return 1;
-    }
+    // ADR-0037: every lifecycle mutation goes through the one backend the API also uses; PluginManager stays its low-level loader.
+    using var pluginAudit = new JsonLinesAuditSink(pluginBuilder.Configuration["Audit:FilePath"] ?? "audit.jsonl");
+    var lifecycle = new PluginLifecycleService(manager, pluginBuilder.Configuration["Plugins:RootPath"] ?? "plugins", auditSink: pluginAudit);
+    var command = new PluginCommand(
+        lifecycle, manager, pluginBuilder.Configuration["Plugins:TrustStorePath"] ?? "publisher-trust.json",
+        Console.Out, Console.Error, ActorIdentity.FromOperatingSystemUser(Environment.UserName));
+    return await command.RunAsync(pluginArgs);
 }
 
 static async Task<int> RunVaultCommandAsync(string[] vaultArgs)

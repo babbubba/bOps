@@ -223,6 +223,29 @@ export interface PluginCatalogEntry {
   declaredMaxRisk: RiskLevel | null;
   effectiveMaxRisk: RiskLevel | null;
   loadError: string | null;
+  /**
+   * V1.3-M6 lifecycle projection. `lifecycleState` is deliberately a plain string: the server may add values, and the UI must render
+   * an unknown one generically. `lifecycleETag` is an opaque precondition token — never parsed or reconstructed. `lifecycleFailure`
+   * (the persisted lifecycle failure) is a different concept from `loadError` (a runtime load diagnostic).
+   */
+  lifecycleState?: string | null;
+  lifecycleETag?: string | null;
+  lifecycleFailure?: string | null;
+  recoveryAvailable?: boolean;
+}
+
+/** bOps.Api.PluginLifecycleResponse — the success body of a lifecycle mutation. */
+export interface PluginLifecycleResponse {
+  pluginId: string;
+  version: string | null;
+  state: string | null;
+}
+
+/** bOps.Api.PluginLifecycleError — the sanitized body of a refused lifecycle mutation. */
+export interface PluginLifecycleError {
+  message: string;
+  category: string;
+  stage?: string | null;
 }
 
 export interface PluginCatalogPage {

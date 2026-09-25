@@ -59,8 +59,10 @@ public sealed class V11ReleaseGateTests
     [InlineData("PUT", "/api/plugins/acme.absent")]
     [InlineData("PATCH", "/api/plugins/acme.absent")]
     [InlineData("DELETE", "/api/plugins/acme.absent")]
-    [InlineData("POST", "/api/plugins/acme.absent/enable")]
-    public async Task PluginCatalog_ExposesNoMutationPath_EvenToTheStrongestCaller(string method, string path)
+    // V1.3-M6 (ADR-0037) deliberately adds the administrator-only lifecycle operations (archive install/replace, enable, disable,
+    // recover); those are covered by PluginLifecycleEndpointsTests. What must still never exist is a generic create/replace-by-body,
+    // a patch, or any removal of an installed plugin.
+    public async Task PluginCatalog_ExposesNoGenericMutationOrRemovalPath_EvenToTheStrongestCaller(string method, string path)
     {
         using var factory = new TestAppFactory { Roles = ["viewer", "operator", "approver", "administrator"] };
         using var client = factory.CreateClient();
@@ -70,7 +72,7 @@ public sealed class V11ReleaseGateTests
 
         Assert.True(
             response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
-            $"{method} {path} returned {(int)response.StatusCode}; the catalog must stay read-only.");
+            $"{method} {path} returned {(int)response.StatusCode}; the catalog resource itself must offer no generic mutation or removal.");
     }
 
     [Fact]
