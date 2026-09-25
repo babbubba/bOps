@@ -107,7 +107,8 @@ internal sealed class AnthropicUsageDto
     public int OutputTokens { get; set; }
 }
 
-[JsonSourceGenerationOptions(WriteIndented = false)]
+// A semantically absent member is omitted rather than sent as null: strict providers reject explicit nulls (ADR-0038).
+[JsonSourceGenerationOptions(WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(MessagesRequest))]
 [JsonSerializable(typeof(MessagesResponse))]
 internal sealed partial class AnthropicJsonContext : JsonSerializerContext;

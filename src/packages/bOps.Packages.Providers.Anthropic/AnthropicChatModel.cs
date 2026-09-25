@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using bOps.Packages.Providers.Wire;
 
 namespace bOps.Packages.Providers.Anthropic;
 
@@ -48,20 +49,22 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
     private async Task<ModelResponse> CompleteNativeAsync(ModelRequest request, CancellationToken ct)
     {
+        var wireNames = ToolWireNames.ForRequest(request, includeOfferedTools: true);
         var payload = new MessagesRequest
         {
             Model = options.Model,
             MaxTokens = MaxTokens,
             System = request.SystemPrompt,
-            Messages = BuildMessages(request.History),
-            Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(BuildToolDefinition).ToList(),
+            Messages = BuildMessages(request.History, wireNames),
+            Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(manifest => BuildToolDefinition(manifest, wireNames)).ToList(),
         };
 
         var completion = await SendAsync(payload, ct);
         var response = completion.Body;
+        var offered = request.AvailableTools.Select(manifest => manifest.Name).ToHashSet(StringComparer.Ordinal);
         var toolCalls = response.Content
             .Where(block => block.Type == "tool_use")
-            .Select(block => new ModelToolCall(block.Id!, block.Name!, ToolArguments.FromJson(block.Input ?? new JsonObject())))
+            .Select(block => MapResponseCall(block, wireNames, offered))
             .ToList();
         var text = string.Concat(response.Content.Where(block => block.Type == "text").Select(block => block.Text));
 
@@ -75,7 +78,8 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
     private async Task<ModelResponse> CompleteWithFallbackAsync(ModelRequest request, CancellationToken ct)
     {
         var system = BuildFallbackSystemPrompt(request);
-        var messages = BuildMessages(request.History);
+        var messages = BuildMessages(request.History, ToolWireNames.ForRequest(request, includeOfferedTools: false));
+        var offered = request.AvailableTools.Select(manifest => manifest.Name).ToHashSet(StringComparer.Ordinal);
         ModelCallDetails? lastDetails = null;
 
         for (var attempt = 0; attempt < 2; attempt++)
@@ -89,12 +93,17 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
             if (TryParseFallbackJson(text, out var parsed))
             {
                 var usage = MapUsage(response.Usage);
-                return parsed.IsFinal
-                    ? new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details }
-                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage)
-                    {
-                        Details = completion.Details,
-                    };
+                if (parsed.IsFinal)
+                {
+                    return new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details };
+                }
+
+                // The same closed rule as the native path: only a tool offered in this request can be named.
+                var call = new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)
+                {
+                    ToolNameError = offered.Contains(parsed.ToolName!) ? null : ToolWireNames.DescribeUnknown(parsed.ToolName!),
+                };
+                return new ModelResponse(null, [call], false, usage) { Details = completion.Details };
             }
 
             messages.Add(new AnthropicMessageDto { Role = "assistant", Content = [new ContentBlockDto { Type = "text", Text = text }] });
@@ -217,14 +226,14 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
     /// <see cref="ChatRole.Tool"/> turns in a row (the executed call's result, then one
     /// "not executed" turn per tool call the model proposed but the runtime did not run).
     /// </summary>
-    private static List<AnthropicMessageDto> BuildMessages(IReadOnlyList<ChatTurn> history)
+    private static List<AnthropicMessageDto> BuildMessages(IReadOnlyList<ChatTurn> history, ToolWireNames wireNames)
     {
         var messages = new List<AnthropicMessageDto>();
 
         foreach (var turn in history)
         {
             var role = MapRole(turn.Role);
-            var blocks = BuildContentBlocks(turn);
+            var blocks = BuildContentBlocks(turn, wireNames);
 
             if (messages.Count > 0 && messages[^1].Role == role)
             {
@@ -239,7 +248,27 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         return messages;
     }
 
-    private static List<ContentBlockDto> BuildContentBlocks(ChatTurn turn)
+    /// <summary>
+    /// Turns a <c>tool_use</c> block back into a canonical <see cref="ModelToolCall"/> through this request's closed
+    /// alias map (ADR-0038). A name that is not an offered alias is never passed on as a tool name. The input is
+    /// already a JSON object; a block with no input at all is an explicit empty object, and the runtime still
+    /// enforces required parameters.
+    /// </summary>
+    private static ModelToolCall MapResponseCall(ContentBlockDto block, ToolWireNames wireNames, HashSet<string> offered)
+    {
+        var wireName = block.Name ?? string.Empty;
+        if (!wireNames.TryGetCanonical(wireName, out var canonical) || !offered.Contains(canonical))
+        {
+            return new ModelToolCall(block.Id!, wireName, ToolArguments.Empty)
+            {
+                ToolNameError = ToolWireNames.DescribeUnknown(wireName),
+            };
+        }
+
+        return new ModelToolCall(block.Id!, canonical, ToolArguments.FromJson(block.Input ?? new JsonObject()));
+    }
+
+    private static List<ContentBlockDto> BuildContentBlocks(ChatTurn turn, ToolWireNames wireNames)
     {
         if (turn.Role == ChatRole.Tool)
         {
@@ -255,7 +284,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         if (turn.ToolCalls is { Count: > 0 })
         {
             blocks.AddRange(turn.ToolCalls.Select(call =>
-                new ContentBlockDto { Type = "tool_use", Id = call.Id, Name = call.ToolName, Input = call.Arguments.ToJson() }));
+                new ContentBlockDto { Type = "tool_use", Id = call.Id, Name = wireNames.ToWire(call.ToolName), Input = call.Arguments.ToJson() }));
         }
 
         // A message needs at least one content block — an assistant turn with neither text nor
@@ -275,8 +304,8 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown chat role."),
     };
 
-    private static ToolDto BuildToolDefinition(ToolManifest manifest) =>
-        new() { Name = manifest.Name, Description = manifest.Description, InputSchema = BuildParameterSchema(manifest) };
+    private static ToolDto BuildToolDefinition(ToolManifest manifest, ToolWireNames wireNames) =>
+        new() { Name = wireNames.ToWire(manifest.Name), Description = manifest.Description, InputSchema = BuildParameterSchema(manifest) };
 
     private static JsonObject BuildParameterSchema(ToolManifest manifest)
     {
@@ -371,8 +400,16 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
             if (node.TryGetPropertyValue("tool", out var toolNode) && toolNode is not null)
             {
-                var argumentsNode = node.TryGetPropertyValue("arguments", out var argsNode) ? argsNode as JsonObject : null;
-                result = new FallbackParseResult(false, null, toolNode.GetValue<string>(), ToolArguments.FromJson(argumentsNode ?? new JsonObject()));
+                // No "arguments" member is an explicit empty object; one that is present but not an object is an
+                // unparseable reply (retried once), never repaired into {} (ADR-0038).
+                node.TryGetPropertyValue("arguments", out var argsNode);
+                if (argsNode is not null and not JsonObject)
+                {
+                    result = FallbackParseResult.None;
+                    return false;
+                }
+
+                result = new FallbackParseResult(false, null, toolNode.GetValue<string>(), ToolArguments.FromJson(argsNode as JsonObject ?? new JsonObject()));
                 return true;
             }
 

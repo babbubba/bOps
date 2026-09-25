@@ -53,9 +53,9 @@ internal sealed class FunctionCallDto
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
-    /// <summary>A JSON-encoded string per the OpenAI schema, not a nested object.</summary>
+    /// <summary>A JSON-encoded string per the OpenAI schema, not a nested object. <c>null</c> in a reply means the provider sent no arguments payload at all.</summary>
     [JsonPropertyName("arguments")]
-    public required string Arguments { get; set; }
+    public string? Arguments { get; set; }
 }
 
 internal sealed class ToolDefinitionDto
@@ -110,7 +110,8 @@ internal sealed class UsageDto
     public int CompletionTokens { get; set; }
 }
 
-[JsonSourceGenerationOptions(WriteIndented = false)]
+// A semantically absent member is omitted rather than sent as null: strict providers reject explicit nulls (ADR-0038).
+[JsonSourceGenerationOptions(WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]
 internal sealed partial class OpenAiJsonContext : JsonSerializerContext;

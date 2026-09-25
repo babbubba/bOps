@@ -41,6 +41,20 @@ public sealed record ModelToolCall
 
     /// <summary>The arguments the model supplied.</summary>
     public ToolArguments Arguments { get; init; }
+
+    /// <summary>
+    /// Set by a provider adapter when the tool name in the reply is not one it offered in that request (ADR-0038).
+    /// <see cref="ToolName"/> then holds what the provider sent, for the record only: the runtime must never resolve
+    /// or execute a call carrying this, and rejects it as an unknown tool.
+    /// </summary>
+    public string? ToolNameError { get; init; }
+
+    /// <summary>
+    /// Set by a provider adapter when the arguments in the reply were present but not a JSON object (ADR-0038).
+    /// <see cref="Arguments"/> is then an empty placeholder, never a repaired guess: the runtime must not execute
+    /// the call and turns this into a failed step the model can see. The text never contains argument content.
+    /// </summary>
+    public string? ArgumentsError { get; init; }
 }
 
 /// <summary>

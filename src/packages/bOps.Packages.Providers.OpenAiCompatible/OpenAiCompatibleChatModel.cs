@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using bOps.Packages.Providers.Wire;
 
 namespace bOps.Packages.Providers.OpenAiCompatible;
 
@@ -36,18 +37,20 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
     private async Task<ModelResponse> CompleteNativeAsync(ModelRequest request, CancellationToken ct)
     {
+        var wireNames = ToolWireNames.ForRequest(request, includeOfferedTools: true);
         var payload = new ChatCompletionRequest
         {
             Model = options.Model,
-            Messages = BuildMessages(request),
-            Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(BuildToolDefinition).ToList(),
+            Messages = BuildMessages(request, wireNames),
+            Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(manifest => BuildToolDefinition(manifest, wireNames)).ToList(),
             ToolChoice = request.AvailableTools.Count == 0 ? null : "auto",
         };
 
         var completion = await SendAsync(payload, ct);
         var message = completion.Body.Choices[0].Message;
+        var offered = request.AvailableTools.Select(manifest => manifest.Name).ToHashSet(StringComparer.Ordinal);
         var toolCalls = (message.ToolCalls ?? [])
-            .Select(dto => new ModelToolCall(dto.Id, dto.Function.Name, ParseArguments(dto.Function.Arguments)))
+            .Select(dto => MapResponseCall(dto, wireNames, offered))
             .ToList();
 
         return new ModelResponse(message.Content, toolCalls, toolCalls.Count == 0, MapUsage(completion.Body.Usage))
@@ -58,7 +61,9 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
     private async Task<ModelResponse> CompleteWithFallbackAsync(ModelRequest request, CancellationToken ct)
     {
-        var messages = BuildMessages(request with { SystemPrompt = BuildFallbackSystemPrompt(request) });
+        var messages = BuildMessages(
+            request with { SystemPrompt = BuildFallbackSystemPrompt(request) }, ToolWireNames.ForRequest(request, includeOfferedTools: false));
+        var offered = request.AvailableTools.Select(manifest => manifest.Name).ToHashSet(StringComparer.Ordinal);
         ModelCallDetails? lastDetails = null;
 
         for (var attempt = 0; attempt < 2; attempt++)
@@ -71,12 +76,17 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             if (TryParseFallbackJson(text, out var parsed))
             {
                 var usage = MapUsage(completion.Body.Usage);
-                return parsed.IsFinal
-                    ? new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details }
-                    : new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)], false, usage)
-                    {
-                        Details = completion.Details,
-                    };
+                if (parsed.IsFinal)
+                {
+                    return new ModelResponse(parsed.FinalText, [], true, usage) { Details = completion.Details };
+                }
+
+                // The same closed rule as the native path: only a tool offered in this request can be named.
+                var call = new ModelToolCall(Guid.NewGuid().ToString("N"), parsed.ToolName!, parsed.Arguments!)
+                {
+                    ToolNameError = offered.Contains(parsed.ToolName!) ? null : ToolWireNames.DescribeUnknown(parsed.ToolName!),
+                };
+                return new ModelResponse(null, [call], false, usage) { Details = completion.Details };
             }
 
             messages.Add(new ChatMessageDto { Role = "assistant", Content = text });
@@ -184,7 +194,7 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or
             System.Net.HttpStatusCode.GatewayTimeout;
 
-    private static List<ChatMessageDto> BuildMessages(ModelRequest request)
+    private static List<ChatMessageDto> BuildMessages(ModelRequest request, ToolWireNames wireNames)
     {
         var messages = new List<ChatMessageDto> { new() { Role = "system", Content = request.SystemPrompt } };
 
@@ -194,12 +204,32 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             {
                 Role = MapRole(turn.Role),
                 Content = turn.Content,
-                ToolCalls = turn.ToolCalls?.Select(MapToolCall).ToList(),
+                ToolCalls = turn.ToolCalls?.Select(call => MapToolCall(call, wireNames)).ToList(),
                 ToolCallId = turn.ToolCallId,
             });
         }
 
         return messages;
+    }
+
+    /// <summary>
+    /// Turns a tool call in a reply back into a canonical <see cref="ModelToolCall"/> through this request's closed
+    /// alias map (ADR-0038). A name that is not an offered alias is never passed on as a tool name, and arguments
+    /// that are present but malformed are never turned into an empty object.
+    /// </summary>
+    private static ModelToolCall MapResponseCall(ToolCallDto dto, ToolWireNames wireNames, HashSet<string> offered)
+    {
+        var (arguments, argumentsError) = ParseArguments(dto.Function.Arguments);
+
+        if (!wireNames.TryGetCanonical(dto.Function.Name, out var canonical) || !offered.Contains(canonical))
+        {
+            return new ModelToolCall(dto.Id, dto.Function.Name, ToolArguments.Empty)
+            {
+                ToolNameError = ToolWireNames.DescribeUnknown(dto.Function.Name),
+            };
+        }
+
+        return new ModelToolCall(dto.Id, canonical, arguments) { ArgumentsError = argumentsError };
     }
 
     private static string MapRole(ChatRole role) => role switch
@@ -211,17 +241,17 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown chat role."),
     };
 
-    private static ToolCallDto MapToolCall(ModelToolCall call) => new()
+    private static ToolCallDto MapToolCall(ModelToolCall call, ToolWireNames wireNames) => new()
     {
         Id = call.Id,
-        Function = new FunctionCallDto { Name = call.ToolName, Arguments = call.Arguments.ToJson().ToJsonString() },
+        Function = new FunctionCallDto { Name = wireNames.ToWire(call.ToolName), Arguments = call.Arguments.ToJson().ToJsonString() },
     };
 
-    private static ToolDefinitionDto BuildToolDefinition(ToolManifest manifest) => new()
+    private static ToolDefinitionDto BuildToolDefinition(ToolManifest manifest, ToolWireNames wireNames) => new()
     {
         Function = new FunctionDefinitionDto
         {
-            Name = manifest.Name,
+            Name = wireNames.ToWire(manifest.Name),
             Description = manifest.Description,
             Parameters = BuildParameterSchema(manifest),
         },
@@ -329,8 +359,16 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
             if (node.TryGetPropertyValue("tool", out var toolNode) && toolNode is not null)
             {
-                var argumentsNode = node.TryGetPropertyValue("arguments", out var argsNode) ? argsNode as JsonObject : null;
-                result = new FallbackParseResult(false, null, toolNode.GetValue<string>(), ToolArguments.FromJson(argumentsNode ?? new JsonObject()));
+                // No "arguments" member is an explicit empty object; one that is present but not an object is an
+                // unparseable reply (retried once), never repaired into {} (ADR-0038).
+                node.TryGetPropertyValue("arguments", out var argsNode);
+                if (argsNode is not null and not JsonObject)
+                {
+                    result = FallbackParseResult.None;
+                    return false;
+                }
+
+                result = new FallbackParseResult(false, null, toolNode.GetValue<string>(), ToolArguments.FromJson(argsNode as JsonObject ?? new JsonObject()));
                 return true;
             }
 
@@ -344,16 +382,37 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         }
     }
 
-    private static ToolArguments ParseArguments(string json)
+    /// <summary>
+    /// Parses the JSON-encoded arguments string of a native tool call. No payload at all (a missing or null member) is
+    /// an explicit empty object, since some providers send that for tools without parameters and the runtime still
+    /// enforces required parameters; a payload that is present but blank, not JSON, or not a JSON object is malformed
+    /// and is reported, never repaired (ADR-0038). The error text never contains any of the payload.
+    /// </summary>
+    private static (ToolArguments Arguments, string? Error) ParseArguments(string? json)
     {
+        if (json is null)
+        {
+            return (ToolArguments.Empty, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return (ToolArguments.Empty, "the arguments payload was empty");
+        }
+
+        JsonNode? node;
         try
         {
-            return ToolArguments.FromJson(JsonNode.Parse(json) as JsonObject ?? new JsonObject());
+            node = JsonNode.Parse(json);
         }
         catch (JsonException)
         {
-            return ToolArguments.Empty;
+            return (ToolArguments.Empty, "the arguments payload was not valid JSON");
         }
+
+        return node is JsonObject obj
+            ? (ToolArguments.FromJson(obj), null)
+            : (ToolArguments.Empty, "the arguments payload was not a JSON object");
     }
 
     private static ModelUsage? MapUsage(UsageDto? usage) =>
