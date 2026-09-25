@@ -748,3 +748,17 @@ bOps.
 **Decision.** Uploaded plugin archives remain untrusted until bounded validation completes; no plugin code executes during upload, staging or validation. Reuse the existing `PluginManager`/`PluginHost` and signature/trust infrastructure. Bound extraction and reject traversal, rooted paths, symlink/reparse entries and collisions. Keep installation separate from activation; install/replace uses staging, atomic promotion and deterministic crash recovery. Persist distinct `Current`, `Activation LKG`, `Transaction Rollback` and `Candidate` generation roles: failed replacement restores pre-transaction `Current` while preserving the true Activation LKG, and only successful activation advances Activation LKG. Enable requires explicit administrator action and activation confirmation. Enabled plugin code runs in-process with host privileges and is not sandboxed. Serialize same-plugin lifecycle mutations and protect them with ETag optimistic concurrency. Reserve idempotency before plugin identity is known at the accepted Node/Actor/IdempotencyKey boundary; operation kind, plugin identity, archive digest and other intent fields form canonical intent, so reuse with different intent conflicts. Invalid or failed candidates never replace the last safe generation. API/UI are non-authoritative for trust and transition legality; the public lifecycle stays product-neutral and contains no commercial/business logic.
 
 **Consequences.** ADR-0037 (Accepted 2026-09-24) governs the V1.3-M plugin lifecycle architecture. M5 implementation and M6 review can proceed without redesign; enabled plugins execute with host privileges.
+
+### D-034 — V1.3.x HARDEN-1: provider wire contract (ADR-0038)
+
+**Decision.** Canonical tool names never change; each provider adapter maps them to strict wire names
+(`^[A-Za-z0-9_-]{1,64}$`) through one closed, deterministic, injective per-request alias map (one internal source file
+shared by the OpenAI-compatible and Anthropic adapters). A response tool name absent from the map is never passed through:
+the call is rejected as an unknown tool. Blank or malformed argument payloads are validation failures, never `{}`. The
+assistant turn records every tool call the model emitted; the one executed call keeps its result and the rest are
+persisted on `PlanStep.UnexecutedToolCalls` and answered "not executed", so live and resumed history are identical. Plan
+and replan calls carry no native tools; they receive a text catalog of tool names, risk and one-line descriptions.
+
+**Consequences.** Three additive `bOps.Abstractions` members (`ModelToolCall.ToolNameError`, `ModelToolCall.ArgumentsError`,
+`PlanStep.UnexecutedToolCalls`); no breaking change, no migration. Aliases never reach Runtime, Policy or Audit. Failure
+classification, retry and timeouts stay with HARDEN-2.
