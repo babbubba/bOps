@@ -35,6 +35,14 @@
         "resolved": "3.1.4",
         "contentHash": "5mj99LvCqrq3CNi06xYdyIAXOEh+5b33F2nErCzI5zWiDdLHXiPXEWFSUAF8zlIv0ZWqjZNCwHTQeAPYbF3pCg=="
       },
+      "Docker.DotNet": {
+        "type": "Transitive",
+        "resolved": "3.125.15",
+        "contentHash": "XN8FKxVv8Mjmwu104/Hl9lM61pLY675s70gzwSj8KR5pwblo8HfWLcCuinh9kYsqujBkMH4HVRCEcRuU6al4BQ==",
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.1"
+        }
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -125,6 +133,59 @@
           "SQLitePCLRaw.core": "3.0.3"
         }
       },
+      "System.CodeDom": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "QWERdKi/tQAx+MbrPxTGcpchqMANnVXNiv2r2tILBBB38E74buD+fABSUhozZ1G9kjbadFB0m+HPFMkhJPeFvA=="
+      },
+      "System.Configuration.ConfigurationManager": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "0B+BzJ6pPMrRzJrVsttKf9MfDj6Syw9xoY+agcS9VssYQali1446+jTf5v1K94AMFUBxLXqDZlaTjO5edaI3jA==",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "10.0.0",
+          "System.Security.Cryptography.ProtectedData": "10.0.0"
+        }
+      },
+      "System.Diagnostics.EventLog": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "uaFRda9NjtbJRkdx311eXlAA3n2em7223c1A8d1VWyl+4FL9vkG7y2lpPfBU9HYdj/9KgdRNdn1vFK8ZYCYT/A=="
+      },
+      "System.Diagnostics.PerformanceCounter": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "ZnhizmMstYa05UNuwiMew7EsGApEy6qBcvBBSxoUcaX8WvkE2pb+iQyRWyQZ8E0mq7PlPBjwVh4+6ie+B6oeZA==",
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "10.0.0"
+        }
+      },
+      "System.IO.FileSystem.AccessControl": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "SxHB3nuNrpptVk+vZ/F+7OHEpoHUIKKMl02bUmYHQr1r+glbZQxs7pRtsf4ENO29TVm2TH3AEeep2fJcy92oYw=="
+      },
+      "System.Management": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "LE3rDZoPzulou78Tsq+3ALhUs4vatQ03v2QWbYVIenVPneUH/+LTUmHyyl098OxIFLQI6sNkZs8YHbUnT/sm3A==",
+        "dependencies": {
+          "System.CodeDom": "10.0.0"
+        }
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "qy6C3gQRTrfhFfuiIYU1jNwWfFdJpBVo1BARW7jgMm1zTEm3LRzLLyOLJGaAuKE+nZCGkEP71y4rj9NWjqLGdQ=="
+      },
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "PaFmFQXX/qL1vl0CfdJUMPMYT8TOEHlcdEiOZtd4LV2rcaS/WDQM4bpECcbRM4BrD+DWkWd/jtb6iPOqAX9TWA==",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "10.0.0"
+        }
+      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -176,7 +237,33 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.2.0-preview.8, )"
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Docker": "[1.0.0, )",
+          "bOps.Packages.Filesystem": "[1.0.0, )",
+          "bOps.Packages.Firewall.Linux": "[1.0.0, )",
+          "bOps.Packages.Firewall.Windows": "[1.0.0, )",
+          "bOps.Packages.Identity.Linux": "[1.0.0, )",
+          "bOps.Packages.Identity.Windows": "[1.0.0, )",
+          "bOps.Packages.Network": "[1.0.0, )",
+          "bOps.Packages.Network.Native.Linux": "[1.0.0, )",
+          "bOps.Packages.Network.Native.Windows": "[1.0.0, )",
+          "bOps.Packages.Scheduler.Linux": "[1.0.0, )",
+          "bOps.Packages.Scheduler.Windows": "[1.0.0, )",
+          "bOps.Packages.Security": "[1.0.0, )",
+          "bOps.Packages.Service.Linux": "[1.0.0, )",
+          "bOps.Packages.Service.Windows": "[1.0.0, )",
+          "bOps.Packages.Storage.Linux": "[1.0.0, )",
+          "bOps.Packages.Storage.Windows": "[1.0.0, )",
+          "bOps.Packages.System.Linux": "[1.0.0, )",
+          "bOps.Packages.System.Windows": "[1.0.0, )",
+          "bOps.Packages.Web": "[1.0.0, )",
+          "bOps.Runtime": "[1.0.0, )"
         }
       },
       "bops.memory": {
@@ -184,21 +271,199 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.8, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
-          "bOps.Abstractions": "[1.2.0-preview.8, )"
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.docker": {
+        "type": "Project",
+        "dependencies": {
+          "Docker.DotNet": "[3.125.15, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.filesystem": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.8, )",
+          "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.3, )",
+          "System.IO.FileSystem.AccessControl": "[5.0.0, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.firewall.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.firewall.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Firewall.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.firewall.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Firewall.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.identity.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.identity.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.identity.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Packages.Identity.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.network": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.network.native.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.network.native.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Network.Native.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.network.native.windows": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Network.Native.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.scheduler.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.scheduler.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Scheduler.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.scheduler.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "[10.0.0, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Scheduler.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.security": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.service.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.service.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Service.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.service.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.ServiceProcess.ServiceController": "[10.0.0, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Service.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.storage.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.storage.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Storage.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.storage.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.Management": "[10.0.0, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.Storage.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.system.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
+        }
+      },
+      "bops.packages.system.linux": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.System.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.system.windows": {
+        "type": "Project",
+        "dependencies": {
+          "System.Diagnostics.PerformanceCounter": "[10.0.0, )",
+          "System.Management": "[10.0.0, )",
+          "System.ServiceProcess.ServiceController": "[10.0.0, )",
+          "bOps.Abstractions": "[1.3.0-preview.1, )",
+          "bOps.Packages.System.Core": "[1.0.0, )"
+        }
+      },
+      "bops.packages.web": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
         }
       },
       "bops.policy": {
         "type": "Project",
         "dependencies": {
           "YamlDotNet": "[18.1.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.8, )"
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.2.0-preview.8, )"
+          "bOps.Abstractions": "[1.3.0-preview.1, )"
         }
       }
     }
