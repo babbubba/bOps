@@ -74,6 +74,14 @@ public sealed class AnthropicWireContractTests
             ["stop_reason"] = "end_turn",
         }.ToJsonString();
 
+    /// <summary>
+    /// A <c>tool_use</c> reply whose <c>input</c> is embedded as raw, unparsed text — unlike <see cref="ReplyWithToolUse"/>,
+    /// which builds it through <see cref="JsonNode"/> and so cannot represent a repeated property name without
+    /// throwing while the test itself constructs the reply.
+    /// </summary>
+    private static string ReplyWithRawToolUseInput(string id, string name, string rawInputJson) =>
+        $$"""{"model":"claude-test","content":[{"type":"tool_use","id":"{{id}}","name":"{{name}}","input":{{rawInputJson}}}],"stop_reason":"tool_use"}""";
+
     [Fact]
     public void TheStrictProvider_RejectsADottedToolName()
     {
@@ -279,5 +287,58 @@ public sealed class AnthropicWireContractTests
         Assert.NotNull(invented.ToolNameError);
         Assert.Equal("/", afterRetry.Arguments.GetRequired<string>("path"));
         Assert.Equal(4, provider.RequestBodies.Count);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("way-too-long-a-tool-name-that-exceeds-the-sixty-four-character-provider-limit-by-far")]
+    public async Task M1_ARejectedRawToolName_NeverPollutesTheNextRequest_EvenWhenEmptyOrOverLong(string invalidRawName)
+    {
+        var rejected = new ModelToolCall("call-0", invalidRawName, ToolArguments.Empty) { ToolNameError = "rejected" };
+        var history = new[]
+        {
+            ChatTurn.FromUser("goal"),
+            ChatTurn.FromAssistantToolCalls([rejected]),
+            ChatTurn.FromToolResult("call-0", "Unknown tool"),
+        };
+        var provider = new StrictAnthropicProvider(TextReply);
+
+        await Model(provider).CompleteAsync(Request(history, "fs.size"));
+
+        Assert.Equal(0, provider.Rejections);
+        using var body = JsonDocument.Parse(provider.RequestBodies[0]);
+        var sentName = body.RootElement.GetProperty("messages")[1].GetProperty("content")[0].GetProperty("name").GetString();
+        Assert.NotNull(sentName);
+        Assert.InRange(sentName!.Length, 1, 64);
+        Assert.All(sentName, c => Assert.True(char.IsLetterOrDigit(c) || c is '_' or '-'));
+        Assert.NotEqual(invalidRawName, sentName);
+    }
+
+    [Fact]
+    public async Task M2_03_DuplicateJsonKeysInNativeInput_AreRejectedAsMalformed_NeverAsArgumentException()
+    {
+        var provider = new StrictAnthropicProvider(ReplyWithRawToolUseInput("toolu_1", "fs_size", """{"a":1,"a":2}"""));
+
+        var response = await Model(provider).CompleteAsync(Request([ChatTurn.FromUser("goal")], "fs.size"));
+
+        var call = Assert.Single(response.ToolCalls);
+        Assert.NotNull(call.ArgumentsError);
+        Assert.Null(call.ToolNameError);
+        Assert.Equal("fs.size", call.ToolName);
+        Assert.Empty(call.Arguments.ToJson());
+        Assert.Equal(0, provider.Rejections);
+    }
+
+    [Fact]
+    public async Task M2_04_DuplicateJsonKeysInFallbackArguments_AreRejectedAsUnparseable_AndRetried()
+    {
+        var provider = new StrictAnthropicProvider(
+            FallbackReply("""{"tool":"fs.size","arguments":{"a":1,"a":2}}"""),
+            FallbackReply("""{"tool":"fs.size","arguments":{"path":"/"}}"""));
+
+        var response = await Model(provider, native: false).CompleteAsync(Request([ChatTurn.FromUser("goal")], "fs.size"));
+
+        Assert.Equal(2, provider.RequestBodies.Count);
+        Assert.Equal("/", Assert.Single(response.ToolCalls).Arguments.GetRequired<string>("path"));
     }
 }

@@ -466,4 +466,54 @@ public sealed class OpenAiWireContractTests
                 ["finish_reason"] = "stop",
             }),
         }.ToJsonString();
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("way-too-long-a-tool-name-that-exceeds-the-sixty-four-character-provider-limit-by-far")]
+    public async Task M1_ARejectedRawToolName_NeverPollutesTheNextRequest_EvenWhenEmptyOrOverLong(string invalidRawName)
+    {
+        var rejected = new ModelToolCall("call-0", invalidRawName, ToolArguments.Empty) { ToolNameError = "rejected" };
+        var history = new[]
+        {
+            ChatTurn.FromUser("goal"),
+            ChatTurn.FromAssistantToolCalls([rejected]),
+            Result("call-0", "Unknown tool"),
+        };
+        var provider = new StrictOpenAiProvider(TextReply);
+
+        await Model(provider).CompleteAsync(StepRequest(history, Tools("fs.size")));
+
+        Assert.Equal(0, provider.Rejections);
+        using var body = JsonDocument.Parse(provider.RequestBodies[0]);
+        var sentName = body.RootElement.GetProperty("messages")[2].GetProperty("tool_calls")[0].GetProperty("function").GetProperty("name").GetString();
+        Assert.Matches("^[a-zA-Z0-9_-]{1,64}$", sentName!);
+        Assert.NotEqual(invalidRawName, sentName);
+    }
+
+    [Fact]
+    public async Task M2_01_DuplicateJsonKeysInNativeArguments_AreRejectedAsMalformed_NeverAsArgumentException()
+    {
+        var provider = new StrictOpenAiProvider(ReplyWithCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")));
+
+        var response = await Model(provider).CompleteAsync(StepRequest([ChatTurn.FromUser("goal")], Tools("system.cpu")));
+
+        var call = Assert.Single(response.ToolCalls);
+        Assert.NotNull(call.ArgumentsError);
+        Assert.Null(call.ToolNameError);
+        Assert.Equal("system.cpu", call.ToolName);
+        Assert.Empty(call.Arguments.ToJson());
+    }
+
+    [Fact]
+    public async Task M2_02_DuplicateJsonKeysInFallbackArguments_AreRejectedAsUnparseable_AndRetried()
+    {
+        var provider = new StrictOpenAiProvider(
+            ReplyBody("""{"tool":"fs.size","arguments":{"a":1,"a":2}}"""),
+            ReplyBody("""{"tool":"fs.size","arguments":{"path":"/"}}"""));
+
+        var response = await Model(provider, native: false).CompleteAsync(StepRequest([ChatTurn.FromUser("goal")], Tools("fs.size")));
+
+        Assert.Equal(2, provider.RequestBodies.Count);
+        Assert.Equal("/", Assert.Single(response.ToolCalls).Arguments.GetRequired<string>("path"));
+    }
 }

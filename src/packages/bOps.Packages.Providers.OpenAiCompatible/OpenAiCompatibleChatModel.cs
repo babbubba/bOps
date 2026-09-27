@@ -241,10 +241,21 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown chat role."),
     };
 
+    /// <summary>
+    /// A call whose raw name a provider adapter already rejected (<see cref="ModelToolCall.ToolNameError"/> is set)
+    /// is never looked up in this request's alias map — that raw name was deliberately excluded from it
+    /// (<see cref="ToolWireNames.ForRequest"/>, HARDEN-1 review M-1) — and is sent instead under the map's bounded,
+    /// non-executable <see cref="ToolWireNames.InvalidToolPlaceholder"/>, so a strict provider still sees every call
+    /// the model emitted answered, without the rejected name ever reaching the wire.
+    /// </summary>
     private static ToolCallDto MapToolCall(ModelToolCall call, ToolWireNames wireNames) => new()
     {
         Id = call.Id,
-        Function = new FunctionCallDto { Name = wireNames.ToWire(call.ToolName), Arguments = call.Arguments.ToJson().ToJsonString() },
+        Function = new FunctionCallDto
+        {
+            Name = call.ToolNameError is null ? wireNames.ToWire(call.ToolName) : wireNames.InvalidToolPlaceholder,
+            Arguments = call.Arguments.ToJson().ToJsonString(),
+        },
     };
 
     private static ToolDefinitionDto BuildToolDefinition(ToolManifest manifest, ToolWireNames wireNames) => new()
@@ -345,7 +356,9 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
     {
         try
         {
-            if (JsonNode.Parse(text.Trim()) is not JsonObject node)
+            // A repeated property name anywhere in the reply — including inside "arguments" — is a parse-time
+            // JsonException here too (ADR-0038, HARDEN-1 review M-2), so it takes the existing unparseable-reply retry.
+            if (StrictJson.Parse(text.Trim()) is not JsonObject node)
             {
                 result = FallbackParseResult.None;
                 return false;
@@ -403,7 +416,9 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         JsonNode? node;
         try
         {
-            node = JsonNode.Parse(json);
+            // A repeated property name is caught here too, at parse time (ADR-0038, HARDEN-1 review M-2), never left
+            // to surface later as an unhandled ArgumentException from ordinary enumeration or property access.
+            node = StrictJson.Parse(json);
         }
         catch (JsonException)
         {

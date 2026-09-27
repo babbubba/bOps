@@ -147,4 +147,68 @@ public sealed partial class ToolWireNamesTests
         Assert.Equal(3, NonAsciiNames.Select(map.ToWire).Distinct(StringComparer.Ordinal).Count());
         Assert.All(NonAsciiNames, name => Assert.Matches(StrictName(), map.ToWire(name)));
     }
+
+    private static ToolManifest Tool(string name) => new()
+    {
+        Name = name,
+        Description = $"{name}.",
+        Risk = RiskLevel.Read,
+        Platforms = ["linux", "windows"],
+        Requires = [],
+        Parameters = [],
+    };
+
+    private static ModelToolCall Rejected(string id, string rawName) =>
+        new(id, rawName, ToolArguments.Empty) { ToolNameError = "rejected" };
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("way-too-long-a-tool-name-that-exceeds-the-sixty-four-character-provider-limit-by-far")]
+    public void M1_ForRequest_ExcludesARejectedRawName_FromAliasConstruction_EvenWhenEmptyOrOverLong(string invalidRawName)
+    {
+        var history = new[]
+        {
+            ChatTurn.FromUser("goal"),
+            ChatTurn.FromAssistantToolCalls([Rejected("call-0", invalidRawName)]),
+            ChatTurn.FromToolResult("call-0", "Unknown tool"),
+        };
+        var request = new ModelRequest("system", history, [Tool("fs.size")]);
+
+        var map = ToolWireNames.ForRequest(request, includeOfferedTools: true);
+
+        Assert.Equal("fs_size", map.ToWire("fs.size"));
+    }
+
+    [Fact]
+    public void M1_InvalidToolPlaceholder_IsWireSafeAndNeverResolvesInTheReverseMap()
+    {
+        var map = ToolWireNames.Create(["fs.size", "system.cpu"]);
+
+        var placeholder = map.InvalidToolPlaceholder;
+
+        Assert.Matches(StrictName(), placeholder);
+        Assert.False(map.TryGetCanonical(placeholder, out _));
+    }
+
+    [Fact]
+    public void M1_InvalidToolPlaceholder_IsDeterministic_ForTheSameRequestNames()
+    {
+        var first = ToolWireNames.Create(["fs.size", "system.cpu"]);
+        var second = ToolWireNames.Create(["system.cpu", "fs.size"]);
+
+        Assert.Equal(first.InvalidToolPlaceholder, second.InvalidToolPlaceholder);
+    }
+
+    [Fact]
+    public void M1_InvalidToolPlaceholder_AvoidsCollidingWithARealAliasOfThisRequest()
+    {
+        // A pathological but legal tool name that happens to occupy the reserved placeholder's usual spelling.
+        var map = ToolWireNames.Create(["fs.size", "_bops_invalid_tool"]);
+
+        var placeholder = map.InvalidToolPlaceholder;
+
+        Assert.NotEqual("_bops_invalid_tool", placeholder);
+        Assert.Matches(StrictName(), placeholder);
+        Assert.False(map.TryGetCanonical(placeholder, out _));
+    }
 }

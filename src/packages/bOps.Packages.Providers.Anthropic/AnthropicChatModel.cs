@@ -251,7 +251,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
     /// <summary>
     /// Turns a <c>tool_use</c> block back into a canonical <see cref="ModelToolCall"/> through this request's closed
     /// alias map (ADR-0038). A name that is not an offered alias is never passed on as a tool name. The input is
-    /// already a JSON object; a block with no input at all is an explicit empty object, and the runtime still
+    /// already a JSON value; a block with no input at all is an explicit empty object, and the runtime still
     /// enforces required parameters.
     /// </summary>
     private static ModelToolCall MapResponseCall(ContentBlockDto block, ToolWireNames wireNames, HashSet<string> offered)
@@ -265,7 +265,40 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
             };
         }
 
-        return new ModelToolCall(block.Id!, canonical, ToolArguments.FromJson(block.Input ?? new JsonObject()));
+        var (arguments, argumentsError) = ParseInput(block.Input);
+        return new ModelToolCall(block.Id!, canonical, arguments) { ArgumentsError = argumentsError };
+    }
+
+    /// <summary>
+    /// Parses a <c>tool_use</c> block's <c>input</c>: absent is an explicit empty object (the runtime still enforces
+    /// required parameters), and a value that is present but not an object, or an object with a repeated property
+    /// name at any depth, is malformed and reported, never repaired (ADR-0038, HARDEN-1 review M-2). Re-parsing the
+    /// raw text strictly, rather than trusting <see cref="ContentBlockDto.Input"/>'s own already-deserialized shape,
+    /// is what lets a repeated key survive long enough to be reported instead of throwing during response
+    /// deserialization in <see cref="SendAsync"/>, outside this method's containment.
+    /// </summary>
+    private static (ToolArguments Arguments, string? Error) ParseInput(JsonElement? input)
+    {
+        if (input is not { } element)
+        {
+            return (ToolArguments.Empty, null);
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return (ToolArguments.Empty, "the arguments payload was not a JSON object");
+        }
+
+        try
+        {
+            return StrictJson.Parse(element.GetRawText()) is JsonObject obj
+                ? (ToolArguments.FromJson(obj), null)
+                : (ToolArguments.Empty, "the arguments payload was not a JSON object");
+        }
+        catch (JsonException)
+        {
+            return (ToolArguments.Empty, "the arguments payload was not valid JSON");
+        }
     }
 
     private static List<ContentBlockDto> BuildContentBlocks(ChatTurn turn, ToolWireNames wireNames)
@@ -283,8 +316,16 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
         if (turn.ToolCalls is { Count: > 0 })
         {
-            blocks.AddRange(turn.ToolCalls.Select(call =>
-                new ContentBlockDto { Type = "tool_use", Id = call.Id, Name = wireNames.ToWire(call.ToolName), Input = call.Arguments.ToJson() }));
+            // A call whose raw name was already rejected (ToolNameError set) is sent under the request's bounded,
+            // non-executable placeholder instead of being looked up in the alias map, which deliberately excludes it
+            // (HARDEN-1 review M-1).
+            blocks.AddRange(turn.ToolCalls.Select(call => new ContentBlockDto
+            {
+                Type = "tool_use",
+                Id = call.Id,
+                Name = call.ToolNameError is null ? wireNames.ToWire(call.ToolName) : wireNames.InvalidToolPlaceholder,
+                Input = JsonSerializer.SerializeToElement(call.Arguments.ToJson()),
+            }));
         }
 
         // A message needs at least one content block — an assistant turn with neither text nor
@@ -386,7 +427,9 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
     {
         try
         {
-            if (JsonNode.Parse(text.Trim()) is not JsonObject node)
+            // A repeated property name anywhere in the reply — including inside "arguments" — is a parse-time
+            // JsonException here too (ADR-0038, HARDEN-1 review M-2), so it takes the existing unparseable-reply retry.
+            if (StrictJson.Parse(text.Trim()) is not JsonObject node)
             {
                 result = FallbackParseResult.None;
                 return false;

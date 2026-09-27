@@ -227,4 +227,59 @@ public sealed class ProviderWireEndToEndTests
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.UnknownTool });
         Assert.Contains("was offered", result.Steps[0].Observation!, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The core HARDEN-1 review M-1 regression: a model returning an invalid tool name (empty, or over the wire
+    /// length bound) is rejected safely, and — because that raw name is excluded from alias construction — neither
+    /// the very next request in the same run nor a request built after a full persist/<see cref="AgentRunner.ResumeAsync"/>
+    /// round trip is ever blocked by it.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("way-too-long-a-tool-name-that-exceeds-the-sixty-four-character-provider-limit-by-far")]
+    public async Task M1_ARejectedRawToolName_NeverBlocksTheNextRequest_LiveOrAfterResume(string invalidRawName)
+    {
+        var tool = new RecordingReadTool("fs.size", []);
+        var live = new StrictOpenAiProvider(
+            Plan("fs.size"),                                  // 0 plan: one planned step
+            ToolCalls(("call_1", invalidRawName, "{}")),       // 1 TURN N: the model returns an invalid tool name
+            Plan("fs.size"),                                   // 2 the replan an UnknownTool deviation triggers
+            ToolCalls(("call_2", "fs_size", "{}")),             // 3 TURN N+1: a legitimate offered tool — must not be blocked
+            Text("Finished."));                                 // 4 final
+        var audit = new RecordingAuditSink();
+
+        var result = await Runner(Model(live), Registry([tool]), audit).RunAsync("goal", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(0, live.Rejections);
+        Assert.Equal(1, tool.ExecutionCount);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.UnknownTool });
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "fs.size", Outcome: ToolOutcome.Success });
+
+        // Persist and resume: the rejected call is still in history, and still must not block the next request.
+        var stored = result with { Status = AgentTaskStatus.Running, Steps = [.. result.Steps.Select(s => s with { ModelCalls = null })] };
+        var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
+        var resumed = new StrictOpenAiProvider(Text("Finished again."));
+
+        var resumedResult = await Runner(Model(resumed), Registry([tool]), new RecordingAuditSink()).ResumeAsync(reloaded, Actor);
+
+        Assert.Equal(0, resumed.Rejections);
+        Assert.Equal(AgentTaskStatus.Completed, resumedResult.Status);
+    }
+
+    [Fact]
+    public async Task M2_05_M2_06_M2_07_DuplicateJsonKeysInArguments_NeverExecute_AndNeverLeaveTheTaskRunning()
+    {
+        var tool = new RecordingReadTool("system.cpu", []);
+        var provider = new StrictOpenAiProvider(Plan(), ToolCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")), Text("Finished."));
+        var audit = new RecordingAuditSink();
+
+        var result = await Runner(Model(provider), Registry([tool]), audit).RunAsync("goal", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.NotEqual(AgentTaskStatus.Running, result.Status);
+        Assert.Equal(0, tool.ExecutionCount);
+        Assert.Equal(0, provider.Rejections);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "system.cpu", Outcome: ToolOutcome.Failure });
+    }
 }

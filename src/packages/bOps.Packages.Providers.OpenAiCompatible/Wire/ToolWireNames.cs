@@ -25,13 +25,22 @@ internal sealed class ToolWireNames
     /// <summary>The longest function name providers accept.</summary>
     public const int MaxLength = 64;
 
+    /// <summary>
+    /// The reserved namespace a rejected call's wire placeholder is drawn from (HARDEN-1 review M-1). No canonical
+    /// bOps tool is ever registered under a name starting this way, so an offered or historical name occupying it is
+    /// only a residual, defensive case, not one this codebase produces today.
+    /// </summary>
+    private const string InvalidToolPlaceholderBase = "_bops_invalid_tool";
+
     private readonly Dictionary<string, string> _toWire;
     private readonly Dictionary<string, string> _toCanonical;
+    private readonly string _invalidToolPlaceholder;
 
     private ToolWireNames(Dictionary<string, string> toWire, Dictionary<string, string> toCanonical)
     {
         _toWire = toWire;
         _toCanonical = toCanonical;
+        _invalidToolPlaceholder = BuildInvalidToolPlaceholder(toCanonical);
     }
 
     /// <summary>Builds the map for one request over every canonical name it will mention.</summary>
@@ -83,12 +92,21 @@ internal sealed class ToolWireNames
     /// request sends tool definitions, the offered tools. A name that cannot be mapped fails the request before
     /// anything is sent.
     /// </summary>
+    /// <remarks>
+    /// A call the runtime never executed because a provider adapter already rejected its name
+    /// (<see cref="ModelToolCall.ToolNameError"/> is set) contributes nothing here (HARDEN-1 review M-1). Its raw
+    /// name is exactly what a provider adapter could not honour in the first place — it can be empty, over-long, or
+    /// otherwise wire-unsafe — so feeding it back into alias construction would fail the very next request the task
+    /// makes, and rebuilding history the same way on a resumed task would reproduce the same failure every time. The
+    /// call still appears in this request's wire history, through <see cref="InvalidToolPlaceholder"/> instead.
+    /// </remarks>
     /// <exception cref="ModelProtocolException">The names cannot be mapped to unambiguous provider-valid names.</exception>
     public static ToolWireNames ForRequest(ModelRequest request, bool includeOfferedTools)
     {
         var names = request.History
             .Where(turn => turn.ToolCalls is not null)
             .SelectMany(turn => turn.ToolCalls!)
+            .Where(call => call.ToolNameError is null)
             .Select(call => call.ToolName);
         if (includeOfferedTools)
         {
@@ -137,6 +155,18 @@ internal sealed class ToolWireNames
             ? alias
             : throw new InvalidOperationException($"Tool name '{canonicalName}' was not part of this request's wire name map.");
 
+    /// <summary>
+    /// The bounded, wire-safe, non-executable name substituted on the wire for a tool call whose raw name a provider
+    /// adapter already rejected (<see cref="ModelToolCall.ToolNameError"/> is set; HARDEN-1 review M-1). It carries
+    /// the call in provider history — a strict provider still needs every emitted call answered — without ever
+    /// contributing the rejected raw name (which can be empty, over-long, or otherwise wire-unsafe) to alias
+    /// construction. It is deterministic for this request and drawn from a reserved namespace; in the residual case
+    /// where that name is itself a real alias of this request, a deterministic numbered variant is used instead. It
+    /// is never entered into the reverse map, so it never resolves to a canonical tool, never executes, and a
+    /// provider that later echoes it back still fails closed as an unknown tool name.
+    /// </summary>
+    public string InvalidToolPlaceholder => _invalidToolPlaceholder;
+
     /// <summary>Looks a provider-returned name up exactly. A name that is not an alias in this request is never resolved, guessed or repaired.</summary>
     public bool TryGetCanonical(string wireName, out string canonicalName)
     {
@@ -148,6 +178,29 @@ internal sealed class ToolWireNames
 
         canonicalName = string.Empty;
         return false;
+    }
+
+    /// <summary>
+    /// Picks this request's <see cref="InvalidToolPlaceholder"/>: the reserved base name, unless it already denotes a
+    /// real alias of this request, in which case a numbered variant is tried until one does not (HARDEN-1 review
+    /// M-1). Every candidate is wire-safe and well under <see cref="MaxLength"/> for any request this codebase
+    /// builds, so this always terminates.
+    /// </summary>
+    private static string BuildInvalidToolPlaceholder(Dictionary<string, string> toCanonical)
+    {
+        if (!toCanonical.ContainsKey(InvalidToolPlaceholderBase))
+        {
+            return InvalidToolPlaceholderBase;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{InvalidToolPlaceholderBase}_{suffix.ToString(CultureInfo.InvariantCulture)}";
+            if (!toCanonical.ContainsKey(candidate))
+            {
+                return candidate;
+            }
+        }
     }
 
     private static bool IsSafeChar(char c, bool allowUnderscore) =>
