@@ -1,0 +1,274 @@
+# Operator configuration
+
+How to configure and run bOps locally through the CLI, the local API and the web UI: credentials,
+the encrypted vault, the filesystem read policy and key rotation. It is a configuration guide, not a
+deployment guide, and it describes only what the current code and shipped `appsettings.json` files do.
+
+## The four credentials, at a glance
+
+They are different secrets for different processes. Do not reuse one variable for another.
+
+| Variable | Read by | Purpose |
+|---|---|---|
+| `BOPS_MODEL_API_KEY` | CLI (`src/core/bOps.Cli/appsettings.json`) | Model-provider API key for CLI runs |
+| `BOPS_MODELPROVIDER_API_KEY` | API (`src/core/bOps.Api/appsettings.json`) | Model-provider API key for tasks run through the API |
+| `BOPS_API_KEY` | API | The key clients (the UI, scripts) present to the API |
+| `BOPS_VAULT_MASTER_KEY` | API and `bops vault rotate-key` | Master key of the encrypted vault |
+
+The variable names are just the defaults in the shipped configuration (`ApiKeySecret`, `Secret`,
+`MasterKeySecret` each hold a `Provider: environment` + `Name` reference). The configuration never
+contains the secret itself; never commit one.
+
+Configuration sources are the `appsettings.json` next to the project, then environment variables,
+which override JSON. Nested keys use a double underscore: `Filesystem__ReadPatterns__0`.
+
+## 1. CLI configuration
+
+The CLI loads its shipped `appsettings.json` from the current directory, and creates `audit.jsonl`,
+`policy.yaml` lookups and plugin files relative to it. Run it from its project directory:
+
+```bash
+cd src/core/bOps.Cli
+export BOPS_MODEL_API_KEY='<your-model-provider-key>'
+dotnet run -- "list the files under this directory and tell me what is taking up the most space"
+```
+
+```powershell
+cd src/core/bOps.Cli
+$env:BOPS_MODEL_API_KEY = '<your-model-provider-key>'
+dotnet run -- "list the files under this directory and tell me what is taking up the most space"
+```
+
+(The built executable is named `bops`; the README examples use that name.) The shipped defaults use the
+OpenRouter provider with model `openrouter/free`; change `ModelProvider` in the JSON or override it with
+`ModelProvider__Provider`, `ModelProvider__BaseUrl`, `ModelProvider__Model`.
+
+The CLI does **not** load `appsettings.Development.json` unless you set `DOTNET_ENVIRONMENT=Development`.
+It has no `Vault` section of its own (see [section 7](#7-vault-key-rotation)).
+
+Without a `policy.yaml`, bOps uses a built-in safe default: read and low-risk tools run automatically,
+medium and high risk ask for approval, critical is forbidden.
+
+## 2. API configuration
+
+Run the API from its project directory so its shipped configuration is loaded; its launch profile
+(`src/core/bOps.Api/Properties/launchSettings.json`) sets `ASPNETCORE_ENVIRONMENT=Development` and
+`http://localhost:5080`.
+
+```bash
+export BOPS_API_KEY='<a-local-secret>'
+export BOPS_MODELPROVIDER_API_KEY='<your-model-provider-key>'
+export BOPS_VAULT_MASTER_KEY='<a-secret-of-at-least-20-characters>'
+cd src/core/bOps.Api
+dotnet run
+```
+
+```powershell
+$env:BOPS_API_KEY = '<a-local-secret>'
+$env:BOPS_MODELPROVIDER_API_KEY = '<your-model-provider-key>'
+$env:BOPS_VAULT_MASTER_KEY = '<a-secret-of-at-least-20-characters>'
+cd src/core/bOps.Api
+dotnet run
+```
+
+Clients authenticate with `Authorization: Bearer <BOPS_API_KEY>` only. Query-string credentials are not
+supported. The shipped configuration defines one key, `local-operator`, holding the roles
+`viewer,operator,approver,administrator`.
+
+Because `BOPS_VAULT_MASTER_KEY` is referenced by the shipped configuration, the API will not start
+without it. To run without the vault, see [section 5](#5-encrypted-vault).
+
+Tasks run through the API persist to `tasks.db`, `audit.jsonl`, `settings.json`, `vault.dat` and the
+plugin files in the API's working directory (all paths are configurable in `appsettings.json`).
+
+## 3. Web UI
+
+The Angular UI in `web/bops-ui` is a client of the local API. `npm start` serves it on
+`http://localhost:4200` and proxies `/api` to `http://localhost:5080` (`proxy.conf.json`), so start the
+API first. On the sign-in screen enter the value of `BOPS_API_KEY`; the UI validates it against
+`/api/session/me`.
+
+The UI keeps the API key in memory only (a signal in `AuthService`); it is lost on page refresh and you
+sign in again. The Settings page is visible to administrators only and needs the vault.
+
+## 4. Provider configuration
+
+The `ModelProvider` section names the provider id, `BaseUrl`, `Model`, and the `ApiKeySecret` reference.
+Supported providers and their status are listed in the README's
+[Providers](../README.md#providers) section; the wire contract is in
+[ADR-0038](architecture/adr/0038-provider-wire-contract.md).
+
+On the API, the effective configuration is resolved as follows:
+
+- If the real environment variable `ModelProvider__Provider` is set, that environment configuration wins
+  and the Settings profile is not consulted.
+- Otherwise the provider chosen in Settings supplies its endpoint and model, falling back field by field
+  to the `ModelProvider` block.
+- The API key: a value resolved from the environment reference (`BOPS_MODELPROVIDER_API_KEY`) wins
+  outright; only when it is empty is the key stored in the vault for that provider used.
+
+Settings changes take effect on the next API restart.
+
+## 5. Encrypted vault
+
+The vault (`vault.dat`, [ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md))
+stores the provider API keys entered on the Settings page, encrypted with AES-256-GCM. Provider profiles
+and the active provider are stored, unencrypted, in `settings.json`. Stored keys are never returned by
+an endpoint; responses carry only a masked prefix/suffix.
+
+The master key comes from outside the repository: the environment variable named by
+`Vault:MasterKeySecret` (default `BOPS_VAULT_MASTER_KEY`), at least **20 characters**. It is never stored
+next to `vault.dat`.
+
+Startup behaviour of the API:
+
+| Situation | Result |
+|---|---|
+| No `Vault:MasterKeySecret` in the configuration | Vault off: `/api/settings/*` is not mapped (`404`), the Settings page says the vault is not configured; everything else works. |
+| Configured, environment variable unset or empty | The API **refuses to start**, naming the variable. |
+| Configured, value shorter than 20 characters | The API **refuses to start**. |
+| Configured and valid | Vault on. |
+
+To turn the vault off, remove `MasterKeySecret` from the `Vault` section of the API configuration (or
+use a configuration file that leaves it out).
+
+`Vault:FilePath` is optional and defaults to `vault.dat` in the API's working directory. If the API is
+started by a launcher (an Aspire AppHost, a service, a container), set the variable in that launcher's
+environment; a variable set in another terminal does not reach it. To confirm it works, call
+`GET /api/settings` with your API key (an `administrator` key); it answers `200`.
+
+## 6. Vault key generation
+
+Any high-entropy secret of at least 20 characters. Keep it in a password manager, not in the repository.
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+```bash
+openssl rand -base64 32
+```
+
+## 7. Vault key rotation
+
+Rotation re-encrypts `vault.dat` under a new master key. It is a CLI-only action; it is deliberately not
+exposed through the API.
+
+The command is:
+
+```bash
+bops vault rotate-key <NEW_KEY_ENVIRONMENT_VARIABLE>
+```
+
+It takes the **name** of the environment variable that holds the new key, not the key itself. The CLI has
+no `Vault` section in its shipped configuration, so tell it where the current key lives and where the
+vault file is with the same environment variables the API configuration uses, and run it where the
+relative `vault.dat` path resolves to the API's vault (or set `Vault__FilePath` to the path):
+
+```bash
+export Vault__MasterKeySecret__Provider=environment
+export Vault__MasterKeySecret__Name=BOPS_VAULT_MASTER_KEY
+export Vault__FilePath=/path/to/src/core/bOps.Api/vault.dat
+export BOPS_VAULT_MASTER_KEY='<current-key>'
+export BOPS_NEW_VAULT_MASTER_KEY='<new-key>'
+bops vault rotate-key BOPS_NEW_VAULT_MASTER_KEY
+```
+
+```powershell
+$env:Vault__MasterKeySecret__Provider = 'environment'
+$env:Vault__MasterKeySecret__Name = 'BOPS_VAULT_MASTER_KEY'
+$env:Vault__FilePath = 'C:\path\to\src\core\bOps.Api\vault.dat'
+$env:BOPS_VAULT_MASTER_KEY = '<current-key>'
+$env:BOPS_NEW_VAULT_MASTER_KEY = '<new-key>'
+bops vault rotate-key BOPS_NEW_VAULT_MASTER_KEY
+```
+
+On success it prints how many stored keys were rotated. Afterwards set `BOPS_VAULT_MASTER_KEY` to the new
+key for the API and restart it. The rotate command does not check the length of the new key, but the API
+will refuse to start with one shorter than 20 characters. Back up `vault.dat` before rotating.
+
+## 8. Backup and recovery
+
+Backup is file-level. Back up the files the API keeps in its working directory that you care about:
+`vault.dat`, `settings.json`, and for plugins `plugins.json`, `publisher-trust.json` and the `plugins/`
+directory (default names; check `Vault:FilePath`, `Settings:FilePath` and `Plugins:*` if you changed
+them), plus `audit.jsonl` if you keep the audit chain (`bops audit verify` checks it).
+
+- The master key is deliberately **not** stored with `vault.dat`; keep it separately, in your password
+  manager.
+- Losing only the vault file: the stored provider keys are gone; re-enter them on the Settings page.
+- Losing only the master key: `vault.dat` cannot be decrypted, so it is unusable; you must start a new
+  vault and re-enter the provider keys. A copied vault file alone is inert.
+- Losing `plugins.json` means reinstalling plugins.
+
+No recovery beyond this is promised.
+
+## 9. Filesystem access policy
+
+Filesystem tools are deny-by-default: they read nothing until `Filesystem:ReadPatterns` lists what they
+may read (`WritePatterns` likewise for writes). The simplest way to allow a path is an environment
+variable on the process (CLI or API):
+
+```bash
+export Filesystem__ReadPatterns__0='<your-pattern>'
+```
+
+```powershell
+$env:Filesystem__ReadPatterns__0 = '<your-pattern>'
+```
+
+Alternatively put the patterns in an `appsettings.Development.json` next to `appsettings.json`:
+
+```json
+{ "Filesystem": { "ReadPatterns": [ "<your-pattern>" ] } }
+```
+
+That file is loaded by the API under its launch profile (`ASPNETCORE_ENVIRONMENT=Development`), but **not
+by the CLI** unless you also set `DOTNET_ENVIRONMENT=Development`. See
+[filesystem inventory](filesystem-inventory.md) and [troubleshooting](filesystem-troubleshooting.md).
+
+## 10. Running CLI, API and UI
+
+```bash
+# CLI
+cd src/core/bOps.Cli
+dotnet run -- "<goal>"
+
+# API (terminal 1)
+cd src/core/bOps.Api
+dotnet run
+
+# UI (terminal 2, from the repository root)
+cd web/bops-ui
+npm ci
+npm start        # http://localhost:4200
+```
+
+Other npm scripts: `npm run build`, `npm test`, `npm run lint:i18n`.
+
+## 11. Production notes
+
+- Bind the API to loopback, or put TLS and an authenticated reverse proxy in front of it. The launch
+  profile's `localhost:5080` is a development setting only.
+- The API and CLI run with the privileges of their host account; bOps does not elevate.
+- Credentials travel only in the `Authorization: Bearer` header, never in a query string.
+- When the API is started by a service manager or container launcher, inject the environment variables
+  there.
+
+See the [threat model](security/threat-model.md), [web network policy](security/web-network-policy.md)
+and [SECURITY.md](../SECURITY.md).
+
+### Known validation limits
+
+On Linux, CI exercises `systemctl` for real through `service.list`/`service.status`. For
+`service.start`/`stop`/`restart`, CI validates the tool contract, verification wiring and rejected-input
+paths, but does not execute a real privileged service lifecycle. A real systemd lifecycle test exists for
+enable/disable and runs only when `BOPS_RUN_REAL_SYSTEMD_TESTS=1` under root, so the normal unprivileged
+CI runner skips it. Windows CI runs elevated. See
+`tests/bOps.Packages.Service.Linux.Tests/LinuxServiceActionToolsTests.cs`.
+
+## Related documents
+
+[Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
+[Delegation policy](agents/delegation-policy.md) · [Architecture decisions](architecture/adr/) ·
+[Vault ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md)

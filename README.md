@@ -290,6 +290,7 @@ Plan and progress: [consolidated roadmap](agentic/_plans/2026-09-16-consolidated
 | Topic | Read |
 |---|---|
 | Architecture | [ADR index](docs/architecture/adr/) · [decision register](agentic/06-decisions.md) |
+| Operator configuration | [credentials, vault, key rotation, filesystem policy](docs/operator-configuration.md) |
 | Security | [threat model](docs/security/threat-model.md) · [web network policy](docs/security/web-network-policy.md) · [security policy](SECURITY.md) |
 | Plugins and Skills | [getting started](docs/plugins/getting-started.md) · [sample plugin](samples/bops-sample-plugin/) |
 | Delegation | [overview](docs/agents/delegation.md) · [policy setup](docs/agents/delegation-policy.md) · [HTTP API](docs/agents/delegations-api.md) |
