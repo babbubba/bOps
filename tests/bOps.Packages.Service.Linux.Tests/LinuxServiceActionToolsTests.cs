@@ -89,7 +89,7 @@ public sealed class LinuxServiceActionToolsTests
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Skip = "Requires Linux.";
             else if (Environment.GetEnvironmentVariable("BOPS_RUN_REAL_SYSTEMD_TESTS") != "1") Skip = "Requires explicit real-systemd opt-in.";
             else if (!string.Equals(Environment.UserName, "root", StringComparison.Ordinal)) Skip = "Requires root.";
-            else if (!File.Exists("/run/systemd/system")) Skip = "Requires systemd.";
+            else if (!Directory.Exists("/run/systemd/system")) Skip = "Requires systemd.";
         }
     }
 
