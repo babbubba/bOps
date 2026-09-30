@@ -1,6 +1,8 @@
 # ADR-0013 — `ModelCallAuditEvent` gains an `Outcome`, and a failed model call is caught in the loop
 
 Status: Accepted
+Amended by: ADR-0039 (2026-09-30) — model-call timeout versus cancellation, failure classification, runtime-owned
+bounded retry with one audit event per attempt, sanitized reason, launcher backstop
 
 ## Context
 

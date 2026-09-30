@@ -762,3 +762,23 @@ and replan calls carry no native tools; they receive a text catalog of tool name
 **Consequences.** Three additive `bOps.Abstractions` members (`ModelToolCall.ToolNameError`, `ModelToolCall.ArgumentsError`,
 `PlanStep.UnexecutedToolCalls`); no breaking change, no migration. Aliases never reach Runtime, Policy or Audit. Failure
 classification, retry and timeouts stay with HARDEN-2.
+
+### D-035 — V1.3.x HARDEN-2: model-call failure containment (ADR-0039)
+
+**Decision.** The runtime owns a per-attempt model-call timeout distinct from the caller's cancellation: a timeout is
+an audited `Timeout` failure, a genuine cancellation still propagates. Provider packages classify every failure into a
+provider-neutral `ModelFailureKind` (`Transient`, `RateLimited`, `Timeout`, `Unreachable`, `Authentication`,
+`QuotaExceeded`, `InvalidRequest`, `ContextOverflow`, `MalformedResponse`, `Unknown`; 402 is `QuotaExceeded`, 413 is
+`ContextOverflow` only on explicit evidence) and make one attempt per `CompleteAsync`. `AgentRunner.CallModelAsync`
+retries only `Transient`, `RateLimited`, `Timeout` and `Unreachable`, bounded by attempts (3) and a per-call budget
+(300 s) that always wins, with jittered backoff and a `Retry-After` honoured only if it fits the maximum delay (30 s)
+and the remaining budget. Every attempt gets its own `ModelCallRecord` and `ModelCallAuditEvent` (`ModelAttempt`,
+`FailureKind`, `RetryDecision`, `RetryDelayMs`, `ProviderStatusCode`). Reasons are extracted by providers, redacted and
+bounded to 500 characters by internal code on both sides; the sanitizer is not public API. A malformed plan/replan
+reply (including duplicate keys at any depth) is audited as `MalformedResponse` and keeps the single corrective
+re-ask. The API launcher backstop converts only a still-persisted `Running` task to `Failed` and records a narrow
+`TaskExecutionFaultAuditEvent`.
+
+**Consequences.** Additive public contract only (ADR-0039 lists it). A model timeout or an escaped runtime exception
+can no longer leave a task `Running` in the API host. General task lifecycle audit, resume semantics and
+compare-and-set transitions remain HARDEN-3's; context compaction on `ContextOverflow` is HARDEN-8's.
