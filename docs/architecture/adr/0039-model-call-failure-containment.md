@@ -69,6 +69,11 @@ also what a provider **timeout** looks like, and that nothing downstream can tel
 - Adapters map their own transport timeout (an `OperationCanceledException` thrown while the token they were
   given is *not* cancelled — `HttpClient.Timeout`) to `ModelProtocolException` with kind `Timeout`, so the
   classification is the same whichever timer fires first.
+- The `try`/`catch` that classifies a failure surrounds **only** the adapter invocation (a synchronous throw included). The
+  runtime's own bookkeeping after a successful call (token metering, the success record, the success audit write, the
+  required-shape check of a plan reply) is outside it: a failure there is never classified as a model failure, never records
+  a second attempt for the same call and never triggers a retry, so it cannot cause a second billable call. It propagates to
+  the existing step containment or the host backstop (§9).
 
 ### 2. Provider-neutral failure classification (additive)
 
@@ -103,6 +108,12 @@ New enum in `bOps.Abstractions`:
   `NotRetryable`, `AttemptsExhausted`, `BudgetExhausted`, `RetryAfterExceedsLimit`. Every value except `Retry`
   marks the **terminal** attempt of the logical call.
 - `ChatModelOptions.RequestTimeout` (`TimeSpan?`) and `ChatModelOptions.DefaultRequestTimeout` (150 s), §10.
+**HTTP 200 with an embedded error.** Some OpenRouter-compatible providers answer `200` with a root-level structured
+`error` object instead of a `choices` array. The adapter detects that object before normal success parsing and classifies
+it from the embedded provider error code, exactly as it would the same status. Only a root-level structured `error` counts:
+assistant text that merely mentions "error" does not. A response is never both success and failure, and only sanitized,
+bounded fields leave the adapter. In this case `ProviderStatusCode` carries the embedded provider error code, not the HTTP
+transport status (`200`).
 
 ### 3. Adapters make one attempt per `CompleteAsync`
 
@@ -254,7 +265,9 @@ description so existing readers keep working.
 `AgentRunnerOptions.Validate` rejects incoherent values (attempts < 1; non-positive attempt timeout or budget;
 negative base delay; maximum delay below base delay) when the runner is built, and the hosts additionally require
 `ModelCallAttemptTimeout < RequestTimeout`, failing fast with a message naming the keys, so the runtime attempt
-timeout normally fires first.
+timeout normally fires first. The CLI validates while it starts. The API resolves `IChatModel` lazily, so it validates on the
+first model resolution (the first task or delegation request), before any task is persisted. In both hosts an incoherent
+configuration fails closed; the API does not validate at process start.
 
 ## Alternatives considered
 
