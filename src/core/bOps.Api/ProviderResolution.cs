@@ -80,6 +80,7 @@ internal static class ProviderResolution
             profile?.SupportsNativeToolCalling ?? configured.SupportsNativeToolCalling)
         {
             ResolvedApiKey = resolvedKey,
+            RequestTimeout = configured.RequestTimeout,
         };
     }
 }

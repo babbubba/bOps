@@ -106,6 +106,25 @@ public sealed class AgentRunner(
         "That reply was not a single valid JSON object in the required shape. Reply again with " +
         "ONLY the JSON object — no prose, no markdown code fence.";
 
+    /// <summary>The least call budget a retry must leave for its next attempt; a wait leaving less ends the call instead (ADR-0039 §4).</summary>
+    private static readonly TimeSpan MinimumModelAttemptWindow = TimeSpan.FromSeconds(1);
+
+    // The options are validated once, when the runner is built, so an incoherent model-call budget fails at start-up.
+    private readonly AgentRunnerOptions options = ValidatedOptions(options);
+
+    /// <summary>Test seam: replaces the wait between model-call attempts (by default <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>).</summary>
+    internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay { get; set; }
+
+    /// <summary>Test seam: replaces the backoff jitter source, a value in [0, 1) (by default <see cref="Random.Shared"/>).</summary>
+    internal Func<double>? ModelRetryJitter { get; set; }
+
+    private static AgentRunnerOptions ValidatedOptions(AgentRunnerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        return options;
+    }
+
     /// <summary>Runs one task to completion (or to a budget/step/replan limit) and returns its final state.</summary>
     /// <param name="goal">The operator's goal, in natural language.</param>
     /// <param name="actor">Who launched this task, recorded on every audit event it produces.</param>
@@ -164,7 +183,7 @@ public sealed class AgentRunner(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Task {TaskId}: planning failed", resolvedTaskId);
-            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, ex.Message, planCalls), ct);
+            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, FailureReason(ex), planCalls), ct);
         }
 
         plans.Add(plan);
@@ -256,7 +275,7 @@ public sealed class AgentRunner(
             var request = new ModelRequest(BuildStepSystemPrompt(plan), history, ToolViewFor(delegation));
             var stepCalls = new List<ModelCallRecord>();
 
-            ModelResponse response;
+            ModelResponse? response = null;
             try
             {
                 response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, stepCalls, ct);
@@ -278,7 +297,7 @@ public sealed class AgentRunner(
                 // own transport/parse errors must not be able to crash the loop either; this is
                 // a genuine dead end for the call either way, not something to retry forever.
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
-                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message, stepCalls), ct);
+                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, FailureReason(ex), stepCalls), ct);
             }
 
             totalTokens += UsageTokens(response);
@@ -383,7 +402,7 @@ public sealed class AgentRunner(
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", taskId, stepIndex);
-                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, ex.Message, replanCalls), ct);
+                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, FailureReason(ex), replanCalls), ct);
                 }
 
                 plans.Add(plan);
@@ -1204,6 +1223,94 @@ public sealed class AgentRunner(
     }
 
     /// <summary>
+    /// The reason a contained failure step carries. A model-call failure — only <see cref="CallModelAsync"/> lets a
+    /// <see cref="ModelProtocolException"/> out — already carries a sanitized, operator-facing reason; anything else is
+    /// redacted and bounded before it is persisted (ADR-0039 §6).
+    /// </summary>
+    private static string FailureReason(Exception ex) =>
+        ex is ModelProtocolException ? ex.Message : ModelFailureText.Sanitize(ex.Message);
+
+    /// <summary>
+    /// The host's final containment boundary (ADR-0039 §9): called when an exception escaped
+    /// <see cref="RunAsync"/>/<see cref="ResumeAsync"/> despite the runner's own containment. Re-reads the latest persisted state
+    /// and, <b>only if it is still <see cref="AgentTaskStatus.Running"/></b>, persists it <see cref="AgentTaskStatus.Failed"/> with a
+    /// synthetic <c>Unexpected runtime failure</c> step carrying a redacted, bounded reason, then writes a
+    /// <see cref="TaskExecutionFaultAuditEvent"/>. A terminal state is never replaced, and a state that cannot be read is never
+    /// written. Never throws for a store or audit failure: those are logged.
+    /// </summary>
+    /// <param name="taskId">The task whose detached execution failed.</param>
+    /// <param name="actor">Who launched or resumed the task.</param>
+    /// <param name="lastKnownState">The state the host last knew, used only when nothing is persisted for the task.</param>
+    /// <param name="exception">What escaped.</param>
+    /// <param name="ct">Cancels the containment writes.</param>
+    /// <returns>Whether the task was moved from <see cref="AgentTaskStatus.Running"/> to <see cref="AgentTaskStatus.Failed"/>.</returns>
+    public async Task<bool> ContainEscapedFailureAsync(
+        Guid taskId, ActorIdentity actor, TaskState? lastKnownState, Exception exception, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        TaskState? current;
+        try
+        {
+            current = await taskStore.LoadAsync(taskId, ct) ?? lastKnownState;
+        }
+        catch (Exception loadFailure) when (loadFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(loadFailure, "Task {TaskId}: could not read its state to contain an escaped failure; left unchanged", taskId);
+            return false;
+        }
+
+        if (current is null || current.Status != AgentTaskStatus.Running)
+        {
+            if (logger.IsEnabled(LogLevel.Warning))
+            {
+                logger.LogWarning(
+                    "Task {TaskId}: an escaped failure was not persisted because the task is {Status}, not Running",
+                    taskId, current?.Status.ToString() ?? "not stored");
+            }
+
+            return false;
+        }
+
+        var exceptionType = exception.GetType().Name;
+        var reason = ModelFailureText.Sanitize($"unexpected runtime failure: {exceptionType}: {exception.Message}");
+        var steps = new List<PlanStep>(current.Steps);
+        var stepIndex = steps.Count;
+        steps.Add(new PlanStep(stepIndex, "Unexpected runtime failure", null, null, reason));
+
+        try
+        {
+            await taskStore.SaveAsync(current with { Status = AgentTaskStatus.Failed, Steps = steps }, ct);
+        }
+        catch (Exception saveFailure) when (saveFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(saveFailure, "Task {TaskId}: could not persist Failed after an escaped failure", taskId);
+            return false;
+        }
+
+        try
+        {
+            await audit.WriteAsync(new TaskExecutionFaultAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                ExceptionType = exceptionType,
+                Reason = reason,
+            }, ct);
+        }
+        catch (Exception auditFailure) when (auditFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(auditFailure, "Task {TaskId}: persisted Failed after an escaped failure but could not audit it", taskId);
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Reconstructs the model-facing conversation for a resumed task from its persisted
     /// <see cref="PlanStep"/>s — the same shape <see cref="ContinueAsync"/> would have built the
     /// first time: the goal, then each step's tool call and its wrapped observation. A step with
@@ -1262,7 +1369,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct);
+            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(revision: 0));
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
@@ -1277,7 +1384,7 @@ public sealed class AgentRunner(
         planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct);
+            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(revision: 0));
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
@@ -1310,7 +1417,7 @@ public sealed class AgentRunner(
         var tokens = 0;
 
         var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct);
+            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(previousPlan.Revision + 1));
         tokens += UsageTokens(response);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
@@ -1322,7 +1429,7 @@ public sealed class AgentRunner(
         replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct);
+            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(previousPlan.Revision + 1));
         tokens += UsageTokens(retryResponse);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
@@ -1341,53 +1448,223 @@ public sealed class AgentRunner(
     }
 
     /// <summary>
-    /// Calls the model, audits the call whatever its outcome and appends what happened (which model, how long, how many
-    /// tokens, and the bodies sent and received) to <paramref name="calls"/>, so a failed call is kept too.
+    /// One logical model call (ADR-0039): a bounded loop of attempts, each under its own timeout distinct from the task's
+    /// cancellation, each audited and appended to <paramref name="calls"/> whatever its outcome (which model, how long, how
+    /// many tokens, the bodies, and for a failure its kind and what was decided next). Only a failure the provider classified
+    /// as transient, rate-limited, timed out or unreachable is tried again, inside <see cref="AgentRunnerOptions.ModelCallBudget"/>.
+    /// A genuine cancellation propagates unchanged; every other terminal failure is thrown as a
+    /// <see cref="ModelProtocolException"/> whose message is the sanitized operator-facing reason and whose kind is the last attempt's.
     /// </summary>
+    /// <param name="malformedOutput">
+    /// For a caller whose reply has a required shape (the plan and replan calls): returns why a reply is unusable, or
+    /// <c>null</c>. An unusable reply is recorded and audited as a <see cref="ModelFailureKind.MalformedResponse"/> attempt and
+    /// returned to the caller, which owns its own bounded corrective re-ask; it is never retried here.
+    /// </param>
     private async Task<ModelResponse> CallModelAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation,
-        List<ModelCallRecord> calls, CancellationToken ct)
+        List<ModelCallRecord> calls, CancellationToken ct, Func<ModelResponse, string?>? malformedOutput = null)
     {
-        var startedAtUtc = timeProvider.GetUtcNow();
-        var startedAt = timeProvider.GetTimestamp();
-        ModelResponse response;
+        var callStartedAt = timeProvider.GetTimestamp();
+        for (var attempt = 1; ; attempt++)
+        {
+            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+            var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
+            var startedAtUtc = timeProvider.GetUtcNow();
+            var startedAt = timeProvider.GetTimestamp();
+            AttemptFailure? failure = null;
+            // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
+            // a successful call is not a model failure and is never classified, recorded or retried as one.
+            ModelResponse? response = null;
+            try
+            {
+                response = await AttemptModelCallAsync(request, attemptTimeout, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // Rule C2 for model calls: the attempt's own timeout fired (or a transport timeout the adapter did not wrap),
+                // not the task's cancellation, so this is a classified, audited failure rather than an escape.
+                failure = new AttemptFailure(ModelFailureKind.Timeout,
+                    $"The model call attempt did not complete within {attemptTimeout.TotalSeconds:0.###} s.", null, null, null);
+            }
+            catch (ModelProtocolException ex)
+            {
+                failure = new AttemptFailure(ex.FailureKind, ModelFailureText.Sanitize(ex.Message), ex.ProviderStatusCode, ex.RetryAfter, ex.Details);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Rule C1 (ADR-0013): an adapter that throws something unexpected is contained like any other failure, but it is
+                // not classified, so it is never retried.
+                logger.LogWarning(ex, "Task {TaskId}: the model adapter threw an unclassified {ExceptionType}", taskId, ex.GetType().Name);
+                failure = new AttemptFailure(ModelFailureKind.Unknown, ModelFailureText.Sanitize($"{ex.GetType().Name}: {ex.Message}"), null, null, null);
+            }
+
+            if (response is not null)
+            {
+                var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
+                delegation?.Meter?.AddTokens(UsageTokens(response));
+
+                if (malformedOutput?.Invoke(response) is { } problem)
+                {
+                    var reason = ModelFailureText.Sanitize(problem);
+                    calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Failure, response.Usage, response.Details, reason) with
+                    {
+                        ModelAttempt = attempt,
+                        FailureKind = ModelFailureKind.MalformedResponse,
+                        RetryDecision = ModelRetryDecision.NotRetryable,
+                    });
+                    await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, reason, response.Usage,
+                        response.Details?.ActualModel, elapsedMs, attempt, ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable,
+                        null, null, ct);
+                    return response;
+                }
+
+                calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null) with
+                {
+                    ModelAttempt = attempt,
+                });
+                await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Success, null, response.Usage,
+                    response.Details?.ActualModel, elapsedMs, attempt, null, null, null, null, ct);
+                return response;
+            }
+
+            if (failure is null)
+            {
+                throw new InvalidOperationException("A model attempt ended with neither a response nor a classified failure.");
+            }
+
+            var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
+            var (decision, delay) = DecideModelRetry(failure, attempt, callStartedAt);
+            long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
+            calls.Add(BuildCallRecord(startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
+            {
+                ModelAttempt = attempt,
+                FailureKind = failure.Kind,
+                RetryDecision = decision,
+                RetryDelayMs = delayMs,
+                ProviderStatusCode = failure.StatusCode,
+            });
+            // Rule S9 / principle 4: every attempt is audited whatever the outcome — exactly like a denied or timed-out tool
+            // call (ADR-0013, ADR-0039 §5). StepIndex is -1 for the initial plan call, and the triggering step's index for a
+            // replan — see ADR-0014.
+            await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, failure.Message, null,
+                failure.Details?.ActualModel, failedMs, attempt, failure.Kind, decision, delayMs, failure.StatusCode, ct);
+
+            if (decision != ModelRetryDecision.Retry)
+            {
+                throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, attempt)) { FailureKind = failure.Kind };
+            }
+
+            if (logger.IsEnabled(LogLevel.Warning))
+            {
+                logger.LogWarning(
+                    "Task {TaskId}: model call attempt {Attempt} failed ({Kind}); retrying in {DelayMs} ms",
+                    taskId, attempt, failure.Kind, delayMs);
+            }
+
+            await (ModelRetryDelay ?? DelayAsync)(delay!.Value, ct);
+        }
+    }
+
+    /// <summary>One attempt, under its own timeout linked to — but distinguishable from — the task's cancellation.</summary>
+    private async Task<ModelResponse> AttemptModelCallAsync(ModelRequest request, TimeSpan timeout, CancellationToken ct)
+    {
+        using var timeoutSource = new CancellationTokenSource(ClampTimerDue(timeout), timeProvider);
+        using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token);
+        var call = model.CompleteAsync(request, attemptSource.Token);
         try
         {
-            response = await model.CompleteAsync(request, ct);
+            // WaitAsync on the timeout alone: an adapter that ignores its token still cannot hold the loop past the attempt
+            // timeout, while the task's own cancellation keeps its existing meaning — it reaches the adapter through
+            // attemptSource, and a reply the adapter already produced is not thrown away.
+            return await call.WaitAsync(timeoutSource.Token);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (!call.IsCompleted)
         {
-            var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-            var failedDetails = (ex as ModelProtocolException)?.Details;
-            calls.Add(BuildCallRecord(startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failedDetails, ex.Message));
-            // Rule S9 / principle 4: a failed model call is still a model call, audited whatever
-            // the outcome — exactly like a denied or timed-out tool call (ADR-0013). Without
-            // this, a task that fails here leaves no trace at all in the audit log. StepIndex is
-            // -1 for the initial plan call, and the triggering step's index for a replan — see
-            // ADR-0014.
-            await WriteAuditAsync(new ModelCallAuditEvent
-            {
-                TimestampUtc = timeProvider.GetUtcNow(),
-                Node = NodeId.Local,
-                TaskId = taskId,
-                StepIndex = stepIndex,
-                Actor = actor,
-                Provider = model.Descriptor.ProviderId,
-                Model = model.Descriptor.ModelId,
-                Outcome = ModelCallOutcome.Failure,
-                ErrorMessage = ex.Message,
-                Usage = null,
-                ActualModel = failedDetails?.ActualModel,
-                DurationMs = failedMs,
-            }, delegation, ct);
+            // The abandoned attempt may still fault later; observe that so it is never an unobserved task exception.
+            _ = call.ContinueWith(
+                static abandoned => _ = abandoned.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             throw;
         }
+    }
 
-        var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-        calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null));
-        delegation?.Meter?.AddTokens(UsageTokens(response));
+    // A CancellationTokenSource timer accepts at most int.MaxValue - 1 milliseconds, and never a negative delay.
+    private static TimeSpan ClampTimerDue(TimeSpan due)
+    {
+        var max = TimeSpan.FromMilliseconds(int.MaxValue - 1);
+        return due <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : due > max ? max : due;
+    }
 
-        await WriteAuditAsync(new ModelCallAuditEvent
+    private Task DelayAsync(TimeSpan delay, CancellationToken ct) => Task.Delay(delay, timeProvider, ct);
+
+    /// <summary>
+    /// The runtime's retry decision after one failed attempt (ADR-0039 §4): only transient kinds, only while attempts remain,
+    /// never earlier than a provider's <c>Retry-After</c>, never for a <c>Retry-After</c> above the configured maximum, and
+    /// never with a wait that would not leave <see cref="MinimumModelAttemptWindow"/> of the call budget for the next attempt.
+    /// </summary>
+    private (ModelRetryDecision Decision, TimeSpan? Delay) DecideModelRetry(AttemptFailure failure, int attempt, long callStartedAt)
+    {
+        if (!ModelFailureText.IsRetryable(failure.Kind))
+        {
+            return (ModelRetryDecision.NotRetryable, null);
+        }
+
+        if (attempt >= options.ModelCallMaxAttempts)
+        {
+            return (ModelRetryDecision.AttemptsExhausted, null);
+        }
+
+        TimeSpan? retryAfter = failure.RetryAfter is { } asked ? (asked < TimeSpan.Zero ? TimeSpan.Zero : asked) : null;
+        if (retryAfter > options.ModelRetryMaxDelay)
+        {
+            return (ModelRetryDecision.RetryAfterExceedsLimit, null);
+        }
+
+        var backoff = ModelRetryBackoff(attempt);
+        var delay = retryAfter is { } honoured && honoured > backoff ? honoured : backoff;
+        var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+        return delay + MinimumModelAttemptWindow > remaining
+            ? (ModelRetryDecision.BudgetExhausted, null)
+            : (ModelRetryDecision.Retry, delay);
+    }
+
+    /// <summary>Exponential backoff with equal jitter: <c>min(max, base × 2^(attempt−1)) × (0.5 + 0.5 × jitter)</c>.</summary>
+    private TimeSpan ModelRetryBackoff(int attempt)
+    {
+        var exponential = options.ModelRetryBaseDelay.Ticks * Math.Pow(2, Math.Min(attempt - 1, 30));
+        var capped = Math.Min(exponential, options.ModelRetryMaxDelay.Ticks);
+        var jitter = Math.Clamp((ModelRetryJitter ?? Random.Shared.NextDouble)(), 0.0, 1.0);
+        return TimeSpan.FromTicks((long)(capped * (0.5 + (0.5 * jitter))));
+    }
+
+    /// <summary>The operator-facing reason of a terminal model-call failure: what kind, what was tried, then the safe detail.</summary>
+    private string DescribeTerminalFailure(AttemptFailure failure, ModelRetryDecision decision, int attempts)
+    {
+        var tried = decision switch
+        {
+            ModelRetryDecision.AttemptsExhausted => $" Gave up after {attempts} attempts.",
+            ModelRetryDecision.BudgetExhausted =>
+                $" Gave up after {attempts} attempt(s): another wait would exceed the {options.ModelCallBudget.TotalSeconds:0.###} s model-call budget.",
+            ModelRetryDecision.RetryAfterExceedsLimit =>
+                $" The provider asked to retry after {failure.RetryAfter!.Value.TotalSeconds:0.###} s, longer than the " +
+                $"{options.ModelRetryMaxDelay.TotalSeconds:0.###} s limit.",
+            _ when attempts > 1 => $" Not retried after attempt {attempts}.",
+            _ => string.Empty,
+        };
+        var detail = string.IsNullOrEmpty(failure.Message) ? string.Empty : $" Details: {failure.Message}";
+        return $"{ModelFailureText.OperatorReason(failure.Kind)}{tried}{detail}";
+    }
+
+    private Task WriteModelCallAuditAsync(
+        Guid taskId, int stepIndex, ActorIdentity actor, DelegatedExecutionScope? delegation, ModelCallOutcome outcome, string? error,
+        ModelUsage? usage, string? actualModel, long durationMs, int attempt, ModelFailureKind? kind, ModelRetryDecision? decision,
+        long? retryDelayMs, int? statusCode, CancellationToken ct) =>
+        WriteAuditAsync(new ModelCallAuditEvent
         {
             TimestampUtc = timeProvider.GetUtcNow(),
             Node = NodeId.Local,
@@ -1396,15 +1673,21 @@ public sealed class AgentRunner(
             Actor = actor,
             Provider = model.Descriptor.ProviderId,
             Model = model.Descriptor.ModelId,
-            Outcome = ModelCallOutcome.Success,
-            ErrorMessage = null,
-            Usage = response.Usage,
-            ActualModel = response.Details?.ActualModel,
-            DurationMs = elapsedMs,
+            Outcome = outcome,
+            ErrorMessage = error,
+            Usage = usage,
+            ActualModel = actualModel,
+            DurationMs = durationMs,
+            ModelAttempt = attempt,
+            FailureKind = kind,
+            RetryDecision = decision,
+            RetryDelayMs = retryDelayMs,
+            ProviderStatusCode = statusCode,
         }, delegation, ct);
 
-        return response;
-    }
+    /// <summary>What one failed attempt amounted to, in provider-neutral terms, with its message already sanitized.</summary>
+    private sealed record AttemptFailure(
+        ModelFailureKind Kind, string Message, int? StatusCode, TimeSpan? RetryAfter, ModelCallDetails? Details);
 
     private ModelCallRecord BuildCallRecord(
         DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome, ModelUsage? usage, ModelCallDetails? details, string? error)
@@ -2369,10 +2652,26 @@ public sealed class AgentRunner(
     /// throws: a plan the runtime cannot parse is a formatting failure to retry or degrade from
     /// (rule C1), never a reason to crash the task.
     /// </summary>
-    private static AgentPlan? TryParsePlan(string? text, int revision)
+    private static AgentPlan? TryParsePlan(string? text, int revision) => TryParsePlan(text, revision, out _);
+
+    /// <summary>
+    /// The plan and replan calls' output check (ADR-0039 §8): why a reply is not a usable plan, or <c>null</c>. The caller's
+    /// model call records and audits an unusable reply as <see cref="ModelFailureKind.MalformedResponse"/>.
+    /// </summary>
+    private static Func<ModelResponse, string?> MalformedPlan(int revision) =>
+        response => TryParsePlan(response.TextResponse, revision, out var problem) is null ? problem : null;
+
+    // Duplicate property names are rejected at parse time, at every depth, exactly like the provider side's StrictJson
+    // (ADR-0038 review M-2): the default options accept {"steps":[…],"steps":[…]} and throw ArgumentException only on a later
+    // access, which would escape as if the model call itself had failed.
+    private static readonly JsonDocumentOptions StrictPlanJson = new() { AllowDuplicateProperties = false };
+
+    private static AgentPlan? TryParsePlan(string? text, int revision, out string? problem)
     {
+        problem = null;
         if (string.IsNullOrWhiteSpace(text))
         {
+            problem = "The plan reply was empty.";
             return null;
         }
 
@@ -2380,13 +2679,15 @@ public sealed class AgentRunner(
         var end = text.LastIndexOf('}');
         if (start < 0 || end <= start)
         {
+            problem = "The plan reply did not contain a JSON object.";
             return null;
         }
 
         try
         {
-            if (JsonNode.Parse(text[start..(end + 1)]) is not JsonObject root)
+            if (JsonNode.Parse(text[start..(end + 1)], nodeOptions: null, documentOptions: StrictPlanJson) is not JsonObject root)
             {
+                problem = "The plan reply was not a JSON object.";
                 return null;
             }
 
@@ -2416,8 +2717,11 @@ public sealed class AgentRunner(
 
             return new AgentPlan(revision, rationale, steps);
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or ArgumentException)
         {
+            // ArgumentException is a second line of defence: the strict options above already turn a duplicate key into a
+            // JsonException, but no JSON-shape surprise may escape this method (rule C1).
+            problem = $"The plan reply was not valid plan JSON: {ex.Message}";
             return null;
         }
     }

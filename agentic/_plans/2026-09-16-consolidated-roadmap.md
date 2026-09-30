@@ -454,7 +454,7 @@ layout. The train HARDEN-1 … HARDEN-14 hardens V1.3 before any V1.4 work; it a
 **Plan.** `agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md` (full review, findings,
 execution order, dependency gates, Definition of Done).
 **Tasks.** `agentic/_tasks/2026-09-25-v1.3x-harden-NN-*.md` — one packet at a time, in the plan's
-canonical order; HARDEN-1 complete; next executable packet: HARDEN-2.
+canonical order; HARDEN-1 and HARDEN-2 complete; next executable packet: HARDEN-3.
 
 ## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport
 

@@ -47,6 +47,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(DelegationReconciliationAuditEvent), "delegationReconciliation")]
 [JsonDerivedType(typeof(EntitlementDecisionAuditEvent), "entitlementDecision")]
 [JsonDerivedType(typeof(PluginLifecycleAuditEvent), "pluginLifecycle")]
+[JsonDerivedType(typeof(TaskExecutionFaultAuditEvent), "taskExecutionFault")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -276,6 +277,46 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>How long the call took, in milliseconds; <c>null</c> (and omitted) for an event written before it was measured.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? DurationMs { get; init; }
+
+    /// <summary>
+    /// Which attempt of one logical model call this event records, starting at 1 (ADR-0039): every attempt is its own
+    /// event. Named for the model call, not the task — a task execution attempt is a different concept. <c>null</c> (and
+    /// omitted) for an event written before attempts were recorded.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ModelAttempt { get; init; }
+
+    /// <summary>Why this attempt failed, in provider-neutral terms; present only when <see cref="Outcome"/> is <see cref="ModelCallOutcome.Failure"/> and the attempt was classified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelFailureKind? FailureKind { get; init; }
+
+    /// <summary>What the runtime decided after this failed attempt; every value except <see cref="ModelRetryDecision.Retry"/> marks the last attempt.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelRetryDecision? RetryDecision { get; init; }
+
+    /// <summary>How long the runtime waits before the next attempt, in milliseconds, when <see cref="RetryDecision"/> is <see cref="ModelRetryDecision.Retry"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? RetryDelayMs { get; init; }
+
+    /// <summary>The provider's status code for this attempt, when a response was obtained.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProviderStatusCode { get; init; }
+}
+
+/// <summary>
+/// An unexpected exception escaped the runner's normal containment and the host performed the fail-safe transition of a
+/// task still persisted <see cref="AgentTaskStatus.Running"/> to <see cref="AgentTaskStatus.Failed"/> (ADR-0039 §9).
+/// Deliberately narrow: it is written only when that transition happened, and it is not the general task lifecycle
+/// record. <see cref="AuditEvent.StepIndex"/> is the index of the synthetic failure step. It never carries a stack
+/// trace, request or response bodies, credentials, headers, prompt content or tool secrets.
+/// </summary>
+public sealed record TaskExecutionFaultAuditEvent : AuditEvent
+{
+    /// <summary>The type name of the exception that escaped, without its namespace.</summary>
+    public required string ExceptionType { get; init; }
+
+    /// <summary>The persisted reason, redacted and bounded.</summary>
+    public required string Reason { get; init; }
 }
 
 /// <summary>A policy decision was made for a tool call, whatever the outcome that followed.</summary>

@@ -54,6 +54,19 @@ public sealed class ChatModelOptions
     /// <summary>Whether the provider/model reliably supports native tool calling.</summary>
     public bool SupportsNativeToolCalling { get; init; }
 
+    /// <summary>
+    /// The outer transport timeout an adapter applies to one request (ADR-0039); <c>null</c> means
+    /// <see cref="DefaultRequestTimeout"/>. It is a guard, not the policy: the runtime's own model-call attempt timeout is
+    /// shorter and normally fires first.
+    /// </summary>
+    public TimeSpan? RequestTimeout { get; init; }
+
+    /// <summary>The transport timeout used when <see cref="RequestTimeout"/> is not configured: 150 seconds.</summary>
+    public static TimeSpan DefaultRequestTimeout { get; } = TimeSpan.FromSeconds(150);
+
+    /// <summary>The transport timeout in effect: <see cref="RequestTimeout"/>, or <see cref="DefaultRequestTimeout"/>.</summary>
+    public TimeSpan EffectiveRequestTimeout => RequestTimeout ?? DefaultRequestTimeout;
+
     /// <inheritdoc />
     public override string ToString() =>
         $"{nameof(ChatModelOptions)} {{ Provider = {Provider}, BaseUrl = {BaseUrl}, ApiKeySecret = {ApiKeySecret}, " +

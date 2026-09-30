@@ -18,10 +18,24 @@ namespace bOps.Packages.Providers.OpenAiCompatible;
 /// When <see cref="ChatModelOptions.SupportsNativeToolCalling"/> is false, tool calling falls
 /// back to a JSON-schema-in-prompt strategy (plan §3.1.1): the tool list is embedded in the
 /// system prompt, the model is asked to reply with a single JSON object, and one retry is
-/// allowed before the call fails outright — never executing a tool "guessed" from a fuzzy parse.
+/// allowed before the call fails outright — never executing a tool "guessed" from a fuzzy parse. That corrective re-ask is
+/// the one inseparable exchange inside one <see cref="CompleteAsync"/>; a transport failure is never retried here
+/// (ADR-0039): each HTTP request is one attempt, and a failure is thrown classified for the runtime to decide.
 /// </summary>
 public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClient httpClient) : IChatModel
 {
+    // ADR-0039: the explicit outer transport timeout replaces HttpClient's implicit 100 s; the runtime's own, shorter
+    // attempt timeout normally fires first. Applied once, to the client this adapter is given, before any request.
+    private readonly HttpClient _httpClient = WithRequestTimeout(httpClient, options);
+
+    private static HttpClient WithRequestTimeout(HttpClient client, ChatModelOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(options);
+        client.Timeout = options.EffectiveRequestTimeout;
+        return client;
+    }
+
     /// <inheritdoc />
     public ChatModelDescriptor Descriptor { get; } = new(options.Provider, options.Model);
 
@@ -98,101 +112,95 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             });
         }
 
-        throw new ModelProtocolException(
-            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.")
-        {
-            Details = lastDetails,
-        };
+        throw ProviderFailures.Malformed(
+            options.Provider, "did not return valid JSON tool-call output after one corrective re-ask.", 200, lastDetails);
     }
 
     /// <summary>A reply that parsed, with what was sent and received so the call can be understood afterwards.</summary>
     private sealed record Completion(ChatCompletionResponse Body, ModelCallDetails Details);
 
+    /// <summary>
+    /// Sends one request — exactly one HTTP attempt (ADR-0039 §3): a failure is thrown as a classified
+    /// <see cref="ModelProtocolException"/> with a safe reason, and the runtime decides whether to try again.
+    /// </summary>
     private async Task<Completion> SendAsync(ChatCompletionRequest payload, CancellationToken ct)
     {
         var requestJson = JsonSerializer.Serialize(payload, OpenAiJsonContext.Default.ChatCompletionRequest);
+        var sentOnly = new ModelCallDetails(null, null, requestJson, null);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
         {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
-            };
-            if (!string.IsNullOrEmpty(options.ResolvedApiKey))
-            {
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ResolvedApiKey);
-            }
+            Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
+        };
+        if (!string.IsNullOrEmpty(options.ResolvedApiKey))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ResolvedApiKey);
+        }
 
-            HttpResponseMessage httpResponse;
+        HttpResponseMessage httpResponse;
+        try
+        {
+            httpResponse = await _httpClient.SendAsync(httpRequest, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderFailures.Unreachable(options.Provider, ex, sentOnly);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderFailures.TransportTimeout(options.Provider, _httpClient.Timeout, ex, sentOnly);
+        }
+
+        using (httpResponse)
+        {
+            var status = (int)httpResponse.StatusCode;
+            string rawBody;
             try
             {
-                httpResponse = await httpClient.SendAsync(httpRequest, ct);
-            }
-            catch (HttpRequestException) when (attempt < 2)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
-                continue;
+                rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
             }
             catch (HttpRequestException ex)
             {
-                throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
+                throw ProviderFailures.Interrupted(options.Provider, status, ex, sentOnly);
             }
-
-            using (httpResponse)
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
             {
-                if (IsTransient(httpResponse.StatusCode) && attempt < 2)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
-                    continue;
-                }
-
-                var rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
-                var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
-
-                if (!httpResponse.IsSuccessStatusCode)
-                {
-                    throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                        $"({httpResponse.StatusCode}) for the chat completion request.")
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                ChatCompletionResponse? body;
-                try
-                {
-                    body = JsonSerializer.Deserialize(rawBody, OpenAiJsonContext.Default.ChatCompletionResponse);
-                }
-                catch (JsonException ex)
-                {
-                    throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex)
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                if (body is null || body.Choices.Count == 0)
-                {
-                    throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned {(body is null ? "an empty response body" : "no choices")}.")
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody));
+                throw ProviderFailures.TransportTimeout(options.Provider, _httpClient.Timeout, ex, sentOnly);
             }
+
+            var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                throw ProviderFailures.HttpFailure(options.Provider, httpResponse, OpenAiErrorBody.Read(rawBody), failedDetails);
+            }
+
+            // A router can report a failed upstream call with a success status and the real status inside the body.
+            if (rawBody.Contains("\"error\"", StringComparison.Ordinal) && OpenAiErrorBody.EmbeddedStatus(rawBody) is { } embedded)
+            {
+                throw ProviderFailures.StatusFailure(options.Provider, embedded, OpenAiErrorBody.Read(rawBody), failedDetails);
+            }
+
+            ChatCompletionResponse? body;
+            try
+            {
+                body = JsonSerializer.Deserialize(rawBody, OpenAiJsonContext.Default.ChatCompletionResponse);
+            }
+            catch (JsonException ex)
+            {
+                throw ProviderFailures.Malformed(
+                    options.Provider, "returned a response that did not match the expected schema.", status, failedDetails, ex);
+            }
+
+            if (body is null || body.Choices.Count == 0)
+            {
+                throw ProviderFailures.Malformed(
+                    options.Provider, $"returned {(body is null ? "an empty response body" : "no choices")}.", status, failedDetails);
+            }
+
+            return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody));
         }
-
-        throw new ModelProtocolException($"Provider '{options.Provider}' exhausted its bounded transient retry budget.");
     }
-
-    private static bool IsTransient(System.Net.HttpStatusCode statusCode) =>
-        statusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or
-            System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or
-            System.Net.HttpStatusCode.GatewayTimeout;
 
     private static List<ChatMessageDto> BuildMessages(ModelRequest request, ToolWireNames wireNames)
     {

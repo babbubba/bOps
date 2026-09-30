@@ -20,10 +20,23 @@ namespace bOps.Packages.Providers.Anthropic;
 /// rather than translating a second protocol into the one shared <see cref="ModelResponse"/> shape.
 ///
 /// Like <c>OpenAiCompatibleChatModel</c>, honors <see cref="ChatModelOptions.SupportsNativeToolCalling"/>
-/// with the same JSON-schema-in-prompt fallback strategy (plan §3.1.1) when it is false.
+/// with the same JSON-schema-in-prompt fallback strategy (plan §3.1.1) when it is false. A transport failure is never
+/// retried here (ADR-0039): each HTTP request is one attempt, and a failure is thrown classified for the runtime to decide.
 /// </summary>
 public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient httpClient) : IChatModel
 {
+    // ADR-0039: the explicit outer transport timeout replaces HttpClient's implicit 100 s; the runtime's own, shorter
+    // attempt timeout normally fires first. Applied once, to the client this adapter is given, before any request.
+    private readonly HttpClient _httpClient = WithRequestTimeout(httpClient, options);
+
+    private static HttpClient WithRequestTimeout(HttpClient client, ChatModelOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(options);
+        client.Timeout = options.EffectiveRequestTimeout;
+        return client;
+    }
+
     /// <summary>
     /// Anthropic's Messages API requires <c>max_tokens</c> on every request; <see cref="ChatModelOptions"/>
     /// has no such field (it is a provider-agnostic contract in <c>bOps.Abstractions</c>, which stays
@@ -122,101 +135,121 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
             });
         }
 
-        throw new ModelProtocolException(
-            $"Provider '{options.Provider}' did not return valid JSON tool-call output after one retry.")
-        {
-            Details = lastDetails,
-        };
+        throw ProviderFailures.Malformed(
+            options.Provider, "did not return valid JSON tool-call output after one corrective re-ask.", 200, lastDetails);
     }
 
     /// <summary>A reply that parsed, with what was sent and received so the call can be understood afterwards.</summary>
     private sealed record Completion(MessagesResponse Body, ModelCallDetails Details);
 
+    /// <summary>
+    /// Sends one request — exactly one HTTP attempt (ADR-0039 §3): a failure is thrown as a classified
+    /// <see cref="ModelProtocolException"/> with a safe reason, and the runtime decides whether to try again.
+    /// </summary>
     private async Task<Completion> SendAsync(MessagesRequest payload, CancellationToken ct)
     {
         var requestJson = JsonSerializer.Serialize(payload, AnthropicJsonContext.Default.MessagesRequest);
+        var sentOnly = new ModelCallDetails(null, null, requestJson, null);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/v1/messages")
         {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/v1/messages")
-            {
-                Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
-            };
-            httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
-            if (!string.IsNullOrEmpty(options.ResolvedApiKey))
-            {
-                httpRequest.Headers.Add("x-api-key", options.ResolvedApiKey);
-            }
+            Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
+        };
+        httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
+        if (!string.IsNullOrEmpty(options.ResolvedApiKey))
+        {
+            httpRequest.Headers.Add("x-api-key", options.ResolvedApiKey);
+        }
 
-            HttpResponseMessage httpResponse;
+        HttpResponseMessage httpResponse;
+        try
+        {
+            httpResponse = await _httpClient.SendAsync(httpRequest, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderFailures.Unreachable(options.Provider, ex, sentOnly);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderFailures.TransportTimeout(options.Provider, _httpClient.Timeout, ex, sentOnly);
+        }
+
+        using (httpResponse)
+        {
+            var status = (int)httpResponse.StatusCode;
+            string rawBody;
             try
             {
-                httpResponse = await httpClient.SendAsync(httpRequest, ct);
-            }
-            catch (HttpRequestException) when (attempt < 2)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
-                continue;
+                rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
             }
             catch (HttpRequestException ex)
             {
-                throw new ModelProtocolException($"Provider '{options.Provider}' could not be reached: {ex.Message}", ex);
+                throw ProviderFailures.Interrupted(options.Provider, status, ex, sentOnly);
             }
-
-            using (httpResponse)
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
             {
-                if (IsTransient(httpResponse.StatusCode) && attempt < 2)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(100 * (attempt + 1)), ct);
-                    continue;
-                }
-
-                var rawBody = await httpResponse.Content.ReadAsStringAsync(ct);
-                var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
-
-                if (!httpResponse.IsSuccessStatusCode)
-                {
-                    throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned HTTP {(int)httpResponse.StatusCode} " +
-                        $"({httpResponse.StatusCode}) for the messages request.")
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                MessagesResponse? body;
-                try
-                {
-                    body = JsonSerializer.Deserialize(rawBody, AnthropicJsonContext.Default.MessagesResponse);
-                }
-                catch (JsonException ex)
-                {
-                    throw new ModelProtocolException(
-                        $"Provider '{options.Provider}' returned a response that did not match the expected schema.", ex)
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                if (body is null)
-                {
-                    throw new ModelProtocolException($"Provider '{options.Provider}' returned an empty response body.")
-                    {
-                        Details = failedDetails,
-                    };
-                }
-
-                return new Completion(body, new ModelCallDetails(body.Model, body.StopReason, requestJson, rawBody));
+                throw ProviderFailures.TransportTimeout(options.Provider, _httpClient.Timeout, ex, sentOnly);
             }
-        }
 
-        throw new ModelProtocolException($"Provider '{options.Provider}' exhausted its bounded transient retry budget.");
+            var failedDetails = new ModelCallDetails(null, null, requestJson, rawBody);
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                throw ProviderFailures.HttpFailure(options.Provider, httpResponse, ReadError(rawBody), failedDetails);
+            }
+
+            MessagesResponse? body;
+            try
+            {
+                body = JsonSerializer.Deserialize(rawBody, AnthropicJsonContext.Default.MessagesResponse);
+            }
+            catch (JsonException ex)
+            {
+                throw ProviderFailures.Malformed(
+                    options.Provider, "returned a response that did not match the expected schema.", status, failedDetails, ex);
+            }
+
+            if (body is null)
+            {
+                throw ProviderFailures.Malformed(options.Provider, "returned an empty response body.", status, failedDetails);
+            }
+
+            return new Completion(body, new ModelCallDetails(body.Model, body.StopReason, requestJson, rawBody));
+        }
     }
 
-    private static bool IsTransient(System.Net.HttpStatusCode statusCode) =>
-        statusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or
-            System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or
-            System.Net.HttpStatusCode.GatewayTimeout;
+    /// <summary>
+    /// The safe parts of an Anthropic error body, <c>{"type":"error","error":{"type","message"}}</c> (ADR-0039 §6): only the
+    /// error type (for classification) and message; nothing else in the body is read.
+    /// </summary>
+    private static ProviderError ReadError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return ProviderError.None;
+        }
+
+        try
+        {
+            if (StrictJson.Parse(body) is not JsonObject { } root || root["error"] is not JsonObject error)
+            {
+                return ProviderError.None;
+            }
+
+            var type = error["type"] is JsonValue typeValue && typeValue.GetValueKind() == JsonValueKind.String
+                ? typeValue.GetValue<string>()
+                : null;
+            var message = error["message"] is JsonValue messageValue && messageValue.GetValueKind() == JsonValueKind.String
+                ? messageValue.GetValue<string>()
+                : null;
+            return new ProviderError(type, message, ProviderFailures.Join(type, message));
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or FormatException)
+        {
+            return ProviderError.None;
+        }
+    }
 
     /// <summary>
     /// Maps <paramref name="history"/> into Anthropic messages, merging consecutive turns that map

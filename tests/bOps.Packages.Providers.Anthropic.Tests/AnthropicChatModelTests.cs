@@ -78,19 +78,21 @@ public sealed class AnthropicChatModelTests
     }
 
     [Fact]
-    public async Task CompleteAsync_RetriesOnlyTransientHttpFailures_WithinABoundedBudget()
+    public async Task CompleteAsync_MakesOneAttempt_AndThrowsATransientFailureForTheRuntimeToRetry()
     {
+        // ADR-0039 §3: the adapter never retries; the runtime owns retry and audits every attempt.
         var (model, handler) = CreateModel(
         [
             (HttpStatusCode.ServiceUnavailable, "temporarily unavailable"),
             (HttpStatusCode.OK, """{"content":[{"type":"text","text":"recovered"}]}"""),
         ]);
 
-        var response = await model.CompleteAsync(
-            new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], []));
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => model.CompleteAsync(
+            new ModelRequest("You are a test model.", [ChatTurn.FromUser("hello")], [])));
 
-        Assert.Equal("recovered", response.TextResponse);
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Single(handler.Requests);
+        Assert.Equal(ModelFailureKind.Transient, failure.FailureKind);
+        Assert.Equal(503, failure.ProviderStatusCode);
     }
 
     [Fact]

@@ -313,7 +313,10 @@ public sealed class ModelCallRecordingTests
 
         var call = Assert.Single(FinalStep(task).ModelCalls!);
         Assert.Equal(ModelCallOutcome.Failure, call.Outcome);
-        Assert.Equal("transport", call.ErrorMessage);
+        // ADR-0039: an unclassified exception is recorded with its type, sanitized, and never retried.
+        Assert.Equal("InvalidOperationException: transport", call.ErrorMessage);
+        Assert.Equal(ModelFailureKind.Unknown, call.FailureKind);
+        Assert.Equal(ModelRetryDecision.NotRetryable, call.RetryDecision);
         Assert.Null(call.RequestJson);
     }
 

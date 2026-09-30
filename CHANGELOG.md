@@ -14,6 +14,25 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- A model/provider failure can no longer leave a task `Running` (ADR-0039, HARDEN-2). A provider timeout used to escape every
+  handler as a cancellation: no audit, no record, task orphaned `Running`. The runtime now owns a per-attempt model-call timeout
+  distinct from the task's cancellation, and a timeout is an audited `Timeout` failure. Provider adapters make one HTTP attempt per
+  call and classify every failure (`Transient`, `RateLimited`, `Timeout`, `Unreachable`, `Authentication`, `QuotaExceeded`,
+  `InvalidRequest`, `ContextOverflow`, `MalformedResponse`, `Unknown`); the runtime retries only the first four, bounded by
+  `Agent:ModelCallMaxAttempts` (3) and `Agent:ModelCallBudget` (5 min, always wins), with jittered backoff
+  (`Agent:ModelRetryBaseDelay` 1 s, `Agent:ModelRetryMaxDelay` 30 s) and a `Retry-After` honoured only when it fits both.
+  `Agent:ModelCallAttemptTimeout` (2 min) must be shorter than the new explicit transport timeout `ModelProvider:RequestTimeout`
+  (2 min 30 s, replacing `HttpClient`'s implicit 100 s); incoherent values fail closed before any task is persisted (the CLI validates at start-up; the API validates on the first model resolution, because it resolves the model lazily). Every attempt has its own model-call
+  record and audit event (`ModelAttempt`, `FailureKind`, `RetryDecision`, `RetryDelayMs`, `ProviderStatusCode`). The task's
+  failure step says what to do ("Provider authentication failed. Check the configured provider credential.") followed by the
+  provider's own reason — for a router, the upstream provider and message — redacted and bounded to 500 characters. A plan or
+  replan reply with duplicate JSON keys is audited as `MalformedResponse` and takes the existing single corrective re-ask instead
+  of escaping. If anything else escapes the runner in the API host, a task still persisted `Running` is failed and audited with a
+  new `TaskExecutionFaultAuditEvent`; a terminal task is never overwritten. An OpenRouter-compatible provider that answers HTTP 200
+  with a root-level structured `error` object is classified from the embedded provider error code (assistant text mentioning "error"
+  is not enough; `ProviderStatusCode` then carries that embedded code, not `200`). A failure of the runtime's own bookkeeping after a
+  successful model call (for example the success audit write) is no longer misreported as a model failure and never causes a second
+  model call. All `bOps.Abstractions` changes are additive.
 - Model requests now satisfy strict OpenAI-compatible and Anthropic tool contracts (ADR-0038). Tool names such as `fs.size` are
   sent under deterministic, collision-checked wire aliases (`fs_size`) mapped back to the canonical name inside the provider
   adapter, so policy and audit never see an alias; a reply naming anything that was not offered is rejected as an unknown tool. Plan

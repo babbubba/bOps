@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -114,6 +116,26 @@ public sealed record ModelCallRecord
 
     /// <summary>Whether a body was cut to the configured limit.</summary>
     public bool PayloadTruncated { get; init; }
+
+    /// <summary>Which attempt of one logical model call this record is, starting at 1 (ADR-0039); <c>null</c> for a record written before attempts were recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ModelAttempt { get; init; }
+
+    /// <summary>Why this attempt failed, in provider-neutral terms, when it failed and was classified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelFailureKind? FailureKind { get; init; }
+
+    /// <summary>What the runtime decided after this failed attempt.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelRetryDecision? RetryDecision { get; init; }
+
+    /// <summary>How long the runtime waited before the next attempt, in milliseconds, when it retried.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? RetryDelayMs { get; init; }
+
+    /// <summary>The provider's status code for this attempt, when a response was obtained.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProviderStatusCode { get; init; }
 }
 
 /// <summary>One iteration of the agent loop: the tool call requested (if any), its result, and the observation fed back to the model.</summary>

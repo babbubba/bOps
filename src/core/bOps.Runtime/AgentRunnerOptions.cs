@@ -51,4 +51,69 @@ public sealed record AgentRunnerOptions
     /// request repeats the whole conversation on every call, so this bounds how fast a task's stored state grows.
     /// </summary>
     public int MaxModelPayloadCharacters { get; init; } = 200_000;
+
+    /// <summary>
+    /// How many attempts one logical model call may make (ADR-0039). Only a failure the provider classified as
+    /// transient, rate-limited, timed out or unreachable is tried again; <c>1</c> disables retry.
+    /// </summary>
+    public int ModelCallMaxAttempts { get; init; } = 3;
+
+    /// <summary>
+    /// How long one model call attempt may run before the runtime abandons it as a <c>Timeout</c> failure — distinct from
+    /// the task's own cancellation. Must be shorter than the provider's transport timeout, so this one normally fires first.
+    /// </summary>
+    public TimeSpan ModelCallAttemptTimeout { get; init; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// The wall-clock cap for one logical model call, every attempt and every wait between them included. It always wins:
+    /// no attempt runs past it and no wait is started that would not leave room for another attempt.
+    /// </summary>
+    public TimeSpan ModelCallBudget { get; init; } = TimeSpan.FromSeconds(300);
+
+    /// <summary>The first backoff delay before retrying a model call; each later retry doubles it, up to <see cref="ModelRetryMaxDelay"/>, with jitter.</summary>
+    public TimeSpan ModelRetryBaseDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest backoff delay, and the longest provider <c>Retry-After</c> honoured; a longer one ends the call instead.</summary>
+    public TimeSpan ModelRetryMaxDelay { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> naming the configuration keys when the model-call settings are not
+    /// coherent. A host that knows the provider's transport timeout passes it, so an attempt timeout that could never fire
+    /// first is rejected at start-up rather than discovered in production.
+    /// </summary>
+    /// <param name="providerRequestTimeout">The provider's effective transport timeout, when the caller knows it.</param>
+    public void Validate(TimeSpan? providerRequestTimeout = null)
+    {
+        if (ModelCallMaxAttempts < 1)
+        {
+            throw new InvalidOperationException("'Agent:ModelCallMaxAttempts' must be at least 1.");
+        }
+
+        if (ModelCallAttemptTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("'Agent:ModelCallAttemptTimeout' must be positive.");
+        }
+
+        if (ModelCallBudget <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("'Agent:ModelCallBudget' must be positive.");
+        }
+
+        if (ModelRetryBaseDelay < TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("'Agent:ModelRetryBaseDelay' must not be negative.");
+        }
+
+        if (ModelRetryMaxDelay < ModelRetryBaseDelay)
+        {
+            throw new InvalidOperationException("'Agent:ModelRetryMaxDelay' must not be shorter than 'Agent:ModelRetryBaseDelay'.");
+        }
+
+        if (providerRequestTimeout is { } transport && ModelCallAttemptTimeout >= transport)
+        {
+            throw new InvalidOperationException(
+                $"'Agent:ModelCallAttemptTimeout' ({ModelCallAttemptTimeout}) must be shorter than the provider transport timeout " +
+                $"'ModelProvider:RequestTimeout' ({transport}), so the runtime's attempt timeout fires first.");
+        }
+    }
 }
