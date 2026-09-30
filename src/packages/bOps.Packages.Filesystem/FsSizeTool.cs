@@ -21,10 +21,10 @@ public sealed class FsSizeTool(
         Parameters =
         [
             new ToolParameter("path", ToolParameterType.Path, "The file or directory to summarize."),
-            new ToolParameter("maxDepth", ToolParameterType.Integer, "Maximum traversal depth. Uses the host default when omitted.", Required: false),
-            new ToolParameter("maxEntries", ToolParameterType.Integer, "Maximum entries, including the requested root. Uses the host default when omitted.", Required: false),
-            new ToolParameter("topEntries", ToolParameterType.Integer, "Number of largest files to return. Uses the host default when omitted.", Required: false),
-            new ToolParameter("maxDurationMilliseconds", ToolParameterType.Integer, "Maximum collection time in milliseconds. Uses the host default when omitted.", Required: false),
+            new ToolParameter("maxDepth", ToolParameterType.Integer, "Maximum traversal depth. Uses the host default when omitted.", Required: false) { Minimum = 0 },
+            new ToolParameter("maxEntries", ToolParameterType.Integer, "Maximum entries, including the requested root. Uses the host default when omitted.", Required: false) { Minimum = 1 },
+            new ToolParameter("topEntries", ToolParameterType.Integer, "Number of largest files to return. Uses the host default when omitted.", Required: false) { Minimum = 0 },
+            new ToolParameter("maxDurationMilliseconds", ToolParameterType.Integer, "Maximum collection time in milliseconds. Uses the host default when omitted.", Required: false) { Minimum = 1 },
             new ToolParameter("exact", ToolParameterType.Boolean, "Whether to create an exact durable manifest. Defaults to false.", Required: false),
         ],
     };

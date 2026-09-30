@@ -24,7 +24,7 @@ public sealed class FsLocksTool(FilesystemPathPolicy pathPolicy) : ITool
         Parameters =
         [
             new ToolParameter("path", ToolParameterType.Path, "The existing regular file to inspect."),
-            new ToolParameter("limit", ToolParameterType.Integer, "Maximum rows, 1 through 1000. Defaults to 100.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, "Maximum rows, 1 through 1000. Defaults to 100.", Required: false) { Minimum = 1, Maximum = MaximumLimit },
         ],
     };
 
@@ -36,7 +36,7 @@ public sealed class FsLocksTool(FilesystemPathPolicy pathPolicy) : ITool
         if (!pathPolicy.AllowsRead(path)) return Task.FromResult(ToolCallResult.Failure($"Path not permitted for read access by filesystem policy: {requested}"));
         if (!File.Exists(path) || Directory.Exists(path)) return Task.FromResult(ToolCallResult.Failure($"'{path}' is not an existing regular file."));
         var limit = !arguments.TryGet<int>("limit", out var requestedLimit) ? DefaultLimit : requestedLimit;
-        if (limit is < 1 or > MaximumLimit) return Task.FromResult(ToolCallResult.Failure("limit is outside its supported range."));
+        if (limit is < 1 or > MaximumLimit) return Task.FromResult(ToolCallResult.Failure("limit is outside its supported range.") with { FailureKind = ToolFailureKind.Validation });
         return Task.FromResult(OperatingSystem.IsWindows() ? Windows(path, limit) : Linux(path, limit, ct));
     }
 

@@ -295,6 +295,7 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             ["type"] = "object",
             ["properties"] = properties,
             ["required"] = required,
+            ["additionalProperties"] = false,
         };
     }
 
@@ -302,12 +303,23 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
     {
         if (parameter.Type == ToolParameterType.PathList)
         {
-            return new JsonObject
+            var arraySchema = new JsonObject
             {
                 ["type"] = "array",
                 ["description"] = parameter.Description,
                 ["items"] = new JsonObject { ["type"] = "string" },
             };
+            if (parameter.MinItems is { } minItems)
+            {
+                arraySchema["minItems"] = minItems;
+            }
+
+            if (parameter.MaxItems is { } maxItems)
+            {
+                arraySchema["maxItems"] = maxItems;
+            }
+
+            return arraySchema;
         }
 
         var schema = new JsonObject
@@ -319,6 +331,18 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
         if (parameter.AllowedValues is { Count: > 0 })
         {
             schema["enum"] = new JsonArray(parameter.AllowedValues.Select(value => (JsonNode)value).ToArray());
+        }
+        // Only the constraints that apply to the declared type are projected: the manifest is the sole source of a bound, and a
+        // bound that does not belong to the type is never invented into the schema.
+        if (parameter.Type is ToolParameterType.Integer or ToolParameterType.Number)
+        {
+            if (parameter.Minimum is { } minimum) schema["minimum"] = minimum;
+            if (parameter.Maximum is { } maximum) schema["maximum"] = maximum;
+        }
+        else if (parameter.Type is ToolParameterType.String or ToolParameterType.Path)
+        {
+            if (parameter.MinLength is { } minLength) schema["minLength"] = minLength;
+            if (parameter.MaxLength is { } maxLength) schema["maxLength"] = maxLength;
         }
 
         return schema;

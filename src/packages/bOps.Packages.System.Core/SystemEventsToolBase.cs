@@ -48,19 +48,19 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
         ArgumentNullException.ThrowIfNull(arguments);
         if (!SystemEventsArguments.TryRead(arguments, clock.GetUtcNow(), out var query, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         var platformError = query!.EventId is { } eventId ? ValidateEventId(eventId) : null;
         platformError ??= query.Channel is { } channel ? ValidateChannel(channel) : null;
         if (platformError is not null)
         {
-            return ToolCallResult.Failure(platformError);
+            return ToolCallResult.Failure(platformError) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(query, ct);
-        return ToolCallResult.Success(SystemEventFormatting.Format(snapshot, query, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemEventFormatting.Format(snapshot, query, limit, maxOutputBytes));
     }
 
     /// <inheritdoc />

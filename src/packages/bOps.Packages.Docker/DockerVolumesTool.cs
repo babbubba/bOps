@@ -28,8 +28,8 @@ public sealed class DockerVolumesTool(IDockerClientFactory clientFactory) : IToo
         Requires = [DockerCapability.Name],
         Parameters =
         [
-            new ToolParameter("limit", ToolParameterType.Integer, $"Volumes to return, 1 to {MaximumLimit}. Defaults to {DefaultLimit}.", Required: false),
-            new ToolParameter("maxOutputBytes", ToolParameterType.Integer, $"Size of the result, {MinimumOutputBytes} to {MaximumOutputBytes}. Defaults to {DefaultOutputBytes}.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, $"Volumes to return, 1 to {MaximumLimit}. Defaults to {DefaultLimit}.", Required: false) { Minimum = 1, Maximum = MaximumLimit },
+            new ToolParameter("maxOutputBytes", ToolParameterType.Integer, $"Size of the result, {MinimumOutputBytes} to {MaximumOutputBytes}. Defaults to {DefaultOutputBytes}.", Required: false) { Minimum = MinimumOutputBytes, Maximum = MaximumOutputBytes },
         ],
     };
 
@@ -54,7 +54,7 @@ public sealed class DockerVolumesTool(IDockerClientFactory clientFactory) : IToo
         }
         catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
         {
-            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex)) with { FailureKind = ToolFailureKind.Environment };
         }
     }
 

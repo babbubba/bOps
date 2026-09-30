@@ -1378,12 +1378,12 @@ public sealed class AgentRunner(
             await RejectAsync(
                 taskId, stepIndex, actor, call, rejectedPackage, rejectedRisk,
                 AuthorizationKind.PolicyDenied, rejection, planRevision: -1, ct, scope, delegation);
-            return new ToolCallResult(ToolOutcome.Denied, null, rejection);
+            return new ToolCallResult(ToolOutcome.Denied, null, rejection) { FailureKind = ToolFailureKind.Authorization };
         }
 
         if (BudgetStopsStep(delegation))
         {
-            return new ToolCallResult(ToolOutcome.Denied, null, "The role has no budget or time left for another step.");
+            return new ToolCallResult(ToolOutcome.Denied, null, "The role has no budget or time left for another step.") { FailureKind = ToolFailureKind.Authorization };
         }
 
         var evidenceCall = new ModelToolCall($"skill-evidence-{sequence}", toolName, arguments);
@@ -1391,10 +1391,10 @@ public sealed class AgentRunner(
             taskId, stepIndex, actor, evidenceCall, planRevision: -1, ct, scope, delegation);
         if (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.UnknownTool or AuthorizationKind.EntitlementDenied)
         {
-            return new ToolCallResult(ToolOutcome.Denied, null, step.Result?.ErrorMessage ?? "Evidence invocation was denied.");
+            return new ToolCallResult(ToolOutcome.Denied, null, step.Result?.ErrorMessage ?? "Evidence invocation was denied.") { FailureKind = step.Result is { FailureKind: not ToolFailureKind.Unspecified } denied ? denied.FailureKind : RejectionKind(authorization) };
         }
 
-        var result = step.Result ?? ToolCallResult.Failure("Evidence invocation produced no result.");
+        var result = step.Result ?? ToolCallResult.Failure("Evidence invocation produced no result.") with { FailureKind = ToolFailureKind.Internal };
         return result with
         {
             Output = TruncateForHistory(result.Output),
@@ -2267,7 +2267,7 @@ public sealed class AgentRunner(
             : ValidateArguments(manifest, call.Arguments);
         if (validationError is not null)
         {
-            var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, ToolCallResult.Failure(validationError),
+            var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, ToolCallResult.Failure(validationError) with { FailureKind = ToolFailureKind.Validation },
                 AuthorizationKind.Automatic, TimeSpan.Zero, verification: null, verificationDetail: null, planRevision, ct, skillScope, delegation);
             return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic, null);
         }
@@ -2563,7 +2563,7 @@ public sealed class AgentRunner(
         if (registration is null)
         {
             return new VerificationInvocation(ToolCallResult.Failure(
-                $"Verification tool '{spec.VerifyToolName}' is not registered, or not available on this platform."), null);
+                $"Verification tool '{spec.VerifyToolName}' is not registered, or not available on this platform.") with { FailureKind = ToolFailureKind.Environment }, null);
         }
 
         var verifyTool = registration.Tool;
@@ -2572,7 +2572,7 @@ public sealed class AgentRunner(
         if (ValidateArguments(verifyTool.Manifest, verificationArguments) is { } validationError)
         {
             return new VerificationInvocation(ToolCallResult.Failure(
-                $"Could not build a valid call to verification tool '{spec.VerifyToolName}': {validationError}"), null);
+                $"Could not build a valid call to verification tool '{spec.VerifyToolName}': {validationError}") with { FailureKind = ToolFailureKind.Validation }, null);
         }
 
         if (delegation is not null
@@ -2737,9 +2737,14 @@ public sealed class AgentRunner(
 
         try
         {
-            return tool is IContextualTool contextualTool
+            var result = tool is IContextualTool contextualTool
                 ? await contextualTool.ExecuteAsync(call.Arguments, executionContext, timeoutCts.Token)
                 : await tool.ExecuteAsync(call.Arguments, timeoutCts.Token);
+
+            // A tool that reports its own timeout is classified from its structured outcome, never from its message.
+            return result.Outcome == ToolOutcome.Timeout && result.FailureKind == ToolFailureKind.Unspecified
+                ? result with { FailureKind = ToolFailureKind.Timeout }
+                : result;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2747,13 +2752,13 @@ public sealed class AgentRunner(
             // a distinct outcome, not a failure and not a crash. The overall task's ct is
             // untouched, so the loop continues to the next step.
             return new ToolCallResult(ToolOutcome.Timeout, null,
-                $"'{call.ToolName}' did not complete within {options.DefaultToolTimeout}.");
+                $"'{call.ToolName}' did not complete within {options.DefaultToolTimeout}.") { FailureKind = ToolFailureKind.Timeout };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Rule C1: a tool that throws is a bug in the tool, but it must never kill the task.
             logger.LogError(ex, "Tool {Tool} threw during execution", call.ToolName);
-            return ToolCallResult.Failure($"'{call.ToolName}' failed unexpectedly: {ex.Message}");
+            return ToolCallResult.Failure($"'{call.ToolName}' failed unexpectedly: {ex.Message}") with { FailureKind = ToolFailureKind.Internal };
         }
     }
 
@@ -2776,12 +2781,12 @@ public sealed class AgentRunner(
             return new ToolCallResult(
                 ToolOutcome.Timeout,
                 null,
-                $"Approval binding for '{tool.Manifest.Name}' did not complete within {options.DefaultToolTimeout}.");
+                $"Approval binding for '{tool.Manifest.Name}' did not complete within {options.DefaultToolTimeout}.") { FailureKind = ToolFailureKind.Timeout };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Tool {Tool}: approval binding threw", tool.Manifest.Name);
-            return ToolCallResult.Failure($"Approval binding for '{tool.Manifest.Name}' failed unexpectedly: {ex.Message}");
+            return ToolCallResult.Failure($"Approval binding for '{tool.Manifest.Name}' failed unexpectedly: {ex.Message}") with { FailureKind = ToolFailureKind.Internal };
         }
     }
 
@@ -2812,6 +2817,7 @@ public sealed class AgentRunner(
             Duration = TimeSpan.Zero,
             Summary = null,
             Verification = null,
+            FailureKind = RejectionKind(authorization),
             SkillRunId = skillScope?.RunId,
             SkillId = skillScope?.SkillId,
             CapabilityName = skillScope?.CapabilityName,
@@ -2825,8 +2831,10 @@ public sealed class AgentRunner(
         // distinct from the ToolCallAuditEvent above — written by the caller in ExecuteStepAsync,
         // before this method runs, alongside the Approval case (which also needs one but is not
         // a rejection at the policy stage) — so both paths share one write site instead of two.
-        var step = new PlanStep(stepIndex, "Denied", call, ToolCallResult.Failure(message), message, planRevision);
-        return (step, WrapToolOutput(message));
+        var failure = ToolCallResult.Failure(message) with { FailureKind = RejectionKind(authorization) };
+        var observation = FailureObservation(failure);
+        var step = new PlanStep(stepIndex, "Denied", call, failure, observation, planRevision);
+        return (step, WrapToolOutput(observation));
     }
 
     private async Task<(PlanStep Step, string Observation)> RecordAsync(
@@ -2864,12 +2872,14 @@ public sealed class AgentRunner(
             Target = skillScope?.Target,
             Environment = skillScope?.Environment,
             BlastRadius = skillScope?.BlastRadius,
+            FailureKind = DeclaredFailureKind(result),
+            Completeness = DeclaredCompleteness(result),
             PlanHash = skillScope?.PlanHash,
         }, delegation, ct);
 
         var observationText = result.Succeeded
             ? TruncateForHistory(result.Output)
-            : $"ERROR: {result.ErrorMessage}";
+            : FailureObservation(result);
 
         // rule S4: a Refuted verification must reach the model as an explicit observation, not
         // just as an audited field nobody downstream reads.
@@ -2883,6 +2893,30 @@ public sealed class AgentRunner(
         var step = new PlanStep(stepIndex, manifest.Name, call, result, observationText, planRevision);
         return (step, WrapToolOutput(observationText));
     }
+
+    /// <summary>
+    /// A call the runtime refused before execution: naming a tool that is not offered breaks the contract (Validation);
+    /// every other refusal is a policy, approval, envelope or entitlement decision (Authorization).
+    /// </summary>
+    private static ToolFailureKind RejectionKind(AuthorizationKind authorization) =>
+        authorization == AuthorizationKind.UnknownTool ? ToolFailureKind.Validation : ToolFailureKind.Authorization;
+
+    /// <summary>The structured failure kind to audit: nothing for a success, and nothing for a result that carried no classification.</summary>
+    private static ToolFailureKind? DeclaredFailureKind(ToolCallResult result) =>
+        result.Succeeded || result.FailureKind == ToolFailureKind.Unspecified ? null : result.FailureKind;
+
+    /// <summary>The declared evidence completeness to audit, or nothing when the tool declared none.</summary>
+    private static ToolResultCompleteness? DeclaredCompleteness(ToolCallResult result) =>
+        result.Completeness == ToolResultCompleteness.Unspecified ? null : result.Completeness;
+
+    /// <summary>
+    /// The model-facing text of a failed call. A classified failure names its kind so the model can tell a correctable
+    /// argument error from an environmental one; a result without a classification keeps the legacy wording.
+    /// </summary>
+    private static string FailureObservation(ToolCallResult result) =>
+        result.FailureKind == ToolFailureKind.Unspecified
+            ? $"ERROR: {result.ErrorMessage}"
+            : $"ERROR ({result.FailureKind.ToString().ToLowerInvariant()}): {result.ErrorMessage}";
 
     private JsonObject? CreateAuditSummary(ITool tool, ToolArguments arguments, ToolCallResult result)
     {
@@ -2963,10 +2997,69 @@ public sealed class AgentRunner(
             {
                 return $"Argument '{parameter.Name}' is not one of the allowed values.";
             }
+
+            if (ViolatedConstraint(parameter, value) is { } violation)
+            {
+                return violation;
+            }
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Checks one already type-checked argument against the typed constraints of its parameter (ADR-0022). The message names the
+    /// argument, the value and the bound so a model can correct the call; it is culture-invariant and the value is never clamped.
+    /// </summary>
+    private static string? ViolatedConstraint(ToolParameter parameter, JsonNode value)
+    {
+        var name = parameter.Name;
+        switch (parameter.Type)
+        {
+            case ToolParameterType.Integer or ToolParameterType.Number when value is JsonValue numeric && TryReadNumber(numeric, out var number):
+                if (parameter.Minimum is { } minimum && number < minimum)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' = {number} is below minimum {minimum}.");
+                }
+
+                if (parameter.Maximum is { } maximum && number > maximum)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' = {number} exceeds maximum {maximum}.");
+                }
+
+                break;
+            case ToolParameterType.String or ToolParameterType.Path when value is JsonValue textual && textual.TryGetValue<string>(out var text):
+                if (parameter.MinLength is { } minLength && text.Length < minLength)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' length {text.Length} is below minimum {minLength}.");
+                }
+
+                if (parameter.MaxLength is { } maxLength && text.Length > maxLength)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' length {text.Length} exceeds maximum {maxLength}.");
+                }
+
+                break;
+            case ToolParameterType.PathList when value is JsonArray items:
+                if (parameter.MinItems is { } minItems && items.Count < minItems)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' contains {items.Count} items, below minimum {minItems}.");
+                }
+
+                if (parameter.MaxItems is { } maxItems && items.Count > maxItems)
+                {
+                    return FormattableString.Invariant($"Argument '{name}' contains {items.Count} items, exceeding maximum {maxItems}.");
+                }
+
+                break;
+        }
+
+        return null;
+    }
+
+    /// <summary>Reads a JSON number whatever backs the node: a parsed element or a CLR value a caller built.</summary>
+    private static bool TryReadNumber(JsonValue value, out double number) =>
+        double.TryParse(value.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out number);
 
     private string TruncateForHistory(string? output)
     {

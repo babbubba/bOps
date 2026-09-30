@@ -23,8 +23,8 @@ public sealed class FsTailTool(FilesystemPathPolicy pathPolicy) : ITool
         Parameters =
         [
             new ToolParameter("path", ToolParameterType.Path, "The regular file to tail."),
-            new ToolParameter("lines", ToolParameterType.Integer, "Number of final lines, 1 through 5000. Defaults to 100.", Required: false),
-            new ToolParameter("maxBytes", ToolParameterType.Integer, "Maximum bytes to read backwards, 1 through 1048576. Defaults to 65536.", Required: false),
+            new ToolParameter("lines", ToolParameterType.Integer, "Number of final lines, 1 through 5000. Defaults to 100.", Required: false) { Minimum = 1, Maximum = MaximumLines },
+            new ToolParameter("maxBytes", ToolParameterType.Integer, "Maximum bytes to read backwards, 1 through 1048576. Defaults to 65536.", Required: false) { Minimum = 1, Maximum = MaximumBytes },
         ],
     };
 
@@ -38,7 +38,7 @@ public sealed class FsTailTool(FilesystemPathPolicy pathPolicy) : ITool
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) return ToolCallResult.Failure("fs.tail does not read symlinks or reparse points.");
         var lines = !arguments.TryGet<int>("lines", out var requestedLines) ? DefaultLines : requestedLines;
         var maxBytes = !arguments.TryGet<int>("maxBytes", out var requestedBytes) ? DefaultMaxBytes : requestedBytes;
-        if (lines is < 1 or > MaximumLines || maxBytes is < 1 or > MaximumBytes) return ToolCallResult.Failure("lines or maxBytes is outside its supported range.");
+        if (lines is < 1 or > MaximumLines || maxBytes is < 1 or > MaximumBytes) return ToolCallResult.Failure("lines or maxBytes is outside its supported range.") with { FailureKind = ToolFailureKind.Validation };
 
         try
         {

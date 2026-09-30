@@ -49,7 +49,7 @@ public sealed class DockerImageInspectTool(IDockerClientFactory clientFactory) :
         }
         catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
         {
-            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex)) with { FailureKind = ToolFailureKind.Environment };
         }
     }
 }

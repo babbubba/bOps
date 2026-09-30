@@ -45,16 +45,16 @@ public static class FirewallManifests
             new("direction", ToolParameterType.Enum, "all, inbound, or outbound", Required:false, AllowedValues:["all", "inbound", "outbound"]),
             new("action", ToolParameterType.Enum, "all, allow, or block", Required:false, AllowedValues:["all", "allow", "block"]),
             new("protocol", ToolParameterType.Enum, "all, tcp, udp, icmp, or any", Required:false, AllowedValues:["all", "tcp", "udp", "icmp", "any"]),
-            new("localPort", ToolParameterType.Integer, "Local port 1-65535", Required:false), new("remotePort", ToolParameterType.Integer, "Remote port 1-65535", Required:false),
+            new("localPort", ToolParameterType.Integer, "Local port 1-65535", Required:false) { Minimum = 1, Maximum = 65535 }, new("remotePort", ToolParameterType.Integer, "Remote port 1-65535", Required:false) { Minimum = 1, Maximum = 65535 },
             new("enabled", ToolParameterType.Boolean, "Rule enabled state", Required:false),
-            new("limit", ToolParameterType.Integer, "Maximum rows (1-5000, default 500)", Required:false),
-            new("maxOutputBytes", ToolParameterType.Integer, "Maximum JSON bytes (1-262144, default 65536)", Required:false),
+            new("limit", ToolParameterType.Integer, "Maximum rows (1-5000, default 500)", Required:false) { Minimum = 1, Maximum = FirewallLimits.MaximumRows },
+            new("maxOutputBytes", ToolParameterType.Integer, "Maximum JSON bytes (1-262144, default 65536)", Required:false) { Minimum = 1, Maximum = FirewallLimits.MaximumOutputBytes },
         ],
     };
     public static ToolManifest Inspect(string platform) => new()
     {
         Name = "firewall.rule.inspect", Description = "Re-enumerates local firewall evidence and returns the rule with this observation id. An observation id is not a mutation token.",
-        Risk = RiskLevel.Read, Platforms = [platform], Requires = [], Parameters = [new("id", ToolParameterType.String, "An id returned by firewall.rules.")],
+        Risk = RiskLevel.Read, Platforms = [platform], Requires = [], Parameters = [new("id", ToolParameterType.String, "An id returned by firewall.rules.") { MinLength = 1, MaxLength = 256 }],
     };
 }
 

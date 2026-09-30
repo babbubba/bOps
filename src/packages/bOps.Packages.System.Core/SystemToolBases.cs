@@ -20,11 +20,11 @@ public abstract class SystemUpdatesToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!SystemMaintenanceArguments.TryReadUpdates(arguments, out var query, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         var snapshot = await CollectAsync(query, ct).ConfigureAwait(false);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Updates(snapshot, query.Limit));
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Updates(snapshot, query.Limit));
     }
 }
 
@@ -41,8 +41,8 @@ public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -59,8 +59,8 @@ public abstract class SystemCrashesToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -77,8 +77,8 @@ public abstract class SystemDriversToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -116,12 +116,12 @@ public abstract class ApplicationInventoryToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
-        return ToolCallResult.Success(SystemInventoryFormatting.FormatApplications(snapshot, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemInventoryFormatting.FormatApplications(snapshot, limit, maxOutputBytes));
     }
 }
 
@@ -142,12 +142,12 @@ public abstract class DeviceInventoryToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
-        return ToolCallResult.Success(SystemInventoryFormatting.FormatDevices(snapshot, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemInventoryFormatting.FormatDevices(snapshot, limit, maxOutputBytes));
     }
 }
 
@@ -257,7 +257,7 @@ public abstract class ProcessInspectToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadPid(arguments, out var pid, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(pid, ct)));
@@ -298,7 +298,7 @@ public abstract class ProcessMetricsToolBase : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadMetrics(arguments, out var pid, out var sampleMilliseconds, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
@@ -308,7 +308,7 @@ public abstract class ProcessMetricsToolBase : ITool
         var second = await SampleAsync(pid, ct);
         var elapsed = clock.GetElapsedTime(startedAt);
 
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.Format(
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.Format(
             Compute(pid, sampleMilliseconds, first, second, elapsed)));
     }
 
@@ -399,7 +399,7 @@ public abstract class ProcessTreeToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadTree(arguments, out var rootPid, out var maxDepth, out var limit, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
@@ -409,7 +409,7 @@ public abstract class ProcessTreeToolBase(string platform) : ITool
             ? new Dictionary<int, string?>()
             : await ResolveUsersAsync(selection.Rows.Select(row => row.Pid).ToArray(), ct);
 
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatTree(selection, snapshot, rootPid, maxDepth, users));
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.FormatTree(selection, snapshot, rootPid, maxDepth, users));
     }
 }
 
@@ -432,12 +432,12 @@ public abstract class ProcessModulesToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadModules(arguments, out var pid, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(pid, ProcessDiagnosticsLimits.ModuleScanCeiling, ct);
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatModules(snapshot, pid, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.FormatModules(snapshot, pid, limit, maxOutputBytes));
     }
 }
 

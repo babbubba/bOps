@@ -81,6 +81,54 @@ If your tool's risk is anything other than `Read`, it **must** also declare a
 `VerificationSpec` and implement `IVerifiableTool`, or the registry rejects it at enable time —
 this is enforced structurally, not by convention (rule B3).
 
+### Declaring argument bounds, failure kinds and completeness
+
+A bound the model must respect belongs in the manifest, not only in the description. `ToolParameter`
+has init-only constraints (additive; the positional constructor is unchanged):
+
+| Parameter type | Constraints |
+|---|---|
+| `Integer`, `Number` | `Minimum`, `Maximum` (inclusive) |
+| `String`, `Path` | `MinLength`, `MaxLength` |
+| `PathList` | `MinItems`, `MaxItems` |
+
+```csharp
+new ToolParameter("limit", ToolParameterType.Integer, "Maximum rows (1-500, default 50).", Required: false)
+{
+    Minimum = 1,
+    Maximum = 500,
+}
+```
+
+Registration fails if a constraint does not fit the parameter type, is negative where a count is
+meant, or has a minimum above its maximum. The runtime then rejects an out-of-range argument
+**before policy, approval and execution** with a message the model can act on
+(`Argument 'limit' = 900 exceeds maximum 500.`); it never clamps. Both provider adapters project
+the same bounds, the enum values and `additionalProperties: false` into the tool's JSON Schema.
+Keep your own validation as defence in depth, and keep the description human-readable: an
+architecture test fails when a description states a numeric range (`1-500`, `1..500`, `1 to 500`,
+`1 through 500`) that the parameter does not declare.
+
+A bound that depends on host configuration (a ceiling an operator can change) cannot be a static
+constraint; declare only the part that is always true (for example `Minimum = 1`) and enforce the
+configured ceiling in the tool.
+
+The runtime classifies its own failures (`ToolCallResult.FailureKind`): argument validation and
+unknown tools are `Validation`, a timeout is `Timeout`, a thrown exception is `Internal`, and a
+policy, approval, envelope or entitlement denial is `Authorization`. A tool sets `Environment`
+when the host cannot provide what it needs (a provider is missing or unreachable, access is
+denied, the operation is unsupported here) and may set `Validation` for its own defence-in-depth
+checks. The model sees the kind in its observation (`ERROR (environment): ...`); a result with no
+kind keeps the plain `ERROR: ...` wording.
+
+`Success` does not mean the evidence is whole. A tool that can collect only part of what was asked
+for sets `ToolCallResult.Completeness` to `Complete`, `Partial` or `Unavailable`; a tool that
+declares nothing leaves `Unspecified`. Derive the value from the same fields you already emit
+(`complete`, `truncated`, `partial`, `status`) so the two cannot disagree: `complete: true` is
+`Complete`; a truncated result, a partial source or `partial: true` is `Partial`; no readable
+source is `Unavailable`. The runtime records both values on the step and in the audit record and
+never parses your output to find them.
+
 ## Writing the entry type
 
 ```csharp

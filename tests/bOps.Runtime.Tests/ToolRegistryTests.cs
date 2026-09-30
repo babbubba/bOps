@@ -36,6 +36,116 @@ public sealed class ToolRegistryTests
     }
 
     [Fact]
+    public void Register_RejectsConstraintsThatDoNotMatchTheDeclaredParameterType()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters = [new ToolParameter("name", ToolParameterType.String, "Name.") { Minimum = 1 }],
+        };
+
+        var exception = Assert.Throws<ToolRegistrationException>(() =>
+            registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest)));
+
+        Assert.Equal("test.read", exception.ToolName);
+    }
+
+    public static TheoryData<ToolParameter> InconsistentOrInapplicableConstraints => new()
+    {
+        new ToolParameter("p", ToolParameterType.Integer, "p") { Minimum = 5, Maximum = 4 },
+        new ToolParameter("p", ToolParameterType.Number, "p") { Minimum = double.NaN },
+        new ToolParameter("p", ToolParameterType.Number, "p") { Maximum = double.PositiveInfinity },
+        new ToolParameter("p", ToolParameterType.String, "p") { MinLength = 5, MaxLength = 4 },
+        new ToolParameter("p", ToolParameterType.PathList, "p") { MinItems = 5, MaxItems = 4 },
+        new ToolParameter("p", ToolParameterType.String, "p") { Maximum = 4 },
+        new ToolParameter("p", ToolParameterType.Boolean, "p") { Minimum = 0 },
+        new ToolParameter("p", ToolParameterType.Integer, "p") { MaxLength = 4 },
+        new ToolParameter("p", ToolParameterType.Enum, "p", AllowedValues: ["a"]) { MinLength = 1 },
+        new ToolParameter("p", ToolParameterType.String, "p") { MinItems = 1 },
+        new ToolParameter("p", ToolParameterType.Path, "p") { MaxItems = 1 },
+        new ToolParameter("p", ToolParameterType.PathList, "p") { MinLength = 1 },
+        new ToolParameter("p", ToolParameterType.String, "p") { MinLength = -1 },
+        new ToolParameter("p", ToolParameterType.String, "p") { MaxLength = -1 },
+        new ToolParameter("p", ToolParameterType.PathList, "p") { MinItems = -1 },
+        new ToolParameter("p", ToolParameterType.PathList, "p") { MaxItems = -1 },
+    };
+
+    [Theory]
+    [MemberData(nameof(InconsistentOrInapplicableConstraints))]
+    public void Register_RejectsInconsistentOrInapplicableConstraints(ToolParameter parameter)
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with { Parameters = [parameter] };
+
+        var exception = Assert.Throws<ToolRegistrationException>(() =>
+            registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest)));
+
+        Assert.Equal("test.read", exception.ToolName);
+        Assert.Null(registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void Register_AcceptsEveryApplicableConstraint_IncludingEqualBounds()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters =
+            [
+                new ToolParameter("count", ToolParameterType.Integer, "c") { Minimum = 1, Maximum = 1 },
+                new ToolParameter("ratio", ToolParameterType.Number, "r") { Minimum = 0.5, Maximum = 2.5 },
+                new ToolParameter("name", ToolParameterType.String, "n") { MinLength = 0, MaxLength = 8 },
+                new ToolParameter("file", ToolParameterType.Path, "f") { MinLength = 1 },
+                new ToolParameter("files", ToolParameterType.PathList, "l") { MinItems = 1, MaxItems = 10 },
+                new ToolParameter("open", ToolParameterType.Integer, "o") { Maximum = 3 },
+            ],
+        };
+
+        registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest));
+
+        Assert.NotNull(registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void Register_AcceptsAManifestBuiltOnlyWithTheLegacyConstructors()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters =
+            [
+                new ToolParameter("count", ToolParameterType.Integer, "Old style."),
+                new ToolParameter("mode", ToolParameterType.Enum, "Old style.", false, false, ["a", "b"]),
+                new ToolParameter("secret", ToolParameterType.String, "Old style.", Required: false, Sensitive: true),
+            ],
+        };
+
+        registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest));
+
+        var registered = registry.Resolve("test.read")!.Manifest.Parameters;
+        Assert.All(registered, parameter =>
+        {
+            Assert.Null(parameter.Minimum);
+            Assert.Null(parameter.Maximum);
+            Assert.Null(parameter.MinLength);
+            Assert.Null(parameter.MaxLength);
+            Assert.Null(parameter.MinItems);
+            Assert.Null(parameter.MaxItems);
+        });
+    }
+
+    [Fact]
+    public void LegacyToolCallResultConstructors_LeaveTheNewFieldsUnspecified()
+    {
+        var constructed = new ToolCallResult(ToolOutcome.Failure, null, "old");
+
+        Assert.Equal(ToolFailureKind.Unspecified, constructed.FailureKind);
+        Assert.Equal(ToolResultCompleteness.Unspecified, constructed.Completeness);
+        Assert.Equal(ToolFailureKind.Unspecified, ToolCallResult.Failure("old").FailureKind);
+        Assert.Equal(ToolResultCompleteness.Unspecified, ToolCallResult.Success("old").Completeness);
+    }
+
+    [Fact]
     public void LegacyRegisterOverloads_StampExplicitNotGovernedRequirements()
     {
         var registry = CreateRegistry();

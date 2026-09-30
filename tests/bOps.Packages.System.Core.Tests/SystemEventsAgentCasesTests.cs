@@ -231,7 +231,9 @@ public sealed class SystemEventsAgentCasesTests
 
         var step = ToolStep(task);
         Assert.False(step.Result!.Succeeded);
-        Assert.Contains("windowMinutes must be between 1 and 10080", step.Result.ErrorMessage, StringComparison.Ordinal);
+        // HARDEN-6: the manifest constraint now rejects this before the tool runs; the package check is defence in depth.
+        Assert.Equal("Argument 'windowMinutes' = 525600 exceeds maximum 10080.", step.Result.ErrorMessage);
+        Assert.Equal(ToolFailureKind.Validation, step.Result.FailureKind);
         Assert.Equal(AgentTaskStatus.Completed, task.Status);
     }
 

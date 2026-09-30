@@ -14,7 +14,7 @@ public static class StorageManifests
     public static ToolManifest Partitions(string platform) => ListManifest(
         "storage.partitions", platform,
         "Lists disk partitions with their owning disk, offsets, sizes, type and boot/read-only flags.",
-        [new ToolParameter("diskId", ToolParameterType.String, "Filter by exact disk id.", Required: false)]);
+        [new ToolParameter("diskId", ToolParameterType.String, "Filter by exact disk id.", Required: false) { MinLength = 1, MaxLength = StorageLimits.TextCharacters }]);
 
     public static ToolManifest Mounts(string platform) => ListManifest(
         "storage.mounts", platform,
@@ -29,9 +29,9 @@ public static class StorageManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("device", ToolParameterType.String, "Filter by exact enumerated device id.", Required: false),
+            new ToolParameter("device", ToolParameterType.String, "Filter by exact enumerated device id.", Required: false) { MinLength = 1, MaxLength = StorageLimits.TextCharacters },
             new ToolParameter("sampleMilliseconds", ToolParameterType.Integer,
-                $"Sampling interval ({StorageLimits.MinimumSampleMilliseconds}-{StorageLimits.MaximumSampleMilliseconds}, default {StorageLimits.DefaultSampleMilliseconds}).", Required: false),
+                $"Sampling interval ({StorageLimits.MinimumSampleMilliseconds}-{StorageLimits.MaximumSampleMilliseconds}, default {StorageLimits.DefaultSampleMilliseconds}).", Required: false) { Minimum = StorageLimits.MinimumSampleMilliseconds, Maximum = StorageLimits.MaximumSampleMilliseconds },
             OutputParameter(),
         ],
     };
@@ -39,7 +39,7 @@ public static class StorageManifests
     public static ToolManifest Health(string platform) => ListManifest(
         "storage.health", platform,
         "Reports bounded hardware health evidence. Unknown is never treated as healthy and raw SMART/WMI payloads are never returned.",
-        [new ToolParameter("device", ToolParameterType.String, "Filter by exact enumerated device id.", Required: false)]);
+        [new ToolParameter("device", ToolParameterType.String, "Filter by exact enumerated device id.", Required: false) { MinLength = 1, MaxLength = StorageLimits.TextCharacters }]);
 
     private static ToolManifest ListManifest(string name, string platform, string description, IReadOnlyList<ToolParameter> filters) => new()
     {
@@ -52,9 +52,9 @@ public static class StorageManifests
     };
 
     private static ToolParameter RowParameter() => new(
-        "limit", ToolParameterType.Integer, $"Maximum rows (1-{StorageLimits.MaximumRows}, default {StorageLimits.DefaultRows}).", Required: false);
+        "limit", ToolParameterType.Integer, $"Maximum rows (1-{StorageLimits.MaximumRows}, default {StorageLimits.DefaultRows}).", Required: false) { Minimum = 1, Maximum = StorageLimits.MaximumRows };
 
     private static ToolParameter OutputParameter() => new(
         "maxOutputBytes", ToolParameterType.Integer,
-        $"Maximum UTF-8 output bytes ({StorageLimits.MinimumOutputBytes}-{StorageLimits.MaximumOutputBytes}, default {StorageLimits.DefaultOutputBytes}).", Required: false);
+        $"Maximum UTF-8 output bytes ({StorageLimits.MinimumOutputBytes}-{StorageLimits.MaximumOutputBytes}, default {StorageLimits.DefaultOutputBytes}).", Required: false) { Minimum = StorageLimits.MinimumOutputBytes, Maximum = StorageLimits.MaximumOutputBytes };
 }
