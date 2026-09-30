@@ -10,10 +10,11 @@ namespace bOps.Api;
 /// <summary>
 /// Starts or resumes a task as a detached background operation (ADR-0018) — never awaited by the
 /// HTTP request that triggers it. Safe without a job queue or hosted-service framework because
-/// <see cref="AgentRunner.RunAsync"/>/<see cref="AgentRunner.ResumeAsync"/> already catch every
-/// exception except <see cref="OperationCanceledException"/> and always persist their result
-/// through <see cref="ITaskStore"/> (rule C1; V0.7) — a client observes progress by reading the
-/// store, never by holding this method's own <see cref="Task"/> open.
+/// <see cref="AgentRunner.RunAsync"/>/<see cref="AgentRunner.ResumeAsync"/> contain every failure except
+/// the task's own cancellation and always persist their result through <see cref="ITaskStore"/>
+/// (rule C1; V0.7; ADR-0039) — a client observes progress by reading the store, never by holding this
+/// method's own <see cref="Task"/> open. Anything that escapes anyway reaches a backstop that never
+/// leaves the task <see cref="AgentTaskStatus.Running"/> (ADR-0039 §9).
 /// </summary>
 internal sealed class AgentTaskLauncher(
     AgentRunner runner,
@@ -97,12 +98,15 @@ internal sealed class AgentTaskLauncher(
                 var current = await taskStore.LoadAsync(taskId) ?? lastKnownState;
                 await taskStore.SaveAsync(current with { Status = AgentTaskStatus.Cancelled });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellation.IsCancellationRequested)
             {
-                // Rule C1 guarantees AgentRunner itself does not let this happen — this remains a
-                // defensive backstop against a genuinely unexpected failure in the detached
-                // Task.Run wrapper itself, not something the agent loop is expected to trigger.
+                // The final containment boundary (ADR-0039 §9). Rule C1 and ADR-0039 mean the runner should never let this
+                // happen — including an OperationCanceledException this launcher did not request, such as a timeout — so
+                // whatever does escape is a runtime defect: it is logged, and a task still persisted Running is failed and
+                // audited so it never stays Running without an executor. A terminal state is never overwritten.
                 logger.LogError(ex, "Task {TaskId}: background execution failed unexpectedly", taskId);
+                // Never throws for a store or audit failure (it logs them), so nothing escapes this detached task.
+                await runner.ContainEscapedFailureAsync(taskId, actor, lastKnownState, ex, CancellationToken.None);
             }
             finally
             {

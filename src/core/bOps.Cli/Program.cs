@@ -215,10 +215,13 @@ var modelOptions = new ChatModelOptions(
     ResolvedApiKey = configuredModelOptions.ApiKeySecret is null
         ? null
         : host.Services.GetRequiredService<ISecretProvider>().GetSecret(configuredModelOptions.ApiKeySecret),
+    RequestTimeout = configuredModelOptions.RequestTimeout,
 };
 
 var model = chatModelRegistry.Create(modelOptions);
 var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
+// ADR-0039: the runtime's model-call attempt timeout must fire before the provider's outer transport timeout.
+runnerOptions.Validate(modelOptions.EffectiveRequestTimeout);
 
 var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Policy");
 var (policyEngine, policyConfig) = await LoadPolicyAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);

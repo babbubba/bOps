@@ -244,6 +244,11 @@ public interface IChatModel
     ChatModelDescriptor Descriptor { get; }
 
     /// <summary>Asks the model for its next step, given the conversation so far and the tools available.</summary>
+    /// <remarks>
+    /// One invocation is one attempt: an adapter must not retry a transport failure itself. It throws a
+    /// <see cref="ModelProtocolException"/> carrying a <see cref="ModelProtocolException.FailureKind"/> instead, and the
+    /// runtime decides whether, when and how often to try again, auditing every attempt (ADR-0039).
+    /// </remarks>
     /// <param name="request">The system prompt, history, and available tools.</param>
     /// <param name="ct">Cancelled if the call should be abandoned.</param>
     Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default);
@@ -278,4 +283,78 @@ public sealed class ModelProtocolException : Exception
 
     /// <summary>The request and reply bodies of the failed call, when the adapter had them, so the failure can be diagnosed afterwards.</summary>
     public ModelCallDetails? Details { get; init; }
+
+    /// <summary>
+    /// Why the call failed, in provider-neutral terms, decided by the adapter (ADR-0039). The runtime retries only
+    /// <see cref="ModelFailureKind.Transient"/>, <see cref="ModelFailureKind.RateLimited"/>,
+    /// <see cref="ModelFailureKind.Timeout"/> and <see cref="ModelFailureKind.Unreachable"/>. When set, the exception's
+    /// message must be a safe, bounded reason: no credential, header, identifier, prompt or full body.
+    /// </summary>
+    public ModelFailureKind FailureKind { get; init; }
+
+    /// <summary>How long the provider asked the caller to wait before trying again, when it said; never negative. The runtime decides whether to honour it.</summary>
+    public TimeSpan? RetryAfter { get; init; }
+
+    /// <summary>The provider's status code (an HTTP status for an HTTP provider), when a response was obtained; <c>null</c> otherwise.</summary>
+    public int? ProviderStatusCode { get; init; }
+}
+
+/// <summary>
+/// Why a model call failed, in provider-neutral terms (ADR-0039). A provider package decides the kind — it is the only
+/// code that understands a provider's status codes and error bodies — and the runtime only reads it: to decide whether
+/// the call is worth another attempt, and to tell the operator what to do. Values are appended, never reordered.
+/// </summary>
+public enum ModelFailureKind
+{
+    /// <summary>The failure could not be safely classified. Never retried.</summary>
+    Unknown,
+
+    /// <summary>A temporary provider-side failure (for example HTTP 500, 502, 503 or an overloaded provider). Retried within bounds.</summary>
+    Transient,
+
+    /// <summary>The provider refused the call because of a rate limit (HTTP 429). Retried within bounds, honouring a bounded <c>Retry-After</c>.</summary>
+    RateLimited,
+
+    /// <summary>The call did not complete in time: the runtime's attempt timeout, the transport timeout, or HTTP 408/504. Retried within bounds.</summary>
+    Timeout,
+
+    /// <summary>No provider response was obtained at all (DNS, socket, connection or TLS failure). Retried within bounds.</summary>
+    Unreachable,
+
+    /// <summary>The provider refused the credential (HTTP 401, and 403 unless the provider says otherwise). Never retried.</summary>
+    Authentication,
+
+    /// <summary>The provider account has no quota or credit left (HTTP 402, or an explicit quota error code). Never retried.</summary>
+    QuotaExceeded,
+
+    /// <summary>The provider rejected the request itself (HTTP 400 and other client errors without context-limit evidence). Never retried.</summary>
+    InvalidRequest,
+
+    /// <summary>The provider said explicitly that the request exceeds the model's context or token limit. Never retried by the generic retry.</summary>
+    ContextOverflow,
+
+    /// <summary>The provider or model answered with something that is not a usable reply. Never retried by the generic retry.</summary>
+    MalformedResponse,
+}
+
+/// <summary>
+/// What the runtime decided after one failed attempt of a logical model call (ADR-0039). Every value except
+/// <see cref="Retry"/> marks the last attempt of that call.
+/// </summary>
+public enum ModelRetryDecision
+{
+    /// <summary>Another attempt follows after the recorded delay.</summary>
+    Retry,
+
+    /// <summary>The failure kind is never retried.</summary>
+    NotRetryable,
+
+    /// <summary>The configured maximum number of attempts was reached.</summary>
+    AttemptsExhausted,
+
+    /// <summary>The wait before another attempt would not fit in the remaining call budget.</summary>
+    BudgetExhausted,
+
+    /// <summary>The provider asked to wait longer than the configured maximum retry delay.</summary>
+    RetryAfterExceedsLimit,
 }

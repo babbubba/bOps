@@ -126,6 +126,9 @@ builder.Services.AddSingleton<IChatModel>(sp =>
         sp.GetRequiredService<SettingsStore>(),
         sp.GetRequiredService<ISecretProvider>(),
         sp.GetService<VaultSecretProvider>());
+    // ADR-0039: the runtime's model-call attempt timeout must fire before the provider's outer transport timeout.
+    (builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions())
+        .Validate(modelOptions.EffectiveRequestTimeout);
     return sp.GetRequiredService<IChatModelRegistry>().Create(modelOptions);
 });
 
