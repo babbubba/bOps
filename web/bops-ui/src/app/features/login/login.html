@@ -10,6 +10,12 @@
       </div>
     </div>
 
+    @if (auth.sessionExpired()) {
+      <p role="status" class="mb-4 rounded-lg border border-status-blocked bg-status-blocked/10 px-3 py-2 text-sm">
+        {{ 'login.sessionExpired' | t }}
+      </p>
+    }
+
     <label for="api-key" class="mb-1 block text-sm font-medium">{{ 'login.apiKey' | t }}</label>
     <input
       id="api-key"

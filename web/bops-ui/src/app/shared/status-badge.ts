@@ -20,7 +20,9 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   selector: 'bops-status-badge',
   template: `
     <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium" [class]="cssClass()">
-      @if (status() === 0) {
+      @if (interrupted()) {
+        <span class="h-1.5 w-1.5 rounded-full border border-current"></span>
+      } @else if (status() === 0) {
         <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-current"></span>
       }
       {{ label() }}
@@ -30,12 +32,18 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
 export class StatusBadge {
   private readonly i18n = inject(I18n);
   readonly status = input.required<AgentTaskStatus>();
+  /** A Running task that no executor holds (see isInterrupted): labelled as such and not pulsing, so it is not mistaken for live work. */
+  readonly interrupted = input(false);
 
   protected label(): string {
+    if (this.interrupted()) {
+      return this.i18n.t('dashboard.status.interrupted');
+    }
+
     return this.i18n.label('taskStatus', AgentTaskStatusName[this.status()]);
   }
 
   protected cssClass(): string {
-    return STATUS_CLASSES[this.status()];
+    return this.interrupted() ? 'bg-status-blocked/15 text-status-blocked' : STATUS_CLASSES[this.status()];
   }
 }
