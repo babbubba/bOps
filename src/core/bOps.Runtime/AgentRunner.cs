@@ -275,7 +275,7 @@ public sealed class AgentRunner(
             var request = new ModelRequest(BuildStepSystemPrompt(plan), history, ToolViewFor(delegation));
             var stepCalls = new List<ModelCallRecord>();
 
-            ModelResponse response;
+            ModelResponse? response = null;
             try
             {
                 response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, stepCalls, ct);
@@ -1471,10 +1471,40 @@ public sealed class AgentRunner(
             var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var startedAtUtc = timeProvider.GetUtcNow();
             var startedAt = timeProvider.GetTimestamp();
-            AttemptFailure failure;
+            AttemptFailure? failure = null;
+            // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
+            // a successful call is not a model failure and is never classified, recorded or retried as one.
+            ModelResponse? response = null;
             try
             {
-                var response = await AttemptModelCallAsync(request, attemptTimeout, ct);
+                response = await AttemptModelCallAsync(request, attemptTimeout, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // Rule C2 for model calls: the attempt's own timeout fired (or a transport timeout the adapter did not wrap),
+                // not the task's cancellation, so this is a classified, audited failure rather than an escape.
+                failure = new AttemptFailure(ModelFailureKind.Timeout,
+                    $"The model call attempt did not complete within {attemptTimeout.TotalSeconds:0.###} s.", null, null, null);
+            }
+            catch (ModelProtocolException ex)
+            {
+                failure = new AttemptFailure(ex.FailureKind, ModelFailureText.Sanitize(ex.Message), ex.ProviderStatusCode, ex.RetryAfter, ex.Details);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Rule C1 (ADR-0013): an adapter that throws something unexpected is contained like any other failure, but it is
+                // not classified, so it is never retried.
+                logger.LogWarning(ex, "Task {TaskId}: the model adapter threw an unclassified {ExceptionType}", taskId, ex.GetType().Name);
+                failure = new AttemptFailure(ModelFailureKind.Unknown, ModelFailureText.Sanitize($"{ex.GetType().Name}: {ex.Message}"), null, null, null);
+            }
+
+            if (response is not null)
+            {
                 var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
                 delegation?.Meter?.AddTokens(UsageTokens(response));
 
@@ -1501,28 +1531,10 @@ public sealed class AgentRunner(
                     response.Details?.ActualModel, elapsedMs, attempt, null, null, null, null, ct);
                 return response;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+
+            if (failure is null)
             {
-                // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                // Rule C2 for model calls: the attempt's own timeout fired (or a transport timeout the adapter did not wrap),
-                // not the task's cancellation, so this is a classified, audited failure rather than an escape.
-                failure = new AttemptFailure(ModelFailureKind.Timeout,
-                    $"The model call attempt did not complete within {attemptTimeout.TotalSeconds:0.###} s.", null, null, null);
-            }
-            catch (ModelProtocolException ex)
-            {
-                failure = new AttemptFailure(ex.FailureKind, ModelFailureText.Sanitize(ex.Message), ex.ProviderStatusCode, ex.RetryAfter, ex.Details);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Rule C1 (ADR-0013): an adapter that throws something unexpected is contained like any other failure, but it is
-                // not classified, so it is never retried.
-                logger.LogWarning(ex, "Task {TaskId}: the model adapter threw an unclassified {ExceptionType}", taskId, ex.GetType().Name);
-                failure = new AttemptFailure(ModelFailureKind.Unknown, ModelFailureText.Sanitize($"{ex.GetType().Name}: {ex.Message}"), null, null, null);
+                throw new InvalidOperationException("A model attempt ended with neither a response nor a classified failure.");
             }
 
             var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
