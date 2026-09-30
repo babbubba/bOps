@@ -8,8 +8,10 @@ documents; it does not duplicate or supersede their rules.
 bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
 policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
 decides and executes. V1.2 multi-agent orchestration is complete and released as
-`v1.2.0-preview.8`. The active milestone is V1.3 senior-operator local diagnostics: batches A–E
-are implemented locally and V1.3-F is next. All gates are defined only by the consolidated roadmap.
+`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The active work is the
+V1.3.x reliability hardening train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`),
+executed one HARDEN packet at a time; the next packet is HARDEN-1. All gates are defined only by the
+consolidated roadmap.
 
 ## Required read order
 

@@ -142,6 +142,62 @@ public sealed class SqliteTaskStoreTests : IDisposable
         Assert.Null(loaded.Plans[0].ModelCalls);
     }
 
+    [Fact]
+    public async Task LoadAsync_ReadsATaskStoredBeforeUnexecutedToolCallsWereKept_WithNone()
+    {
+        var id = Guid.NewGuid();
+        const string legacy = """
+            {"Id":"00000000-0000-0000-0000-000000000000","Node":"local","Goal":"g","Status":1,
+             "Steps":[{"Index":0,"Description":"fs.read","ToolCall":{"Id":"call-0","ToolName":"fs.read","Arguments":{"path":"/tmp"}},
+                       "Result":{"Outcome":0,"Output":"o","ErrorMessage":null},"Observation":"o","PlanRevision":0}],
+             "Plans":[{"Revision":0,"Rationale":"r","Steps":[]}],"CreatedAtUtc":"2026-09-19T19:04:57.3626736+00:00"}
+            """;
+        _ = new SqliteTaskStore(_filePath); // creates the schema
+        await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = _filePath }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO tasks (id, status, updated_at_utc, state_json) VALUES ($id, 'Completed', $at, $json)";
+            command.Parameters.AddWithValue("$id", id.ToString());
+            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$json", legacy.Replace("00000000-0000-0000-0000-000000000000", id.ToString()));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var loaded = await new SqliteTaskStore(_filePath).LoadAsync(id);
+
+        var step = Assert.Single(loaded!.Steps);
+        Assert.Equal("fs.read", step.ToolCall!.ToolName);
+        Assert.Equal("/tmp", step.ToolCall.Arguments.GetRequired<string>("path"));
+        Assert.Null(step.UnexecutedToolCalls);
+        Assert.Null(step.ToolCall.ArgumentsError);
+        Assert.Null(step.ToolCall.ToolNameError);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ThenLoadAsync_KeepsEveryCallTheModelEmitted_AndWhyOneCouldNotRun()
+    {
+        var unexecuted = new List<ModelToolCall>
+        {
+            new("call-b", "system.crashes", ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["limit"] = 5 })),
+            new("call-c", "not.offered", ToolArguments.Empty) { ToolNameError = "'not.offered' is not a tool that was offered in this request." },
+            new("call-d", "fs.size", ToolArguments.Empty) { ArgumentsError = "the arguments payload was empty" },
+        };
+        var task = SampleTask(AgentTaskStatus.Running);
+        task = task with { Steps = [task.Steps[0] with { UnexecutedToolCalls = unexecuted }] };
+
+        var store = new SqliteTaskStore(_filePath);
+        await store.SaveAsync(task);
+        var loaded = await store.LoadAsync(task.Id);
+
+        var kept = loaded!.Steps[0].UnexecutedToolCalls!;
+        Assert.Equal(["call-b", "call-c", "call-d"], kept.Select(c => c.Id));
+        Assert.Equal(5, kept[0].Arguments.GetRequired<int>("limit"));
+        Assert.Equal(unexecuted[1].ToolNameError, kept[1].ToolNameError);
+        Assert.Equal(unexecuted[2].ArgumentsError, kept[2].ArgumentsError);
+        Assert.Equal("fs.read", loaded.Steps[0].ToolCall!.ToolName);
+    }
+
     private static TaskState SampleTask(AgentTaskStatus status)
     {
         var arguments = ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["path"] = "/tmp/example" });

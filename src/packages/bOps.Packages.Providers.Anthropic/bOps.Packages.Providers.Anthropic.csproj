@@ -11,6 +11,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One shared implementation of the wire-name map (ADR-0038), owned by the OpenAI-compatible package. Linked, not referenced: provider packages must not depend on each other (rule B6). -->
+    <Compile Include="..\bOps.Packages.Providers.OpenAiCompatible\Wire\ToolWireNames.cs" Link="Wire\ToolWireNames.cs" />
+    <!-- One shared implementation of strict duplicate-key-safe JSON parsing (ADR-0038, HARDEN-1 review M-2), owned the same way. -->
+    <Compile Include="..\bOps.Packages.Providers.OpenAiCompatible\Wire\StrictJson.cs" Link="Wire\StrictJson.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
   </ItemGroup>
 

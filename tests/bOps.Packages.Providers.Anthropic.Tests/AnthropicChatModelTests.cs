@@ -21,6 +21,16 @@ public sealed class AnthropicChatModelTests
             ResolvedApiKey = "test-key",
         };
 
+    private static readonly ToolManifest ReadManifest = new()
+    {
+        Name = "test.read",
+        Description = "Reads a thing.",
+        Risk = RiskLevel.Read,
+        Platforms = ["linux", "windows"],
+        Requires = [],
+        Parameters = [new ToolParameter("path", ToolParameterType.Path, "The path to read", Required: true)],
+    };
+
 #pragma warning disable CA2000 // The handler/HttpClient pair's lifetime is the test method's —
                                // nothing here holds a real OS handle worth an explicit Dispose,
                                // and the handler is returned so tests can inspect what was sent.
@@ -87,14 +97,15 @@ public sealed class AnthropicChatModelTests
     public async Task CompleteAsync_ParsesAToolUseBlock_IntoAModelToolCall()
     {
         var (model, _) = CreateModel(
-            [(HttpStatusCode.OK, """{"content":[{"type":"tool_use","id":"toolu_1","name":"test.read","input":{"path":"/tmp"}}],"stop_reason":"tool_use"}""")]);
+            [(HttpStatusCode.OK, """{"content":[{"type":"tool_use","id":"toolu_1","name":"test_read","input":{"path":"/tmp"}}],"stop_reason":"tool_use"}""")]);
 
-        var result = await model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], []));
+        var result = await model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], [ReadManifest]));
 
         Assert.False(result.IsFinal);
         var call = Assert.Single(result.ToolCalls);
         Assert.Equal("toolu_1", call.Id);
         Assert.Equal("test.read", call.ToolName);
+        Assert.Null(call.ToolNameError);
         Assert.Equal("/tmp", call.Arguments.GetRequired<string>("path"));
     }
 
@@ -102,21 +113,12 @@ public sealed class AnthropicChatModelTests
     public async Task CompleteAsync_TranslatesToolManifestsIntoAnthropicInputSchemas()
     {
         var (model, handler) = CreateModel([(HttpStatusCode.OK, """{"content":[{"type":"text","text":"ok"}]}""")]);
-        var manifest = new ToolManifest
-        {
-            Name = "test.read",
-            Description = "Reads a thing.",
-            Risk = RiskLevel.Read,
-            Platforms = ["linux", "windows"],
-            Requires = [],
-            Parameters = [new ToolParameter("path", ToolParameterType.Path, "The path to read", Required: true)],
-        };
 
-        await model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], [manifest]));
+        await model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], [ReadManifest]));
 
         var body = JsonDocument.Parse(handler.RequestBodies[0]).RootElement;
         var tool = body.GetProperty("tools")[0];
-        Assert.Equal("test.read", tool.GetProperty("name").GetString());
+        Assert.Equal("test_read", tool.GetProperty("name").GetString());
         var schema = tool.GetProperty("input_schema");
         Assert.Equal("object", schema.GetProperty("type").GetString());
         Assert.Equal("string", schema.GetProperty("properties").GetProperty("path").GetProperty("type").GetString());

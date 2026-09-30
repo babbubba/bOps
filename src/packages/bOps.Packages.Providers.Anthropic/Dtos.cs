@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
@@ -57,9 +58,17 @@ internal sealed class ContentBlockDto
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
-    /// <summary>Present when <see cref="Type"/> is <c>"tool_use"</c>: the tool's arguments, as a JSON object (not a JSON-encoded string, unlike the OpenAI schema).</summary>
+    /// <summary>
+    /// Present when <see cref="Type"/> is <c>"tool_use"</c>: the tool's arguments, as a JSON value (not a
+    /// JSON-encoded string, unlike the OpenAI schema). Kept as a raw <see cref="JsonElement"/>, never a
+    /// <see cref="JsonNode"/> — a <see cref="JsonObject"/> field would silently accept a repeated property name
+    /// while this whole response is deserialized and only throw later, from ordinary access, escaping the
+    /// containment <c>AnthropicChatModel</c> gives every other malformed reply (ADR-0038, HARDEN-1 review M-2). A
+    /// <see cref="JsonElement"/> keeps the repeated key intact instead, so the adapter's own strict re-parse of it is
+    /// what decides, on its own terms, whether the payload is well-formed.
+    /// </summary>
     [JsonPropertyName("input")]
-    public JsonObject? Input { get; set; }
+    public JsonElement? Input { get; set; }
 
     /// <summary>Present when <see cref="Type"/> is <c>"tool_result"</c>: the <see cref="Id"/> of the <c>"tool_use"</c> block this answers.</summary>
     [JsonPropertyName("tool_use_id")]
@@ -107,7 +116,8 @@ internal sealed class AnthropicUsageDto
     public int OutputTokens { get; set; }
 }
 
-[JsonSourceGenerationOptions(WriteIndented = false)]
+// A semantically absent member is omitted rather than sent as null: strict providers reject explicit nulls (ADR-0038).
+[JsonSourceGenerationOptions(WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(MessagesRequest))]
 [JsonSerializable(typeof(MessagesResponse))]
 internal sealed partial class AnthropicJsonContext : JsonSerializerContext;

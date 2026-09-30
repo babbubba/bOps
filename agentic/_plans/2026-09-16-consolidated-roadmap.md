@@ -446,6 +446,16 @@ the operational-completeness gate. Commercial identities/providers remain privat
 **Status.** M1–M8 implemented on a feature branch; local M8 gate passed (`agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md`); not merged; Windows/Linux CI evidence pending.
 **Public task.** `agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md` — **molto alto**.
 
+### V1.3.x — reliability hardening train (active)
+
+Real operator use after the V1.3 merge exposed composition failures across the provider wire contract,
+model-failure containment, resume, Windows evidence, delegation readiness, browser session and UI
+layout. The train HARDEN-1 … HARDEN-14 hardens V1.3 before any V1.4 work; it adds no V1.4 scope.
+**Plan.** `agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md` (full review, findings,
+execution order, dependency gates, Definition of Done).
+**Tasks.** `agentic/_tasks/2026-09-25-v1.3x-harden-NN-*.md` — one packet at a time, in the plan's
+canonical order; HARDEN-1 complete; next executable packet: HARDEN-2.
+
 ## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport
 
 V1.4 adds a third runtime profile without degrading the existing standalone OSS product:

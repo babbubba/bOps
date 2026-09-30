@@ -14,6 +14,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- Model requests now satisfy strict OpenAI-compatible and Anthropic tool contracts (ADR-0038). Tool names such as `fs.size` are
+  sent under deterministic, collision-checked wire aliases (`fs_size`) mapped back to the canonical name inside the provider
+  adapter, so policy and audit never see an alias; a reply naming anything that was not offered is rejected as an unknown tool. Plan
+  and replan calls no longer offer native tools (they get a text catalog instead), which removes the HTTP 400 that ended a task on a
+  replan. Explicit `null` members are omitted, a turn with several tool calls keeps a valid and persisted history (also on resume),
+  and malformed tool-argument JSON (including an empty payload) is a recorded validation failure instead of an empty `{}` call.
+  `bOps.Abstractions` gains three additive members: `ModelToolCall.ToolNameError`, `ModelToolCall.ArgumentsError` and
+  `PlanStep.UnexecutedToolCalls`.
 - The UI no longer stalls on a running task with "HTTP 429". The task watcher retries transient failures (429, 502–504, no answer)
   with exponential backoff and `Retry-After` instead of stopping at the first one, and polls every 2 s instead of 500 ms. The API's
   rate limiter now keeps the strict 120-token bucket for mutations and unauthenticated calls, and gives authenticated `GET`/`HEAD`

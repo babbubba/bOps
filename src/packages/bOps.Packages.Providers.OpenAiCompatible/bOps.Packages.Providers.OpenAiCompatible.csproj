@@ -16,4 +16,8 @@
     <ProjectReference Include="..\..\core\bOps.Abstractions\bOps.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Packages.Providers.OpenAiCompatible.Tests" />
+  </ItemGroup>
+
 </Project>

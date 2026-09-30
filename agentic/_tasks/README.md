@@ -34,6 +34,7 @@ snapshots under `agentic/obsolete/`.
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
+| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1 complete — next: HARDEN-2** (packet map below) | alto / molto alto per packet |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
@@ -66,3 +67,27 @@ design/exploration work so a smaller coding model can execute one bounded unit a
 
 Model escalation is never automatic. Stop after two reasoned attempts on the same blocker and hand
 off precise evidence rather than consuming the remainder of a usage window.
+
+## V1.3.x reliability hardening packet map
+
+Governed by [`../_plans/2026-09-25-v1.3x-reliability-hardening.md`](../_plans/2026-09-25-v1.3x-reliability-hardening.md),
+which holds the full review, finding IDs, dependency gates and Definition of Done. **One HARDEN packet
+at a time, in this exact order.** A packet with an ADR prerequisite drafts the ADR first and stops for
+operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cavallari`).
+
+| Order | Packet | Priority | Implementation | Review | Status |
+|---:|---|---|---|---|---|
+| 1 | [HARDEN-1 provider wire contract](2026-09-25-v1.3x-harden-01-provider-wire-contract.md) | MUST | Opus High | Opus High | **Completed** |
+| 2 | [HARDEN-2 model-call failure containment](2026-09-25-v1.3x-harden-02-model-failure-containment.md) | MUST | Opus High | Opus High | **Next** |
+| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | Not started |
+| 4 | [HARDEN-4 task lifecycle UI](2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md) | MUST | Sonnet High | Opus Medium/High | Not started |
+| 5 | [HARDEN-5 storage.health fix](2026-09-25-v1.3x-harden-05-storage-health.md) | MUST | Sonnet Medium | Sonnet Medium | Not started |
+| 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | Not started |
+| 7 | [HARDEN-7 Windows stability evidence](2026-09-25-v1.3x-harden-07-windows-stability-evidence.md) | MUST | Opus High | Opus High | Not started |
+| 8 | [HARDEN-9 evidence reasoning](2026-09-25-v1.3x-harden-09-evidence-reasoning.md) | SHOULD | Opus Medium/High | Opus Medium | Not started |
+| 9 | [HARDEN-8 context and budget economy](2026-09-25-v1.3x-harden-08-context-budget-economy.md) | SHOULD | Opus High | Opus High | Not started |
+| 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | Not started |
+| 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | Not started |
+| 12 | [HARDEN-12 UI layout and localization](2026-09-25-v1.3x-harden-12-ui-layout-localization.md) | SHOULD | Sonnet Medium | Sonnet Medium | Not started |
+| 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | Not started |
+| 14 | [HARDEN-14 end-to-end composition gate](2026-09-25-v1.3x-harden-14-e2e-composition-gate.md) | GATE | Sonnet High | Opus Medium/High | Not started |
