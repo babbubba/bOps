@@ -782,3 +782,26 @@ re-ask. The API launcher backstop converts only a still-persisted `Running` task
 **Consequences.** Additive public contract only (ADR-0039 lists it). A model timeout or an escaped runtime exception
 can no longer leave a task `Running` in the API host. General task lifecycle audit, resume semantics and
 compare-and-set transitions remain HARDEN-3's; context compaction on `ContextOverflow` is HARDEN-8's.
+
+### D-036 — V1.3.x HARDEN-3: resume state machine (ADR-0040)
+
+**Decision.** Resume is a persisted state-machine transition. A task has an `ExecutionAttempt` (initial execution 1,
+each accepted resume +1, distinct from ADR-0039's `ModelAttempt`). One runtime function decides resumability in a fixed
+order with deterministic refusal codes: `Delegated` and legacy `Unknown`-origin tasks, every persisted `Running` task
+(with or without a local executor — no orphan resume), `Completed` and `PolicyBlocked` are refused; `Failed` (with or
+without a plan), `Cancelled`, `MaxStepsReached`, `ReplanLimitReached` and `BudgetExceeded` are resumable only while the
+lifetime step/replan caps and the currently configured token cap leave headroom, so no accepted resume is zero-work.
+Resume acquisition is a real atomic conditional write through the additive `ITaskTransitionStore` capability (SQLite:
+one conditional `UPDATE` on status and the new `execution_attempt` column); a store without it makes resume fail
+closed, and no load/check/save emulation exists. The API answers 202 only after that transition and the launcher's
+admission of the new attempt; a non-admitted attempt is contained `Failed` and answered 503. Every executor,
+cancellation, backstop and containment write is fenced on `(Running, ExecutionAttempt)`. `MaxSteps`/`MaxReplans` are
+per attempt, `MaxLifetimeSteps` (60) / `MaxLifetimeReplans` (12) are lifetime caps that always win, tokens are
+cumulative and never reset, synthetic failure steps never count. Task origin is explicit metadata (`Ordinary`,
+`Delegated`), never a text heuristic. A `TaskLifecycleAuditEvent` records starts, resume acceptance/rejection, terminal
+writes and superseded executors, always with the execution attempt and without payloads.
+
+**Consequences.** ADR-0040 (Accepted 2026-09-30, with operator amendments) amends ADR-0017 and ADR-0018. Additive
+public contract only; one additive SQLite column. Pre-ADR tasks are no longer ordinarily resumable (unknown origin).
+Orphan recovery (lease/heartbeat or other ownership proof), delegated resume (HARDEN-11), UI lifecycle (HARDEN-4) and
+context notes on resume (HARDEN-8) stay out of scope.

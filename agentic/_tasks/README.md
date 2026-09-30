@@ -34,7 +34,7 @@ snapshots under `agentic/obsolete/`.
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
-| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1 and HARDEN-2 complete — HARDEN-3 next (ADR-0039 accepted)** (packet map below) | alto / molto alto per packet |
+| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1, HARDEN-2 and HARDEN-3 complete — HARDEN-4 next** (packet map below) | alto / molto alto per packet |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
@@ -79,8 +79,8 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 |---:|---|---|---|---|---|
 | 1 | [HARDEN-1 provider wire contract](2026-09-25-v1.3x-harden-01-provider-wire-contract.md) | MUST | Opus High | Opus High | **Completed** |
 | 2 | [HARDEN-2 model-call failure containment](2026-09-25-v1.3x-harden-02-model-failure-containment.md) | MUST | Opus High | Opus High | **Completed** |
-| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | Next — not started |
-| 4 | [HARDEN-4 task lifecycle UI](2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md) | MUST | Sonnet High | Opus Medium/High | Not started |
+| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | **Completed** |
+| 4 | [HARDEN-4 task lifecycle UI](2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md) | MUST | Sonnet High | Opus Medium/High | Next — not started |
 | 5 | [HARDEN-5 storage.health fix](2026-09-25-v1.3x-harden-05-storage-health.md) | MUST | Sonnet Medium | Sonnet Medium | Not started |
 | 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | Not started |
 | 7 | [HARDEN-7 Windows stability evidence](2026-09-25-v1.3x-harden-07-windows-stability-evidence.md) | MUST | Opus High | Opus High | Not started |

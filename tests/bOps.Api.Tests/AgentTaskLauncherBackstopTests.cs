@@ -20,6 +20,7 @@ public sealed class AgentTaskLauncherBackstopTests
     private sealed class Rig : IDisposable
     {
         public required AgentTaskLauncher Launcher { get; init; }
+        public required AgentRunner Runner { get; init; }
         public required ScriptedStore Store { get; init; }
         public required ListAuditSink Audit { get; init; }
 
@@ -44,20 +45,6 @@ public sealed class AgentTaskLauncherBackstopTests
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("The condition was not reached.");
-            }
-
-            await Task.Delay(10);
-        }
-    }
-
     private static Rig Create(IChatModel model, ScriptedStore store)
     {
         var audit = new ListAuditSink();
@@ -66,7 +53,7 @@ public sealed class AgentTaskLauncherBackstopTests
             TimeProvider.System, NullLogger<AgentRunner>.Instance, new AgentRunnerOptions());
         var launcher = new AgentTaskLauncher(
             runner, store, TimeProvider.System, new AgentTaskLauncherOptions(), NullLogger<AgentTaskLauncher>.Instance);
-        return new Rig { Launcher = launcher, Store = store, Audit = audit };
+        return new Rig { Launcher = launcher, Runner = runner, Store = store, Audit = audit };
     }
 
     // H2-20, H2-21, H2-26
@@ -105,8 +92,9 @@ public sealed class AgentTaskLauncherBackstopTests
         Assert.Equal("OperationCanceledException", Assert.Single(rig.Audit.Events.OfType<TaskExecutionFaultAuditEvent>()).ExceptionType);
     }
 
-    // H2-22: a resume that throws before doing anything leaves a terminal task exactly as it was, and is not audited as a
-    // containment transition.
+    // H2-22 (ADR-0040 §4.5): the backstop leaves a terminal task exactly as it was, and is not audited as a containment
+    // transition. (Since HARDEN-3 a terminal task is only ever resumed through an atomic transition to a new Running attempt,
+    // so the backstop is exercised here directly.)
     [Theory]
     [InlineData(AgentTaskStatus.Failed)]
     [InlineData(AgentTaskStatus.Completed)]
@@ -114,21 +102,36 @@ public sealed class AgentTaskLauncherBackstopTests
     public async Task AnEscapedFailure_NeverOverwritesATerminalState(AgentTaskStatus terminal)
     {
         var store = new ScriptedStore();
-        var existing = new TaskState(Guid.NewGuid(), NodeId.Local, "old goal", terminal, [], [], DateTimeOffset.UtcNow);
+        var existing = new TaskState(Guid.NewGuid(), NodeId.Local, "old goal", terminal, [], [], DateTimeOffset.UtcNow) { Origin = TaskOrigin.Ordinary };
         await store.SaveAsync(existing);
         using var rig = Create(new QueueChatModel(), store);
 
-        // No recorded plan: ResumeAsync throws InvalidOperationException inside the detached run.
-        Assert.True(await rig.Launcher.TryResumeAsync(existing, Actor, CancellationToken.None));
-        // The backstop re-reads the state before deciding; wait for that read, then for its (absent) write.
-        await WaitUntilAsync(() => store.LoadCount > 0);
-        await Task.Delay(50);
+        Assert.False(await rig.Runner.ContainEscapedFailureAsync(existing.Id, 1, Actor, existing, new InvalidOperationException("late")));
 
         var after = (await store.LoadAsync(existing.Id))!;
         Assert.Equal(terminal, after.Status);
         Assert.Empty(after.Steps);
         Assert.Equal(1, store.SaveCount);
-        Assert.Empty(rig.Audit.Events.OfType<TaskExecutionFaultAuditEvent>());
+        Assert.Empty(rig.Audit.Events);
+    }
+
+    // H3-27 through the launcher's own call: a backstop for an older execution attempt never overwrites a newer one.
+    [Fact]
+    public async Task TheBackstop_NeverOverwritesANewerExecutionAttempt()
+    {
+        var store = new ScriptedStore();
+        var newer = new TaskState(Guid.NewGuid(), NodeId.Local, "goal", AgentTaskStatus.Running, [], [], DateTimeOffset.UtcNow)
+        {
+            Origin = TaskOrigin.Ordinary,
+            ExecutionAttempt = 2,
+        };
+        await store.SaveAsync(newer);
+        using var rig = Create(new QueueChatModel(), store);
+
+        Assert.False(await rig.Runner.ContainEscapedFailureAsync(newer.Id, 1, Actor, newer, new InvalidOperationException("stale")));
+
+        Assert.Same(newer, await store.LoadAsync(newer.Id));
+        Assert.Empty(rig.Audit.Events);
     }
 
     // H2-05 end to end through the launcher: a model failure is contained by the runner itself, so the backstop has nothing
@@ -165,8 +168,12 @@ public sealed class AgentTaskLauncherBackstopTests
         Assert.DoesNotContain(rig.Audit.Events.OfType<ModelCallAuditEvent>(), e => e.FailureKind == ModelFailureKind.Timeout);
     }
 
-    /// <summary>An in-memory store that can fail a chosen save, to make an exception escape the runner deterministically.</summary>
-    private sealed class ScriptedStore : ITaskStore
+    /// <summary>
+    /// An in-memory store that can fail a chosen write, to make an exception escape the runner deterministically. It has the
+    /// ADR-0040 atomic transitions under one lock, like the real store, so the launcher and the runner take their fenced paths;
+    /// <see cref="FailSave"/> numbers every write (save, create or transition) in order.
+    /// </summary>
+    private sealed class ScriptedStore : ITaskStore, ITaskTransitionStore
     {
         private readonly Dictionary<Guid, TaskState> _tasks = [];
         private int _saves;
@@ -180,18 +187,46 @@ public sealed class AgentTaskLauncherBackstopTests
 
         public Task SaveAsync(TaskState task, CancellationToken ct = default)
         {
-            var number = Interlocked.Increment(ref _saves);
-            if (FailSave?.Invoke(number) is { } failure)
-            {
-                throw failure;
-            }
-
+            FailIfScripted();
             lock (_tasks)
             {
                 _tasks[task.Id] = task;
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task<bool> TryCreateAsync(TaskState task, CancellationToken ct = default)
+        {
+            FailIfScripted();
+            lock (_tasks)
+            {
+                return Task.FromResult(_tasks.TryAdd(task.Id, task));
+            }
+        }
+
+        public Task<bool> TryTransitionAsync(TaskState task, AgentTaskStatus expectedStatus, int expectedExecutionAttempt, CancellationToken ct = default)
+        {
+            FailIfScripted();
+            lock (_tasks)
+            {
+                if (!_tasks.TryGetValue(task.Id, out var stored) || stored.Status != expectedStatus || stored.ExecutionAttempt != expectedExecutionAttempt)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _tasks[task.Id] = task;
+                return Task.FromResult(true);
+            }
+        }
+
+        private void FailIfScripted()
+        {
+            var number = Interlocked.Increment(ref _saves);
+            if (FailSave?.Invoke(number) is { } failure)
+            {
+                throw failure;
+            }
         }
 
         public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default)

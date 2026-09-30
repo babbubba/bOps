@@ -6,8 +6,24 @@ namespace bOps.Api;
 /// <summary>Body of <c>POST /api/agents/tasks</c>.</summary>
 internal sealed record StartTaskRequest(string Goal);
 
-/// <summary>Response of <c>POST /api/agents/tasks</c> and <c>POST /api/agents/tasks/{id}/resume</c> — the task has started, not finished.</summary>
+/// <summary>Response of <c>POST /api/agents/tasks</c> — the task has started, not finished.</summary>
 internal sealed record TaskAcceptedResponse(Guid TaskId);
+
+/// <summary>
+/// Response of an accepted <c>POST /api/agents/tasks/{id}/resume</c> (ADR-0040 §9): the transition that was persisted and
+/// admitted — the task is <c>Running</c> under <see cref="ExecutionAttempt"/> — not a snapshot read before it.
+/// <see cref="TaskId"/> is kept for clients written against the earlier response.
+/// </summary>
+internal sealed record TaskResumeAcceptedResponse(
+    Guid TaskId,
+    bOps.Abstractions.AgentTaskStatus Status,
+    int ExecutionAttempt,
+    bool Executing,
+    bool Resumable,
+    TaskErrorResponse? ResumeBlockedReason);
+
+/// <summary>The body of a refused task request (409, 501, 503): a stable <see cref="Code"/> and an operator <see cref="Message"/>.</summary>
+internal sealed record TaskErrorResponse(string Code, string Message);
 
 /// <summary>Body of <c>POST /api/delegations</c> (ADR-0030 section 9). Without <see cref="Remediation"/> the run only diagnoses.</summary>
 internal sealed record StartDelegationRequest(string Objective, int? MaxSteps, int? MaxTokens, DelegationRemediationBody? Remediation);

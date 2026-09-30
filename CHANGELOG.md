@@ -14,6 +14,23 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- Resume is now a persisted state-machine transition (ADR-0040, HARDEN-3). `POST /api/agents/tasks/{id}/resume` used to accept any
+  status, answer 202 before anything was written (a reader kept seeing the old terminal state), throw after the 202 for a task
+  without a plan, resume `MaxStepsReached` into zero work, reset the token budget, and resume delegated role tasks outside their
+  envelope. A task now has an `ExecutionAttempt` (1 for its initial execution, +1 per accepted resume). One runtime rule decides
+  resumability: `Failed` (with or without a plan — it re-plans), `Cancelled`, `MaxStepsReached`, `ReplanLimitReached` and
+  `BudgetExceeded` are resumable while budget remains; `Completed`, `PolicyBlocked`, every task stored `Running` (with or without an
+  executor in this host), delegated role tasks and tasks stored before this change (unknown origin) are refused with a stable code.
+  The API answers 202 only after an atomic SQLite transition to `Running` under the new execution attempt **and** the launcher's
+  admission of that attempt; refusals are 409 `{ code, message }`, a lost race is 409 `resume_conflict`, and an attempt no executor
+  admitted is marked `Failed` and answered 503 `executor_unavailable` with `Retry-After` (the start endpoint's 503 gained the same
+  body). Every write of an execution attempt is fenced on it, so an older executor can never overwrite a newer attempt.
+  `Agent:MaxSteps` and `Agent:MaxReplans` are now per execution attempt, bounded by the new lifetime caps `Agent:MaxLifetimeSteps`
+  (60) and `Agent:MaxLifetimeReplans` (12); tokens are cumulative across attempts and never reset; synthetic failure steps no longer
+  consume the step budget. The task view adds `executionAttempt`, `accounting`, `origin`, `terminalReason`, `executing`,
+  `resumable` and `resumeBlockedReason`, and the event stream also emits on status or attempt changes. A new
+  `TaskLifecycleAuditEvent` records execution starts, accepted and rejected resumes, terminal writes and superseded executors.
+  `tasks.db` gains an additive `execution_attempt` column. All `bOps.Abstractions` changes are additive.
 - A model/provider failure can no longer leave a task `Running` (ADR-0039, HARDEN-2). A provider timeout used to escape every
   handler as a cancellation: no audit, no record, task orphaned `Running`. The runtime now owns a per-attempt model-call timeout
   distinct from the task's cancellation, and a timeout is an audited `Timeout` failure. Provider adapters make one HTTP attempt per

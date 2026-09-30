@@ -35,9 +35,13 @@ namespace bOps.Runtime;
 ///
 /// From V0.7, every step's outcome is persisted through <see cref="ITaskStore"/> as it happens,
 /// not only once the task reaches a terminal status — so a task interrupted mid-run (crash,
-/// restart, an operator's own cancellation) is never merely lost, only left
-/// <see cref="AgentTaskStatus.Running"/> for <see cref="ResumeAsync"/> to pick back up from its
-/// next unfinished step (ADR-0017).
+/// restart, an operator's own cancellation) is never merely lost (ADR-0017).
+///
+/// From HARDEN-3 (ADR-0040), resume is a persisted state-machine transition: one resumability rule, an
+/// atomic transition to <see cref="AgentTaskStatus.Running"/> under the next execution attempt, per-attempt
+/// budgets bounded by lifetime ones, cumulative tokens, and every write of an execution attempt fenced on it.
+/// A task still stored <see cref="AgentTaskStatus.Running"/> is never resumed: nothing here can prove no
+/// other process is executing it.
 /// </summary>
 public sealed class AgentRunner(
     IChatModel model,
@@ -144,7 +148,8 @@ public sealed class AgentRunner(
     /// checked against the role's authority envelope before policy, and every audit event it writes correlated
     /// to the delegated run. Internal, so only the runtime's orchestrator can call it. It counts the role's steps and
     /// tokens against its envelope and stops the role when they run out or its deadline is reached (V1.2-E); the tool
-    /// view the model is shown is narrowed to the envelope.
+    /// view the model is shown is narrowed to the envelope. The role's task is persisted <see cref="TaskOrigin.Delegated"/>
+    /// (ADR-0040 §8), so no ordinary resume can ever continue it outside its envelope.
     /// </summary>
     /// <param name="goal">The role's objective.</param>
     /// <param name="actor">The operator on whose authority the run executes.</param>
@@ -161,109 +166,431 @@ public sealed class AgentRunner(
     private async Task<TaskState> RunCoreAsync(
         string goal, ActorIdentity actor, Guid? taskId, DelegatedExecutionScope? delegation, CancellationToken ct)
     {
-        var resolvedTaskId = taskId ?? Guid.NewGuid();
-        var createdAtUtc = timeProvider.GetUtcNow();
-        var steps = new List<PlanStep>();
-        var plans = new List<AgentPlan>();
-        var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
-        var totalTokens = 0;
+        // ADR-0040 §1, §8: the initial execution is execution attempt 1, and the runtime alone records who created the task.
+        var run = new ExecutionRun
+        {
+            TaskId = taskId ?? Guid.NewGuid(),
+            Goal = goal,
+            CreatedAtUtc = timeProvider.GetUtcNow(),
+            ExecutionAttempt = 1,
+            Origin = delegation is null ? TaskOrigin.Ordinary : TaskOrigin.Delegated,
+            DelegationId = delegation?.Correlation.DelegationId,
+            DelegationRole = delegation?.Correlation.Agent?.Role,
+            Actor = actor,
+            Delegation = delegation,
+            Steps = [],
+            Plans = [],
+        };
 
         using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
-        taskActivity?.SetTag("bops.task_id", resolvedTaskId);
+        taskActivity?.SetTag("bops.task_id", run.TaskId);
         taskActivity?.SetTag("bops.node", NodeId.Local.Value);
 
+        await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
+        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, [ChatTurn.FromUser(goal)], taskActivity, ct), ct);
+    }
+
+    /// <summary>
+    /// PLAN, then the step loop: the start of a fresh task, and of a resumed execution attempt whose task has no plan yet —
+    /// its initial plan call had failed (ADR-0040 §7). A planning failure ends the attempt <see cref="AgentTaskStatus.Failed"/>
+    /// through the normal path; it never escapes.
+    /// </summary>
+    private async Task<TaskState> PlanAndContinueAsync(ExecutionRun run, List<ChatTurn> history, Activity? taskActivity, CancellationToken ct)
+    {
         AgentPlan plan;
         var planCalls = new List<ModelCallRecord>();
         try
         {
-            var (createdPlan, planTokens) = await CreatePlanAsync(resolvedTaskId, actor, goal, delegation, planCalls, ct);
+            var (createdPlan, planTokens) = await CreatePlanAsync(run.TaskId, run.Actor, run.Goal, run.Delegation, planCalls, ct);
             plan = createdPlan;
-            totalTokens += planTokens;
+            run.TokensUsed += planTokens;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Task {TaskId}: planning failed", resolvedTaskId);
-            return await FinishAsync(BuildFailed(resolvedTaskId, createdAtUtc, goal, steps, plans, FailureReason(ex), planCalls), ct);
+            logger.LogError(ex, "Task {TaskId}: planning failed", run.TaskId);
+            // A malformed reply recorded before the call failed still spent tokens (ADR-0040 §5.2).
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(planCalls);
+            return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), planCalls, ct);
         }
 
-        plans.Add(plan);
+        run.Plans.Add(plan);
         taskActivity?.SetTag("bops.plan_revision", plan.Revision);
         taskActivity?.SetTag("bops.plan_steps", plan.Steps.Count);
 
-        if ((options.MaxTotalTokens is { } initialBudget && totalTokens > initialBudget) || BudgetStops(delegation))
+        if (await BudgetStopAsync(run, ct) is { } stopped)
         {
-            return await FinishAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+            return stopped;
         }
 
-        await taskStore.SaveAsync(Build(resolvedTaskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
+        await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
 
-        return await ContinueAsync(resolvedTaskId, actor, goal, createdAtUtc, steps, plans, history, plan, totalTokens,
-            plannedStepCursor: 0, replanCount: 0, startStepIndex: 0, delegation, ct);
+        return await ContinueAsync(run, history, plan, plannedStepCursor: 0, ct);
     }
 
     /// <summary>
-    /// Resumes a task previously left <see cref="AgentTaskStatus.Running"/> — after a crash, a
-    /// restart, or an operator's own interruption — from its next unfinished step, rather than
-    /// starting the goal over (V0.7, ADR-0017). Rebuilds the in-memory conversation history from
-    /// <paramref name="task"/>'s persisted <see cref="TaskState.Steps"/> and continues with its
-    /// last recorded <see cref="AgentPlan"/> — this is the same loop <see cref="RunAsync"/> uses,
-    /// entered at a later step, not a separate implementation of it.
+    /// Resumes a stored task (ADR-0040): acquires it — the one runtime resumability rule, then an atomic transition to
+    /// <see cref="AgentTaskStatus.Running"/> under the next execution attempt — and runs that attempt in-process from its
+    /// next unfinished step, rebuilding the conversation from the persisted steps (ADR-0038). The CLI's <c>bops resume</c>.
     /// </summary>
-    /// <param name="task">A task state previously returned by <see cref="ITaskStore.LoadAsync"/>, typically still <see cref="AgentTaskStatus.Running"/>.</param>
+    /// <param name="task">The task as just read from <see cref="ITaskStore.LoadAsync"/>; the acquisition succeeds only if it is still what is persisted.</param>
     /// <param name="actor">Who resumed this task, recorded on every audit event it produces from this point on.</param>
     /// <param name="ct">Cancelled to abandon the resumed task; the returned state is never built for a genuinely cancelled run.</param>
+    /// <exception cref="TaskResumeRefusedException">The task cannot be resumed; nothing was executed or written.</exception>
     public async Task<TaskState> ResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(actor);
 
-        if (task.Plans.Count == 0)
+        var acquisition = await AcquireResumeAsync(task, actor, ct);
+        if (acquisition.Outcome != TaskResumeOutcome.Acquired)
         {
-            throw new InvalidOperationException($"Task {task.Id} has no recorded plan and cannot be resumed.");
+            throw new TaskResumeRefusedException(acquisition.Refusal!);
         }
 
-        var steps = new List<PlanStep>(task.Steps);
-        var plans = new List<AgentPlan>(task.Plans);
-        var plan = plans[^1];
-        var history = RebuildHistory(task.Goal, steps);
-        var plannedStepCursor = steps.Count(s => s.PlanRevision == plan.Revision);
-        var replanCount = plans.Count - 1;
+        return await ExecuteAcquiredResumeAsync(acquisition.Task!, actor, ct);
+    }
 
-        using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
-        taskActivity?.SetTag("bops.task_id", task.Id);
-        taskActivity?.SetTag("bops.node", NodeId.Local.Value);
-        taskActivity?.SetTag("bops.resumed", true);
-        taskActivity?.SetTag("bops.plan_revision", plan.Revision);
+    /// <summary>Decides whether <paramref name="task"/> may be resumed now, under this runner's budgets (ADR-0040 §3).</summary>
+    /// <param name="task">The task as persisted.</param>
+    public TaskResumeDecision EvaluateResume(TaskState task) => TaskResumePolicy.Evaluate(task, options);
 
+    /// <summary>
+    /// The first half of a resume (ADR-0040 §4.3): reads the stored task, applies the resumability rule, and atomically moves
+    /// it to <see cref="AgentTaskStatus.Running"/> under the next execution attempt. Every outcome for a stored task is
+    /// audited (<see cref="TaskLifecycleStage.ResumeAccepted"/> or <see cref="TaskLifecycleStage.ResumeRejected"/>). An
+    /// acquired attempt must then be run with <see cref="ExecuteAcquiredResumeAsync"/>, or contained with
+    /// <see cref="ContainUnadmittedResumeAsync"/> if no executor admits it — never left <see cref="AgentTaskStatus.Running"/>.
+    /// </summary>
+    /// <param name="taskId">The task to resume.</param>
+    /// <param name="actor">Who asked for the resume.</param>
+    /// <param name="ct">Cancels the read; once the transition is attempted it is not abandoned half-way.</param>
+    public async Task<TaskResumeAcquisition> TryAcquireResumeAsync(Guid taskId, ActorIdentity actor, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var task = await taskStore.LoadAsync(taskId, ct);
+        return task is null
+            ? new TaskResumeAcquisition(TaskResumeOutcome.NotFound, null, null)
+            : await AcquireResumeAsync(task, actor, ct);
+    }
+
+    private async Task<TaskResumeAcquisition> AcquireResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct)
+    {
+        var decision = EvaluateResume(task);
+        if (!decision.Resumable)
+        {
+            return await RejectResumeAsync(task, actor, decision.Refusal!, ct);
+        }
+
+        // ADR-0040 §4.1: without an atomic conditional write there is no safe resume — fail closed, never load/check/save.
+        if (taskStore is not ITaskTransitionStore transitions)
+        {
+            return await RejectResumeAsync(task, actor, new TaskResumeRefusal(TaskResumeRefusal.TransitionUnsupported,
+                "The task store cannot perform the atomic transition a resume requires."), ct);
+        }
+
+        var acquired = task with
+        {
+            Status = AgentTaskStatus.Running,
+            ExecutionAttempt = task.ExecutionAttempt + 1,
+            ResumedAtUtc = timeProvider.GetUtcNow(),
+            ResumedBy = actor,
+            TerminalReason = null,
+            // ADR-0040 §5.4: a task stored without accounting gets its derived record materialized by this write, once.
+            Accounting = TaskResumePolicy.EffectiveAccounting(task),
+        };
+
+        // From here nothing is abandoned half-way: the transition either happened or did not, and is audited either way.
+        if (!await transitions.TryTransitionAsync(acquired, task.Status, task.ExecutionAttempt, CancellationToken.None))
+        {
+            return await RejectResumeAsync(task, actor, new TaskResumeRefusal(TaskResumeRefusal.ResumeConflict,
+                "The task changed while it was being resumed (another resume or writer got there first)."), CancellationToken.None);
+        }
+
+        try
+        {
+            await WriteAuditAsync(
+                LifecycleEvent(acquired, TaskLifecycleStage.ResumeAccepted, actor) with { PriorStatus = task.Status }, null, CancellationToken.None);
+        }
+        catch (Exception auditFailure)
+        {
+            // An acquired attempt with no executor must never stay Running.
+            logger.LogError(auditFailure, "Task {TaskId}: acquired for a resume but the acquisition could not be audited", task.Id);
+            await ContainUnadmittedResumeAsync(acquired, actor, CancellationToken.None);
+            throw;
+        }
+
+        return new TaskResumeAcquisition(TaskResumeOutcome.Acquired, acquired, null);
+    }
+
+    private async Task<TaskResumeAcquisition> RejectResumeAsync(TaskState task, ActorIdentity actor, TaskResumeRefusal refusal, CancellationToken ct)
+    {
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Task {TaskId}: resuming from step {StepIndex}", task.Id, steps.Count);
+            logger.LogInformation("Task {TaskId}: resume refused ({Code})", task.Id, refusal.Code);
         }
 
-        return await ContinueAsync(task.Id, actor, task.Goal, task.CreatedAtUtc, steps, plans, history, plan, totalTokens: 0,
-            plannedStepCursor, replanCount, startStepIndex: steps.Count, delegation: null, ct);
+        // The refusal code only: never its message, the goal or any payload (ADR-0040 §10).
+        await WriteAuditAsync(
+            LifecycleEvent(task, TaskLifecycleStage.ResumeRejected, actor) with { PriorStatus = task.Status, RefusalCode = refusal.Code },
+            null, ct);
+        return new TaskResumeAcquisition(TaskResumeOutcome.Refused, task, refusal);
     }
 
     /// <summary>
-    /// The step loop shared by a fresh <see cref="RunAsync"/> (starting empty, at step 0) and a
-    /// <see cref="ResumeAsync"/> (starting from previously persisted state, at the next step
-    /// after the last one completed).
+    /// The second half of a resume (ADR-0040 §4.3): runs the execution attempt <see cref="TryAcquireResumeAsync"/> acquired,
+    /// from the persisted snapshot. A task with no plan re-enters planning (ADR-0040 §7); otherwise the loop continues with
+    /// its last plan, under a fresh per-attempt step and replan budget capped by the lifetime remainder, and with its
+    /// lifetime tokens carried over, never reset (ADR-0040 §5). Every write is fenced by the execution attempt.
+    /// </summary>
+    /// <param name="acquired">The <see cref="TaskResumeAcquisition.Task"/> of an acquisition.</param>
+    /// <param name="actor">Who resumed the task.</param>
+    /// <param name="ct">Cancelled to abandon the attempt; the returned state is never built for a genuinely cancelled run.</param>
+    public async Task<TaskState> ExecuteAcquiredResumeAsync(TaskState acquired, ActorIdentity actor, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(acquired);
+        ArgumentNullException.ThrowIfNull(actor);
+        if (acquired.Status != AgentTaskStatus.Running || acquired.Origin != TaskOrigin.Ordinary || acquired.ResumedAtUtc is null)
+        {
+            throw new ArgumentException("Only the Running snapshot of an acquired ordinary task's execution attempt can be executed.", nameof(acquired));
+        }
+
+        var accounting = TaskResumePolicy.EffectiveAccounting(acquired);
+        var run = new ExecutionRun
+        {
+            TaskId = acquired.Id,
+            Goal = acquired.Goal,
+            CreatedAtUtc = acquired.CreatedAtUtc,
+            ExecutionAttempt = acquired.ExecutionAttempt,
+            Origin = acquired.Origin,
+            ResumedAtUtc = acquired.ResumedAtUtc,
+            ResumedBy = acquired.ResumedBy,
+            Actor = actor,
+            Delegation = null,
+            Steps = [.. acquired.Steps],
+            Plans = [.. acquired.Plans],
+            TokensUsed = accounting.TokensUsed,
+            LifetimeSteps = accounting.LifetimeSteps,
+            LifetimeReplans = accounting.LifetimeReplans,
+            Persisted = true,
+        };
+
+        using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
+        taskActivity?.SetTag("bops.task_id", run.TaskId);
+        taskActivity?.SetTag("bops.node", NodeId.Local.Value);
+        taskActivity?.SetTag("bops.resumed", true);
+        taskActivity?.SetTag("bops.execution_attempt", run.ExecutionAttempt);
+
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Task {TaskId}: execution attempt {ExecutionAttempt} resuming from step {StepIndex}", run.TaskId, run.ExecutionAttempt, run.Steps.Count);
+        }
+
+        await WriteAuditAsync(LifecycleEvent(acquired, TaskLifecycleStage.ExecutionStarted, actor), null, ct);
+        return await ExecuteGuardedAsync(run, () =>
+        {
+            var history = RebuildHistory(run.Goal, run.Steps);
+            if (run.Plans.Count == 0)
+            {
+                return PlanAndContinueAsync(run, history, taskActivity, ct);
+            }
+
+            var plan = run.Plans[^1];
+            taskActivity?.SetTag("bops.plan_revision", plan.Revision);
+            return ContinueAsync(run, history, plan, run.Steps.Count(s => s.PlanRevision == plan.Revision), ct);
+        }, ct);
+    }
+
+    /// <summary>
+    /// Contains an execution attempt a resume acquired but no executor admitted (ADR-0040 §4.3 step 7): transitions only
+    /// <c>(Running, that attempt)</c> to <see cref="AgentTaskStatus.Failed"/> with <see cref="TaskTerminalKind.NotAdmitted"/>
+    /// and a synthetic, uncounted <c>Execution not started</c> step, and audits the terminal write. Never throws: a store or
+    /// audit failure is logged.
+    /// </summary>
+    /// <param name="acquired">The acquired snapshot that was not admitted.</param>
+    /// <param name="actor">Who asked for the resume.</param>
+    /// <param name="ct">Cancels the containment writes.</param>
+    /// <returns>Whether the attempt was moved to <see cref="AgentTaskStatus.Failed"/>.</returns>
+    public async Task<bool> ContainUnadmittedResumeAsync(TaskState acquired, ActorIdentity actor, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(acquired);
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var failed = acquired with
+        {
+            Status = AgentTaskStatus.Failed,
+            TerminalReason = new TaskTerminalReason(TaskTerminalKind.NotAdmitted),
+            Steps =
+            [
+                .. acquired.Steps,
+                new PlanStep(acquired.Steps.Count, TaskResumePolicy.NotStartedStepDescription, null, null,
+                    $"Execution attempt {acquired.ExecutionAttempt} was not started: no executor admitted it.")
+                {
+                    ExecutionAttempt = acquired.ExecutionAttempt,
+                },
+            ],
+        };
+
+        return await TryWriteTerminalAsync(failed, acquired.ExecutionAttempt, actor, "an execution attempt that was not admitted", ct);
+    }
+
+    /// <summary>
+    /// Completes an operator's cancellation after the executor stopped (ADR-0040 §4.5): re-reads the task and transitions
+    /// only <c>(Running, <paramref name="executionAttempt"/>)</c> to <see cref="AgentTaskStatus.Cancelled"/>, then audits the
+    /// terminal write. A newer attempt or a terminal state is never overwritten. Never throws: failures are logged.
+    /// </summary>
+    /// <param name="taskId">The cancelled task.</param>
+    /// <param name="executionAttempt">The execution attempt that was cancelled.</param>
+    /// <param name="actor">Who started or resumed that attempt.</param>
+    /// <param name="lastKnownState">The state the host last knew, used only when nothing is persisted and the store has no transitions.</param>
+    /// <param name="ct">Cancels the writes.</param>
+    /// <returns>Whether the task was moved to <see cref="AgentTaskStatus.Cancelled"/>.</returns>
+    public async Task<bool> CompleteCancellationAsync(
+        Guid taskId, int executionAttempt, ActorIdentity actor, TaskState? lastKnownState, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        TaskState? current;
+        try
+        {
+            current = await taskStore.LoadAsync(taskId, ct) ?? lastKnownState;
+        }
+        catch (Exception loadFailure) when (loadFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(loadFailure, "Task {TaskId}: could not read its state to record a cancellation; left unchanged", taskId);
+            return false;
+        }
+
+        if (current is null || current.Status != AgentTaskStatus.Running || current.ExecutionAttempt != executionAttempt)
+        {
+            return false;
+        }
+
+        var cancelled = current with
+        {
+            Status = AgentTaskStatus.Cancelled,
+            TerminalReason = new TaskTerminalReason(TaskTerminalKind.Cancelled),
+            Accounting = TaskResumePolicy.EffectiveAccounting(current),
+        };
+        return await TryWriteTerminalAsync(cancelled, executionAttempt, actor, "a cancellation", ct);
+    }
+
+    /// <summary>
+    /// The one fenced terminal write outside the loop: <c>(Running, executionAttempt)</c> → <paramref name="terminal"/>, then
+    /// its <see cref="TaskLifecycleStage.ExecutionTerminal"/> event. With a store that has no transitions only execution
+    /// attempt 1 can exist (resume fails closed), and the pre-ADR-0040 save is kept. Never throws.
+    /// </summary>
+    private async Task<bool> TryWriteTerminalAsync(TaskState terminal, int executionAttempt, ActorIdentity actor, string what, CancellationToken ct)
+    {
+        try
+        {
+            if (taskStore is ITaskTransitionStore transitions)
+            {
+                if (!await transitions.TryTransitionAsync(terminal, AgentTaskStatus.Running, executionAttempt, ct))
+                {
+                    if (logger.IsEnabled(LogLevel.Warning))
+                    {
+                        logger.LogWarning(
+                            "Task {TaskId}: {What} was not persisted because execution attempt {ExecutionAttempt} no longer owns the task",
+                            terminal.Id, what, executionAttempt);
+                    }
+
+                    return false;
+                }
+            }
+            else
+            {
+                await taskStore.SaveAsync(terminal, ct);
+            }
+        }
+        catch (Exception saveFailure) when (saveFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(saveFailure, "Task {TaskId}: could not persist {What}", terminal.Id, what);
+            return false;
+        }
+
+        try
+        {
+            await WriteAuditAsync(LifecycleEvent(terminal, TaskLifecycleStage.ExecutionTerminal, actor), null, ct);
+        }
+        catch (Exception auditFailure) when (auditFailure is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogError(auditFailure, "Task {TaskId}: persisted {What} but could not audit it", terminal.Id, what);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Runs an execution attempt's body and handles the two ways it can stop without a terminal state of its own: fenced by a
+    /// newer attempt (ADR-0040 §4.4: stop, audit, write nothing more, return what is persisted), or cancelled (persist the
+    /// attempt's progress and accounting, fenced, so a cancellation never loses tokens already spent, then propagate).
+    /// </summary>
+    private async Task<TaskState> ExecuteGuardedAsync(ExecutionRun run, Func<Task<TaskState>> body, CancellationToken ct)
+    {
+        try
+        {
+            return await body();
+        }
+        catch (TaskExecutionSupersededException superseded) when (superseded.TaskId == run.TaskId)
+        {
+            if (logger.IsEnabled(LogLevel.Warning))
+            {
+                logger.LogWarning(
+                    "Task {TaskId}: execution attempt {ExecutionAttempt} was superseded and stopped without writing",
+                    run.TaskId, run.ExecutionAttempt);
+            }
+
+            var current = await taskStore.LoadAsync(run.TaskId, CancellationToken.None) ?? run.Build(AgentTaskStatus.Running);
+            await WriteAuditAsync(
+                LifecycleEvent(current, TaskLifecycleStage.ExecutionSuperseded, run.Actor) with { ExecutionAttempt = run.ExecutionAttempt },
+                run.Delegation, CancellationToken.None);
+            return current;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested && run.Persisted)
+        {
+            try
+            {
+                await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
+            }
+            catch (Exception progressFailure) when (progressFailure is not OperationCanceledException)
+            {
+                logger.LogWarning(progressFailure, "Task {TaskId}: could not persist the progress of a cancelled execution attempt", run.TaskId);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The step loop shared by a fresh <see cref="RunAsync"/> (starting empty, at step 0) and a resumed execution attempt
+    /// (starting from previously persisted state, at the next step after the last one completed). The loop is bounded by the
+    /// attempt's own executable-step count, never by <c>Steps.Count</c> (ADR-0040 §5.1).
     /// </summary>
     private async Task<TaskState> ContinueAsync(
-        Guid taskId, ActorIdentity actor, string goal, DateTimeOffset createdAtUtc,
-        List<PlanStep> steps, List<AgentPlan> plans, List<ChatTurn> history, AgentPlan plan, int totalTokens,
-        int plannedStepCursor, int replanCount, int startStepIndex, DelegatedExecutionScope? delegation, CancellationToken ct)
+        ExecutionRun run, List<ChatTurn> history, AgentPlan plan, int plannedStepCursor, CancellationToken ct)
     {
+        var taskId = run.TaskId;
+        var actor = run.Actor;
+        var delegation = run.Delegation;
+        var steps = run.Steps;
+        var plans = run.Plans;
         string? lastPolicyDeniedTool = null;
         var consecutivePolicyDenials = 0;
 
-        for (var stepIndex = startStepIndex; stepIndex < options.MaxSteps; stepIndex++)
+        // ADR-0040 §5.1: a fresh per-attempt budget, never more than what the task has left over its lifetime.
+        var stepCap = Math.Min(options.MaxSteps, options.MaxLifetimeSteps - run.LifetimeSteps);
+
+        while (run.AttemptSteps < stepCap)
         {
             ct.ThrowIfCancellationRequested();
+            var stepIndex = steps.Count;
 
             // ADR-0030 section 6: a delegated role takes a step only inside its own step budget and deadline.
             if (BudgetStopsStep(delegation))
             {
-                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+                return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.DelegationBudget, ct);
             }
 
             var stepStopwatch = Stopwatch.StartNew();
@@ -285,7 +612,7 @@ public sealed class AgentRunner(
                 // rather than the task being completed with nothing to show.
                 for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
                 {
-                    totalTokens += UsageTokens(response);
+                    run.TokensUsed += UsageTokens(response);
                     var retryRequest = request with { History = [.. history, ChatTurn.FromUser(EmptyResponseRetryInstructions)] };
                     response = await CallModelAsync(taskId, stepIndex, actor, retryRequest, delegation, stepCalls, ct);
                 }
@@ -297,16 +624,15 @@ public sealed class AgentRunner(
                 // own transport/parse errors must not be able to crash the loop either; this is
                 // a genuine dead end for the call either way, not something to retry forever.
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
-                return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, FailureReason(ex), stepCalls), ct);
+                return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
             }
 
-            totalTokens += UsageTokens(response);
+            run.TokensUsed += UsageTokens(response);
 
             if (IsEmptyFinal(response))
             {
                 logger.LogError("Task {TaskId} step {StepIndex}: the model returned an empty final response", taskId, stepIndex);
-                return await FinishAsync(
-                    BuildFailed(taskId, createdAtUtc, goal, steps, plans, DescribeEmptyResponse(stepCalls), stepCalls), ct);
+                return await FailAsync(run, DescribeEmptyResponse(stepCalls), (TaskTerminalKind.EmptyResponse, null), stepCalls, ct);
             }
 
             if (response.IsFinal || response.ToolCalls.Count == 0)
@@ -314,9 +640,11 @@ public sealed class AgentRunner(
                 steps.Add(new PlanStep(stepIndex, "Final response", null, null, response.TextResponse, plan.Revision)
                 {
                     ModelCalls = stepCalls,
+                    ExecutionAttempt = run.ExecutionAttempt,
                 });
+                run.CountStep();
                 BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
-                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Completed, steps, plans), ct);
+                return await FinishAsync(run, AgentTaskStatus.Completed, TaskTerminalKind.Completed, ct);
             }
 
             // D-007: the contract allows several tool calls per model turn. V0.1 executes the
@@ -332,8 +660,10 @@ public sealed class AgentRunner(
             {
                 ModelCalls = stepCalls,
                 UnexecutedToolCalls = response.ToolCalls.Count > 1 ? response.ToolCalls.Skip(1).ToList() : null,
+                ExecutionAttempt = run.ExecutionAttempt,
             };
             steps.Add(step);
+            run.CountStep();
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
             // retry it until MaxSteps — a Forbidden decision must be a dead end, not a suggestion
@@ -350,7 +680,7 @@ public sealed class AgentRunner(
                     logger.LogWarning(
                         "Task {TaskId} blocked: '{Tool}' was denied {Count} times in a row",
                         taskId, primaryCall.ToolName, consecutivePolicyDenials);
-                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.PolicyBlocked, steps, plans), ct);
+                    return await FinishAsync(run, AgentTaskStatus.PolicyBlocked, TaskTerminalKind.PolicyBlocked, ct);
                 }
             }
             else
@@ -363,9 +693,9 @@ public sealed class AgentRunner(
 
             BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
 
-            if ((options.MaxTotalTokens is { } budget && totalTokens > budget) || BudgetStops(delegation))
+            if (await BudgetStopAsync(run, ct) is { } stoppedAfterStep)
             {
-                return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+                return stoppedAfterStep;
             }
 
             // EVALUATE: rule C8. A step whose outcome the plan could not have anticipated — the
@@ -385,34 +715,40 @@ public sealed class AgentRunner(
 
             if (deviated || planExhausted)
             {
-                if (replanCount >= options.MaxReplans)
+                // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
+                if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
                 {
-                    logger.LogWarning("Task {TaskId}: replan limit ({MaxReplans}) reached", taskId, options.MaxReplans);
-                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.ReplanLimitReached, steps, plans), ct);
+                    var lifetimeBound = run.LifetimeReplans >= options.MaxLifetimeReplans;
+                    logger.LogWarning(
+                        "Task {TaskId}: replan limit reached ({Scope})", taskId, lifetimeBound ? "lifetime" : "execution attempt");
+                    return await FinishAsync(run, AgentTaskStatus.ReplanLimitReached,
+                        lifetimeBound ? TaskTerminalKind.LifetimeReplanLimit : TaskTerminalKind.ReplanLimit, ct);
                 }
 
                 var replanCalls = new List<ModelCallRecord>();
                 try
                 {
                     var (newPlan, replanTokens) = await ReplanAsync(
-                        taskId, actor, goal, plan, steps, observation, stepIndex, delegation, replanCalls, ct);
+                        taskId, actor, run.Goal, plan, steps, observation, stepIndex, delegation, replanCalls, ct);
                     plan = newPlan;
-                    totalTokens += replanTokens;
+                    run.TokensUsed += replanTokens;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", taskId, stepIndex);
-                    return await FinishAsync(BuildFailed(taskId, createdAtUtc, goal, steps, plans, FailureReason(ex), replanCalls), ct);
+                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+                    return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), replanCalls, ct);
                 }
 
                 plans.Add(plan);
-                replanCount++;
+                run.AttemptReplans++;
+                run.LifetimeReplans++;
                 plannedStepCursor = 0;
                 BOpsTelemetry.ReplansTotal.Add(1);
 
-                if ((options.MaxTotalTokens is { } replanBudget && totalTokens > replanBudget) || BudgetStops(delegation))
+                if (await BudgetStopAsync(run, ct) is { } stoppedAfterReplan)
                 {
-                    return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.BudgetExceeded, steps, plans), ct);
+                    return stoppedAfterReplan;
                 }
             }
             else
@@ -423,11 +759,14 @@ public sealed class AgentRunner(
             // V0.7 (ADR-0017): a crash between here and the next iteration must lose at most the
             // step in flight, never every step already completed — this is what makes a task
             // resumable rather than merely inspectable after the fact.
-            await taskStore.SaveAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.Running, steps, plans), ct);
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
         }
 
-        logger.LogWarning("Task {TaskId} reached the {MaxSteps}-step limit without completing", taskId, options.MaxSteps);
-        return await FinishAsync(Build(taskId, createdAtUtc, goal, AgentTaskStatus.MaxStepsReached, steps, plans), ct);
+        var lifetimeExhausted = run.LifetimeSteps >= options.MaxLifetimeSteps;
+        logger.LogWarning(
+            "Task {TaskId} reached its {Scope} step limit without completing", taskId, lifetimeExhausted ? "lifetime" : "execution attempt");
+        return await FinishAsync(run, AgentTaskStatus.MaxStepsReached,
+            lifetimeExhausted ? TaskTerminalKind.LifetimeStepLimit : TaskTerminalKind.StepLimit, ct);
     }
 
     /// <summary>
@@ -1215,11 +1554,104 @@ public sealed class AgentRunner(
     private Task WriteAuditAsync(AuditEvent evt, DelegatedExecutionScope? delegation, CancellationToken ct) =>
         audit.WriteAsync(delegation is null ? evt : evt with { Delegation = delegation.Correlation }, ct);
 
-    /// <summary>Persists a task's terminal state and returns it — the one place every exit from <see cref="ContinueAsync"/> goes through.</summary>
-    private async Task<TaskState> FinishAsync(TaskState task, CancellationToken ct)
+    /// <summary>
+    /// Persists the execution attempt's terminal state, fenced (ADR-0040 §4.4), audits it as
+    /// <see cref="TaskLifecycleStage.ExecutionTerminal"/> and returns it — the one place every exit from the loop goes through.
+    /// </summary>
+    private async Task<TaskState> FinishAsync(
+        ExecutionRun run, AgentTaskStatus status, TaskTerminalKind kind, CancellationToken ct, ModelFailureKind? failureKind = null)
     {
-        await taskStore.SaveAsync(task, ct);
+        var task = run.Build(status, new TaskTerminalReason(kind) { FailureKind = failureKind });
+        await SaveOwnedAsync(run, task, ct);
+        await WriteAuditAsync(LifecycleEvent(task, TaskLifecycleStage.ExecutionTerminal, run.Actor), run.Delegation, ct);
         return task;
+    }
+
+    /// <summary>Ends the execution attempt <see cref="AgentTaskStatus.Failed"/> with a synthetic failure step, which no step budget counts (ADR-0040 §5.2).</summary>
+    private Task<TaskState> FailAsync(
+        ExecutionRun run, string message, (TaskTerminalKind Kind, ModelFailureKind? FailureKind) reason,
+        IReadOnlyList<ModelCallRecord>? modelCalls, CancellationToken ct)
+    {
+        run.Steps.Add(new PlanStep(run.Steps.Count, TaskResumePolicy.ModelFailureStepDescription, null, null, message)
+        {
+            ModelCalls = modelCalls,
+            ExecutionAttempt = run.ExecutionAttempt,
+        });
+        return FinishAsync(run, AgentTaskStatus.Failed, reason.Kind, ct, reason.FailureKind);
+    }
+
+    /// <summary>A terminal model-call failure is a <see cref="TaskTerminalKind.ModelFailure"/> of its classified kind; anything else is a contained runtime failure.</summary>
+    private static (TaskTerminalKind Kind, ModelFailureKind? FailureKind) FailureKindOf(Exception ex) =>
+        ex is ModelProtocolException modelFailure
+            ? (TaskTerminalKind.ModelFailure, modelFailure.FailureKind)
+            : (TaskTerminalKind.RuntimeFailure, null);
+
+    /// <summary>Ends the attempt <see cref="AgentTaskStatus.BudgetExceeded"/> when the cumulative token cap or a delegated role's budget is used up; otherwise <c>null</c>.</summary>
+    private async Task<TaskState?> BudgetStopAsync(ExecutionRun run, CancellationToken ct)
+    {
+        if (options.MaxTotalTokens is { } tokenCap && run.TokensUsed > tokenCap)
+        {
+            return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.TokenBudget, ct);
+        }
+
+        return BudgetStops(run.Delegation)
+            ? await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.DelegationBudget, ct)
+            : null;
+    }
+
+    /// <summary>
+    /// Every write of an executing attempt (ADR-0040 §4.4). With a store that has transitions it is accepted only while the
+    /// task is still <c>(Running, this attempt)</c>; the first write of a fresh task creates it when no host did. A refused
+    /// write throws <see cref="TaskExecutionSupersededException"/>, and the attempt stops. A store without transitions keeps
+    /// the pre-ADR-0040 unconditional save: resume refuses such a store, so no other attempt can exist.
+    /// </summary>
+    private async Task SaveOwnedAsync(ExecutionRun run, TaskState state, CancellationToken ct)
+    {
+        if (taskStore is not ITaskTransitionStore transitions)
+        {
+            await taskStore.SaveAsync(state, ct);
+            run.Persisted = true;
+            return;
+        }
+
+        if (await transitions.TryTransitionAsync(state, AgentTaskStatus.Running, run.ExecutionAttempt, ct)
+            || (!run.Persisted && run.ExecutionAttempt == 1 && await transitions.TryCreateAsync(state, ct)))
+        {
+            run.Persisted = true;
+            return;
+        }
+
+        throw new TaskExecutionSupersededException(run.TaskId, run.ExecutionAttempt);
+    }
+
+    /// <summary>
+    /// A <see cref="TaskLifecycleAuditEvent"/> for <paramref name="state"/>: its execution attempt, origin, status and — for a
+    /// terminal stage — terminal kind, with the lifetime accounting and the configured caps. Never the goal or any payload.
+    /// </summary>
+    private TaskLifecycleAuditEvent LifecycleEvent(TaskState state, TaskLifecycleStage stage, ActorIdentity actor)
+    {
+        var accounting = TaskResumePolicy.EffectiveAccounting(state);
+        return new TaskLifecycleAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = state.Id,
+            StepIndex = state.Steps.Count,
+            Actor = actor,
+            Stage = stage,
+            ExecutionAttempt = state.ExecutionAttempt,
+            Origin = state.Origin,
+            Status = state.Status,
+            TerminalKind = stage == TaskLifecycleStage.ExecutionTerminal ? state.TerminalReason?.Kind : null,
+            TokensUsed = accounting.TokensUsed,
+            LifetimeSteps = accounting.LifetimeSteps,
+            LifetimeReplans = accounting.LifetimeReplans,
+            MaxTotalTokens = options.MaxTotalTokens,
+            MaxSteps = options.MaxSteps,
+            MaxLifetimeSteps = options.MaxLifetimeSteps,
+            MaxReplans = options.MaxReplans,
+            MaxLifetimeReplans = options.MaxLifetimeReplans,
+        };
     }
 
     /// <summary>
@@ -1231,12 +1663,9 @@ public sealed class AgentRunner(
         ex is ModelProtocolException ? ex.Message : ModelFailureText.Sanitize(ex.Message);
 
     /// <summary>
-    /// The host's final containment boundary (ADR-0039 §9): called when an exception escaped
-    /// <see cref="RunAsync"/>/<see cref="ResumeAsync"/> despite the runner's own containment. Re-reads the latest persisted state
-    /// and, <b>only if it is still <see cref="AgentTaskStatus.Running"/></b>, persists it <see cref="AgentTaskStatus.Failed"/> with a
-    /// synthetic <c>Unexpected runtime failure</c> step carrying a redacted, bounded reason, then writes a
-    /// <see cref="TaskExecutionFaultAuditEvent"/>. A terminal state is never replaced, and a state that cannot be read is never
-    /// written. Never throws for a store or audit failure: those are logged.
+    /// The host's final containment boundary (ADR-0039 §9), for a caller that does not know the execution attempt: contains
+    /// whichever attempt is persisted <see cref="AgentTaskStatus.Running"/>. A host that started or admitted the attempt uses
+    /// <see cref="ContainEscapedFailureAsync(Guid, int, ActorIdentity, TaskState?, Exception, CancellationToken)"/>.
     /// </summary>
     /// <param name="taskId">The task whose detached execution failed.</param>
     /// <param name="actor">Who launched or resumed the task.</param>
@@ -1244,8 +1673,32 @@ public sealed class AgentRunner(
     /// <param name="exception">What escaped.</param>
     /// <param name="ct">Cancels the containment writes.</param>
     /// <returns>Whether the task was moved from <see cref="AgentTaskStatus.Running"/> to <see cref="AgentTaskStatus.Failed"/>.</returns>
-    public async Task<bool> ContainEscapedFailureAsync(
-        Guid taskId, ActorIdentity actor, TaskState? lastKnownState, Exception exception, CancellationToken ct = default)
+    public Task<bool> ContainEscapedFailureAsync(
+        Guid taskId, ActorIdentity actor, TaskState? lastKnownState, Exception exception, CancellationToken ct = default) =>
+        ContainEscapedFailureCoreAsync(taskId, null, actor, lastKnownState, exception, ct);
+
+    /// <summary>
+    /// The host's final containment boundary (ADR-0039 §9, fenced by ADR-0040 §4.5): called when an exception escaped an
+    /// execution attempt despite the runner's own containment. Re-reads the latest persisted state and, <b>only if it is still
+    /// <see cref="AgentTaskStatus.Running"/> under <paramref name="executionAttempt"/></b>, transitions it to
+    /// <see cref="AgentTaskStatus.Failed"/> with a synthetic <c>Unexpected runtime failure</c> step carrying a redacted,
+    /// bounded reason, then writes a <see cref="TaskExecutionFaultAuditEvent"/> and the terminal lifecycle event. A terminal
+    /// state or a newer execution attempt is never replaced, and a state that cannot be read is never written. Never throws
+    /// for a store or audit failure: those are logged.
+    /// </summary>
+    /// <param name="taskId">The task whose detached execution failed.</param>
+    /// <param name="executionAttempt">The execution attempt that failed.</param>
+    /// <param name="actor">Who launched or resumed the task.</param>
+    /// <param name="lastKnownState">The state the host last knew, used only when nothing is persisted and the store has no transitions.</param>
+    /// <param name="exception">What escaped.</param>
+    /// <param name="ct">Cancels the containment writes.</param>
+    /// <returns>Whether the task was moved from <see cref="AgentTaskStatus.Running"/> to <see cref="AgentTaskStatus.Failed"/>.</returns>
+    public Task<bool> ContainEscapedFailureAsync(
+        Guid taskId, int executionAttempt, ActorIdentity actor, TaskState? lastKnownState, Exception exception, CancellationToken ct = default) =>
+        ContainEscapedFailureCoreAsync(taskId, executionAttempt, actor, lastKnownState, exception, ct);
+
+    private async Task<bool> ContainEscapedFailureCoreAsync(
+        Guid taskId, int? executionAttempt, ActorIdentity actor, TaskState? lastKnownState, Exception exception, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(exception);
@@ -1261,13 +1714,14 @@ public sealed class AgentRunner(
             return false;
         }
 
-        if (current is null || current.Status != AgentTaskStatus.Running)
+        if (current is null || current.Status != AgentTaskStatus.Running
+            || (executionAttempt is { } attempt && current.ExecutionAttempt != attempt))
         {
             if (logger.IsEnabled(LogLevel.Warning))
             {
                 logger.LogWarning(
-                    "Task {TaskId}: an escaped failure was not persisted because the task is {Status}, not Running",
-                    taskId, current?.Status.ToString() ?? "not stored");
+                    "Task {TaskId}: an escaped failure was not persisted because the task is {Status} under execution attempt {Persisted}, not the failed Running attempt",
+                    taskId, current?.Status.ToString() ?? "not stored", current?.ExecutionAttempt);
             }
 
             return false;
@@ -1275,17 +1729,24 @@ public sealed class AgentRunner(
 
         var exceptionType = exception.GetType().Name;
         var reason = ModelFailureText.Sanitize($"unexpected runtime failure: {exceptionType}: {exception.Message}");
-        var steps = new List<PlanStep>(current.Steps);
-        var stepIndex = steps.Count;
-        steps.Add(new PlanStep(stepIndex, "Unexpected runtime failure", null, null, reason));
+        var stepIndex = current.Steps.Count;
+        var failed = current with
+        {
+            Status = AgentTaskStatus.Failed,
+            Steps =
+            [
+                .. current.Steps,
+                new PlanStep(stepIndex, TaskResumePolicy.RuntimeFailureStepDescription, null, null, reason)
+                {
+                    ExecutionAttempt = current.ExecutionAttempt,
+                },
+            ],
+            TerminalReason = new TaskTerminalReason(TaskTerminalKind.RuntimeFailure),
+            Accounting = TaskResumePolicy.EffectiveAccounting(current),
+        };
 
-        try
+        if (!await TryWriteTerminalAsync(failed, current.ExecutionAttempt, actor, "Failed after an escaped failure", ct))
         {
-            await taskStore.SaveAsync(current with { Status = AgentTaskStatus.Failed, Steps = steps }, ct);
-        }
-        catch (Exception saveFailure) when (saveFailure is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            logger.LogError(saveFailure, "Task {TaskId}: could not persist Failed after an escaped failure", taskId);
             return false;
         }
 
@@ -2726,17 +3187,72 @@ public sealed class AgentRunner(
         }
     }
 
-    private static TaskState BuildFailed(
-        Guid taskId, DateTimeOffset createdAtUtc, string goal, List<PlanStep> steps, List<AgentPlan> plans, string message,
-        IReadOnlyList<ModelCallRecord>? modelCalls = null)
+    /// <summary>
+    /// The in-memory state of one execution attempt (ADR-0040): the task's identity and origin, its steps and plans, its
+    /// lifetime accounting carried in from earlier attempts, and this attempt's own step and replan counters.
+    /// </summary>
+    private sealed class ExecutionRun
     {
-        steps.Add(new PlanStep(steps.Count, "Model protocol failure", null, null, message) { ModelCalls = modelCalls });
-        return Build(taskId, createdAtUtc, goal, AgentTaskStatus.Failed, steps, plans);
-    }
+        public required Guid TaskId { get; init; }
 
-    private static TaskState Build(
-        Guid taskId, DateTimeOffset createdAtUtc, string goal, AgentTaskStatus status, List<PlanStep> steps, List<AgentPlan> plans) =>
-        new(taskId, NodeId.Local, goal, status, steps, plans, createdAtUtc);
+        public required string Goal { get; init; }
+
+        public required DateTimeOffset CreatedAtUtc { get; init; }
+
+        public required int ExecutionAttempt { get; init; }
+
+        public required TaskOrigin Origin { get; init; }
+
+        public Guid? DelegationId { get; init; }
+
+        public AgentRoleKind? DelegationRole { get; init; }
+
+        public DateTimeOffset? ResumedAtUtc { get; init; }
+
+        public ActorIdentity? ResumedBy { get; init; }
+
+        public required ActorIdentity Actor { get; init; }
+
+        public DelegatedExecutionScope? Delegation { get; init; }
+
+        public required List<PlanStep> Steps { get; init; }
+
+        public required List<AgentPlan> Plans { get; init; }
+
+        public long TokensUsed { get; set; }
+
+        public int LifetimeSteps { get; set; }
+
+        public int LifetimeReplans { get; set; }
+
+        /// <summary>Executable steps taken by this attempt: the loop's bound, never <c>Steps.Count</c>.</summary>
+        public int AttemptSteps { get; private set; }
+
+        public int AttemptReplans { get; set; }
+
+        /// <summary>Whether a row this attempt owns exists in the store.</summary>
+        public bool Persisted { get; set; }
+
+        /// <summary>Counts one executable step against this attempt's and the task's lifetime budget (ADR-0040 §5.2).</summary>
+        public void CountStep()
+        {
+            AttemptSteps++;
+            LifetimeSteps++;
+        }
+
+        public TaskState Build(AgentTaskStatus status, TaskTerminalReason? terminalReason = null) =>
+            new(TaskId, NodeId.Local, Goal, status, [.. Steps], [.. Plans], CreatedAtUtc)
+            {
+                ExecutionAttempt = ExecutionAttempt,
+                Accounting = new TaskAccounting(TokensUsed, LifetimeSteps, LifetimeReplans),
+                Origin = Origin,
+                DelegationId = DelegationId,
+                DelegationRole = DelegationRole,
+                TerminalReason = terminalReason,
+                ResumedAtUtc = ResumedAtUtc,
+                ResumedBy = ResumedBy,
+            };
+    }
 
     private delegate Task<ToolCallResult> EvidenceInvocation(
         string toolName,

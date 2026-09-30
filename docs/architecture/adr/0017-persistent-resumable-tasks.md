@@ -2,6 +2,9 @@
 
 Status: Accepted
 Date: 2026-09-15
+Amended by: ADR-0040 (2026-09-30) — execution attempts, ordered resumability table (never `Running`, never delegated or
+unknown-origin tasks), atomic transition before the resume, execution-attempt fencing, per-attempt versus lifetime
+step/replan budgets, cumulative never-reset tokens, zero-plan re-planning, task lifecycle audit
 
 ## Context
 

@@ -62,19 +62,124 @@ internal sealed class RecordingAuditSink : IAuditSink
 /// <summary>
 /// An <see cref="ITaskStore"/> held entirely in memory, for tests that do not exercise real
 /// persistence directly — the real store is <c>SqliteTaskStore</c> (V0.7, ADR-0017), tested on
-/// its own in <c>bOps.Memory.Tests</c>. Also records every save, in order, so a test can assert
-/// exactly when the runtime persists (rule V0.7: after every step, and again at the end).
+/// its own in <c>bOps.Memory.Tests</c>. Also records every write, in order, so a test can assert
+/// exactly when the runtime persists (rule V0.7: after every step, and again at the end). It has the
+/// ADR-0040 transitions with the same atomic semantics as the real store, under one lock: the compare
+/// and the write are never separated, and the execution-attempt fence on <see cref="SaveAsync"/> applies.
 /// </summary>
-internal sealed class InMemoryTaskStore : ITaskStore
+internal sealed class InMemoryTaskStore : ITaskStore, ITaskTransitionStore
 {
     private readonly Dictionary<Guid, TaskState> _tasks = [];
+    private readonly List<TaskState> _saves = [];
 
-    public List<TaskState> Saves { get; } = [];
+    /// <summary>Every accepted write (save, create or transition), in order.</summary>
+    public List<TaskState> Saves
+    {
+        get
+        {
+            lock (_tasks)
+            {
+                return [.. _saves];
+            }
+        }
+    }
+
+    /// <summary>Runs before every transition, outside the lock — a test's hook to interleave another writer.</summary>
+    public Func<TaskState, Task>? BeforeTransition { get; set; }
+
+    public Task SaveAsync(TaskState task, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            if (_tasks.TryGetValue(task.Id, out var stored) && stored.ExecutionAttempt > task.ExecutionAttempt)
+            {
+                throw new TaskExecutionSupersededException(task.Id, task.ExecutionAttempt);
+            }
+
+            Write(task);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> TryCreateAsync(TaskState task, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            if (_tasks.ContainsKey(task.Id))
+            {
+                return Task.FromResult(false);
+            }
+
+            Write(task);
+            return Task.FromResult(true);
+        }
+    }
+
+    public async Task<bool> TryTransitionAsync(TaskState task, AgentTaskStatus expectedStatus, int expectedExecutionAttempt, CancellationToken ct = default)
+    {
+        if (task.ExecutionAttempt != expectedExecutionAttempt && task.ExecutionAttempt != expectedExecutionAttempt + 1)
+        {
+            throw new ArgumentException("Invalid execution attempt for a transition.", nameof(task));
+        }
+
+        if (BeforeTransition is { } hook)
+        {
+            await hook(task);
+        }
+
+        lock (_tasks)
+        {
+            if (!_tasks.TryGetValue(task.Id, out var stored) || stored.Status != expectedStatus || stored.ExecutionAttempt != expectedExecutionAttempt)
+            {
+                return false;
+            }
+
+            Write(task);
+            return true;
+        }
+    }
+
+    public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            return Task.FromResult(_tasks.TryGetValue(taskId, out var task) ? task : null);
+        }
+    }
+
+    public Task<IReadOnlyList<TaskState>> ListByStatusAsync(AgentTaskStatus status, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            return Task.FromResult<IReadOnlyList<TaskState>>(_tasks.Values.Where(t => t.Status == status).ToList());
+        }
+    }
+
+    /// <summary>Stores <paramref name="task"/> as it is, bypassing every check — a test's setup of a persisted row.</summary>
+    public void Seed(TaskState task)
+    {
+        lock (_tasks)
+        {
+            _tasks[task.Id] = task;
+        }
+    }
+
+    private void Write(TaskState task)
+    {
+        _tasks[task.Id] = task;
+        _saves.Add(task);
+    }
+}
+
+/// <summary>A task store with no <see cref="ITaskTransitionStore"/> capability — resume must fail closed against it (ADR-0040 §4.1).</summary>
+internal sealed class PlainTaskStore : ITaskStore
+{
+    private readonly Dictionary<Guid, TaskState> _tasks = [];
 
     public Task SaveAsync(TaskState task, CancellationToken ct = default)
     {
         _tasks[task.Id] = task;
-        Saves.Add(task);
         return Task.CompletedTask;
     }
 

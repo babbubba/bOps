@@ -7,9 +7,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace bOps.Runtime.Tests;
 
 /// <summary>
-/// V0.7 (ADR-0017): every step is persisted through <see cref="ITaskStore"/> as it happens, and
-/// a task left <see cref="AgentTaskStatus.Running"/> can be resumed from its next unfinished step
-/// rather than restarted.
+/// V0.7 (ADR-0017): every step is persisted through <see cref="ITaskStore"/> as it happens. Resume is
+/// the ADR-0040 state machine, covered by <see cref="ResumeStateMachineTests"/>.
 /// </summary>
 public sealed class AgentRunnerPersistenceTests
 {
@@ -98,49 +97,5 @@ public sealed class AgentRunnerPersistenceTests
 
             return response;
         }
-    }
-
-    [Fact]
-    public async Task ResumeAsync_ContinuesFromTheNextStep_WithoutRepeatingCompletedOnes()
-    {
-        // No planning response here: ResumeAsync never calls CreatePlanAsync — it continues with
-        // the plan already recorded on the persisted task.
-        var model = new FakeChatModel(
-            new ModelResponse(null, [new ModelToolCall("call-1", "test.read", ToolArguments.Empty)], false, null),
-            new ModelResponse("done", [], true, null));
-        var registry = CreateRegistryWith(new FakeReadTool());
-        var taskStore = new InMemoryTaskStore();
-
-        var partial = new TaskState(
-            Guid.NewGuid(), NodeId.Local, "check things", AgentTaskStatus.Running,
-            [new PlanStep(0, "test.read", new ModelToolCall("call-0", "test.read", ToolArguments.Empty),
-                ToolCallResult.Success("ok"), "ok", 0)],
-            [new AgentPlan(0, "A generic test plan.", [])],
-            DateTimeOffset.UtcNow);
-
-        var result = await CreateRunner(model, registry, taskStore).ResumeAsync(partial, Actor);
-
-        Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        Assert.Equal(3, result.Steps.Count);
-        Assert.Equal(0, result.Steps[0].Index);
-        Assert.Equal(1, result.Steps[1].Index);
-        Assert.Equal(2, result.Steps[2].Index);
-
-        // Only the resumed model calls happened — the planning call from the original run is not
-        // repeated, and the model saw the already-completed step as history, not as a fresh ask.
-        Assert.Equal(2, model.Requests.Count);
-        Assert.Contains(model.Requests[0].History, turn => turn.Role == ChatRole.Tool && turn.Content!.Contains("ok", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task ResumeAsync_Throws_WhenTheTaskHasNoRecordedPlan()
-    {
-        var model = new FakeChatModel();
-        var registry = CreateRegistryWith();
-        var taskStore = new InMemoryTaskStore();
-
-        var empty = new TaskState(Guid.NewGuid(), NodeId.Local, "check things", AgentTaskStatus.Running, [], [], DateTimeOffset.UtcNow);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRunner(model, registry, taskStore).ResumeAsync(empty, Actor));
     }
 }

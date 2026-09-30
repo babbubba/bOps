@@ -271,11 +271,10 @@ public sealed class AgentsAndApprovalsEndpointsTests
     }
 
     [Fact]
-    public async Task ResumeTask_ContinuesAStoredRunningTask_ToCompletion()
+    public async Task ResumeTask_ContinuesAStoredCancelledTask_ToCompletion()
     {
-        // A model that can finish a resumed task in one more step — the resume endpoint's job is
-        // to hand a stored TaskState to AgentRunner.ResumeAsync (V0.7) and let it continue, not to
-        // plan again, so no planning response is queued here.
+        // A model that can finish a resumed task in one more step — the resume endpoint acquires the stored task
+        // (ADR-0040) and the runner continues it from its last plan, so no planning response is queued here.
         using var factory = new TestAppFactory
         {
             ChatModel = new QueueChatModel(QueueChatModel.Final("resumed and done")),
@@ -284,11 +283,11 @@ public sealed class AgentsAndApprovalsEndpointsTests
 
         var taskStore = factory.Services.GetRequiredService<ITaskStore>();
         var partial = new TaskState(
-            Guid.NewGuid(), NodeId.Local, "check things", AgentTaskStatus.Running,
+            Guid.NewGuid(), NodeId.Local, "check things", AgentTaskStatus.Cancelled,
             [new PlanStep(0, "system.cpu", new ModelToolCall("call-0", "system.cpu", ToolArguments.Empty),
                 ToolCallResult.Success("42%"), "42%", 0)],
             [new AgentPlan(0, "test plan", [])],
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow) { Origin = TaskOrigin.Ordinary };
         await taskStore.SaveAsync(partial);
 
         var resumed = await client.PostAsync(new Uri($"/api/agents/tasks/{partial.Id}/resume", UriKind.Relative), content: null);

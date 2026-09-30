@@ -255,7 +255,7 @@ bops "search the web for the current LTS .NET version and fetch its release note
 ```
 
 ```bash
-bops resume <task-id>          # resume a persisted task (V0.7, SQLite-backed) from where it left off
+bops resume <task-id>          # resume a failed, cancelled or budget-stopped task as a new execution attempt (ADR-0040)
 ```
 
 ```bash

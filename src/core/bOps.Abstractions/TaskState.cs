@@ -181,6 +181,10 @@ public sealed record PlanStep
 
     /// <summary>The tool calls the model emitted in the same turn after <see cref="ToolCall"/> and that bOps deliberately did not execute (one call per step), in emission order. Kept so the model's turn can be rebuilt exactly (ADR-0038); <c>null</c> when there were none, and in every step recorded before this was kept.</summary>
     public IReadOnlyList<ModelToolCall>? UnexecutedToolCalls { get; init; }
+
+    /// <summary>The execution attempt that produced this step (ADR-0040 §1); <c>null</c> in a step recorded before execution attempts were kept, read as 1.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ExecutionAttempt { get; init; }
 }
 
 /// <summary>
@@ -228,4 +232,38 @@ public sealed record TaskState
 
     /// <summary>When the task was created, in UTC.</summary>
     public DateTimeOffset CreatedAtUtc { get; init; }
+
+    /// <summary>
+    /// The task's current execution attempt (ADR-0040 §1): 1 for its initial execution, one more for every accepted
+    /// resume. Distinct from <see cref="ModelCallRecord.ModelAttempt"/>. A task persisted before execution attempts were
+    /// kept loads as 1: the source-generated deserializer writes 0 for an absent member, and any value below 1 reads as 1.
+    /// </summary>
+    public int ExecutionAttempt { get => field < 1 ? 1 : field; init; } = 1;
+
+    /// <summary>What the task has consumed over its lifetime (ADR-0040 §5); <c>null</c> only for a task persisted before accounting was kept.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TaskAccounting? Accounting { get; init; }
+
+    /// <summary>Who created the task (ADR-0040 §8). Set by the runtime only; <see cref="TaskOrigin.Unknown"/> for a task persisted before it was kept.</summary>
+    public TaskOrigin Origin { get; init; }
+
+    /// <summary>For a <see cref="TaskOrigin.Delegated"/> task, the delegated run it belongs to.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? DelegationId { get; init; }
+
+    /// <summary>For a <see cref="TaskOrigin.Delegated"/> task, the role it performs.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AgentRoleKind? DelegationRole { get; init; }
+
+    /// <summary>Why the latest execution attempt ended; <c>null</c> while it runs and for a task persisted before this was kept.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TaskTerminalReason? TerminalReason { get; init; }
+
+    /// <summary>When a resume acquired the current execution attempt; <c>null</c> for the initial execution.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ResumedAtUtc { get; init; }
+
+    /// <summary>Who resumed the task into its current execution attempt; <c>null</c> for the initial execution.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ActorIdentity? ResumedBy { get; init; }
 }
