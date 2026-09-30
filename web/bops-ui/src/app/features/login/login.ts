@@ -14,7 +14,7 @@ import { TranslatePipe } from '../../core/i18n/translate.pipe';
   templateUrl: './login.html',
 })
 export class Login {
-  private readonly auth = inject(AuthService);
+  protected readonly auth = inject(AuthService);
 
   protected readonly token = signal('');
   protected readonly submitting = signal(false);

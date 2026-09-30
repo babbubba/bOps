@@ -35,6 +35,43 @@ export const AgentTaskStatusName: Record<AgentTaskStatus, string> = {
 export const TaskStatusRunning: AgentTaskStatus = 0;
 export const TaskStatusCompleted: AgentTaskStatus = 1;
 
+/** bOps.Abstractions.TaskOrigin, in declaration order (explicit values on the server). */
+export type TaskOrigin = 0 | 1 | 2;
+
+/** bOps.Abstractions.TaskTerminalKind, in declaration order (ADR-0040 §6). Append-only on the server. */
+export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
+  0: 'Completed',
+  1: 'StepLimit',
+  2: 'LifetimeStepLimit',
+  3: 'TokenBudget',
+  4: 'DelegationBudget',
+  5: 'ReplanLimit',
+  6: 'LifetimeReplanLimit',
+  7: 'PolicyBlocked',
+  8: 'ModelFailure',
+  9: 'EmptyResponse',
+  10: 'RuntimeFailure',
+  11: 'Cancelled',
+  12: 'NotAdmitted',
+};
+export const TaskTerminalModelFailure: TaskTerminalKind = 8;
+
+/** bOps.Abstractions.ModelFailureKind, in declaration order (ADR-0039): the provider-neutral reason a model call failed. */
+export type ModelFailureKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export const ModelFailureKindName: Record<ModelFailureKind, string> = {
+  0: 'Unknown',
+  1: 'Transient',
+  2: 'RateLimited',
+  3: 'Timeout',
+  4: 'Unreachable',
+  5: 'Authentication',
+  6: 'QuotaExceeded',
+  7: 'InvalidRequest',
+  8: 'ContextOverflow',
+  9: 'MalformedResponse',
+};
+
 export interface ToolParameter {
   name: string;
   type: number;
@@ -99,6 +136,8 @@ export interface ModelCallRecord {
   finishReason: string | null;
   errorMessage: string | null;
   payloadTruncated: boolean;
+  /** Why this attempt failed, in provider-neutral terms. Absent on a record written before failures were classified. */
+  failureKind?: ModelFailureKind | null;
 }
 
 export interface PlanStep {
@@ -125,6 +164,31 @@ export interface AgentPlan {
   modelCalls?: ModelCallRecord[] | null;
 }
 
+/** bOps.Api.TaskErrorResponse: the stable `code` and the operator `message` of a refused task request (409, 501, 503) or of `resumeBlockedReason`. */
+export interface TaskErrorResponse {
+  code: string;
+  message: string;
+}
+
+/** What a task has consumed over its whole lifetime, across every execution attempt (ADR-0040 §5). A resume never resets it. */
+export interface TaskAccounting {
+  tokensUsed: number;
+  lifetimeSteps: number;
+  lifetimeReplans: number;
+}
+
+/** Why the latest execution attempt ended (ADR-0040 §6). Carries no free text. */
+export interface TaskTerminalReason {
+  kind: TaskTerminalKind;
+  /** For a `ModelFailure`, the provider-neutral kind of the last failed model attempt. */
+  failureKind?: ModelFailureKind | null;
+}
+
+/**
+ * A task as `GET /api/agents/tasks/{id}` (and the list) sends it: the persisted state plus the lifecycle the server computed
+ * (ADR-0040 §9). `executing`, `resumable` and `resumeBlockedReason` are decided by the server; the UI renders them and never
+ * derives them from `status`.
+ */
 export interface TaskState {
   id: string;
   node: string;
@@ -133,10 +197,34 @@ export interface TaskState {
   steps: PlanStep[];
   plans: AgentPlan[];
   createdAtUtc: string;
+  /** 1 for the initial execution, one more for every accepted resume. Not the same thing as a model call's retry attempt. */
+  executionAttempt: number;
+  accounting: TaskAccounting;
+  origin: TaskOrigin;
+  delegationId?: string | null;
+  delegationRole?: number | null;
+  terminalReason?: TaskTerminalReason | null;
+  resumedAtUtc?: string | null;
+  resumedBy?: { kind: string; id: string; displayName: string | null } | null;
+  /** True when the launcher of this host holds an execution attempt of the task. `Running` and not `executing` is an interrupted task. */
+  executing: boolean;
+  resumable: boolean;
+  /** Why an ordinary resume would be refused now; `null` when it would be accepted. */
+  resumeBlockedReason: TaskErrorResponse | null;
 }
 
 export interface TaskAcceptedResponse {
   taskId: string;
+}
+
+/** Body of an accepted `POST /api/agents/tasks/{id}/resume` (ADR-0040 §9): the durable transition, not a full task. */
+export interface TaskResumeAcceptedResponse {
+  taskId: string;
+  status: AgentTaskStatus;
+  executionAttempt: number;
+  executing: boolean;
+  resumable: boolean;
+  resumeBlockedReason: TaskErrorResponse | null;
 }
 
 export interface PendingApproval {

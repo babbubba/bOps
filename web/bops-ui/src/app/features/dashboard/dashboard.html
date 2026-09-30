@@ -85,7 +85,7 @@
               >
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate font-medium">{{ shortGoal(task.goal) }}</span>
-                  <bops-status-badge [status]="task.status" />
+                  <bops-status-badge [status]="task.status" [interrupted]="isInterrupted(task)" />
                 </div>
                 <div class="mt-1 text-xs text-muted">{{ 'dashboard.task.meta' | t: { count: task.steps.length, time: formatTime(task.createdAtUtc) } }}</div>
               </button>
@@ -112,17 +112,70 @@
             <h2 class="text-base font-semibold">{{ task.goal }}</h2>
             <p class="text-xs text-muted">{{ 'dashboard.detail.taskId' | t: { id: task.id } }}</p>
           </div>
-          <bops-status-badge [status]="task.status" />
+          <bops-status-badge [status]="task.status" [interrupted]="isInterrupted(task)" />
         </div>
 
-        @if (task.status !== 0 && task.status !== 1) {
-          <button
-            type="button"
-            (click)="resume(task.id, $event)"
-            class="mb-4 rounded-lg border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/10"
-          >
-            {{ 'dashboard.detail.resume' | t }}
-          </button>
+        @if (tasks.connection() === 'reconnecting') {
+          <p role="status" class="mb-4 rounded-lg border border-status-blocked bg-status-blocked/10 px-3 py-2 text-sm">
+            {{ 'dashboard.connection.reconnecting' | t }}
+          </p>
+        } @else if (tasks.connection() === 'sessionExpired') {
+          <p role="alert" class="mb-4 rounded-lg border border-risk-critical bg-risk-critical/10 px-3 py-2 text-sm">
+            {{ 'dashboard.connection.sessionExpired' | t }}
+          </p>
+        }
+
+        <dl [attr.aria-label]="'dashboard.lifecycle.aria' | t" class="mb-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+          <dt class="text-muted">{{ 'dashboard.lifecycle.attempt' | t }}</dt>
+          <dd>{{ task.executionAttempt }}</dd>
+          <dt class="text-muted">{{ 'dashboard.lifecycle.tokens' | t }}</dt>
+          <dd>{{ i18n.number(task.accounting.tokensUsed) }}</dd>
+          <dt class="text-muted">{{ 'dashboard.lifecycle.steps' | t }}</dt>
+          <dd>{{ i18n.number(task.accounting.lifetimeSteps) }}</dd>
+          <dt class="text-muted">{{ 'dashboard.lifecycle.replans' | t }}</dt>
+          <dd>{{ i18n.number(task.accounting.lifetimeReplans) }}</dd>
+          @if (task.terminalReason; as reason) {
+            <dt class="text-muted">{{ 'dashboard.lifecycle.terminal' | t }}</dt>
+            <dd class="break-words">{{ terminalText(reason) }}</dd>
+          }
+        </dl>
+
+        @if (failureGuidance(task); as guidance) {
+          <div role="note" class="mb-4 rounded-lg border border-status-failed bg-status-failed/10 p-3 text-sm">
+            <p class="break-words">{{ guidance }}</p>
+            @if (providerReason(task); as reason) {
+              <p class="mt-1 break-words text-xs text-muted">{{ 'dashboard.lifecycle.providerReason' | t: { reason: reason } }}</p>
+            }
+          </div>
+        }
+
+        @if (task.resumable || task.executing) {
+          <div class="mb-4 flex flex-wrap items-center gap-2">
+            @if (task.resumable) {
+              <button
+                type="button"
+                (click)="resume(task.id, $event)"
+                [disabled]="tasks.resuming()"
+                class="rounded-lg border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {{ (tasks.resuming() ? 'dashboard.detail.resuming' : 'dashboard.detail.resume') | t }}
+              </button>
+            }
+            @if (task.executing) {
+              <button
+                type="button"
+                (click)="cancel(task.id, $event)"
+                [disabled]="tasks.cancelling()"
+                class="rounded-lg border border-risk-critical px-3 py-1.5 text-sm font-medium text-risk-critical hover:bg-risk-critical/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {{ (tasks.cancelling() ? 'dashboard.detail.cancelling' : 'dashboard.detail.cancel') | t }}
+              </button>
+            }
+          </div>
+        }
+
+        @if (!task.resumable && blockedText(task); as blocked) {
+          <p role="note" class="mb-4 break-words text-sm text-muted">{{ blocked }}</p>
         }
 
         @if (task.steps.length === 0) {

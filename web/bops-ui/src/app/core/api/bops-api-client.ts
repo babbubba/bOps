@@ -21,6 +21,7 @@ import {
   SetProviderProfileRequest,
   SettingsView,
   TaskAcceptedResponse,
+  TaskResumeAcceptedResponse,
   TaskState,
   ToolManifest,
 } from './models';
@@ -39,8 +40,13 @@ export class BOpsApiClient {
     return firstValueFrom(this.http.post<TaskAcceptedResponse>('/api/agents/tasks', { goal }));
   }
 
-  resumeTask(taskId: string): Promise<TaskAcceptedResponse> {
-    return firstValueFrom(this.http.post<TaskAcceptedResponse>(`/api/agents/tasks/${taskId}/resume`, {}));
+  resumeTask(taskId: string): Promise<TaskResumeAcceptedResponse> {
+    return firstValueFrom(this.http.post<TaskResumeAcceptedResponse>(`/api/agents/tasks/${taskId}/resume`, {}));
+  }
+
+  /** Asks the host executing the task to stop it. Asynchronous: a 202 means the request was made, not that the task has stopped. */
+  cancelTask(taskId: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/agents/tasks/${taskId}`));
   }
 
   getTask(taskId: string): Promise<TaskState> {

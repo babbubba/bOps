@@ -12,6 +12,7 @@ const STORAGE_KEY = 'bops-ui-language';
 export type EnumGroup =
   | 'risk'
   | 'taskStatus'
+  | 'terminalKind'
   | 'trust'
   | 'delegationStatus'
   | 'delegationRole'

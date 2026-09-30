@@ -44,7 +44,7 @@ describe('switching language', () => {
           useValue: {
             statusFilter: signal(0),
             tasks: signal([
-              { id: 't1', node: 'n', goal: 'Inspect the production host', status: 0, steps: [{ index: 0 }, { index: 1 }], plans: [], createdAtUtc: '2026-09-15T12:00:00Z' },
+              { id: 't1', node: 'n', goal: 'Inspect the production host', status: 0, executing: true, steps: [{ index: 0 }, { index: 1 }], plans: [], createdAtUtc: '2026-09-15T12:00:00Z' },
             ]),
             selectedTaskId: signal(null),
             selectedTask: signal(null),
@@ -314,7 +314,7 @@ describe('switching language', () => {
     it('translates the login error at display time', async () => {
       TestBed.configureTestingModule({
         imports: [Login],
-        providers: [{ provide: AuthService, useValue: { signIn: () => Promise.reject(new Error('nope')) } }],
+        providers: [{ provide: AuthService, useValue: { signIn: () => Promise.reject(new Error('nope')), sessionExpired: signal(false) } }],
       });
       const fixture = TestBed.createComponent(Login);
       fixture.detectChanges();
