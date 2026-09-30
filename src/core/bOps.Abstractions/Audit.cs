@@ -48,6 +48,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(EntitlementDecisionAuditEvent), "entitlementDecision")]
 [JsonDerivedType(typeof(PluginLifecycleAuditEvent), "pluginLifecycle")]
 [JsonDerivedType(typeof(TaskExecutionFaultAuditEvent), "taskExecutionFault")]
+[JsonDerivedType(typeof(TaskLifecycleAuditEvent), "taskLifecycle")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -317,6 +318,83 @@ public sealed record TaskExecutionFaultAuditEvent : AuditEvent
 
     /// <summary>The persisted reason, redacted and bounded.</summary>
     public required string Reason { get; init; }
+}
+
+/// <summary>Which point of a task's lifecycle a <see cref="TaskLifecycleAuditEvent"/> records (ADR-0040 §10).</summary>
+public enum TaskLifecycleStage
+{
+    /// <summary>An execution attempt began: the initial execution of a task, or an admitted resumed attempt.</summary>
+    ExecutionStarted = 0,
+
+    /// <summary>A resume acquired the task: it was atomically moved to <see cref="AgentTaskStatus.Running"/> under a new execution attempt.</summary>
+    ResumeAccepted = 1,
+
+    /// <summary>A resume of a stored task was refused, lost the transition to another writer, or the store cannot perform it.</summary>
+    ResumeRejected = 2,
+
+    /// <summary>An execution attempt reached a terminal status.</summary>
+    ExecutionTerminal = 3,
+
+    /// <summary>An executor was fenced: the task had been taken over, so its write was refused and it stopped.</summary>
+    ExecutionSuperseded = 4,
+}
+
+/// <summary>
+/// A task lifecycle transition (ADR-0040 §10): an execution attempt starting or ending, a resume accepted or rejected, an
+/// executor superseded. Every event names the <see cref="ExecutionAttempt"/> it concerns and a budget snapshot, so a task's
+/// attempts can be followed in the log. Distinct from <see cref="TaskExecutionFaultAuditEvent"/>, which keeps its narrow
+/// ADR-0039 meaning. It never carries the goal, prompts, model or tool payloads, refusal text, credentials or stack traces.
+/// <see cref="AuditEvent.StepIndex"/> is the task's step count when the event was written.
+/// </summary>
+public sealed record TaskLifecycleAuditEvent : AuditEvent
+{
+    /// <summary>What happened.</summary>
+    public required TaskLifecycleStage Stage { get; init; }
+
+    /// <summary>The execution attempt concerned: the attempt that started, ended or was superseded; for a resume, the new attempt when accepted and the persisted one when rejected.</summary>
+    public required int ExecutionAttempt { get; init; }
+
+    /// <summary>The task's origin.</summary>
+    public required TaskOrigin Origin { get; init; }
+
+    /// <summary>For a resume stage, the status the task had before the resume.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AgentTaskStatus? PriorStatus { get; init; }
+
+    /// <summary>The task's status after the event (for a rejection, its unchanged status).</summary>
+    public required AgentTaskStatus Status { get; init; }
+
+    /// <summary>For <see cref="TaskLifecycleStage.ExecutionTerminal"/>, why the attempt ended.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TaskTerminalKind? TerminalKind { get; init; }
+
+    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/>, the stable refusal code (for example <c>task_running</c>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RefusalCode { get; init; }
+
+    /// <summary>Tokens the task has used over its lifetime.</summary>
+    public required long TokensUsed { get; init; }
+
+    /// <summary>Executable steps the task has taken over its lifetime.</summary>
+    public required int LifetimeSteps { get; init; }
+
+    /// <summary>Replans the task has made over its lifetime.</summary>
+    public required int LifetimeReplans { get; init; }
+
+    /// <summary>The configured cumulative token cap, or <c>null</c> when none is configured.</summary>
+    public int? MaxTotalTokens { get; init; }
+
+    /// <summary>The configured per-attempt step cap.</summary>
+    public required int MaxSteps { get; init; }
+
+    /// <summary>The configured lifetime step cap.</summary>
+    public required int MaxLifetimeSteps { get; init; }
+
+    /// <summary>The configured per-attempt replan cap.</summary>
+    public required int MaxReplans { get; init; }
+
+    /// <summary>The configured lifetime replan cap.</summary>
+    public required int MaxLifetimeReplans { get; init; }
 }
 
 /// <summary>A policy decision was made for a tool call, whatever the outcome that followed.</summary>

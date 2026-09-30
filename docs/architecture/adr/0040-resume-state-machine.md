@@ -144,16 +144,16 @@ when an administrator has configured a `MaxTotalTokens` above the tokens already
 public interface ITaskTransitionStore
 {
     Task<bool> TryCreateAsync(TaskState task, CancellationToken ct = default);
-    Task<bool> TryTransitionAsync(TaskState next, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
+    Task<bool> TryTransitionAsync(TaskState task, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
         CancellationToken ct = default);
 }
 ```
 
 - `TryCreateAsync` inserts the task only if no row with its id exists.
 - `TryTransitionAsync` atomically — at the persistence level, across threads **and processes** sharing the store —
-  replaces the row for `next.Id` with `next` if and only if the persisted status is `expectedStatus` **and** the
+  replaces the row for `task.Id` with `task` if and only if the persisted status is `expectedStatus` **and** the
   persisted execution attempt is `expectedExecutionAttempt`; otherwise it changes nothing and returns `false`.
-  `next.ExecutionAttempt` must be `expectedExecutionAttempt` (a write by the owning attempt) or
+  `task.ExecutionAttempt` must be `expectedExecutionAttempt` (a write by the owning attempt) or
   `expectedExecutionAttempt + 1` (an acquisition); anything else is an argument error.
 - A store must never implement it as load, check in process, save. A store that does not implement the interface
   makes resume refuse with `transition_unsupported` (fail closed). `ITaskStore` is unchanged, so third-party stores

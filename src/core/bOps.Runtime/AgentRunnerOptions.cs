@@ -9,8 +9,18 @@ namespace bOps.Runtime;
 /// </summary>
 public sealed record AgentRunnerOptions
 {
-    /// <summary>The step budget: an anti-infinite-loop guard-rail. Exceeding it ends the task as <c>MaxStepsReached</c>.</summary>
+    /// <summary>
+    /// The per-execution-attempt step budget (ADR-0040 §5): an anti-infinite-loop guard-rail. Exhausting it ends the attempt
+    /// as <c>MaxStepsReached</c>; a resume starts a fresh per-attempt budget, capped by <see cref="MaxLifetimeSteps"/>.
+    /// </summary>
     public int MaxSteps { get; init; } = 15;
+
+    /// <summary>
+    /// The task-lifetime step budget across every execution attempt (ADR-0040 §5). It always wins over <see cref="MaxSteps"/>:
+    /// an attempt runs at most the lifetime remainder, and a task that has used it up cannot be resumed. Must not be below
+    /// <see cref="MaxSteps"/>, so a single execution attempt behaves exactly as without it.
+    /// </summary>
+    public int MaxLifetimeSteps { get; init; } = 60;
 
     /// <summary>How long a single tool execution may run before it is cancelled and reported as <c>Timeout</c> (rule S7).</summary>
     public TimeSpan DefaultToolTimeout { get; init; } = TimeSpan.FromSeconds(30);
@@ -25,18 +35,22 @@ public sealed record AgentRunnerOptions
     public int MaxConsecutivePolicyDenials { get; init; } = 2;
 
     /// <summary>
-    /// An optional total token budget across the whole task. <c>null</c> (the V0.1 default)
+    /// An optional total token budget across the whole task — cumulative over every execution attempt and never reset by a
+    /// resume (ADR-0040 §5). <c>null</c> (the V0.1 default)
     /// means unbounded — the mechanism exists from V0.1 per rule C5, even though no default
     /// limit is imposed until an operator configures one.
     /// </summary>
     public int? MaxTotalTokens { get; init; }
 
     /// <summary>
-    /// How many times the task may replan before ending as <c>ReplanLimitReached</c> instead of
-    /// continuing to retry (agentic/01-architecture-rules.md, rule C8) — the same anti-runaway
-    /// guard-rail rule C5 already requires for steps, applied to plan revisions.
+    /// How many times one execution attempt may replan before ending as <c>ReplanLimitReached</c> instead of continuing to
+    /// retry (agentic/01-architecture-rules.md, rule C8; ADR-0040 §5) — the same anti-runaway guard-rail rule C5 already
+    /// requires for steps, applied to plan revisions.
     /// </summary>
     public int MaxReplans { get; init; } = 3;
+
+    /// <summary>The task-lifetime replan budget across every execution attempt (ADR-0040 §5); it always wins over <see cref="MaxReplans"/>, and must not be below it.</summary>
+    public int MaxLifetimeReplans { get; init; } = 12;
 
     /// <summary>
     /// How many times a model that ends a step with no text and no tool call (an empty final response) is asked
@@ -77,13 +91,35 @@ public sealed record AgentRunnerOptions
     public TimeSpan ModelRetryMaxDelay { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Throws <see cref="InvalidOperationException"/> naming the configuration keys when the model-call settings are not
+    /// Throws <see cref="InvalidOperationException"/> naming the configuration keys when the budgets or the model-call settings are not
     /// coherent. A host that knows the provider's transport timeout passes it, so an attempt timeout that could never fire
     /// first is rejected at start-up rather than discovered in production.
     /// </summary>
     /// <param name="providerRequestTimeout">The provider's effective transport timeout, when the caller knows it.</param>
     public void Validate(TimeSpan? providerRequestTimeout = null)
     {
+        if (MaxSteps < 1)
+        {
+            throw new InvalidOperationException("'Agent:MaxSteps' must be at least 1.");
+        }
+
+        if (MaxLifetimeSteps < MaxSteps)
+        {
+            throw new InvalidOperationException(
+                $"'Agent:MaxLifetimeSteps' ({MaxLifetimeSteps}) must not be below 'Agent:MaxSteps' ({MaxSteps}).");
+        }
+
+        if (MaxReplans < 0)
+        {
+            throw new InvalidOperationException("'Agent:MaxReplans' must not be negative.");
+        }
+
+        if (MaxLifetimeReplans < MaxReplans)
+        {
+            throw new InvalidOperationException(
+                $"'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}) must not be below 'Agent:MaxReplans' ({MaxReplans}).");
+        }
+
         if (ModelCallMaxAttempts < 1)
         {
             throw new InvalidOperationException("'Agent:ModelCallMaxAttempts' must be at least 1.");

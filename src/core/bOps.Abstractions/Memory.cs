@@ -29,9 +29,9 @@ public interface ITaskStore
     Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default);
 
     /// <summary>
-    /// Lists every stored task currently at <paramref name="status"/> — in practice, the way an
-    /// operator finds what is resumable after a restart: every task still
-    /// <see cref="AgentTaskStatus.Running"/>.
+    /// Lists every stored task currently at <paramref name="status"/> — for example every task still
+    /// <see cref="AgentTaskStatus.Running"/>, which after a restart an operator must inspect (such a task is never
+    /// resumed as it is: ADR-0040).
     /// </summary>
     /// <param name="status">The status to filter by.</param>
     /// <param name="ct">Cancelled if the read should be abandoned.</param>

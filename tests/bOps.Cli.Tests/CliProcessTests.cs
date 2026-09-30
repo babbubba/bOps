@@ -147,6 +147,30 @@ public sealed class CliProcessTests : IDisposable
         Assert.Contains("No stored task with id", error, StringComparison.Ordinal);
     }
 
+
+    // HARDEN-3 / ADR-0040: `bops resume` applies the same resumability rule as the API; a refusal names its code, changes
+    // nothing and exits 1 — including for a task still stored Running, which no host may resume.
+    [Theory]
+    [InlineData(bOps.Abstractions.AgentTaskStatus.Completed, "task_completed")]
+    [InlineData(bOps.Abstractions.AgentTaskStatus.Running, "task_running")]
+    public async Task Resume_OfANonResumableTask_IsRefusedWithItsCode_AndChangesNothing(bOps.Abstractions.AgentTaskStatus status, string code)
+    {
+        var store = new bOps.Memory.SqliteTaskStore(Path.Combine(_dir, "tasks.db"));
+        var task = new bOps.Abstractions.TaskState(
+            Guid.NewGuid(), bOps.Abstractions.NodeId.Local, "check", status, [], [], DateTimeOffset.UtcNow)
+        {
+            Origin = bOps.Abstractions.TaskOrigin.Ordinary,
+        };
+        await store.SaveAsync(task);
+
+        var (exit, _, error) = await RunAsync("resume", task.Id.ToString());
+
+        Assert.Equal(1, exit);
+        Assert.Contains($"({code})", error, StringComparison.Ordinal);
+        var after = (await store.LoadAsync(task.Id))!;
+        Assert.Equal((status, 1), (after.Status, after.ExecutionAttempt));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    }
     [Fact]
     public async Task NoArguments_StillPrintsTheUsage_NamingDelegate()
     {

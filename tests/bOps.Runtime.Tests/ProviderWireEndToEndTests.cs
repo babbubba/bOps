@@ -174,11 +174,13 @@ public sealed class ProviderWireEndToEndTests
         Assert.Equal(0, live.Rejections);
 
         // Resume from the stored state alone (no provider payloads), against a fresh strict provider.
-        var stored = finished with { Status = AgentTaskStatus.Running, Steps = [finished.Steps[0] with { ModelCalls = null }] };
+        var stored = finished with { Status = AgentTaskStatus.Cancelled, Steps = [finished.Steps[0] with { ModelCalls = null }] };
         var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
         var resumed = new StrictOpenAiProvider(Text("Finished again."));
 
-        await Runner(Model(resumed), Registry(tools), new RecordingAuditSink()).ResumeAsync(reloaded, Actor);
+        var store = new InMemoryTaskStore();
+        store.Seed(reloaded);
+        await Runner(Model(resumed), Registry(tools), new RecordingAuditSink(), store: store).ResumeAsync(reloaded, Actor);
 
         Assert.Equal(0, resumed.Rejections);
         var liveMessages = Messages(live.RequestBodies[2]);
@@ -257,11 +259,13 @@ public sealed class ProviderWireEndToEndTests
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "fs.size", Outcome: ToolOutcome.Success });
 
         // Persist and resume: the rejected call is still in history, and still must not block the next request.
-        var stored = result with { Status = AgentTaskStatus.Running, Steps = [.. result.Steps.Select(s => s with { ModelCalls = null })] };
+        var stored = result with { Status = AgentTaskStatus.Cancelled, Steps = [.. result.Steps.Select(s => s with { ModelCalls = null })] };
         var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
         var resumed = new StrictOpenAiProvider(Text("Finished again."));
 
-        var resumedResult = await Runner(Model(resumed), Registry([tool]), new RecordingAuditSink()).ResumeAsync(reloaded, Actor);
+        var store = new InMemoryTaskStore();
+        store.Seed(reloaded);
+        var resumedResult = await Runner(Model(resumed), Registry([tool]), new RecordingAuditSink(), store: store).ResumeAsync(reloaded, Actor);
 
         Assert.Equal(0, resumed.Rejections);
         Assert.Equal(AgentTaskStatus.Completed, resumedResult.Status);

@@ -143,13 +143,15 @@ public sealed class ToolCallProtocolTests
         // What a task store keeps: the state as JSON, with no provider payload in it (the model calls are dropped).
         var stored = finished with
         {
-            Status = AgentTaskStatus.Running,
+            Status = AgentTaskStatus.Cancelled,
             Steps = [finished.Steps[0] with { ModelCalls = null }],
         };
         var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
 
         var resumeModel = new FakeChatModel(Final());
-        await CreateRunner(resumeModel, Registry(tools)).ResumeAsync(reloaded, Actor);
+        var store = new InMemoryTaskStore();
+        store.Seed(reloaded);
+        await CreateRunner(resumeModel, Registry(tools), store: store).ResumeAsync(reloaded, Actor);
 
         var live = liveModel.Requests[2].History;
         var resumed = resumeModel.Requests[0].History;

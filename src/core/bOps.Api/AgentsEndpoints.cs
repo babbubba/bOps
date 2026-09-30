@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Security.Claims;
 using bOps.Abstractions;
+using bOps.Runtime;
 
 namespace bOps.Api;
 
@@ -58,25 +59,43 @@ internal static class AgentsEndpoints
             }
 
             return taskId is null
-                ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+                ? ExecutorUnavailable(http, "Every execution slot of this host is busy; retry later.")
                 : Results.Accepted($"/api/agents/tasks/{taskId}", new TaskAcceptedResponse(taskId.Value));
         }).RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
-        group.MapPost("/{id:guid}/resume", async (Guid id, ITaskStore store, AgentTaskLauncher launcher,
+        // ADR-0040 §4.3: 202 only once the task has been atomically moved to Running under a new execution attempt AND the
+        // launcher has admitted that attempt. A reader after the 202 never sees the pre-resume terminal state.
+        group.MapPost("/{id:guid}/resume", async (Guid id, AgentRunner runner, AgentTaskLauncher launcher,
             ClaimsPrincipal principal, HttpContext http) =>
         {
-            var existing = await store.LoadAsync(id);
-            if (existing is null)
+            var actor = ApiActor(principal);
+            var acquisition = await runner.TryAcquireResumeAsync(id, actor, http.RequestAborted);
+            switch (acquisition.Outcome)
             {
-                return Results.NotFound(new { message = $"No stored task with id '{id}'." });
+                case TaskResumeOutcome.NotFound:
+                    return Results.NotFound(new { message = $"No stored task with id '{id}'." });
+                case TaskResumeOutcome.Refused:
+                    var refusal = acquisition.Refusal!;
+                    return Results.Json(
+                        new TaskErrorResponse(refusal.Code, refusal.Message),
+                        statusCode: refusal.Code == TaskResumeRefusal.TransitionUnsupported
+                            ? StatusCodes.Status501NotImplemented
+                            : StatusCodes.Status409Conflict);
             }
 
-            if (!await launcher.TryResumeAsync(existing, ApiActor(principal), http.RequestAborted))
+            var acquired = acquisition.Task!;
+            if (!launcher.TryAdmit(acquired, actor))
             {
-                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+                // The acquired attempt never runs: it is contained Failed, never left Running, and this is not a 202.
+                await runner.ContainUnadmittedResumeAsync(acquired, actor, CancellationToken.None);
+                return ExecutorUnavailable(http,
+                    $"No executor admitted execution attempt {acquired.ExecutionAttempt}; the task was marked Failed and can be resumed later.");
             }
 
-            return Results.Accepted($"/api/agents/tasks/{id}", new TaskAcceptedResponse(id));
+            var blocked = runner.EvaluateResume(acquired).Refusal;
+            return Results.Accepted($"/api/agents/tasks/{id}", new TaskResumeAcceptedResponse(
+                id, acquired.Status, acquired.ExecutionAttempt, Executing: true, Resumable: false,
+                blocked is null ? null : new TaskErrorResponse(blocked.Code, blocked.Message)));
         }).RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
         group.MapDelete("/{id:guid}", (Guid id, AgentTaskLauncher launcher) =>
@@ -85,42 +104,53 @@ internal static class AgentsEndpoints
                 : Results.NotFound(new { message = $"Task '{id}' is not running in this host." }))
             .RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
-        group.MapGet("/{id:guid}", async (Guid id, ITaskStore store) =>
+        group.MapGet("/{id:guid}", async (Guid id, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher) =>
         {
             var task = await store.LoadAsync(id);
             return task is null
                 ? Results.NotFound(new { message = $"No stored task with id '{id}'." })
-                : Results.Ok(TaskStateView.WithoutModelPayloads(task));
+                : Results.Ok(View(task, runner, launcher));
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
-        group.MapGet("/", async (string? status, ITaskStore store) =>
+        group.MapGet("/", async (string? status, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher) =>
         {
             if (!Enum.TryParse<AgentTaskStatus>(status ?? nameof(AgentTaskStatus.Running), ignoreCase: true, out var parsed))
             {
                 return Results.BadRequest(new { message = $"Unknown status '{status}'." });
             }
 
-            return Results.Ok((await store.ListByStatusAsync(parsed)).Select(TaskStateView.WithoutModelPayloads));
+            return Results.Ok((await store.ListByStatusAsync(parsed)).Select(task => View(task, runner, launcher)));
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
         group.MapGet("/{id:guid}/events", StreamTaskEventsAsync)
             .RequireAuthorization(ApiAuthorization.ViewerPolicy);
     }
 
+    private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, AgentTaskLauncher launcher) =>
+        TaskStateView.ToView(task, launcher.IsExecuting(task.Id), runner.EvaluateResume(task));
+
+    /// <summary>A temporary executor condition (ADR-0040 §9): 503 with a body and <c>Retry-After</c>. Never used for a task-state conflict.</summary>
+    private static IResult ExecutorUnavailable(HttpContext http, string message)
+    {
+        http.Response.Headers.RetryAfter = "5";
+        return Results.Json(new TaskErrorResponse("executor_unavailable", message), statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
     /// <summary>
-    /// Server-Sent Events: a full <see cref="TaskState"/> snapshot every time its step count
-    /// changes, until the task reaches a terminal status — implemented as a plain
-    /// <c>text/event-stream</c> write loop rather than a typed SSE result helper, so it does not
-    /// depend on the exact shape of whatever SSE support a given ASP.NET Core version ships (ADR-0018).
+    /// Server-Sent Events: a task view snapshot every time its step count, its status or its execution attempt changes,
+    /// until the task reaches a terminal status — implemented as a plain <c>text/event-stream</c> write loop rather than a
+    /// typed SSE result helper, so it does not depend on the exact shape of whatever SSE support a given ASP.NET Core
+    /// version ships (ADR-0018). Because a resume is persisted before its 202 (ADR-0040 §4.3), a stream opened after a
+    /// resume starts on the new execution attempt and never ends on the stale pre-resume snapshot.
     /// </summary>
-    private static async Task StreamTaskEventsAsync(Guid id, HttpContext http, ITaskStore store)
+    private static async Task StreamTaskEventsAsync(Guid id, HttpContext http, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher)
     {
         var response = http.Response;
         response.ContentType = "text/event-stream";
         response.Headers.CacheControl = "no-cache";
 
         var ct = http.RequestAborted;
-        var lastStepCount = -1;
+        (int Steps, AgentTaskStatus Status, int ExecutionAttempt)? last = null;
         var firstSeenAtUtc = DateTimeOffset.UtcNow;
 
         while (!ct.IsCancellationRequested)
@@ -138,10 +168,11 @@ internal static class AgentsEndpoints
                 return;
             }
 
-            if (task.Steps.Count != lastStepCount)
+            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt);
+            if (last != current)
             {
-                lastStepCount = task.Steps.Count;
-                await WriteEventAsync(response, "snapshot", JsonSerializer.Serialize(TaskStateView.WithoutModelPayloads(task), SseJsonOptions), ct);
+                last = current;
+                await WriteEventAsync(response, "snapshot", View(task, runner, launcher).ToJsonString(SseJsonOptions), ct);
             }
 
             if (task.Status != AgentTaskStatus.Running)

@@ -228,8 +228,8 @@ var (policyEngine, policyConfig) = await LoadPolicyAsync(builder.Configuration["
 var approvalProvider = new ConsoleApprovalProvider();
 
 // V0.7 (ADR-0017): a plain SQLite file next to the audit log — every task is persisted as it
-// runs, so `bops resume <task-id>` can pick a `Running` task back up after a crash, a restart,
-// or an operator's own interruption.
+// runs, so `bops resume <task-id>` can continue a task that failed, was cancelled or ran out of a
+// per-attempt budget, under the ADR-0040 resumability rule (never a task still stored Running).
 var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? "tasks.db");
 
 var runner = new AgentRunner(
@@ -282,7 +282,16 @@ if (resumeTaskId is { } taskIdToResume)
         return 1;
     }
 
-    result = await runner.ResumeAsync(existing, actor);
+    // ADR-0040: the same resumability rule and atomic transition as the API; a refusal changes nothing.
+    try
+    {
+        result = await runner.ResumeAsync(existing, actor);
+    }
+    catch (TaskResumeRefusedException refused)
+    {
+        await Console.Error.WriteLineAsync($"Task {taskIdToResume} cannot be resumed ({refused.Refusal.Code}): {refused.Refusal.Message}");
+        return 1;
+    }
 }
 else
 {
