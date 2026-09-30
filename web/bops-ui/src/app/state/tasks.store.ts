@@ -84,6 +84,9 @@ export const TasksStore = signalStore(
             });
           },
           onConnection: (connection) => {
+            // A refusal that arrives after the operator signed out (the answer to a poll already in flight) is not an expiry:
+            // signing out ends the watch, it does not leave one to be restored for whoever signs in next.
+            if (connection === 'sessionExpired' && !auth.authenticated()) return;
             patchState(store, { connection });
             if (connection === 'sessionExpired') {
               patchState(store, { pendingWatch: { taskId, expectedAttempt } });
@@ -293,6 +296,17 @@ export const TasksStore = signalStore(
           if (auth.authenticated() && store.pendingWatch()) {
             untracked(() => store.restoreWatch());
           }
+        });
+
+        // Signing out on purpose ends what the operator was following. An expiry is told apart by the watch it leaves pending:
+        // only the expiry path leaves one, so a sign-out never resumes under the next identity.
+        let wasAuthenticated = auth.authenticated();
+        effect(() => {
+          const authenticated = auth.authenticated();
+          untracked(() => {
+            if (wasAuthenticated && !authenticated && !store.pendingWatch()) store.clearSelection();
+            wasAuthenticated = authenticated;
+          });
         });
       },
       onDestroy() {
