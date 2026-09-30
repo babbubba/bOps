@@ -1,22 +1,15 @@
-# Handoff — V1.2 complete (`v1.2.0-preview.8` pre-release); V1.3-A–L complete and merged; V1.3-M implemented on a feature branch
+# Handoff — V1.3 implemented and merged; V1.3.x hardening active
 
-## Current handoff — 2026-09-25 (V1.3-M8 local release gate)
+## Current handoff — 2026-09-30
 
-V1.3-M1–M8 are implemented on branch `feat/v13-m1-entitlement-adr` and **have not been pushed, reviewed as a PR, merged or tagged**. The M8
-gate ran locally on Windows and its result is **LOCAL GATE PASS — EXTERNAL/CI EVIDENCE PENDING**; the full record, the
-acceptance table and the skip audit are in
-[`agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md`](agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md).
-
-- Release build 0 warnings; Angular 172/172; Architecture 68, Runtime 897, PluginHost 125, Cli 84, Audit 11, Api 160 (alone) all passing.
-  One complete .NET run had two load-sensitive failures (a known Api approval-poll timing test and a real-Docker-daemon timeout);
-  both pass alone and are recorded, not hidden.
-- Still pending and required before V1.3 is called released: Windows/Linux CI on the branch, the 83 Linux-gated tests, the
-  elevated-Windows service and Task Scheduler tests, and symbolic-link privilege for 15 link tests.
-- M8 added evidence only (a public-tree leak scan, plugin-lifecycle boundary guards, archive attack limits and the missing
-  ADR-0036 matrix rows); no production code changed and no version was bumped (`bOps.Abstractions` is `1.3.0-preview.1`).
+- V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
+- V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
+- V1.3.x reliability hardening is the active workstream. HARDEN-1, HARDEN-2 and HARDEN-3 are complete; HARDEN-4 is next.
+- The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next action: push the branch and open the PR only when the operator authorizes it, then wait for Windows/Linux CI.
+Next action: **HARDEN-4 — Dashboard task lifecycle UI**, see
+[`agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md`](agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md). It has not started.
 
 ## Handoff — 2026-09-24 (historical)
 
@@ -178,7 +171,7 @@ does not get equivalent hardening in this batch).
 
 ## Enabling the vault
 
-Opt-in only — see `README.md`'s "Provider credentials" section for the `Vault:MasterKeySecret`
+Opt-in only — see [`docs/operator-configuration.md`](docs/operator-configuration.md) for the `Vault:MasterKeySecret`
 config shape, the `BOPS_VAULT_MASTER_KEY` environment variable, and the `bops vault rotate-key`
 usage. Backup/restore is file-level (copy `vault.dat`); because the master key is deliberately never
 stored beside it, a copied vault file alone is inert, and losing the vault means re-entering keys
