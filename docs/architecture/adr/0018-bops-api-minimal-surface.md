@@ -2,6 +2,9 @@
 
 Status: Accepted
 Date: 2026-09-15
+Amended by: ADR-0040 (2026-09-30) — `POST /api/agents/tasks/{id}/resume` 202 only after the atomic transition and launcher
+admission, 409/501/503 bodies, start 503 body, task view fields (`executionAttempt`, `accounting`, `origin`,
+`terminalReason`, `executing`, `resumable`, `resumeBlockedReason`), `/events` emits on status/attempt change
 
 ## Context
 

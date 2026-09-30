@@ -79,7 +79,7 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 |---:|---|---|---|---|---|
 | 1 | [HARDEN-1 provider wire contract](2026-09-25-v1.3x-harden-01-provider-wire-contract.md) | MUST | Opus High | Opus High | **Completed** |
 | 2 | [HARDEN-2 model-call failure containment](2026-09-25-v1.3x-harden-02-model-failure-containment.md) | MUST | Opus High | Opus High | **Completed** |
-| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | Next — not started |
+| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | In progress — ADR-0040 accepted, implementation authorized |
 | 4 | [HARDEN-4 task lifecycle UI](2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md) | MUST | Sonnet High | Opus Medium/High | Not started |
 | 5 | [HARDEN-5 storage.health fix](2026-09-25-v1.3x-harden-05-storage-health.md) | MUST | Sonnet Medium | Sonnet Medium | Not started |
 | 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | Not started |
