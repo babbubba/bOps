@@ -143,14 +143,17 @@ public sealed class OpenAiCompatibleChatModelTests
     }
 
     [Fact]
-    public async Task CompleteAsync_KeepsTheBodiesOfTheAttemptThatWorked_AfterATransientFailure()
+    public async Task CompleteAsync_MakesOneAttempt_AndThrowsATransientFailureForTheRuntimeToRetry()
     {
+        // ADR-0039 §3: the adapter never retries; the runtime owns retry and audits every attempt.
         var (model, handler) = CreateModel([(HttpStatusCode.ServiceUnavailable, "overloaded"), (HttpStatusCode.OK, TextReply)]);
 
-        var result = await model.CompleteAsync(Request);
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => model.CompleteAsync(Request));
 
-        Assert.Equal(2, handler.Requests.Count);
-        Assert.Equal(TextReply, result.Details!.ResponseJson);
+        Assert.Single(handler.Requests);
+        Assert.Equal(ModelFailureKind.Transient, failure.FailureKind);
+        Assert.Equal(503, failure.ProviderStatusCode);
+        Assert.Equal("overloaded", failure.Details!.ResponseJson);
     }
 
     [Fact]
