@@ -126,8 +126,12 @@ for sets `ToolCallResult.Completeness` to `Complete`, `Partial` or `Unavailable`
 declares nothing leaves `Unspecified`. Derive the value from the same fields you already emit
 (`complete`, `truncated`, `partial`, `status`) so the two cannot disagree: `complete: true` is
 `Complete`; a truncated result, a partial source or `partial: true` is `Partial`; no readable
-source is `Unavailable`. The runtime records both values on the step and in the audit record and
-never parses your output to find them.
+source, or a subject that does not exist (a process that has exited, a root that was not found),
+is `Unavailable` even when the output also says `partial: true`, because there is no evidence to
+be partial about. A list cut by its `limit` is `Partial`; to know it was cut, count what you
+observed before applying the limit. An empty result that answers the question fully is still
+`Complete`. The runtime records both values on the step and in the audit record and never parses
+your output to find them.
 
 ## Writing the entry type
 

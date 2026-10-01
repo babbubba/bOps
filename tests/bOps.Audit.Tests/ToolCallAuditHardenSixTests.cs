@@ -106,6 +106,66 @@ public sealed class ToolCallAuditHardenSixTests : IDisposable
         Assert.Null(toolCall.Completeness);
     }
 
+    /// <summary>
+    /// H6-R4: <c>Fixtures/tool-call-pre-harden6.jsonl</c> was written by the real <see cref="JsonLinesAuditSink"/> of commit
+    /// <c>f085971</c>, the last commit before HARDEN-6, for exactly the two events built below; it is a captured artifact, never
+    /// regenerated from the code under test. The same events written today must produce the same lines byte for byte, hashes
+    /// included, so a record without the HARDEN-6 metadata cannot drift and a pre-HARDEN-6 chain stays verifiable.
+    /// </summary>
+    [Fact]
+    public async Task EventsWithoutHardenSixMetadata_SerializeExactlyAsThePreHardenSixSinkWroteThem()
+    {
+        var golden = await File.ReadAllLinesAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tool-call-pre-harden6.jsonl"));
+        var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        ToolCallAuditEvent[] events =
+        [
+            new()
+            {
+                TimestampUtc = new DateTimeOffset(2026, 9, 1, 10, 0, 0, TimeSpan.Zero),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = 2,
+                Actor = Actor,
+                Package = new PackageId("bops.packages.system.linux"),
+                Tool = "system.crashes",
+                Arguments = new JsonObject { ["sinceMinutes"] = 60 },
+                Risk = RiskLevel.Read,
+                Authorization = AuthorizationKind.Automatic,
+                Outcome = ToolOutcome.Success,
+                Duration = TimeSpan.FromMilliseconds(5),
+                Summary = new JsonObject { ["crashes"] = 2 },
+            },
+            new()
+            {
+                TimestampUtc = new DateTimeOffset(2026, 9, 1, 10, 0, 1, TimeSpan.Zero),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = 3,
+                Actor = Actor,
+                Package = new PackageId("bops.packages.system.linux"),
+                Tool = "system.crashes",
+                Arguments = new JsonObject { ["sinceMinutes"] = 43200 },
+                Risk = RiskLevel.Read,
+                Authorization = AuthorizationKind.Automatic,
+                Outcome = ToolOutcome.Failure,
+                Duration = TimeSpan.FromMilliseconds(1),
+            },
+        ];
+
+        using (var sink = new JsonLinesAuditSink(filePath))
+        {
+            foreach (var evt in events)
+            {
+                await sink.WriteAsync(evt);
+            }
+        }
+
+        Assert.Equal(golden, await File.ReadAllLinesAsync(filePath));
+        Assert.All(golden, line => Assert.DoesNotContain("FailureKind", line, StringComparison.Ordinal));
+        Assert.All(golden, line => Assert.DoesNotContain("Completeness", line, StringComparison.Ordinal));
+        Assert.True(AuditChainVerifier.VerifyFile(filePath).IsValid);
+    }
+
     [Fact]
     public async Task EventWithBothFields_RoundTripsThroughTheSerializerUnchanged()
     {

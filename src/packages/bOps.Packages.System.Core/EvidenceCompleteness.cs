@@ -14,9 +14,10 @@ namespace bOps.Packages.Sys.Core;
 /// the derivation happens here, inside the package that wrote the JSON; the runtime only ever reads the typed value.
 /// </summary>
 /// <remarks>
-/// Precedence, first match wins: <c>complete: true</c> is <see cref="ToolResultCompleteness.Complete"/>; <c>partial: true</c> is
-/// <see cref="ToolResultCompleteness.Partial"/>; a <c>status</c> of <c>unavailable</c> or <c>unsupported</c>, or a subject that
-/// does not exist (<c>exists</c> or <c>rootFound</c> false), is <see cref="ToolResultCompleteness.Unavailable"/>;
+/// Precedence, first match wins: a subject that does not exist (<c>exists</c> or <c>rootFound</c> false) is
+/// <see cref="ToolResultCompleteness.Unavailable"/>, because no evidence about it was collected; <c>complete: true</c> is
+/// <see cref="ToolResultCompleteness.Complete"/>; <c>partial: true</c> is <see cref="ToolResultCompleteness.Partial"/>; a
+/// <c>status</c> of <c>unavailable</c> or <c>unsupported</c> is <see cref="ToolResultCompleteness.Unavailable"/>;
 /// <c>complete: false</c>, <c>truncated: true</c> or a <c>status</c> of <c>partial</c> is <see cref="ToolResultCompleteness.Partial"/>;
 /// any other recognised field is <see cref="ToolResultCompleteness.Complete"/>. Output with none of these fields stays
 /// <see cref="ToolResultCompleteness.Unspecified"/>.
@@ -57,6 +58,13 @@ internal static class EvidenceCompleteness
         var rootFound = Flag(root, "rootFound");
         var status = root["status"] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
+        // A subject that is not there yields no evidence at all, whatever else the output says: process.metrics reports a
+        // vanished process as {"exists":false,"partial":true}, and that is Unavailable, not a partial reading of something.
+        if (exists == false || rootFound == false)
+        {
+            return ToolResultCompleteness.Unavailable;
+        }
+
         if (complete == true)
         {
             return ToolResultCompleteness.Complete;
@@ -67,7 +75,7 @@ internal static class EvidenceCompleteness
             return ToolResultCompleteness.Partial;
         }
 
-        if (status is "unavailable" or "unsupported" || exists == false || rootFound == false)
+        if (status is "unavailable" or "unsupported")
         {
             return ToolResultCompleteness.Unavailable;
         }

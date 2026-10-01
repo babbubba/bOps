@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.Anthropic\bOps.Packages.Providers.Anthropic.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
   </ItemGroup>
 
 </Project>

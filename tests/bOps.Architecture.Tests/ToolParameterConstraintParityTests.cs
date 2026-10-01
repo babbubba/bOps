@@ -23,8 +23,18 @@ public sealed partial class ToolParameterConstraintParityTests
     [GeneratedRegex(@"(?<![\w.-])(?<lo>\d+)\s*(?:-|\.\.|to|through)\s*(?<hi>\d+)(?![\w-]|\.\d)", RegexOptions.CultureInvariant)]
     private static partial Regex RangePattern();
 
+    [GeneratedRegex(@"\bbetween\s+(?<lo>\d+)\s+and\s+(?<hi>\d+)(?![\w-]|\.\d)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex BetweenPattern();
+
     [GeneratedRegex(@"up to (?<hi>\d+) characters", RegexOptions.CultureInvariant)]
     private static partial Regex UpToCharactersPattern();
+
+    /// <summary>The first numeric range <paramref name="description"/> states, in any notation the guard knows.</summary>
+    private static Match StatedRange(string description)
+    {
+        var match = RangePattern().Match(description);
+        return match.Success ? match : BetweenPattern().Match(description);
+    }
 
     [Fact]
     public void EveryRangeStatedInAParameterDescription_HasTheMatchingTypedConstraint()
@@ -56,9 +66,11 @@ public sealed partial class ToolParameterConstraintParityTests
     [InlineData("Maximum relations, from 1 to 1000. Defaults to 100.", 1, 1000)]
     [InlineData("Lookback in minutes, 1..10080.", 1, 10080)]
     [InlineData("Local port 1-65535", 1, 65535)]
+    [InlineData("Window in minutes, between 1 and 10080.", 1, 10080)]
+    [InlineData("Must be Between 200 and 5000 milliseconds.", 200, 5000)]
     public void TheRangePattern_RecognisesTheNotationsTheManifestsUse(string description, long low, long high)
     {
-        var match = RangePattern().Match(description);
+        var match = StatedRange(description);
 
         Assert.True(match.Success, description);
         Assert.Equal((low, high), (long.Parse(match.Groups["lo"].Value, CultureInfo.InvariantCulture), long.Parse(match.Groups["hi"].Value, CultureInfo.InvariantCulture)));
@@ -68,8 +80,20 @@ public sealed partial class ToolParameterConstraintParityTests
     [InlineData("Milliseconds to wait for a reply. Defaults to 4000, capped at 10000.")]
     [InlineData("ISO language code, e.g. 'en' or 'en-US'.")]
     [InlineData("0 (off), 1 (moderate) or 2 (strict). Defaults to the instance.")]
+    [InlineData("Choose between fast and thorough; defaults to 3 retries and 2 workers.")]
     public void TheRangePattern_DoesNotMistakeOtherNumbersForARange(string description) =>
-        Assert.False(RangePattern().IsMatch(description), description);
+        Assert.False(StatedRange(description).Success, description);
+
+    [Fact]
+    public void TheParityCheck_FlagsABetweenRangeStatedOnlyInProse_AndAcceptsOneThatIsBacked()
+    {
+        // H6-R6: without this the "between N and M" notation the task names would pass the guard unchecked.
+        var prose = new ToolParameter("windowMinutes", ToolParameterType.Integer, "Window in minutes, between 1 and 10080.", Required: false);
+
+        Assert.Single(FindViolations([("t", prose)]));
+        Assert.Single(FindViolations([("t", prose with { Minimum = 1, Maximum = 1000 })]));
+        Assert.Empty(FindViolations([("t", prose with { Minimum = 1, Maximum = 10080 })]));
+    }
 
     [Fact]
     public void SystemCrashes_SinceMinutes_IsConstrainedToTheDocumentedWindow()
@@ -86,7 +110,7 @@ public sealed partial class ToolParameterConstraintParityTests
         var violations = new List<string>();
         foreach (var (tool, parameter) in entries)
         {
-            var match = RangePattern().Match(parameter.Description);
+            var match = StatedRange(parameter.Description);
             if (match.Success)
             {
                 var low = long.Parse(match.Groups["lo"].Value, CultureInfo.InvariantCulture);

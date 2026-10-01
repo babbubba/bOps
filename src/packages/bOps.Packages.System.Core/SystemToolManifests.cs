@@ -122,7 +122,7 @@ public static class SystemToolManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("limit", ToolParameterType.Integer, "Maximum number of processes to return.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, "Maximum number of processes to return.", Required: false) { Minimum = 1 },
         ],
     };
 

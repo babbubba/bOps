@@ -193,16 +193,20 @@ public abstract class DiskUsageToolBase(string platform) : ITool
         ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
 }
 
-/// <summary>The tool shell for <c>process.list</c>.</summary>
+/// <summary>
+/// The tool shell for <c>process.list</c>. The OS package observes every process it can see; the order, the limit and the
+/// completeness are decided here, so both platforms report a truncated or degraded listing the same way (rule A8, HARDEN-6).
+/// </summary>
 public abstract class ProcessListToolBase(string platform) : ITool
 {
     private const int DefaultLimit = 20;
+    private const int BytesPerMb = 1024 * 1024;
 
     /// <inheritdoc />
     public ToolManifest Manifest { get; } = SystemToolManifests.ProcessList(platform);
 
-    /// <summary>Collects up to <paramref name="limit"/> processes, sorted by memory usage descending.</summary>
-    protected abstract Task<IReadOnlyList<ProcessSummary>> CollectAsync(int limit, CancellationToken ct);
+    /// <summary>Observes every running process this identity can see, in no particular order.</summary>
+    protected abstract Task<IReadOnlyList<ProcessListObservation>> ObserveAsync(CancellationToken ct);
 
     /// <inheritdoc />
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
@@ -210,7 +214,38 @@ public abstract class ProcessListToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
 
         var limit = arguments.TryGet<int>("limit", out var requested) ? requested : DefaultLimit;
-        return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(limit, ct)));
+        if (limit < 1)
+        {
+            // The manifest's Minimum stops this before the tool runs; this is defence in depth for a direct call.
+            return ToolCallResult.Failure("limit must be at least 1.") with { FailureKind = ToolFailureKind.Validation };
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var selection = Select(await ObserveAsync(ct), limit);
+        return ToolCallResult.Success(SystemToolFormatting.Format(selection.Processes)) with
+        {
+            Completeness = selection.Truncated || selection.Unreadable > 0
+                ? ToolResultCompleteness.Partial
+                : ToolResultCompleteness.Complete,
+        };
+    }
+
+    /// <summary>
+    /// Orders <paramref name="observed"/> by working set, largest first, and keeps <paramref name="limit"/> rows. Every
+    /// observation is counted before the limit is applied, so a cut listing is known to be cut. An unreadable working set
+    /// sorts as zero and an unreadable name reads <c>&lt;unknown&gt;</c>, exactly as the listing always showed them.
+    /// </summary>
+    internal static ProcessListSelection Select(IReadOnlyList<ProcessListObservation> observed, int limit)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+
+        var rows = observed
+            .OrderByDescending(process => process.WorkingSetBytes ?? 0)
+            .Take(limit)
+            .Select(process => new ProcessSummary(process.Pid, process.Name ?? "<unknown>", (process.WorkingSetBytes ?? 0) / BytesPerMb))
+            .ToArray();
+        var unreadable = observed.Count(process => process.Name is null || process.WorkingSetBytes is null);
+        return new ProcessListSelection(rows, observed.Count, unreadable);
     }
 }
 

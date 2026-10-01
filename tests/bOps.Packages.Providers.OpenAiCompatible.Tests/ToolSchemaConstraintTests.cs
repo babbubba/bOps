@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using bOps.Abstractions;
+using bOps.Packages.Sys.Core;
 
 namespace bOps.Packages.Providers.OpenAiCompatible.Tests;
 
@@ -88,6 +89,22 @@ public sealed class ToolSchemaConstraintTests
         Assert.Equal(10080, sinceMinutes.GetProperty("maximum").GetInt32());
         Assert.False(sinceMinutes.TryGetProperty("minLength", out _));
         Assert.False(sinceMinutes.TryGetProperty("maxItems", out _));
+    }
+
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public async Task ProductionSystemCrashesManifest_EmitsSinceMinutesBounds_OnAClosedArgumentObject(string platform)
+    {
+        // The manifest the system packages actually register, not a copy: a drift in either is caught here.
+        var schema = await SchemaOfAsync(SystemToolManifests.Crashes(platform));
+
+        Assert.Equal("object", schema.GetProperty("type").GetString());
+        Assert.Equal(JsonValueKind.False, schema.GetProperty("additionalProperties").ValueKind);
+        var sinceMinutes = schema.GetProperty("properties").GetProperty("sinceMinutes");
+        Assert.Equal("integer", sinceMinutes.GetProperty("type").GetString());
+        Assert.Equal(1, sinceMinutes.GetProperty("minimum").GetInt32());
+        Assert.Equal(10080, sinceMinutes.GetProperty("maximum").GetInt32());
     }
 
     [Fact]

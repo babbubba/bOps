@@ -26,6 +26,22 @@ public sealed record DiskUsageResult(string Name, long TotalMb, long FreeMb);
 /// <summary>One running process, for listing by memory usage.</summary>
 public sealed record ProcessSummary(int Pid, string Name, long WorkingSetMb);
 
+/// <summary>
+/// One process as an OS package observed it for <c>process.list</c>. A property this identity could not read (the process
+/// exited mid-read, or it belongs to another user) is <c>null</c>, so the shell can tell degraded evidence from a real zero.
+/// </summary>
+public sealed record ProcessListObservation(int Pid, string? Name, long? WorkingSetBytes);
+
+/// <summary>The <c>process.list</c> rows actually returned and what is known about the rows that were not (HARDEN-6).</summary>
+/// <param name="Processes">The returned rows, largest working set first, at most the requested limit.</param>
+/// <param name="ObservedProcesses">How many processes were observed before the limit was applied.</param>
+/// <param name="Unreadable">How many observed processes had a name or working set this identity could not read.</param>
+public sealed record ProcessListSelection(IReadOnlyList<ProcessSummary> Processes, int ObservedProcesses, int Unreadable)
+{
+    /// <summary>True when the limit left observed processes out.</summary>
+    public bool Truncated => ObservedProcesses > Processes.Count;
+}
+
 /// <summary>Swap (paging file) totals, in megabytes.</summary>
 public sealed record SwapUsageResult(long TotalMb, long UsedMb)
 {

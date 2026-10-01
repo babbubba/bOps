@@ -46,6 +46,7 @@ network.traceroute.host | String | minLength=1 | maxLength=256
 network.traceroute.maxHops | Integer | minimum=1 | maximum=64
 network.traceroute.timeout | Integer | minimum=100 | maximum=5000
 process.inspect.pid | Integer | minimum=1
+process.list.limit | Integer | minimum=1
 process.metrics.pid | Integer | minimum=1
 process.metrics.sampleMilliseconds | Integer | minimum=200 | maximum=5000
 process.modules.limit | Integer | minimum=1 | maximum=1000
