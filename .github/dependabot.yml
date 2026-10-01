@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /web/bops-ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # @angular/* packages pin each other's exact versions as peers, so they must move together.
+      angular:
+        patterns:
+          - "@angular/*"
+    ignore:
+      # Stay on the current Angular major; a major upgrade is a deliberate migration, not a bot PR.
+      - dependency-name: "@angular/*"
+        update-types: ["version-update:semver-major"]
