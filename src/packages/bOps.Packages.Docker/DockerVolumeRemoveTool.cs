@@ -22,7 +22,7 @@ public sealed class DockerVolumeRemoveTool(IDockerClientFactory clientFactory) :
         RequiresExplicitApproval = true,
         Platforms = ["windows", "linux"],
         Requires = [DockerCapability.Name],
-        Parameters = [new ToolParameter("volume", ToolParameterType.String, "The volume name.")],
+        Parameters = [new ToolParameter("volume", ToolParameterType.String, "The volume name.") { MinLength = 2, MaxLength = DockerNames.MaximumVolumeNameLength }],
         Verification = new VerificationSpec("docker.volume.inspect", ["volume"], "Confirms the volume no longer exists."),
     };
 
@@ -51,7 +51,7 @@ public sealed class DockerVolumeRemoveTool(IDockerClientFactory clientFactory) :
         }
         catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
         {
-            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex)) with { FailureKind = ToolFailureKind.Environment };
         }
     }
 

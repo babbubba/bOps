@@ -19,10 +19,10 @@ public sealed class FsDeleteTreePrepareTool(
         Requires = [],
         Parameters =
         [
-            new ToolParameter("paths", ToolParameterType.PathList, "The exact file or directory roots to include. Globs are rejected."),
-            new ToolParameter("maxDepth", ToolParameterType.Integer, "Maximum traversal depth. Uses the host default when omitted.", Required: false),
-            new ToolParameter("maxEntries", ToolParameterType.Integer, "Maximum entries across every root. Uses the host default when omitted.", Required: false),
-            new ToolParameter("maxDurationMilliseconds", ToolParameterType.Integer, "Maximum total preflight time. Uses the host default when omitted.", Required: false),
+            new ToolParameter("paths", ToolParameterType.PathList, "The exact file or directory roots to include. Globs are rejected.") { MinItems = 1 },
+            new ToolParameter("maxDepth", ToolParameterType.Integer, "Maximum traversal depth. Uses the host default when omitted.", Required: false) { Minimum = 0 },
+            new ToolParameter("maxEntries", ToolParameterType.Integer, "Maximum entries across every root. Uses the host default when omitted.", Required: false) { Minimum = 1 },
+            new ToolParameter("maxDurationMilliseconds", ToolParameterType.Integer, "Maximum total preflight time. Uses the host default when omitted.", Required: false) { Minimum = 1 },
         ],
     };
 

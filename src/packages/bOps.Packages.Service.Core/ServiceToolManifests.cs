@@ -23,7 +23,7 @@ public static class ServiceToolManifests
         Platforms = [platform], Requires = [], Parameters = [
             new ToolParameter("name", ToolParameterType.String, "The service name to inspect."),
             new ToolParameter("direction", ToolParameterType.String, "both, requires, or dependents. Defaults to both.", Required: false),
-            new ToolParameter("limit", ToolParameterType.Integer, "Maximum relations, from 1 to 1000. Defaults to 100.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, "Maximum relations, from 1 to 1000. Defaults to 100.", Required: false) { Minimum = 1, Maximum = 1000 },
         ],
     };
 

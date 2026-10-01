@@ -211,6 +211,8 @@ public static partial class SystemToolConformance
 
         Assert.True(result.Succeeded, result.ErrorMessage);
         Assert.NotNull(result.Output);
+        // HARDEN-6: the listing always states whether it is whole; which of the two depends on this machine, not on the contract.
+        Assert.Contains(result.Completeness, new[] { ToolResultCompleteness.Complete, ToolResultCompleteness.Partial });
         var lines = result.Output!.Split('\n');
         Assert.True(lines.Length > 1, "process.list must report a header row plus at least one process.");
         Assert.StartsWith("PID\tName\tWorkingSet", lines[0], StringComparison.Ordinal);
@@ -234,6 +236,11 @@ public static partial class SystemToolConformance
         Assert.True(result.Succeeded, result.ErrorMessage);
         var lines = result.Output!.Split('\n');
         Assert.Equal(2, lines.Length); // header + exactly one process
+
+        // A limit below 1 is refused, never answered with an empty listing that looks complete.
+        var refused = await tool.ExecuteAsync(ToolArguments.FromJson(new System.Text.Json.Nodes.JsonObject { ["limit"] = 0 }));
+        Assert.False(refused.Succeeded);
+        Assert.Equal(ToolFailureKind.Validation, refused.FailureKind);
     }
 
     /// <summary>Runs <paramref name="tool"/> and asserts its <c>system.swap</c> output shape. Total may legitimately be 0 on a machine configured with no swap.</summary>

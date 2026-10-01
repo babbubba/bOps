@@ -70,6 +70,7 @@ public sealed class DockerDaemonUnavailableTests
         if (name != "docker.build")
         {
             Assert.Contains("could not be reached", result.ErrorMessage, StringComparison.Ordinal);
+            Assert.Equal(ToolFailureKind.Environment, result.FailureKind);
         }
 
         Assert.True(result.ErrorMessage!.Length < 2_000);

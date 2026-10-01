@@ -27,7 +27,7 @@ public sealed class DockerVolumeCreateTool(IDockerClientFactory clientFactory, D
         Requires = [DockerCapability.Name],
         Parameters =
         [
-            new ToolParameter("volume", ToolParameterType.String, "The volume name: 2 to 128 letters, digits, '_', '.' or '-', starting with a letter or digit."),
+            new ToolParameter("volume", ToolParameterType.String, "The volume name: 2 to 128 letters, digits, '_', '.' or '-', starting with a letter or digit.") { MinLength = 2, MaxLength = DockerNames.MaximumVolumeNameLength },
             new ToolParameter("driver", ToolParameterType.String, "The volume driver. Defaults to local; only drivers the operator has allowed are accepted.", Required: false),
         ],
         Verification = new VerificationSpec("docker.volume.inspect", ["volume"], "Confirms the volume exists afterwards."),
@@ -83,7 +83,7 @@ public sealed class DockerVolumeCreateTool(IDockerClientFactory clientFactory, D
         }
         catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
         {
-            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex)) with { FailureKind = ToolFailureKind.Environment };
         }
     }
 

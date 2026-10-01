@@ -30,8 +30,8 @@ public sealed class FsGrepTool(FilesystemPathPolicy pathPolicy) : ITool
             new ToolParameter("recursive", ToolParameterType.Boolean, "Search child directories when path is a directory. Defaults to false.", Required: false),
             new ToolParameter("regex", ToolParameterType.Boolean, "Interpret pattern as a regular expression. Defaults to false.", Required: false),
             new ToolParameter("caseSensitive", ToolParameterType.Boolean, "Match case exactly. Defaults to true.", Required: false),
-            new ToolParameter("maxMatches", ToolParameterType.Integer, "Maximum matches, 1 through 2000. Defaults to 200.", Required: false),
-            new ToolParameter("maxOutputBytes", ToolParameterType.Integer, "Maximum UTF-8 output bytes, 1 through 131072. Defaults to 32768.", Required: false),
+            new ToolParameter("maxMatches", ToolParameterType.Integer, "Maximum matches, 1 through 2000. Defaults to 200.", Required: false) { Minimum = 1, Maximum = HardMaxMatches },
+            new ToolParameter("maxOutputBytes", ToolParameterType.Integer, "Maximum UTF-8 output bytes, 1 through 131072. Defaults to 32768.", Required: false) { Minimum = 1, Maximum = HardMaxOutputBytes },
         ],
     };
 
@@ -59,7 +59,7 @@ public sealed class FsGrepTool(FilesystemPathPolicy pathPolicy) : ITool
         var maxOutputBytes = Bounded(arguments, "maxOutputBytes", DefaultMaxOutputBytes, HardMaxOutputBytes);
         if (maxMatches is null || maxOutputBytes is null)
         {
-            return ToolCallResult.Failure("maxMatches or maxOutputBytes is outside its supported range.");
+            return ToolCallResult.Failure("maxMatches or maxOutputBytes is outside its supported range.") with { FailureKind = ToolFailureKind.Validation };
         }
 
         Regex? compiled = null;

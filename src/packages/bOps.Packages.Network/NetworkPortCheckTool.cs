@@ -29,7 +29,7 @@ public sealed class NetworkPortCheckTool : ITool
         Parameters =
         [
             new ToolParameter("host", ToolParameterType.String, "The hostname or IP address to check."),
-            new ToolParameter("port", ToolParameterType.Integer, "The TCP port to check."),
+            new ToolParameter("port", ToolParameterType.Integer, "The TCP port to check.") { Minimum = 1, Maximum = 65535 },
             new ToolParameter("timeoutMs", ToolParameterType.Integer, "Milliseconds to wait for a connection. Defaults to 2000, capped at 10000.", Required: false),
         ],
     };

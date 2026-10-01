@@ -103,6 +103,7 @@ public sealed class WebSearchToolTests : IDisposable
 
         Assert.False(result.Succeeded);
         Assert.Contains("500", result.ErrorMessage);
+        Assert.Equal(ToolFailureKind.Environment, result.FailureKind);
     }
 
     [Fact]
@@ -173,6 +174,7 @@ public sealed class WebSearchToolTests : IDisposable
 
         Assert.False(result.Succeeded);
         Assert.Contains("safeSearch", result.ErrorMessage);
+        Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
     }
 
     [Fact]

@@ -37,15 +37,15 @@ public static class SystemToolManifests
     /// <summary>Read-only maintenance evidence contracts.</summary>
     public static ToolManifest Updates(string platform) => Maintenance(platform, "system.updates", [
         new ToolParameter("kind", ToolParameterType.Enum, "Update classification (default all).", Required: false, AllowedValues: SystemMaintenanceArguments.UpdateKinds),
-        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumUpdates}, default {SystemMaintenanceLimits.DefaultUpdates}).", Required: false)]);
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumUpdates}, default {SystemMaintenanceLimits.DefaultUpdates}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumUpdates }]);
     public static ToolManifest UpdateHistory(string platform) => Maintenance(platform, "system.update_history", [
-        new ToolParameter("sinceDays", ToolParameterType.Integer, $"History window in days (1-{SystemMaintenanceLimits.MaximumSinceDays}, default {SystemMaintenanceLimits.DefaultSinceDays}).", Required: false),
-        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumHistory}, default {SystemMaintenanceLimits.DefaultHistory}).", Required: false)]);
+        new ToolParameter("sinceDays", ToolParameterType.Integer, $"History window in days (1-{SystemMaintenanceLimits.MaximumSinceDays}, default {SystemMaintenanceLimits.DefaultSinceDays}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumSinceDays },
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumHistory}, default {SystemMaintenanceLimits.DefaultHistory}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumHistory }]);
     public static ToolManifest Crashes(string platform) => Maintenance(platform, "system.crashes", [
-        new ToolParameter("sinceMinutes", ToolParameterType.Integer, $"Crash window in minutes (1-{SystemMaintenanceLimits.MaximumSinceMinutes}, default {SystemMaintenanceLimits.DefaultSinceMinutes}).", Required: false),
-        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumCrashes}, default {SystemMaintenanceLimits.DefaultCrashes}).", Required: false)]);
+        new ToolParameter("sinceMinutes", ToolParameterType.Integer, $"Crash window in minutes (1-{SystemMaintenanceLimits.MaximumSinceMinutes}, default {SystemMaintenanceLimits.DefaultSinceMinutes}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumSinceMinutes },
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumCrashes}, default {SystemMaintenanceLimits.DefaultCrashes}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumCrashes }]);
     public static ToolManifest Drivers(string platform) => Maintenance(platform, "system.drivers", [
-        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumDrivers}, default {SystemMaintenanceLimits.DefaultDrivers}).", Required: false)]);
+        new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumDrivers}, default {SystemMaintenanceLimits.DefaultDrivers}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumDrivers }]);
 
     /// <summary>The manifest for <c>system.events</c> on the given platform (ADR-0032).</summary>
     public static ToolManifest Events(string platform) => new()
@@ -60,22 +60,22 @@ public static class SystemToolManifests
         Parameters =
         [
             new ToolParameter("windowMinutes", ToolParameterType.Integer,
-                $"How many minutes back to look (1-{SystemEventsLimits.MaximumWindowMinutes}, default {SystemEventsLimits.DefaultWindowMinutes}).", Required: false),
+                $"How many minutes back to look (1-{SystemEventsLimits.MaximumWindowMinutes}, default {SystemEventsLimits.DefaultWindowMinutes}).", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumWindowMinutes },
             new ToolParameter("minSeverity", ToolParameterType.Enum,
                 "Only events at least this severe. Omit for every severity.", Required: false,
                 AllowedValues: SystemEventsArguments.SeverityNames),
             new ToolParameter("source", ToolParameterType.String,
-                "Exact, case-insensitive source: the Windows provider name, or the Linux syslog identifier or systemd unit (for example nginx or nginx.service).", Required: false),
+                "Exact, case-insensitive source: the Windows provider name, or the Linux syslog identifier or systemd unit (for example nginx or nginx.service).", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.SourceCharacters },
             new ToolParameter("eventId", ToolParameterType.String,
-                "Exact event id: a number on Windows, the 32-digit hexadecimal MESSAGE_ID on Linux.", Required: false),
+                "Exact event id: a number on Windows, the 32-digit hexadecimal MESSAGE_ID on Linux.", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.EventIdCharacters },
             new ToolParameter("channel", ToolParameterType.String,
-                "Windows: a channel such as System or Application (default: both). Linux: a journal transport such as kernel (default: all).", Required: false),
+                "Windows: a channel such as System or Application (default: both). Linux: a journal transport such as kernel (default: all).", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.ChannelCharacters },
             new ToolParameter("text", ToolParameterType.String,
-                $"Case-insensitive text the message must contain (up to {SystemEventsLimits.TextCharacters} characters).", Required: false),
+                $"Case-insensitive text the message must contain (up to {SystemEventsLimits.TextCharacters} characters).", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.TextCharacters },
             new ToolParameter("limit", ToolParameterType.Integer,
-                $"Maximum events to return (1-{SystemEventsLimits.MaximumEvents}, default {SystemEventsLimits.DefaultEvents}).", Required: false),
+                $"Maximum events to return (1-{SystemEventsLimits.MaximumEvents}, default {SystemEventsLimits.DefaultEvents}).", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumEvents },
             new ToolParameter("maxOutputBytes", ToolParameterType.Integer,
-                $"Maximum UTF-8 output bytes ({SystemEventsLimits.MinimumOutputBytes}-{SystemEventsLimits.MaximumOutputBytes}).", Required: false),
+                $"Maximum UTF-8 output bytes ({SystemEventsLimits.MinimumOutputBytes}-{SystemEventsLimits.MaximumOutputBytes}).", Required: false) { Minimum = SystemEventsLimits.MinimumOutputBytes, Maximum = SystemEventsLimits.MaximumOutputBytes },
         ],
     };
 
@@ -122,7 +122,7 @@ public static class SystemToolManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("limit", ToolParameterType.Integer, "Maximum number of processes to return.", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, "Maximum number of processes to return.", Required: false) { Minimum = 1 },
         ],
     };
 
@@ -158,7 +158,7 @@ public static class SystemToolManifests
         Risk = RiskLevel.Read,
         Platforms = [platform],
         Requires = [],
-        Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to inspect.")],
+        Parameters = [new ToolParameter("pid", ToolParameterType.Integer, "The process ID to inspect.") { Minimum = 1 }],
     };
 
     /// <summary>The manifest for <c>process.metrics</c> on the given platform (ADR-0034).</summary>
@@ -173,10 +173,10 @@ public static class SystemToolManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("pid", ToolParameterType.Integer, "The process ID to sample."),
+            new ToolParameter("pid", ToolParameterType.Integer, "The process ID to sample.") { Minimum = 1 },
             new ToolParameter("sampleMilliseconds", ToolParameterType.Integer,
                 $"Interval between the two samples ({ProcessDiagnosticsLimits.MinimumSampleMilliseconds}-{ProcessDiagnosticsLimits.MaximumSampleMilliseconds}, default {ProcessDiagnosticsLimits.DefaultSampleMilliseconds}).",
-                Required: false),
+                Required: false) { Minimum = ProcessDiagnosticsLimits.MinimumSampleMilliseconds, Maximum = ProcessDiagnosticsLimits.MaximumSampleMilliseconds },
         ],
     };
 
@@ -191,11 +191,11 @@ public static class SystemToolManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("rootPid", ToolParameterType.Integer, "The process to walk down from. Omit for every visible root.", Required: false),
+            new ToolParameter("rootPid", ToolParameterType.Integer, "The process to walk down from. Omit for every visible root.", Required: false) { Minimum = 1 },
             new ToolParameter("maxDepth", ToolParameterType.Integer,
-                $"Generations below the root to walk (0-{ProcessDiagnosticsLimits.MaximumTreeDepth}, default {ProcessDiagnosticsLimits.DefaultTreeDepth}).", Required: false),
+                $"Generations below the root to walk (0-{ProcessDiagnosticsLimits.MaximumTreeDepth}, default {ProcessDiagnosticsLimits.DefaultTreeDepth}).", Required: false) { Minimum = 0, Maximum = ProcessDiagnosticsLimits.MaximumTreeDepth },
             new ToolParameter("limit", ToolParameterType.Integer,
-                $"Maximum rows to return (1-{ProcessDiagnosticsLimits.MaximumTreeRows}, default {ProcessDiagnosticsLimits.DefaultTreeRows}).", Required: false),
+                $"Maximum rows to return (1-{ProcessDiagnosticsLimits.MaximumTreeRows}, default {ProcessDiagnosticsLimits.DefaultTreeRows}).", Required: false) { Minimum = 1, Maximum = ProcessDiagnosticsLimits.MaximumTreeRows },
         ],
     };
 
@@ -210,12 +210,12 @@ public static class SystemToolManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("pid", ToolParameterType.Integer, "The process ID whose modules to list."),
+            new ToolParameter("pid", ToolParameterType.Integer, "The process ID whose modules to list.") { Minimum = 1 },
             new ToolParameter("limit", ToolParameterType.Integer,
-                $"Maximum modules to return (1-{ProcessDiagnosticsLimits.MaximumModules}, default {ProcessDiagnosticsLimits.DefaultModules}).", Required: false),
+                $"Maximum modules to return (1-{ProcessDiagnosticsLimits.MaximumModules}, default {ProcessDiagnosticsLimits.DefaultModules}).", Required: false) { Minimum = 1, Maximum = ProcessDiagnosticsLimits.MaximumModules },
             new ToolParameter("maxOutputBytes", ToolParameterType.Integer,
                 $"Maximum UTF-8 output bytes ({ProcessDiagnosticsLimits.MinimumModuleOutputBytes}-{ProcessDiagnosticsLimits.MaximumModuleOutputBytes}, default {ProcessDiagnosticsLimits.DefaultModuleOutputBytes}).",
-                Required: false),
+                Required: false) { Minimum = ProcessDiagnosticsLimits.MinimumModuleOutputBytes, Maximum = ProcessDiagnosticsLimits.MaximumModuleOutputBytes },
         ],
     };
 
@@ -263,9 +263,9 @@ public static class SystemToolManifests
         Parameters =
         [
             new ToolParameter("limit", ToolParameterType.Integer,
-                $"Maximum items to return (1-{InventoryToolLimits.MaximumItems}).", Required: false),
+                $"Maximum items to return (1-{InventoryToolLimits.MaximumItems}).", Required: false) { Minimum = 1, Maximum = InventoryToolLimits.MaximumItems },
             new ToolParameter("maxOutputBytes", ToolParameterType.Integer,
-                $"Maximum UTF-8 output bytes ({InventoryToolLimits.MinimumOutputBytes}-{InventoryToolLimits.MaximumOutputBytes}).", Required: false),
+                $"Maximum UTF-8 output bytes ({InventoryToolLimits.MinimumOutputBytes}-{InventoryToolLimits.MaximumOutputBytes}).", Required: false) { Minimum = InventoryToolLimits.MinimumOutputBytes, Maximum = InventoryToolLimits.MaximumOutputBytes },
         ],
     };
 }

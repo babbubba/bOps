@@ -10,11 +10,11 @@ public abstract class StorageIoToolBase : ITool
     protected abstract Task<IReadOnlyList<StorageIoSample>> SampleAsync(string? device, CancellationToken ct);
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
-        if (!StorageArguments.TryReadIo(arguments, out var device, out var milliseconds, out var bytes, out var error)) return ToolCallResult.Failure(error!);
+        if (!StorageArguments.TryReadIo(arguments, out var device, out var milliseconds, out var bytes, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         var first = await SampleAsync(device, ct);
         var start = clock.GetTimestamp();
         await Task.Delay(TimeSpan.FromMilliseconds(milliseconds), clock, ct);
         var second = await SampleAsync(device, ct);
-        return ToolCallResult.Success(StorageFormatting.Io(StorageCalculations.ComputeIo(first, second, clock.GetElapsedTime(start).TotalSeconds), milliseconds, bytes));
+        return EvidenceCompleteness.Success(StorageFormatting.Io(StorageCalculations.ComputeIo(first, second, clock.GetElapsedTime(start).TotalSeconds), milliseconds, bytes));
     }
 }

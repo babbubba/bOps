@@ -1,0 +1,94 @@
+certificate.list.expiringWithinDays | Integer | minimum=0
+certificate.list.limit | Integer | minimum=1 | maximum=2000
+docker.volume.create.volume | String | minLength=2 | maxLength=128
+docker.volume.inspect.volume | String | minLength=2 | maxLength=128
+docker.volume.remove.volume | String | minLength=2 | maxLength=128
+docker.volumes.limit | Integer | minimum=1 | maximum=500
+docker.volumes.maxOutputBytes | Integer | minimum=4096 | maximum=65536
+firewall.rule.inspect.id | String | minLength=1 | maxLength=256
+firewall.rules.limit | Integer | minimum=1 | maximum=5000
+firewall.rules.localPort | Integer | minimum=1 | maximum=65535
+firewall.rules.maxOutputBytes | Integer | minimum=1 | maximum=262144
+firewall.rules.remotePort | Integer | minimum=1 | maximum=65535
+fs.delete_tree.prepare.maxDepth | Integer | minimum=0
+fs.delete_tree.prepare.maxDurationMilliseconds | Integer | minimum=1
+fs.delete_tree.prepare.maxEntries | Integer | minimum=1
+fs.delete_tree.prepare.paths | PathList | minItems=1
+fs.grep.maxMatches | Integer | minimum=1 | maximum=2000
+fs.grep.maxOutputBytes | Integer | minimum=1 | maximum=131072
+fs.locks.limit | Integer | minimum=1 | maximum=1000
+fs.size.maxDepth | Integer | minimum=0
+fs.size.maxDurationMilliseconds | Integer | minimum=1
+fs.size.maxEntries | Integer | minimum=1
+fs.size.topEntries | Integer | minimum=0
+fs.tail.lines | Integer | minimum=1 | maximum=5000
+fs.tail.maxBytes | Integer | minimum=1 | maximum=1048576
+identity.current.limit | Integer | minimum=1 | maximum=500
+identity.groups.limit | Integer | minimum=1 | maximum=2000
+identity.sessions.limit | Integer | minimum=1 | maximum=500
+identity.users.limit | Integer | minimum=1 | maximum=2000
+network.dns_query.name | String | minLength=1 | maxLength=256
+network.dns_query.timeout | Integer | minimum=100 | maximum=10000
+network.interface_stats.sampleMilliseconds | Integer | minimum=100 | maximum=5000
+network.neighbors.limit | Integer | minimum=1 | maximum=5000
+network.ntp_probe.host | String | minLength=1 | maxLength=256
+network.ntp_probe.timeout | Integer | minimum=100 | maximum=5000
+network.port_check.port | Integer | minimum=1 | maximum=65535
+network.routes.limit | Integer | minimum=1 | maximum=5000
+network.sockets.limit | Integer | minimum=1 | maximum=5000
+network.sockets.localPort | Integer | minimum=1 | maximum=65535
+network.sockets.pid | Integer | minimum=1
+network.tls_probe.host | String | minLength=1 | maxLength=253
+network.tls_probe.port | Integer | minimum=1 | maximum=65535
+network.tls_probe.sniHost | String | minLength=1 | maxLength=253
+network.tls_probe.timeoutMilliseconds | Integer | minimum=1 | maximum=15000
+network.traceroute.host | String | minLength=1 | maxLength=256
+network.traceroute.maxHops | Integer | minimum=1 | maximum=64
+network.traceroute.timeout | Integer | minimum=100 | maximum=5000
+process.inspect.pid | Integer | minimum=1
+process.list.limit | Integer | minimum=1
+process.metrics.pid | Integer | minimum=1
+process.metrics.sampleMilliseconds | Integer | minimum=200 | maximum=5000
+process.modules.limit | Integer | minimum=1 | maximum=1000
+process.modules.maxOutputBytes | Integer | minimum=4096 | maximum=131072
+process.modules.pid | Integer | minimum=1
+process.tree.limit | Integer | minimum=1 | maximum=2000
+process.tree.maxDepth | Integer | minimum=0 | maximum=16
+process.tree.rootPid | Integer | minimum=1
+scheduler.history.limit | Integer | minimum=1 | maximum=1000
+scheduler.history.sinceMinutes | Integer | minimum=1 | maximum=10080
+scheduler.list.limit | Integer | minimum=1 | maximum=2000
+service.dependencies.limit | Integer | minimum=1 | maximum=1000
+storage.disks.limit | Integer | minimum=1 | maximum=2000
+storage.disks.maxOutputBytes | Integer | minimum=4096 | maximum=262144
+storage.health.device | String | minLength=1 | maxLength=256
+storage.health.limit | Integer | minimum=1 | maximum=2000
+storage.health.maxOutputBytes | Integer | minimum=4096 | maximum=262144
+storage.io.device | String | minLength=1 | maxLength=256
+storage.io.maxOutputBytes | Integer | minimum=4096 | maximum=262144
+storage.io.sampleMilliseconds | Integer | minimum=500 | maximum=5000
+storage.mounts.limit | Integer | minimum=1 | maximum=2000
+storage.mounts.maxOutputBytes | Integer | minimum=4096 | maximum=262144
+storage.partitions.diskId | String | minLength=1 | maxLength=256
+storage.partitions.limit | Integer | minimum=1 | maximum=2000
+storage.partitions.maxOutputBytes | Integer | minimum=4096 | maximum=262144
+system.apps.limit | Integer | minimum=1 | maximum=500
+system.apps.maxOutputBytes | Integer | minimum=4096 | maximum=65536
+system.crashes.limit | Integer | minimum=1 | maximum=1000
+system.crashes.sinceMinutes | Integer | minimum=1 | maximum=10080
+system.devices.limit | Integer | minimum=1 | maximum=500
+system.devices.maxOutputBytes | Integer | minimum=4096 | maximum=65536
+system.drivers.limit | Integer | minimum=1 | maximum=3000
+system.events.channel | String | minLength=1 | maxLength=256
+system.events.eventId | String | minLength=1 | maxLength=64
+system.events.limit | Integer | minimum=1 | maximum=500
+system.events.maxOutputBytes | Integer | minimum=4096 | maximum=65536
+system.events.source | String | minLength=1 | maxLength=128
+system.events.text | String | minLength=1 | maxLength=256
+system.events.windowMinutes | Integer | minimum=1 | maximum=10080
+system.update_history.limit | Integer | minimum=1 | maximum=2000
+system.update_history.sinceDays | Integer | minimum=1 | maximum=365
+system.updates.limit | Integer | minimum=1 | maximum=2000
+web.search.page | Integer | minimum=1 | maximum=20
+web.search.query | String | minLength=1 | maxLength=512
+web.search.safeSearch | Integer | minimum=0 | maximum=2

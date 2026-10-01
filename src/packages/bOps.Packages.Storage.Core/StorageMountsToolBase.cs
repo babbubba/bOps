@@ -8,7 +8,7 @@ public abstract class StorageMountsToolBase(string platform) : ITool
     protected abstract Task<IReadOnlyList<StorageMount>> CollectAsync(CancellationToken ct);
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
-        if (!StorageArguments.TryReadList(arguments, null, out _, out var limit, out var bytes, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(StorageFormatting.Mounts(await CollectAsync(ct), limit, bytes));
+        if (!StorageArguments.TryReadList(arguments, null, out _, out var limit, out var bytes, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(StorageFormatting.Mounts(await CollectAsync(ct), limit, bytes));
     }
 }

@@ -34,6 +34,11 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
 
         var manifest = tool.Manifest;
 
+        foreach (var parameter in manifest.Parameters)
+        {
+            ValidateConstraints(manifest.Name, parameter);
+        }
+
         if (manifest.Risk != RiskLevel.Read)
         {
             if (manifest.Verification is null)
@@ -61,6 +66,50 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
         }
 
         _packageEnabled.TryAdd(package.Value, true);
+    }
+
+    private static void ValidateConstraints(string toolName, ToolParameter parameter)
+    {
+        if (DescribeInvalidConstraint(parameter) is { } problem)
+        {
+            throw new ToolRegistrationException(toolName, $"Parameter '{parameter.Name}' ({parameter.Type}) declares invalid constraints: {problem}.");
+        }
+    }
+
+    /// <summary>ADR-0022: a constraint must fit the parameter type it is declared on and be consistent with its counterpart.</summary>
+    private static string? DescribeInvalidConstraint(ToolParameter parameter)
+    {
+        if ((parameter.Minimum is not null || parameter.Maximum is not null) && parameter.Type is not (ToolParameterType.Integer or ToolParameterType.Number))
+        {
+            return "Minimum/Maximum apply only to Integer and Number";
+        }
+
+        if ((parameter.MinLength is not null || parameter.MaxLength is not null) && parameter.Type is not (ToolParameterType.String or ToolParameterType.Path))
+        {
+            return "MinLength/MaxLength apply only to String and Path";
+        }
+
+        if ((parameter.MinItems is not null || parameter.MaxItems is not null) && parameter.Type != ToolParameterType.PathList)
+        {
+            return "MinItems/MaxItems apply only to PathList";
+        }
+
+        if ((parameter.Minimum is { } minimum && !double.IsFinite(minimum)) || (parameter.Maximum is { } maximum && !double.IsFinite(maximum)))
+        {
+            return "Minimum and Maximum must be finite numbers";
+        }
+
+        if (parameter.MinLength < 0 || parameter.MaxLength < 0 || parameter.MinItems < 0 || parameter.MaxItems < 0)
+        {
+            return "lengths and item counts cannot be negative";
+        }
+
+        if (parameter.Minimum > parameter.Maximum || parameter.MinLength > parameter.MaxLength || parameter.MinItems > parameter.MaxItems)
+        {
+            return "a minimum exceeds its maximum";
+        }
+
+        return null;
     }
 
     /// <inheritdoc />

@@ -66,7 +66,7 @@ internal static class LinuxMutation
 {
     public static async Task<ToolCallResult> ChangeAsync(ILinuxProcessRunner runner, string id, bool enable, CancellationToken ct)
     {
-        if (id.StartsWith("cron:", StringComparison.Ordinal)) return ToolCallResult.Failure("Cron observations are read-only; scheduler enable/disable is unsupported.");
+        if (id.StartsWith("cron:", StringComparison.Ordinal)) return ToolCallResult.Failure("Cron observations are read-only; scheduler enable/disable is unsupported.") with { FailureKind = ToolFailureKind.Environment };
         if (!LinuxSystemd.IsTimerName(id)) return ToolCallResult.Failure("Only canonical systemd timer ids can be enabled or disabled.");
         LinuxSystemdTimerSnapshot state; try { state = await LinuxSystemd.ShowAsync(runner, id, ct); } catch (KeyNotFoundException) { return ToolCallResult.Failure("The systemd timer was not found."); } catch (Exception e) { return ToolCallResult.Failure($"Could not inspect the systemd timer: {e.Message}"); }
         if (state.UnitFileState is "masked" or "masked-runtime") return ToolCallResult.Failure("Masked systemd timers are not unmasked by scheduler mutations.");

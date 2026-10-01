@@ -230,6 +230,19 @@ public sealed record ToolCallAuditEvent : AuditEvent
     /// <summary>The contextual blast radius, when applicable.</summary>
     public BlastRadius? BlastRadius { get; init; }
 
+    /// <summary>
+    /// The structured failure classification of the call (HARDEN-6, ADR-0022). <c>null</c> for a success and for any result that
+    /// carried no classification, so a record written before HARDEN-6 and one without it serialize identically.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolFailureKind? FailureKind { get; init; }
+
+    /// <summary>
+    /// How complete the evidence of a successful call was (HARDEN-6, ADR-0022). <c>null</c> when the tool declared nothing.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolResultCompleteness? Completeness { get; init; }
+
     /// <summary>The immutable plan hash during execution, absent during evidence gathering.</summary>
     public string? PlanHash { get; init; }
 }

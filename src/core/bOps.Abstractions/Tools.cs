@@ -113,6 +113,24 @@ public sealed record ToolParameter
 
     /// <summary>For <see cref="ToolParameterType.Enum"/>, the values the argument may take.</summary>
     public IReadOnlyList<string>? AllowedValues { get; init; }
+
+    /// <summary>Inclusive numeric lower bound for Integer or Number parameters.</summary>
+    public double? Minimum { get; init; }
+
+    /// <summary>Inclusive numeric upper bound for Integer or Number parameters.</summary>
+    public double? Maximum { get; init; }
+
+    /// <summary>Minimum character length for String or Path parameters.</summary>
+    public int? MinLength { get; init; }
+
+    /// <summary>Maximum character length for String or Path parameters.</summary>
+    public int? MaxLength { get; init; }
+
+    /// <summary>Minimum item count for PathList parameters.</summary>
+    public int? MinItems { get; init; }
+
+    /// <summary>Maximum item count for PathList parameters.</summary>
+    public int? MaxItems { get; init; }
 }
 
 /// <summary>
@@ -228,6 +246,36 @@ public enum ToolOutcome
     Timeout,
 }
 
+/// <summary>Why a tool invocation did not yield its requested result.</summary>
+public enum ToolFailureKind
+{
+    /// <summary>No structured classification was supplied.</summary>
+    Unspecified = 0,
+    /// <summary>The call violated the declared tool contract.</summary>
+    Validation = 1,
+    /// <summary>The host environment could not provide required evidence.</summary>
+    Environment = 2,
+    /// <summary>An unexpected runtime or tool exception occurred.</summary>
+    Internal = 3,
+    /// <summary>The invocation exceeded its runtime timeout.</summary>
+    Timeout = 4,
+    /// <summary>Policy, approval, envelope, or entitlement denied the call.</summary>
+    Authorization = 5,
+}
+
+/// <summary>How complete the evidence in a tool result is.</summary>
+public enum ToolResultCompleteness
+{
+    /// <summary>The tool did not declare evidence completeness.</summary>
+    Unspecified = 0,
+    /// <summary>All applicable evidence was collected.</summary>
+    Complete = 1,
+    /// <summary>Useful evidence was collected but one or more sources were incomplete.</summary>
+    Partial = 2,
+    /// <summary>No applicable evidence was available.</summary>
+    Unavailable = 3,
+}
+
 /// <summary>
 /// The result of a tool call. Duration is measured by the runtime, around the call — a tool
 /// never reports its own timing (agentic/07-plan-corrections.md).
@@ -253,6 +301,12 @@ public sealed record ToolCallResult
 
     /// <summary>Present when <see cref="Outcome"/> is not <see cref="ToolOutcome.Success"/>.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>Structured failure classification. Defaults preserve existing tool results.</summary>
+    public ToolFailureKind FailureKind { get; init; }
+
+    /// <summary>Structured evidence completeness. Defaults preserve existing tool results.</summary>
+    public ToolResultCompleteness Completeness { get; init; }
 
     /// <summary>True only when <see cref="Outcome"/> is <see cref="ToolOutcome.Success"/>.</summary>
     public bool Succeeded => Outcome is ToolOutcome.Success;

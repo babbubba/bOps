@@ -76,3 +76,52 @@ and the target state may have changed. Re-approval on resume is safer and operat
 - Unsigned legacy plugins remain installable for inspection but disabled and untrusted.
 - Contract changes after 1.0 must be backward-compatible unless the major version changes.
 - The precise limitations of these controls are documented in the V1.0 threat model.
+
+## HARDEN-6 amendment — Accepted 2026-10-01
+
+### Context
+
+Some tool argument limits are currently described in prose only. Provider schemas therefore cannot
+express them and the runtime can reject them only in package-specific code, after generic admission
+has already begun. `ToolCallResult` also lacks typed semantics for a failed invocation and for
+evidence which is valid but incomplete. Both gaps prevent the runtime, audit, and model-facing
+observation from treating tools consistently without knowing package output formats.
+
+### Decision
+
+1. `ToolParameter` receives only additive init-only constraint properties: numeric `Minimum` and
+   `Maximum`; string/path `MinLength` and `MaxLength`; and `PathList` `MinItems` and `MaxItems`.
+   Its existing positional constructor and all existing defaults remain unchanged.
+2. Registry validation rejects inconsistent constraints and constraints inapplicable to a parameter
+   type. The runtime enforces every declared constraint before policy, approval, or tool execution;
+   it reports the specific violation and never clamps model input.
+3. Every provider schema projects the same applicable constraints, enum values, and
+   `additionalProperties: false` from the manifest. The manifest remains the sole constraint
+   source; packages retain their local validation only as defence in depth.
+4. `ToolCallResult` receives additive init-only `FailureKind` and `Completeness` properties with
+   `Unspecified` defaults. Runtime-owned failures are classified structurally; packages may report
+   environmental failure and complete, partial, or unavailable evidence. The runtime propagates
+   those typed values to the step and audit without parsing package JSON.
+5. These additions are binary and source compatible with plugins compiled against the existing
+   `ToolParameter` and `ToolCallResult` constructors. Contract serialization must round-trip both
+   new values and payloads that omit them.
+
+### Alternatives considered
+
+**Add constraints as constructor parameters.** Rejected: changing positional constructors breaks
+compiled plugins and needlessly forces manifest migrations.
+
+**Infer bounds or completeness by parsing descriptions and package JSON at runtime.** Rejected:
+prose and output formatting are not typed contracts, and core must remain package-agnostic.
+
+**Clamp invalid model arguments.** Rejected: it hides the requested operation from policy and the
+model, producing unauditable behaviour.
+
+### Consequences
+
+- Manifest authors declare bounds once; registration, provider schema generation, and runtime
+  validation use that declaration consistently.
+- Validation, authorization, timeout, internal and environmental failures remain distinguishable
+  from successful but partial evidence.
+- Existing manifests and existing plugin binaries continue to load unchanged; tests enforce this
+  compatibility and JSON round-tripping.

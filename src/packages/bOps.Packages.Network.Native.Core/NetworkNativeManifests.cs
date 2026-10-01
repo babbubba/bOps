@@ -25,9 +25,9 @@ public static class NetworkNativeManifests
         [
             new ToolParameter("protocol", ToolParameterType.Enum, "Filter by transport protocol. Default all.", Required: false, AllowedValues: ["all", "tcp", "udp"]),
             new ToolParameter("state", ToolParameterType.String, "Filter by exact, case-insensitive TCP state (for example Established, Listen).", Required: false),
-            new ToolParameter("pid", ToolParameterType.Integer, "Filter by owning process id.", Required: false),
-            new ToolParameter("localPort", ToolParameterType.Integer, "Filter by local port (1-65535).", Required: false),
-            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false),
+            new ToolParameter("pid", ToolParameterType.Integer, "Filter by owning process id.", Required: false) { Minimum = 1 },
+            new ToolParameter("localPort", ToolParameterType.Integer, "Filter by local port (1-65535).", Required: false) { Minimum = 1, Maximum = 65_535 },
+            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false) { Minimum = 1, Maximum = NetworkNativeLimits.MaximumRows },
         ],
     };
 
@@ -43,7 +43,7 @@ public static class NetworkNativeManifests
         Parameters =
         [
             new ToolParameter("addressFamily", ToolParameterType.Enum, "Filter by address family. Default all.", Required: false, AllowedValues: ["all", "ipv4", "ipv6"]),
-            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false) { Minimum = 1, Maximum = NetworkNativeLimits.MaximumRows },
         ],
     };
 
@@ -59,7 +59,7 @@ public static class NetworkNativeManifests
         [
             new ToolParameter("addressFamily", ToolParameterType.Enum, "Filter by address family. Default all.", Required: false, AllowedValues: ["all", "ipv4", "ipv6"]),
             new ToolParameter("interfaceName", ToolParameterType.String, "Filter by exact, case-insensitive interface name.", Required: false),
-            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false),
+            new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows to return (1-{NetworkNativeLimits.MaximumRows}, default {NetworkNativeLimits.DefaultRows}).", Required: false) { Minimum = 1, Maximum = NetworkNativeLimits.MaximumRows },
         ],
     };
 
@@ -77,7 +77,7 @@ public static class NetworkNativeManifests
             new ToolParameter("interfaceName", ToolParameterType.String, "Report only this exact, case-insensitive interface name. Omit for every interface.", Required: false),
             new ToolParameter("sampleMilliseconds", ToolParameterType.Integer,
                 $"Interval between the two samples ({NetworkNativeLimits.MinimumSampleMilliseconds}-{NetworkNativeLimits.MaximumSampleMilliseconds}, default {NetworkNativeLimits.DefaultSampleMilliseconds}).",
-                Required: false),
+                Required: false) { Minimum = NetworkNativeLimits.MinimumSampleMilliseconds, Maximum = NetworkNativeLimits.MaximumSampleMilliseconds },
         ],
     };
 
@@ -92,12 +92,12 @@ public static class NetworkNativeManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("name", ToolParameterType.String, "The name to resolve (a hostname for A/AAAA, an IP address for PTR)."),
+            new ToolParameter("name", ToolParameterType.String, "The name to resolve (a hostname for A/AAAA, an IP address for PTR).") { MinLength = 1, MaxLength = NetworkNativeLimits.NameCharacters },
             new ToolParameter("recordType", ToolParameterType.Enum, "The record type to query.", AllowedValues: ["A", "AAAA", "PTR"]),
             new ToolParameter("server", ToolParameterType.String, "An explicit DNS server to query instead of the system resolver.", Required: false),
             new ToolParameter("timeout", ToolParameterType.Integer,
                 $"Query timeout in milliseconds ({NetworkNativeLimits.MinimumDnsTimeoutMilliseconds}-{NetworkNativeLimits.MaximumDnsTimeoutMilliseconds}, default {NetworkNativeLimits.DefaultDnsTimeoutMilliseconds}).",
-                Required: false),
+                Required: false) { Minimum = NetworkNativeLimits.MinimumDnsTimeoutMilliseconds, Maximum = NetworkNativeLimits.MaximumDnsTimeoutMilliseconds },
         ],
     };
 
@@ -112,12 +112,12 @@ public static class NetworkNativeManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("host", ToolParameterType.String, "The destination hostname or IP address."),
+            new ToolParameter("host", ToolParameterType.String, "The destination hostname or IP address.") { MinLength = 1, MaxLength = NetworkNativeLimits.NameCharacters },
             new ToolParameter("maxHops", ToolParameterType.Integer,
-                $"Maximum hops to probe ({NetworkNativeLimits.MinimumMaxHops}-{NetworkNativeLimits.MaximumMaxHops}, default {NetworkNativeLimits.DefaultMaxHops}).", Required: false),
+                $"Maximum hops to probe ({NetworkNativeLimits.MinimumMaxHops}-{NetworkNativeLimits.MaximumMaxHops}, default {NetworkNativeLimits.DefaultMaxHops}).", Required: false) { Minimum = NetworkNativeLimits.MinimumMaxHops, Maximum = NetworkNativeLimits.MaximumMaxHops },
             new ToolParameter("timeout", ToolParameterType.Integer,
                 $"Per-hop timeout in milliseconds ({NetworkNativeLimits.MinimumTracerouteTimeoutMilliseconds}-{NetworkNativeLimits.MaximumTracerouteTimeoutMilliseconds}, default {NetworkNativeLimits.DefaultTracerouteTimeoutMilliseconds}).",
-                Required: false),
+                Required: false) { Minimum = NetworkNativeLimits.MinimumTracerouteTimeoutMilliseconds, Maximum = NetworkNativeLimits.MaximumTracerouteTimeoutMilliseconds },
             new ToolParameter("addressFamily", ToolParameterType.Enum, "Which address family to trace. Default auto (resolves to whichever the host answers first).", Required: false, AllowedValues: ["auto", "ipv4", "ipv6"]),
         ],
     };
@@ -133,10 +133,10 @@ public static class NetworkNativeManifests
         Requires = [],
         Parameters =
         [
-            new ToolParameter("host", ToolParameterType.String, "The NTP server to query."),
+            new ToolParameter("host", ToolParameterType.String, "The NTP server to query.") { MinLength = 1, MaxLength = NetworkNativeLimits.NameCharacters },
             new ToolParameter("timeout", ToolParameterType.Integer,
                 $"Query timeout in milliseconds ({NetworkNativeLimits.MinimumNtpTimeoutMilliseconds}-{NetworkNativeLimits.MaximumNtpTimeoutMilliseconds}, default {NetworkNativeLimits.DefaultNtpTimeoutMilliseconds}).",
-                Required: false),
+                Required: false) { Minimum = NetworkNativeLimits.MinimumNtpTimeoutMilliseconds, Maximum = NetworkNativeLimits.MaximumNtpTimeoutMilliseconds },
         ],
     };
 }

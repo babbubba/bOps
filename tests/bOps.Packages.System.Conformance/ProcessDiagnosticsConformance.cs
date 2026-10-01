@@ -113,16 +113,22 @@ public static class ProcessDiagnosticsConformance
         Assert.Equal(500, json["sampleMilliseconds"]!.GetValue<int>());
     }
 
-    /// <summary>A process that is not running is a successful observation of an absence, and it is partial.</summary>
+    /// <summary>
+    /// A process that is not running is a successful observation of an absence: the legacy <c>partial</c> field stays true, and
+    /// the typed completeness is <see cref="ToolResultCompleteness.Unavailable"/> because no evidence about it exists (HARDEN-6).
+    /// </summary>
     public static async Task AssertProcessMetricsReportsMissingAsync(ITool tool)
     {
         ArgumentNullException.ThrowIfNull(tool);
 
-        var json = await RunAsync(tool, new JsonObject { ["pid"] = UnlikelyPid, ["sampleMilliseconds"] = 200 });
+        var result = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["pid"] = UnlikelyPid, ["sampleMilliseconds"] = 200 }));
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var json = JsonNode.Parse(result.Output!)!;
 
         Assert.False(json["exists"]!.GetValue<bool>());
         Assert.True(json["partial"]!.GetValue<bool>());
         Assert.Null(json["cpuPercent"]);
+        Assert.Equal(ToolResultCompleteness.Unavailable, result.Completeness);
     }
 
     /// <summary><c>sampleMilliseconds</c> is refused outside 200–5000, never clamped.</summary>

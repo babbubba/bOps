@@ -26,18 +26,18 @@ public sealed class WebSearchTool(SearxngClient client) : ITool
         Requires = [WebCapabilities.Searxng],
         Parameters =
         [
-            new ToolParameter("query", ToolParameterType.String, "The search query."),
+            new ToolParameter("query", ToolParameterType.String, "The search query.") { MinLength = 1, MaxLength = MaxQueryLength },
             new ToolParameter(
                 "category", ToolParameterType.Enum, "Restricts results to one result category.",
                 Required: false, AllowedValues: ["general", "images", "videos", "news", "map", "science", "it"]),
             new ToolParameter("language", ToolParameterType.String, "ISO language code, e.g. 'en' or 'en-US'.", Required: false),
             new ToolParameter(
                 "safeSearch", ToolParameterType.Integer,
-                "0 (off), 1 (moderate) or 2 (strict). Defaults to the instance's own setting.", Required: false),
+                "0 (off), 1 (moderate) or 2 (strict). Defaults to the instance's own setting.", Required: false) { Minimum = 0, Maximum = 2 },
             new ToolParameter(
                 "timeRange", ToolParameterType.Enum, "Restricts results to a recency window.",
                 Required: false, AllowedValues: ["day", "week", "month", "year"]),
-            new ToolParameter("page", ToolParameterType.Integer, "1-based result page. Defaults to 1.", Required: false),
+            new ToolParameter("page", ToolParameterType.Integer, "1-based result page. Defaults to 1.", Required: false) { Minimum = 1, Maximum = 20 },
         ],
     };
 
@@ -47,12 +47,12 @@ public sealed class WebSearchTool(SearxngClient client) : ITool
         var queryText = arguments.GetRequired<string>("query").Trim();
         if (queryText.Length == 0)
         {
-            return ToolCallResult.Failure("'query' must not be empty.");
+            return ToolCallResult.Failure("'query' must not be empty.") with { FailureKind = ToolFailureKind.Validation };
         }
 
         if (queryText.Length > MaxQueryLength)
         {
-            return ToolCallResult.Failure($"'query' must be at most {MaxQueryLength} characters.");
+            return ToolCallResult.Failure($"'query' must be at most {MaxQueryLength} characters.") with { FailureKind = ToolFailureKind.Validation };
         }
 
         arguments.TryGet<string>("category", out var category);
@@ -62,13 +62,13 @@ public sealed class WebSearchTool(SearxngClient client) : ITool
         arguments.TryGet<int>("safeSearch", out var safeSearch);
         if (arguments.ContainsKey("safeSearch") && safeSearch is < 0 or > 2)
         {
-            return ToolCallResult.Failure("'safeSearch' must be 0, 1 or 2.");
+            return ToolCallResult.Failure("'safeSearch' must be 0, 1 or 2.") with { FailureKind = ToolFailureKind.Validation };
         }
 
         arguments.TryGet<int>("page", out var page);
         if (arguments.ContainsKey("page") && page is < 1 or > 20)
         {
-            return ToolCallResult.Failure("'page' must be between 1 and 20.");
+            return ToolCallResult.Failure("'page' must be between 1 and 20.") with { FailureKind = ToolFailureKind.Validation };
         }
 
         var query = new SearxngQuery(
@@ -82,7 +82,7 @@ public sealed class WebSearchTool(SearxngClient client) : ITool
         var outcome = await client.SearchAsync(query, ct);
         return outcome.Success
             ? ToolCallResult.Success(ToJson(queryText, outcome.Results))
-            : ToolCallResult.Failure(outcome.FailureReason!);
+            : ToolCallResult.Failure(outcome.FailureReason!) with { FailureKind = ToolFailureKind.Environment };
     }
 
     private static string ToJson(string query, IReadOnlyList<SearxngResult> results)

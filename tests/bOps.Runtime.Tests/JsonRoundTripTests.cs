@@ -26,7 +26,7 @@ public sealed class JsonRoundTripTests
     [Fact]
     public void ToolParameter_RoundTrips()
     {
-        var value = new ToolParameter("paths", ToolParameterType.PathList, "Filesystem paths.", Required: false, Sensitive: true, AllowedValues: ["a", "b"]);
+        var value = new ToolParameter("paths", ToolParameterType.PathList, "Filesystem paths.", Required: false, Sensitive: true, AllowedValues: ["a", "b"]) { MinItems = 1, MaxItems = 4 };
 
         var result = RoundTrip(value);
 
@@ -38,6 +38,8 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Required, result.Required);
         Assert.Equal(value.Sensitive, result.Sensitive);
         Assert.Equal(value.AllowedValues, result.AllowedValues);
+        Assert.Equal(value.MinItems, result.MinItems);
+        Assert.Equal(value.MaxItems, result.MaxItems);
     }
 
     [Fact]
@@ -96,11 +98,61 @@ public sealed class JsonRoundTripTests
     [Fact]
     public void ToolCallResult_RoundTrips()
     {
-        var value = ToolCallResult.Success("42% CPU");
+        var value = ToolCallResult.Success("42% CPU") with { Completeness = ToolResultCompleteness.Partial };
 
         var result = RoundTrip(value);
 
         Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void ToolCallResult_WithFailureKindAndCompleteness_RoundTrips()
+    {
+        var value = ToolCallResult.Failure("daemon unreachable") with
+        {
+            FailureKind = ToolFailureKind.Environment,
+            Completeness = ToolResultCompleteness.Unavailable,
+        };
+
+        var result = RoundTrip(value);
+
+        Assert.Equal(value, result);
+        Assert.Equal(ToolFailureKind.Environment, result!.FailureKind);
+    }
+
+    [Fact]
+    public void ToolCallResult_PersistedBeforeHardenSix_DeserializesWithUnspecifiedDefaults()
+    {
+        var result = JsonSerializer.Deserialize<ToolCallResult>("""{"Outcome":1,"Output":null,"ErrorMessage":"old"}""", Options)!;
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.Equal("old", result.ErrorMessage);
+        Assert.Equal(ToolFailureKind.Unspecified, result.FailureKind);
+        Assert.Equal(ToolResultCompleteness.Unspecified, result.Completeness);
+    }
+
+    [Fact]
+    public void ToolParameter_PersistedBeforeHardenSix_DeserializesWithoutConstraints()
+    {
+        var result = JsonSerializer.Deserialize<ToolParameter>("""{"Name":"limit","Type":1,"Description":"d","Required":false,"Sensitive":false,"AllowedValues":null}""", Options)!;
+
+        Assert.Equal("limit", result.Name);
+        Assert.Null(result.Minimum);
+        Assert.Null(result.Maximum);
+        Assert.Null(result.MinLength);
+        Assert.Null(result.MaxLength);
+        Assert.Null(result.MinItems);
+        Assert.Null(result.MaxItems);
+    }
+
+    [Fact]
+    public void ToolParameter_WithEveryConstraint_RoundTrips()
+    {
+        var value = new ToolParameter("x", ToolParameterType.Number, "d") { Minimum = 0.5, Maximum = 2.5, MinLength = 1, MaxLength = 9, MinItems = 2, MaxItems = 3 };
+
+        var result = RoundTrip(value)!;
+
+        Assert.Equal((0.5, 2.5, 1, 9, 2, 3), (result.Minimum, result.Maximum, result.MinLength, result.MaxLength, result.MinItems, result.MaxItems));
     }
 
     // ---- Audit.cs ----

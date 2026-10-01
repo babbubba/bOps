@@ -20,11 +20,11 @@ public abstract class SystemUpdatesToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!SystemMaintenanceArguments.TryReadUpdates(arguments, out var query, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         var snapshot = await CollectAsync(query, ct).ConfigureAwait(false);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Updates(snapshot, query.Limit));
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Updates(snapshot, query.Limit));
     }
 }
 
@@ -41,8 +41,8 @@ public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadHistory(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.History(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -59,8 +59,8 @@ public abstract class SystemCrashesToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -77,8 +77,8 @@ public abstract class SystemDriversToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!);
-        return ToolCallResult.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemMaintenanceArguments.TryReadDrivers(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Drivers(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
     }
 }
 
@@ -116,12 +116,12 @@ public abstract class ApplicationInventoryToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
-        return ToolCallResult.Success(SystemInventoryFormatting.FormatApplications(snapshot, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemInventoryFormatting.FormatApplications(snapshot, limit, maxOutputBytes));
     }
 }
 
@@ -142,12 +142,12 @@ public abstract class DeviceInventoryToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!InventoryToolArguments.TryRead(arguments, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(InventoryToolLimits.CollectionItems, ct);
-        return ToolCallResult.Success(SystemInventoryFormatting.FormatDevices(snapshot, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemInventoryFormatting.FormatDevices(snapshot, limit, maxOutputBytes));
     }
 }
 
@@ -193,16 +193,20 @@ public abstract class DiskUsageToolBase(string platform) : ITool
         ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
 }
 
-/// <summary>The tool shell for <c>process.list</c>.</summary>
+/// <summary>
+/// The tool shell for <c>process.list</c>. The OS package observes every process it can see; the order, the limit and the
+/// completeness are decided here, so both platforms report a truncated or degraded listing the same way (rule A8, HARDEN-6).
+/// </summary>
 public abstract class ProcessListToolBase(string platform) : ITool
 {
     private const int DefaultLimit = 20;
+    private const int BytesPerMb = 1024 * 1024;
 
     /// <inheritdoc />
     public ToolManifest Manifest { get; } = SystemToolManifests.ProcessList(platform);
 
-    /// <summary>Collects up to <paramref name="limit"/> processes, sorted by memory usage descending.</summary>
-    protected abstract Task<IReadOnlyList<ProcessSummary>> CollectAsync(int limit, CancellationToken ct);
+    /// <summary>Observes every running process this identity can see, in no particular order.</summary>
+    protected abstract Task<IReadOnlyList<ProcessListObservation>> ObserveAsync(CancellationToken ct);
 
     /// <inheritdoc />
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
@@ -210,7 +214,38 @@ public abstract class ProcessListToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
 
         var limit = arguments.TryGet<int>("limit", out var requested) ? requested : DefaultLimit;
-        return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(limit, ct)));
+        if (limit < 1)
+        {
+            // The manifest's Minimum stops this before the tool runs; this is defence in depth for a direct call.
+            return ToolCallResult.Failure("limit must be at least 1.") with { FailureKind = ToolFailureKind.Validation };
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var selection = Select(await ObserveAsync(ct), limit);
+        return ToolCallResult.Success(SystemToolFormatting.Format(selection.Processes)) with
+        {
+            Completeness = selection.Truncated || selection.Unreadable > 0
+                ? ToolResultCompleteness.Partial
+                : ToolResultCompleteness.Complete,
+        };
+    }
+
+    /// <summary>
+    /// Orders <paramref name="observed"/> by working set, largest first, and keeps <paramref name="limit"/> rows. Every
+    /// observation is counted before the limit is applied, so a cut listing is known to be cut. An unreadable working set
+    /// sorts as zero and an unreadable name reads <c>&lt;unknown&gt;</c>, exactly as the listing always showed them.
+    /// </summary>
+    internal static ProcessListSelection Select(IReadOnlyList<ProcessListObservation> observed, int limit)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+
+        var rows = observed
+            .OrderByDescending(process => process.WorkingSetBytes ?? 0)
+            .Take(limit)
+            .Select(process => new ProcessSummary(process.Pid, process.Name ?? "<unknown>", (process.WorkingSetBytes ?? 0) / BytesPerMb))
+            .ToArray();
+        var unreadable = observed.Count(process => process.Name is null || process.WorkingSetBytes is null);
+        return new ProcessListSelection(rows, observed.Count, unreadable);
     }
 }
 
@@ -257,7 +292,7 @@ public abstract class ProcessInspectToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadPid(arguments, out var pid, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         return ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(pid, ct)));
@@ -298,7 +333,7 @@ public abstract class ProcessMetricsToolBase : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadMetrics(arguments, out var pid, out var sampleMilliseconds, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
@@ -308,7 +343,7 @@ public abstract class ProcessMetricsToolBase : ITool
         var second = await SampleAsync(pid, ct);
         var elapsed = clock.GetElapsedTime(startedAt);
 
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.Format(
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.Format(
             Compute(pid, sampleMilliseconds, first, second, elapsed)));
     }
 
@@ -399,7 +434,7 @@ public abstract class ProcessTreeToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadTree(arguments, out var rootPid, out var maxDepth, out var limit, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
@@ -409,7 +444,7 @@ public abstract class ProcessTreeToolBase(string platform) : ITool
             ? new Dictionary<int, string?>()
             : await ResolveUsersAsync(selection.Rows.Select(row => row.Pid).ToArray(), ct);
 
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatTree(selection, snapshot, rootPid, maxDepth, users));
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.FormatTree(selection, snapshot, rootPid, maxDepth, users));
     }
 }
 
@@ -432,12 +467,12 @@ public abstract class ProcessModulesToolBase(string platform) : ITool
         ArgumentNullException.ThrowIfNull(arguments);
         if (!ProcessDiagnosticsArguments.TryReadModules(arguments, out var pid, out var limit, out var maxOutputBytes, out var error))
         {
-            return ToolCallResult.Failure(error!);
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(pid, ProcessDiagnosticsLimits.ModuleScanCeiling, ct);
-        return ToolCallResult.Success(ProcessDiagnosticsFormatting.FormatModules(snapshot, pid, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(ProcessDiagnosticsFormatting.FormatModules(snapshot, pid, limit, maxOutputBytes));
     }
 }
 

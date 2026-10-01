@@ -90,7 +90,7 @@ public sealed class DockerImagePullTool(IDockerClientFactory clientFactory) : IV
         }
         catch (Exception ex) when (DockerFailure.IsUnreachable(ex))
         {
-            return ToolCallResult.Failure(DockerFailure.Unreachable(ex));
+            return ToolCallResult.Failure(DockerFailure.Unreachable(ex)) with { FailureKind = ToolFailureKind.Environment };
         }
     }
 

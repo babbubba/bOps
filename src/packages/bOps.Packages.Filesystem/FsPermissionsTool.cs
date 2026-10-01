@@ -53,7 +53,7 @@ public sealed class FsPermissionsTool(FilesystemPathPolicy pathPolicy) : ITool
                 return Task.FromResult(ToolCallResult.Success(LinuxPermissions(path)));
             }
 
-            return Task.FromResult(ToolCallResult.Failure("fs.permissions supports Windows and Linux only."));
+            return Task.FromResult(ToolCallResult.Failure("fs.permissions supports Windows and Linux only.") with { FailureKind = ToolFailureKind.Environment });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {

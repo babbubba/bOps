@@ -52,7 +52,7 @@ internal sealed class ComWindowsSchedulerAdapter : IWindowsSchedulerAdapter
             return ToolCallResult.Success($"Updated enablement for task '{valid}'.");
         }
         catch (COMException ex) when (IsNotFound(ex)) { return ToolCallResult.Failure($"Task '{valid}' does not exist."); }
-        catch (COMException ex) when (IsAccessDenied(ex)) { return ToolCallResult.Failure($"Task '{valid}' cannot be changed: access denied."); }
+        catch (COMException ex) when (IsAccessDenied(ex)) { return ToolCallResult.Failure($"Task '{valid}' cannot be changed: access denied.") with { FailureKind = ToolFailureKind.Environment }; }
         catch (COMException ex) { return ToolCallResult.Failure($"Could not change task '{valid}': {ex.Message}"); }
         finally { Release(task); Release(service); }
     }
