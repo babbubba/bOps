@@ -1,15 +1,16 @@
 # Handoff — V1.3 implemented and merged; V1.3.x hardening active
 
-## Current handoff — 2026-09-30
+## Current handoff — 2026-10-01
 
 - V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
-- V1.3.x reliability hardening is the active workstream. HARDEN-1, HARDEN-2 and HARDEN-3 are complete; HARDEN-4 is next.
+- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-6 are complete; HARDEN-7 is next.
+- HARDEN-5 (Windows `storage.health`) merged through PR #61; HARDEN-6 (typed `ToolParameter` constraints, `FailureKind`, `Completeness`, 94 constrained parameters, Windows/Linux validated, CI green) merged through PR #62.
 - The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next action: **HARDEN-4 — Dashboard task lifecycle UI**, see
-[`agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md`](agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md). It has not started.
+Next action: **HARDEN-7 — Windows crash and stability evidence**, see
+[`agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md`](agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md). It has not started.
 
 ## Handoff — 2026-09-24 (historical)
 
