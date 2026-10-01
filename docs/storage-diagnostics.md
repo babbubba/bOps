@@ -25,9 +25,18 @@ healthy-looking default.
 
 Windows uses `Win32_DiskDrive`, `Win32_DiskPartition` and `Win32_LogicalDisk`. I/O comes from
 `Win32_PerfRawData_PerfDisk_PhysicalDisk`; an instance is associated with a disk only when its
-numeric prefix maps unambiguously to an enumerated disk. Health prefers `MSFT_PhysicalDisk` in
-`root\Microsoft\Windows\Storage`. A missing provider or insufficient permission yields
-`health: "unknown"` with a bounded detail.
+numeric prefix maps unambiguously to an enumerated disk. Health is read from `MSFT_PhysicalDisk` in
+`root\Microsoft\Windows\Storage` (`source: "MSFT_PhysicalDisk"`). Its `HealthStatus` maps
+`0` → `healthy`, `1` → `warning`, `2` → `unhealthy`, `5` → `unknown`; any other or missing code is
+`unknown` with a detail naming the code. Supplemental evidence (temperature, maximum temperature,
+wear, read/write error totals, power-on hours) comes from the associated
+`MSFT_StorageReliabilityCounter` (`reliabilitySource`) and never overrides `HealthStatus`. A
+reported `0` is a real value; a counter the device does not report stays `null`. Reliability
+counters normally need an elevated identity: when they are denied the disk keeps its real health
+with `partial: true` and `partialReason: "reliability counters require elevation"`. If the Storage
+namespace is absent the host is `unsupported`; `Win32_DiskDrive` then supplies disk identity only
+(`source: "Win32_DiskDrive"`) and its `Status` is never read as health. Any other provider failure
+yields `unknown` with a bounded detail.
 
 Linux reads `/sys/block` for devices and partitions, `/proc/self/mountinfo` plus `statvfs(3)` for
 filesystem bytes and inodes, and samples `/proc/diskstats` twice for live rates. If `smartctl` is
@@ -38,10 +47,20 @@ JSON in output. Without `smartctl`, base sysfs state is returned with `smartAvai
 
 ## Health semantics
 
-`health` is exactly `healthy`, `warning`, `critical` or `unknown`. `unknown` means the platform did
-not provide enough evidence; it is not success. The tool exposes only selected fields:
-temperature, power-on hours, media errors, reallocated sectors and wear percentage. Private data,
-raw WMI objects and raw SMART payloads never cross the tool boundary.
+`health` is one of `healthy`, `warning`, `critical`, `unhealthy`, `unknown` or `unsupported`. The
+severe value is platform-specific: Linux (`smartctl`) reports `critical`; Windows
+(`MSFT_PhysicalDisk.HealthStatus = 2`) reports `unhealthy`. `unsupported` is emitted only by Windows
+when the Storage provider namespace is absent. `unknown` means the platform did not provide enough
+evidence; it is not success.
+
+`partial`, with an optional `partialReason`, is an independent per-device flag for evidence
+completeness (for example optional reliability counters that were denied or not reported). It is not
+a health value: a `healthy` disk can be `partial`. `reliabilitySource`, `temperatureMaxC`,
+`readErrorsTotal` and `writeErrorsTotal` are additive fields (currently Windows only; `null`
+elsewhere); `mediaErrors` keeps its SMART meaning and is not the sum of read and write errors. The
+tool exposes only selected fields: temperature, power-on hours, media errors, reallocated sectors,
+wear percentage and the fields above. Private data, raw WMI objects and raw SMART payloads never
+cross the tool boundary.
 
 ## Operational examples
 

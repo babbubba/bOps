@@ -65,6 +65,8 @@ public static class StorageFormatting
             ["temperatureC"] = Round(x.TemperatureC), ["powerOnHours"] = x.PowerOnHours, ["mediaErrors"] = x.MediaErrors,
             ["reallocatedSectors"] = x.ReallocatedSectors, ["wearPercent"] = Round(x.WearPercent),
             ["smartAvailable"] = x.SmartAvailable, ["source"] = x.Source, ["detail"] = Bound(x.Detail, 512),
+            ["partial"] = x.Partial, ["partialReason"] = Bound(x.PartialReason, 512), ["reliabilitySource"] = x.ReliabilitySource,
+            ["temperatureMaxC"] = Round(x.TemperatureMaxC), ["readErrorsTotal"] = x.ReadErrorsTotal, ["writeErrorsTotal"] = x.WriteErrorsTotal,
         }), filtered.Length, limit, bytes);
     }
 

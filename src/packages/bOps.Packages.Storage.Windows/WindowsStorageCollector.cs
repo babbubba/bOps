@@ -84,38 +84,125 @@ internal static partial class WindowsStorageCollector
         return samples;
     }
 
-    public static IReadOnlyList<StorageHealth> Health()
+    internal const string StorageNamespace = @"\\.\root\Microsoft\Windows\Storage";
+
+    // MSFT_PhysicalDisk has no Temperature property; asking for one makes the whole query fail as InvalidQuery.
+    internal const string PhysicalDiskHealthQuery =
+        "SELECT ObjectId,DeviceId,FriendlyName,HealthStatus,OperationalStatus,MediaType,Usage,Size FROM MSFT_PhysicalDisk";
+
+    internal const string ReliabilityClass = "MSFT_StorageReliabilityCounter";
+    internal const string ReliabilityAssociationClass = "MSFT_PhysicalDiskToStorageReliabilityCounter";
+
+    internal static readonly IReadOnlyList<string> ReliabilityProperties =
+        ["DeviceId", "Temperature", "TemperatureMax", "Wear", "ReadErrorsTotal", "WriteErrorsTotal", "PowerOnHours"];
+
+    public static IReadOnlyList<StorageHealth> Health() => WindowsStorageHealthComposer.Compose(Disks(), QueryHealth());
+
+    private static StorageHealthSnapshot QueryHealth()
     {
-        var disks = Disks();
         try
         {
-            var scope = new ManagementScope(@"\\.\root\Microsoft\Windows\Storage");
+            var scope = new ManagementScope(StorageNamespace);
             scope.Connect();
-            using var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(
-                "SELECT DeviceId,FriendlyName,HealthStatus,OperationalStatus,MediaType,Temperature,Usage,Size FROM MSFT_PhysicalDisk"));
+            using var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(PhysicalDiskHealthQuery));
             using var results = searcher.Get();
-            var rows = new List<StorageHealth>();
+            var rows = new List<PhysicalDiskEvidence>();
             foreach (var item in results.Cast<ManagementObject>())
             {
-                var deviceId = Text(item["DeviceId"]);
-                var matched = disks.SingleOrDefault(disk => DiskIndex(disk.Id) == deviceId);
-                var device = matched?.Id ?? (deviceId is null ? Text(item["FriendlyName"]) ?? "unknown" : $@"\\.\PHYSICALDRIVE{deviceId}");
-                var healthCode = Number(item["HealthStatus"]);
-                rows.Add(new StorageHealth(
-                    device, healthCode switch { 0 => "healthy", 1 => "warning", 2 => "critical", _ => "unknown" },
-                    JoinNumbers(item["OperationalStatus"]), Celsius(item["Temperature"]), null, null, null,
-                    null, false, "MSFT_PhysicalDisk", healthCode is null ? "HealthStatus unavailable." : null));
+                using (item)
+                {
+                    var disk = new PhysicalDiskRow(
+                        Text(item["DeviceId"]), Text(item["FriendlyName"]), Number(item["HealthStatus"]), JoinNumbers(item["OperationalStatus"]));
+                    var (state, reliability) = ReadReliability(item);
+                    rows.Add(new PhysicalDiskEvidence(disk, state, reliability));
+                }
             }
 
-            return rows.Count == 0 ? UnknownHealth(disks, "MSFT_PhysicalDisk returned no rows.") : rows;
+            return new StorageHealthSnapshot(StorageHealthProviderState.Available, rows, null);
+        }
+        catch (ManagementException ex) when (ex.ErrorCode == ManagementStatus.InvalidNamespace)
+        {
+            return new StorageHealthSnapshot(StorageHealthProviderState.NamespaceUnsupported, [], null);
+        }
+        catch (ManagementException ex) when (ex.ErrorCode == ManagementStatus.AccessDenied)
+        {
+            return new StorageHealthSnapshot(StorageHealthProviderState.Failed, [], "Storage health provider denied access.");
         }
         catch (ManagementException ex)
         {
-            return UnknownHealth(disks, $"Storage health provider unavailable: {ex.ErrorCode}.");
+            return new StorageHealthSnapshot(StorageHealthProviderState.Failed, [], $"Storage health provider unavailable: {ex.ErrorCode}.");
         }
         catch (UnauthorizedAccessException)
         {
-            return UnknownHealth(disks, "Storage health provider denied access.");
+            return new StorageHealthSnapshot(StorageHealthProviderState.Failed, [], "Storage health provider denied access.");
+        }
+    }
+
+    // Reliability counters are supplemental: a failure here must never disturb the base health evidence.
+    private static (ReliabilityState State, ReliabilityRow? Row) ReadReliability(ManagementObject physicalDisk)
+    {
+        try
+        {
+            var query = new RelatedObjectQuery(
+                physicalDisk.Path.RelativePath, ReliabilityClass, ReliabilityAssociationClass, null, null, null, null, false);
+            using var searcher = new ManagementObjectSearcher(physicalDisk.Scope, query);
+            using var results = searcher.Get();
+            var related = results.Cast<ManagementObject>().ToList();
+            try
+            {
+                if (related.Count == 0) return (ReliabilityCountersDenied(physicalDisk.Scope) ? ReliabilityState.AccessDenied : ReliabilityState.Absent, null);
+                if (related.Count != 1) return (ReliabilityState.Absent, null);
+                var counter = related[0];
+                return (ReliabilityState.Available, new ReliabilityRow(
+                    Double(counter["Temperature"]), Double(counter["TemperatureMax"]), Double(counter["Wear"]),
+                    UnsignedLong(counter["ReadErrorsTotal"]), UnsignedLong(counter["WriteErrorsTotal"]), UnsignedLong(counter["PowerOnHours"])));
+            }
+            finally
+            {
+                foreach (var item in related) item.Dispose();
+            }
+        }
+        catch (ManagementException ex) when (ex.ErrorCode == ManagementStatus.AccessDenied)
+        {
+            return (ReliabilityState.AccessDenied, null);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return (ReliabilityState.AccessDenied, null);
+        }
+        catch (ManagementException)
+        {
+            return (ReliabilityState.Failed, null);
+        }
+    }
+
+    // The association query can return no rows instead of failing when the caller lacks rights, so ask the
+    // class directly: only an explicit access-denied answer is reported as an elevation requirement.
+    private static bool ReliabilityCountersDenied(ManagementScope scope)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(scope, new ObjectQuery($"SELECT DeviceId FROM {ReliabilityClass}"));
+            using var results = searcher.Get();
+            foreach (var item in results.Cast<ManagementObject>())
+            {
+                item.Dispose();
+                break;
+            }
+
+            return false;
+        }
+        catch (ManagementException ex) when (ex.ErrorCode == ManagementStatus.AccessDenied)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+        catch (ManagementException)
+        {
+            return false;
         }
     }
 
@@ -136,10 +223,7 @@ internal static partial class WindowsStorageCollector
             .ToDictionary(x => Number(x["Index"])!.Value, x => Text(x["DeviceID"])!, EqualityComparer<int>.Default);
     }
 
-    private static StorageHealth[] UnknownHealth(IReadOnlyList<StorageDisk> disks, string detail) =>
-        disks.Select(disk => new StorageHealth(disk.Id, "unknown", null, null, null, null, null, null, false, "Win32_DiskDrive", detail)).ToArray();
-
-    private static string? DiskIndex(string id)
+    internal static string? DiskIndex(string id)
     {
         var match = PhysicalDriveRegex().Match(id);
         return match.Success ? match.Groups[1].Value : null;
@@ -148,7 +232,13 @@ internal static partial class WindowsStorageCollector
     private static long HundredNanosecondsToMilliseconds(object? value) => (Long(value) ?? 0) / 10_000;
     private static double? Used(long? total, long? free) => total > 0 && free is not null ? Math.Clamp((total.Value - free.Value) * 100d / total.Value, 0, 100) : null;
     private static bool IsRemovable(string? media) => media?.Contains("removable", StringComparison.OrdinalIgnoreCase) == true;
-    private static double? Celsius(object? value) => Number(value) is { } n && n > 0 ? n : null;
+    private static double? Double(object? value) => value is null ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+    private static long? UnsignedLong(object? value)
+    {
+        if (value is null) return null;
+        try { return Convert.ToInt64(value, CultureInfo.InvariantCulture); }
+        catch (OverflowException) { return null; }
+    }
     private static string? Text(object? value) => Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() is { Length: > 0 } text ? text : null;
     private static long? Long(object? value) => value is null ? null : Convert.ToInt64(value, CultureInfo.InvariantCulture);
     private static int? Integer(object? value) => value is null ? null : Convert.ToInt32(value, CultureInfo.InvariantCulture);
