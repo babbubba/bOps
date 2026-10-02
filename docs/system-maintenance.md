@@ -48,7 +48,7 @@ The same normalizer feeds `system.stability`, so the two tools cannot classify a
 
 **Time.** `timestampKind` is `occurred` for the Report.wer `EventTime` and the Application Error 1000 record time, and
 `reported` for the WER 1001 processing time and a Report.wer file time. A `BlueScreen` Report.wer `EventTime` is `reported`:
-Windows writes it after the reboot (on the operator workstation 20–50 s after the next boot's Kernel-Power 41), so it is not the
+Windows writes it after the reboot (on the operator workstation, after the next boot's Kernel-Power 41), so it is not the
 crash time, and no other time is promoted in its place; a merged crash takes its occurrence time when
 one of its sources proves it, and then carries the WER processing time in `reportedUtc`. A crash belongs to the window
 by that primary time.
