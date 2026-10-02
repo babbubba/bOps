@@ -1,298 +1,407 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics.Eventing.Reader;
-using System.Globalization;
-using System.Text;
-using System.Xml.Linq;
 using bOps.Packages.Sys.Core;
 
 namespace bOps.Packages.Sys.Windows;
 
+/// <summary>One known WER report directory and the distinct source name of its root.</summary>
+/// <param name="Source">The source name, for example <c>windows.wer.programdata.reportarchive</c>.</param>
+/// <param name="Path">The directory.</param>
+internal sealed record WerDirectory(string Source, string Path);
+
 /// <summary>
-/// Reads bounded Windows crash evidence from official WER metadata directories and the two
-/// relevant Application Event Log providers. Dump files are deliberately never opened.
+/// Reads bounded Windows crash evidence (<c>system.crashes</c>, ADR-0032 HARDEN-7 amendment §4, ADR-0041 §6–§7): Application Error
+/// 1000 and WER 1001 from the Application log, and the needed keys of Report.wer files in the known WER directories of both roots.
+/// Records are typed by the one shared WER normalizer, merged only by report GUID, and dated honestly. Every source runs within a
+/// slice of one call budget, so a slow source becomes partial evidence instead of exhausting the runner's tool timeout. Dump files
+/// are never opened; their paths are references only.
 /// </summary>
 public sealed class WindowsCrashEvidenceTool : SystemCrashesToolBase
 {
-    private const int MaximumReportsPerDirectory = 512;
-    private const int MaximumEventsPerProvider = 512;
-    private const int MaximumMetadataBytes = 32 * 1024;
-    private const int MaximumRows = 2_048;
-    private static readonly TimeSpan EventLogTimeout = TimeSpan.FromSeconds(10);
-    private static readonly string[] WerRelativeDirectories = ["Microsoft\\Windows\\WER\\ReportArchive", "Microsoft\\Windows\\WER\\ReportQueue"];
-    private readonly TimeProvider clock;
-    private readonly Func<IEnumerable<string>> knownWerDirectories;
+    internal const string ApplicationErrorSource = "windows-event-application-error";
+    internal const string WerEventSource = "windows-event-wer";
+    internal const int MaximumReportsPerDirectory = 512;
+    internal const int MaximumEventsPerProvider = 512;
+    internal const int MaximumCrashes = 2_048;
 
-    public WindowsCrashEvidenceTool() : this(TimeProvider.System, KnownWerDirectories) { }
-    internal WindowsCrashEvidenceTool(TimeProvider clock) : this(clock, KnownWerDirectories) { }
-    internal WindowsCrashEvidenceTool(TimeProvider clock, Func<IEnumerable<string>> knownWerDirectories) : base("windows")
+    /// <summary>The whole call: comfortably below the runner's 30-second tool timeout (review note R7).</summary>
+    internal static readonly TimeSpan CallBudget = TimeSpan.FromSeconds(20);
+
+    /// <summary>The ADR-0032 bound of one Event Log read, now a cap within the call budget.</summary>
+    internal static readonly TimeSpan EventLogReadCap = TimeSpan.FromSeconds(10);
+
+    private const string Channel = "Application";
+    // ReportQueue first: it holds the few kernel reports whose EventTime dates live dumps (H-7), and it finishes quickly, so the
+    // much larger ReportArchive inherits the time it does not use.
+    private static readonly string[] WerRelativeDirectories = ["ReportQueue", "ReportArchive"];
+
+    private readonly Func<IEnumerable<WerDirectory>> knownWerDirectories;
+    private readonly Func<EventLogRequest, EvidenceBudgetSlice, EventLogScan> readEvents;
+    private readonly Func<IReadOnlyList<string>, EvidenceBudgetSlice, CoverageStore> probeChannel;
+
+    public WindowsCrashEvidenceTool()
+        : this(TimeProvider.System, KnownWerDirectories, null, null)
     {
-        this.clock = clock;
-        this.knownWerDirectories = knownWerDirectories;
     }
 
-    protected override Task<MaintenanceSnapshot<CrashRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct)
+    internal WindowsCrashEvidenceTool(
+        TimeProvider clock,
+        Func<IEnumerable<WerDirectory>> knownWerDirectories,
+        Func<EventLogRequest, EvidenceBudgetSlice, EventLogScan>? readEvents = null,
+        Func<IReadOnlyList<string>, EvidenceBudgetSlice, CoverageStore>? probeChannel = null)
+        : base("windows", clock)
     {
-        ArgumentNullException.ThrowIfNull(arguments);
-        var since = clock.GetUtcNow().AddMinutes(-arguments.SinceMinutes!.Value);
-        var rows = new List<CrashRecord>();
+        this.knownWerDirectories = knownWerDirectories;
+        this.readEvents = readEvents ?? ((request, slice) => WindowsEventLogEvidence.Read(request, slice));
+        this.probeChannel = probeChannel ?? ((backed, slice) => WindowsEventLogEvidence.ProbeChannel(Channel, backed, slice));
+    }
+
+    protected override Task<CrashEvidenceSnapshot> CollectAsync(CrashesQuery query, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var budget = new EvidenceTimeBudget(CallBudget, Clock);
+        var directories = knownWerDirectories().ToArray();
+        var natives = new List<CrashNative>();
         var sources = new List<MaintenanceSource>();
+        var stores = new List<CoverageStore>();
         var warnings = new List<string>();
         var truncated = false;
+        // Time is shared among the sources that can take it: a WER directory that is not there (or cannot be listed) ends at once,
+        // so it does not take a share that a populated directory needs.
+        var steps = 3 + directories.Count(directory => Directory.Exists(directory.Path));
 
-        foreach (var directory in knownWerDirectories())
+        ct.ThrowIfCancellationRequested();
+        using (var slice = budget.Start(steps--, ct, EventLogReadCap))
+        {
+            stores.Add(probeChannel([ApplicationErrorSource, WerEventSource], slice));
+        }
+
+        foreach (var (provider, eventId, source) in new[]
+                 {
+                     ("Application Error", 1000, ApplicationErrorSource),
+                     ("Windows Error Reporting", 1001, WerEventSource),
+                 })
         {
             ct.ThrowIfCancellationRequested();
-            var result = ReadWerDirectory(directory, since, ct);
-            rows.AddRange(result.Rows);
+            using var slice = budget.Start(steps--, ct, EventLogReadCap);
+            var request = new EventLogRequest(
+                Channel,
+                WindowsEventLogEvidence.WindowXPath([WindowsEventLogEvidence.ProviderClause(provider, [eventId])], query.FromUtc, query.ToUtc),
+                query.FromUtc,
+                MaximumEventsPerProvider);
+            var scan = readEvents(request, slice);
+            ct.ThrowIfCancellationRequested();
+            sources.Add(new MaintenanceSource(source, scan.ChannelMissing ? InventorySourceStatus.Unavailable : scan.Status, scan.Detail) { ExaminedFromUtc = scan.ExaminedFromUtc });
+            if (scan.Detail is { } detail && scan.Status != InventorySourceStatus.Available)
+            {
+                warnings.Add(detail);
+            }
+
+            truncated |= scan.Truncated;
+            natives.AddRange(scan.Records.Select(record => eventId == 1000 ? FromApplicationError(record) : FromWer(record)));
+        }
+
+        long callBytes = 0;
+        foreach (var directory in directories)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var slice = budget.Start(Directory.Exists(directory.Path) ? Math.Max(1, steps--) : Math.Max(1, steps), ct);
+            var result = ReadWerDirectory(directory, query.FromUtc, slice, ref callBytes);
+            natives.AddRange(result.Records);
             sources.Add(result.Source);
             warnings.AddRange(result.Warnings);
             truncated |= result.Truncated;
+            if (result.Source.Status != InventorySourceStatus.NotApplicable)
+            {
+                stores.Add(new CoverageStore(directory.Source, CoverageBasis.Directory, result.OldestItemUtc, null, [directory.Source]));
+            }
         }
 
-        foreach (var provider in new[] { new CrashEventProvider("Application Error", 1000, "windows-event-application-error"), new CrashEventProvider("Windows Error Reporting", 1001, "windows-event-wer") })
+        var crashes = WindowsCrashCorrelator.Merge(natives)
+            .Where(crash => crash.TimestampUtc >= query.FromUtc && crash.TimestampUtc <= query.ToUtc)
+            .OrderByDescending(crash => crash.TimestampUtc)
+            .ThenBy(crash => crash.ReportId, StringComparer.Ordinal)
+            .ToList();
+        if (crashes.Count > MaximumCrashes)
         {
-            ct.ThrowIfCancellationRequested();
-            var result = ReadEvents(provider, since, ct);
-            rows.AddRange(result.Rows);
-            sources.Add(result.Source);
-            warnings.AddRange(result.Warnings);
-            truncated |= result.Truncated;
-        }
-
-        var deduplicatedWer = rows
-            .GroupBy(row => row.Source == "windows-wer-report" && !string.IsNullOrWhiteSpace(row.EventIdOrCrashId)
-                ? "wer:" + row.EventIdOrCrashId : Guid.NewGuid().ToString("N"), StringComparer.Ordinal)
-            .Select(group => group.OrderByDescending(row => row.TimestampUtc).ThenBy(row => row.Process, StringComparer.Ordinal).First())
-            .OrderByDescending(row => row.TimestampUtc).ThenBy(row => row.Process, StringComparer.OrdinalIgnoreCase).ThenBy(row => row.Process, StringComparer.Ordinal).ThenBy(row => row.Source, StringComparer.Ordinal).ToList();
-        if (deduplicatedWer.Count > MaximumRows)
-        {
-            deduplicatedWer.RemoveRange(MaximumRows, deduplicatedWer.Count - MaximumRows);
+            crashes.RemoveRange(MaximumCrashes, crashes.Count - MaximumCrashes);
             truncated = true;
             warnings.Add("The normalized crash-evidence ceiling was reached.");
         }
 
-        return Task.FromResult(new MaintenanceSnapshot<CrashRecord>(deduplicatedWer, sources, warnings, truncated));
+        return Task.FromResult(new CrashEvidenceSnapshot(crashes, sources, warnings, truncated) { Stores = stores });
     }
 
-    private static IEnumerable<string> KnownWerDirectories()
+    /// <summary>A WER 1001 record as a native crash record: its time is when WER processed the report, so it is <c>reported</c>.</summary>
+    internal static CrashNative FromWer(EventLogItem record)
     {
-        var roots = new[] { Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) };
-        return roots.Where(root => !string.IsNullOrWhiteSpace(root)).SelectMany(root => WerRelativeDirectories.Select(relative => Path.Combine(root, relative))).Distinct(StringComparer.OrdinalIgnoreCase);
+        ArgumentNullException.ThrowIfNull(record);
+        var signature = WindowsWerNormalizer.FromWer1001(record.Data, record.IsUnnamed);
+        return new CrashNative(
+            CrashEvidenceRole.Wer1001,
+            WerEventSource,
+            record.TimeCreatedUtc,
+            EvidenceTimestampKind.Reported,
+            NativeId(record),
+            signature.ReportId is { } id ? [id] : [],
+            signature.ReportId)
+        {
+            Kind = signature.Kind,
+            EventName = signature.EventName,
+            Process = signature.Application,
+            FaultModule = signature.Module,
+            BugcheckCode = signature.BugcheckCode,
+            LiveDumpCode = signature.LiveDumpCode,
+            ExceptionCode = signature.ExceptionCode,
+            Bucket = signature.Bucket,
+            DumpPath = signature.DumpPath,
+        };
     }
 
-    private static CrashSourceResult ReadWerDirectory(string directory, DateTimeOffset since, CancellationToken ct)
+    /// <summary>An Application Error 1000 record as a native crash record: its record time is the crash time, so it is <c>occurred</c>.</summary>
+    internal static CrashNative FromApplicationError(EventLogItem record)
     {
-        var sourceName = "windows.wer." + Path.GetFileName(directory).ToLowerInvariant();
-        if (!Directory.Exists(directory)) return new([], new(sourceName, InventorySourceStatus.NotApplicable, "The known WER directory is not present."), [], false);
+        ArgumentNullException.ThrowIfNull(record);
+        var fault = WindowsWerNormalizer.FromApplicationError1000(record.Data, record.IsUnnamed);
+        return new CrashNative(
+            CrashEvidenceRole.ApplicationError,
+            ApplicationErrorSource,
+            record.TimeCreatedUtc,
+            EvidenceTimestampKind.Occurred,
+            NativeId(record),
+            fault.IntegratorReportId is { } id ? [id] : [],
+            null)
+        {
+            Kind = CrashKinds.ApplicationCrash,
+            Process = fault.Application,
+            Pid = fault.ProcessId,
+            FaultModule = fault.Module,
+            ExceptionCode = fault.ExceptionCode,
+        };
+    }
+
+    /// <summary>
+    /// Report.wer keys as a native crash record. <c>EventTime</c> is an occurrence time — except for a <c>BlueScreen</c> report, whose
+    /// <c>EventTime</c> is written after the reboot and is therefore a reporting time (operator-decided, evidence-driven correction of
+    /// ADR-0041 §6, 2026-10-02: on the operator workstation it was always 20–50 s after the Kernel-Power 41 of the next boot). Without
+    /// <c>EventTime</c> the file's last-write time is a
+    /// reporting time. Its identity is <c>ReportIdentifier</c> and <c>IntegratorReportIdentifier</c>.
+    /// </summary>
+    internal static CrashNative FromReportWer(IReadOnlyDictionary<string, string> values, string source, string reportDirectory, DateTimeOffset lastWriteUtc)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var signature = WindowsWerNormalizer.FromReportWer(values);
+        var integrator = WindowsWerNormalizer.NormalizeGuid(values.GetValueOrDefault("IntegratorReportIdentifier"));
+        var eventTime = WindowsReportWerScanner.EventTime(values);
+        return new CrashNative(
+            CrashEvidenceRole.ReportWer,
+            source,
+            eventTime ?? lastWriteUtc,
+            eventTime is null || signature.Kind == CrashKinds.KernelBugcheck ? EvidenceTimestampKind.Reported : EvidenceTimestampKind.Occurred,
+            reportDirectory,
+            new[] { signature.ReportId, integrator }.OfType<string>().Distinct(StringComparer.Ordinal).ToArray(),
+            signature.ReportId)
+        {
+            Kind = signature.Kind,
+            EventName = signature.EventName,
+            Process = signature.Application,
+            FaultModule = signature.Module,
+            BugcheckCode = signature.BugcheckCode,
+            LiveDumpCode = signature.LiveDumpCode,
+            ExceptionCode = signature.ExceptionCode,
+            Bucket = signature.Bucket,
+            HasEventTime = eventTime is not null,
+        };
+    }
+
+    internal static IEnumerable<WerDirectory> KnownWerDirectories()
+    {
+        foreach (var (root, label) in new[]
+                 {
+                     (Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "programdata"),
+                     (Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "localappdata"),
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                continue;
+            }
+
+            foreach (var relative in WerRelativeDirectories)
+            {
+                yield return new WerDirectory(
+                    "windows.wer." + label + "." + (relative == "ReportArchive" ? "reportarchive" : "reportqueue"),
+                    Path.Combine(root, "Microsoft", "Windows", "WER", relative));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Scans one WER directory: at most <see cref="MaximumReportsPerDirectory"/> report directories, each Report.wer by the bounded key
+    /// scan, within the per-call byte budget and the time slice. A report that cannot be read or lacks its needed keys within its cap is
+    /// skipped and makes the source partial; it never hides the readable ones.
+    /// </summary>
+    internal static WerDirectoryResult ReadWerDirectory(WerDirectory directory, DateTimeOffset windowFromUtc, EvidenceBudgetSlice slice, ref long callBytes)
+    {
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentNullException.ThrowIfNull(slice);
+        // Enumerated without an existence test first: Directory.Exists is also false for a directory this identity may not read,
+        // which would turn a denied directory into a "not present" one. Only a directory that is really missing is notApplicable.
+        string[] reports;
         try
         {
-            var reports = Directory.EnumerateDirectories(directory).OrderBy(path => path, StringComparer.OrdinalIgnoreCase).Take(MaximumReportsPerDirectory + 1).ToArray();
-            var truncated = reports.Length > MaximumReportsPerDirectory;
-            var rows = new List<CrashRecord>();
-            var warnings = new List<string>();
-            foreach (var report in reports.Take(MaximumReportsPerDirectory))
-            {
-                ct.ThrowIfCancellationRequested();
-                var metadata = Path.Combine(report, "Report.wer");
-                if (!File.Exists(metadata)) continue;
-                try
-                {
-                    var parsed = WindowsWerReport.Parse(ReadBoundedText(metadata));
-                    var row = parsed.ToCrashRecord(File.GetLastWriteTimeUtc(metadata));
-                    if (row.TimestampUtc >= since) rows.Add(row);
-                }
-                catch (InvalidDataException exception)
-                {
-                    warnings.Add("WER report metadata was skipped: " + Bounded(exception.Message));
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    return new(rows, new(sourceName, InventorySourceStatus.Unavailable, "The current identity cannot read a WER report."), warnings, truncated);
-                }
-                catch (IOException)
-                {
-                    return new(rows, new(sourceName, InventorySourceStatus.Unavailable, "A WER report could not be read."), warnings, truncated);
-                }
-            }
-            if (truncated) warnings.Add("The WER report-directory ceiling was reached.");
-            var status = warnings.Count > 0 || truncated ? InventorySourceStatus.Partial : InventorySourceStatus.Available;
-            return new(rows, new(sourceName, status, status == InventorySourceStatus.Partial ? "One or more WER reports were unavailable, malformed, or beyond bounds." : null), warnings, truncated);
+            reports = Directory.EnumerateDirectories(directory.Path).Order(StringComparer.OrdinalIgnoreCase).Take(MaximumReportsPerDirectory + 1).ToArray();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new([], new(directory.Source, InventorySourceStatus.NotApplicable, "The known WER directory is not present."), [], false, null);
         }
         catch (UnauthorizedAccessException)
         {
-            return new([], new(sourceName, InventorySourceStatus.Unavailable, "The current identity cannot read this known WER directory."), [], false);
+            return new([], new(directory.Source, InventorySourceStatus.Unavailable, "The current identity cannot read this known WER directory."), [], false, null);
         }
         catch (IOException)
         {
-            return new([], new(sourceName, InventorySourceStatus.Unavailable, "This known WER directory could not be read."), [], false);
+            return new([], new(directory.Source, InventorySourceStatus.Unavailable, "This known WER directory could not be read."), [], false, null);
         }
-    }
 
-    private static CrashSourceResult ReadEvents(CrashEventProvider provider, DateTimeOffset since, CancellationToken ct)
-    {
-        var sourceName = provider.Source;
-        var rows = new List<CrashRecord>();
-        try
+        var ceiling = reports.Length > MaximumReportsPerDirectory;
+        var records = new List<CrashNative>();
+        var warnings = new List<string>();
+        int denied = 0, unreadable = 0, missingKeys = 0, reparse = 0;
+        var stopped = false;
+        var timedOut = false;
+        DateTimeOffset? oldest = null;
+        foreach (var report in reports.Take(MaximumReportsPerDirectory))
         {
-            var start = since.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
-            var xpath = "*[System[TimeCreated[@SystemTime>='" + start + "'] and Provider[@Name='" + provider.Name + "'] and EventID=" + provider.EventId.ToString(CultureInfo.InvariantCulture) + "]]";
-            using var timeout = new CancellationTokenSource(EventLogTimeout);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
-            using var reader = new EventLogReader(new EventLogQuery("Application", PathType.LogName, xpath) { ReverseDirection = true, TolerateQueryErrors = false });
-            using var registration = linked.Token.Register(reader.CancelReading);
-            var count = 0;
-            while (true)
+            if (slice.Token.IsCancellationRequested)
             {
-                EventRecord? record;
-                try { record = reader.ReadEvent(); }
-                catch (OperationCanceledException) when (timeout.IsCancellationRequested && !ct.IsCancellationRequested)
+                if (!slice.TimedOut)
                 {
-                    return new(rows, new(sourceName, InventorySourceStatus.Partial, "The Event Log read did not finish in time."), ["The Event Log read did not finish in time."], true);
+                    slice.Token.ThrowIfCancellationRequested();
                 }
-                if (record is null) break;
-                using (record)
-                {
-                    linked.Token.ThrowIfCancellationRequested();
-                    if (++count > MaximumEventsPerProvider) return new(rows, new(sourceName, InventorySourceStatus.Partial, "The Event Log record ceiling was reached."), ["The Event Log record ceiling was reached."], true);
-                    if (TryReadEventEvidence(record, out var evidence) && WindowsCrashEventNormalizer.TryNormalize(evidence!, out var row)) rows.Add(row!);
-                }
+
+                timedOut = true;
+                break;
             }
-            return new(rows, new(sourceName, InventorySourceStatus.Available), [], false);
+
+            var allowance = (int)Math.Min(WindowsReportWerScanner.PerFileBytes, WindowsReportWerScanner.PerCallBytes - callBytes);
+            if (allowance <= 0)
+            {
+                stopped = true;
+                warnings.Add("The per-call Report.wer byte budget was reached.");
+                break;
+            }
+
+            var metadata = Path.Combine(report, "Report.wer");
+            try
+            {
+                // Existence is not tested first: without read access File.Exists and FileInfo.Exists say "absent", which would turn a
+                // report this identity may not read into a silent gap. Opening it tells a missing report from a denied one.
+                if (new DirectoryInfo(report).Attributes.HasFlag(FileAttributes.ReparsePoint)
+                    || new FileInfo(metadata) is { Exists: true } info && info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    reparse++;
+                    continue;
+                }
+
+                var scan = ScanFile(metadata, allowance);
+
+                callBytes += scan.BytesRead;
+                if (!scan.HasNeededKeys)
+                {
+                    if (scan.ReachedCap && allowance < WindowsReportWerScanner.PerFileBytes)
+                    {
+                        stopped = true;
+                        warnings.Add("The per-call Report.wer byte budget was reached.");
+                        break;
+                    }
+
+                    missingKeys++;
+                    continue;
+                }
+
+                var lastWrite = new DateTimeOffset(File.GetLastWriteTimeUtc(metadata), TimeSpan.Zero);
+                var native = FromReportWer(scan.Values, directory.Source, report, lastWrite);
+                records.Add(native);
+                oldest = oldest is { } known && known <= native.TimeUtc ? known : native.TimeUtc;
+            }
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // A report directory without Report.wer (being written, or holding only attachments) is not a report.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                denied++;
+            }
+            catch (IOException)
+            {
+                unreadable++;
+            }
         }
-        catch (UnauthorizedAccessException)
+
+        var reasons = new List<string>();
+        if (denied > 0)
         {
-            return new(rows, new(sourceName, InventorySourceStatus.Unavailable, "The current identity cannot read the Application Event Log."), [], false);
+            reasons.Add($"{denied} report(s) are not readable by this identity");
         }
-        catch (PlatformNotSupportedException)
+
+        if (unreadable > 0)
         {
-            return new(rows, new(sourceName, InventorySourceStatus.NotApplicable, "Windows Event Log is unavailable on this runtime."), [], false);
+            reasons.Add($"{unreadable} report(s) could not be read");
         }
-        catch (EventLogException exception)
+
+        if (reparse > 0)
         {
-            return new(rows, new(sourceName, InventorySourceStatus.Unavailable, Bounded(exception.Message)), [], false);
+            reasons.Add($"{reparse} report(s) are reparse points and were not followed");
         }
-    }
 
-    private static bool TryReadEventEvidence(EventRecord record, out WindowsCrashEventEvidence? evidence)
-    {
-        evidence = null;
-        try
+        if (missingKeys > 0)
         {
-            if (record.TimeCreated is not { } timestamp || string.IsNullOrWhiteSpace(record.ProviderName)) return false;
-            var data = XElement.Parse(record.ToXml()).Descendants().Where(x => x.Name.LocalName == "Data")
-                .Select((x, index) => new KeyValuePair<string, string>(x.Attribute("Name")?.Value ?? index.ToString(CultureInfo.InvariantCulture), x.Value))
-                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            evidence = new(record.ProviderName, record.Id, new DateTimeOffset(timestamp.ToUniversalTime(), TimeSpan.Zero), record.RecordId?.ToString(CultureInfo.InvariantCulture), data);
-            return true;
+            reasons.Add($"{missingKeys} report(s) had no EventType within the {WindowsReportWerScanner.PerFileBytes / 1024} KiB scan cap");
         }
-        catch (Exception exception) when (exception is EventLogException or System.Xml.XmlException)
+
+        if (ceiling)
         {
-            return false;
+            reasons.Add($"the {MaximumReportsPerDirectory}-report directory ceiling was reached");
         }
-    }
 
-    private static string ReadBoundedText(string path)
-    {
-        var info = new FileInfo(path);
-        if (info.Length > MaximumMetadataBytes) throw new InvalidDataException("The report metadata exceeds the byte limit.");
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var bytes = new byte[MaximumMetadataBytes + 1];
-        var count = 0;
-        while (count < bytes.Length)
+        if (stopped)
         {
-            var read = stream.Read(bytes, count, bytes.Length - count);
-            if (read == 0) break;
-            count += read;
+            reasons.Add("the per-call Report.wer byte budget was reached");
         }
-        if (count > MaximumMetadataBytes) throw new InvalidDataException("The report metadata exceeds the byte limit.");
-        var payload = bytes.AsSpan(0, count);
-        Encoding encoding = new UTF8Encoding(false, true);
-        if (payload.StartsWith(Encoding.Unicode.GetPreamble())) { payload = payload[2..]; encoding = new UnicodeEncoding(false, true, true); }
-        else if (payload.StartsWith(Encoding.BigEndianUnicode.GetPreamble())) { payload = payload[2..]; encoding = new UnicodeEncoding(true, true, true); }
-        else if (payload.StartsWith(Encoding.UTF8.GetPreamble())) payload = payload[3..];
-        try { return encoding.GetString(payload); }
-        catch (DecoderFallbackException) { throw new InvalidDataException("The report metadata has an invalid text encoding."); }
-    }
 
-    private static string Bounded(string? value) => string.IsNullOrWhiteSpace(value) ? "The Event Log query could not be read." : value.Length <= 200 ? value : value[..200];
-    private sealed record CrashEventProvider(string Name, int EventId, string Source);
-    private sealed record CrashSourceResult(IReadOnlyList<CrashRecord> Rows, MaintenanceSource Source, IReadOnlyList<string> Warnings, bool Truncated);
-}
-
-/// <summary>Strict, bounded parser for the key/value fields bOps consumes from an official Report.wer file.</summary>
-internal sealed record WindowsWerReport(IReadOnlyDictionary<string, string> Values)
-{
-    public static WindowsWerReport Parse(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        if (timedOut)
         {
-            var separator = line.IndexOf('=');
-            if (separator <= 0) continue;
-            var key = line[..separator].Trim();
-            if (key.Length is 0 or > 128) continue;
-            var value = line[(separator + 1)..].Trim();
-            if (value.Length > 2_048) value = value[..2_048];
-            values.TryAdd(key, value);
+            reasons.Add("the time bound stopped the scan");
         }
-        if (values.Count == 0) throw new InvalidDataException("The report has no key/value metadata.");
-        return new(values);
+
+        warnings.AddRange(reasons.Select(reason => "WER reports: " + reason + "."));
+        var status = reasons.Count > 0 ? InventorySourceStatus.Partial : InventorySourceStatus.Available;
+        var detail = reasons.Count > 0 ? string.Join("; ", reasons) + "." : null;
+        var complete = !ceiling && !stopped && !timedOut;
+        return new(
+            records,
+            new(directory.Source, status, detail) { ExaminedFromUtc = complete ? windowFromUtc : null },
+            warnings,
+            ceiling || stopped || timedOut,
+            oldest);
     }
 
-    public CrashRecord ToCrashRecord(DateTime lastWriteUtc)
+    private static ReportWerScan ScanFile(string path, int allowance)
     {
-        var timestamp = TryFileTime("EventTime") ?? new DateTimeOffset(DateTime.SpecifyKind(lastWriteUtc, DateTimeKind.Utc));
-        var process = First("AppName", "NsAppName", "ProcessName");
-        var pid = TryPid(First("AppPid", "Pid", "ProcessId"));
-        var type = First("EventType")?.ToUpperInvariant();
-        var kind = type switch { "APPCRASH" or "BEX" or "CLR20R3" => "application-crash", "APPHANG" => "application-hang", null => "wer", _ => "wer" };
-        var id = First("ReportIdentifier", "CabId", "ReportId", "Response.BucketId");
-        var dump = First("DumpPath", "DumpFile", "MinidumpPath");
-        var module = First("FaultModuleName", "FaultingModule", "Sig[3]");
-        var summary = string.Join("; ", new[] { type, module }.Where(value => !string.IsNullOrWhiteSpace(value)));
-        return new(timestamp, process, pid, kind, dump, id, string.IsNullOrWhiteSpace(summary) ? null : summary, "windows-wer-report");
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return WindowsReportWerScanner.Scan(stream, allowance);
     }
 
-    private string? First(params string[] names) => names.Select(name => Values.GetValueOrDefault(name)).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-    private DateTimeOffset? TryFileTime(string name) => long.TryParse(Values.GetValueOrDefault(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0 ? DateTimeOffset.FromFileTime(value) : null;
-    private static int? TryPid(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var style = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? NumberStyles.AllowHexSpecifier : NumberStyles.Integer;
-        var text = style == NumberStyles.AllowHexSpecifier ? value[2..] : value;
-        return int.TryParse(text, style, CultureInfo.InvariantCulture, out var pid) && pid > 0 ? pid : null;
-    }
-}
+    private static string? NativeId(EventLogItem record) =>
+        record.RecordId is { } id ? record.Channel + "/" + id.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
 
-internal sealed record WindowsCrashEventEvidence(string Provider, int EventId, DateTimeOffset TimestampUtc, string? RecordId, IReadOnlyDictionary<string, string> Data);
-
-internal static class WindowsCrashEventNormalizer
-{
-    public static bool TryNormalize(WindowsCrashEventEvidence evidence, out CrashRecord? row)
-    {
-        ArgumentNullException.ThrowIfNull(evidence);
-        row = null;
-        var isApplicationError = evidence.Provider.Equals("Application Error", StringComparison.OrdinalIgnoreCase) && evidence.EventId == 1000;
-        var isWer = evidence.Provider.Equals("Windows Error Reporting", StringComparison.OrdinalIgnoreCase) && evidence.EventId == 1001;
-        if (!isApplicationError && !isWer) return false;
-        var process = First(evidence.Data, "AppName", "FaultingApplicationName", "0");
-        var pid = ParsePid(First(evidence.Data, "ProcessId", "FaultingProcessId", "6"));
-        var crashId = First(evidence.Data, "ReportId", "ReportIdentifier", "CabId") ?? evidence.RecordId;
-        var eventType = First(evidence.Data, "EventType");
-        var kind = isApplicationError ? "application-crash" : eventType?.Equals("APPHANG", StringComparison.OrdinalIgnoreCase) == true ? "application-hang" : "wer";
-        var summary = First(evidence.Data, "FaultingModuleName", "FaultModuleName", "P1", "1");
-        row = new(evidence.TimestampUtc.ToUniversalTime(), process, pid, kind, First(evidence.Data, "DumpPath", "DumpFile"), crashId, summary, isApplicationError ? "windows-event-application-error" : "windows-event-wer");
-        return true;
-    }
-
-    private static string? First(IReadOnlyDictionary<string, string> values, params string[] names) => names.Select(name => values.GetValueOrDefault(name)).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-    private static int? ParsePid(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var style = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? NumberStyles.AllowHexSpecifier : NumberStyles.Integer;
-        return int.TryParse(style == NumberStyles.AllowHexSpecifier ? value[2..] : value, style, CultureInfo.InvariantCulture, out var pid) && pid > 0 ? pid : null;
-    }
+    internal sealed record WerDirectoryResult(
+        IReadOnlyList<CrashNative> Records,
+        MaintenanceSource Source,
+        IReadOnlyList<string> Warnings,
+        bool Truncated,
+        DateTimeOffset? OldestItemUtc);
 }

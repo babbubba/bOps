@@ -45,14 +45,15 @@ public sealed class EvidenceCompletenessTests
     public void FromOutput_OfNull_IsUnspecified() =>
         Assert.Equal(ToolResultCompleteness.Unspecified, EvidenceCompleteness.FromOutput(null));
 
-    // ---- system.crashes (and its maintenance siblings) ----
+    // ---- system.crashes (schema 2: complete also needs every log to reach the start of the request) ----
 
     [Fact]
     public async Task Crashes_OnePartialSource_YieldsPartial_AndTheLegacyFieldsAgree()
     {
-        var snapshot = new MaintenanceSnapshot<CrashRecord>(
+        var snapshot = new CrashEvidenceSnapshot(
             [Crash("app")],
-            [new MaintenanceSource("wer", InventorySourceStatus.Available), new MaintenanceSource("minidumps", InventorySourceStatus.Partial, "directory not readable")]);
+            [new MaintenanceSource("wer", InventorySourceStatus.Available), new MaintenanceSource("minidumps", InventorySourceStatus.Partial, "directory not readable")])
+        { Stores = [Reaching("wer")] };
 
         var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.Empty);
 
@@ -62,9 +63,9 @@ public sealed class EvidenceCompletenessTests
     }
 
     [Fact]
-    public async Task Crashes_EveryApplicableSourceAvailable_YieldsComplete()
+    public async Task Crashes_EverySourceAvailable_AndTheLogReachesTheRequest_YieldsComplete()
     {
-        var snapshot = new MaintenanceSnapshot<CrashRecord>([Crash("app")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]);
+        var snapshot = new CrashEvidenceSnapshot([Crash("app")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]) { Stores = [Reaching("wer")] };
 
         var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.Empty);
 
@@ -73,9 +74,39 @@ public sealed class EvidenceCompletenessTests
     }
 
     [Fact]
+    public async Task Crashes_EverySourceAvailable_ButTheLogStartsAfterTheRequest_YieldsPartial_WithStatusComplete()
+    {
+        var shortLog = new CoverageStore("windows.channel.Application", CoverageBasis.EventLog, Now.AddDays(-60), 20_971_520, ["wer"]);
+        var snapshot = new CrashEvidenceSnapshot([Crash("app")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]) { Stores = [shortLog] };
+
+        var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["sinceDays"] = 180 }));
+
+        var json = JsonNode.Parse(result.Output!)!.AsObject();
+        Assert.Equal("complete", json["status"]!.GetValue<string>());
+        Assert.False(json["truncated"]!.GetValue<bool>());
+        Assert.Equal("partial", json["coverage"]!["state"]!.GetValue<string>());
+        Assert.False(json["complete"]!.GetValue<bool>());
+        Assert.Equal(ToolResultCompleteness.Partial, result.Completeness);
+        AssertLegacyFieldsAgree(result);
+    }
+
+    [Fact]
+    public async Task Crashes_EverySourceAvailable_ButTheLogReachIsUnknown_YieldsPartial()
+    {
+        var unknown = new CoverageStore("windows.channel.Application", CoverageBasis.EventLog, null, null, ["wer"]);
+        var snapshot = new CrashEvidenceSnapshot([Crash("app")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]) { Stores = [unknown] };
+
+        var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.Empty);
+
+        Assert.Equal("unknown", JsonNode.Parse(result.Output!)!["coverage"]!["state"]!.GetValue<string>());
+        Assert.Equal(ToolResultCompleteness.Partial, result.Completeness);
+        AssertLegacyFieldsAgree(result);
+    }
+
+    [Fact]
     public async Task Crashes_NoSourceCouldBeRead_YieldsUnavailable_NotAnEmptyLookingSuccess()
     {
-        var snapshot = new MaintenanceSnapshot<CrashRecord>([], [new MaintenanceSource("wer", InventorySourceStatus.Unavailable, "access denied")]);
+        var snapshot = new CrashEvidenceSnapshot([], [new MaintenanceSource("wer", InventorySourceStatus.Unavailable, "access denied")]) { Stores = [Reaching("wer")] };
 
         var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.Empty);
 
@@ -84,22 +115,24 @@ public sealed class EvidenceCompletenessTests
         AssertLegacyFieldsAgree(result);
     }
 
-    [Fact]
-    public async Task Crashes_CutByTheLimit_YieldsPartialEvenThoughEverySourceWasAvailable()
+    [Theory]
+    [InlineData("raw")]
+    [InlineData("aggregate")]
+    public async Task Crashes_CutByTheLimit_YieldsPartialEvenThoughEverySourceWasAvailable(string mode)
     {
-        var snapshot = new MaintenanceSnapshot<CrashRecord>(
-            [Crash("a"), Crash("b")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]);
+        var snapshot = new CrashEvidenceSnapshot([Crash("a"), Crash("b")], [new MaintenanceSource("wer", InventorySourceStatus.Available)]) { Stores = [Reaching("wer")] };
 
-        var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["limit"] = 1 }));
+        var result = await new CrashesTool(snapshot).ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["limit"] = 1, ["mode"] = mode }));
 
         Assert.Equal(ToolResultCompleteness.Partial, result.Completeness);
+        Assert.True(JsonNode.Parse(result.Output!)!["truncated"]!.GetValue<bool>());
         AssertLegacyFieldsAgree(result);
     }
 
     [Fact]
     public async Task Crashes_ArgumentRejectedByThePackage_IsAValidationFailureWithNoCompleteness()
     {
-        var result = await new CrashesTool(new MaintenanceSnapshot<CrashRecord>([], [])).ExecuteAsync(
+        var result = await new CrashesTool(new CrashEvidenceSnapshot([], [])).ExecuteAsync(
             ToolArguments.FromJson(new JsonObject { ["sinceMinutes"] = 0 }));
 
         Assert.False(result.Succeeded);
@@ -117,7 +150,7 @@ public sealed class EvidenceCompletenessTests
     [InlineData(InventorySourceStatus.Unsupported, ToolResultCompleteness.Unavailable)]
     public async Task Events_SourceStatusDrivesCompleteness_AndTheLegacyFieldsAgree(InventorySourceStatus source, ToolResultCompleteness expected)
     {
-        var snapshot = new SystemEventSnapshot([Event("first")], [new InventorySourceResult("System", source, null)]);
+        var snapshot = new SystemEventSnapshot([Event("first")], [new InventorySourceResult("System", source, null)]) { Stores = [Reaching("System")] };
 
         var result = await new EventsTool(snapshot).ExecuteAsync(ToolArguments.Empty);
 
@@ -126,11 +159,28 @@ public sealed class EvidenceCompletenessTests
         AssertLegacyFieldsAgree(result);
     }
 
+    [Theory]
+    [InlineData(-30, "partial")]
+    [InlineData(null, "unknown")]
+    public async Task Events_EverySourceAvailable_ButCoverageIsNotComplete_YieldsPartial(int? oldestDaysAgo, string coverage)
+    {
+        var store = new CoverageStore("windows.channel.System", CoverageBasis.EventLog, oldestDaysAgo is { } days ? Now.AddDays(days) : null, null, ["System"]);
+        var snapshot = new SystemEventSnapshot([Event("first")], [new InventorySourceResult("System", InventorySourceStatus.Available, null)]) { Stores = [store] };
+
+        var result = await new EventsTool(snapshot).ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["mode"] = "aggregate", ["windowDays"] = 180 }));
+
+        var json = JsonNode.Parse(result.Output!)!.AsObject();
+        Assert.Equal("complete", json["status"]!.GetValue<string>());
+        Assert.Equal(coverage, json["coverage"]!["state"]!.GetValue<string>());
+        Assert.False(json["complete"]!.GetValue<bool>());
+        Assert.Equal(ToolResultCompleteness.Partial, result.Completeness);
+    }
+
     [Fact]
     public async Task Events_TrimmedByTheByteBound_BecomesPartial_EvenWhenEverySourceWasAvailable()
     {
         var events = Enumerable.Range(0, 60).Select(index => Event($"message {index} {new string('x', 400)}", index)).ToArray();
-        var snapshot = new SystemEventSnapshot(events, [new InventorySourceResult("System", InventorySourceStatus.Available, null)]);
+        var snapshot = new SystemEventSnapshot(events, [new InventorySourceResult("System", InventorySourceStatus.Available, null)]) { Stores = [Reaching("System")] };
 
         var result = await new EventsTool(snapshot).ExecuteAsync(
             ToolArguments.FromJson(new JsonObject { ["limit"] = 60, ["maxOutputBytes"] = 4096 }));
@@ -194,14 +244,18 @@ public sealed class EvidenceCompletenessTests
         Assert.Equal(expected, result.Completeness);
     }
 
-    private static CrashRecord Crash(string process) => new(Now, process, 5, "segfault", null, "e1", "crashed", "wer");
+    private static CrashEvidence Crash(string process) =>
+        new(Now.AddMinutes(-5), EvidenceTimestampKind.Occurred, "wer", CrashKinds.ApplicationCrash) { Process = process, EvidenceSources = ["wer"] };
+
+    /// <summary>A store whose history reaches far before any window these tests ask for.</summary>
+    private static CoverageStore Reaching(string source) => new("store." + source, CoverageBasis.EventLog, Now.AddDays(-400), 20_971_520, [source]);
 
     private static SystemEventRecord Event(string message, int minute = 0) =>
         new(Now.AddMinutes(-minute), SystemEventSeverity.Error, "Service Control Manager", "7034", "System", message, 4, "services");
 
-    private sealed class CrashesTool(MaintenanceSnapshot<CrashRecord> snapshot) : SystemCrashesToolBase("test")
+    private sealed class CrashesTool(CrashEvidenceSnapshot snapshot) : SystemCrashesToolBase("test", new FixedClock(Now))
     {
-        protected override Task<MaintenanceSnapshot<CrashRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct) =>
+        protected override Task<CrashEvidenceSnapshot> CollectAsync(CrashesQuery query, CancellationToken ct) =>
             Task.FromResult(snapshot);
     }
 

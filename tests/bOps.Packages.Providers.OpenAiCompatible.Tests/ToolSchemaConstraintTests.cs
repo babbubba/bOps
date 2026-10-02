@@ -107,6 +107,47 @@ public sealed class ToolSchemaConstraintTests
         Assert.Equal(10080, sinceMinutes.GetProperty("maximum").GetInt32());
     }
 
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public async Task ProductionHarden7Manifests_ProjectEveryBoundAndMode_WithoutAnyConditionalSchema(string platform)
+    {
+        // HARDEN-7: the new day horizons, modes and stability bounds reach the provider schema from the manifests alone; the two
+        // cross-field rules stay in the package reader and in the descriptions, never as conditional JSON Schema (ADR-0032 amendment §2).
+        var events = await SchemaOfAsync(SystemToolManifests.Events(platform));
+        var crashes = await SchemaOfAsync(SystemToolManifests.Crashes(platform));
+        var stability = await SchemaOfAsync(SystemToolManifests.Stability(platform));
+
+        AssertBounds(events, "windowDays", 1, 180);
+        AssertBounds(events, "windowMinutes", 1, 10080);
+        Assert.Equal(["raw", "aggregate"], Enumerated(events, "mode"));
+        AssertBounds(crashes, "sinceDays", 1, 180);
+        AssertBounds(crashes, "sinceMinutes", 1, 10080);
+        AssertBounds(crashes, "limit", 1, 1000);
+        Assert.Equal(["aggregate", "raw"], Enumerated(crashes, "mode"));
+        AssertBounds(stability, "windowDays", 1, 180);
+        AssertBounds(stability, "limit", 1, 200);
+        Assert.Equal(["windowDays", "limit"], stability.GetProperty("properties").EnumerateObject().Select(property => property.Name).ToArray());
+        foreach (var schema in new[] { events, crashes, stability })
+        {
+            Assert.Equal(JsonValueKind.False, schema.GetProperty("additionalProperties").ValueKind);
+            foreach (var keyword in new[] { "if", "then", "else", "allOf", "anyOf", "oneOf", "not", "dependentRequired", "dependentSchemas" })
+            {
+                Assert.False(schema.TryGetProperty(keyword, out _), keyword);
+            }
+        }
+    }
+
+    private static void AssertBounds(JsonElement schema, string name, int minimum, int maximum)
+    {
+        var property = schema.GetProperty("properties").GetProperty(name);
+        Assert.Equal("integer", property.GetProperty("type").GetString());
+        Assert.Equal((minimum, maximum), (property.GetProperty("minimum").GetInt32(), property.GetProperty("maximum").GetInt32()));
+    }
+
+    private static string[] Enumerated(JsonElement schema, string name) =>
+        schema.GetProperty("properties").GetProperty(name).GetProperty("enum").EnumerateArray().Select(value => value.GetString()!).ToArray();
+
     [Fact]
     public async Task SystemCrashes_ParameterWithoutConstraints_EmitsNoBounds()
     {

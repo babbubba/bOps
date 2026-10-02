@@ -85,7 +85,7 @@ public sealed class LinuxSystemEventsTests
     }
 
     private static LinuxSystemEventsTool ToolFor(FakeJournalctl fake, TimeSpan? timeout = null) =>
-        new(fake.ScriptPath, new FixedClock(Now), timeout ?? TimeSpan.FromSeconds(20));
+        new(fake.ScriptPath, new FixedClock(Now), timeout ?? TimeSpan.FromSeconds(20), new FakeJournal(Now.AddDays(-400)).Run);
 
     private static async Task<JsonObject> RunAsync(LinuxSystemEventsTool tool, Action<JsonObject>? configure = null)
     {
@@ -409,6 +409,30 @@ public sealed class LinuxSystemEventsTests
     [LinuxOnlyFact]
     public Task SystemEvents_RejectBadArguments() =>
         SystemToolConformance.AssertSystemEventsRejectBadArgumentsAsync(new LinuxSystemEventsTool());
+
+    [LinuxOnlyFact]
+    public Task SystemEvents_AggregateConforms() =>
+        SystemToolConformance.AssertSystemEventsAggregateConformsAsync(new LinuxSystemEventsTool());
+
+    [LinuxOnlyFact]
+    public async Task SystemCrashes_ConformsInBothModes()
+    {
+        var tool = new LinuxCrashEvidenceTool();
+        SystemToolConformance.AssertCrashesManifest(tool.Manifest, "linux");
+        var aggregate = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["sinceDays"] = 30 }));
+        var raw = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["mode"] = "raw", ["sinceMinutes"] = 10_080, ["limit"] = 50 }));
+        Assert.True(aggregate.Succeeded && raw.Succeeded);
+        SystemToolConformance.AssertCrashesEnvelope(aggregate.Output!, 100);
+        SystemToolConformance.AssertCrashesEnvelope(raw.Output!, 50);
+    }
+
+    [LinuxOnlyFact]
+    public Task SystemStability_Conforms() =>
+        SystemToolConformance.AssertStabilityConformsAsync(new LinuxStabilityTool(), "linux", windowDays: 180);
+
+    [LinuxOnlyFact]
+    public Task SystemStability_RejectsBadArguments() =>
+        SystemToolConformance.AssertStabilityRejectsBadArgumentsAsync(new LinuxStabilityTool());
 
     [LinuxOnlyFact]
     public async Task ARealMessageWrittenToJournald_IsReadBack_WithItsSourceSeverityAndProcess()

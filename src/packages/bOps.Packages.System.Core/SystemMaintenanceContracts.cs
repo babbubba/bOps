@@ -14,16 +14,21 @@ public static class SystemMaintenanceLimits
     public const int DefaultHistory = 200, MaximumHistory = 2000;
     public const int DefaultSinceMinutes = 1440, MaximumSinceMinutes = 10080;
     public const int DefaultCrashes = 100, MaximumCrashes = 1000;
+    public const int MaximumCrashSinceDays = 180, CrashOutputBytes = 65_536;
     public const int DefaultDrivers = 300, MaximumDrivers = 3000;
     public const int SourceCharacters = 128, WarningCharacters = 256, MaximumWarnings = 32;
     public const int NameCharacters = 512, TextCharacters = 1024, PathCharacters = 2048;
 }
 
 public sealed record MaintenanceArguments(string? Kind, int? SinceDays, int? SinceMinutes, int Limit);
-public sealed record MaintenanceSource(string Name, InventorySourceStatus Status, string? Detail = null);
+/// <summary>The outcome of reading one maintenance or crash-evidence source.</summary>
+public sealed record MaintenanceSource(string Name, InventorySourceStatus Status, string? Detail = null)
+{
+    /// <summary>For a time-windowed crash source: the oldest instant the scan reached (ADR-0032 HARDEN-7 amendment §5).</summary>
+    public DateTimeOffset? ExaminedFromUtc { get; init; }
+}
 public sealed record UpdateRecord(string Id, string Name, string? CurrentVersion, string? AvailableVersion, string? Kind, bool? RebootMayBeRequired, string Source, DateTimeOffset? PublishedUtc);
 public sealed record UpdateHistoryRecord(DateTimeOffset TimestampUtc, string Id, string Name, string? Version, string Result, string Source);
-public sealed record CrashRecord(DateTimeOffset TimestampUtc, string? Process, int? Pid, string? Kind, string? DumpPath, string? EventIdOrCrashId, string? Summary, string Source);
 public sealed record DriverRecord(string Name, string? PathOrModule, string? Version, string? Vendor, string? State, bool? Loaded, string? AddressOrSize, string Source);
 public sealed record MaintenanceSnapshot<T>(IReadOnlyList<T> Items, IReadOnlyList<MaintenanceSource> Sources, IReadOnlyList<string>? Warnings = null, bool CollectionTruncated = false, TimeSpan? CatalogAge = null);
 
@@ -55,15 +60,6 @@ public static class SystemMaintenanceArguments
         value = new(null, days, null, limit); error = null; return true;
     }
 
-    public static bool TryReadCrashes(ToolArguments args, out MaintenanceArguments value, out string? error)
-    {
-        ArgumentNullException.ThrowIfNull(args);
-        value = new(null, null, SystemMaintenanceLimits.DefaultSinceMinutes, SystemMaintenanceLimits.DefaultCrashes);
-        if (!TryLimit(args, "limit", SystemMaintenanceLimits.DefaultCrashes, SystemMaintenanceLimits.MaximumCrashes, out var limit, out error)
-            || !TryInteger(args, "sinceMinutes", SystemMaintenanceLimits.DefaultSinceMinutes, SystemMaintenanceLimits.MaximumSinceMinutes, out var minutes, out error)) return false;
-        value = new(null, null, minutes, limit); error = null; return true;
-    }
-
     public static bool TryReadDrivers(ToolArguments args, out MaintenanceArguments value, out string? error)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -90,7 +86,6 @@ public static class SystemMaintenanceFormatting
     private const string Timestamp = "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
     public static string Updates(MaintenanceSnapshot<UpdateRecord> snapshot, int limit) { ArgumentNullException.ThrowIfNull(snapshot); ValidateLimit(limit, SystemMaintenanceLimits.MaximumUpdates); return Format(snapshot, limit, x => x.Name, x => x.Source, x => x.PublishedUtc, x => new JsonObject { ["id"] = B(x.Id, 256), ["name"] = B(x.Name, SystemMaintenanceLimits.NameCharacters), ["currentVersion"] = B(x.CurrentVersion, 256), ["availableVersion"] = B(x.AvailableVersion, 256), ["kind"] = NormalizeKind(x.Kind), ["rebootMayBeRequired"] = x.RebootMayBeRequired, ["source"] = B(x.Source, SystemMaintenanceLimits.SourceCharacters), ["publishedUtc"] = Dt(x.PublishedUtc) }, snapshot.CatalogAge); }
     public static string History(MaintenanceSnapshot<UpdateHistoryRecord> snapshot, int limit) { ArgumentNullException.ThrowIfNull(snapshot); ValidateLimit(limit, SystemMaintenanceLimits.MaximumHistory); return Format(snapshot, limit, x => x.Name, x => x.Source, x => x.TimestampUtc, x => new JsonObject { ["timestampUtc"] = Dt(x.TimestampUtc), ["id"] = B(x.Id, 256), ["name"] = B(x.Name, SystemMaintenanceLimits.NameCharacters), ["version"] = B(x.Version, 256), ["result"] = NormalizeResult(x.Result), ["source"] = B(x.Source, SystemMaintenanceLimits.SourceCharacters) }); }
-    public static string Crashes(MaintenanceSnapshot<CrashRecord> snapshot, int limit) { ArgumentNullException.ThrowIfNull(snapshot); ValidateLimit(limit, SystemMaintenanceLimits.MaximumCrashes); return Format(snapshot, limit, x => x.Process ?? "", x => x.Source, x => x.TimestampUtc, x => new JsonObject { ["timestampUtc"] = Dt(x.TimestampUtc), ["process"] = B(x.Process, 512), ["pid"] = x.Pid, ["kind"] = B(x.Kind, 128), ["dumpPath"] = B(x.DumpPath, SystemMaintenanceLimits.PathCharacters), ["eventIdOrCrashId"] = B(x.EventIdOrCrashId, 256), ["summary"] = B(x.Summary, SystemMaintenanceLimits.TextCharacters), ["source"] = B(x.Source, SystemMaintenanceLimits.SourceCharacters) }); }
     public static string Drivers(MaintenanceSnapshot<DriverRecord> snapshot, int limit) { ArgumentNullException.ThrowIfNull(snapshot); ValidateLimit(limit, SystemMaintenanceLimits.MaximumDrivers); return Format(snapshot, limit, x => x.Name, x => x.Source, _ => null, x => new JsonObject { ["name"] = B(x.Name, 512), ["pathOrModule"] = B(x.PathOrModule, SystemMaintenanceLimits.PathCharacters), ["version"] = B(x.Version, 256), ["vendor"] = B(x.Vendor, 256), ["state"] = B(x.State, 128), ["loaded"] = x.Loaded, ["addressOrSize"] = B(x.AddressOrSize, 256), ["source"] = B(x.Source, SystemMaintenanceLimits.SourceCharacters) }); }
 
     private static string Format<T>(MaintenanceSnapshot<T> snapshot, int limit, Func<T, string> name, Func<T, string> source, Func<T, DateTimeOffset?> timestamp, Func<T, JsonObject> create, TimeSpan? catalogAge = null)

@@ -7,9 +7,9 @@ using bOps.Abstractions;
 namespace bOps.Packages.Sys.Core;
 
 /// <summary>
-/// The shared tool shell for <c>system.events</c> (ADR-0032): manifest, argument validation, ordering, bounds and output are
-/// written once here, and each OS package implements only collection. The tool also contributes an aggregate audit summary that
-/// never carries an event message.
+/// The shared tool shell for <c>system.events</c> (ADR-0032): manifest, argument validation, ordering, aggregation, coverage, bounds
+/// and output are written once here, and each OS package implements only collection. The tool also contributes an aggregate audit
+/// summary that never carries an event message.
 /// </summary>
 public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
 {
@@ -25,6 +25,9 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
     /// <inheritdoc />
     public ToolManifest Manifest { get; }
 
+    /// <summary>The clock the window and the call's time budget are measured on.</summary>
+    protected TimeProvider Clock => clock;
+
     /// <summary>
     /// Checks an <c>eventId</c> against this platform's shape (a number on Windows, a 32-digit hexadecimal id on Linux).
     /// Returns an explanation, or <c>null</c> when the value is acceptable.
@@ -37,8 +40,8 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
     protected abstract string? ValidateChannel(string channel);
 
     /// <summary>
-    /// Reads the events <paramref name="query"/> asks for. A source that cannot be read is reported in the snapshot, never left out,
-    /// and cancellation must stop the native enumeration promptly.
+    /// Reads the events <paramref name="query"/> asks for, and the coverage of the stores behind them. A source that cannot be read is
+    /// reported in the snapshot, never left out, and cancellation must stop the native enumeration promptly.
     /// </summary>
     protected abstract Task<SystemEventSnapshot> CollectAsync(SystemEventQuery query, CancellationToken ct);
 
@@ -46,7 +49,7 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemEventsArguments.TryRead(arguments, clock.GetUtcNow(), out var query, out var limit, out var maxOutputBytes, out var error))
+        if (!SystemEventsArguments.TryRead(arguments, clock.GetUtcNow(), out var query, out var mode, out var limit, out var maxOutputBytes, out var error))
         {
             return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
         }
@@ -60,7 +63,7 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(query, ct);
-        return EvidenceCompleteness.Success(SystemEventFormatting.Format(snapshot, query, limit, maxOutputBytes));
+        return EvidenceCompleteness.Success(SystemEventFormatting.Format(snapshot, query, mode, limit, maxOutputBytes));
     }
 
     /// <inheritdoc />
@@ -82,25 +85,64 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
             return null;
         }
 
+        var aggregate = root["groups"] is JsonArray;
+        var entries = (aggregate ? root["groups"] : root["events"])!.AsArray();
         var bySeverity = new JsonObject();
-        foreach (var group in root["events"]!.AsArray().GroupBy(item => item!["severity"]!.GetValue<string>()).OrderBy(group => group.Key, StringComparer.Ordinal))
+        foreach (var group in entries
+                     .GroupBy(item => item!["severity"]!.GetValue<string>())
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
-            bySeverity[group.Key] = group.Count();
+            bySeverity[group.Key] = aggregate ? group.Sum(item => item!["count"]!.GetValue<int>()) : group.Count();
         }
 
-        return new JsonObject
+        var summary = new JsonObject
         {
+            ["mode"] = root["mode"]?.GetValue<string>(),
             ["status"] = root["status"]!.GetValue<string>(),
             ["complete"] = root["complete"]!.GetValue<bool>(),
             ["truncated"] = root["truncated"]!.GetValue<bool>(),
             ["observedEvents"] = root["observedEvents"]!.GetValue<int>(),
-            ["returnedEvents"] = root["returnedEvents"]!.GetValue<int>(),
-            ["bySeverity"] = bySeverity,
-            ["sources"] = new JsonArray(root["sources"]!.AsArray().Select(source => (JsonNode)new JsonObject
-            {
-                ["name"] = source!["name"]!.GetValue<string>(),
-                ["status"] = source["status"]!.GetValue<string>(),
-            }).ToArray()),
         };
+        if (aggregate)
+        {
+            summary["observedGroups"] = root["observedGroups"]!.GetValue<int>();
+            summary["returnedGroups"] = root["returnedGroups"]!.GetValue<int>();
+        }
+        else
+        {
+            summary["returnedEvents"] = root["returnedEvents"]!.GetValue<int>();
+        }
+
+        summary["bySeverity"] = bySeverity;
+        summary["sources"] = EvidenceAudit.Sources(root);
+        EvidenceAudit.AddCoverage(summary, root);
+        return summary;
+    }
+}
+
+/// <summary>The parts of an evidence-tool audit summary every evidence tool shares; never a message, name, path or identifier.</summary>
+internal static class EvidenceAudit
+{
+    internal static JsonArray Sources(JsonObject root) =>
+        new(root["sources"]!.AsArray().Select(source => (JsonNode)new JsonObject
+        {
+            ["name"] = source!["name"]!.GetValue<string>(),
+            ["status"] = source["status"]!.GetValue<string>(),
+        }).ToArray());
+
+    internal static void AddCoverage(JsonObject summary, JsonObject root)
+    {
+        if (root["coverage"] is not JsonObject coverage)
+        {
+            return;
+        }
+
+        summary["coverageState"] = coverage["state"]!.GetValue<string>();
+        summary["stores"] = new JsonArray(coverage["stores"]!.AsArray().Select(store => (JsonNode)new JsonObject
+        {
+            ["name"] = store!["name"]!.GetValue<string>(),
+            ["state"] = store["state"]!.GetValue<string>(),
+            ["oldestAvailableUtc"] = store["oldestAvailableUtc"]?.GetValue<string>(),
+        }).ToArray());
     }
 }
