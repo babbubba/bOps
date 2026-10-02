@@ -855,3 +855,50 @@ default. More results are `Partial` by design. No change to `bOps.Abstractions`,
 audit schema; all new contract types are package-local in `bOps.Packages.System.Core`. HARDEN-9 uses this `mode` and
 adds no second aggregation parameter. Both ADRs are accepted as an operator decision through the HARDEN-7 architecture
 gate; the independent review's blocking findings are resolved in their text. Implementation is HARDEN-7.
+
+### D-038 — V1.3.x HARDEN-9: evidence reasoning and limitation disclosure (ADR-0042, ADR-0032 HARDEN-9 amendment)
+
+**Status.** Proposed 2026-10-02 through the HARDEN-9 architecture gate; it becomes Accepted with ADR-0042 and the ADR-0032
+HARDEN-9 amendment after the independent architecture review and the operator's acceptance. Implementation has not
+started.
+
+**Problem.** In task 88f97dda the agent weighed a current CPU sample against months of intermittent freezes, never
+disclosed partial or truncated sources, and read `system.events` output dominated by the bOps host's own errors (H-6).
+HARDEN-7 made the evidence typed, bounded and honest about time and coverage; nothing yet tells the model how to weigh it,
+nothing tells the model which evidence it saw incompletely, and nothing makes the final answer state it.
+
+**Decision.** (1) No reasoning engine, no new tool, no relation or confidence field and no `bOps.Abstractions` change.
+Deterministic code establishes and labels evidence; the model interprets it; the runtime makes the limits visible and
+asks for their disclosure; nothing is rewritten. (2) Five evidence classes: observed (what a tool result states, including
+its deterministic aggregates and exact-identity merges), derived (what follows necessarily from observed values of
+compatible kinds), hypothesis, cause, unknown. (3) **Causality rule:** a cause is stated only when evidence itself records
+the relation; correlation, temporal order or proximity, frequency, co-occurrence, absence of other evidence and partial
+coverage never establish one. (4) **Coverage/completeness rule:** only a `Complete` result supports absence, for its
+window and filters; `Partial` gives lower bounds and a bounded period; `Unavailable`, `notCollected`, `notApplicable`,
+`null`, truncated, shortened or excluded evidence is unknown, never zero; a partial result is partial as a whole. (5)
+**Time rule:** ADR-0041 §6 unchanged; a `reported` or record time only bounds the occurrence from above; order between
+kinds is derivable only when a reported time precedes an occurrence time; no time is promoted. (6) Identity exists only
+where a tool established it (`system.crashes` report-GUID merges); cross-tool relations are temporal and stated by the
+model; overlapping counts are never added. (7) The runtime gets a fixed, neutral evidence rule (clauses E1–E8, at most
+2,000 characters) in its system prompt; a deterministic **evidence-limitations digest** in step prompts listing, from
+typed `ToolCallResult` fields and persisted step data only, steps with `Partial`/`Unavailable` completeness, non-validation
+failures, and observations the runtime shortened (at most 16 entries, 4,608 characters, delimited, markers neutralized in
+tool output); and one bounded **disclosure re-ask** (`Agent:EvidenceDisclosureRetries`, default 1) when a final answer
+given under listed limitations lacks an `Evidence limitations` section — a re-ask failure or empty reply keeps the original
+answer. (8) `system.events` gains `excludeSources` (a comma-separated `String`, at most 8 entries of 128 characters,
+1,024 in total, `source` matching, before grouping, echoed as an always-present sorted array); aggregation stays `mode`;
+`schemaVersion` stays 2.
+
+**Compatibility.** Additive: one runtime option, one `system.events` argument and output field, a longer system prompt, at
+most one extra model call per limited task. No change to `bOps.Abstractions`, `system.crashes`, `system.stability`,
+policy, persistence, provider projection or the audit schema. The loop's final-response contract changes (ADR-0042 §6).
+
+**Rejected.** A reasoning or correlation tool; relation, cause or confidence fields; a typed coverage field on
+`ToolCallResult`; parsing package JSON in the core; appending or persisting limitations outside the model's answer;
+re-asking without bound or refusing an answer; a diagnostic-goal heuristic; a manifest temporality field; a string-list
+parameter type for this one argument; wildcard exclusions; a default self-noise exclusion; a second aggregation switch.
+
+**Consequences.** HARDEN-8 inherits the interface of ADR-0042 §16 (digest from persisted steps, step-index references,
+fixed prompt cost, and the 4,000-character observation budget against 32–64 KiB typed results, which HARDEN-9 discloses
+and HARDEN-8 fixes). HARDEN-7 residuals N-1 and N-3 stay out of scope; N-2 is a one-sentence description fix that the
+operator may assign to the HARDEN-9 implementation.

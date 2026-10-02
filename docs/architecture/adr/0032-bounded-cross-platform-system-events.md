@@ -6,6 +6,9 @@ Amended by: HARDEN-7 amendment (2026-10-02, at the end of this document) — agg
 keeps raw as its default, `system.crashes` defaults to aggregate), aggregate-only long horizons, temporal coverage
 metadata, schema 2 for both tools; the new `system.stability` tool is
 [ADR-0041](0041-typed-cross-platform-stability-evidence.md).
+Proposed amendment: HARDEN-9 amendment (2026-10-02, at the end of this document, pending review) — `excludeSources` for
+`system.events`, echoed in the output; `schemaVersion` stays 2. The runtime part of HARDEN-9 is
+[ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md).
 
 ## Context
 
@@ -598,3 +601,104 @@ implementation: `system.events` keeps `raw` as its default and aggregation is an
 §9); the order of the cross-field rules is fixed (R16, §2); the acceptance is recorded as an operator decision through
 the architecture gate (R15). The remaining blocking corrections (R1–R4) are in
 [ADR-0041](0041-typed-cross-platform-stability-evidence.md#independent-review-corrections-2026-10-02).
+
+## HARDEN-9 amendment — Proposed 2026-10-02
+
+Status: Proposed (2026-10-02, HARDEN-9 architecture gate; independent architecture review and operator acceptance
+pending). Proposed together with [ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md), which governs the
+runtime part of HARDEN-9 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md), scope 4;
+hypothesis H-6). Everything in the 2026-09-21 decision and the HARDEN-7 amendment that this amendment does not name stays
+as it is; in particular `mode` remains the only aggregation switch and no `aggregate` argument is added.
+
+### Context
+
+On the operator workstation `system.events` with `mode: aggregate`, `windowDays: 180`, `minSeverity: error` returned
+1,112 records in 32 groups, among them `.NET Runtime` 1000 × 259 written by the bOps development host itself (HARDEN-7
+real-Windows evidence; H-6). The `limit` and the byte budget cut from the end of the order, so self-noise can push other
+records or groups out of the result, and the model cannot ask for "everything except these sources" without hiding that
+it did.
+
+### Decision
+
+#### 1. Argument
+
+| Name | Type | Manifest constraint | Valid in |
+|---|---|---|---|
+| `excludeSources` | String | `MinLength = 1`, `MaxLength = 1024` | both modes, every horizon |
+
+The value is a comma-separated list of source names. The shared System.Core reader splits it on `,`, trims spaces around
+each entry, and rejects as a `ToolFailureKind.Validation` failure — never clamping, dropping or correcting — an empty
+entry, more than **8** entries, an entry longer than 128 characters or outside the `source` character set (letters,
+digits, `space _ . @ : / ( ) -`, which contains no comma, so the separator is unambiguous), two entries equal under
+case-insensitive comparison, and an entry equal (case-insensitive) to `source`. These checks are part of rule 3 of the
+HARDEN-7 amendment §2; rules 1 and 2 keep their place and order.
+
+A `String` is used because `bOps.Abstractions` has no list type except `PathList`, which is subject to the path policy;
+adding a string-list type is an SDK and provider-projection change this packet does not need (ADR-0042 §14). The bounds
+are those of `source` (128 characters per entry) and a small fixed count: 8 entries cover a host's own noise sources with
+room to spare, keep the XPath and the echo small, and cap the echo at about 1.1 KB, well inside the 4,096-byte minimum of
+`maxOutputBytes`.
+
+#### 2. Matching
+
+A record is excluded when, for any entry, the `source` filter would select it: exact, case-insensitive equality with the
+Windows provider name, or with the Linux syslog identifier or the systemd unit. `SystemEventFilter` stays the one
+definition and applies the exclusion to every collector's records. A collector may also exclude natively only with the
+same meaning: Windows adds the exclusion to the XPath on the provider spelling registered on the machine, built only from
+validated values, exactly as for `source`; an entry with no registered spelling is excluded by the shared filter. Linux
+excludes after parsing, because journald matches cannot negate "identifier or unit".
+
+#### 3. Order and counting
+
+The exclusion is a filter like the others: applied before grouping, before `limit` and before the byte budget.
+`observedEvents` counts matched records after the exclusion, and no group or row contains an excluded record. The scan
+ceiling behaves as for `source`: on Linux excluded records are scanned and count towards the ceiling; on Windows natively
+excluded records are not read. No count of excluded records is reported: Windows' native exclusion cannot count them,
+and one field must not have two platform meanings.
+
+#### 4. Echo
+
+Every result carries a top-level `excludeSources` array, placed after `window`, always present: the parsed entries
+(trimmed, as given) ordered case-insensitive ordinal then ordinal, or `[]` when the argument was absent. It belongs to the
+envelope and is never removed by the byte budget. The exclusion is therefore never silent; ADR-0042 §7 forbids reading an
+excluded source as absent.
+
+#### 5. Completeness and coverage
+
+Unchanged. The exclusion narrows the question, like `source`: `complete: true` with an exclusion means complete for the
+filtered question. `coverage` and `examinedFromUtc` keep their meaning.
+
+#### 6. Schema version, manifest and audit
+
+- `schemaVersion` stays **2**. The argument is additive and optional; the echo is a new always-present field whose empty
+  value means exactly the schema-2 behaviour; no existing field changes meaning. A schema-2 reader that does not pass
+  `excludeSources` loses nothing by ignoring it. (Schema 2 has not been released in a tag; no consumer outside the System
+  packages parses the output, ADR-0032 HARDEN-7 amendment §9.)
+- The manifest gains the parameter and one description sentence: excluded sources use the matching of `source`, are
+  echoed in `excludeSources`, and are not evidence of absence. The HARDEN-6 constraint snapshot gains one constrained
+  parameter; Windows and Linux manifests stay identical apart from `Platforms`.
+- Audit: the redacted arguments already carry the value (it is not `Sensitive`); the audit summary is unchanged and never
+  carries a message.
+- `system.crashes` and `system.stability` gain nothing: their sources are fixed and typed, and self-noise is a
+  `system.events` problem.
+
+### Alternatives considered
+
+**A string-list parameter type in `bOps.Abstractions`.** Rejected for HARDEN-9: an SDK change, runtime validation and
+two provider projections for one argument; a future ADR-0022 amendment may add it, and this argument would then migrate
+with a schema bump. **A repeated single-value `excludeSource`.** Rejected: one exclusion is not enough for the measured
+noise. **Wildcards or patterns.** Rejected: a query language. **A built-in default exclusion of bOps' own sources.**
+Rejected: the package would name products and evidence would be hidden without the caller asking. **Excluding after
+`limit`.** Rejected: excluded records would still displace others. **An excluded-record count.** Rejected for the
+platform asymmetry in §3. **A second aggregation switch.** Rejected by D-037; aggregation stays `mode`.
+
+### Tests
+
+Shared reader: valid lists with and without spaces; empty entry, 9 entries, a 129-character entry, a forbidden character,
+case-insensitive duplicates and an entry equal to `source` rejected with `Validation`; HARDEN-7 rules 1 and 2 still
+reported first; the total length enforced by the runtime from the manifest. Filter: exclusion in `raw` and `aggregate`,
+case-insensitive, Linux identifier and unit, excluded records absent from rows, groups and `observedEvents`. Echo: always
+present, sorted, `[]` without the argument, kept under the byte budget, `schemaVersion` 2. Windows: native exclusion on the
+registered spelling and the shared fallback give the same records for an untruncated scan; the XPath is built only from
+validated values. Linux: real journald exclusion. Architecture: constraint snapshot and manifest parity. Platform evidence:
+one real Windows `mode: aggregate` run with `windowDays` and `excludeSources` showing the excluded noise and the echo.
