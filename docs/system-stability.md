@@ -80,8 +80,8 @@ for 32–180, one dense row per category and timestamp kind.
 
 ### Minidumps
 
-The inventory lists file names, sizes and last-write times only — files are never opened — with at most the 16 newest
-by name and the totals in `observed` and `totalBytes`. `fileNameLocalDate` is the date a `MMDDYY-n-n.dmp` name carries,
+The inventory lists file names, sizes and last-write times only — files are never opened — with at most the 16 most recent
+by last-write time and the totals in `observed` and `totalBytes`. `fileNameLocalDate` is the date a `MMDDYY-n-n.dmp` name carries,
 in the machine's local calendar: descriptive only, never used as the crash time, for the window or for buckets. The
 inventory describes the files present now and carries **no retention guarantee**: 0 files does not mean no past dumps.
 A non-elevated Windows identity normally cannot read `C:\Windows\Minidump`; the category is then `unavailable` with

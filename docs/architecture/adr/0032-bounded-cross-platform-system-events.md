@@ -397,7 +397,7 @@ of the order and sets `truncated: true`.
   `windows.wer.localappdata.reportqueue`. Event Log sources keep `windows-event-application-error` and
   `windows-event-wer`; Linux keeps `linux-coredumpctl` and `linux-core-pattern`.
 - **Bounds.** The existing ceilings stay: 512 Event Log records per provider, 512 report directories per WER directory,
-  2,048 normalized records, a 10-second bound per Event Log read. Report.wer is read by a streaming key scan of at most
+  2,048 normalized records, a shared 20-second call budget divided into bounded per-operation slices, with each Event Log read capped at 10 seconds within its slice. Report.wer is read by a streaming key scan of at most
   256 KiB per file (replacing the 32 KiB whole-file skip) and at most 32 MiB of Report.wer data per call. A file whose
   needed keys are not found within its cap is skipped and makes its source `partial`; reaching the per-call cap stops
   the scan with the source `partial` and the result truncated.
@@ -464,7 +464,7 @@ read succeeded; that is `status`, `truncated`, the per-source `status` and `Tool
   within its ceiling and `null` otherwise, because directory order is not time order. The span a source's evidence
   really covers is `[max(examinedFromUtc, oldestAvailableUtc of its store), requestedToUtc]`.
 - Time bounds of the coverage reads: in `system.events` they share the call's 20-second bound; in `system.crashes`
-  the Windows probe is one more Event Log read under its own 10-second bound and the Linux probe runs under the same
+  the Windows probe is one more Event Log read that consumes the shared 20-second call budget (a slice capped at 10 seconds, not an independent budget) and the Linux probe runs under the same
   15-second bound as the `coredumpctl` run; in `system.stability` they share the call's 20-second bound (ADR-0041 §4).
   A probe that does not finish leaves `oldestAvailableUtc: null` and `state: unknown`.
 
