@@ -527,7 +527,7 @@ validation run on the operator workstation; it narrows one row of §6 and reopen
 - **Observation.** For `BlueScreen` (`kernel-bugcheck`) reports the Report.wer `EventTime` is later than the Kernel-Power 41
   record that Windows logs at the next boot, so it cannot be the crash time: `0x50` Report.wer `EventTime` 08:45:27Z vs
   Kernel-Power 41 08:44:37Z (2026-09-04; minidump written 08:44:47Z); `0x1e` 14:26:56 vs 14:26:35 (2026-08-06); `0x3b` 20:59:23
-  vs 20:59:04 (2026-08-03); `0x7f` 06:24:50 vs 06:24:31 (2026-08-02) — always 20–50 s after the boot. For `LiveKernelEvent`
+  vs 20:59:04 (2026-08-03) — always after the boot. For `LiveKernelEvent`
   reports the `EventTime` matches the live dump (the `0x193` dump `WATCHDOG-20260730-1010.dmp` has `EventTime` 2026-07-30
   08:10Z), and for application reports it follows the Application Error 1000 record by a fraction of a second (`APPCRASH`
   0.14 s).
