@@ -1,6 +1,7 @@
 # ADR-0041 — Typed cross-platform stability evidence (`system.stability`)
 
-Status: Accepted
+Status: Accepted (2026-10-02, operator decision through the HARDEN-7 architecture gate, with the independent-review
+corrections recorded below)
 Date: 2026-10-02
 
 Governs the `system.stability` part of HARDEN-7 of the V1.3.x reliability train
@@ -18,7 +19,7 @@ On the operator workstation the evidence that answers "why has this PC been free
 System log — 16 Kernel-Power 41 unexpected shutdowns, at least 200 WHEA-Logger hardware errors, 5 bugcheck records
 since August — and no typed tool surfaced it (plan §2.4). `system.events` can find each of them only if the model
 already knows the provider name and event id, and then returns one row per record within 7 days. `system.crashes` sees
-WER reports of kernel events but not shutdowns, hardware errors, display driver resets or storage resets, which are the
+WER reports of kernel events but not shutdowns, hardware errors, display driver faults or storage resets, which are the
 signals that distinguish failing hardware, a failing driver and a failing application.
 
 The capability must stay inside the safety model: read-only, typed, bounded, no query language, no caller-chosen
@@ -54,13 +55,15 @@ query. The output budget is fixed (§5); it is not an argument. There are no cro
 
 The manifest description states: read-only machine stability evidence over up to 180 days; the eight categories;
 aggregated counts with typed `occurred`/`reported` times and a time-bucket timeline; source status and temporal
-coverage; that a category count of 0 is trustworthy only when `complete` is true; and that per-crash detail is
-`system.crashes` and raw records are `system.events`.
+coverage; that a category count is exact only when the category `status` is `available`, a lower bound when it is
+`partial` and `null` (unknown) when it is `unavailable`; that a category count of 0 is trustworthy only when `complete` is
+true; that category counts are evidence records and must not be summed into an incident count; and that per-crash detail
+is `system.crashes` and raw records are `system.events`.
 
 ### 3. Categories
 
 Eight categories, in this fixed order: `unexpectedShutdown`, `kernelCrash`, `kernelFault`, `hardwareError`,
-`displayReset`, `storageError`, `memoryExhaustion`, `minidump`. Every result lists all eight, on both platforms, each
+`displayFault`, `storageError`, `memoryExhaustion`, `minidump`. Every result lists all eight, on both platforms, each
 with an `applicability`:
 
 - `applicable` — this platform has typed evidence for the category and this tool collects it.
@@ -83,17 +86,25 @@ window. Event data is read by field name from the record's own XML inside the pa
 | `kernelCrash` | `windows.stability.kernelCrash` | System | `Microsoft-Windows-WER-SystemErrorReporting` | 1001 | leading `0x…` token of `param1`, canonical hex | `null` | `null` | `reported` |
 | `kernelFault` | — | — | — | — | — | — | — | — |
 | `hardwareError` | `windows.stability.hardwareError` | System | `Microsoft-Windows-WHEA-Logger` | all | `null` | `null` | `corrected` (level 3, warning), `uncorrected` (level 1 or 2), else `unknown` | `occurred` when `corrected`, else `reported` |
-| `displayReset` | `windows.stability.displayReset.system` | System | `Display` | 4101 | `null` | first data value when it matches `^[A-Za-z0-9_.-]{1,64}$` (the driver), else `null` | `null` | `occurred` |
-| | `windows.stability.displayReset.wer` | Application | `Windows Error Reporting` | 1001 with `EventName` = `LiveKernelEvent` and `P1` (hex) ∈ {`117`, `141`, `193`, `1a1`} | canonical hex of `P1` (`0x117`, `0x141`, `0x193`, `0x1a1`) | `null` | `null` | `reported` |
+| `displayFault` | `windows.stability.displayFault.system` | System | `Display` | 4101 | `null` | first data value when it matches `^[A-Za-z0-9_.-]{1,64}$` (the driver), else `null` | `null` | `occurred` |
+| | `windows.stability.displayFault.wer` | Application | `Windows Error Reporting` | 1001 with `EventName` = `LiveKernelEvent` and `P1` (hex) ∈ {`117`, `141`, `193`} | canonical hex of `P1` (`0x117`, `0x141`, `0x193`) | `null` | `null` | `reported` |
 | `storageError` | `windows.stability.storageError` | System | `disk` (7, 11, 51, 153); `stornvme` (129); `storahci` (129) | as listed | `null` | first data value when it matches `^[A-Za-z0-9_.\\-]{1,128}$` (the device or port), else `null` | `null` | `occurred` |
 | `memoryExhaustion` | — | — | — | — | — | — | — | — |
 | `minidump` | `windows.minidump` | — | — | — | `null` | `null` | `null` | `reported` |
 
 - The XPath of each source filters natively on channel, provider, event id and the window. For
-  `windows.stability.displayReset.wer` the `EventName` and `P1` conditions are tested after reading, so its 5,000-record
+  `windows.stability.displayFault.wer` the `EventName` and `P1` conditions are tested after reading, so its 5,000-record
   ceiling (§4) counts every WER 1001 record of the window.
-- `kernelFault` is `notCollected` on Windows: "Non-display LiveKernelEvent reports are listed by system.crashes as
-  kernel-live-dump."
+- **`displayFault` means graphics-stack fault evidence, not proof of a reset.** Display 4101 and LiveKernelEvent
+  `0x117` (VIDEO_TDR_TIMEOUT_DETECTED) and `0x141` (VIDEO_ENGINE_TIMEOUT_DETECTED) record a timeout detection and
+  recovery (TDR); LiveKernelEvent `0x193` (VIDEO_DXGKRNL_LIVEDUMP) records a live dump taken by the display kernel
+  (`dxgkrnl`), which shows a graphics-stack problem but does not by itself prove that the adapter was reset. The `code`
+  of each group keeps the distinction. LiveKernelEvent `0x1a1` (WIN32K_CALLOUT_WATCHDOG_LIVEDUMP, a win32k callout
+  watchdog — a hang signature, plan §2.3) is **not** display evidence and is not in this category; like every other
+  non-display LiveKernelEvent it is listed by `system.crashes` as `kind: kernel-live-dump`, and `system.stability` does
+  not count it (see `kernelFault` below). No separate category is introduced for it.
+- `kernelFault` is `notCollected` on Windows: "Non-display LiveKernelEvent reports (for example 0x1a1) are listed by
+  system.crashes as kernel-live-dump."
 - `memoryExhaustion` is `notCollected` on Windows: "Windows low-memory diagnostics are not collected by this version;
   use system.events."
 - **Boot context** (not a category): source `windows.stability.bootContext`, System channel, provider `EventLog`, event
@@ -103,8 +114,9 @@ window. Event data is read by field name from the record's own XML inside the pa
   argument or environment variable), top level only, entries whose name matches `^[A-Za-z0-9_.-]{1,128}$` and ends in
   `.dmp` (case-insensitive); reparse points are not followed and other entries are counted as skipped (source
   `partial`). For each file only the name, the size in bytes and the last-write time (UTC) are read; the file is never
-  opened. A file belongs to the window by its last-write time. `occurredLocalDate` is derived from a name of the form
-  `MMDDYY-<digits>-<digits>.dmp` when that is a valid date (`20YY-MM-DD`), else `null` (§6). A missing directory is
+  opened. A file belongs to the window by its last-write time. `fileNameLocalDate` is the date encoded in a name of the
+  form `MMDDYY-<digits>-<digits>.dmp`, as `20YY-MM-DD`, when that is a valid date, else `null`; it is descriptive file
+  metadata, not an occurrence time (§6). A missing directory is
   `notApplicable` ("The minidump directory does not exist."); an unreadable one is `unavailable` ("The minidump
   directory is not readable by this identity; it usually requires elevation."), which makes the result `partial`.
 
@@ -135,7 +147,8 @@ Every Linux kernel-transport record is `occurred` (§6). The other categories:
 
 - `unexpectedShutdown`: `notApplicable` — "journald has no typed record of an unclean shutdown; bOps does not infer one
   from missing shutdown messages."
-- `displayReset`: `notCollected` — "GPU reset messages are driver-specific and are not collected by this version."
+- `displayFault`: `notCollected` — "GPU fault and reset messages are driver-specific and are not collected by this
+  version."
 - `storageError`: `notCollected` — "Kernel block-layer and controller errors are not collected by this version; use
   system.events with channel kernel."
 - `minidump`: `notCollected` — "Kernel crash dumps (kdump) are not inventoried by this version."
@@ -157,7 +170,7 @@ An identity outside the `adm` and `systemd-journal` groups cannot see kernel rec
 - **Records** that cannot be read or whose required data is malformed are skipped and make their source `partial`;
   values that fail their pattern become `null`, never a guess.
 - **Coverage stores** (ADR-0032 amendment §5): Windows — `windows.channel.System` (`eventLog`) backs every
-  `windows.stability.*` source except `windows.stability.displayReset.wer`, which is backed by
+  `windows.stability.*` source except `windows.stability.displayFault.wer`, which is backed by
   `windows.channel.Application` (`eventLog`); `windows.minidump` is a `directory` store. Linux — `linux.journald`
   (`journal`) backs `linux.journald.kernel`.
 
@@ -187,8 +200,8 @@ An identity outside the `adm` and `systemd-journal` groups cannot see kernel rec
   ],
   "categories": [
     { "category": "unexpectedShutdown", "applicability": "applicable", "status": "available", "detail": null, "count": 16 },
-    { "category": "kernelFault", "applicability": "notCollected", "status": null, "detail": "Non-display LiveKernelEvent reports are listed by system.crashes as kernel-live-dump.", "count": null },
-    { "category": "minidump", "applicability": "applicable", "status": "unavailable", "detail": null, "count": 0 }
+    { "category": "kernelFault", "applicability": "notCollected", "status": null, "detail": "Non-display LiveKernelEvent reports (for example 0x1a1) are listed by system.crashes as kernel-live-dump.", "count": null },
+    { "category": "minidump", "applicability": "applicable", "status": "unavailable", "detail": null, "count": null }
   ],
   "context": { "applicability": "applicable", "status": "available", "detail": null, "boots": 61, "cleanShutdowns": 44 },
   "timeline": [
@@ -202,14 +215,13 @@ An identity outside the `adm` and `systemd-journal` groups cannot see kernel rec
       "provider": "Microsoft-Windows-Kernel-Power", "eventId": "41",
       "code": "0x0", "component": null, "severityClass": null, "timestampKind": "reported",
       "count": 14,
-      "firstSeenUtc": "2026-08-01T07:12:44.0000000Z", "lastSeenUtc": "2026-09-25T06:01:02.0000000Z",
-      "drillDown": { "tool": "system.events", "channel": "System", "source": "Microsoft-Windows-Kernel-Power", "eventId": "41", "text": null }
+      "firstSeenUtc": "2026-08-01T07:12:44.0000000Z", "lastSeenUtc": "2026-09-25T06:01:02.0000000Z"
     }
   ],
   "minidumps": {
     "applicability": "applicable", "status": "unavailable",
     "directory": "C:\\Windows\\Minidump",
-    "observed": 0, "returned": 0, "totalBytes": 0,
+    "observed": null, "returned": null, "totalBytes": null,
     "files": []
   }
 }
@@ -230,26 +242,38 @@ Field rules:
   characters) and `examinedFromUtc`.
 - **`categories`** — all eight, in the fixed order. For an applicable category: `status` is derived from its sources
   (all `available` → `available`; all `notApplicable` → `notApplicable`; otherwise `partial` when at least one source is
-  `available` or `partial`, else `unavailable`), and `count` is the number of its evidence records in the window after
-  deduplication (§7), computed before `limit` and the byte budget so it is never reduced by them. For `notApplicable`
-  and `notCollected`: `status` and `count` are `null`. Categories carry no times; times are in `groups` and `timeline`.
+  `available` or `partial`, else `unavailable`). `count` is the number of its evidence records in the window after
+  deduplication (§7), computed before `limit` and the byte budget so it is never reduced by them, and its meaning
+  depends on the category `status`:
+
+  | Category `status` | `count` |
+  |---|---|
+  | `available` | The exact number of evidence records in the window. |
+  | `partial` | The number of records actually observed — a **lower bound**: a source of the category was unreadable, stopped by a ceiling or the time bound, or skipped records. |
+  | `unavailable` | `null` — unknown. No source of the category could be read; this is never reported as `0`. |
+  | `notApplicable` | `0` — every source of the category is absent on this machine (for example no minidump directory), so there is nothing that could hold evidence; `detail` says why. |
+
+  For the `notApplicable` and `notCollected` **applicabilities**: `status` and `count` are `null`. Unknown evidence is
+  never represented as absence of evidence. Categories carry no times; times are in `groups` and `timeline`.
 - **`context`** — Windows: `boots` (6005) and `cleanShutdowns` (6006) in the window, with the status of
-  `windows.stability.bootContext`; both counts are `null` when that source is `unavailable`. Linux:
-  `applicability: notCollected`, `status`, `boots` and `cleanShutdowns` `null`.
+  `windows.stability.bootContext`; both counts are `null` when that source is `unavailable` and lower bounds when it is
+  `partial`. Linux: `applicability: notCollected`, `status`, `boots` and `cleanShutdowns` `null`.
 - **`bucket` and `timeline`** — §8.
 - **`groups`** — §8. `provider` and `eventId` are the native tuple of the group's records (Windows), or `"kernel"` and
-  `null` (Linux), or `null` and `null` (`minidump`). `drillDown` is a fixed hint built only from package constants,
-  never from event data: for a Windows Event Log group, `{ "tool": "system.events", "channel", "source", "eventId",
-  "text": null }` — valid `system.events` arguments for the raw records; for `displayReset` from WER, `{ "tool":
-  "system.crashes" }` with the other fields `null`; for a Linux group, `{ "tool": "system.events", "channel": "kernel",
-  "source": null, "eventId": null, "text": "<the rule's prefix>" }`; for `minidump`, `null`.
+  `null` (Linux), or `null` and `null` (`minidump`). A group carries no hint, query or pre-built argument set for
+  another tool: the model chooses any follow-up call (for example `system.events` with its own window and mode) itself.
 - **`minidumps`** — Windows: `directory` (the resolved path), `observed` (files in the window), `totalBytes` (their total
   size), `returned` and `files` — at most the 16 newest by last-write time, each `{ "name", "sizeBytes",
-  "fileTimeUtc", "timestampKind": "reported", "occurredLocalDate" }`. The 16-file listing is a bounded reference list
+  "fileTimeUtc", "timestampKind": "reported", "fileNameLocalDate" }`. The 16-file listing is a bounded reference list
   by design; the category count and the `minidump` group carry the totals, so a longer directory does not set
-  `truncated` (only the enumeration ceiling or the byte budget does). When the directory is unreadable, `observed`,
-  `returned` and `totalBytes` are 0 and `files` is empty, and `status` says why. Linux: `applicability: notCollected`,
-  `status`, `directory`, `totalBytes` `null`, counts 0, `files` empty.
+  `truncated` (only the enumeration ceiling or the byte budget does). The counters follow the category rule: with
+  `status` `available`, `observed` and `totalBytes` are exact; with `partial` (enumeration ceiling reached, entries
+  skipped or unreadable) they are the values actually observed — **lower bounds**; with `unavailable` (the directory
+  could not be read at all) `observed`, `returned` and `totalBytes` are `null`, `files` is empty and `status` says why —
+  never `0`. `returned` is otherwise the number of entries in `files`. A missing directory (`notApplicable`) has
+  `observed`, `returned` and `totalBytes` `0`. The inventory describes the files present now; a directory carries no
+  retention guarantee (ADR-0032 amendment §5), so it says nothing about dumps that were deleted. Linux:
+  `applicability: notCollected`; `status`, `directory`, `observed`, `returned` and `totalBytes` `null`; `files` empty.
 - **Strings** — `code` ≤ 32 characters, `component` ≤ 128, `detail` ≤ 256, file names ≤ 128; every value either
   matched its pattern or is `null`. No message text appears anywhere in the result.
 - **Budget** — the UTF-8 result is at most 32,768 bytes. When it would be larger, groups are removed from the end of
@@ -286,15 +310,22 @@ relabelled, displayed or aggregated as an occurrence time.
 | Linux `coredumpctl` | the core dump's timestamp | `occurred` |
 | Linux kernel-transport journal record | realtime timestamp | `occurred` |
 
-- **Minidump names.** The `MMDDYY` in a minidump name is the machine's **local** calendar day of the bugcheck. It is
-  reported as `occurredLocalDate` (day precision, local, never converted to UTC) and is never used for window
-  membership, bucketing or `firstSeenUtc`/`lastSeenUtc`.
+- **Minidump file names.** A minidump's only time is its file last-write time, which is `reported`: Windows writes the
+  file when it extracts the dump, normally at the next start. The `MMDDYY` encoded in a name of the form
+  `MMDDYY-<digits>-<digits>.dmp` is returned as `fileNameLocalDate`: the date the name carries, at day precision, in the
+  machine's local calendar, never converted to UTC. bOps does **not** claim that it is the day of the bugcheck — nothing
+  available to this version proves whether Windows encodes the crash day or the extraction day — so it is descriptive
+  metadata only: it is never an occurrence time, never a `timestampKind`, and never used for window membership,
+  bucketing, ordering or `firstSeenUtc`/`lastSeenUtc`. A minidump time becomes an occurrence time only through an
+  occurrence source of the same crash (for `system.crashes`, a Report.wer `EventTime` merged by report identity, §7).
+  Whether the file-name date reliably equals the crash day may be re-evaluated separately on real-host evidence.
 - **Merged crash records** (`system.crashes`, §7): the primary `timestampUtc` is, in order of precedence, the Report.wer
   `EventTime` (`occurred`), the Application Error 1000 record time (`occurred`), then the earliest WER 1001 record time
   (`reported`). When the primary time is `occurred` and a WER 1001 is a member, `reportedUtc` is the earliest WER 1001
   record time; otherwise `null`. `source` names the evidence that supplied the primary time.
-- **Aggregation** never mixes kinds: `timestampKind` is part of every aggregation key (ADR-0032 amendment §3–§4; §8
-  here), and every `timeline` row is per category **and** kind.
+- **Aggregation** never mixes kinds: `timestampKind` is part of every `system.crashes` and `system.stability`
+  aggregation key (ADR-0032 amendment §4; §8 here), and every `timeline` row is per category **and** kind.
+  `system.events` groups carry record times and no `timestampKind` (ADR-0032 amendment §3).
 
 ### 7. Identity, deduplication and correlation (normative for `system.stability` and `system.crashes`)
 
@@ -312,9 +343,9 @@ relabelled, displayed or aggregated as an occurrence time.
   correlates by time proximity, process name, code, bucket, message text or any other similarity; a possible duplicate
   is reported as such (`uncorrelatedCount` in `system.crashes` groups) and is not removed.
 - **`system.stability` counts evidence records, not incidents.** Within a category, records are deduplicated only by
-  the exact identities above (WER 1001 `LiveKernelEvent` records in `displayReset` by `ReportId`). Records that probably
+  the exact identities above (WER 1001 `LiveKernelEvent` records in `displayFault` by `ReportId`). Records that probably
   describe one incident but share no identity stay separate: a Display 4101 and a LiveKernelEvent 141 of one display
-  reset are two records in two groups; a Kernel-Power 41 with a non-zero `BugcheckCode` and the System-log 1001 of the
+  timeout (TDR) are two records in two groups; a Kernel-Power 41 with a non-zero `BugcheckCode` and the System-log 1001 of the
   same bugcheck are two records in two categories. The manifest description says that category counts are evidence
   records and must not be summed into an incident count.
 
@@ -354,10 +385,11 @@ follow that amendment's §6 table. Consequences specific to this tool:
 
 - A non-elevated Windows identity normally cannot read the minidump directory: that source is `unavailable`, `status`
   is `partial`, and the result is `Partial`, never `Complete` — elevation is not requested.
-- Because `displayReset` reads the Application log, a request longer than the Application log's history makes
+- Because `displayFault` reads the Application log, a request longer than the Application log's history makes
   `coverage.state` `partial` even when the System log reaches back further; the store list shows which log is short.
 - The `windows.minidump` store is a `directory` store and never changes `coverage.state` (ADR-0032 amendment §5).
-- Category counts of 0 are trustworthy only when `complete` is true; the manifest description says so.
+- Category counts of 0 are trustworthy only when `complete` is true; the manifest description says so. A category
+  whose sources could not be read has `count: null`, never `0` (§5), whatever `complete` says.
 
 ### 10. Boundary with `system.crashes` and `system.events`
 
@@ -373,8 +405,8 @@ Two overlaps are deliberate and stated in both manifest descriptions:
   `Microsoft-Windows-WER-SystemErrorReporting` 1001; `system.crashes` lists the WER report of it (Application WER
   1001 `BlueScreen`, kind `kernel-bugcheck`) with its dump reference and, when Report.wer provides it, its occurrence
   time.
-- **Display live dumps.** `system.stability` counts LiveKernelEvent `0x117`, `0x141`, `0x193`, `0x1a1` in
-  `displayReset`; `system.crashes` lists every LiveKernelEvent as `kernel-live-dump`. Both read the WER 1001 data
+- **Display live dumps.** `system.stability` counts LiveKernelEvent `0x117`, `0x141` and `0x193` in `displayFault`;
+  `system.crashes` lists every LiveKernelEvent, including `0x1a1`, as `kernel-live-dump`. Both read the WER 1001 data
   through one package-internal normalizer in `bOps.Packages.System.Windows`, so the two tools cannot classify the same
   record differently.
 
@@ -395,6 +427,8 @@ per-crash rows, `system.crashes` has no machine-level categories or timeline.
   bounded output size, independent of log size.
 - Native text that reaches the result (`component`, file names) is untrusted data matched against a fixed pattern or
   dropped; like every tool result it enters the context as delimited data and never alters runtime state.
+- The result carries no hint, pre-built argument set or suggested call for another tool; it cannot steer a follow-up
+  query, and its schema does not depend on another tool's arguments.
 - **Audit:** the tool is an `IToolAuditSummaryProvider`. The summary holds `status`, `complete`, `truncated`,
   `windowDays`, per category `applicability`, `status` and `count`, `context` counts, each source's `name` and
   `status`, `coverage.state` and each store's `name`, `state` and `oldestAvailableUtc`. It never holds a group
@@ -445,21 +479,53 @@ System-log bugcheck record already carries the code.
 **PowerShell `Get-WinEvent`, `wevtutil` or WMI event queries.** Rejected as in ADR-0032: a command surface for what the
 .NET API does natively.
 
-**Correlate display resets, shutdowns and bugchecks into incidents by time proximity.** Rejected: fuzzy matching turns a
+**Correlate display faults, shutdowns and bugchecks into incidents by time proximity.** Rejected: fuzzy matching turns a
 hypothesis into a count. The tool reports evidence records with typed times; correlation is the model's reasoning
 (HARDEN-9), stated as such.
+
+**A `displayReset` category including LiveKernelEvent `0x1a1`** (the classification of the original packet). Rejected
+by the independent review: `0x193` is a display-kernel live dump that does not prove a reset, and `0x1a1` is a win32k
+callout watchdog (a hang signature), not display evidence. `displayFault` with `0x117`, `0x141` and `0x193` is what the
+evidence supports; a separate category for `0x1a1` alone is not introduced.
+
+**A per-group `drillDown` hint with pre-built `system.events` arguments.** Rejected by the independent review: it is not
+needed for this capability, duplicates `provider`/`eventId` already in the group, ties this schema to another tool's
+arguments, cannot carry a correct window (a hint without one would run with `system.events`' 60-minute default and miss
+the group's records), and spends the output budget without adding evidence. The model chooses its own follow-up call.
+
+**Treat the minidump file-name date as the occurrence day.** Rejected: no evidence available to this version proves
+that Windows encodes the crash day rather than the extraction day. The date is returned as descriptive
+`fileNameLocalDate` and the file time stays `reported`.
 
 ## Consequences
 
 - "Why has this PC been freezing for months?" has a single bounded, typed first call: category totals, signatures and a
   weekly timeline over up to 180 days, with each log's reach and each source's gaps explicit.
 - Windows and Linux share one contract without false parity: categories that a platform cannot evidence say
-  `notApplicable` or `notCollected` instead of a reassuring zero.
+  `notApplicable` or `notCollected` instead of a reassuring zero, and a category or minidump counter whose sources could
+  not be read is `null`, not `0`.
 - On a non-elevated Windows host the result is `Partial` because the minidump directory is unreadable; that is the
   honest state, and the rest of the evidence is still returned.
-- Some incidents appear as several evidence records (a display reset in two groups, a bugcheck in two categories, a
+- Some incidents appear as several evidence records (a display timeout in two groups, a bugcheck in two categories, a
   bugcheck in both `system.stability` and `system.crashes`); the descriptions and this ADR say so, and HARDEN-9's
   evidence-reasoning rule must treat them as related evidence, not as independent occurrences.
 - Adding a category, a provider tuple, a Linux message rule or a bucket width changes the public result and needs an
   amendment to this ADR and a `schemaVersion` bump when the shape changes.
 - No change to `bOps.Abstractions`, policy, runtime, persistence or the audit schema.
+
+## Independent review corrections (2026-10-02)
+
+The independent architecture review of commit `017477e` returned CHANGES REQUIRED. Its blocking findings are resolved in
+this text before any implementation:
+
+- **R1** — the category is `displayFault` (Display 4101, LiveKernelEvent `0x117`, `0x141`, `0x193`); `0x1a1` is not
+  display evidence and is left to `system.crashes` (`kernel-live-dump`), §3.1, §10.
+- **R2** — a category or minidump counter whose sources could not be read is `null`, a `partial` one is a lower bound,
+  §5.
+- **R3** — `drillDown` is removed from schema 1; no other hint replaces it, §5, §11.
+- **R4** — `occurredLocalDate` is replaced by the descriptive `fileNameLocalDate`; minidump times stay `reported`, §3.1,
+  §6.
+- **R5** — the plan, the HARDEN-7 and HARDEN-9 packets and D-037 are reconciled with this ADR and the ADR-0032
+  amendment.
+
+Non-blocking findings R6–R12 are implementation obligations recorded in the HARDEN-7 packet.

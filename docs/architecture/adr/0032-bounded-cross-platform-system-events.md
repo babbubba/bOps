@@ -2,8 +2,9 @@
 
 Status: Accepted
 Date: 2026-09-21
-Amended by: HARDEN-7 amendment (2026-10-02, at the end of this document) — aggregate and raw modes, aggregate-only
-long horizons, temporal coverage metadata, `system.crashes` schema 2; the new `system.stability` tool is
+Amended by: HARDEN-7 amendment (2026-10-02, at the end of this document) — aggregate and raw modes (`system.events`
+keeps raw as its default, `system.crashes` defaults to aggregate), aggregate-only long horizons, temporal coverage
+metadata, schema 2 for both tools; the new `system.stability` tool is
 [ADR-0041](0041-typed-cross-platform-stability-evidence.md).
 
 ## Context
@@ -167,6 +168,9 @@ The documentation says which groups or rights widen visibility and leaves that c
 
 ## HARDEN-7 amendment — Accepted 2026-10-02
 
+Status: Accepted (2026-10-02, operator decision through the HARDEN-7 architecture gate, with the independent-review
+corrections recorded at the end of this amendment).
+
 Governs the `system.events` and `system.crashes` part of HARDEN-7 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md); plan
 [`2026-09-25-v1.3x-reliability-hardening.md`](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) §2.3, §2.4,
@@ -197,19 +201,26 @@ cross-field condition those constraints cannot express.
 
 ### Decision
 
-#### 1. Two output modes; aggregate is the default
+#### 1. Two output modes; a default per tool
 
-`system.events` and `system.crashes` each gain one optional argument:
+`system.events` and `system.crashes` each gain one optional argument, `mode`, the single canonical way to choose the
+output shape (there is no boolean `aggregate` argument or any other second switch):
 
-| Name | Type | Allowed values | Default |
-|---|---|---|---|
-| `mode` | Enum | `aggregate`, `raw` | `aggregate` |
+| Tool | Name | Type | Allowed values | Default |
+|---|---|---|---|---|
+| `system.events` | `mode` | Enum | `raw`, `aggregate` | `raw` |
+| `system.crashes` | `mode` | Enum | `aggregate`, `raw` | `aggregate` |
 
 - `aggregate` returns **groups**: one entry per distinct aggregation key (§3, §4) with `count`, `firstSeenUtc` and
-  `lastSeenUtc`, instead of one entry per native record. It is the default because it is what the model reads first.
-- `raw` returns **rows**, one per record, in the schema-1 row shape plus the additive fields listed below. It is chosen
-  explicitly when the model needs messages (`system.events`) or per-crash detail and dump references
-  (`system.crashes`).
+  `lastSeenUtc`, instead of one entry per native record.
+- `raw` returns **rows**, one per record, in the schema-1 row shape plus the additive fields listed below.
+- **`system.events` keeps `raw` as its default.** A call without `mode` returns rows exactly as before (schema 2 adds
+  fields and makes `complete` stricter, §3, §6), so every existing invocation keeps the same kind of output; aggregation is an additive capability
+  the caller chooses explicitly with `mode: aggregate`, and long horizons (§2) are available only through that explicit
+  choice.
+- **`system.crashes` defaults to `aggregate`** (packet scope 5: aggregate is the default model-facing output for crash
+  evidence). This is an intentional default behavioural change of that tool, versioned by schema 2 (§9); `mode: raw` is
+  chosen explicitly for per-crash detail and dump references.
 - Every filter applies before aggregation, in both modes, with unchanged meaning. `limit` keeps its name, range and
   default, and bounds **groups** in aggregate mode and **rows** in raw mode.
 - The result always states the mode it was produced in (`"mode": "aggregate"` or `"raw"`).
@@ -228,14 +239,23 @@ The minute argument is valid in both modes. The window is `[now − N minutes, n
 in UTC. When neither argument is present the minute default applies (60 for `system.events`, 1440 for
 `system.crashes`), in either mode.
 
+The mode is resolved first: the explicit `mode`, else the tool's default (§1). For `system.events` a day argument
+therefore requires an explicit `mode: aggregate`; `windowDays` without `mode` is a raw request and is rejected by rule 2.
+For `system.crashes` `sinceDays` without `mode` is valid, because its default is `aggregate`.
+
 Two cross-field rules are enforced by the shared argument reader in `bOps.Packages.System.Core`, before any collection,
 as a `ToolFailureKind.Validation` failure whose message names the rule. Nothing is clamped and the tool never switches
-mode on its own:
+mode on its own. The reader evaluates them in this fixed order and reports only the first rule that fails:
 
-1. The minute argument and the day argument together → rejected: "Use either windowMinutes or windowDays, not both."
-   (`sinceMinutes`/`sinceDays` for `system.crashes`).
-2. The day argument with `mode: raw` → rejected: "windowDays applies only to mode aggregate; raw mode is limited to
-   windowMinutes up to 10080 (7 days)." (the `sinceDays`/`sinceMinutes` equivalent for `system.crashes`).
+1. The minute argument and the day argument together → rejected, in either mode: "Use either windowMinutes or
+   windowDays, not both." (`sinceMinutes`/`sinceDays` for `system.crashes`).
+2. The day argument in raw mode (explicit `mode: raw`, or the `system.events` default) → rejected: "windowDays
+   applies only to mode aggregate; raw mode is limited to windowMinutes up to 10080 (7 days)." (the
+   `sinceDays`/`sinceMinutes` equivalent for `system.crashes`).
+3. Every remaining argument check (the existing per-argument and per-platform validation).
+
+A request carrying both arguments with `mode: raw` is therefore rejected by rule 1. The runtime's manifest checks
+(ranges, enum values, unknown arguments) run before the tool and are unaffected by this order.
 
 Every numeric bound therefore stays a HARDEN-6 manifest constraint, and the manifest stays the sole source of numeric
 bounds: a raw request above 7 days can only be expressed as `windowMinutes > 10080`, which the runtime rejects from the
@@ -250,6 +270,8 @@ horizon that hits a ceiling is reported truncated together with the instant the 
 is never raised silently.
 
 #### 3. `system.events` result, schema 2
+
+An explicit aggregate request (`mode: aggregate`, `windowDays: 180`):
 
 ```json
 {
@@ -288,8 +310,9 @@ is never raised silently.
   Groups are ordered by `count` descending, then `lastSeenUtc` descending, then `channel`, `source`, `unit`, `eventId`,
   `severity` — each compared case-insensitively ordinal, then ordinal, `null` before any value. `observedGroups` is the
   number of distinct keys; `returnedGroups` the number returned after `limit` and the byte budget.
-- **Raw** (`mode: raw`): `returnedEvents` and `events` exactly as in schema 1 (same row fields, ordering and bounds);
-  no `observedGroups`, `returnedGroups` or `groups`.
+- **Raw** (`mode: raw`, the default): `returnedEvents` and `events` exactly as in schema 1 (same row fields, ordering
+  and bounds); no `observedGroups`, `returnedGroups` or `groups`. Against schema 1 a raw result only adds `mode`,
+  `coverage` and `sources[].examinedFromUtc`, and `complete` is stricter (§6).
 - Both modes carry `schemaVersion`, `mode`, `status`, `complete`, `truncated`, `window`, `coverage`, `observedEvents`
   and `sources`. `observedEvents` counts matched records before grouping in both modes. Each `sources` entry gains
   `examinedFromUtc` (§5).
@@ -491,22 +514,25 @@ module name, a report id, a bucket or a path.
 
 | Tool | Before | After | Nature of the change |
 |---|---|---|---|
-| `system.events` | `schemaVersion: 1` | `2` | Additive fields (`mode`, `coverage`, `sources[].examinedFromUtc`); behavioural default change (`mode` defaults to `aggregate`); shape change in aggregate mode (`groups` instead of `events`); `complete` now also requires complete coverage. |
-| `system.crashes` | `schemaVersion: 1` | `2` | Additive row fields and `mode`, `window`, `coverage`; vocabulary extension of `kind`; `summary` and `dumpPath` population corrected; behavioural default change (`aggregate`); shape change in aggregate mode (`groups` instead of `items`); a fixed 65,536-byte budget where none existed; `complete` now also requires complete coverage. The other maintenance tools stay at schema 1. |
+| `system.events` | `schemaVersion: 1` | `2` | Existing default behaviour preserved: `mode` defaults to `raw`, whose rows are the schema-1 rows. Additive fields (`mode`, `coverage`, `sources[].examinedFromUtc`); an opt-in aggregate mode with its own shape (`groups` instead of `events`) and the aggregate-only `windowDays`; `complete` now also requires complete coverage. |
+| `system.crashes` | `schemaVersion: 1` | `2` | Intentional default behavioural change: `mode` defaults to `aggregate`, whose shape is structurally different (`groups` instead of `items`). Additive row fields and `mode`, `window`, `coverage`; vocabulary extension of `kind`; `summary` and `dumpPath` population corrected; a fixed 65,536-byte budget where none existed; `complete` now also requires complete coverage. The other maintenance tools stay at schema 1. |
 | `system.stability` | — | `1` | New tool ([ADR-0041](0041-typed-cross-platform-stability-evidence.md)). |
 
 Compatibility story:
 
+- **SDK/API abstractions.** Additive, no break: no change to `bOps.Abstractions`; the new arguments use the HARDEN-6
+  `ToolParameter` constraint properties, `ToolParameterType.Enum` and the existing `ToolCallResult.Completeness`. Every
+  contract type added is package-local in `bOps.Packages.System.Core`.
 - **Arguments.** Every schema-1 argument keeps its name, type, range and default, and every schema-1 call stays valid.
-  Only the default output mode changes.
-- **Readers.** A reader that needs the schema-1 row shape passes `mode: raw` and gets every schema-1 field with the same
-  meaning, except `complete` (stricter), `summary` (no longer raw `P1`) and `kind` (more values), plus additive fields
-  it may ignore. Readers must check `schemaVersion`. No consumer outside the System packages and their tests parses
-  either output (checked at `fd3b61c`); the conformance suite and the documentation move to schema 2 with the
-  implementation.
-- **Public SDK.** No change to `bOps.Abstractions`: the new arguments use the HARDEN-6 `ToolParameter` constraint
-  properties, `ToolParameterType.Enum` and the existing `ToolCallResult.Completeness`. Every contract type added is
-  package-local in `bOps.Packages.System.Core`.
+- **Tool-result schema.** Both tools bump `schemaVersion` to 2; readers must check it.
+- **`system.events` behaviour.** Preserved: a call without `mode` returns raw rows with every schema-1 field and the
+  same meaning, except `complete` (stricter), plus additive fields a reader may ignore. Aggregation and long horizons
+  exist only behind an explicit `mode: aggregate`.
+- **`system.crashes` behaviour.** Intentionally changed: a call without `mode` returns groups. A reader that needs the
+  schema-1 row shape passes `mode: raw` and gets every schema-1 field with the same meaning, except `complete`
+  (stricter), `summary` (no longer raw `P1`) and `kind` (more values), plus additive fields it may ignore.
+- **Consumers.** No consumer outside the System packages and their tests parses either output (checked at `fd3b61c`);
+  the conformance suite and the documentation move to schema 2 with the implementation.
 
 ### Alternatives considered
 
@@ -522,8 +548,19 @@ package family. If a second package needs cross-field rules, that is a new ADR.
 **A separate aggregate tool (`system.events.summary`, `system.crashes.summary`).** Rejected for the reason ADR-0032
 rejected `service.logs`: two vocabularies for one concept, and a model choosing between near-identical tools.
 
-**Keep `raw` as the default.** Rejected: the default is what the model reads first, and the incident shows that
-per-record output spends the context on duplicates and hides the signal (plan §2.3, H-6).
+**Keep `raw` as the default of `system.crashes`.** Rejected: the default is what the model reads first, and the
+incident shows that per-record crash output spends the context on duplicates and hides the signal (plan §2.3; packet
+scope 5).
+
+**Make `aggregate` the default of `system.events` too.** Rejected by the independent review: the packet asks for an
+aggregate mode and long horizons for events, not for a new default; `system.events` answers "what did this log record
+around this time", where messages and chronology are the point (the reason ADR-0032 rejected a `warning` severity
+default); the self-noise hypothesis that would motivate it (H-6) is unconfirmed and belongs to HARDEN-9; and keeping
+`raw` preserves every existing invocation. Aggregation stays one explicit `mode` value away.
+
+**A boolean `aggregate` argument (or a second aggregation switch) for `system.events`.** Rejected: one canonical `mode`
+argument for both tools; two switches for one choice would be two vocabularies for one concept. HARDEN-9 uses this
+`mode`.
 
 **Report retention only through `Completeness`.** Rejected: `Partial` says that something is missing, not what or since
 when. **Report retention only through `coverage` and keep `Complete`.** Rejected: typed consumers (runtime, audit,
@@ -541,13 +578,22 @@ clocks. `timestampKind` is part of the key.
 
 ### Consequences
 
-- The default answer is compact and comparable: counts per signature with first and last time, and an explicit mode
-  switch for per-record detail. A months-long question can be asked (up to 180 days) and is answered within the same
-  scan ceilings, with both the reach of the scan and the reach of the log visible.
+- The default crash answer is compact and comparable: counts per signature with first and last time, and an explicit
+  `mode: raw` for per-crash detail. `system.events` keeps its per-record default and gains the same compact view through
+  an explicit `mode: aggregate`. A months-long question can be asked (up to 180 days, aggregate mode only) and is
+  answered within the same scan ceilings, with both the reach of the scan and the reach of the log visible.
 - `complete: true` now means "every source read, nothing cut, and the history reaches the start of the request". More
   results are `Partial` than before, by design; `coverage` explains which and why.
-- Schema 2 deliberately changes the default output shape of both tools; schema-1 readers pass `mode: raw`. The
-  conformance suite, the System.Core contract tests, the audit-summary tests, `docs/system-events.md` and
-  `docs/system-maintenance.md` change with the implementation.
+- Schema 2 deliberately changes the default output shape of `system.crashes` only; its schema-1 readers pass
+  `mode: raw`. `system.events` keeps its default output shape. The conformance suite, the System.Core contract tests,
+  the audit-summary tests, `docs/system-events.md` and `docs/system-maintenance.md` change with the implementation.
 - Coverage costs one extra bounded read per store (one Event Log record, or one `journalctl` line).
 - No change to `bOps.Abstractions`, policy, runtime, persistence or the audit schema.
+
+### Independent review corrections (2026-10-02)
+
+The independent architecture review of commit `017477e` (CHANGES REQUIRED) changed this amendment before any
+implementation: `system.events` keeps `raw` as its default and aggregation is an explicit `mode: aggregate` (R5, §1,
+§9); the order of the cross-field rules is fixed (R16, §2); the acceptance is recorded as an operator decision through
+the architecture gate (R15). The remaining blocking corrections (R1–R4) are in
+[ADR-0041](0041-typed-cross-platform-stability-evidence.md#independent-review-corrections-2026-10-02).
