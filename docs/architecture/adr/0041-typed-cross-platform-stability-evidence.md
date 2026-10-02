@@ -297,7 +297,8 @@ relabelled, displayed or aggregated as an occurrence time.
 |---|---|---|
 | Application Error 1000 (Application) | record time | `occurred` |
 | WER 1001 (Application, `Windows Error Reporting`) | record time — WER processing | `reported` |
-| Report.wer with `EventTime` | `EventTime` (FILETIME) | `occurred` |
+| Report.wer with `EventTime`, every kind except `BlueScreen` | `EventTime` (FILETIME) | `occurred` |
+| Report.wer with `EventTime`, `BlueScreen` (`kernel-bugcheck`) | `EventTime` (FILETIME) — written after the reboot (correction of 2026-10-02 below) | `reported` |
 | Report.wer without `EventTime` | file last-write time | `reported` |
 | `Microsoft-Windows-WER-SystemErrorReporting` 1001 (System) | record time — logged at the next boot | `reported` |
 | Kernel-Power 41 | record time — logged at the next boot | `reported` |
@@ -319,6 +320,11 @@ relabelled, displayed or aggregated as an occurrence time.
   bucketing, ordering or `firstSeenUtc`/`lastSeenUtc`. A minidump time becomes an occurrence time only through an
   occurrence source of the same crash (for `system.crashes`, a Report.wer `EventTime` merged by report identity, §7).
   Whether the file-name date reliably equals the crash day may be re-evaluated separately on real-host evidence.
+- **BlueScreen reports (evidence-driven correction, 2026-10-02).** A `BlueScreen` Report.wer `EventTime` is written when WER
+  creates the report after the reboot, so it is `reported`, not `occurred`; see the correction at the end of this ADR. The
+  precedence below is unchanged: the `EventTime` keeps its position as the primary time and only its kind changes. Nothing is
+  promoted in its place — not the Kernel-Power 41 time, not a minidump file time, not a file-name date — so a bugcheck with no
+  source that proves its occurrence stays `reported`.
 - **Merged crash records** (`system.crashes`, §7): the primary `timestampUtc` is, in order of precedence, the Report.wer
   `EventTime` (`occurred`), the Application Error 1000 record time (`occurred`), then the earliest WER 1001 record time
   (`reported`). When the primary time is `occurred` and a WER 1001 is a member, `reportedUtc` is the earliest WER 1001
@@ -403,8 +409,8 @@ Two overlaps are deliberate and stated in both manifest descriptions:
 
 - **Bugchecks.** `system.stability` counts each bugcheck in `kernelCrash` from the System-log
   `Microsoft-Windows-WER-SystemErrorReporting` 1001; `system.crashes` lists the WER report of it (Application WER
-  1001 `BlueScreen`, kind `kernel-bugcheck`) with its dump reference and, when Report.wer provides it, its occurrence
-  time.
+  1001 `BlueScreen`, kind `kernel-bugcheck`) with its dump reference and, when Report.wer provides it, the report's
+  `EventTime` — a `reported` time written after the reboot, not the crash time (evidence-driven correction of 2026-10-02).
 - **Display live dumps.** `system.stability` counts LiveKernelEvent `0x117`, `0x141` and `0x193` in `displayFault`;
   `system.crashes` lists every LiveKernelEvent, including `0x1a1`, as `kernel-live-dump`. Both read the WER 1001 data
   through one package-internal normalizer in `bOps.Packages.System.Windows`, so the two tools cannot classify the same
@@ -512,6 +518,26 @@ that Windows encodes the crash day rather than the extraction day. The date is r
 - Adding a category, a provider tuple, a Linux message rule or a bucket width changes the public result and needs an
   amendment to this ADR and a `schemaVersion` bump when the shape changes.
 - No change to `bOps.Abstractions`, policy, runtime, persistence or the audit schema.
+
+## Evidence-driven correction discovered during real Windows validation (2026-10-02)
+
+Operator-decided, evidence-driven correction made during the HARDEN-7 implementation, after the real-Windows elevated
+validation run on the operator workstation; it narrows one row of §6 and reopens nothing else.
+
+- **Observation.** For `BlueScreen` (`kernel-bugcheck`) reports the Report.wer `EventTime` is later than the Kernel-Power 41
+  record that Windows logs at the next boot, so it cannot be the crash time: `0x50` Report.wer `EventTime` 08:45:27Z vs
+  Kernel-Power 41 08:44:37Z (2026-09-04; minidump written 08:44:47Z); `0x1e` 14:26:56 vs 14:26:35 (2026-08-06); `0x3b` 20:59:23
+  vs 20:59:04 (2026-08-03); `0x7f` 06:24:50 vs 06:24:31 (2026-08-02) — always 20–50 s after the boot. For `LiveKernelEvent`
+  reports the `EventTime` matches the live dump (the `0x193` dump `WATCHDOG-20260730-1010.dmp` has `EventTime` 2026-07-30
+  08:10Z), and for application reports it follows the Application Error 1000 record by a fraction of a second (`APPCRASH`
+  0.14 s).
+- **Decision.** By the rule of §6 that a time not proven to be an occurrence time is `reported`, the Report.wer `EventTime`
+  of a `BlueScreen` report is `reported`. `LiveKernelEvent` and application crash and hang reports keep `occurred`. The
+  primary-time precedence of merged crashes is unchanged, and no other time (Kernel-Power 41, minidump file time,
+  `fileNameLocalDate`) is promoted to an occurrence time in its place.
+- **Effect.** `system.crashes` `kernel-bugcheck` groups and rows built from a Report.wer `EventTime` carry
+  `timestampKind: reported` (and `reportedUtc: null`). No schema, argument or field changes; `system.stability` is unaffected
+  (its bugcheck evidence is the System-log record, already `reported`).
 
 ## Independent review corrections (2026-10-02)
 

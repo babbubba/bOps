@@ -364,7 +364,8 @@ of the order and sets `truncated: true`.
   that share a report identity are merged into one (ADR-0041 §7); records without one are never merged.
   `observedItems` counts these crash records inside the window in both modes.
 - **Raw rows** keep every schema-1 field (`timestampUtc`, `process`, `pid`, `kind`, `dumpPath`, `eventIdOrCrashId`,
-  `summary`, `source`) and add: `timestampKind` (`occurred` or `reported`, ADR-0041 §6), `reportedUtc` (the WER
+  `summary`, `source`) and add: `timestampKind` (`occurred` or `reported`, ADR-0041 §6 — a `BlueScreen` Report.wer `EventTime` is
+  `reported`, by the evidence-driven correction of 2026-10-02 recorded in ADR-0041), `reportedUtc` (the WER
   processing time when the record also has an occurrence time, else `null`), `reportId` (lower-case GUID or `null`),
   `eventName`, `code`, `bugcheckCode`, `liveDumpCode`, `exceptionCode`, `faultModule`, `bucket` and `evidenceSources`
   (sorted names of the sources the record was merged from). `source` is the source that supplied `timestampUtc`.
