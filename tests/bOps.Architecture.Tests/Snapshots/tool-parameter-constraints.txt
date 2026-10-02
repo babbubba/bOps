@@ -75,6 +75,7 @@ storage.partitions.maxOutputBytes | Integer | minimum=4096 | maximum=262144
 system.apps.limit | Integer | minimum=1 | maximum=500
 system.apps.maxOutputBytes | Integer | minimum=4096 | maximum=65536
 system.crashes.limit | Integer | minimum=1 | maximum=1000
+system.crashes.sinceDays | Integer | minimum=1 | maximum=180
 system.crashes.sinceMinutes | Integer | minimum=1 | maximum=10080
 system.devices.limit | Integer | minimum=1 | maximum=500
 system.devices.maxOutputBytes | Integer | minimum=4096 | maximum=65536
@@ -85,7 +86,10 @@ system.events.limit | Integer | minimum=1 | maximum=500
 system.events.maxOutputBytes | Integer | minimum=4096 | maximum=65536
 system.events.source | String | minLength=1 | maxLength=128
 system.events.text | String | minLength=1 | maxLength=256
+system.events.windowDays | Integer | minimum=1 | maximum=180
 system.events.windowMinutes | Integer | minimum=1 | maximum=10080
+system.stability.limit | Integer | minimum=1 | maximum=200
+system.stability.windowDays | Integer | minimum=1 | maximum=180
 system.update_history.limit | Integer | minimum=1 | maximum=2000
 system.update_history.sinceDays | Integer | minimum=1 | maximum=365
 system.updates.limit | Integer | minimum=1 | maximum=2000

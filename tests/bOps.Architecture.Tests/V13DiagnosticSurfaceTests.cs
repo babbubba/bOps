@@ -15,7 +15,7 @@ public sealed class V13DiagnosticSurfaceTests
 {
     private static readonly string[] Expected =
     [
-        "system.info", "system.time", "system.reboot_pending", "system.updates", "system.update_history", "system.crashes", "system.drivers", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "system.swap", "system.io",
+        "system.info", "system.time", "system.reboot_pending", "system.updates", "system.update_history", "system.crashes", "system.stability", "system.drivers", "system.apps", "system.devices", "system.events", "system.cpu", "system.memory", "system.disk", "system.swap", "system.io",
         "process.list", "process.inspect", "process.metrics", "process.tree", "process.modules", "process.stop", "process.kill",
         "fs.list", "fs.read", "fs.stat", "fs.write", "fs.delete", "fs.search", "fs.hash", "fs.move", "fs.size", "fs.delete_tree.prepare", "fs.delete_tree.verify", "fs.delete_tree", "fs.grep", "fs.tail", "fs.permissions", "fs.locks", "fs.copy.verify", "fs.copy", "fs.mkdir",
         "network.interfaces", "network.dns", "network.ping", "network.connections", "network.port_check", "network.route", "network.sockets", "network.routes", "network.neighbors", "network.interface_stats", "network.dns_query", "network.traceroute", "network.ntp_probe",

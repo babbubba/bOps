@@ -20,11 +20,12 @@ public sealed class SystemMaintenanceContractTests
     {
         Assert.True(SystemMaintenanceArguments.TryReadUpdates(Args(), out var u, out _)); Assert.Equal("all", u.Kind); Assert.Equal(200, u.Limit);
         Assert.True(SystemMaintenanceArguments.TryReadHistory(Args(), out var h, out _)); Assert.Equal(30, h.SinceDays); Assert.Equal(200, h.Limit);
-        Assert.True(SystemMaintenanceArguments.TryReadCrashes(Args(), out var c, out _)); Assert.Equal(1440, c.SinceMinutes); Assert.Equal(100, c.Limit);
+        Assert.True(SystemCrashesArguments.TryRead(Args(), Now, out var c, out _)); Assert.Equal(Now.AddMinutes(-1440), c!.FromUtc); Assert.Equal(100, c.Limit); Assert.Equal(EvidenceMode.Aggregate, c.Mode);
         Assert.True(SystemMaintenanceArguments.TryReadDrivers(Args(), out var d, out _)); Assert.Equal(300, d.Limit);
         Assert.True(SystemMaintenanceArguments.TryReadUpdates(Args(j => j["limit"] = 2000), out u, out _)); Assert.Equal(2000, u.Limit);
         Assert.True(SystemMaintenanceArguments.TryReadHistory(Args(j => { j["sinceDays"] = 365; j["limit"] = 2000; }), out h, out _)); Assert.Equal(365, h.SinceDays); Assert.Equal(2000, h.Limit);
-        Assert.True(SystemMaintenanceArguments.TryReadCrashes(Args(j => { j["sinceMinutes"] = 10080; j["limit"] = 1000; }), out c, out _)); Assert.Equal(10080, c.SinceMinutes); Assert.Equal(1000, c.Limit);
+        Assert.True(SystemCrashesArguments.TryRead(Args(j => { j["sinceMinutes"] = 10080; j["limit"] = 1000; }), Now, out c, out _)); Assert.Equal(Now.AddMinutes(-10080), c!.FromUtc); Assert.Equal(1000, c.Limit);
+        Assert.True(SystemCrashesArguments.TryRead(Args(j => j["sinceDays"] = 180), Now, out c, out _)); Assert.Equal(Now.AddDays(-180), c!.FromUtc); Assert.Equal(EvidenceMode.Aggregate, c.Mode);
         Assert.True(SystemMaintenanceArguments.TryReadDrivers(Args(j => j["limit"] = 3000), out d, out _)); Assert.Equal(3000, d.Limit);
     }
 
@@ -34,7 +35,8 @@ public sealed class SystemMaintenanceContractTests
         Assert.False(SystemMaintenanceArguments.TryReadUpdates(Args(j => j["kind"] = "maybe"), out _, out _));
         Assert.False(SystemMaintenanceArguments.TryReadUpdates(Args(j => j["limit"] = 2001), out _, out _));
         Assert.False(SystemMaintenanceArguments.TryReadHistory(Args(j => j["sinceDays"] = 366), out _, out _));
-        Assert.False(SystemMaintenanceArguments.TryReadCrashes(Args(j => j["sinceMinutes"] = 10081), out _, out _));
+        Assert.False(SystemCrashesArguments.TryRead(Args(j => j["sinceMinutes"] = 10081), Now, out _, out _));
+        Assert.False(SystemCrashesArguments.TryRead(Args(j => j["sinceDays"] = 181), Now, out _, out _));
         Assert.False(SystemMaintenanceArguments.TryReadDrivers(Args(j => j["limit"] = 3001), out _, out _));
     }
 
@@ -70,16 +72,6 @@ public sealed class SystemMaintenanceContractTests
         var history = Available(new UpdateHistoryRecord(Now, "id", "pkg", null, "SUCCESS", "logs"), new UpdateHistoryRecord(Now, "id2", "pkg2", "1", "maybe", "logs"));
         var rows = Json(SystemMaintenanceFormatting.History(history, 200))["items"]!.AsArray();
         Assert.Equal("success", rows[0]!["result"]!.GetValue<string>()); Assert.Equal("unknown", rows[1]!["result"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public void Crashes_DumpPathIsOnlySerializedMetadata_UnavailableAndTruncatedAreIncomplete()
-    {
-        var crash = new CrashRecord(Now, "app", 5, "segfault", "C:/dumps/a.dmp", "e1", "crashed", "wer");
-        var json = Json(SystemMaintenanceFormatting.Crashes(Available(crash), 1));
-        Assert.Equal("C:/dumps/a.dmp", json["items"]![0]!["dumpPath"]!.GetValue<string>());
-        Assert.False(Json(SystemMaintenanceFormatting.Crashes(new([], [new("backend", InventorySourceStatus.Unavailable)]), 100))["complete"]!.GetValue<bool>());
-        Assert.False(Json(SystemMaintenanceFormatting.Crashes(new([crash, crash with { Process = "other" }], [new("backend", InventorySourceStatus.Available)]), 1))["complete"]!.GetValue<bool>());
     }
 
     [Fact]

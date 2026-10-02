@@ -16,14 +16,27 @@ public static partial class SystemEventsArguments
     /// <summary>The accepted <c>minSeverity</c> values, most severe first.</summary>
     public static readonly IReadOnlyList<string> SeverityNames = ["critical", "error", "warning", "information", "verbose"];
 
+    /// <summary>The accepted <c>mode</c> values; <c>raw</c>, the default, first (ADR-0032 HARDEN-7 amendment §1).</summary>
+    public static readonly IReadOnlyList<string> ModeNames = ["raw", "aggregate"];
+
+    private static readonly HorizonRules Horizon = new(
+        "windowMinutes",
+        "windowDays",
+        EvidenceMode.Raw,
+        SystemEventsLimits.DefaultWindowMinutes,
+        SystemEventsLimits.MaximumWindowMinutes,
+        SystemEventsLimits.MaximumWindowDays);
+
     /// <summary>
     /// Validates <paramref name="arguments"/> and builds the collector query for a window that ends at <paramref name="now"/>.
-    /// Returns <c>false</c> with an explanation when anything is out of range or malformed.
+    /// Returns <c>false</c> with an explanation when anything is out of range or malformed. The two cross-field rules of the
+    /// HARDEN-7 amendment (minute and day argument together; day argument in raw mode) are checked first, in that order.
     /// </summary>
     public static bool TryRead(
         ToolArguments arguments,
         DateTimeOffset now,
         out SystemEventQuery? query,
+        out EvidenceMode mode,
         out int limit,
         out int maxOutputBytes,
         out string? error)
@@ -34,7 +47,7 @@ public static partial class SystemEventsArguments
         maxOutputBytes = SystemEventsLimits.DefaultOutputBytes;
         var json = arguments.ToJson();
 
-        if (!TryInteger(json, arguments, "windowMinutes", SystemEventsLimits.DefaultWindowMinutes, 1, SystemEventsLimits.MaximumWindowMinutes, out var windowMinutes, out error)
+        if (!EvidenceModes.TryReadHorizon(json, arguments, Horizon, out mode, out var window, out error)
             || !TryInteger(json, arguments, "limit", SystemEventsLimits.DefaultEvents, 1, SystemEventsLimits.MaximumEvents, out limit, out error)
             || !TryInteger(json, arguments, "maxOutputBytes", SystemEventsLimits.DefaultOutputBytes, SystemEventsLimits.MinimumOutputBytes, SystemEventsLimits.MaximumOutputBytes, out maxOutputBytes, out error)
             || !TrySeverity(json, arguments, out var minSeverity, out error)
@@ -47,7 +60,7 @@ public static partial class SystemEventsArguments
         }
 
         query = new SystemEventQuery(
-            now.AddMinutes(-windowMinutes).ToUniversalTime(),
+            now.Subtract(window).ToUniversalTime(),
             now.ToUniversalTime(),
             minSeverity,
             source,

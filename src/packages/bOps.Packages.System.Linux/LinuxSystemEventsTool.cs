@@ -20,23 +20,29 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
     private const int MaximumErrorCharacters = 200;
     private const int MaximumErrorBytes = 4_096;
 
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan ProbeCap = TimeSpan.FromSeconds(2);
 
     private readonly string executable;
     private readonly TimeSpan timeout;
+    private readonly JournalRunner probe;
 
     /// <summary>Creates the tool over the system <c>journalctl</c>.</summary>
     public LinuxSystemEventsTool()
-        : this("journalctl", TimeProvider.System, DefaultTimeout)
+        : this("journalctl", TimeProvider.System, SystemEventsLimits.CallTimeout)
     {
     }
 
-    internal LinuxSystemEventsTool(string executable, TimeProvider clock, TimeSpan timeout)
+    internal LinuxSystemEventsTool(string executable, TimeProvider clock, TimeSpan timeout, JournalRunner? probe = null)
         : base("linux", clock)
     {
         this.executable = executable;
         this.timeout = timeout;
+        this.probe = probe ?? JournalctlProcess.For(executable);
     }
+
+    /// <summary>The journal scope of the coverage probe: the requested transport, else the whole journal the source reads (review note R6).</summary>
+    internal static IReadOnlyList<string> ProbeScope(SystemEventQuery query) =>
+        query.Channel is { } channel ? ["_TRANSPORT=" + channel.ToLowerInvariant()] : [];
 
     /// <inheritdoc />
     protected override string? ValidateEventId(string eventId) =>
@@ -54,6 +60,19 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
     protected override async Task<SystemEventSnapshot> CollectAsync(SystemEventQuery query, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(query);
+        var budget = new EvidenceTimeBudget(timeout, Clock);
+        CoverageStore store;
+        using (var probeSlice = budget.Start(2, ct, ProbeCap))
+        {
+            store = await JournalCoverageProbe.ProbeAsync(probe, ProbeScope(query), [SourceName], probeSlice);
+        }
+
+        var snapshot = await ReadAsync(query, budget, ct);
+        return snapshot with { Stores = [store] };
+    }
+
+    private async Task<SystemEventSnapshot> ReadAsync(SystemEventQuery query, EvidenceTimeBudget budget, CancellationToken ct)
+    {
         var startInfo = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
@@ -88,18 +107,18 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
         using (process)
         {
             process.StandardInput.Close();
-            using var timeoutSource = new CancellationTokenSource(timeout);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token);
+            using var slice = budget.Start(1, ct);
+            DateTimeOffset? oldestRead = null;
             var events = new List<SystemEventRecord>();
             var scanned = 0;
             var malformed = 0;
 #pragma warning disable CA2025 // Awaited in the finally block below, before the process is disposed.
-            var errorTask = ReadErrorAsync(process, linked.Token);
+            var errorTask = ReadErrorAsync(process, slice.Token);
 #pragma warning restore CA2025
 
             try
             {
-                while (await process.StandardOutput.ReadLineAsync(linked.Token) is { } line)
+                while (await process.StandardOutput.ReadLineAsync(slice.Token) is { } line)
                 {
                     var kind = JournalRecordParser.TryParse(line, out var record);
                     if (kind == JournalRecordParser.LineKind.Malformed)
@@ -114,6 +133,7 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
                     }
 
                     scanned++;
+                    oldestRead = oldestRead is { } known && known < record!.TimestampUtc ? known : record!.TimestampUtc;
                     if (SystemEventFilter.Matches(record!, query))
                     {
                         events.Add(record!);
@@ -131,16 +151,16 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
                     Kill(process);
                 }
 
-                await process.WaitForExitAsync(linked.Token);
+                await process.WaitForExitAsync(slice.Token);
                 var error = await errorTask;
-                return Describe(events, process.ExitCode, reachedCeiling, malformed, error);
+                return Describe(events, process.ExitCode, reachedCeiling, malformed, error, reachedCeiling ? oldestRead : query.FromUtc);
             }
-            catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested && !ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (slice.TimedOut)
             {
                 Kill(process);
                 return new SystemEventSnapshot(
                     events,
-                    [new(SourceName, InventorySourceStatus.Partial, "journalctl did not finish in time and was stopped.")],
+                    [new(SourceName, InventorySourceStatus.Partial, "journalctl did not finish in time and was stopped.") { ExaminedFromUtc = oldestRead }],
                     CollectionTruncated: true);
             }
             catch (OperationCanceledException)
@@ -157,7 +177,7 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
     }
 
     private static SystemEventSnapshot Describe(
-        List<SystemEventRecord> events, int exitCode, bool reachedCeiling, int malformed, string error)
+        List<SystemEventRecord> events, int exitCode, bool reachedCeiling, int malformed, string error, DateTimeOffset? examinedFromUtc)
     {
         if (!reachedCeiling && exitCode != 0)
         {
@@ -183,7 +203,7 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
 
         return new SystemEventSnapshot(
             events,
-            [new(SourceName, status, detail)],
+            [new(SourceName, status, detail) { ExaminedFromUtc = examinedFromUtc }],
             CollectionTruncated: reachedCeiling);
     }
 

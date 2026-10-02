@@ -12,6 +12,15 @@ public static class SystemEventsLimits
     /// <summary>Largest look-back window a caller may request: seven days.</summary>
     public const int MaximumWindowMinutes = 10_080;
 
+    /// <summary>Largest look-back window in days, valid only with <c>mode: aggregate</c> (ADR-0032 HARDEN-7 amendment §2).</summary>
+    public const int MaximumWindowDays = 180;
+
+    /// <summary>Longest sample message of an aggregate group.</summary>
+    public const int SampleMessageCharacters = 512;
+
+    /// <summary>The bound on one call's reads, coverage probes included: shorter than the runner's 30-second tool timeout.</summary>
+    public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(20);
+
     /// <summary>Default number of events returned.</summary>
     public const int DefaultEvents = 50;
 

@@ -18,13 +18,15 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     private const int MaximumDetailCharacters = 200;
 
     private static readonly string[] DefaultChannels = ["System", "Application"];
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>The most one coverage probe (one record and the channel configuration) may take of the call budget.</summary>
+    private static readonly TimeSpan ProbeCap = TimeSpan.FromSeconds(2);
 
     private readonly TimeSpan timeout;
 
     /// <summary>Creates the tool over the local Event Log.</summary>
     public WindowsSystemEventsTool()
-        : this(TimeProvider.System, DefaultTimeout)
+        : this(TimeProvider.System, SystemEventsLimits.CallTimeout)
     {
     }
 
@@ -47,29 +49,41 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     /// <inheritdoc />
     protected override string? ValidateChannel(string channel) => null;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Reads each channel within one call budget (<see cref="SystemEventsLimits.CallTimeout"/>, coverage probes included): the probes
+    /// first, each capped, then every channel within its share of what is left, so a flooded channel cannot starve the next one
+    /// (review note R7).
+    /// </summary>
     protected override Task<SystemEventSnapshot> CollectAsync(SystemEventQuery query, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(query);
         var events = new List<SystemEventRecord>();
         var sources = new List<InventorySourceResult>();
+        var stores = new List<CoverageStore>();
         var truncated = false;
         var explicitChannel = query.Channel is not null;
         var providerName = query.Source is { } source ? ResolveProvider(source) : null;
         var xpath = WindowsEventXPath.Build(query, providerName);
+        string[] channels = query.Channel is { } requested ? [requested] : DefaultChannels;
+        var budget = new EvidenceTimeBudget(timeout, Clock);
+        var steps = channels.Length * 2;
 
-        using var timeoutSource = new CancellationTokenSource(timeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token);
-
-        foreach (var channel in query.Channel is { } requested ? [requested] : DefaultChannels)
+        foreach (var channel in channels)
         {
             ct.ThrowIfCancellationRequested();
-            var name = $"windows.channel.{channel}";
-            sources.Add(ReadChannel(channel, name, xpath, query, explicitChannel, events, linked, timeoutSource, ct, out var channelTruncated));
+            using var slice = budget.Start(steps--, ct, ProbeCap);
+            stores.Add(WindowsEventLogEvidence.ProbeChannel(channel, [$"windows.channel.{channel}"], slice));
+        }
+
+        foreach (var channel in channels)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var slice = budget.Start(steps--, ct);
+            sources.Add(ReadChannel(channel, $"windows.channel.{channel}", xpath, query, explicitChannel, events, slice, out var channelTruncated));
             truncated |= channelTruncated;
         }
 
-        return Task.FromResult(new SystemEventSnapshot(events, sources, truncated));
+        return Task.FromResult(new SystemEventSnapshot(events, sources, truncated) { Stores = stores });
     }
 
     private static InventorySourceResult ReadChannel(
@@ -79,19 +93,23 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
         SystemEventQuery query,
         bool explicitChannel,
         List<SystemEventRecord> events,
-        CancellationTokenSource linked,
-        CancellationTokenSource timeoutSource,
-        CancellationToken ct,
+        EvidenceBudgetSlice slice,
         out bool truncated)
     {
         truncated = false;
         var scanned = 0;
         var skipped = 0;
+        DateTimeOffset? oldestRead = null;
         try
         {
+            if (slice.Token.IsCancellationRequested)
+            {
+                slice.Token.ThrowIfCancellationRequested();
+            }
+
             var eventQuery = new EventLogQuery(channel, PathType.LogName, xpath) { ReverseDirection = true, TolerateQueryErrors = false };
             using var reader = new EventLogReader(eventQuery);
-            using var registration = linked.Token.Register(reader.CancelReading);
+            using var registration = slice.Token.Register(reader.CancelReading);
 
             while (true)
             {
@@ -100,7 +118,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
                 {
                     record = reader.ReadEvent();
                 }
-                catch (EventLogException) when (scanned > 0)
+                catch (EventLogException) when (scanned > 0 && !slice.Token.IsCancellationRequested)
                 {
                     skipped++;
                     break;
@@ -113,12 +131,17 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
 
                 using (record)
                 {
+                    slice.Token.ThrowIfCancellationRequested();
                     scanned++;
-                    if (TryNormalize(record, out var normalized) && SystemEventFilter.Matches(normalized!, query))
+                    if (TryNormalize(record, out var normalized))
                     {
-                        events.Add(normalized!);
+                        oldestRead = oldestRead is { } known && known < normalized!.TimestampUtc ? known : normalized!.TimestampUtc;
+                        if (SystemEventFilter.Matches(normalized, query))
+                        {
+                            events.Add(normalized);
+                        }
                     }
-                    else if (normalized is null)
+                    else
                     {
                         skipped++;
                     }
@@ -127,18 +150,18 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
                 if (scanned >= query.ScanCeiling)
                 {
                     truncated = true;
-                    return new(sourceName, InventorySourceStatus.Partial, "The scan ceiling was reached before the start of the window.");
+                    return new(sourceName, InventorySourceStatus.Partial, "The scan ceiling was reached before the start of the window.") { ExaminedFromUtc = oldestRead };
                 }
             }
 
             return skipped > 0
-                ? new(sourceName, InventorySourceStatus.Partial, $"{skipped} record(s) could not be read and were skipped.")
-                : new(sourceName, InventorySourceStatus.Available, null);
+                ? new(sourceName, InventorySourceStatus.Partial, $"{skipped} record(s) could not be read and were skipped.") { ExaminedFromUtc = query.FromUtc }
+                : new(sourceName, InventorySourceStatus.Available, null) { ExaminedFromUtc = query.FromUtc };
         }
-        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested && !ct.IsCancellationRequested)
+        catch (Exception exception) when (exception is OperationCanceledException or EventLogException && slice.TimedOut)
         {
             truncated = true;
-            return new(sourceName, InventorySourceStatus.Partial, "The read did not finish in time and was stopped.");
+            return new(sourceName, InventorySourceStatus.Partial, "The read did not finish within its share of the time bound and was stopped.") { ExaminedFromUtc = oldestRead };
         }
         catch (EventLogNotFoundException)
         {

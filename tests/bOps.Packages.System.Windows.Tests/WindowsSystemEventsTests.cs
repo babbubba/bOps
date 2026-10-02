@@ -112,6 +112,30 @@ public sealed class WindowsSystemEventsTests
         SystemToolConformance.AssertSystemEventsRejectBadArgumentsAsync(new WindowsSystemEventsTool());
 
     [WindowsOnlyFact]
+    public Task SystemEvents_AggregateConforms() =>
+        SystemToolConformance.AssertSystemEventsAggregateConformsAsync(new WindowsSystemEventsTool());
+
+    [WindowsOnlyFact]
+    public async Task SystemCrashes_ConformsInBothModes()
+    {
+        var tool = new WindowsCrashEvidenceTool();
+        SystemToolConformance.AssertCrashesManifest(tool.Manifest, "windows");
+        var aggregate = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["sinceDays"] = 30 }));
+        var raw = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["mode"] = "raw", ["sinceMinutes"] = 10_080, ["limit"] = 50 }));
+        Assert.True(aggregate.Succeeded && raw.Succeeded);
+        SystemToolConformance.AssertCrashesEnvelope(aggregate.Output!, 100);
+        SystemToolConformance.AssertCrashesEnvelope(raw.Output!, 50);
+    }
+
+    [WindowsOnlyFact]
+    public Task SystemStability_Conforms() =>
+        SystemToolConformance.AssertStabilityConformsAsync(new WindowsStabilityTool(), "windows", windowDays: 180);
+
+    [WindowsOnlyFact]
+    public Task SystemStability_RejectsBadArguments() =>
+        SystemToolConformance.AssertStabilityRejectsBadArgumentsAsync(new WindowsStabilityTool());
+
+    [WindowsOnlyFact]
     public async Task ARealReadOfTheSystemAndApplicationLogs_ReturnsNormalizedEvents_AndNamesBothSources()
     {
         var json = await RunAsync(new WindowsSystemEventsTool(), j => { j["windowMinutes"] = 10_080; j["limit"] = 500; j["maxOutputBytes"] = 65_536; });

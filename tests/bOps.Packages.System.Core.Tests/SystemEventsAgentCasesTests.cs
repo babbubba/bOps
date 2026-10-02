@@ -55,7 +55,10 @@ public sealed class SystemEventsAgentCasesTests
         protected override Task<SystemEventSnapshot> CollectAsync(SystemEventQuery query, CancellationToken ct) =>
             Task.FromResult(new SystemEventSnapshot(
                 records.Where(record => SystemEventFilter.Matches(record, query)).ToArray(),
-                [new InventorySourceResult("test.log", InventorySourceStatus.Available, null)]));
+                [new InventorySourceResult("test.log", InventorySourceStatus.Available, null)])
+            {
+                Stores = [new CoverageStore("test.store", CoverageBasis.EventLog, query.FromUtc.AddDays(-1), null, ["test.log"])],
+            });
     }
 
     private sealed class ScriptedModel(params ModelResponse[] responses) : IChatModel

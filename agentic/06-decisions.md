@@ -805,3 +805,53 @@ writes and superseded executors, always with the execution attempt and without p
 public contract only; one additive SQLite column. Pre-ADR tasks are no longer ordinarily resumable (unknown origin).
 Orphan recovery (lease/heartbeat or other ownership proof), delegated resume (HARDEN-11), UI lifecycle (HARDEN-4) and
 context notes on resume (HARDEN-8) stay out of scope.
+
+### D-037 — V1.3.x HARDEN-7: typed stability evidence and temporal coverage (ADR-0032 amendment, ADR-0041)
+
+**Decision.** (1) `system.events` and `system.crashes` gain one explicit `mode` argument (`raw` | `aggregate`), the
+only aggregation switch of either tool: `system.crashes` defaults to `aggregate` (an intentional default change),
+`system.events` keeps `raw` as its default (existing behaviour preserved; aggregation is opt-in). Aggregate returns
+deterministic groups with `count`, `firstSeenUtc`, `lastSeenUtc` (events keyed by channel, source, unit, event id and
+severity; crashes by kind, `eventName` when the kind is `wer`, code, application, module and `timestampKind`); raw
+returns the schema-1 rows plus additive fields, with a stricter `complete` and, for crashes, a corrected `summary`, a
+wider `kind` vocabulary and a fixed byte budget. (2) Long horizons are a separate day argument (`windowDays`,
+`sinceDays`, 1–180, manifest constraints) valid only in aggregate mode and exclusive with the unchanged minute argument
+(1–10080), so raw stays at 7 days through the HARDEN-6 manifest bound; the two cross-field rules are enforced once, in
+a fixed order (both arguments; day argument in raw mode; then the rest), in the shared System.Core reader, with no
+conditional-schema machinery in `bOps.Abstractions`. (3) Every one of the three tools returns a `coverage`
+object (per history store: `oldestAvailableUtc`, `logMaximumBytes`, `state` `complete` | `partial` | `unknown`; directory
+stores always `unknown`) and a per-source `examinedFromUtc`; retention coverage is distinct from completeness, but
+`complete` (and so `ToolResultCompleteness.Complete`) now also requires `coverage.state == complete`, so a retention gap is
+`Partial`, never hidden. (4) New `Read` tool `system.stability` (ADR-0041): eight fixed categories (unexpected shutdown,
+kernel crash, kernel fault, hardware error, display fault, storage error, memory exhaustion, minidump), each
+`applicable`, `notApplicable` or `notCollected` per platform; Windows reads fixed System-log tuples, the WER 1001
+LiveKernelEvent display codes and the minidump directory (name, size, time only); `displayFault` is Display 4101 and
+LiveKernelEvent `0x117`, `0x141`, `0x193` — graphics-stack fault evidence, not proof of a reset — and never `0x1a1`
+(a win32k watchdog hang signature, listed by `system.crashes` as a kernel live dump); Linux reads the kernel journal
+with fixed message rules (panic, oops, MCE/EDAC, OOM kill) and claims no Windows parity; signature groups plus a
+timeline whose bucket width (hour, day, week) is derived from `windowDays`; a category or minidump counter whose
+sources could not be read is `null`, a partial one a lower bound; no `drillDown` or other hint for another tool.
+(5) Every crash and stability time carries `timestampKind` (`occurred` | `reported`); a time not proven to be an
+occurrence is `reported`, and the kind is part of every crash and stability aggregation key; a minidump's file time is
+`reported` and the date in its name is the descriptive `fileNameLocalDate`, never an occurrence time. A `BlueScreen` Report.wer `EventTime` is `reported` (operator-decided, evidence-driven correction discovered during the HARDEN-7 real-Windows validation, 2026-10-02: it is written after the next boot's Kernel-Power 41 — `0x50` 08:45:27Z vs 08:44:37Z, `0x1e` 14:26:56 vs 14:26:35, `0x3b` 20:59:23 vs 20:59:04); `LiveKernelEvent` and application Report.wer `EventTime` stay `occurred`, and no other time is promoted in its place (ADR-0041 §6). (6) Crash records merge only on a shared WER report GUID; nothing is correlated by proximity or
+similarity. (7) `system.crashes` is per-crash evidence, `system.stability` machine-level signals; the two overlaps
+(bugchecks, display live dumps) are stated and must not be summed. Schema versions: `system.events` and
+`system.crashes` 1 → 2, `system.stability` 1.
+
+**Reason.** The incident's evidence existed but was flooded (100 rows, 7 signatures), capped at 7 days, mislabelled in
+time, invisible without provider/event-id knowledge, and silent about log retention. A typed `Complete` over two months of
+a six-month request is the false negative this train removes.
+
+**Rejected.** *Raising the minute maximum with a package-only raw check* (schema advertises refused values). *Generic
+conditional schema in the SDK.* *Separate summary tools.* *Raw as the `system.crashes` default.* *Aggregate as the
+`system.events` default* (independent review). *A boolean `aggregate` argument or any second aggregation switch.*
+*Retention only via `Completeness`, or only via `coverage`.* *Caller-chosen providers, event ids or categories* (a
+query language). *Fuzzy incident correlation.* *Parsing dumps.* *Inferring Linux unclean shutdowns.* *`0x1a1` as
+display evidence; the minidump file-name date as occurrence; a `drillDown` hint* (independent review).
+
+**Consequences.** SDK/API abstractions: additive, no break. Tool results: schema 2 for both amended tools;
+`system.crashes` changes its default output shape (schema-1 readers pass `mode: raw`), `system.events` keeps its
+default. More results are `Partial` by design. No change to `bOps.Abstractions`, policy, runtime, persistence or the
+audit schema; all new contract types are package-local in `bOps.Packages.System.Core`. HARDEN-9 uses this `mode` and
+adds no second aggregation parameter. Both ADRs are accepted as an operator decision through the HARDEN-7 architecture
+gate; the independent review's blocking findings are resolved in their text. Implementation is HARDEN-7.

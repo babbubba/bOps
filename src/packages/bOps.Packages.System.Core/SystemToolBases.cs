@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 
 namespace bOps.Packages.Sys.Core;
@@ -46,21 +47,82 @@ public abstract class SystemUpdateHistoryToolBase(string platform) : ITool
     }
 }
 
-/// <summary>Shared shell for bounded, read-only crash-evidence collection.</summary>
-public abstract class SystemCrashesToolBase(string platform) : ITool
+/// <summary>
+/// Shared shell for bounded, read-only crash evidence (<c>system.crashes</c>, schema 2 of the ADR-0032 HARDEN-7 amendment): argument
+/// reading with the two cross-field rules, aggregation, coverage, the fixed byte budget and the audit summary are written once here;
+/// each OS package implements only collection and, on Windows, report-identity merging.
+/// </summary>
+public abstract class SystemCrashesToolBase(string platform, TimeProvider? clock = null) : IToolAuditSummaryProvider
 {
+    private readonly TimeProvider clock = clock ?? TimeProvider.System;
+
     /// <inheritdoc />
     public ToolManifest Manifest { get; } = SystemToolManifests.Crashes(platform);
 
-    /// <summary>Collects only normalized crash metadata after bounded arguments are validated.</summary>
-    protected abstract Task<MaintenanceSnapshot<CrashRecord>> CollectAsync(MaintenanceArguments arguments, CancellationToken ct);
+    /// <summary>The clock the window and the call's time budget are measured on.</summary>
+    protected TimeProvider Clock => clock;
+
+    /// <summary>
+    /// Collects normalized crashes for the window of <paramref name="query"/>, after its arguments were validated. Collection never
+    /// depends on <see cref="CrashesQuery.Limit"/>: grouping needs every crash of the window, and the limit is applied afterwards.
+    /// </summary>
+    protected abstract Task<CrashEvidenceSnapshot> CollectAsync(CrashesQuery query, CancellationToken ct);
 
     /// <inheritdoc />
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!SystemMaintenanceArguments.TryReadCrashes(arguments, out var query, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
-        return EvidenceCompleteness.Success(SystemMaintenanceFormatting.Crashes(await CollectAsync(query, ct).ConfigureAwait(false), query.Limit));
+        if (!SystemCrashesArguments.TryRead(arguments, clock.GetUtcNow(), out var query, out var error))
+        {
+            return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var snapshot = await CollectAsync(query!, ct).ConfigureAwait(false);
+        return EvidenceCompleteness.Success(SystemCrashFormatting.Format(snapshot, query!));
+    }
+
+    /// <inheritdoc />
+    public JsonObject? CreateAuditSummary(ToolArguments arguments, ToolCallResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (!result.Succeeded || result.Output is null)
+        {
+            return null;
+        }
+
+        JsonObject root;
+        try
+        {
+            root = JsonNode.Parse(result.Output)!.AsObject();
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidOperationException or NullReferenceException)
+        {
+            return null;
+        }
+
+        var aggregate = root["groups"] is JsonArray;
+        var byKind = new JsonObject();
+        foreach (var kind in (aggregate ? root["groups"] : root["items"])!.AsArray()
+                     .GroupBy(entry => entry!["kind"]?.GetValue<string>() ?? "unknown")
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            byKind[kind.Key] = aggregate ? kind.Sum(entry => entry!["count"]!.GetValue<int>()) : kind.Count();
+        }
+
+        // Never an application or module name, a report id, a bucket or a path (ADR-0032 HARDEN-7 amendment §8).
+        var summary = new JsonObject
+        {
+            ["mode"] = root["mode"]!.GetValue<string>(),
+            ["status"] = root["status"]!.GetValue<string>(),
+            ["complete"] = root["complete"]!.GetValue<bool>(),
+            ["truncated"] = root["truncated"]!.GetValue<bool>(),
+            ["observedItems"] = root["observedItems"]!.GetValue<int>(),
+            ["byKind"] = byKind,
+            ["sources"] = EvidenceAudit.Sources(root),
+        };
+        EvidenceAudit.AddCoverage(summary, root);
+        return summary;
     }
 }
 
