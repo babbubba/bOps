@@ -604,69 +604,115 @@ the architecture gate (R15). The remaining blocking corrections (R1–R4) are in
 
 ## HARDEN-9 amendment — Proposed 2026-10-02
 
-Status: Proposed (2026-10-02, HARDEN-9 architecture gate; independent architecture review and operator acceptance
-pending). Proposed together with [ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md), which governs the
-runtime part of HARDEN-9 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md), scope 4;
-hypothesis H-6). Everything in the 2026-09-21 decision and the HARDEN-7 amendment that this amendment does not name stays
-as it is; in particular `mode` remains the only aggregation switch and no `aggregate` argument is added.
+Status: Proposed (2026-10-02, HARDEN-9 architecture gate; revised 2026-10-03 after the independent architecture review,
+finding N7; architecture delta review and operator acceptance pending). Proposed together with
+[ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md), which governs the runtime part of HARDEN-9
+([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md), scope 4; hypothesis H-6).
+Everything in the 2026-09-21 decision and the HARDEN-7 amendment that this amendment does not name stays as it is; in
+particular `mode` remains the only aggregation switch and no `aggregate` argument is added.
 
 ### Context
 
 On the operator workstation `system.events` with `mode: aggregate`, `windowDays: 180`, `minSeverity: error` returned
 1,112 records in 32 groups, among them `.NET Runtime` 1000 × 259 written by the bOps development host itself (HARDEN-7
-real-Windows evidence; H-6). The `limit` and the byte budget cut from the end of the order, so self-noise can push other
-records or groups out of the result, and the model cannot ask for "everything except these sources" without hiding that
-it did.
+real-Windows evidence; H-6). The `limit` and the byte budget cut from the end of the order, and on Windows the scan
+ceiling is spent on those records too, so self-noise can push other records or groups out of the result; the model
+cannot ask for "everything except these sources" without hiding that it did.
 
 ### Decision
 
-#### 1. Argument
+#### 1. Argument and grammar
 
-| Name | Type | Manifest constraint | Valid in |
+| Name | Type | Machine-readable manifest constraint | Valid in |
 |---|---|---|---|
-| `excludeSources` | String | `MinLength = 1`, `MaxLength = 1024` | both modes, every horizon |
+| `excludeSources` | String, optional | `MinLength = 1`, `MaxLength = 1024` | both modes, every horizon |
 
-The value is a comma-separated list of source names. The shared System.Core reader splits it on `,`, trims spaces around
-each entry, and rejects as a `ToolFailureKind.Validation` failure — never clamping, dropping or correcting — an empty
-entry, more than **8** entries, an entry longer than 128 characters or outside the `source` character set (letters,
-digits, `space _ . @ : / ( ) -`, which contains no comma, so the separator is unambiguous), two entries equal under
-case-insensitive comparison, and an entry equal (case-insensitive) to `source`. These checks are part of rule 3 of the
-HARDEN-7 amendment §2; rules 1 and 2 keep their place and order.
+- **Absent or JSON `null`** → no exclusion (the same rule every optional `system.events` argument already follows).
+  An empty string is rejected by the runtime from `MinLength` before the tool runs.
+- **Separator.** The value is split on `,` (U+002C). Every entry is trimmed of surrounding whitespace.
+- **Entries.** After trimming, each entry must be non-empty, at most **128** UTF-16 code units (`string.Length`), and use
+  only the `source` character set — letters, digits and `space _ . @ : / ( ) -` (the set contains no comma, so the
+  separator is unambiguous) — with the same pattern check `source` uses. At most **8** entries.
+- **Total.** At most **1,024** UTF-16 code units for the whole value, enforced by the runtime from `MaxLength`
+  (HARDEN-6).
+- **Rejections** (`ToolFailureKind.Validation`, message naming the rule; nothing is clamped, dropped or corrected): an
+  empty entry (for example `a,,b` or a trailing comma); more than 8 entries; an entry longer than 128; a character
+  outside the set; two entries equal under `StringComparison.OrdinalIgnoreCase`; an entry equal to the `source` argument
+  under `OrdinalIgnoreCase`. These checks run in the shared System.Core reader as part of rule 3 of the HARDEN-7
+  amendment §2; rules 1 and 2 keep their place and order.
+- **Unknown names.** A syntactically valid name that matches no provider, identifier or record is **accepted and
+  echoed**; it is not a validation failure (whether a source exists on a host, or in the window, is not knowable before
+  the read and must not be guessed).
+- **Description.** The parameter description states what the machine-readable constraints cannot: comma-separated, at
+  most 8 entries of at most 128 characters in the `source` character set, matched exactly and case-insensitively against
+  the result's `source` value, no duplicates, not equal to `source`, echoed in the output, and that excluded sources are
+  not evidence of absence.
 
 A `String` is used because `bOps.Abstractions` has no list type except `PathList`, which is subject to the path policy;
 adding a string-list type is an SDK and provider-projection change this packet does not need (ADR-0042 §14). The bounds
-are those of `source` (128 characters per entry) and a small fixed count: 8 entries cover a host's own noise sources with
-room to spare, keep the XPath and the echo small, and cap the echo at about 1.1 KB, well inside the 4,096-byte minimum of
-`maxOutputBytes`.
+are those of `source` (128 per entry) and a small fixed count: 8 entries cover a host's own noise sources with room to
+spare, keep the XPath and the echo small, and cap the echo at about 1.1 KB.
 
-#### 2. Matching
+#### 2. Matching — the canonical `source`, nothing else
 
-A record is excluded when, for any entry, the `source` filter would select it: exact, case-insensitive equality with the
-Windows provider name, or with the Linux syslog identifier or the systemd unit. `SystemEventFilter` stays the one
-definition and applies the exclusion to every collector's records. A collector may also exclude natively only with the
-same meaning: Windows adds the exclusion to the XPath on the provider spelling registered on the machine, built only from
-validated values, exactly as for `source`; an entry with no registered spelling is excluded by the shared filter. Linux
-excludes after parsing, because journald matches cannot negate "identifier or unit".
+A record is excluded when its canonical `source` value — the value the result shows in the row's or group's `source`
+field — equals an entry under `StringComparison.OrdinalIgnoreCase`. There is no second matching rule: the caller
+excludes what `source` shows.
+
+- **Windows.** The canonical `source` is the record's provider name. Exclusion is **native, before the scan ceiling**,
+  and the shared post-filter is applied as well:
+  - For each entry the collector looks up the provider spelling registered on the machine
+    (`EventLogSession.GetProviderNames()`, first match under `OrdinalIgnoreCase`, the lookup ADR-0032 already uses for
+    `source`); when none is registered, or the registered spelling does not itself pass the `source` character-set check,
+    the validated entry itself is used.
+  - The XPath gains one predicate on the `System` element: `Provider[@Name!='p1' and @Name!='p2' …]` — one `!=` term per
+    entry, joined with `and`, each value a name that passed the `source` character-set check (which contains no quote),
+    never caller-supplied XPath. `not()` is not used (outside the Event Log XPath subset).
+  - The shared `SystemEventFilter` then applies the canonical-`source` exclusion to every record returned, so a record
+    whose provider spelling the native comparison did not match is still excluded, after the scan.
+  - Evidence: a read-only probe on the operator workstation (Application log, last 24 hours, 2026-10-03) returned 698
+    records; `Provider[@Name!='Windows Error Reporting' and @Name!='Microsoft-Windows-Security-SPP']` returned 199 =
+    698 − 378 − 121, none of them from either provider; on that host the native comparison was also case-insensitive.
+    Because ADR-0032 records case-sensitive native provider matching on some hosts, the registered-spelling lookup and
+    the post-filter are both required. The implementation verifies the construct on real Windows by test; if the
+    construct is not honoured reliably, implementation stops and returns to architecture — it does not switch to
+    post-filtering on its own, because that would change the scan-ceiling, `truncated` and completeness semantics.
+- **Linux.** The canonical `source` is the parser's: `SYSLOG_IDENTIFIER`, else `_SYSTEMD_UNIT`, else `_COMM`, else
+  `unknown` (`JournalRecordParser`). Exclusion is the shared post-filter after parsing only; no journal match expression
+  is built from an entry (journald matches cannot be negated), and no caller-supplied journal expression exists. Unlike
+  the `source` filter, which also matches the unit, an exclusion never compares `_SYSTEMD_UNIT` separately: a record
+  whose identifier is `x` and whose unit is `x.service` is excluded by `x`, not by `x.service`.
 
 #### 3. Order and counting
 
 The exclusion is a filter like the others: applied before grouping, before `limit` and before the byte budget.
-`observedEvents` counts matched records after the exclusion, and no group or row contains an excluded record. The scan
-ceiling behaves as for `source`: on Linux excluded records are scanned and count towards the ceiling; on Windows natively
-excluded records are not read. No count of excluded records is reported: Windows' native exclusion cannot count them,
-and one field must not have two platform meanings.
+`observedEvents` counts matched records after the exclusion, and no group or row contains an excluded record; an
+exclusion that removes every matching record gives an empty `events` or `groups` with the echo. Scan ceilings: on
+Windows, natively excluded records are not read and do not count towards the 10,000-record ceiling (post-filtered
+records do); on Linux every excluded record is scanned and counts. `truncated`, `status`, `complete` and `Completeness`
+keep their HARDEN-7 definitions over the records actually scanned. No count of excluded records is reported: Windows'
+native exclusion cannot count them, and one field must not have two platform meanings.
 
 #### 4. Echo
 
-Every result carries a top-level `excludeSources` array, placed after `window`, always present: the parsed entries
-(trimmed, as given) ordered case-insensitive ordinal then ordinal, or `[]` when the argument was absent. It belongs to the
-envelope and is never removed by the byte budget. The exclusion is therefore never silent; ADR-0042 §7 forbids reading an
-excluded source as absent.
+Every successful result carries a top-level `excludeSources` array, placed immediately after `window`, always present:
+
+- `[]` when the argument was absent or `null`;
+- otherwise the validated entries — trimmed, in the caller's spelling — sorted by `StringComparison.OrdinalIgnoreCase`,
+  then `StringComparison.Ordinal` (the duplicate rule makes the first comparison decisive; the second keeps the order
+  total); the same input therefore always produces the same echo.
+
+It belongs to the envelope and is never removed by the byte budget. Worst case: 8 entries × 128 characters of the
+single-byte character set plus JSON punctuation is about 1,060 bytes. The implementation proves by test that the
+largest envelope — maximal echo, default channels, every source with its longest `detail`, coverage stores — fits in the
+minimum `maxOutputBytes` of 4,096 with the budget removing only rows or groups; if it does not fit, implementation stops
+and returns to architecture rather than shortening the envelope.
 
 #### 5. Completeness and coverage
 
 Unchanged. The exclusion narrows the question, like `source`: `complete: true` with an exclusion means complete for the
-filtered question. `coverage` and `examinedFromUtc` keep their meaning.
+filtered question. `coverage` and `examinedFromUtc` keep their meaning. ADR-0042 §7 forbids reading an excluded source as
+absent.
 
 #### 6. Schema version, manifest and audit
 
@@ -674,9 +720,9 @@ filtered question. `coverage` and `examinedFromUtc` keep their meaning.
   value means exactly the schema-2 behaviour; no existing field changes meaning. A schema-2 reader that does not pass
   `excludeSources` loses nothing by ignoring it. (Schema 2 has not been released in a tag; no consumer outside the System
   packages parses the output, ADR-0032 HARDEN-7 amendment §9.)
-- The manifest gains the parameter and one description sentence: excluded sources use the matching of `source`, are
-  echoed in `excludeSources`, and are not evidence of absence. The HARDEN-6 constraint snapshot gains one constrained
-  parameter; Windows and Linux manifests stay identical apart from `Platforms`.
+- The manifest gains the parameter with its description (§1) and one sentence in the tool description. The HARDEN-6
+  constraint snapshot gains one constrained parameter; Windows and Linux manifests stay identical apart from
+  `Platforms`; both provider adapters project `minLength`/`maxLength` for it.
 - Audit: the redacted arguments already carry the value (it is not `Sensitive`); the audit summary is unchanged and never
   carries a message.
 - `system.crashes` and `system.stability` gain nothing: their sources are fixed and typed, and self-noise is a
@@ -689,16 +735,27 @@ two provider projections for one argument; a future ADR-0022 amendment may add i
 with a schema bump. **A repeated single-value `excludeSource`.** Rejected: one exclusion is not enough for the measured
 noise. **Wildcards or patterns.** Rejected: a query language. **A built-in default exclusion of bOps' own sources.**
 Rejected: the package would name products and evidence would be hidden without the caller asking. **Excluding after
-`limit`.** Rejected: excluded records would still displace others. **An excluded-record count.** Rejected for the
-platform asymmetry in §3. **A second aggregation switch.** Rejected by D-037; aggregation stays `mode`.
+`limit`.** Rejected: excluded records would still displace others. **Windows post-filtering only.** Rejected: the noise
+would keep consuming the scan ceiling, which is half of H-6. **Leaving native exclusion to the implementer.** Rejected by
+the independent review: it changes ceiling, `truncated` and completeness semantics. **Matching the Linux unit
+separately, as `source` does.** Rejected by the independent review: the caller excludes what `source` shows, one
+semantic. **Rejecting unknown names.** Rejected: existence in the window is not knowable before the read. **An
+excluded-record count.** Rejected for the platform asymmetry in §3. **A second aggregation switch.** Rejected by D-037;
+aggregation stays `mode`.
 
 ### Tests
 
-Shared reader: valid lists with and without spaces; empty entry, 9 entries, a 129-character entry, a forbidden character,
-case-insensitive duplicates and an entry equal to `source` rejected with `Validation`; HARDEN-7 rules 1 and 2 still
-reported first; the total length enforced by the runtime from the manifest. Filter: exclusion in `raw` and `aggregate`,
-case-insensitive, Linux identifier and unit, excluded records absent from rows, groups and `observedEvents`. Echo: always
-present, sorted, `[]` without the argument, kept under the byte budget, `schemaVersion` 2. Windows: native exclusion on the
-registered spelling and the shared fallback give the same records for an untruncated scan; the XPath is built only from
-validated values. Linux: real journald exclusion. Architecture: constraint snapshot and manifest parity. Platform evidence:
-one real Windows `mode: aggregate` run with `windowDays` and `excludeSources` showing the excluded noise and the echo.
+Shared reader: valid lists with and without spaces; JSON `null` treated as absent; an empty entry (`a,,b`, trailing
+comma), 9 entries, a 129-character entry, a forbidden character, case-insensitive duplicates and an entry equal to
+`source` rejected with `Validation`; HARDEN-7 rules 1 and 2 still reported first; an empty string and a 1,025-character
+value rejected by the runtime from the manifest. Matching: case-insensitive canonical `source`; an unknown valid name
+accepted and echoed; an exclusion removing every matching record (empty rows or groups, echo present); exclusion in
+`raw` and `aggregate`; excluded records absent from rows, groups and `observedEvents`. Echo: always present, `[]` without
+the argument, sorted, caller spelling kept, byte-identical for permuted input; `schemaVersion` 2. Envelope: the
+worst-case echo at `maxOutputBytes: 4096`. Windows: the XPath contains one `@Name!=` term per entry built only from
+validated or registered names (an injection attempt cannot pass the reader); native exclusion keeps excluded records out
+of the scan ceiling; a record whose spelling differs is removed by the post-filter; real Windows verification of the
+construct. Linux: canonical `source` (identifier, unit fallback, `_COMM` fallback, `unknown`); a record with identifier
+`x` and unit `x.service` excluded by `x` only; real journald exclusion. Architecture: constraint snapshot, manifest
+parity, provider projection of `minLength`/`maxLength` (OpenAI-compatible and Anthropic). Platform evidence: one real
+Windows `mode: aggregate` run with `windowDays` and `excludeSources` showing the excluded noise and the echo.

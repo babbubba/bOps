@@ -1,7 +1,7 @@
 # ADR-0042 — Evidence reasoning and limitation disclosure
 
-Status: Proposed (2026-10-02, HARDEN-9 architecture gate; independent architecture review and operator acceptance
-pending)
+Status: Proposed (2026-10-02, HARDEN-9 architecture gate; revised 2026-10-03 after the independent architecture review —
+see "Independent review corrections"; architecture delta review and operator acceptance pending)
 Date: 2026-10-02
 
 Governs the runtime part of HARDEN-9 of the V1.3.x reliability train
@@ -12,7 +12,8 @@ finding F-22, hypothesis H-6). The `system.events` part (`excludeSources`) is th
 proposed together with this ADR. It builds on, and does not restate, the ADR-0022 HARDEN-6 amendment
 (`ToolResultCompleteness`, `ToolFailureKind`), the ADR-0032 HARDEN-7 amendment (modes, horizons, temporal coverage,
 the stricter `complete`) and [ADR-0041](0041-typed-cross-platform-stability-evidence.md) (§6 evidence time, §7 identity
-and correlation, §10 tool boundary).
+and correlation, §10 tool boundary). The decision entry that will summarize it (D-038) is written in
+`agentic/06-decisions.md` only when the architecture is accepted.
 
 ## Context
 
@@ -43,14 +44,21 @@ evidence is used.
   to `Agent:MaxObservationCharacters` (default 4,000) before it enters the model history (rule C3), while the typed
   evidence tools emit up to 32,768 (`system.events` default, `system.stability`) or 65,536 bytes (`system.crashes`):
   with defaults the model sees only the head and tail of those results.
+- Persisted step layout (`AgentRunner.RecordAsync`, `RejectAsync`): a step on a resolved tool has `Description` equal to
+  the manifest name and `ToolCall.ToolName` equal to it (the registry resolves names ordinally); every pre-execution
+  rejection (policy, operator, entitlement, envelope, unknown tool) has `Description` `Denied`, and only the unknown-tool
+  rejection is classified `ToolFailureKind.Validation`. `Result.Output` is the full tool output; `Observation` is
+  `TruncateForHistory(Output)`, optionally followed by `\nVerification: …`; `WrapToolOutput` is applied only to the
+  history turn and never persisted. The final answer is a step with `Description` `Final response`, read by
+  `DelegationRoleData.FinalText`.
 
 ### What "evidence reasoning" means in bOps
 
 It is **not** an inference engine. Deterministic code already establishes, labels and bounds the evidence (HARDEN-6,
 HARDEN-7). What is missing is (1) a standing rule telling the model how to weigh and describe that evidence, (2) the
-runtime telling the model, from facts only the runtime holds, which evidence was incomplete, failed, or shortened before
-it reached the model, and (3) a final answer that states those limitations. The model interprets; the runtime makes the
-limits impossible to miss and cheap to disclose; nothing is rewritten.
+runtime telling the model, from facts only the runtime holds, for which steps the requested result was not obtained or
+was only partially available to it, and (3) a final answer that states those limitations. The model interprets; the
+runtime makes the limits impossible to miss and cheap to disclose; nothing is rewritten.
 
 ## Decision
 
@@ -61,13 +69,14 @@ HARDEN-9 is a combination of four bounded pieces, each where the boundary rules 
 | Piece | Lives in | Why there |
 |---|---|---|
 | Evidence rule (§4) | `bOps.Runtime`, appended to the base system prompt | It is a standing instruction to the model; it is product- and platform-neutral, so the core may carry it (rule A1). |
-| Evidence-limitations digest (§5) | `bOps.Runtime`, built from persisted steps | Only typed `ToolCallResult` fields and runtime facts are used; the core never parses package JSON (packet stop condition). |
+| Evidence-limitations digest (§5) | `bOps.Runtime`, built from persisted steps | Only typed `ToolCallResult` fields and persisted step metadata are used; the core never parses package JSON (packet stop condition). |
 | Final-answer disclosure check (§6) | `bOps.Runtime`, final-response path of the step loop | It changes the loop's final-response contract, which only the runtime owns (packet ADR prerequisite). |
 | `excludeSources` (H-6 self-noise) | `bOps.Packages.System.Core` shared reader and filter; per-OS collectors | It is a `system.events` argument (ADR-0032 HARDEN-9 amendment). |
 
 There is **no** new tool, no shared reasoning layer, no relation or confidence field in any package output, no
-cross-tool correlation code, no runtime-initiated tool call and no `bOps.Abstractions` change. Windows and Linux share
-everything except the collectors' native exclusion (§15).
+cross-tool correlation code, no runtime-initiated tool execution and no `bOps.Abstractions` change. Windows and Linux
+share everything except the collectors' native exclusion (§15). One package manifest description is also corrected
+(HARDEN-7 residual N-2, §16).
 
 ### 2. Evidence model
 
@@ -76,10 +85,14 @@ Five classes. Deterministic code produces the first two; the model produces the 
 | Class | Definition | Produced by | Authorized by | Not authorized by |
 |---|---|---|---|---|
 | **Observed** | What a tool result states: values, counts, groups, timelines, coverage, source status, typed time kinds — including what the tool computed deterministically under its accepted ADR (aggregation, exact-identity merges, buckets). | Packages | The tool's contract. | — |
-| **Derived** | A statement that follows necessarily from observed values without any assumption: ordering of two occurrence times, an interval, a bound from a reported time (§8), "at least N" from a lower bound, which steps were incomplete (§5). | Runtime (the digest, §5); the model when it states it with its inputs | Arithmetic and order on values of compatible kinds (§8). | Values of incompatible kinds; summing overlapping evidence (§9). |
-| **Hypothesis** | A possible explanation: temporal proximity, co-occurrence, frequency, similarity, a pattern across sources. | The model | Any observed or derived support, stated with what supports it, what contradicts it and what evidence would confirm it. | — (a hypothesis is never presented as observed or as a cause) |
-| **Cause** | A causal relation stated as established. | The model | Only evidence that itself records the relation (a record that names the reason of what it describes — for example an unexpected-shutdown record carrying the bugcheck code that ended the session). | Correlation, temporal proximity or order, frequency, co-occurrence, absence of other evidence, partial coverage, or the number of hypotheses ruled out. |
-| **Unknown** | What the evidence cannot say: not collected, unavailable, outside retained history, not applicable on this platform, a `null` count, the part of a result that was truncated or shortened. | Packages (statuses, `null`, coverage) and the runtime (digest) | — | Never reported as zero, absence or health. |
+| **Derived** | A statement that follows deterministically from observed evidence under explicitly stated architectural preconditions: "at least N" from a lower bound; the steps the digest lists (§5); the occurrence bound of one event from its own `reported` time; the order or interval of two different events only under the clock preconditions of §8. | Runtime (the digest); the model when it states the statement together with its inputs and preconditions | Arithmetic and order on values of compatible kinds whose preconditions hold (§8). | Values of incompatible kinds; an order whose clock preconditions do not hold or are not shown (§8); summing overlapping evidence (§9). |
+| **Hypothesis** | A possible explanation: temporal proximity, co-occurrence, frequency, similarity, a pattern across sources, an order that is not derivable. | The model | Any observed or derived support, stated with what supports it, what contradicts it and what evidence would confirm it. | — (a hypothesis is never presented as observed, derived or as a cause) |
+| **Attributed cause** | A causal relation that a source record itself states (a record that names the reason of what it describes — for example an unexpected-shutdown record carrying the bugcheck code that ended the session). | The source; the model reports it | The record's own statement, reported as the record's attribution: "the record attributes Y to X". | Anything else: correlation, temporal order or proximity, frequency, co-occurrence, absence of other evidence, partial coverage, the number of hypotheses ruled out. |
+| **Unknown** | What the evidence cannot say: not collected, unavailable, outside retained history, not applicable on this platform, a `null` count, the part of a result that was truncated or not visible to the model, an excluded source. | Packages (statuses, `null`, coverage) and the runtime (digest) | — | Never reported as zero, absence or health. |
+
+**No independently established cause.** bOps has no product contract that verifies a causal fact, and HARDEN-9 adds
+none. The model therefore never states "X caused Y" as its own conclusion. When a record attributes a cause, the model
+says so as the record's statement ("the record states X as the reason for Y"); every other causal idea is a hypothesis.
 
 ### 3. Deterministic code vs model
 
@@ -87,16 +100,18 @@ Five classes. Deterministic code produces the first two; the model produces the 
 |---|---|
 | Normalize, classify and bound evidence; establish exact identity; aggregate; bucket; label time kinds; report coverage, source status and completeness (HARDEN-7, unchanged). | Choose which evidence to collect and in which `mode`/horizon. |
 | Remove caller-named noise sources and echo the exclusion (ADR-0032 HARDEN-9 amendment). | Relate evidence across tools and calls in time; form, rank and test hypotheses. |
-| List, from typed fields only, every step whose evidence was incomplete, failed, or shortened before it reached the model (§5). | Explain each limitation in the final answer using what the tool itself reported (which source, which period, which items). |
-| Check once that a final answer given under listed limitations contains the disclosure section, and ask once if it does not (§6). | Write the final answer, including the "Evidence limitations" section. |
+| List, from typed fields and persisted step metadata only, every step for which the requested result was not obtained or was only partially available (§5). | Explain each limitation in the final answer using what the tool itself reported — or say that the relevant evidence was not visible. |
+| Check once, deterministically, that a final answer given under listed limitations contains the disclosure heading, and ask once for a restatement if it does not (§6). | Write the final answer, including the `Evidence limitations` section. |
 
 **Explicitly forbidden inference** (the rule of §4 forbids it to the model; no code produces it): a `reported` or record
-time presented as an occurrence time; proximity, order, frequency or co-occurrence presented as a cause; an empty,
-partial, unavailable, truncated, shortened, excluded, `notCollected`, `notApplicable` or `null` result presented as zero,
-absence or health; a lower bound presented as an exact count; counts added across tools whose descriptions say they
-overlap; two records presented as the same incident without an identity the tool established; a single current sample
-presented as a historical trend; anything before a store's `oldestAvailableUtc` presented as known; a descriptive local
-date (`fileNameLocalDate`) presented as an occurrence time.
+time presented as an occurrence time; an order between different events presented as a fact when the clock
+preconditions of §8 are not shown; proximity, order, frequency or co-occurrence presented as a cause; a record's causal
+attribution restated as the model's own causal conclusion; an empty, partial, unavailable, truncated, shortened,
+excluded, `notCollected`, `notApplicable` or `null` result presented as zero, absence or health; any result presented as
+proof that something did not occur; a lower bound presented as an exact count; counts added across tools whose
+descriptions say they overlap; two records presented as the same incident without an identity the tool established; a
+single current sample presented as a historical trend; anything before a store's `oldestAvailableUtc` presented as
+known; a descriptive local date (`fileNameLocalDate`) presented as an occurrence time.
 
 **Explicitly not in code:** no confidence score or percentage, no causal or relation field, no ranking of hypotheses, no
 summary of findings, no post-processing of the model's text. The packet requires none, and each would put an unprovable
@@ -105,106 +120,179 @@ judgement behind a deterministic-looking field.
 ### 4. The evidence rule (system prompt)
 
 A fixed paragraph appended to `AgentRunner.SystemPrompt`, so every plan, replan and step call carries it. It must state
-each clause below in product-, OS-, tool- and symptom-neutral words; the wording is the implementation's, the clauses are
-normative:
+each clause below; the wording is the implementation's, the clauses are normative:
 
 - **E1 Observation vs inference.** Report what tool results show as observations; label anything concluded beyond them
   as an inference or hypothesis.
 - **E2 Current vs historical.** A reading of the current state is weak evidence about a past or intermittent problem;
   prefer evidence covering the period in question; a single sample is not a trend.
-- **E3 Bounded evidence.** Evidence a result marks as partial, unavailable, truncated, shortened or covering less time
-  than requested is a bounded observation; counts from it are minimums.
-- **E4 Absence.** "Not found" proves absence only when the result is complete for the whole period asked; otherwise
-  say "not observed in the evidence read" and why. Not collected, not available, outside retained history, excluded by a
-  filter, and not applicable on this system are unknowns, never zero.
-- **E5 Time.** Some times record when something happened, others when it was recorded or reported, possibly much later.
-  A recording time shows only that the thing happened no later than that time; never present it as when it happened.
+- **E3 Bounded evidence.** Evidence a result marks as partial, unavailable, truncated or covering less time than
+  requested, or that was not fully visible, is a bounded observation; counts from it are minimums.
+- **E4 Absence.** No result proves that something did not happen. The strongest statement is that no matching records
+  were observed in the readable sources covering the requested period and filters, and only when the result says it is
+  complete; otherwise say that nothing was observed in the evidence read and why it is incomplete. Not collected, not
+  available, outside retained history, excluded by a filter, and not applicable on this system are unknowns, never zero.
+- **E5 Time.** Some times record when something happened, others when it was recorded or reported, possibly much later;
+  a time without a stated kind is the time of the record. A recording time shows only that the thing happened no later
+  than that time; never present it as when it happened. Order two different events as a fact only on one comparable
+  clock, with no clock change or restart between them and a gap larger than the precision of the times; otherwise the
+  order is only a hypothesis.
 - **E6 Correlation.** Relate independent sources by time to form hypotheses. Closeness in time, co-occurrence,
   frequency or similarity never proves a cause. When tools say their evidence overlaps, one event may appear in both:
   do not add their counts.
-- **E7 Cause.** State a cause only when the evidence itself records that relation; otherwise give the most likely
-  explanations as hypotheses, with the evidence for and against and what would confirm them.
-- **E8 Disclosure.** When the runtime lists evidence limitations, the final answer contains a short section headed
-  exactly `Evidence limitations` (this heading in English whatever the answer's language) naming each affected step's
-  tool and what that tool reported as partial, missing or cut. When the runtime lists none, the answer has no such
-  section.
+- **E7 Cause.** Never state a cause as your own conclusion. When a record itself states a reason, report it as that
+  record's statement; otherwise give the most likely explanations as hypotheses, with the evidence for and against and
+  what would confirm them.
+- **E8 Disclosure.** When the runtime lists evidence limitations, the final answer contains a section with the heading
+  `Evidence limitations` — this exact English heading on its own line, whatever the answer's language; the section
+  itself may be written in the answer's language. For each listed step it names the tool and what that tool reported as
+  partial, missing or cut; when the step failed or the relevant evidence was not visible, it says that it was not
+  visible rather than describing content that was not received. When the runtime lists none, no such section is
+  required: do not add an empty or boilerplate one; a limitation the model judges material may still be disclosed.
 
-Constraints: at most 2,000 characters; no OS, product, provider, package, tool name, event source, event id or symptom
-term (a deny-list test, §17); no field name of any package schema; no example drawn from the incident.
+Constraints:
+
+- at most 2,000 characters;
+- **no identifier-shaped tokens**: no token containing `.`, `_` or `/` between letters or digits, no token with an
+  upper-case letter after its first character (camelCase or PascalCase identifiers), no token mixing letters and digits
+  — so no package, schema, field, tool or provider identifier can appear;
+- no name from a fixed deny-list of operating systems, products, providers, log stores, event sources and symptom words;
+- ordinary English words — including `complete`, `partial`, `coverage`, `truncated`, `reported` — are allowed in their
+  normal sense;
+- the heading literal `Evidence limitations` is allowed (two ordinary words);
+- no example drawn from the incident.
+
+The digest template and the re-ask instruction (§5, §6) are runtime-authored texts outside this rule and may carry their
+version identifiers.
 
 ### 5. Evidence-limitations digest
 
-A runtime-authored, deterministic list of the steps whose evidence the model must treat as limited.
+**Scope.** The limitations digest lists the steps for which the requested result was not obtained or was only partially
+available — to the tool or to the model. That covers evidence reads and actions alike, so a failed non-`Read` action is
+listed without any registry lookup or risk parsing.
 
-**Input.** The task's persisted steps, all execution attempts, in step-index order. Only steps with a `ToolCall` and a
-`Result` are considered; final-response steps, synthetic failure steps and verification results are not.
+**Input.** The task's persisted steps, all execution attempts, in ascending `Index` (globally monotonic across attempts,
+ADR-0040). Only steps with a `ToolCall` and a `Result` are considered; final-response steps, synthetic failure steps and
+verification results are not.
 
 **A step is listed when any of the following holds** (typed fields and persisted step data only):
 
 1. `Result.Completeness` is `Partial` or `Unavailable` (this includes every HARDEN-7 coverage mismatch, which the package
    folds into `Partial`);
 2. `Result.Outcome` is not `Success` and `Result.FailureKind` is not `Validation` — an environment, internal, timeout,
-   authorization (policy, entitlement, operator, envelope) or unclassified failure: evidence that was not collected;
-3. the result succeeded and its persisted `Observation` does not contain its `Output` in full (ordinal) — the runtime
-   shortened it under rule C3. Using the persisted step, not the current option value, makes this identical live and on
-   resume.
+   authorization (policy, entitlement, operator, envelope) or unclassified failure;
+3. `Result.Outcome` is not `Success`, `Result.FailureKind` is `Validation`, and the step is not superseded (below);
+4. the result is shortened: `Result.Outcome` is `Success`, `Result.Output` is neither `null` nor empty, and
+   `(Observation ?? "").StartsWith(Result.Output, StringComparison.Ordinal)` is false.
 
-`Validation` failures are not listed: the call broke the tool contract (including an unknown tool name), no evidence
-collection was attempted, and the model already sees the error and corrects it (E2E-2). `Completeness.Unspecified` with
-`Success` is not listed: the tool declared nothing, and E4 already forbids absence claims from it.
+**Shortening predicate (rule 4), against the real layout.** The persisted `Observation` of a successful step is either
+`Output` itself, or `Output` followed by the verification suffix `\nVerification: …`, or — when rule C3 cut it — the
+first two thirds of the budget, the marker `\n... [truncated N characters] ...\n`, and the last third. The comparison is
+therefore "`Observation` starts with the full `Output`", not the reverse and not `Contains`; `WrapToolOutput` is not part
+of the persisted value and is not involved. A `null` or empty `Output` is never shortened. Lengths are UTF-16 code units
+(`string.Length`). The predicate uses only persisted data, so it is identical live and on resume and independent of the
+current `MaxObservationCharacters`. (A false negative would need the tool output to contain the runtime's own truncation
+marker at exactly the cut position; the predicate stays deterministic either way.)
+
+**Validation supersession (rule 3) — the only supersession rule.** A resolved-tool `Validation` failure at step *i* is
+superseded when a step *j* with `j > i` exists whose `ToolCall.ToolName` equals step *i*'s `ToolCall.ToolName` (ordinal)
+and whose `Result.Outcome` is `Success`. Steps are compared by `Index` only, so a later success in the same execution
+attempt or in a later one supersedes equally; an earlier success never supersedes a later failure; the superseding
+step is itself listed if one of the other rules applies to it. The case it exists for: a model that calls a tool with
+invalid arguments and corrects them is not reporting a limitation; a model that never succeeds is (for example an
+invalid `system.crashes` call followed directly by a final answer is listed).
+
+**Unknown-tool rejections.** A step with `Description` `Denied` and `Result.FailureKind` `Validation` is an unknown-tool
+rejection: the runtime records exactly that combination only for `AuthorizationKind.UnknownTool` (`RejectionKind`).
+It has no resolved name, so it is never superseded and is always listed; its tool label is the fixed token
+`(unknown tool)` and the caller-supplied name is never used.
+
+**Non-validation failures are never superseded.** A step listed by rule 2 stays listed even when a later step on the
+same tool succeeds: persisted steps carry no identity strong enough to prove that the later call obtained what the
+failed one requested (arguments, window and scope may differ), and over-disclosure is preferred to a silently dropped
+limitation.
 
 **Entry.** One line per listed step, from a fixed template:
-`- step <index>: <tool> — <facts>`, where `<tool>` is the step's `ToolCall.ToolName` when it has at most 128 characters,
-all of them letters, digits, `.`, `_` or `-` (the shape of a canonical tool name; unresolved names are `Validation`
-failures and never listed anyway), and otherwise the literal `(tool name omitted)` — a pure function of the persisted
-step, independent of what the registry holds later; and `<facts>` is, in this order and
-separated by `; `: `completeness Partial|Unavailable`; `outcome <ToolOutcome>, failure <ToolFailureKind>`;
-`observation shortened from <length of Output> characters`. Enum values are their C# names. An entry never contains
+`- step <index>: <tool> — <facts>`. `<tool>` is `(unknown tool)` for an unknown-tool rejection; otherwise the step's
+`ToolCall.ToolName` — a resolved, canonical name — when it has at most 128 characters, all of them letters, digits, `.`,
+`_` or `-`, and the literal `(tool name omitted)` otherwise (defence in depth). `<facts>` is, in this order and separated
+by `; `: `completeness Partial|Unavailable`; `outcome <ToolOutcome>, failure <ToolFailureKind>`;
+`observation shortened from <Output.Length> characters`. Enum values are their C# names. An entry never contains
 `Output`, `ErrorMessage`, `Observation` text, arguments, or any text a tool or the model produced.
 
 **Order and bounds.** Ascending step index. At most **16** entries — the newest 16 listed steps — so a whole default
 attempt (`MaxSteps` 15) always fits; when more steps qualify, one fixed line states how many earlier steps are not
 listed. Each entry is at most 256 characters; the fixed text around the entries is at most 512 characters; the digest is
-therefore at most 4,608 characters, independent of task length. Computation is O(steps) over at most
-`MaxLifetimeSteps` (60) steps.
+therefore at most 4,608 characters, independent of task length. Computation is O(steps²) in the worst case for the
+supersession check over at most `MaxLifetimeSteps` (60) steps.
 
-**Placement.** When non-empty, the digest is appended to the **step** system prompt (after the plan section), between
-the fixed markers `<<<BOPS_EVIDENCE_LIMITATIONS>>>` and `<<<END_BOPS_EVIDENCE_LIMITATIONS>>>`, with one fixed sentence
-saying it is authored by bOps from typed results, that each tool's own result says which sources, periods or items are
-affected, and that E8 applies. It is runtime-authored text in the trusted turn, so it may contain nothing that came from
-outside the runtime (rule S5): only step indexes, registry tool names, enum names and integers. `WrapToolOutput`
-neutralizes the two new markers inside tool output exactly as it neutralizes the tool-output delimiters, so a tool cannot
-forge a digest. Plan and replan prompts do not carry the digest (the replan digest is HARDEN-8's).
+**Template and placement.** The template is versioned `EvidenceLimitations/v1`; the version string is the first line of
+the digest, and any change of the fixed text or entry format is a new version and an amendment of this ADR. When
+non-empty, the digest is appended to the **step** system prompt (after the plan section), between the fixed markers
+`<<<BOPS_EVIDENCE_LIMITATIONS>>>` and `<<<END_BOPS_EVIDENCE_LIMITATIONS>>>`, with one fixed sentence saying it is
+authored by bOps from typed results, that each tool's own result says which sources, periods or items are affected, and
+that E8 applies. `WrapToolOutput` neutralizes the two new markers inside tool output exactly as it neutralizes the
+tool-output delimiters, so a tool cannot forge a digest. Plan and replan prompts do not carry the digest (the replan
+digest is HARDEN-8's).
 
 **Determinism.** The same persisted steps produce a byte-identical digest. It is rebuilt on every step call, so a resumed
 attempt sees the same digest the interrupted one would have.
 
 ### 6. Final-answer disclosure
 
-When a step call yields a non-empty final answer (after the existing empty-reply handling,
-`EmptyFinalResponseRetries`) and the digest is non-empty, the runtime checks whether the text contains
-`Evidence limitations` (ordinal, case-insensitive). If it does, the answer is accepted. If it does not, the runtime asks
-**once**: the same request plus the model's draft answer as an assistant turn and one runtime-authored user turn with a
-fixed instruction (restate the complete final answer with an `Evidence limitations` section covering the listed steps,
-or call a tool if more evidence is needed). The re-ask uses the same tool view, is an ordinary audited model call
-recorded in the step's `ModelCalls`, and is not a step. The draft and the instruction turn are not kept in the history
-afterwards, live or on resume, exactly as for the empty-reply retry, so live and rebuilt histories stay identical
-(ADR-0038).
+**Trigger.** A step call yields a non-empty final answer — the *original answer* — after the existing empty-reply
+handling (`EmptyFinalResponseRetries`), the digest is non-empty, `Agent:EvidenceDisclosureRetries` is `1`, and the
+heading detector below finds no heading. With an empty digest nothing happens.
+
+**Heading detector (deterministic).** The answer is split into lines (`\n`, a trailing `\r` removed). Fenced code blocks
+are skipped: a line whose content, after at most three leading spaces, starts with at least three backticks or at least
+three tildes opens a fence; the fence closes at the next line that, after at most three leading spaces, consists only of
+at least as many of the same character followed by optional whitespace; an unclosed fence runs to the end of the text;
+fence lines and everything inside are not candidates. A line indented by a tab or by four or more spaces (an indented
+code block) is not a candidate. Each remaining line is normalized: trim whitespace; remove one leading ATX prefix of one
+to six `#` followed by at least one space or tab, and trim; remove one trailing `:` and trim; remove one pair of
+surrounding `**` or one pair of surrounding `__` (the same pair on both sides), and trim; remove one trailing `:` and
+trim. The line is a heading when the result equals `Evidence limitations` under `StringComparison.OrdinalIgnoreCase`.
+So `Evidence limitations`, `Evidence limitations:`, `# Evidence limitations` … `###### Evidence limitations`,
+`**Evidence limitations**`, `**Evidence limitations:**`, `__Evidence limitations__` and `EVIDENCE LIMITATIONS` are
+headings; `There are no Evidence limitations`, `` `Evidence limitations` ``, `## Evidence limitations ##`, and the phrase
+inside a fenced block are not.
+
+**Localization.** The heading stays English on purpose: it is a stable technical marker that makes enforcement
+deterministic in every language. The section's content may be written in the language of the answer (an Italian answer
+with an English heading is the expected form). This is a conscious UX trade-off, not an oversight.
+
+**The re-ask.** At most **one** per task step that produced an original answer. The request is the step's request (same
+system prompt with the digest, same history, same tool view — kept only so the history and provider schema stay
+valid) plus the original answer as an assistant turn and one runtime-authored user turn with the fixed instruction
+`EvidenceDisclosure/v1`, which says: restate the final answer and include the required `Evidence limitations` section;
+keep the conclusions unchanged unless the limitations require qualifying them; do not start a new analysis; do not call
+tools. A qualification caused by the limitations is allowed; a new, unrequested line of reasoning is not.
 
 | Re-ask result | Outcome |
 |---|---|
-| Non-empty final answer (with or without the section) | Accepted unchanged as the final answer; no second re-ask. |
-| A tool call | Executed as this step's call; the loop continues, and a later final answer is checked again. |
-| Empty reply | The original final answer is accepted. |
-| Model-call failure (any `ModelFailureKind`, after ADR-0039 retries) | The original final answer is accepted; the failed call stays audited and recorded. Caller cancellation still propagates. |
+| A non-empty final answer in which the detector finds a heading | **Accepted**: persisted as the final answer instead of the original. |
+| A non-empty final answer without a heading | Disclosure attempt failed: the **original answer** is persisted. |
+| Any tool call (with or without text) | Disclosure attempt failed: the tool is **not executed**, authorized, audited as a tool call or recorded as unexecuted; the **original answer** is persisted. |
+| An empty reply | Disclosure attempt failed: the **original answer** is persisted. |
+| A model-call failure (any `ModelFailureKind`, after the ADR-0039 retries of that one logical call) | Disclosure attempt failed: the **original answer** is persisted; the failed attempts stay audited and recorded. |
+| Caller cancellation | Propagates as for every model call (the task's cancellation semantics, not the re-ask's). |
 
-Bounds and budgets: at most `Agent:EvidenceDisclosureRetries` re-asks per final answer — a new additive option, default
-`1`, valid `0` (disabled) or `1`; the re-ask is skipped when the task's token budget is already used up or a delegated
-role's meter reports no budget or time left (the checks the loop already applies); its tokens count as usual; its time is the ADR-0039 per-call budget. Since each re-ask either ends the task or
-consumes a step through a tool call, the number of re-asks is bounded by the step budgets.
+**Guarantees.** The original answer is held by the runtime until the re-ask is resolved and is the persisted answer
+unless the re-ask is accepted. The re-ask creates no step, consumes no step budget, triggers no replan, executes no
+tool, never loops, and never changes the task status: the task ends `Completed` exactly as it would have without the
+re-ask — including when the final answer came on the last step allowed by `MaxSteps` or `MaxLifetimeSteps`, and when
+the re-ask's tokens take the task past `MaxTotalTokens` (they are counted in `TokensUsed`; the final-answer path does not
+re-evaluate the budget, as today). The runtime never rewrites, truncates, appends to or annotates the model's text.
 
-The runtime never rewrites, truncates, appends to or annotates the model's text, and never refuses a final answer: the
-check can only add one model turn. Whether the section is present does not change the task status.
+**Bounds and budgets.** `Agent:EvidenceDisclosureRetries` is a new additive option, default `1`, valid values `0`
+(disabled) and `1`; any other value fails options validation at startup like the existing budget options. The re-ask is
+skipped when the task's token budget is already used up or a delegated role's meter reports no budget or time left (the
+checks the loop already applies). Its time is the ADR-0039 per-call budget.
+
+**History.** The original answer as an assistant turn and the instruction turn exist only in the re-ask request; they are
+not kept in the history afterwards, live or on resume, exactly as for the empty-reply retry, so live and rebuilt
+histories stay identical (ADR-0038). A completed task is not resumable (ADR-0040), so no later turn follows.
 
 ### 7. Coverage, completeness and negative evidence
 
@@ -213,67 +301,84 @@ generically and the HARDEN-7 manifests express per tool:
 
 | Evidence state | What may be said |
 |---|---|
-| `Completeness.Complete` (every source read, nothing cut, history reaches the request start) | Observed values as facts for the requested period; an empty result as absence **for that period and those filters**. |
-| `Partial` — truncated (limit, byte budget, ceiling, time bound) | Observed values are true but incomplete; counts are lower bounds; absence cannot be claimed. |
+| `Completeness.Complete` (every source read, nothing cut, history reaches the request start) | Observed values as observations for the requested period. For an empty result, at most: "no matching records were observed in the applicable, readable sources covering the requested window and filters" — never that the event did not occur. |
+| `Partial` — truncated (limit, byte budget, ceiling, time bound) | Observed values are true but incomplete; counts are lower bounds; nothing about records that were not returned. |
 | `Partial` — a source unreadable | As above, and the unreadable source is unknown. |
 | `Partial` — `coverage.state: partial` | Only `[max(examinedFromUtc, oldestAvailableUtc), requestedToUtc]` per source was observed; before it, unknown — never "nothing happened". |
-| `Partial` — `coverage.state: unknown`; directory stores | The reach of the history is unknown; absence cannot be claimed. A directory inventory describes the files present now. |
-| `Unavailable` | Nothing is known; no negative inference at all. |
-| `Unspecified` | The tool declared nothing; treat absence claims as not supported. |
+| `Partial` — `coverage.state: unknown`; directory stores | The reach of the history is unknown. A directory inventory describes the files present now. |
+| `Unavailable` | Nothing is known; no negative statement at all. |
+| `Unspecified` | The tool declared nothing; no negative statement is supported. |
 | `notApplicable` / `notCollected` category, `null` count | Unknown, never zero (ADR-0041 §3, §5). |
-| Observation shortened by the runtime | The model did not see all of the result; what it did not see is unknown to it. |
+| Observation shortened by the runtime | The model did not see all of the result; what it did not see is not visible to it. |
 | Source excluded by `excludeSources` | Not looked at; never "no events from that source". |
 
 A result that says it is partial is partial as a whole, even when an individual field (for example a source's
 `examinedFromUtc` equal to the request start) looks complete (HARDEN-7 residual N-3).
 
-**Negative evidence.** "No evidence found" and "evidence proves absence" differ. Only a `Complete` result supports
-absence, and only for its window and filters. No HARDEN-9 component computes absence.
+**Negative evidence.** "No matching records observed" and "the thing did not happen" differ, and no bOps result
+establishes the second: a complete read of the retained, readable records still says nothing about what was never
+recorded. No HARDEN-9 component computes absence.
 
 ### 8. Timestamp semantics
 
-HARDEN-9 preserves ADR-0041 §6 exactly and adds no time and no promotion:
+HARDEN-9 preserves ADR-0041 §6 exactly and adds no time and no promotion.
+
+**Per-event semantics.**
 
 - **`occurred`** — when the thing happened, by the source's documented semantics.
-- **`reported`** — when it was recorded, processed or written; the thing happened **no later than** that instant.
-  A `BlueScreen` Report.wer `EventTime` stays `reported`; Kernel-Power 41, minidump file times and `fileNameLocalDate` are
+- **`reported`** — when it was recorded, processed or written: for the same event, `occurred(A) ≤ reported(A)`. A
+  `BlueScreen` Report.wer `EventTime` stays `reported`; Kernel-Power 41, minidump file times and the file-name date are
   never substitutes for an occurrence time.
-- **Record times** (`system.events`, no kind) — the instant the OS recorded the record; for reasoning they are treated as
-  `reported` unless the record is itself the event it describes.
+- **Record times** (`system.events`, which exposes no `timestampKind`) — the instant the record was written. The model
+  describes it as "the event record is timestamped at T" and never promotes it to an occurrence time, also not when the
+  record seems to describe itself.
 
-| Comparing | Derivable fact | Not derivable |
+**Relations between different events** require the **clock preconditions**, all of them shown by the evidence:
+
+1. both times come from one comparable clock domain (the same host's clock, which local execution gives, D-001);
+2. both are normalized UTC instants (the typed tools' format; a local calendar date is never an instant);
+3. no clock adjustment is known between them (no evidence of a time change), and **no restart lies between them** (no
+   boot, shutdown or unexpected-shutdown evidence in the interval, and the interval is not one the evidence leaves
+   uncertain);
+4. the difference exceeds the coarser precision of the two timestamps; when a source does not state its precision, two
+   seconds — the coarsest common file-time granularity — is assumed.
+
+| Comparing (different events A and B, preconditions met) | Derived fact | Not derivable |
 |---|---|---|
 | `occurred` A vs `occurred` B | Order and interval. | That one caused the other. |
 | `reported` A < `occurred` B | A happened before B. | How long before. |
 | `reported` A ≥ `occurred` B | Nothing about the order of occurrence. | That B preceded A, or that they were close. |
 | `reported` A vs `reported` B | The order in which they were reported. | The order or proximity of occurrence. |
+| Record time A vs any time B | The order of A's **record** and B. | Anything about when what A describes happened. |
 | Local calendar date vs any instant | Nothing (no time zone, no time of day). | Same-day claims. |
 
-All instants are UTC from one host clock (local execution, D-001). bOps does not detect clock changes; second-level
-proximity between different stores is approximate and only ever a hypothesis input.
+When any precondition is not met or not shown — the events span a restart, the clock domain is not shown comparable, a
+clock adjustment is possible, or the gap is within the timestamp precision — the order is **not** a derived fact; it may
+only be an input to a hypothesis, stated as such.
 
 ### 9. Correlation vs causation
 
 - **Identity** (two records are one thing) exists only where a tool established it under its ADR: `system.crashes`
   report-GUID merges; exact native record identity within one call (ADR-0041 §7). No identity key spans tools —
   `system.stability` carries no report ids and `system.events` no record ids — and HARDEN-9 adds none.
-- **Temporal relation** between records of different results is the model's derived fact or hypothesis, always stated
-  with both time kinds (§8). It is never a merge, never a count adjustment, and never presented as identity.
+- **Temporal relation** between records of different results is the model's derived fact (only under §8's
+  preconditions) or hypothesis, always stated with both time kinds. It is never a merge, never a count adjustment, and
+  never presented as identity.
 - **Overlap.** Evidence the tools declare overlapping (bugchecks and display live dumps in `system.stability` and
   `system.crashes`; one incident appearing in several groups or categories) may be described as "probably the same
   incident" as a hypothesis; counts are never added.
-- **Causality** follows §2: only a record that itself states the relation establishes a cause.
+- **Causality** follows §2: only a record's own statement, reported as that record's attribution.
 
 The HARDEN-7 rule is unchanged and not weakened: crash records merge only through intersecting report GUIDs; HARDEN-9
 introduces no correlation by proximity, name, code or similarity anywhere in code.
 
 ### 10. Aggregation and acquisition
 
-HARDEN-9 acquires no evidence: the runtime never calls a tool on its own, and the digest uses only steps the model chose.
-Aggregation uses only the HARDEN-7 `mode`; there is no `aggregate` argument and no second switch. When to use which is
-tool knowledge and stays in the manifests (aggregate for "how often, since when" over long horizons; raw for the detail of
-specific items within 7 days); the neutral rule only says to prefer evidence covering the period asked (E2) and to treat
-bounded results as bounded (E3).
+HARDEN-9 acquires no evidence: the runtime never executes a tool on its own, and the digest uses only steps the model
+chose. Aggregation uses only the HARDEN-7 `mode`; there is no `aggregate` argument and no second switch. When to use
+which is tool knowledge and stays in the manifests (aggregate for "how often, since when" over long horizons; raw for the
+detail of specific items within 7 days); the neutral rule only says to prefer evidence covering the period asked (E2)
+and to treat bounded results as bounded (E3).
 
 ### 11. Bounds
 
@@ -281,36 +386,63 @@ bounded results as bounded (E3).
 |---|---|---|
 | Evidence rule | ≤ 2,000 characters, constant | Added to every model call; small next to the tool catalog. |
 | Digest | ≤ 16 entries × 256 characters + 512 fixed = 4,608 characters | One default attempt fits; independent of task length. |
-| Re-asks | ≤ 1 per final answer (`EvidenceDisclosureRetries` 0–1), one fixed user turn | Bounded extra cost; never a loop. |
+| Re-asks | ≤ 1 per original answer (`EvidenceDisclosureRetries` 0–1), one fixed user turn; no tool execution | Bounded extra cost; never a loop. |
 | Relations, groups, candidates, confidence values computed by HARDEN-9 | 0 | None are computed. |
 | Evidence records read by HARDEN-9 | 0 new; horizons and ceilings are the tools' own (HARDEN-7) | No `180 days × events × relations` product exists. |
-| Time | Re-ask: ADR-0039 per-call budget; digest: O(steps ≤ 60) | — |
+| Time | Re-ask: ADR-0039 per-call budget; digest: over ≤ 60 steps | — |
 | `excludeSources` | ≤ 8 entries × 128 characters, ≤ 1,024 characters in total (ADR-0032 HARDEN-9 amendment) | — |
 
-### 12. Security and privacy
+### 12. Security and privacy (rule S5)
 
-- The digest contains only step indexes, registry tool names, enum names and integers; no tool output, error message,
-  argument, path, payload or model text, so it cannot leak more than the audit already holds and cannot carry an
-  injection into the trusted turn. Its markers are neutralized in tool output.
-- The evidence rule is a constant; no tool output can alter it (rule S5).
-- The re-ask instruction is a constant; the model's earlier text is never echoed into a runtime-authored turn.
+Rule S5 says tool output is data and must never alter runtime state or instructions. The digest does not breach it, and
+the distinction is normative:
+
+- **Raw tool-result text never modifies system or runtime instructions.** It reaches the model only inside the delimited
+  tool-result turn.
+- **Tool text never enters the digest.** No `Output`, `ErrorMessage`, `Observation` text, argument value or model text is
+  copied into it.
+- **Typed metadata the runtime has already extracted may only select fixed runtime-authored tokens.** A
+  `ToolResultCompleteness`, `ToolOutcome` or `ToolFailureKind` value selects its enum name; integers are step indexes
+  and `Output.Length`; the tool label is a resolved canonical name that passes a fixed shape check, or a fixed token.
+  These select text; they never change the goal, the tool list, policy, budgets or any other instruction. A tool that
+  declares `Partial` can at most cause a fixed limitation line and one bounded re-ask.
+
+`agentic/03-security-rules.md` (S5) and `agentic/01-architecture-rules.md` (C7) state this general rule. Further:
+
+- The evidence rule and the re-ask instruction are constants; no tool output can alter them.
+- The model's original answer is placed in the re-ask only as an assistant turn, never inside a runtime-authored turn.
+- The digest markers are neutralized in tool output, so a digest cannot be forged.
 - No new read capability, no dump access, no query surface; `excludeSources` only narrows what `system.events` returns
   and is bounded and echoed.
 
-### 13. Audit and telemetry
+### 13. Audit, persisted marker and telemetry
 
-The three kinds of statement stay distinguishable without new audit types:
+The three kinds of statement stay distinguishable without new audit types or fields:
 
 - **Tool observation** — `ToolCallAuditEvent` (with `Outcome`, `FailureKind`, `Completeness`, HARDEN-6) and the
-  persisted step.
+  persisted step. A tool call returned by a re-ask is not a tool call of the task and produces no `ToolCallAuditEvent`.
 - **Deterministic derivation** — the digest is a pure function of the persisted steps, whose typed fields are audited;
-  it is reproducible and therefore not stored or audited again.
-- **Model interpretation** — `ModelCallAuditEvent` for every call, including the disclosure re-ask, and the persisted
-  final answer.
+  it is reproducible (versioned template `EvidenceLimitations/v1`) and therefore not stored or audited again.
+- **Model interpretation** — `ModelCallAuditEvent` for every call, including the re-ask, and the persisted final answer.
 
-Telemetry: the step span carries `bops.evidence_limitations` (number of digest entries, when non-zero) and
-`bops.evidence_disclosure_reask` (when a re-ask was made); never content. A call-kind field on `ModelCallAuditEvent`
-(plan, replan, step, re-ask) remains the deferred follow-up of ADR-0014.
+**Persisted marker (existing field `PlanStep.Description`).** The final step's description takes one of three fixed
+values:
+
+| `Description` | Meaning |
+|---|---|
+| `Final response` | No disclosure re-ask was made (unchanged; every existing row keeps its meaning). |
+| `Final response; evidence disclosure re-ask accepted` | A re-ask was made and its answer is the persisted one. |
+| `Final response; evidence disclosure re-ask not used` | A re-ask was made and failed; the persisted answer is the original. |
+
+Every runtime consumer that locates the final answer (today `DelegationRoleData.FinalText`, which compares with
+`Final response`) recognizes all three through one shared runtime predicate; this is an implementation item. The final
+step's `ModelCalls` is reconstructed by logical call — a record with `ModelAttempt` 1 (or `null` in legacy rows) starts a
+new logical call (ADR-0039): logical call 1 is the normal final-answer call; the following logical calls are the
+empty-answer retries; when the description carries a re-ask marker, the **last** logical call is the
+evidence-disclosure re-ask. A future model-call-kind field stays the deferred follow-up of ADR-0014.
+
+**Telemetry:** the step span carries `bops.evidence_limitations` (number of digest entries, when non-zero) and
+`bops.evidence_disclosure_reask` (`accepted` or `not_used`, when a re-ask was made); never content.
 
 ### 14. Public contract and compatibility
 
@@ -319,43 +451,46 @@ Telemetry: the step span carries `bops.evidence_limitations` (number of digest e
 | New tools | Not required. |
 | `bOps.Abstractions` | Not required — no change. |
 | Runtime system prompt (evidence rule) | Required — internal behaviour. |
-| Digest in step prompts; disclosure re-ask | Required — loop final-response contract (this ADR; `agentic/01-architecture-rules.md` §C gains a rule with the implementation). |
-| `Agent:EvidenceDisclosureRetries` (default 1) | Required — additive configuration key. |
+| Digest in step prompts; disclosure re-ask; final-step `Description` markers | Required — loop final-response contract (this ADR; `agentic/01-architecture-rules.md` §C gains a rule with the implementation). |
+| `Agent:EvidenceDisclosureRetries` (default 1, valid 0–1) | Required — additive configuration key. |
 | `system.events` `excludeSources` argument and `excludeSources` echo | Required — additive (ADR-0032 HARDEN-9 amendment). |
-| `schemaVersion` of `system.events` | Not required — stays 2 (the amendment explains why). |
-| `system.crashes`, `system.stability` contracts | Not required — unchanged. |
-| Manifest changes | Required for `system.events` only (one parameter, one description sentence); constraint snapshot updated. |
-| Provider schema projection | Not required — `excludeSources` is a plain `String` with `MinLength`/`MaxLength`, already projected. |
+| `system.crashes` manifest description (N-2) | Required — wording only. |
+| `schemaVersion` of `system.events`, `system.crashes`, `system.stability` | Not required — 2, 2 and 1 unchanged. |
+| `system.crashes`, `system.stability` result contracts | Not required — unchanged. |
+| Provider schema projection | Not required — `excludeSources` is a plain `String` with `MinLength`/`MaxLength`, already projected; tests prove it. |
 | Audit schema | Not required. |
-| Typed coverage field, list parameter type, relation/confidence fields, persisted disclosure field | Deferred (each needs its own ADR; none is needed by HARDEN-9). |
+| Typed coverage field, list parameter type, relation/confidence fields, persisted disclosure field, model-call kind | Deferred (each needs its own ADR; none is needed by HARDEN-9). |
 
 ### 15. Windows and Linux
 
 Shared: the evidence rule, the digest, the disclosure check (all platform-neutral runtime code), and the
-`excludeSources` contract, parsing, filter definition and echo. Platform-specific: Windows may exclude natively in the
-XPath on the registered provider spelling and post-filters the rest; Linux post-filters after parsing (journald matches
-cannot negate "identifier or unit"). The scan-ceiling consequence is the one `source` already has (ADR-0032).
-`system.stability`'s `notApplicable`/`notCollected` categories are the platform asymmetry the rule's E4 handles; HARDEN-9
-claims no new parity.
+`excludeSources` contract, parsing, matching on the canonical `source`, and echo. Platform-specific: Windows excludes
+natively in the XPath before the scan ceiling and applies the shared post-filter; Linux applies the shared post-filter
+only (journald matches cannot be negated), so excluded records count towards its scan ceiling (ADR-0032 HARDEN-9
+amendment §2–§3). `system.stability`'s `notApplicable`/`notCollected` categories are the platform asymmetry E4 handles;
+HARDEN-9 claims no new parity.
 
 ### 16. Boundaries with HARDEN-7 residuals and HARDEN-8
 
 - **HARDEN-7 N-1 (BEX64 classification).** No effect on this architecture: an unclassified kind is still typed,
   observed evidence. Out of scope.
-- **HARDEN-7 N-2 (`system.crashes` description says Report.wer `EventTime` is `occurred` without the `BlueScreen`
-  exception).** Weak dependency: the model reads that description, but every row and group carries the authoritative
-  `timestampKind`, and E5 tells the model to use the kind each result states. HARDEN-9's correctness does not depend on
-  it. Minimal treatment: a one-sentence manifest-description correction; it may be done in the HARDEN-9 implementation
-  only if the operator says so at review, as a separately listed item; otherwise it stays a HARDEN-7 follow-up.
+- **HARDEN-7 N-2 — in scope, mandatory HARDEN-9 implementation item.** The `system.crashes` manifest description
+  (`SystemToolManifests.Crashes`) says that a Report.wer `EventTime` is an occurrence time without the exception. The
+  implementation corrects it so that it states that a `BlueScreen` / `kernel-bugcheck` Report.wer `EventTime` is
+  `reported` — written after the restart — and not an occurrence time, while application and `LiveKernelEvent` report
+  times stay `occurred`. Wording only: no argument, field or `schemaVersion` change (stays 2). Required with it: the
+  manifest/description snapshot or assertion updated, Windows/Linux manifest parity, and the provider projection tests
+  (OpenAI-compatible and Anthropic) showing the corrected description is projected unchanged.
 - **HARDEN-7 N-3 (mid-read `EventLogException`: `Partial` while `examinedFromUtc` may equal the request start).** No
   effect: the digest uses `Completeness`, which is correct, and §7 makes a partial result partial as a whole. Out of
   scope.
 - **HARDEN-8.** The digest is built from persisted steps, so compaction of the model-facing history does not change it,
   and a compacted step is not a limitation by itself. Steps are referenced by step index; HARDEN-8's evidence ids must be
   resolvable to it (or HARDEN-8's ADR-0014 amendment moves the digest to evidence ids). The evidence rule and the digest
-  are fixed costs of every step prompt that HARDEN-8's budget must count. The 4,000-character observation budget against
-  32–64 KiB typed evidence results is disclosed by HARDEN-9 (§5 rule 3) and fixed by HARDEN-8. HARDEN-9 does not touch
-  `ReplanAsync`, compaction, evidence retrieval or `ContextOverflow`.
+  are fixed costs of every step prompt that HARDEN-8's budget must count. HARDEN-9 **detects and discloses** observations
+  shortened under the 4,000-character budget (§5 rule 4) and **does not change** that budget; the context-budget economy
+  and the projection strategy for full typed evidence stay HARDEN-8's. HARDEN-9 does not touch `ReplanAsync`,
+  compaction, evidence retrieval or `ContextOverflow`. Order unchanged: HARDEN-7 → HARDEN-9 → HARDEN-8.
 
 ### 17. Test obligations
 
@@ -363,27 +498,35 @@ Deterministic (`FakeChatModel`, fake tools; Windows and Linux CI):
 
 | # | Scenario | Expected |
 |---|---|---|
-| 1 | All evidence `Complete`, not shortened | No digest in any request; no re-ask; one model call in the final step. |
-| 2 | `Partial` (coverage-partial-like result) | Next step prompt holds a delimited entry with index, tool name, `completeness Partial`. |
+| 1 | All evidence `Complete`, not shortened | No digest in any request; no re-ask; final step `Final response`. |
+| 2 | `Partial` (coverage-partial-like result) | Next step prompt holds a delimited, versioned entry with index, tool name, `completeness Partial`. |
 | 3 | `Unavailable` | Entry `completeness Unavailable`. |
-| 4 | Failures: `Environment`, `Timeout`, `Authorization` (policy denied, operator rejected) | Entries with outcome and failure kind. |
-| 5 | `Validation` failure (bad argument, unknown tool) | No entry. |
-| 6 | Output longer than the observation budget, `Complete` | Entry `observation shortened from <n> characters`. |
-| 7 | Tool output containing the digest markers or text resembling an entry | Markers neutralized in the tool turn; the digest is unchanged. |
-| 8 | Digest content | Never contains `Output`, `ErrorMessage`, arguments or model text. |
-| 9 | 20 qualifying steps | Newest 16 entries in ascending order plus the "not listed" line; size within bound; byte-identical on repeat. |
-| 10 | Resume | The digest after resume equals the digest built from the same persisted steps live. |
-| 11 | Final without the section, digest non-empty | Exactly one re-ask with the fixed turn; its final answer accepted; two `ModelCalls`, both audited. |
-| 12 | Re-ask final still without the section | Accepted unchanged; no second re-ask. |
-| 13 | Re-ask empty; re-ask model failure | Original final accepted, task `Completed`; failure audited. Cancellation propagates. |
-| 14 | Re-ask returns a tool call | Executed as the step's call; the loop continues. |
-| 15 | Final already contains the section; `EvidenceDisclosureRetries: 0`; token budget exhausted | No re-ask. |
-| 16 | Evidence rule | ≤ 2,000 characters; contains each clause E1–E8; contains none of the deny-list (OS names, products, providers, package and tool names or name-shaped tokens, event sources and ids, symptom words). |
-| 17 | E2E-3 (incident-like) | Partial and shortened evidence → digest delivered → scripted final without the section → re-ask → scripted final with an `Evidence limitations` section naming sources and coverage is the persisted answer. |
-| 18 | E2E-3 negative | All complete → no digest, no re-ask; the scripted final has no section and is persisted unchanged. |
-| 19 | "Event A precedes crash B by a few seconds" | No tool output and no runtime text contains a relation, cause or confidence field (contract snapshot); the rule contains E6/E7. The model's wording is checked only by an optional, non-gating `Category=LiveModel` scenario. |
-| 20 | "No matching event found in partial history" | The step is listed `Partial` in the digest and the rule contains E4; the package result is `complete: false` (existing HARDEN-7 tests). |
-| 21 | Architecture | Rule A1 still holds for the new runtime code and constants. |
+| 4 | Failures `Environment`, `Timeout`, `Authorization` (policy denied, operator rejected) | Entries with outcome and failure kind. |
+| 5 | Failed non-`Read` action | Listed like any other failure. |
+| 6 | Non-validation failure followed by a success of the same tool | The failure stays listed. |
+| 7 | Validation failure followed by a corrected successful call of the same tool (same attempt; later attempt) | Not listed (superseded) in both cases. |
+| 8 | Invalid `system.crashes`-like call, never retried, then a final answer | Listed `outcome Failure, failure Validation`; re-ask triggered. |
+| 9 | Unknown tool (including a name that looks like an instruction) | Listed as `(unknown tool)`; the raw name appears nowhere in the digest; never superseded. |
+| 10 | Shortening: output longer than the budget; output within the budget; output with a verification suffix; `null` and empty output | Listed with `Output.Length` only in the first case. |
+| 11 | Tool output containing the digest markers or text resembling an entry | Markers neutralized in the tool turn; the digest is unchanged. |
+| 12 | Digest content | Never contains `Output`, `ErrorMessage`, arguments or model text; first line `EvidenceLimitations/v1`. |
+| 13 | 20 qualifying steps | Newest 16 entries in ascending order plus the "not listed" line; size within bound; byte-identical on repeat. |
+| 14 | Resume | The digest after resume equals the digest built from the same persisted steps live. |
+| 15 | Final without heading, digest non-empty | Exactly one re-ask with the fixed `EvidenceDisclosure/v1` turn and the original answer as assistant turn; re-ask answer with heading persisted; `Description` `…re-ask accepted`; both calls audited. |
+| 16 | Re-ask answer without heading; empty; model failure | Original answer persisted; `Description` `…re-ask not used`; task `Completed`; failure audited. Cancellation propagates. |
+| 17 | **Re-ask at the step cap returns a tool call** (final answer on the last step allowed by `MaxSteps`, and by `MaxLifetimeSteps`) | Original answer persisted; the tool is not executed (no tool audit event, no new step, no replan); task status `Completed`, unchanged; no `MaxStepsReached`, `ReplanLimitReached`, `PolicyBlocked` or `BudgetExceeded`. |
+| 18 | Final already contains a heading; `EvidenceDisclosureRetries: 0`; token budget used up; delegated role meter without budget | No re-ask. |
+| 19 | Invalid `EvidenceDisclosureRetries` (−1, 2) | Options validation fails at startup. |
+| 20 | Heading detector | Accepts plain, `:`, `#`–`######`, bold, underscore-bold, case-insensitive, and an Italian answer with the English heading; rejects the phrase in prose, in inline code, in a ```` ``` ```` fence, in a `~~~` fence, in an indented code block, and with closing `#`s. |
+| 21 | Delegation | `DelegationRoleData.FinalText` returns the persisted answer for all three final descriptions. |
+| 22 | Evidence rule | ≤ 2,000 characters; contains each clause E1–E8; contains no identifier-shaped token and nothing from the deny-list; contains ordinary words such as `complete`, `partial`, `coverage`, `truncated`, and the wording "not visible". |
+| 23 | E2E-3 (incident-like) | Partial and shortened evidence → digest delivered → scripted final without heading → re-ask → scripted final with an `Evidence limitations` section naming sources and coverage is the persisted answer. |
+| 24 | E2E-3 negative | All complete → no digest, no re-ask; the scripted final is persisted unchanged. |
+| 25 | "Event A precedes crash B by a few seconds" | No tool output and no runtime text contains a relation, cause or confidence field (contract snapshot); the rule contains E5–E7. The model's wording is checked only by an optional, non-gating `Category=LiveModel` scenario. |
+| 26 | "No matching event found in partial history" | The step is listed `Partial`; the rule contains E4; the package result is `complete: false` (existing HARDEN-7 tests). |
+| 27 | Regressions | Existing `system.crashes` GUID-identity tests and `timestampKind` tests (including `BlueScreen` `reported`) pass unchanged. |
+| 28 | N-2 | The `system.crashes` description states the `BlueScreen`/`kernel-bugcheck` `reported` exception; manifest snapshot and provider projection tests updated; `schemaVersion` 2. |
+| 29 | Architecture | Rule A1 still holds for the new runtime code and constants. |
 
 `excludeSources` tests are listed in the ADR-0032 HARDEN-9 amendment.
 
@@ -418,10 +561,27 @@ it still can.
 **Digest as a tool-result turn.** Rejected: it is runtime-authored, not tool output; placing it among tool data would blur
 rule S5's boundary in both directions.
 
-**Re-ask until the section appears.** Rejected: unbounded; one re-ask is enough to make the requirement visible to the
-model and to make E2E-3 test runtime behaviour rather than scripted text.
+**Executing a tool call returned by the re-ask** (the first proposal). Rejected by the independent review: the re-ask
+could then consume the last step or budget and end the task `MaxStepsReached`, `ReplanLimitReached`, `PolicyBlocked` or
+`BudgetExceeded`, losing a valid answer. The re-ask is a restatement only.
 
-**Fail or refuse a final answer without the section.** Rejected: a correct diagnosis would be lost over formatting.
+**Accepting a re-ask answer without the heading.** Rejected: it could replace a good answer with a worse one while still
+not disclosing; the original is kept.
+
+**Always excluding `Validation` failures from the digest** (the first proposal). Rejected by the independent review: a
+model that never corrects an invalid call would silently lose that evidence.
+
+**Superseding non-validation failures by a later success.** Rejected: no persisted identity proves the later call
+obtained what the failed one requested.
+
+**Substring search for the heading** (the first proposal). Rejected by the independent review: "There are no Evidence
+limitations" or a code block would pass.
+
+**A localized heading.** Rejected: enforcement would need a per-language vocabulary in the core; the fixed English
+marker with localized content is deterministic.
+
+**Re-ask until the section appears.** Rejected: unbounded. **Fail or refuse a final answer without the section.**
+Rejected: a correct diagnosis would be lost over formatting.
 
 **Apply the rule only to diagnostic goals** (detected from the goal text). Rejected: a text heuristic in the core; the
 rule is cheap and generic.
@@ -429,16 +589,42 @@ rule is cheap and generic.
 **Encode current-state vs historical as a manifest field.** Rejected: a `bOps.Abstractions` change; tool descriptions
 already say what a tool reads, and E2 is generic.
 
+**A new persisted field for the re-ask.** Rejected for HARDEN-9: a `bOps.Abstractions` change; the final step's existing
+`Description` carries a fixed marker and the `ModelCalls` order identifies the call.
+
 ## Consequences
 
 - Every model call carries the evidence rule (≤ 2,000 characters); limited tasks also carry the digest (≤ 4,608
-  characters) and may cost one extra model call at the end.
-- Limitations the model could not see for itself — runtime shortening, failed and denied evidence calls — are always in
-  front of it, from typed facts.
+  characters) and may cost one extra model call at the end, which can never cost the original answer or change the
+  task status.
+- Limitations the model could not see for itself — runtime shortening, failed, denied and uncorrected invalid calls —
+  are always in front of it, from typed facts.
 - E2E-3 tests runtime behaviour (digest and re-ask), not only scripted text; the model's prose quality remains a
   live-model concern.
-- No `bOps.Abstractions`, policy, persistence, audit-schema or provider change; no new tool; `system.crashes` and
-  `system.stability` unchanged.
+- No `bOps.Abstractions`, policy, persistence-schema, audit-schema or provider change; no new tool; `system.crashes`
+  changes only its description and `system.stability` nothing.
 - `agentic/01-architecture-rules.md` §C gains a rule for the digest and the disclosure check when this ADR is accepted and
-  implemented.
+  implemented; S5 and C7 already state the typed-metadata rule of §12.
 - HARDEN-8 inherits the interface of §16.
+
+## Independent review corrections (2026-10-03)
+
+The independent architecture review of `90bde7e` returned CHANGES REQUIRED (HARDEN-9 implementation blocked). Resolved in
+this text before any implementation:
+
+- **R1** — the re-ask never executes a tool; any tool call, empty reply, failure or heading-less answer keeps the
+  original answer; no step, replan, status change or loop (§6, test 17).
+- **R2** — `Validation` failures are listed unless superseded by a later success of the same resolved tool (the only
+  supersession rule); unknown-tool rejections are identified by persisted fields and shown as `(unknown tool)`; E8 no
+  longer forbids a disclosure the model judges material (§4, §5).
+- **R3** — a deterministic heading detector replaces substring search; the English heading is a deliberate, documented
+  UX choice (§6).
+- **R4** — `Derived` holds under explicit preconditions; ordering between different events requires the clock
+  preconditions, including no restart in between; `system.events` record times are never promoted (§2, §8).
+- **R5** — HARDEN-7 N-2 is a mandatory HARDEN-9 implementation item (§16).
+- **R6** — D-038 is not in the decision register until the architecture is accepted (header; packet; plan).
+- **N1** scope wording (§5); **N2** non-validation failures never superseded (§5); **N3** S5 distinction (§12, rules S5
+  and C7); **N4** exact shortening predicate (§5); **N5** absence wording (§4 E4, §7); **N6** re-ask wording (§6); **N7**
+  `excludeSources` precision (ADR-0032 HARDEN-9 amendment); **N8** persisted marker and template versions (§5, §6, §13);
+  **N9** identifier-shaped deny-list and "not visible" (§4); **N10** test additions (§17); **N12** attributed causality
+  (§2, §4 E7).

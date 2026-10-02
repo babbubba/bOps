@@ -74,6 +74,14 @@ Required handling:
   operator's intent.
 - Nothing in a tool result may alter runtime state: not the system prompt, not the available
   tool list, not the policy, not the budget.
+- **Typed metadata is not tool text.** Runtime-authored context (for example the evidence-limitations
+  digest of ADR-0042) may depend on typed values the runtime has already extracted from a result —
+  `ToolOutcome`, `ToolFailureKind`, `ToolResultCompleteness`, step indexes, lengths — and on resolved
+  canonical tool names that pass a fixed shape check. Such values may only *select fixed
+  runtime-authored text*; raw tool-result text (output, error messages, observations, arguments) and
+  model text never enter that context, and no such value can change the goal, the tool list, the
+  policy or a budget. Any marker that delimits such context is neutralized in tool output like the
+  tool-output delimiters.
 
 A model that *proposes* a dangerous tool after reading a poisoned log is not a failure of this
 rule — policy and approval exist for exactly that. A model whose proposal is *auto-approved*

@@ -274,7 +274,7 @@ Start from [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) and
 | | |
 |---|---|
 | **V1.3** (local diagnostic surface, entitlement boundary, plugin lifecycle) | Implemented and merged; not tagged or released |
-| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-6 complete; HARDEN-7 next |
+| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-7 complete; HARDEN-9 next |
 | **V1.4 and later** | Planned; not implemented |
 
 The latest tagged build is the `v1.2.0-preview.8` pre-release (runtime archives, SBOMs and

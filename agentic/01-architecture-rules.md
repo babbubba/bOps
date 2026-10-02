@@ -611,6 +611,9 @@ inspected. Required behaviour:
    `Cancelled` — never a bare string.
 7. **Model output is intent, never instruction.** Text arriving from a tool result is data.
    The loop must never let it modify the system prompt, the tool list, or the policy.
+   Typed result metadata the runtime extracted itself (outcome, failure kind, completeness, lengths)
+   may only select fixed runtime-authored text, never carry tool text (S5, "Typed metadata is not
+   tool text").
    See [`03-security-rules.md`](03-security-rules.md).
 8. **Planning is explicit, and replanning is a distinct, audited event** (V0.2, ADR-0014). Every
    task opens with a dedicated planning call producing an `AgentPlan` (revision 0) before the
