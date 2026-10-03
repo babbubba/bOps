@@ -6,7 +6,7 @@ Amended by: HARDEN-7 amendment (2026-10-02, at the end of this document) — agg
 keeps raw as its default, `system.crashes` defaults to aggregate), aggregate-only long horizons, temporal coverage
 metadata, schema 2 for both tools; the new `system.stability` tool is
 [ADR-0041](0041-typed-cross-platform-stability-evidence.md).
-Proposed amendment: HARDEN-9 amendment (2026-10-02, at the end of this document, pending review) — `excludeSources` for
+Amended by: HARDEN-9 amendment (accepted 2026-10-03, at the end of this document) — `excludeSources` for
 `system.events`, echoed in the output; `schemaVersion` stays 2. The runtime part of HARDEN-9 is
 [ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md).
 
@@ -602,10 +602,11 @@ implementation: `system.events` keeps `raw` as its default and aggregation is an
 the architecture gate (R15). The remaining blocking corrections (R1–R4) are in
 [ADR-0041](0041-typed-cross-platform-stability-evidence.md#independent-review-corrections-2026-10-02).
 
-## HARDEN-9 amendment — Proposed 2026-10-02
+## HARDEN-9 amendment — Accepted 2026-10-03
 
-Status: Proposed (2026-10-02, HARDEN-9 architecture gate; revised 2026-10-03 after the independent architecture review,
-finding N7; architecture delta review and operator acceptance pending). Proposed together with
+Status: Accepted (2026-10-03, operator decision; proposed 2026-10-02 at the HARDEN-9 architecture gate, revised
+2026-10-03 after the independent architecture review, finding N7; independent architecture delta review PASS WITH
+NON-BLOCKING FINDINGS; decision D-038). Accepted together with
 [ADR-0042](0042-evidence-reasoning-and-limitation-disclosure.md), which governs the runtime part of HARDEN-9
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md), scope 4; hypothesis H-6).
 Everything in the 2026-09-21 decision and the HARDEN-7 amendment that this amendment does not name stays as it is; in
@@ -755,7 +756,9 @@ the argument, sorted, caller spelling kept, byte-identical for permuted input; `
 worst-case echo at `maxOutputBytes: 4096`. Windows: the XPath contains one `@Name!=` term per entry built only from
 validated or registered names (an injection attempt cannot pass the reader); native exclusion keeps excluded records out
 of the scan ceiling; a record whose spelling differs is removed by the post-filter; real Windows verification of the
-construct. Linux: canonical `source` (identifier, unit fallback, `_COMM` fallback, `unknown`); a record with identifier
+construct with the largest native XPath the tool can build — 8 `excludeSources` `!=` terms, all 5 `Level` terms, a
+`Provider` and an `EventID` condition and the window — on both the `System` and the `Application` channel (accepted
+non-blocking finding N5). Linux: canonical `source` (identifier, unit fallback, `_COMM` fallback, `unknown`); a record with identifier
 `x` and unit `x.service` excluded by `x` only; real journald exclusion. Architecture: constraint snapshot, manifest
 parity, provider projection of `minLength`/`maxLength` (OpenAI-compatible and Anthropic). Platform evidence: one real
 Windows `mode: aggregate` run with `windowDays` and `excludeSources` showing the excluded noise and the echo.

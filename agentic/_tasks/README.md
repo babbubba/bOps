@@ -34,7 +34,7 @@ snapshots under `agentic/obsolete/`.
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
-| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1 through HARDEN-7 complete — HARDEN-9 architecture revised, delta review pending** (packet map below) | alto / molto alto per packet |
+| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1 through HARDEN-7 complete — HARDEN-9 architecture accepted, implementation next** (packet map below) | alto / molto alto per packet |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
@@ -84,7 +84,7 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 | 5 | [HARDEN-5 storage.health fix](2026-09-25-v1.3x-harden-05-storage-health.md) | MUST | Sonnet Medium | Sonnet Medium | **Completed** (PR #61) |
 | 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | **Completed** (PR #62) |
 | 7 | [HARDEN-7 Windows stability evidence](2026-09-25-v1.3x-harden-07-windows-stability-evidence.md) | MUST | Opus High | Opus High | **Completed** (PR #72) |
-| 8 | [HARDEN-9 evidence reasoning](2026-09-25-v1.3x-harden-09-evidence-reasoning.md) | SHOULD | Opus Medium/High | Opus Medium | Architecture defined and revised (ADR-0042 proposed; D-038 pending acceptance) — delta review pending; implementation not started |
+| 8 | [HARDEN-9 evidence reasoning](2026-09-25-v1.3x-harden-09-evidence-reasoning.md) | SHOULD | Opus Medium/High | Opus Medium | **Architecture accepted** (ADR-0042, D-038) — implementation next, not started |
 | 9 | [HARDEN-8 context and budget economy](2026-09-25-v1.3x-harden-08-context-budget-economy.md) | SHOULD | Opus High | Opus High | Not started |
 | 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | Not started |
 | 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | Not started |

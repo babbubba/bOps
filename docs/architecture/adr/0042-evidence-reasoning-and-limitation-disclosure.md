@@ -1,19 +1,19 @@
 # ADR-0042 — Evidence reasoning and limitation disclosure
 
-Status: Proposed (2026-10-02, HARDEN-9 architecture gate; revised 2026-10-03 after the independent architecture review —
-see "Independent review corrections"; architecture delta review and operator acceptance pending)
+Status: Accepted (2026-10-03, operator decision; independent architecture review of `90bde7e` CHANGES REQUIRED,
+resolved in `02e3e19`; independent architecture delta review PASS WITH NON-BLOCKING FINDINGS — see "Operator
+acceptance (2026-10-03)")
 Date: 2026-10-02
 
 Governs the runtime part of HARDEN-9 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md); plan
 [`2026-09-25-v1.3x-reliability-hardening.md`](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) §3 item 4,
 finding F-22, hypothesis H-6). The `system.events` part (`excludeSources`) is the
-[HARDEN-9 amendment of ADR-0032](0032-bounded-cross-platform-system-events.md#harden-9-amendment--proposed-2026-10-02),
-proposed together with this ADR. It builds on, and does not restate, the ADR-0022 HARDEN-6 amendment
+[HARDEN-9 amendment of ADR-0032](0032-bounded-cross-platform-system-events.md#harden-9-amendment--accepted-2026-10-03),
+accepted together with this ADR. It builds on, and does not restate, the ADR-0022 HARDEN-6 amendment
 (`ToolResultCompleteness`, `ToolFailureKind`), the ADR-0032 HARDEN-7 amendment (modes, horizons, temporal coverage,
 the stricter `complete`) and [ADR-0041](0041-typed-cross-platform-stability-evidence.md) (§6 evidence time, §7 identity
-and correlation, §10 tool boundary). The decision entry that will summarize it (D-038) is written in
-`agentic/06-decisions.md` only when the architecture is accepted.
+and correlation, §10 tool boundary). Decision D-038 in `agentic/06-decisions.md` summarizes it.
 
 ## Context
 
@@ -135,8 +135,8 @@ each clause below; the wording is the implementation's, the clauses are normativ
 - **E5 Time.** Some times record when something happened, others when it was recorded or reported, possibly much later;
   a time without a stated kind is the time of the record. A recording time shows only that the thing happened no later
   than that time; never present it as when it happened. Order two different events as a fact only on one comparable
-  clock, with no clock change or restart between them and a gap larger than the precision of the times; otherwise the
-  order is only a hypothesis.
+  clock, with no clock change or restart between them and a gap larger than the precision of the times — two seconds
+  when a source does not state its precision; otherwise the order is only a hypothesis.
 - **E6 Correlation.** Relate independent sources by time to form hypotheses. Closeness in time, co-occurrence,
   frequency or similarity never proves a cause. When tools say their evidence overlaps, one event may appear in both:
   do not add their counts.
@@ -205,7 +205,10 @@ invalid `system.crashes` call followed directly by a final answer is listed).
 **Unknown-tool rejections.** A step with `Description` `Denied` and `Result.FailureKind` `Validation` is an unknown-tool
 rejection: the runtime records exactly that combination only for `AuthorizationKind.UnknownTool` (`RejectionKind`).
 It has no resolved name, so it is never superseded and is always listed; its tool label is the fixed token
-`(unknown tool)` and the caller-supplied name is never used.
+`(unknown tool)` and the caller-supplied name is never used. This is accepted conservative behaviour: an unknown-tool
+rejection stays listed even when the model later calls the intended tool successfully, because nothing persisted links
+the two. The detection assumes that no registered tool is named `Denied`; the implementation reserves `Denied` as a
+runtime description token (registration of a tool with that name fails), so the combination stays unambiguous.
 
 **Non-validation failures are never superseded.** A step listed by rule 2 stays listed even when a later step on the
 same tool succeeds: persisted steps carry no identity strong enough to prove that the later call obtained what the
@@ -432,17 +435,20 @@ values:
 |---|---|
 | `Final response` | No disclosure re-ask was made (unchanged; every existing row keeps its meaning). |
 | `Final response; evidence disclosure re-ask accepted` | A re-ask was made and its answer is the persisted one. |
-| `Final response; evidence disclosure re-ask not used` | A re-ask was made and failed; the persisted answer is the original. |
+| `Final response; evidence disclosure re-ask result not used` | A re-ask was made and failed; the persisted answer is the original. |
 
 Every runtime consumer that locates the final answer (today `DelegationRoleData.FinalText`, which compares with
-`Final response`) recognizes all three through one shared runtime predicate; this is an implementation item. The final
+`Final response`) recognizes all three through one shared runtime predicate; this is an implementation item. The
+predicate is normative: a step is the final-response step only when its `Description` is exactly one of the three
+markers above (ordinal) **and** its `ToolCall` is `null`; a tool step whose description happens to equal a marker is
+never a final response. The final
 step's `ModelCalls` is reconstructed by logical call — a record with `ModelAttempt` 1 (or `null` in legacy rows) starts a
 new logical call (ADR-0039): logical call 1 is the normal final-answer call; the following logical calls are the
 empty-answer retries; when the description carries a re-ask marker, the **last** logical call is the
 evidence-disclosure re-ask. A future model-call-kind field stays the deferred follow-up of ADR-0014.
 
 **Telemetry:** the step span carries `bops.evidence_limitations` (number of digest entries, when non-zero) and
-`bops.evidence_disclosure_reask` (`accepted` or `not_used`, when a re-ask was made); never content.
+`bops.evidence_disclosure_reask` (`accepted` or `result_not_used`, when a re-ask was made); never content.
 
 ### 14. Public contract and compatibility
 
@@ -513,7 +519,7 @@ Deterministic (`FakeChatModel`, fake tools; Windows and Linux CI):
 | 13 | 20 qualifying steps | Newest 16 entries in ascending order plus the "not listed" line; size within bound; byte-identical on repeat. |
 | 14 | Resume | The digest after resume equals the digest built from the same persisted steps live. |
 | 15 | Final without heading, digest non-empty | Exactly one re-ask with the fixed `EvidenceDisclosure/v1` turn and the original answer as assistant turn; re-ask answer with heading persisted; `Description` `…re-ask accepted`; both calls audited. |
-| 16 | Re-ask answer without heading; empty; model failure | Original answer persisted; `Description` `…re-ask not used`; task `Completed`; failure audited. Cancellation propagates. |
+| 16 | Re-ask answer without heading; empty; model failure | Original answer persisted; `Description` `…re-ask result not used`; task `Completed`; failure audited. Cancellation propagates. |
 | 17 | **Re-ask at the step cap returns a tool call** (final answer on the last step allowed by `MaxSteps`, and by `MaxLifetimeSteps`) | Original answer persisted; the tool is not executed (no tool audit event, no new step, no replan); task status `Completed`, unchanged; no `MaxStepsReached`, `ReplanLimitReached`, `PolicyBlocked` or `BudgetExceeded`. |
 | 18 | Final already contains a heading; `EvidenceDisclosureRetries: 0`; token budget used up; delegated role meter without budget | No re-ask. |
 | 19 | Invalid `EvidenceDisclosureRetries` (−1, 2) | Options validation fails at startup. |
@@ -527,6 +533,12 @@ Deterministic (`FakeChatModel`, fake tools; Windows and Linux CI):
 | 27 | Regressions | Existing `system.crashes` GUID-identity tests and `timestampKind` tests (including `BlueScreen` `reported`) pass unchanged. |
 | 28 | N-2 | The `system.crashes` description states the `BlueScreen`/`kernel-bugcheck` `reported` exception; manifest snapshot and provider projection tests updated; `schemaVersion` 2. |
 | 29 | Architecture | Rule A1 still holds for the new runtime code and constants. |
+| 30 | Heading detector, unclosed fence | A heading after an unclosed ```` ``` ```` or `~~~` fence is not found (the fence runs to the end). |
+| 31 | Supersession order | A success **before** a validation failure of the same tool does not supersede it; the failure is listed. |
+| 32 | Final-step predicate | A tool step whose `Description` equals a final-response marker is not treated as the final response (its `ToolCall` is not `null`); all three markers with `ToolCall` `null` are. |
+| 33 | Final-step `ModelCalls` grouping | Records are grouped into logical calls at `ModelAttempt` 1 (or `null`); normal call, empty-answer retries and the re-ask are identified as in §13, including when the re-ask needed several attempts. |
+| 34 | Evidence rule E5 | States the restart condition and the two-second fallback precision. |
+| 35 | Reserved description | Registering a tool named `Denied` fails; unknown-tool rejections stay listed after a later successful call of the intended tool. |
 
 `excludeSources` tests are listed in the ADR-0032 HARDEN-9 amendment.
 
@@ -622,9 +634,28 @@ this text before any implementation:
 - **R4** — `Derived` holds under explicit preconditions; ordering between different events requires the clock
   preconditions, including no restart in between; `system.events` record times are never promoted (§2, §8).
 - **R5** — HARDEN-7 N-2 is a mandatory HARDEN-9 implementation item (§16).
-- **R6** — D-038 is not in the decision register until the architecture is accepted (header; packet; plan).
+- **R6** — D-038 was kept out of the decision register until the architecture was accepted (recorded as Accepted on
+  2026-10-03).
 - **N1** scope wording (§5); **N2** non-validation failures never superseded (§5); **N3** S5 distinction (§12, rules S5
   and C7); **N4** exact shortening predicate (§5); **N5** absence wording (§4 E4, §7); **N6** re-ask wording (§6); **N7**
   `excludeSources` precision (ADR-0032 HARDEN-9 amendment); **N8** persisted marker and template versions (§5, §6, §13);
   **N9** identifier-shaped deny-list and "not visible" (§4); **N10** test additions (§17); **N12** attributed causality
   (§2, §4 E7).
+
+## Operator acceptance (2026-10-03)
+
+Accepted by the operator on 2026-10-03 after the independent architecture review (`90bde7e`, CHANGES REQUIRED, resolved in
+`02e3e19`) and the independent architecture delta review of `02e3e19` (PASS WITH NON-BLOCKING FINDINGS). Recorded as
+decision D-038. The architecture is unchanged by the acceptance; the delta review's non-blocking findings are folded in
+as clarifications and implementation obligations:
+
+- **N1** — `Denied` is reserved as a runtime description token; registering a tool with that name fails (§5, test 35).
+- **N2** — E5 states the two-second fallback precision (§4, test 34).
+- **N3** — the failed-re-ask marker is `Final response; evidence disclosure re-ask result not used` (§13).
+- **N4** — the final-step predicate requires an exact marker and `ToolCall == null` (§13, test 32).
+- **N5** — the real-Windows test exercises the largest native XPath (ADR-0032 HARDEN-9 amendment, Tests).
+- **N6** — unknown-tool rejections are never superseded; accepted conservative behaviour (§5).
+- **N8** — tests 30–34 (unclosed fence, supersession order, final predicate, `ModelCalls` grouping, E5 wording) and the
+  maximum-XPath test are implementation obligations.
+
+HARDEN-9 implementation may start; HARDEN-8 follows it.
