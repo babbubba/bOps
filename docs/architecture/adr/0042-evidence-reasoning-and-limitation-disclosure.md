@@ -4,8 +4,8 @@ Status: Accepted (2026-10-03, operator decision; independent architecture review
 resolved in `02e3e19`; independent architecture delta review PASS WITH NON-BLOCKING FINDINGS — see "Operator
 acceptance (2026-10-03)")
 Date: 2026-10-02
-Proposed amendment: "HARDEN-9 implementation-review amendment — delegated Diagnostic structured output" (2026-10-03,
-at the end of this document, pending review) — no disclosure re-ask for the delegated Diagnostic role's structured JSON
+Accepted amendment: "HARDEN-9 implementation-review amendment — delegated Diagnostic structured output" (2026-10-03,
+at the end of this document) — no disclosure re-ask for the delegated Diagnostic role's structured JSON
 reply; digest and evidence rule still apply.
 
 Governs the runtime part of HARDEN-9 of the V1.3.x reliability train
@@ -663,11 +663,12 @@ as clarifications and implementation obligations:
 
 HARDEN-9 implementation may start; HARDEN-8 follows it.
 
-## HARDEN-9 implementation-review amendment — delegated Diagnostic structured output (Proposed 2026-10-03)
+## HARDEN-9 implementation-review amendment — delegated Diagnostic structured output (Accepted 2026-10-03)
 
-Status: Proposed (2026-10-03, after the independent implementation review of `d322ebd` returned CHANGES REQUIRED with
-blocker R1; revised 2026-10-03 after the independent amendment review of `88c1a10` — CHANGES REQUIRED, blocker R1 on the
-limitation-wording rule, findings N1–N2; independent delta review and operator acceptance pending). It narrows §5–§6 for one case and changes nothing else
+Status: Accepted 2026-10-03 (operator acceptance after independent amendment delta review: PASS; previous R1 resolved;
+new blocking findings none; non-blocking findings none). The independent implementation review of `d322ebd` returned
+CHANGES REQUIRED with blocker R1; the amendment review of `88c1a10` returned CHANGES REQUIRED on the limitation-wording
+rule, addressed in `85dcc66`. This amendment narrows §5–§6 for one case and changes nothing else
 in this ADR; where it and §5–§6 differ, this amendment governs that case only.
 
 ### Problem
@@ -716,10 +717,9 @@ For the delegated Diagnostic role:
    - qualify only findings that a listed limitation materially affects;
    - never create or alter a finding merely to encode a limitation.
 
-   The wording is the implementation's; the five points are normative. They fit the §5 bound: a sample of the whole
-   fixed text of the Diagnostic variant — both markers, a version line, the closing instruction and the "not listed"
-   line — measures 425 UTF-16 characters, under the 512-character budget, so the 4,608-character digest bound is
-   unchanged.
+   The wording is the implementation's; the five points are normative. The delta review demonstrated architectural
+   feasibility with a 498 UTF-16-character formulation. The implementation must verify its definitive Diagnostic
+   variant against the §5 bounds: fixed text ≤ 512 UTF-16 characters and digest ≤ 4,608 UTF-16 characters.
 4. **Limitation qualification rule (preserves ADR-0023).** A runtime limitation is not a finding. For the Diagnostic
    payload:
    - When a listed limitation **materially affects** a finding that is otherwise supported by recorded evidence, the
@@ -837,8 +837,7 @@ The existing digest tests (§17 rows 2–14) and the evidence-rule test (row 22)
 ### Decision record
 
 `agentic/06-decisions.md` says that a decision is changed by an ADR, never by an edit, and that its entries are Accepted.
-D-038 is therefore not edited, and no entry is added while this amendment is Proposed. When the amendment is accepted,
-the next free decision number (D-039 at the time of writing) records it directly as Accepted: disclosure enforcement (§6)
+D-038 is therefore unchanged. D-039 records this amendment directly as Accepted: disclosure enforcement (§6)
 applies to user-facing prose final answers, not to the delegated Diagnostic role's structured JSON payload; the digest
 and the evidence rule still apply to that role.
 
