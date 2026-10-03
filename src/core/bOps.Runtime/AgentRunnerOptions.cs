@@ -60,6 +60,13 @@ public sealed record AgentRunnerOptions
     public int EmptyFinalResponseRetries { get; init; } = 1;
 
     /// <summary>
+    /// Whether a final answer given while the runtime lists evidence limitations, and carrying no
+    /// <c>Evidence limitations</c> heading, is asked once more to restate itself with the section (ADR-0042 §6). <c>1</c> (the
+    /// default) allows that one tool-free re-ask; <c>0</c> disables it. No other value is valid: the re-ask never loops.
+    /// </summary>
+    public int EvidenceDisclosureRetries { get; init; } = 1;
+
+    /// <summary>
     /// The most characters of each request body and each reply body kept with a recorded model call; a longer body is
     /// cut and the record marked. <c>0</c> keeps no bodies (the model, timing and tokens are still recorded). The
     /// request repeats the whole conversation on every call, so this bounds how fast a task's stored state grows.
@@ -118,6 +125,12 @@ public sealed record AgentRunnerOptions
         {
             throw new InvalidOperationException(
                 $"'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}) must not be below 'Agent:MaxReplans' ({MaxReplans}).");
+        }
+
+        if (EvidenceDisclosureRetries is not (0 or 1))
+        {
+            throw new InvalidOperationException(
+                $"'Agent:EvidenceDisclosureRetries' ({EvidenceDisclosureRetries}) must be 0 (disabled) or 1.");
         }
 
         if (ModelCallMaxAttempts < 1)

@@ -99,6 +99,15 @@ internal sealed class RoleMeter
         return _tokens > _budget.MaxTokens ? Stop(BudgetStop.Tokens) : null;
     }
 
+    /// <summary>
+    /// Whether the role has already been stopped, or has used up its tokens or reached its deadline — the same test as
+    /// <see cref="Check"/>, but it never records a stop. Asked before an optional model call (the evidence-disclosure re-ask,
+    /// ADR-0042 §6) so that declining the call cannot itself end the role by its budget.
+    /// </summary>
+    /// <param name="now">The current instant.</param>
+    internal bool IsExhausted(DateTimeOffset now) =>
+        Stopped is not null || now >= _budget.DeadlineUtc || _tokens > _budget.MaxTokens;
+
     /// <summary>Records that a side-effecting step was interrupted, so its outcome is unknown (ADR-0030 section 6).</summary>
     /// <param name="description">Which step, for the run's explanation.</param>
     internal void MarkUnknownOutcome(string description) => UnknownOutcome ??= description;

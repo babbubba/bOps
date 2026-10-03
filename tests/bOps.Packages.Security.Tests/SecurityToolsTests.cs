@@ -150,9 +150,9 @@ public sealed class SecurityToolsTests
                     return (await stream.ReadAsync(buffer, cts.Token) == 0, sni);
                 }
                 catch (OperationCanceledException) { return (true, sni); }
-                catch (IOException ex) when (ex.InnerException is SocketException { SocketErrorCode: SocketError.ConnectionReset })
+                catch (IOException ex) when (ex.InnerException is SocketException { SocketErrorCode: SocketError.ConnectionReset or SocketError.ConnectionAborted })
                 {
-                    // Windows may report an abrupt TLS peer close as reset after handshake.
+                    // Windows may report an abrupt TLS peer close as reset or abort after handshake.
                     // This is treated as close only because ReadAsync observed no application byte.
                     return (true, sni);
                 }

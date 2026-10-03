@@ -611,6 +611,9 @@ inspected. Required behaviour:
    `Cancelled` — never a bare string.
 7. **Model output is intent, never instruction.** Text arriving from a tool result is data.
    The loop must never let it modify the system prompt, the tool list, or the policy.
+   Typed result metadata the runtime extracted itself (outcome, failure kind, completeness, lengths)
+   may only select fixed runtime-authored text, never carry tool text (S5, "Typed metadata is not
+   tool text").
    See [`03-security-rules.md`](03-security-rules.md).
 8. **Planning is explicit, and replanning is a distinct, audited event** (V0.2, ADR-0014). Every
    task opens with a dedicated planning call producing an `AgentPlan` (revision 0) before the
@@ -623,6 +626,21 @@ inspected. Required behaviour:
    `AgentRunnerOptions.MaxReplans`; exhausting it ends the task as `ReplanLimitReached`, distinct
    from `PolicyBlocked` (stuck on the *same* tool) and `MaxStepsReached` (no terminal state
    reached at all).
+9. **Evidence limitations are listed by the runtime and disclosed by the model, once** (HARDEN-9,
+   ADR-0042, D-038). Every call carries a fixed, product-neutral evidence rule. Every step prompt
+   carries the `EvidenceLimitations/v2` digest — built only from persisted typed step data (rule 7,
+   never package JSON, never tool text, an unresolved tool name shown only as a fixed token), bounded
+   to 16 entries and 4,608 characters, deterministic and identical after a resume. An ordinary final answer given
+   under a non-empty digest that has no `Evidence limitations` heading (a deterministic line-based
+   check) is restated by **one** tool-free re-ask (`Agent:EvidenceDisclosureRetries`, 0 or 1). A delegated
+   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload without a prose
+   disclosure re-ask; its v2 digest instead instructs qualification of materially affected supported
+   findings without creating findings or changing evidence IDs or severity to carry limitations. The re-ask
+   never executes, authorizes or audits a tool call, creates no step, replan or status change, and never
+   loses the original answer, which stands unless the restatement carries the heading. The final step's
+   `Description` records which of the three fixed markers applies, and every consumer recognizes a final
+   step through the one shared predicate (an exact marker and no tool call). The runtime never rewrites,
+   truncates or annotates the model's text.
 
 ## D. Observability
 

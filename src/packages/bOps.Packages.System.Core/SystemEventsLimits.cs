@@ -42,6 +42,15 @@ public static class SystemEventsLimits
     /// <summary>Longest <c>channel</c> value.</summary>
     public const int ChannelCharacters = 256;
 
+    /// <summary>Most entries <c>excludeSources</c> may list (ADR-0032 HARDEN-9 amendment §1).</summary>
+    public const int MaximumExcludedSources = 8;
+
+    /// <summary>Longest single <c>excludeSources</c> entry, in UTF-16 code units: the bound of <c>source</c>.</summary>
+    public const int ExcludedSourceCharacters = SourceCharacters;
+
+    /// <summary>Longest whole <c>excludeSources</c> value, separators included. It prevails over eight full-length entries.</summary>
+    public const int ExcludeSourcesCharacters = 1_024;
+
     /// <summary>Longest <c>text</c> filter.</summary>
     public const int TextCharacters = 256;
 

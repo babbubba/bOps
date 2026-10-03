@@ -15,6 +15,7 @@ namespace bOps.Packages.Sys.Core;
 /// <param name="Channel">Windows channel or Linux transport, or <c>null</c> for the platform default.</param>
 /// <param name="Text">Case-insensitive substring of the message, or <c>null</c>.</param>
 /// <param name="ScanCeiling">The most native records a collector may examine before it stops and reports truncation.</param>
+/// <param name="ExcludeSources">Validated sources to leave out, in the caller's spelling, sorted <see cref="StringComparison.OrdinalIgnoreCase"/> then ordinal; matched case-insensitively against the canonical <c>source</c> of a record and nothing else (ADR-0032 HARDEN-9 amendment §2). <c>null</c> or empty for none.</param>
 public sealed record SystemEventQuery(
     DateTimeOffset FromUtc,
     DateTimeOffset ToUtc,
@@ -23,4 +24,5 @@ public sealed record SystemEventQuery(
     string? EventId,
     string? Channel,
     string? Text,
-    int ScanCeiling);
+    int ScanCeiling,
+    IReadOnlyList<string>? ExcludeSources = null);

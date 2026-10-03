@@ -855,3 +855,66 @@ default. More results are `Partial` by design. No change to `bOps.Abstractions`,
 audit schema; all new contract types are package-local in `bOps.Packages.System.Core`. HARDEN-9 uses this `mode` and
 adds no second aggregation parameter. Both ADRs are accepted as an operator decision through the HARDEN-7 architecture
 gate; the independent review's blocking findings are resolved in their text. Implementation is HARDEN-7.
+
+### D-038 — V1.3.x HARDEN-9: evidence reasoning and limitation disclosure (ADR-0042, ADR-0032 HARDEN-9 amendment)
+
+**Decision.** Accepted 2026-10-03 (operator decision after the independent architecture review and its delta review,
+PASS WITH NON-BLOCKING FINDINGS). (1) **Boundary.** No reasoning engine, no new tool, no relation, cause or confidence
+field in code, no `bOps.Abstractions` change: deterministic code establishes and labels evidence, the model interprets
+it, the runtime makes the limits visible and asks once for their disclosure, and nothing is rewritten. (2) **Taxonomy.**
+Observed (what a tool result states, including its deterministic aggregates and exact-identity merges), derived (what
+follows deterministically from observed evidence under stated preconditions), hypothesis, attributed cause (a record's
+own causal statement, reported as that record's attribution, never as the model's conclusion), unknown. (3) **No
+causality** from correlation, temporal order or proximity, frequency, co-occurrence, absence of other evidence or
+partial coverage. (4) **Negative evidence.** No result proves that something did not occur; at most, for a `Complete`
+result, no matching records were observed in the readable sources covering the requested window and filters; `Partial`
+gives lower bounds; `Unavailable`, `notCollected`, `notApplicable`, `null`, truncated, shortened or excluded evidence is
+unknown, never zero. (5) **Time.** ADR-0041 §6 is preserved: `occurred(A) ≤ reported(A)` per event, no promotion,
+`system.events` record times never become occurrence times. Ordering different events is derived only on one
+comparable clock domain, UTC, with no known clock change or restart between them and a gap above the coarser timestamp
+precision (two seconds when unstated); otherwise it is a hypothesis input. (6) **Digest.** A deterministic, versioned
+(`EvidenceLimitations/v1`), bounded (16 entries, 4,608 characters) evidence-limitations digest in step prompts, built
+only from typed `ToolCallResult` fields and persisted step data, lists steps whose requested result was not obtained or
+only partially available: `Partial`/`Unavailable`, non-validation failures (never superseded), shortened observations
+(`Observation.StartsWith(Output, Ordinal)` false), and validation failures unless a later step on the same resolved
+`ToolCall.ToolName` succeeded — the only supersession rule; unknown-tool rejections appear as `(unknown tool)` and are
+never superseded. Typed metadata only selects fixed runtime-authored text (rules S5, C7). (7) **Disclosure.** When the
+digest is non-empty and a deterministic detector finds no `Evidence limitations` heading, at most one re-ask
+(`EvidenceDisclosure/v1`, `Agent:EvidenceDisclosureRetries` 0–1, default 1) asks for a restatement; it **never executes
+a tool**, adds no step or replan, never changes the task status, and keeps the original answer unless the re-ask
+returns an answer with a valid heading; the final step's `Description` records the outcome. (8) **`excludeSources`.**
+`system.events` gains a comma-separated `String` (≤ 8 entries of ≤ 128 characters, ≤ 1,024 total, `source` character
+set, no duplicates, not equal to `source`), matched case-insensitively on the canonical `source`, excluded natively on
+Windows (`Provider[@Name!=…]`, before the scan ceiling) plus a shared post-filter, post-filtered on Linux, echoed as an
+always-present sorted array; `mode` stays the only aggregation switch; `schemaVersion` stays 2. (9) HARDEN-7 residual
+N-2 (`system.crashes` description: `BlueScreen` Report.wer `EventTime` is `reported`) is a mandatory HARDEN-9 item.
+
+**Rejected.** A reasoning or correlation tool; relation, cause or confidence fields; a typed coverage field; parsing
+package JSON in the core; appending or persisting limitations outside the model's answer; executing tools during the
+re-ask; substring heading detection; a localized heading; superseding non-validation failures; a string-list parameter
+type; wildcard or default exclusions; a second aggregation switch.
+
+**Consequences.** Additive only: one runtime option, one `system.events` argument and output field, a longer system
+prompt, at most one extra model call per limited task. HARDEN-9 detects and discloses observations shortened by the
+observation budget but does not change it; the context-budget economy and the projection of full typed evidence belong
+to HARDEN-8, which follows HARDEN-9 and inherits the interface of ADR-0042 §16.
+
+### D-039 — V1.3.x HARDEN-9: delegated Diagnostic structured-output disclosure (ADR-0042 amendment)
+
+**Decision.** Accepted 2026-10-03 (operator decision after independent amendment delta review PASS; previous R1
+resolved, no new blocking or non-blocking findings). For a delegated `AgentRoleKind.Diagnostic` final response, HARDEN-9
+does not enforce the separate prose `Evidence limitations` section or make a disclosure re-ask: the original structured
+JSON final reply is preserved. The typed role gate selects the `EvidenceLimitations/v2` structured-output-safe instruction
+while the digest and common evidence rule remain in effect. A runtime limitation qualifies only a materially affected
+finding that remains supported by its existing `evidenceIds`; it is not itself a finding. A limitation affecting no
+finding stays outside the Diagnostic JSON and remains recoverable from the persisted role task. Ordinary tasks and
+Discovery retain disclosure enforcement. This amends ADR-0042's HARDEN-9 final-answer rule and supplements D-038
+without rewriting it.
+
+**Rejected.** A synthetic finding solely for a limitation; added, changed or invented `evidenceIds` to carry one; a
+`severity` change solely to carry one; attaching an unrelated limitation to a finding; dropping an otherwise supported
+finding because of an unrelated limitation; a generic exemption for delegated roles or JSON output.
+
+**Consequences.** The HARDEN-9 runtime correction may proceed but remains unimplemented and unverified. HARDEN-11 owns
+evaluation of typed limitation metadata in delegation results and approval visibility, and `FindingsOf` parsing
+hardening as defence in depth; HARDEN-9 does not depend on completion of those follow-ups.

@@ -15,8 +15,12 @@ namespace bOps.Packages.Sys.Windows;
 /// </summary>
 internal static class WindowsEventXPath
 {
-    /// <summary>Builds the XPath. <paramref name="providerName"/> is the provider's registered spelling, or <c>null</c> to filter by provider afterwards.</summary>
-    internal static string Build(SystemEventQuery query, string? providerName)
+    /// <summary>
+    /// Builds the XPath. <paramref name="providerName"/> is the provider's registered spelling, or <c>null</c> to filter by provider
+    /// afterwards. <paramref name="excludedProviders"/> are the names to leave out natively, one <c>@Name!=</c> term each, already
+    /// resolved to the registered spelling or, when none is registered, the validated entry itself (ADR-0032 HARDEN-9 amendment §2).
+    /// </summary>
+    internal static string Build(SystemEventQuery query, string? providerName, IReadOnlyList<string>? excludedProviders = null)
     {
         ArgumentNullException.ThrowIfNull(query);
         var conditions = new List<string>
@@ -32,6 +36,12 @@ internal static class WindowsEventXPath
         if (providerName is not null)
         {
             conditions.Add($"Provider[@Name='{Checked(providerName)}']");
+        }
+
+        if (excludedProviders is { Count: > 0 })
+        {
+            // One predicate, one != term per name, joined with and. not() is outside the Event Log XPath subset.
+            conditions.Add("Provider[" + string.Join(" and ", excludedProviders.Select(name => $"@Name!='{CheckedExcluded(name)}'")) + "]");
         }
 
         if (query.EventId is { } eventId)
@@ -62,6 +72,14 @@ internal static class WindowsEventXPath
             && int.Parse(eventId, NumberStyles.None, CultureInfo.InvariantCulture) is <= 65_535 and var number
             ? number
             : throw new ArgumentException("The event id is not a number from 0 to 65535.", nameof(eventId));
+
+    /// <summary>Whether <paramref name="value"/> is made only of the characters a provider name may carry into a query (the <c>source</c> character set).</summary>
+    internal static bool IsSafeProviderName(string value) =>
+        value.Length > 0 && value.All(character => char.IsAsciiLetterOrDigit(character) || " _.@:/()-".Contains(character, StringComparison.Ordinal));
+
+    /// <summary>An excluded name must be a non-empty name of the <c>source</c> character set: an empty one would exclude nothing and hide a bug.</summary>
+    private static string CheckedExcluded(string value) =>
+        value.Length > 0 ? Checked(value) : throw new ArgumentException("An excluded provider name cannot be empty.", nameof(value));
 
     /// <summary>A last defence: a value that could end a string literal or change the query is refused, not escaped.</summary>
     private static string Checked(string value)

@@ -51,7 +51,8 @@ The same normalizer feeds `system.stability`, so the two tools cannot classify a
 Windows writes it after the reboot (on the operator workstation, after the next boot's Kernel-Power 41), so it is not the
 crash time, and no other time is promoted in its place; a merged crash takes its occurrence time when
 one of its sources proves it, and then carries the WER processing time in `reportedUtc`. A crash belongs to the window
-by that primary time.
+by that primary time. The tool description the model reads states the `BlueScreen` exception in the same words, so that
+`EventTime` is never read as the crash time (HARDEN-9, residual N-2).
 
 **Aggregate groups** key on kind, event name (only for kind `wer`), code, application, module and `timestampKind`, with
 `count`, `firstSeenUtc`, `lastSeenUtc`, `dumpReferenceCount`, `evidenceSources` and `uncorrelatedCount` — the members

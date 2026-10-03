@@ -54,7 +54,8 @@ public static partial class SystemEventsArguments
             || !TryName(json, arguments, "source", SystemEventsLimits.SourceCharacters, out var source, out error)
             || !TryName(json, arguments, "eventId", SystemEventsLimits.EventIdCharacters, out var eventId, out error)
             || !TryName(json, arguments, "channel", SystemEventsLimits.ChannelCharacters, out var channel, out error)
-            || !TryText(json, arguments, out var text, out error))
+            || !TryText(json, arguments, out var text, out error)
+            || !TryExcludeSources(json, arguments, source, out var excluded, out error))
         {
             return false;
         }
@@ -67,7 +68,8 @@ public static partial class SystemEventsArguments
             eventId,
             channel,
             text,
-            SystemEventsLimits.ScanCeiling);
+            SystemEventsLimits.ScanCeiling,
+            excluded);
         error = null;
         return true;
     }
@@ -152,6 +154,75 @@ public static partial class SystemEventsArguments
         }
 
         value = raw;
+        return true;
+    }
+
+    /// <summary>
+    /// Reads <c>excludeSources</c> (ADR-0032 HARDEN-9 amendment §1): comma-separated, each entry trimmed, non-empty, at most 128
+    /// characters of the <c>source</c> character set, at most 8 entries and 1,024 characters in all, no two equal ignoring case and
+    /// none equal to <paramref name="source"/>. Nothing is clamped, dropped or corrected. The result is the entries in the caller's
+    /// spelling, sorted case-insensitively and then ordinally, so the same input always gives the same echo. A name that matches
+    /// nothing is valid: whether a source exists in the window is not knowable before the read.
+    /// </summary>
+    private static bool TryExcludeSources(JsonObject json, ToolArguments arguments, string? source, out IReadOnlyList<string> entries, out string? error)
+    {
+        entries = [];
+        error = null;
+        if (!json.ContainsKey("excludeSources") || json["excludeSources"] is null)
+        {
+            return true;
+        }
+
+        if (!arguments.TryGet<string>("excludeSources", out var raw))
+        {
+            error = "excludeSources must be a string.";
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(raw) || raw.Length > SystemEventsLimits.ExcludeSourcesCharacters)
+        {
+            error = $"excludeSources must be 1 to {SystemEventsLimits.ExcludeSourcesCharacters} characters.";
+            return false;
+        }
+
+        var parts = raw.Split(',').Select(part => part.Trim()).ToArray();
+        if (parts.Any(part => part.Length == 0))
+        {
+            error = "excludeSources must not contain an empty entry (check for a doubled or trailing comma).";
+            return false;
+        }
+
+        if (parts.Length > SystemEventsLimits.MaximumExcludedSources)
+        {
+            error = $"excludeSources may list at most {SystemEventsLimits.MaximumExcludedSources} sources.";
+            return false;
+        }
+
+        if (parts.Any(part => part.Length > SystemEventsLimits.ExcludedSourceCharacters))
+        {
+            error = $"excludeSources entries must be 1 to {SystemEventsLimits.ExcludedSourceCharacters} characters.";
+            return false;
+        }
+
+        if (parts.Any(part => !NamePattern().IsMatch(part)))
+        {
+            error = "excludeSources entries may contain only letters, digits and the characters space _ . @ : / ( ) -.";
+            return false;
+        }
+
+        if (parts.Distinct(StringComparer.OrdinalIgnoreCase).Count() != parts.Length)
+        {
+            error = "excludeSources must not list a source twice (names are compared ignoring case).";
+            return false;
+        }
+
+        if (source is not null && parts.Any(part => string.Equals(part, source, StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "excludeSources must not contain the source argument: a source cannot be both selected and excluded.";
+            return false;
+        }
+
+        entries = [.. parts.OrderBy(part => part, StringComparer.OrdinalIgnoreCase).ThenBy(part => part, StringComparer.Ordinal)];
         return true;
     }
 

@@ -77,7 +77,7 @@ internal static class DelegationRoleData
 
     /// <summary>The model's final reply in a loop, or <c>null</c> when it made none.</summary>
     internal static string? FinalText(TaskState task) =>
-        task.Steps.LastOrDefault(step => step.Description == "Final response")?.Observation;
+        task.Steps.LastOrDefault(FinalResponse.IsFinalStep)?.Observation;
 
     /// <summary>
     /// Findings from the Diagnostic role's reply. A finding is kept only when it has a summary and cites at least one

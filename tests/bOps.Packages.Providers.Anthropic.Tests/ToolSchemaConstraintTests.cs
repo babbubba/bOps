@@ -263,6 +263,48 @@ public sealed class ToolSchemaConstraintTests
         Assert.All(BoundKeys, key => Assert.False(properties.GetProperty("text").TryGetProperty(key, out _), key));
     }
 
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public async Task ProductionHarden9Manifests_ProjectExcludeSourcesAsABoundedOptionalString(string platform)
+    {
+        // HARDEN-9: the new system.events argument reaches the provider schema from the manifest alone, as a plain string with
+        // minLength/maxLength; the comma grammar is prose in its description and a rule of the package reader, never an array,
+        // an item pattern or a conditional schema.
+        var manifest = SystemToolManifests.Events(platform);
+        var schema = await SchemaOfAsync(manifest);
+
+        var property = schema.GetProperty("properties").GetProperty("excludeSources");
+        Assert.Equal("string", property.GetProperty("type").GetString());
+        Assert.Equal(1, property.GetProperty("minLength").GetInt32());
+        Assert.Equal(1024, property.GetProperty("maxLength").GetInt32());
+        Assert.Equal(manifest.Parameters.Single(p => p.Name == "excludeSources").Description, property.GetProperty("description").GetString());
+        foreach (var keyword in new[] { "items", "maxItems", "minItems", "enum", "pattern", "format" })
+        {
+            Assert.False(property.TryGetProperty(keyword, out _), keyword);
+        }
+
+        Assert.True(!schema.TryGetProperty("required", out var required) || required.EnumerateArray().All(name => name.GetString() != "excludeSources"));
+        Assert.Equal(JsonValueKind.False, schema.GetProperty("additionalProperties").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public async Task ProductionCrashesManifest_ProjectsTheCorrectedTimestampKindDescriptionUnchanged(string platform)
+    {
+        // HARDEN-7 residual N-2: a BlueScreen (kernel-bugcheck) Report.wer EventTime is reported, not an occurrence time.
+        var manifest = SystemToolManifests.Crashes(platform);
+        using var body = JsonDocument.Parse(await RequestBodyAsync(manifest, nativeToolCalling: true, NativeReply));
+
+        var description = body.RootElement.GetProperty("tools")[0].GetProperty("description").GetString();
+
+        Assert.Equal(manifest.Description, description);
+        Assert.Contains("The Report.wer EventTime of a BlueScreen (kernel-bugcheck) report is reported, not an occurrence time", description, StringComparison.Ordinal);
+        Assert.Contains("the Report.wer EventTime of an application crash, hang or kernel live dump", description, StringComparison.Ordinal);
+        Assert.Contains("schemaVersion 2", description, StringComparison.Ordinal);
+    }
+
     private static void AddIfPresent(Dictionary<string, double> target, string key, double? value)
     {
         if (value is { } bound)
