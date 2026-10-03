@@ -48,6 +48,19 @@ public sealed class EvidenceLimitationsDigestTests
     }
 
     [Fact]
+    public void Build_StartsWithTheVersionLine_ThenOneFixedSentence_ThenTheEntries()
+    {
+        var lines = Digest(ToolStep(3, "test.partial", Partial()))!.Split('\n');
+
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("EvidenceLimitations/v1", lines[0]);
+        Assert.StartsWith("Written by bOps from typed tool results, not by a tool:", lines[1], StringComparison.Ordinal);
+        Assert.Contains("each tool's own result says which sources, periods or items are affected", lines[1], StringComparison.Ordinal);
+        Assert.Contains("under the heading Evidence limitations", lines[1], StringComparison.Ordinal);
+        Assert.StartsWith("- step 3: ", lines[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_ListsAnUnavailableResult()
     {
         var digest = Digest(ToolStep(0, "test.gone", ToolCallResult.Success("nothing") with { Completeness = ToolResultCompleteness.Unavailable }))!;

@@ -47,8 +47,8 @@ internal static class EvidenceLimitationsDigest
     private const int MaxToolNameCharacters = 128;
 
     private const string Introduction =
-        "Written by bOps from typed tool results, not by a tool. Each tool's own result says which sources, periods or items are affected. " +
-        "Disclose these limitations in the final answer under the heading Evidence limitations.";
+        "Written by bOps from typed tool results, not by a tool: each tool's own result says which sources, periods or items are affected, " +
+        "and the final answer must disclose these limitations under the heading Evidence limitations.";
 
     /// <summary>The digest as a step prompt carries it: delimited by the two fixed markers.</summary>
     internal static string Delimit(string digest) => $"{OpenMarker}\n{digest}\n{CloseMarker}";
