@@ -43,7 +43,7 @@ public sealed class EvidenceLimitationsDigestTests
         var digest = Digest(ToolStep(3, "test.partial", Partial()))!;
 
         var lines = digest.Split('\n');
-        Assert.Equal("EvidenceLimitations/v1", lines[0]);
+        Assert.Equal("EvidenceLimitations/v2", lines[0]);
         Assert.Equal(["- step 3: test.partial — completeness Partial"], Entries(digest));
     }
 
@@ -53,7 +53,7 @@ public sealed class EvidenceLimitationsDigestTests
         var lines = Digest(ToolStep(3, "test.partial", Partial()))!.Split('\n');
 
         Assert.Equal(3, lines.Length);
-        Assert.Equal("EvidenceLimitations/v1", lines[0]);
+        Assert.Equal("EvidenceLimitations/v2", lines[0]);
         Assert.StartsWith("Written by bOps from typed tool results, not by a tool:", lines[1], StringComparison.Ordinal);
         Assert.Contains("each tool's own result says which sources, periods or items are affected", lines[1], StringComparison.Ordinal);
         Assert.Contains("under the heading Evidence limitations", lines[1], StringComparison.Ordinal);
@@ -343,6 +343,33 @@ public sealed class EvidenceLimitationsDigestTests
     }
 
     [Fact]
+    public void DiagnosticV2_StatesStructuredFindingIntegrity_AndTheActualRuntimeTextFits()
+    {
+        var instruction = EvidenceLimitationsDigest.DiagnosticIntroduction;
+        foreach (var phrase in new[]
+        {
+            "required JSON", "no prose", "Replaces E8's prose section",
+            "supported by existing evidence", "materially affected", "Never create a finding for a limitation",
+            "add/change/invent evidenceIds", "change severity to carry one",
+            "Never attach unrelated limitations or drop supported findings", "Unmatched limitations stay outside JSON",
+        })
+        {
+            Assert.Contains(phrase, instruction, StringComparison.Ordinal);
+        }
+
+        var steps = Enumerable.Range(0, 60).Select(i => ToolStep(
+            1_000_000 + i, new string('n', 128), Partial(new string('z', 100_000)) with
+            { Outcome = ToolOutcome.Timeout, FailureKind = ToolFailureKind.Authorization }, observation: "cut")).ToArray();
+        var digest = EvidenceLimitationsDigest.Build(steps, diagnostic: true)!.Text;
+        var fixedText = digest.Length - Entries(digest).Sum(entry => entry.Length + 1);
+
+        Assert.StartsWith("EvidenceLimitations/v2\n" + instruction, digest, StringComparison.Ordinal);
+        Assert.Equal(512, fixedText); // version, instruction and worst-case omission line, in UTF-16 code units
+        Assert.Equal(3840, digest.Length); // actual worst-case fixture, including sixteen bounded entries
+        Assert.True(digest.Length <= 4608, $"Actual Diagnostic digest: {digest.Length} UTF-16 code units.");
+    }
+
+    [Fact]
     public void Build_NeverContainsOutputErrorMessageObservationArgumentsOrModelText()
     {
         var call = new ModelToolCall("call-0", "test.leaky", new ToolArguments(new System.Text.Json.Nodes.JsonObject { ["path"] = "SECRET-ARGUMENT" }));
@@ -379,9 +406,9 @@ public sealed class EvidenceLimitationsDigestTests
     [Fact]
     public void Delimit_WrapsTheDigestInTheTwoFixedMarkers()
     {
-        var delimited = EvidenceLimitationsDigest.Delimit("EvidenceLimitations/v1\nbody");
+        var delimited = EvidenceLimitationsDigest.Delimit("EvidenceLimitations/v2\nbody");
 
-        Assert.Equal("<<<BOPS_EVIDENCE_LIMITATIONS>>>\nEvidenceLimitations/v1\nbody\n<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", delimited);
+        Assert.Equal("<<<BOPS_EVIDENCE_LIMITATIONS>>>\nEvidenceLimitations/v2\nbody\n<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", delimited);
     }
 
     [Fact]

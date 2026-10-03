@@ -188,6 +188,7 @@ public sealed partial class DelegationRunnerTests
         public required RestartTool Restart { get; init; }
 
         public required FakeTimeProvider Clock { get; init; }
+        public required InMemoryTaskStore Tasks { get; init; }
     }
 
     private static Harness Create(
@@ -214,11 +215,16 @@ public sealed partial class DelegationRunnerTests
         IAuditSink? sink = null,
         IEntitlementService? entitlementService = null,
         EntitlementRequirement? verifyReadEntitlement = null,
-        EntitlementRequirement? restartEntitlement = null)
+        EntitlementRequirement? restartEntitlement = null,
+        ITool? extraRead = null)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         var restartTool = restart ?? new RestartTool();
         registry.Register(SamplePackage, new FakeReadTool("host.info", discoveryOutput));
+        if (extraRead is not null)
+        {
+            registry.Register(SamplePackage, extraRead);
+        }
         if (verifyReadEntitlement is null)
         {
             registry.Register(SamplePackage, verifyRead ?? new FakeReadTool("test.read", "service is running"));
@@ -269,15 +275,16 @@ public sealed partial class DelegationRunnerTests
         }
 
         var time = clock ?? new FakeTimeProvider(Start);
+        var tasks = new InMemoryTaskStore();
         var agentRunner = new AgentRunner(
             model ?? fakeModel, registry, policy ?? new StubPolicyEngine(PolicyMode.Automatic), stepApproval ?? new NeverCalledApprovalProvider(), audit,
-            new InMemoryTaskStore(), time, NullLogger<AgentRunner>.Instance,
+            tasks, time, NullLogger<AgentRunner>.Instance,
             options ?? new AgentRunnerOptions { MaxObservationCharacters = 1024 }, skills, entitlementService: entitlementService);
         var planApproval = approval ?? new RecordingPlanApproval();
         var runner = new DelegationRunner(
             agentRunner, new FixedProfiles(profiles ?? AllProfiles()), planApproval, audit, time, NullLogger<DelegationRunner>.Instance,
             store, maximumResumes) { AgentIds = agentIds ?? AgentId.New };
-        return new Harness { Runner = runner, Agent = agentRunner, Model = fakeModel, Audit = recording, Approval = planApproval, Restart = restartTool, Clock = time };
+        return new Harness { Runner = runner, Agent = agentRunner, Model = fakeModel, Audit = recording, Approval = planApproval, Restart = restartTool, Clock = time, Tasks = tasks };
     }
 
     private static ExecutionPlan DefaultPlan() => new(
@@ -527,6 +534,42 @@ public sealed partial class DelegationRunnerTests
             Assert.NotEmpty(f.EvidenceIds);
             Assert.All(f.EvidenceIds, id => Assert.Contains(id, evidenceIds));
         });
+    }
+
+    [Fact]
+    public async Task Start_PartialDiagnosticEvidence_PreservesFindingInReportAndApproval()
+    {
+        const string json = "{\"findings\":[{\"summary\":\"The service has stopped; this read is partial.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}";
+        var profiles = AllProfiles();
+        profiles[AgentRoleKind.Diagnostic] = Profile(AgentRoleKind.Diagnostic, tools: ["host.info", "test.partial"]);
+        var partial = new ResultTool("test.partial", EvidenceScenario.Partial());
+        var script = new[]
+        {
+            PlanningTestSupport.PlanResponse(), Call("host.info"), Final(),
+            PlanningTestSupport.PlanResponse(), Call("test.partial"), Final(json),
+        };
+        var h = Create(script, profiles: profiles, extraRead: partial);
+
+        var run = await h.Runner.StartAsync(Request(), Operator);
+
+        Assert.Equal(6, h.Model.Requests.Count); // no seventh, disclosure re-ask call
+        Assert.Equal(1, partial.ExecutionCount);
+        var reportFinding = Assert.Single(Role(run, AgentRoleKind.Diagnostic).Report!.Findings,
+            f => f.Summary == "The service has stopped; this read is partial.");
+        Assert.Equal("The service has stopped; this read is partial.", reportFinding.Summary);
+        Assert.Equal(["discovery-0"], reportFinding.EvidenceIds);
+        var approvalFinding = Assert.Single(Assert.Single(h.Approval.Requests).Findings,
+            f => f.Summary == reportFinding.Summary);
+        Assert.Equal(reportFinding, approvalFinding);
+
+        var diagnosticCall = h.Audit.Events.OfType<ModelCallAuditEvent>()
+            .Last(e => e.Delegation?.Agent?.Role == AgentRoleKind.Diagnostic);
+        var task = await h.Tasks.LoadAsync(diagnosticCall.TaskId);
+        Assert.NotNull(task);
+        Assert.Equal("Final response", task.Steps[^1].Description);
+        Assert.Equal(json, task.Steps[^1].Observation);
+        Assert.Equal(json, DelegationRoleData.FinalText(task));
+        Assert.Contains("EvidenceLimitations/v2", h.Model.Requests[5].SystemPrompt, StringComparison.Ordinal);
     }
 
     [Fact]

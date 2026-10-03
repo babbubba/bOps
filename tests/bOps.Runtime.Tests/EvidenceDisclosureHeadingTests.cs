@@ -138,6 +138,9 @@ public sealed class EvidenceDisclosureHeadingTests
 
     [Theory]
     [InlineData("\tEvidence limitations")]
+    [InlineData(" \tEvidence limitations")]
+    [InlineData("  \tEvidence limitations")]
+    [InlineData("   \tEvidence limitations")]
     [InlineData("\t## Evidence limitations")]
     [InlineData("    Evidence limitations")]
     [InlineData("    ## Evidence limitations")]

@@ -27,6 +27,7 @@ public sealed partial class EvidenceRuleTests
     public void Rule_IsBoundedToTwoThousandCharacters_AsTheParagraphTheSystemPromptCarries()
     {
         Assert.True(EvidenceRule.Paragraph.Length <= EvidenceRule.MaxCharacters, $"The paragraph is {EvidenceRule.Paragraph.Length} characters.");
+        Assert.Equal(1984, EvidenceRule.Paragraph.Length);
         Assert.True(EvidenceRule.Text.Length < EvidenceRule.Paragraph.Length);
         Assert.Equal(2000, EvidenceRule.MaxCharacters);
     }
@@ -109,7 +110,8 @@ public sealed partial class EvidenceRuleTests
     {
         var rule = EvidenceRule.Text;
         Assert.Contains("when it was recorded or reported", rule, StringComparison.Ordinal);
-        Assert.Contains("a time with no stated kind is the time of the record, so the thing happened no later", rule, StringComparison.Ordinal);
+        Assert.Contains("never present a reported time as when it happened", rule, StringComparison.Ordinal);
+        Assert.Contains("A time with no stated kind is the time of the record, so the thing happened no later", rule, StringComparison.Ordinal);
         Assert.Contains("one comparable clock", rule, StringComparison.Ordinal);
         Assert.Contains("universal time", rule, StringComparison.Ordinal);
         Assert.Contains("no clock change or restart lies between them", rule, StringComparison.Ordinal);
