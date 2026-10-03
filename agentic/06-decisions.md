@@ -898,3 +898,23 @@ type; wildcard or default exclusions; a second aggregation switch.
 prompt, at most one extra model call per limited task. HARDEN-9 detects and discloses observations shortened by the
 observation budget but does not change it; the context-budget economy and the projection of full typed evidence belong
 to HARDEN-8, which follows HARDEN-9 and inherits the interface of ADR-0042 §16.
+
+### D-039 — V1.3.x HARDEN-9: delegated Diagnostic structured-output disclosure (ADR-0042 amendment)
+
+**Decision.** Accepted 2026-10-03 (operator decision after independent amendment delta review PASS; previous R1
+resolved, no new blocking or non-blocking findings). For a delegated `AgentRoleKind.Diagnostic` final response, HARDEN-9
+does not enforce the separate prose `Evidence limitations` section or make a disclosure re-ask: the original structured
+JSON final reply is preserved. The typed role gate selects the `EvidenceLimitations/v2` structured-output-safe instruction
+while the digest and common evidence rule remain in effect. A runtime limitation qualifies only a materially affected
+finding that remains supported by its existing `evidenceIds`; it is not itself a finding. A limitation affecting no
+finding stays outside the Diagnostic JSON and remains recoverable from the persisted role task. Ordinary tasks and
+Discovery retain disclosure enforcement. This amends ADR-0042's HARDEN-9 final-answer rule and supplements D-038
+without rewriting it.
+
+**Rejected.** A synthetic finding solely for a limitation; added, changed or invented `evidenceIds` to carry one; a
+`severity` change solely to carry one; attaching an unrelated limitation to a finding; dropping an otherwise supported
+finding because of an unrelated limitation; a generic exemption for delegated roles or JSON output.
+
+**Consequences.** The HARDEN-9 runtime correction may proceed but remains unimplemented and unverified. HARDEN-11 owns
+evaluation of typed limitation metadata in delegation results and approval visibility, and `FindingsOf` parsing
+hardening as defence in depth; HARDEN-9 does not depend on completion of those follow-ups.
