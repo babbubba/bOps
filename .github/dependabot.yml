@@ -1,16 +1,62 @@
 version: 2
+
 updates:
-  - package-ecosystem: npm
-    directory: /web/bops-ui
+  # ------------------------------------------------------------
+  # Angular / npm frontend
+  # Security updates only.
+  # No PR just because a newer package version exists.
+  # ------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/web/bops-ui"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: "weekly"
+
+    # Disable normal/version update PRs.
+    # Security update PRs are still created.
+    open-pull-requests-limit: 0
+
+    # Reduce noise: group vulnerable npm dependencies together.
     groups:
-      # @angular/* packages pin each other's exact versions as peers, so they must move together.
-      angular:
+      frontend-security:
+        applies-to: security-updates
         patterns:
-          - "@angular/*"
-    ignore:
-      # Stay on the current Angular major; a major upgrade is a deliberate migration, not a bot PR.
-      - dependency-name: "@angular/*"
-        update-types: ["version-update:semver-major"]
+          - "*"
+
+  # ------------------------------------------------------------
+  # .NET / NuGet
+  # bOps has projects under src/, tests/ and samples/.
+  # Security updates only.
+  # ------------------------------------------------------------
+  - package-ecosystem: "nuget"
+    directories:
+      - "/src/**"
+      - "/tests/**"
+      - "/samples/**"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 0
+
+    groups:
+      dotnet-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # ------------------------------------------------------------
+  # GitHub Actions
+  # Monitor actions used by .github/workflows.
+  # Security updates only.
+  # ------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 0
+
+    groups:
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
