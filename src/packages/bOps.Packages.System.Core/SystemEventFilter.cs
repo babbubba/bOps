@@ -33,6 +33,13 @@ public static class SystemEventFilter
             return false;
         }
 
+        // ADR-0032 HARDEN-9 amendment §2: the canonical source only. A record's unit is never compared, so an exclusion removes
+        // exactly what the result shows as source.
+        if (query.ExcludeSources is { Count: > 0 } excluded && excluded.Any(entry => Equal(record.Source, entry)))
+        {
+            return false;
+        }
+
         if (query.EventId is { } eventId && !Equal(record.EventId, eventId))
         {
             return false;

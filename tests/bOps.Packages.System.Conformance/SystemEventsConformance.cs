@@ -25,6 +25,7 @@ public static partial class SystemToolConformance
         ("eventId", ToolParameterType.String),
         ("channel", ToolParameterType.String),
         ("text", ToolParameterType.String),
+        ("excludeSources", ToolParameterType.String),
         ("limit", ToolParameterType.Integer),
         ("maxOutputBytes", ToolParameterType.Integer),
         ("mode", ToolParameterType.Enum),
@@ -71,6 +72,10 @@ public static partial class SystemToolConformance
         Assert.Equal((1d, 180d), (days.Minimum, days.Maximum));
         var minutes = manifest.Parameters.Single(parameter => parameter.Name == "windowMinutes");
         Assert.Equal((1d, 10080d), (minutes.Minimum, minutes.Maximum));
+        var excluded = manifest.Parameters.Single(parameter => parameter.Name == "excludeSources");
+        Assert.Equal(ToolParameterType.String, excluded.Type);
+        Assert.Equal((1, 1_024), (excluded.MinLength, excluded.MaxLength));
+        Assert.Contains("not evidence of absence", excluded.Description, StringComparison.Ordinal);
     }
 
     /// <summary>Asserts the rejection of arguments a bounded event reader must never accept, on the real tool.</summary>
@@ -90,6 +95,12 @@ public static partial class SystemToolConformance
             ("channel", "System' or '1'='1"),
             ("text", "a\nb"),
             ("mode", "summary"),
+            ("excludeSources", ""),
+            ("excludeSources", "a,,b"),
+            ("excludeSources", "a,A"),
+            ("excludeSources", "x' or '1'='1"),
+            ("excludeSources", "a,b,c,d,e,f,g,h,i"),
+            ("excludeSources", 7),
         })
         {
             var result = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { [name] = value }));
@@ -147,6 +158,70 @@ public static partial class SystemToolConformance
         }
 
         Assert.True(root["observedEvents"]!.GetValue<int>() >= total);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="tool"/> against the real operating system with <c>excludeSources</c> (ADR-0032 HARDEN-9 amendment): the most
+    /// frequent source of a first read is excluded, the echo is exactly the accepted value, no returned row or group carries the excluded
+    /// source (ignoring case), an unknown but valid name is accepted and echoed, and a legacy call without the argument still works in
+    /// both modes. Returns the excluded source, or <c>null</c> when the host logged nothing in the window (nothing to exclude).
+    /// </summary>
+    public static async Task<string?> AssertSystemEventsExcludeSourcesConformAsync(ITool tool, int windowDays = 7)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        var legacy = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject { ["mode"] = "aggregate", ["windowDays"] = windowDays, ["limit"] = 200, ["maxOutputBytes"] = 65_536 }));
+        Assert.True(legacy.Succeeded, legacy.ErrorMessage);
+        var baseline = JsonNode.Parse(legacy.Output!)!.AsObject();
+        Assert.Empty(baseline["excludeSources"]!.AsArray());
+        var groups = baseline["groups"]!.AsArray();
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        var noisiest = groups
+            .GroupBy(group => group!["source"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Sum(item => item!["count"]!.GetValue<int>()))
+            .First();
+        var excludedSource = noisiest.Key;
+        var excludedCount = noisiest.Sum(item => item!["count"]!.GetValue<int>());
+
+        const string unknown = "Bops Nonexistent Source (conformance)";
+        foreach (var mode in new[] { "aggregate", "raw" })
+        {
+            var arguments = new JsonObject
+            {
+                ["mode"] = mode,
+                ["limit"] = 200,
+                ["maxOutputBytes"] = 65_536,
+                ["excludeSources"] = unknown + " , " + excludedSource,
+            };
+            if (mode == "aggregate")
+            {
+                arguments["windowDays"] = windowDays;
+            }
+            else
+            {
+                arguments["windowMinutes"] = windowDays * 1_440;
+            }
+
+            var result = await tool.ExecuteAsync(ToolArguments.FromJson(arguments));
+            Assert.True(result.Succeeded, result.ErrorMessage);
+            var root = JsonNode.Parse(result.Output!)!.AsObject();
+
+            // The echo is the accepted entries, trimmed, in the caller's spelling and sorted ignoring case then ordinally.
+            Assert.Equal(
+                new[] { unknown, excludedSource }.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ThenBy(name => name, StringComparer.Ordinal),
+                root["excludeSources"]!.AsArray().Select(item => item!.GetValue<string>()));
+
+            var entries = (mode == "aggregate" ? root["groups"] : root["events"])!.AsArray();
+            Assert.All(entries, entry => Assert.NotEqual(excludedSource, entry!["source"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase));
+            Assert.True(root["status"]!.GetValue<string>() is "complete" or "partial" or "unavailable");
+        }
+
+        Assert.True(excludedCount > 0);
+        return excludedSource;
     }
 
     /// <summary>Asserts the shared <c>coverage</c> object (ADR-0032 HARDEN-7 amendment §5) and returns its state.</summary>
@@ -216,6 +291,11 @@ public static partial class SystemToolConformance
         {
             Assert.True(truncated);
         }
+
+        // ADR-0032 HARDEN-9 amendment §4: the exclusion echo is always present, right after the window.
+        var keys = root.Select(pair => pair.Key).ToList();
+        Assert.Equal(keys.IndexOf("window") + 1, keys.IndexOf("excludeSources"));
+        Assert.Empty(root["excludeSources"]!.AsArray());
 
         var sources = root["sources"]!.AsArray();
         Assert.NotEmpty(sources);

@@ -82,6 +82,7 @@ system.devices.maxOutputBytes | Integer | minimum=4096 | maximum=65536
 system.drivers.limit | Integer | minimum=1 | maximum=3000
 system.events.channel | String | minLength=1 | maxLength=256
 system.events.eventId | String | minLength=1 | maxLength=64
+system.events.excludeSources | String | minLength=1 | maxLength=1024
 system.events.limit | Integer | minimum=1 | maximum=500
 system.events.maxOutputBytes | Integer | minimum=4096 | maximum=65536
 system.events.source | String | minLength=1 | maxLength=128

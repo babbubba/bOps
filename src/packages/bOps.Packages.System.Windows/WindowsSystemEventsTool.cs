@@ -63,7 +63,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
         var truncated = false;
         var explicitChannel = query.Channel is not null;
         var providerName = query.Source is { } source ? ResolveProvider(source) : null;
-        var xpath = WindowsEventXPath.Build(query, providerName);
+        var xpath = WindowsEventXPath.Build(query, providerName, ResolveExcludedProviders(query.ExcludeSources));
         string[] channels = query.Channel is { } requested ? [requested] : DefaultChannels;
         var budget = new EvidenceTimeBudget(timeout, Clock);
         var steps = channels.Length * 2;
@@ -272,6 +272,42 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
             return null;
         }
     }
+
+    /// <summary>
+    /// The names for the native exclusion (ADR-0032 HARDEN-9 amendment §2): each validated entry resolved to the spelling its provider
+    /// registered on this machine (first match, ignoring case), because the native comparison can be case-sensitive; an entry that no
+    /// provider registers, a registered spelling outside the <c>source</c> character set, or a failure to list the providers keeps the
+    /// validated entry itself. Nothing but a validated or registered name reaches the query, and the shared post-filter still removes
+    /// any record the native comparison did not match.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolveExcludedProviders(IReadOnlyList<string>? entries)
+    {
+        if (entries is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        IReadOnlyList<string> registered;
+        try
+        {
+            using var session = new EventLogSession();
+            registered = [.. session.GetProviderNames()];
+        }
+        catch (Exception exception) when (exception is EventLogException or UnauthorizedAccessException)
+        {
+            registered = [];
+        }
+
+        return ResolveAgainst(entries, registered);
+    }
+
+    /// <summary>The pure part of <see cref="ResolveExcludedProviders"/>: <paramref name="entries"/> against the registered provider names.</summary>
+    internal static IReadOnlyList<string> ResolveAgainst(IReadOnlyList<string> entries, IReadOnlyList<string> registered) =>
+        [.. entries.Select(entry =>
+            registered.FirstOrDefault(name => string.Equals(name, entry, StringComparison.OrdinalIgnoreCase)) is { } match
+            && WindowsEventXPath.IsSafeProviderName(match)
+                ? match
+                : entry)];
 
     private static string Bounded(string? detail) =>
         string.IsNullOrEmpty(detail)

@@ -544,7 +544,7 @@ public sealed class SystemEventsContractTests
         Assert.Null(manifest.Verification);
         Assert.Contains("fake", manifest.Platforms);
         Assert.Equal(
-            ["windowMinutes", "minSeverity", "source", "eventId", "channel", "text", "limit", "maxOutputBytes", "mode", "windowDays"],
+            ["windowMinutes", "minSeverity", "source", "eventId", "channel", "text", "excludeSources", "limit", "maxOutputBytes", "mode", "windowDays"],
             manifest.Parameters.Select(p => p.Name).ToArray());
         Assert.All(manifest.Parameters, p => Assert.False(p.Required));
         Assert.All(manifest.Parameters, p => Assert.False(p.Sensitive));

@@ -61,6 +61,9 @@ public static class SystemEventFormatting
                 ["fromUtc"] = EvidenceTime.Format(query.FromUtc),
                 ["toUtc"] = EvidenceTime.Format(query.ToUtc),
             },
+            // ADR-0032 HARDEN-9 amendment §4: always present, part of the envelope the byte budget never cuts, so a reader can see what
+            // was left out. An excluded source is not looked at: never evidence that it logged nothing.
+            ["excludeSources"] = new JsonArray((query.ExcludeSources ?? []).Select(entry => (JsonNode)JsonValue.Create(entry)!).ToArray()),
             ["coverage"] = coverage,
             ["observedEvents"] = observed.Length,
             ["sources"] = Sources(snapshot.Sources),
