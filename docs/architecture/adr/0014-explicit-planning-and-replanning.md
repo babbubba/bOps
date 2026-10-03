@@ -101,7 +101,7 @@ not `AgentPlanner`, "because planning and execution are not yet separated in V0.
 - `TaskState`/`PlanStep` are breaking shape changes, acceptable under D-012: `bOps.Abstractions`
   stays on `0.x` until V1.0 specifically so changes like this do not require a migration story.
 
-## HARDEN-8 amendment — context and budget economy (Proposed; architecture corrected after independent review; delta review pending)
+## HARDEN-8 amendment — context and budget economy (Proposed; architecture corrected after second delta review; final delta review pending)
 
 This amendment is not Accepted and authorizes no implementation yet. It supplements the original
 PLAN/REPLAN decision; ADR-0039 model failure containment, ADR-0040 resume accounting and ADR-0042
@@ -109,6 +109,12 @@ evidence reasoning remain authoritative at their respective boundaries. The sour
 `main` at `ad4d196` (HARDEN-9 merged in PR #74). The 12-step, zero-replan diagnostic that used
 269,452 tokens and the incident request with roughly 47 KB of schemas in 58 KB motivate the bounds.
 Schema relevance/filtering is deferred and its fixed cost is only measured here.
+
+For token-budget enforcement, HARDEN-8 governs initial planning, replanning and non-final step
+execution. Once a step response enters the ADR-0042 final-answer path, accepted ADR-0042 §§6
+and 13 govern completion, disclosure and final-step `ModelCalls`. That path does not re-evaluate
+`MaxTotalTokens` after the original final answer or after an admitted disclosure re-ask. This
+precedence preserves the accepted HARDEN-9 behavior; it does not amend ADR-0042.
 
 ### Decision summary
 
@@ -199,9 +205,18 @@ length. Markdown fences or any surrounding prose invalidate it. The OpenAI-compa
 JSON-schema fallback adapter must preserve this exact object as a runtime directive before its
 normal final/tool JSON validation; native tool mode must likewise pass the textual object to
 Runtime. A native response containing both provider tool calls and a textual EvidenceRead claim
-is invalid. Plan/replan parsing must recognize a valid read before malformed-plan validation;
-it does not use the single plan corrective re-ask. Initial planning has no prior evidence and
-does not accept EvidenceRead.
+is invalid. Replan parsing must recognize a valid read before malformed-plan validation;
+the read continues the same replan logical call without using the single malformed-plan
+corrective re-ask. Initial planning has no previously persisted task evidence and does not
+permit EvidenceRead. Before normal initial-plan parsing, recognize a response claiming
+`EvidenceRead/v1`. A structurally valid request in that phase performs no read, is audited once
+as `NotAllowedInPhase` with `StepIndex=null` and `PlanRevision=null`, and enters the existing
+invalid-plan path, consuming its single malformed-plan corrective re-ask. A malformed claimed
+directive in that phase likewise performs no read, is audited once as `Malformed` with both
+indexes null, and enters the same corrective re-ask path. If that re-ask again fails to produce
+a valid plan, use the existing malformed-plan outcome (an empty plan and step-by-step execution).
+Neither case starts an EvidenceRead continuation loop or needs read-slot accounting during
+initial planning; a claimed directive on the corrective response follows the same phase rule.
 
 A response **claims** a runtime directive when its whole trimmed text is a JSON object with a
 top-level `runtime` key, or when it begins with a JSON object prefix whose first complete key is
@@ -209,8 +224,8 @@ top-level `runtime` key, or when it begins with a JSON object prefix whose first
 missing/wrong fields, extra keys, duplicates, bad JSON, fences around a would-be request, or
 prose accompanying a JSON object containing `runtime` is a malformed claimed directive. For
 the last two forms recognition is limited to a literal `"runtime"` key in the fenced/object
-text; no fuzzy search for IDs or arbitrary words. Malformed claims produce a fixed bounded
-error continuation and audit result `Malformed`; they never access the store or become an
+text; no fuzzy search for IDs or arbitrary words. Outside initial planning, malformed claims
+produce a fixed bounded error continuation and audit result `Malformed`; they never access the store or become an
 ordinary final answer. Text with no such claim follows existing final/plan/tool parsing.
 
 `source=result` reads exactly persisted `ToolCallResult.Output`; a null `Result` or null `Output`
@@ -227,20 +242,28 @@ Offsets count UTF-16 code units from zero; `length` is 1–4000. Valid ranges re
 Validation and errors disclose no evidence contents. Replies use fixed markers and existing
 tool-output escaping; marker/JSON overhead is at most 256 code units. The fragment is only in
 the same logical call's local continuation, never copied into future base history. Each read
-request, including malformed and rejected ones, consumes one of **four** slots per logical step
-or replan. A fifth is audited as `LimitExceeded` and terminates that logical call with a bounded
-persisted failure; neither malformed directives nor provider retries reset the counter. At most
-four read continuations occur. The successfully read fragment returns to the same logical model
-conversation, then ordinary plan/replan/step response handling resumes.
+request, including malformed and rejected ones, consumes one of **four** slots per normal step
+or replan logical call. Provider retries and ContextOverflow recovery do not reset the counter.
+A fifth attempted read performs no evidence read, is audited exactly once as `LimitExceeded`,
+and terminates the **entire task** as `Failed/RuntimeFailure`. Persist one bounded synthetic
+non-tool failure step at the next global step index, with the fixed runtime-authored text
+`EvidenceRead/v1 limit exceeded` and any model-call records required by existing recording
+rules; do not attach the same records twice. It has no `ToolCall`, is not evidence-addressable,
+is excluded from the ADR-0042 evidence-limitations digest and cannot match an ADR-0042
+final-response marker. No new public terminal kind is required. At most four read continuations
+occur. A successfully read fragment returns to the same logical model conversation, then
+ordinary replan/step response handling resumes.
 
 Add one metadata-only `EvidenceReadAuditEvent` to `bOps.Abstractions.AuditEvent`'s derived-type
-registration. Its fields are `TaskId` (base), `StepIndex` for a step or triggering replan index,
-`PlanRevision` for a replan (nullable for a step), `EvidenceId` (bounded raw claimed value or
-null), `Source` (`result`/`observation` or null), `Offset` and `RequestedLength` (nullable when
+registration. Its fields are `TaskId` (base), nullable `StepIndex` for a step or triggering
+replan index (`null` during initial planning), nullable `PlanRevision` for a replan (`null` for a
+step or initial planning before any plan has been accepted), `EvidenceId` (bounded raw claimed
+value or null), `Source` (`result`/`observation` or null), `Offset` and `RequestedLength` (nullable when
 malformed), `ReturnedLength` (always 0 on rejection), and `ResultCode` (closed enum): `Success`,
 `EndOfEvidence`, `Malformed`, `InvalidId`, `CrossTaskRejected`, `MissingStep`,
-`UnavailableSource`, `OutOfRange`, `LimitExceeded`, `AttemptBudgetInterrupted`. A duplicate
-index is `InvalidId`; a non-tool/synthetic index is `MissingStep`. Audit every attempted read
+`UnavailableSource`, `OutOfRange`, `LimitExceeded`, `NotAllowedInPhase`, and
+`AttemptBudgetInterrupted`. A duplicate index is `InvalidId`; a non-tool/synthetic index is
+`MissingStep`. Audit every attempted read
 once before a continuation or termination, including interrupted reads. Never place retrieved
 raw evidence in this event. Existing `ModelCallRecord` and model-call audit still record each
 model attempt and known usage; payload-retention settings do not affect the read audit.
@@ -302,23 +325,38 @@ The 269,452-token incident justifies a ceiling with headroom, not a guaranteed 6
 Count known prompt plus completion usage for **every** model attempt, including failed/retried
 attempts, planning, steps, replans, disclosure asks, EvidenceRead continuations and overflow
 retries, cumulatively across resumes. EvidenceRead continuations are full, potentially expensive
-model calls. A token cap may therefore stop the task before `MaxLifetimeSteps`; token budget
-wins first. The separately measured tool schemas remain a fixed per-call cost. Check `>=` before
-starting another model call and after each response. ADR-0040 counts only provider-reported
+model calls. A token cap may therefore stop non-final execution before `MaxLifetimeSteps`; the
+separately measured tool schemas remain a fixed per-call cost. Exhaustion is strictly
+`TokensUsed > MaxTotalTokens`, not `>=`; exactly reaching the cap is not over budget. Apply the
+existing `>` pre-call check before another non-final model call and the ADR-0042 `>` availability
+check before a disclosure re-ask. ADR-0040 counts only provider-reported
 usage: absent usage remains null in its persisted `ModelCallRecord` and `ModelCallAuditEvent`,
 and `TaskState.Accounting.TokensUsed` is then a lower bound, not an invented estimate.
 
-When a response brings known cumulative usage to or above the cap, preserve the paid call before
-terminating. Create **one
-synthetic non-tool `PlanStep`** at the next persisted step index, carrying the crossing call's
-`ModelCalls`, a fixed runtime-authored token-crossing description, `ToolCall=null`, `Result=null`,
-and bounded final text if the response had final text. Plan/replan crossing calls are recorded
-there too; the same `ModelCallRecord` must not also be attached to a plan/other step. Do not
-accept the response as a successful task final answer, execute a tool, read evidence, retry or
-replan afterward. End `BudgetExceeded/TokenBudget`. This bookkeeping step is excluded from
-executable-step and evidence-id resolution, is not a HARDEN-9 final-response marker, and counts
-in task state/audit and cumulative usage. If a crossing response occurs during an initial plan,
-the synthetic step is still persisted; no plan is accepted from it.
+When a planning, replanning or non-final step response crosses the cap after accounting for its
+reported usage (`TokensUsed > MaxTotalTokens`), preserve the paid
+call before terminating. Create **one synthetic non-tool `PlanStep`** at the next global step
+index, carrying the crossing call's `ModelCalls`, a fixed runtime-authored token-crossing
+description, `ToolCall=null`, `Result=null`, and bounded model text if relevant. Plan/replan
+crossing calls are recorded there too; the same `ModelCallRecord` must not also be attached to
+a plan/other step. Execute no proposed tool; perform no evidence read, retry or replan afterward.
+End `BudgetExceeded/TokenBudget`. This bookkeeping step is excluded from executable-step and
+evidence-id resolution, is excluded from the ADR-0042 evidence-limitations digest, cannot match
+a final-response marker, and counts in task state/audit and cumulative usage. If a crossing
+response occurs during initial planning, the synthetic step is still persisted; no plan is
+accepted from it. This is the HARDEN-8 synthetic token-crossing rule.
+
+An original final answer is the intentional ADR-0042 exception to that rule. Even if its usage
+crosses the cap, persist it on the existing final-response step and allow `Completed`; do not
+convert it to `BudgetExceeded` or create a HARDEN-8 token-crossing step. If no disclosure re-ask
+is needed, completion proceeds normally. If one is considered, ADR-0042 §6 first checks budget
+availability using `TokensUsed > MaxTotalTokens`: when already exceeded, skip the re-ask and
+persist the original answer. When a re-ask is admitted while budget remains, its result resolves
+under ADR-0042 even if its reported usage then crosses the cap. The task remains `Completed`;
+use the disclosed answer if accepted, otherwise the preserved original. All re-ask `ModelCalls`
+stay on the existing final-response step per ADR-0042 §13. Do not relocate them to a synthetic
+step or re-evaluate the token budget after the admitted re-ask. This preserves accepted
+HARDEN-9 final-answer and disclosure semantics.
 
 Ship nullable `Agent:MaxAttemptDuration=01:00:00`; explicit null opts out and non-null must be
 positive. Validate `VerbatimHistorySteps` as integer 0–15 (fixed upper bound matching the shipped
@@ -360,7 +398,22 @@ persisted verification annotation, `v=Refuted` survives compaction, and the HARD
 still reflects persisted shortening/partial evidence. Exercise invalid, duplicate, cross-task,
 missing and non-tool ids; malformed claims in native and fallback modes; the fifth-read limit;
 initial-plan overflow without retry; one aggressive overflow retry; duration interruption;
-and a default token-budget crossing with a persisted synthetic step. No live provider is needed.
+and a default non-final token-budget crossing with a persisted synthetic step. For the fifth
+EvidenceRead attempt, assert no read, one `LimitExceeded` audit event, one bounded synthetic
+non-tool failure step with the crossing logical call's retained `ModelCalls`, and
+`Failed/RuntimeFailure` with `EvidenceRead/v1 limit exceeded`. For initial planning, assert a
+valid read is audited `NotAllowedInPhase` and a malformed claimed read is audited `Malformed`;
+both have null `StepIndex` and `PlanRevision`, perform no read, use the existing single
+malformed-plan corrective re-ask, and do not enter a read continuation loop. Assert the
+corrective re-ask's existing malformed-plan outcome if it also fails.
+
+Preserve the existing HARDEN-9 outcomes with explicit budget tests: `TokensUsed == MaxTotalTokens`
+is not over budget and retains exact-cap disclosure behavior; an original final
+answer that crosses the cap persists normally and ends `Completed` without an H8 synthetic
+step; an admitted disclosure re-ask that crosses the cap ends `Completed` with all its
+`ModelCalls` on the final step; a non-final tool-calling response that crosses the cap ends
+`BudgetExceeded/TokenBudget`, records the crossing call exactly once in the H8 synthetic step,
+and does not execute the tool. No live provider is needed.
 
 Before acceptance, independent review must verify unchanged persisted evidence and audit, access
 limited to the current task, retrieval past 4,000 characters, deterministic replan/request sizes,
