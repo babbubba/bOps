@@ -33,6 +33,15 @@ public sealed partial class EvidenceRuleTests
     }
 
     [Fact]
+    public void Rule_UsesDeterministicLfSeparators_RegardlessOfSourceCheckoutLineEndings()
+    {
+        Assert.DoesNotContain('\r', EvidenceRule.Text);
+        Assert.DoesNotContain('\r', EvidenceRule.Paragraph);
+        Assert.Equal(7, EvidenceRule.Text.Count(character => character == '\n'));
+        Assert.True(EvidenceRule.Paragraph.Length <= EvidenceRule.MaxCharacters);
+    }
+
+    [Fact]
     public void Rule_ContainsNoIdentifierShapedToken()
     {
         foreach (var raw in EvidenceRule.Paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
