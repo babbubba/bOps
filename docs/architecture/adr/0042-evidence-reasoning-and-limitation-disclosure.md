@@ -4,6 +4,9 @@ Status: Accepted (2026-10-03, operator decision; independent architecture review
 resolved in `02e3e19`; independent architecture delta review PASS WITH NON-BLOCKING FINDINGS — see "Operator
 acceptance (2026-10-03)")
 Date: 2026-10-02
+Proposed amendment: "HARDEN-9 implementation-review amendment — delegated Diagnostic structured output" (2026-10-03,
+at the end of this document, pending review) — no disclosure re-ask for the delegated Diagnostic role's structured JSON
+reply; digest and evidence rule still apply.
 
 Governs the runtime part of HARDEN-9 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md); plan
@@ -659,3 +662,141 @@ as clarifications and implementation obligations:
   maximum-XPath test are implementation obligations.
 
 HARDEN-9 implementation may start; HARDEN-8 follows it.
+
+## HARDEN-9 implementation-review amendment — delegated Diagnostic structured output (Proposed 2026-10-03)
+
+Status: Proposed (2026-10-03, after the independent implementation review of `d322ebd` returned CHANGES REQUIRED with
+blocker R1; independent review and operator acceptance pending). It narrows §5–§6 for one case and changes nothing else
+in this ADR; where it and §5–§6 differ, this amendment governs that case only.
+
+### Problem
+
+§6 says: a non-empty digest plus a final answer without an `Evidence limitations` heading triggers one disclosure re-ask,
+and a re-ask answer that has the heading is persisted instead of the original. The delegated **Diagnostic** role has a
+structured role contract (ADR-0030 §2, §4; `DelegationRoleData.DiagnosticInstructions`): its final reply is **only one
+JSON object** of the shape `{"findings":[…]}`, with no prose and no code fence, and `DelegationRoleData.FindingsOf` turns
+it into `Finding`s that must cite recorded `Evidence` (ADR-0023). The two rules are incompatible: a valid Diagnostic reply
+cannot contain an `Evidence limitations` heading line outside the JSON without breaking its own contract, so a Diagnostic
+role that worked under limitations always triggers the re-ask, and an *accepted* re-ask replaces a valid payload with one
+that no longer satisfies it.
+
+The review reproduced it deterministically: delegated Diagnostic role → valid JSON with one finding → non-empty digest →
+re-ask accepted → restated answer with text outside the JSON → `FindingsOf` yields 0 findings. Impact: the diagnosis is
+silently emptied — the Diagnostic role's `SkillReport.Findings` is empty, and in a remediation run
+`PlanApprovalRequest.Findings` no longer shows the operator why the plan is proposed. A safety-relevant input to a human
+approval is lost by a mechanism meant to add information.
+
+### Scope
+
+Exactly one case: a final response produced by `AgentRunner` for a delegated task whose acting agent's role is
+`AgentRoleKind.Diagnostic`. The predicate is `delegation is not null && delegation.Correlation.Agent?.Role ==
+AgentRoleKind.Diagnostic` — a typed value the orchestrator sets (ADR-0030 §1), never a text heuristic on the goal or the
+reply. It is **not** generalized to all delegated roles, to every JSON reply, or to other machine-readable output: the
+Discovery role (whose final reply is a plain summary, ADR-0030 §2) and every ordinary task keep §6 unchanged. A future
+role or contract with a structured final payload needs its own decision.
+
+### Chosen rule
+
+For the delegated Diagnostic role:
+
+1. **No disclosure re-ask.** The §6 trigger is not evaluated and no re-ask call is made. The original final reply is
+   persisted unchanged, with `Description` `Final response` (no re-ask marker), so `FinalText` and `FindingsOf` read
+   exactly what the role produced.
+2. **The digest still exists.** It is computed and placed in the role's step prompts exactly as in §5 (same listing
+   rules, entries, bounds and markers). Only its closing sentence differs. Instead of "E8 applies", the structured-role
+   variant says three things: the final reply must remain exactly the structured payload the task instructions require;
+   no `Evidence limitations` section or other text may be added outside it; and the listed limitations must be reflected
+   in the wording of the findings the payload reports (for example a finding resting on partial evidence says so in its
+   summary). No field is added to the payload. Because §5 makes any change of the fixed text a new version, the template
+   becomes **`EvidenceLimitations/v2`** for both variants; the ordinary closing sentence and the entry format are
+   otherwise unchanged.
+3. **The evidence rule still applies in full.** E1–E7 govern the Diagnostic role's reasoning unchanged (observation vs
+   inference, current vs historical, bounded evidence, absence, time kinds and clock preconditions, no causality from
+   correlation, attributed cause). Only E8's prose-section form is replaced, for this role, by rule 2's in-payload form.
+   The constant evidence-rule text is not changed and stays the same for every task; the role-specific direction lives
+   only in the runtime-authored digest sentence selected by the typed predicate (rule S5, "Typed metadata is not tool
+   text").
+4. **Auditability is unchanged.** Every model and tool call is audited as before; the digest stays reproducible from the
+   persisted role task (a `Delegated`-origin task in the task store); telemetry carries `bops.evidence_limitations` as
+   usual and never `bops.evidence_disclosure_reask` for this role.
+
+### Parent responsibility — and the gap it exposes
+
+The disclosure obligation belongs to whatever layer produces user-facing text:
+
+- **Ordinary tasks:** the `AgentRunner` final answer — §6 applies unchanged.
+- **Delegated runs:** there is no parent *model*. The orchestrator is deterministic runtime code (ADR-0030 §2), there is
+  no free-text channel between roles (ADR-0030 §4), and the run's user-facing outcome is the structured delegation result
+  — roles, `Evidence`, `Finding`s, the plan, its approval request and the verification verdict — rendered by the API, CLI
+  and UI (ADR-0030 §9). No component writes a prose answer for a delegated run, so there is no prose final answer on
+  which §6 could be enforced.
+
+**Gap (recorded, not closed here).** The structured delegation result carries no limitation metadata today:
+`DelegationRoleData.EvidenceOf` turns only successful Read steps into `Evidence` (failed, denied and shortened steps are
+not visible as such), `Evidence` has no completeness field, and `SkillReport`, `PlanApprovalRequest` and the delegation
+view show none. The limitations remain recoverable — the digest is a pure function of each role's persisted task — but
+they are not surfaced to the operator who approves a plan. Closing the gap needs a new contract (a completeness or
+limitations element on `Evidence` or on the role result, or a runtime-computed view over the role tasks) and therefore its
+own decision; none is invented here. It is routed as a follow-up to the delegation-operability work (HARDEN-11, which owns
+the delegation API/UI and readiness) or to a dedicated decision, as the operator chooses. Until then, the in-payload
+wording of rule 2 is the only limitation channel of a delegated Diagnostic result.
+
+### Rejected alternatives
+
+- **Re-ask the Diagnostic role, then accept the reply only if its findings are equivalent** (parse both replies with
+  `FindingsOf` and compare). Rejected: it parses twice; it needs a new semantic-equivalence rule for findings (summary
+  wording, evidence ids, severity) that does not exist; such a rule can hide changes it fails to detect; it is more
+  complex than needed; and the role contract is already structured and sufficient — the re-ask adds nothing the contract
+  can carry.
+- **Make `FindingsOf` tolerant** (read the first complete JSON object and ignore the rest). Rejected as the fix: it would
+  make the parser accept replies that break the role contract instead of preserving the conforming payload. Classified
+  **FOLLOW-UP (defence in depth)**, not part of HARDEN-9; if adopted later it must not weaken the evidence-citation
+  invariant of ADR-0023.
+- **Exempt every delegated role or every JSON reply.** Rejected: broader than the conflict; Discovery's reply is prose,
+  and ordinary tasks keep §6.
+- **Add an `evidenceLimitations` field to the Diagnostic payload or to `Finding`.** Rejected here: a contract change
+  (and, for `Finding`, a `bOps.Abstractions` change) that belongs to the gap's own decision.
+- **Keep the re-ask but ask for the heading inside the JSON.** Rejected: the payload has no such field, and §6's
+  detector works on lines, not on data.
+
+### Test requirements
+
+Added to §17 as rows 36–40; deterministic, `FakeChatModel`:
+
+| # | Scenario | Expected |
+|---|---|---|
+| 36 (A) | Delegated Diagnostic role; a `Partial` tool result; final reply is valid JSON with one finding citing recorded evidence; digest non-empty | No disclosure re-ask (one model call in the final step); the original JSON persisted unchanged with `Description` `Final response`; `FindingsOf` returns exactly 1 finding; the role's step prompt carries the `EvidenceLimitations/v2` digest with the structured-role closing sentence. |
+| 37 (B) | Same, through `DelegationRunner` | The Diagnostic role's `SkillReport.Findings` is non-empty (the finding survives). |
+| 38 (C) | Same, with a remediation request reaching plan approval | `PlanApprovalRequest.Findings` contains the Diagnostic finding. |
+| 39 (D) | Ordinary (non-delegated) task; digest non-empty; final answer without heading | The disclosure re-ask still occurs exactly as in §6 (proves the exemption is narrow). |
+| 40 (E) | Delegated Discovery role; digest non-empty; plain-summary final reply without heading | §6 applies unchanged (re-ask made, outcome per §6); no other role or structured output changes behaviour. |
+
+The existing digest tests (§17 rows 2–14) and the evidence-rule test (row 22) move to `EvidenceLimitations/v2`.
+
+### Compatibility impact
+
+- **Runtime:** one typed predicate on the final-response path and one closing-sentence variant of the digest; template
+  version `EvidenceLimitations/v2`. `Agent:EvidenceDisclosureRetries` keeps its meaning and never enables a re-ask for the
+  Diagnostic role.
+- **Delegation:** the Diagnostic role contract (ADR-0030 §2, §4; `DiagnosticInstructions`) is preserved exactly;
+  `FindingsOf` is unchanged.
+- **API, schemas, persistence, audit schema:** no change, no new field; the final-step `Description` vocabulary of §13 is
+  unchanged.
+- **`bOps.Abstractions`:** no change.
+
+### Decision record
+
+`agentic/06-decisions.md` says that a decision is changed by an ADR, never by an edit, and that its entries are Accepted.
+D-038 is therefore not edited, and no entry is added while this amendment is Proposed. When the amendment is accepted,
+the next free decision number (D-039 at the time of writing) records it directly as Accepted: disclosure enforcement (§6)
+applies to user-facing prose final answers, not to the delegated Diagnostic role's structured JSON payload; the digest
+and the evidence rule still apply to that role.
+
+### Implementation-review non-blocking findings (follow-up only, not part of this amendment)
+
+- **N1** — the evidence rule should state explicitly "never present a reported time as when it happened".
+- **N2** — heading-indentation edge case: a line indented by a space followed by a tab.
+- **N3** — the logical grouping of a final step's `ModelCalls` has no production consumer yet.
+- **N4** — test gaps for the Windows native exclusion and for the delegated and lifetime-cap re-ask paths.
+
+Only R1 is architecture-blocking; these stay with the implementation follow-up.
