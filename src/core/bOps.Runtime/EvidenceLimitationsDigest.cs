@@ -18,7 +18,7 @@ namespace bOps.Runtime;
 internal static class EvidenceLimitationsDigest
 {
     /// <summary>The template version; the first line of every digest. Any change of the fixed text or the entry format is a new version.</summary>
-    internal const string Version = "EvidenceLimitations/v1";
+    internal const string Version = "EvidenceLimitations/v2";
 
     /// <summary>The marker that opens the digest block in a step prompt; neutralized inside tool output.</summary>
     internal const string OpenMarker = "<<<BOPS_EVIDENCE_LIMITATIONS>>>";
@@ -50,13 +50,19 @@ internal static class EvidenceLimitationsDigest
         "Written by bOps from typed tool results, not by a tool: each tool's own result says which sources, periods or items are affected, " +
         "and the final answer must disclose these limitations under the heading Evidence limitations.";
 
+    internal const string DiagnosticIntroduction =
+        "Only required JSON; no prose, Evidence limitations heading or fence. Replaces E8's prose section. " +
+        "A limitation is not a Finding. Qualify a summary only if supported by existing evidence and materially affected. " +
+        "Never create a finding for a limitation, add/change/invent evidenceIds or change severity " +
+        "to carry one. Never attach unrelated limitations or drop supported findings. Unmatched limitations stay outside JSON.";
+
     /// <summary>The digest as a step prompt carries it: delimited by the two fixed markers.</summary>
     internal static string Delimit(string digest) => $"{OpenMarker}\n{digest}\n{CloseMarker}";
 
     /// <summary>
     /// Builds the digest of <paramref name="steps"/> (all execution attempts), or <c>null</c> when no step qualifies.
     /// </summary>
-    internal static EvidenceLimitations? Build(IReadOnlyList<PlanStep> steps)
+    internal static EvidenceLimitations? Build(IReadOnlyList<PlanStep> steps, bool diagnostic = false)
     {
         ArgumentNullException.ThrowIfNull(steps);
 
@@ -83,7 +89,7 @@ internal static class EvidenceLimitationsDigest
         var omitted = listed.Count - shown.Count;
 
         var text = new StringBuilder();
-        text.Append(Version).Append('\n').Append(Introduction);
+        text.Append(Version).Append('\n').Append(diagnostic ? DiagnosticIntroduction : Introduction);
         if (omitted > 0)
         {
             text.Append('\n').Append(string.Create(

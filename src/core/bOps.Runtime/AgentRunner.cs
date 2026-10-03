@@ -604,7 +604,8 @@ public sealed class AgentRunner(
 
             // ADR-0042 §5: rebuilt on every step call from the persisted steps alone, so a resumed attempt sees the digest the
             // interrupted one would have; null while nothing qualifies.
-            var limitations = EvidenceLimitationsDigest.Build(steps);
+            var diagnostic = delegation?.Correlation.Agent?.Role == AgentRoleKind.Diagnostic;
+            var limitations = EvidenceLimitationsDigest.Build(steps, diagnostic);
             if (limitations is not null)
             {
                 stepActivity?.SetTag("bops.evidence_limitations", limitations.EntryCount);
@@ -652,7 +653,8 @@ public sealed class AgentRunner(
                 // never by executing anything. The original answer is the persisted one unless the restatement is accepted.
                 var finalText = response.TextResponse;
                 var disclosure = EvidenceDisclosureOutcome.NotAttempted;
-                if (limitations is not null
+                if (!diagnostic
+                    && limitations is not null
                     && options.EvidenceDisclosureRetries == 1
                     && !EvidenceDisclosure.HasHeading(finalText)
                     && DisclosureBudgetRemains(run, delegation))

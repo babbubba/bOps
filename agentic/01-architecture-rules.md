@@ -628,11 +628,14 @@ inspected. Required behaviour:
    reached at all).
 9. **Evidence limitations are listed by the runtime and disclosed by the model, once** (HARDEN-9,
    ADR-0042, D-038). Every call carries a fixed, product-neutral evidence rule. Every step prompt
-   carries the `EvidenceLimitations/v1` digest — built only from persisted typed step data (rule 7,
+   carries the `EvidenceLimitations/v2` digest — built only from persisted typed step data (rule 7,
    never package JSON, never tool text, an unresolved tool name shown only as a fixed token), bounded
-   to 16 entries and 4,608 characters, deterministic and identical after a resume. A final answer given
+   to 16 entries and 4,608 characters, deterministic and identical after a resume. An ordinary final answer given
    under a non-empty digest that has no `Evidence limitations` heading (a deterministic line-based
-   check) is restated by **one** tool-free re-ask (`Agent:EvidenceDisclosureRetries`, 0 or 1). The re-ask
+   check) is restated by **one** tool-free re-ask (`Agent:EvidenceDisclosureRetries`, 0 or 1). A delegated
+   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload without a prose
+   disclosure re-ask; its v2 digest instead instructs qualification of materially affected supported
+   findings without creating findings or changing evidence IDs or severity to carry limitations. The re-ask
    never executes, authorizes or audits a tool call, creates no step, replan or status change, and never
    loses the original answer, which stands unless the restatement carries the heading. The final step's
    `Description` records which of the three fixed markers applies, and every consumer recognizes a final

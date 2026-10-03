@@ -61,7 +61,7 @@ internal static class EvidenceDisclosure
                 continue;
             }
 
-            if (line.StartsWith('\t') || spaces >= 4)
+            if (spaces >= 4 || (spaces < line.Length && line[spaces] == '\t'))
             {
                 continue;
             }
