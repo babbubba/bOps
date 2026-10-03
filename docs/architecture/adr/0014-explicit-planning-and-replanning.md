@@ -101,7 +101,7 @@ not `AgentPlanner`, "because planning and execution are not yet separated in V0.
 - `TaskState`/`PlanStep` are breaking shape changes, acceptable under D-012: `bOps.Abstractions`
   stays on `0.x` until V1.0 specifically so changes like this do not require a migration story.
 
-## HARDEN-8 amendment — context and budget economy (Proposed; awaiting independent architecture review)
+## HARDEN-8 amendment — context and budget economy (Proposed; architecture corrected after independent review; delta review pending)
 
 This amendment is not Accepted and authorizes no implementation yet. It supplements the original
 PLAN/REPLAN decision; ADR-0039 model failure containment, ADR-0040 resume accounting and ADR-0042
@@ -115,90 +115,135 @@ Schema relevance/filtering is deferred and its fixed cost is only measured here.
 | Topic | Decision |
 |---|---|
 | Verbatim history window | `Agent:VerbatimHistorySteps = 3` completed tool-call steps; configurable 0–15. |
-| Compact-step maximum | 256 UTF-16 characters including delimiter and newline, one record per older tool-call step; no historical output or argument values. |
+| Recent compact window | At most `M = 12` older tool-call steps, each record at most 256 UTF-16 code units including newline. M is fixed, not configurable. |
+| Archive summary | One runtime-authored aggregate of at most 512 UTF-16 code units for every step older than the compact window. |
 | Evidence-id format | `ev1:<task-guid-N-lowercase>:<decimal-step-index>`; index is the persisted `PlanStep.Index`. |
 | Full evidence retrieval mechanism | Internal Runtime conversation primitive `EvidenceRead/v1`, encoded as an exact model text reply; no registered operational tool. |
 | Retrieval chunk bound | At most 4,000 UTF-16 characters of source evidence per read; at most four reads per executable step or one replan call. |
-| Replan representation | Same three-step recent window plus 256-character older records; only the current plan revision, never all revisions. |
-| ContextOverflow retry | On first classified overflow, rebuild with K=0 and retry once; a second overflow ends `Failed/ModelFailure/ContextOverflow`. |
+| Replan representation | Same bounded archive/compact/recent history, current plan only, and the triggering step verbatim. |
+| ContextOverflow retry | Only when compactable history exists: rebuild with K=0 and retry once; otherwise terminate the logical call without an identical retry. Failure kind is `ModelFailureKind.ContextOverflow`. |
 | Normal MaxTotalTokens default | `Agent:MaxTotalTokens = 350000`, cumulative for the task lifetime. |
-| Per-attempt duration default | `Agent:MaxAttemptDuration = 01:00:00`, monotonic elapsed time; nullable operator opt-out. |
+| Per-attempt duration default | `Agent:MaxAttemptDuration = 01:00:00`, active execution time excluding human approval waits; nullable operator opt-out. |
+| Additive contracts | `TaskTerminalKind.AttemptDurationBudget`, `PlanStep.VerificationStatus`, and a metadata-only `EvidenceReadAuditEvent` in `bOps.Abstractions`. |
 | Persisted evidence modified? | NO. |
 | HARDEN-9 digest source changed? | NO. |
 | Tool-schema filtering included? | NO. |
 
 ### 1. Model-facing history and stable references
 
-Before every step model call, including after resume, Runtime derives a new history from the current
-task's canonical completed `PlanStep` list (saved without rewriting and reloaded on resume) in
-ascending `Index` order. The initial goal remains first. Of the completed
-tool-call steps, the newest K retain their existing assistant tool-call turn and delimited observation
-verbatim, including the `UnexecutedToolCalls` responses required by ADR-0038. Older tool-call steps
-are replaced by one runtime-authored user turn containing ordered compact records. A step without a
-tool call contributes no historical turn, as in today's `RebuildHistory`. On each new step the window
-moves; no compact text is saved over the original. Rebuild live history after every completed step,
-not only on resume, so the two paths yield byte-identical model-facing history for the same state.
+Before every step model call, including after resume, Runtime derives history from the current
+task's canonical completed `PlanStep` list in ascending `Index` order. The initial goal remains
+first. The newest K completed tool-call steps retain their existing assistant tool-call turn and
+delimited observation verbatim, including ADR-0038 `UnexecutedToolCalls` responses. Of the older
+tool-call steps, only the newest M=12 receive individual compact records. **All remaining older
+tool-call steps become one aggregate archive summary**. A step without a tool call contributes no
+historical turn. The compact block and archive are runtime-authored, delimited context turns;
+neither is persisted over the original. Rebuild live history after every completed step, as on
+resume, so the same persisted state yields byte-identical base history.
 
 The compact record grammar is `s=<index>;e=<id>;r=<revision-or-?>;t=<tool-label>;
-a=<argument-digest>;o=<outcome>;f=<failure-kind-or->;c=<completeness-or->;n=<source-length>\n`.
+a=<argument-digest>;o=<outcome>;f=<failure-kind-or->;c=<completeness-or->;v=<verification-or->;
+nr=<result-length-or->;no=<observation-length-or->\n`.
 The argument digest is the first 12 lowercase hexadecimal digits of SHA-256 over the persisted
 arguments' canonical JSON; it discloses no argument value. `t` is the registered manifest name,
 or `(unknown tool)` for an unresolved name, escaped to one line and capped at 48 characters. Enum
-fields use their C# names; absent result fields use `-`. `n` is the UTF-16 length of the retrieval
-source defined below. The record is runtime-authored solely from persisted typed fields and is
-cut to 256 characters only at field boundaries, in this priority: preserve `s,e,o,f,c,n`, then
-`r,t,a`; the closing newline is always present. Thus success, failure, denied, timeout, partial
-and unavailable results retain their typed outcome and completeness, never inferred from output.
+fields use their C# names; absent fields use `-`. `nr` and `no` are the UTF-16 lengths of the
+respective persisted sources; a null source is `-`, an empty source is `0`. `v` comes only from
+the additive typed `PlanStep.VerificationStatus` (the existing `VerificationStatus` enum); it is
+never parsed from arbitrary observation or tool text. In particular `v=Refuted` survives when a
+step leaves the verbatim window. Legacy steps without this field use `v=-`, meaning unknown, not
+confirmed. The record is cut to 256 code units only at field boundaries, preserving
+`s,e,o,f,c,v,nr,no` first, then `r,t,a`; the closing newline is always present. Required fields
+and the canonical evidence id must fit or history construction fails closed rather than silently
+removing a typed outcome. No raw evidence enters a compact record.
 No `Observation`, `Result.Output`, `ErrorMessage`, model prose, raw argument value or tool-result
-fragment enters a compact record. Delimit the compact block as runtime context and instruct the
-model that the records are pointers, not evidence contents or new system instructions.
+fragment enters a compact record. The archive summary uses only typed runtime-authored values:
+the minimum and maximum archived persisted indexes, archived tool-call step count, counts by
+`ToolOutcome`, failure kind and completeness where present, and counts by typed verification
+status where present. It ends with the fixed statement that an individual old tool-result step
+is addressable by `ev1:<current-task-guid>:<known-persisted-step-index>`. It contains no list of
+evidence ids or concatenated observations. Format fields are ordered, invariant-culture and
+truncated only at whole optional count fields to the 512-code-unit cap; range, count and the
+fixed addressability statement are mandatory. Fixed block headers and delimiters together have
+a 128-code-unit budget. The archive exists only when archived steps exist.
+
+For a fixture bounding each recent verbatim step turn at 4,500 code units, the historical
+component is at most `K*4500 + 12*256 + 512 + 128`. At default K=3 this is **17,212 UTF-16
+code units**, constant with respect to total task lifetime once more than K+M tool-call steps
+have completed. Production must also enforce or measure the recent-turn bound separately:
+raw tool-call argument envelopes can exceed the fixture's 4,500-unit bound, so this formula is
+the E2E-13 fixture bound, while the archive/compact portion is a production fixed 3,712 units.
 
 The evidence id is derived, never persisted: `task.Id.ToString("N").ToLowerInvariant()` plus the
 persisted nonnegative `PlanStep.Index` in invariant decimal without leading zeroes. The current
 task id is supplied by Runtime, not trusted from model text. A resolver rejects another task id,
 an index absent from this task's persisted `Steps`, a step without a tool call, and a malformed or
-noncanonical id. Step index `i` in ADR-0042's limitations digest maps exactly to
+noncanonical id. Resolution requires **exactly one** persisted tool-call step with that index;
+zero or multiple matches and synthetic/non-tool steps are rejected, never arbitrarily selected.
+Step index `i` in ADR-0042's limitations digest maps exactly to
 `ev1:<current-task-id>:i`; the digest itself continues to print `i` and needs no format change.
 
 ### 2. Read complete source evidence through Runtime
 
-An exact, tool-call-free model text reply of the form
-`{"runtime":"EvidenceRead/v1","id":"ev1:...","offset":0,"length":4000}` is a request to
-Runtime, not a final answer or an operational tool call. The parser accepts one JSON object only,
-exact property names and types, no duplicate or extra keys, and integer offset/length. A text
-reply whose `runtime` member claims `EvidenceRead/v1` but fails this validation gets a fixed
-invalid-request result and consumes one read; other text follows the ordinary final-answer path. A reply
-containing any native tool call is processed under the normal one-tool-call rule, never as a read.
-The step system instruction and compact block explain the syntax, source length `n`, and that a
-later offset can retrieve the unseen middle of a shortened output. Runtime validates and reads
-only the in-memory/persisted `PlanStep` of the current task; it cannot address arbitrary task ids,
-files, databases, nodes or package tools. It does not execute a tool, affect policy/approval, or
-create a `PlanStep`. It uses the same primitive for a replan call, whose request also has no tools.
+The one request shape is:
 
-For a persisted step with nonempty `Result.Output`, the retrieval source is exactly that full
-output, including the portion omitted from the 4,000-character `Observation`. Otherwise the source
-is the persisted `Observation` (or empty string). This handles denied, failed and unavailable
-steps without pretending that an absent output exists. Runtime reports the chosen source label,
-total UTF-16 length, requested offset and returned length. Offsets are zero-based UTF-16 code
-units; `length` is 1–4000. A valid range returns
-`source.Substring(offset, min(length, source.Length-offset))`, except an offset or end that splits
-a surrogate pair is rejected. `offset == source.Length` returns an empty end-of-evidence result;
-negative, oversized, malformed or split ranges return a fixed error with source length and no
-evidence. An invalid request consumes one of the four reads. All replies use fixed markers and
-the existing tool-output escaping so evidence text remains data; marker/JSON overhead is capped
-at 256 characters. A fifth request ends the task as `Failed/RuntimeFailure` with a bounded
-`EvidenceRead/v1 limit exceeded` failure step;
-the four-read limit is stated in the system instruction, so the model can act or answer before
-then. At most four extra model continuations follow reads per step/replan.
+```json
+{"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result","offset":0,"length":4000}
+```
 
-The request and continuation are normal audited model attempts with the current step index (or
-the triggering step for replan). `ModelCallRecord` keeps their usage, sanitized outcome and
-bounded request/reply bodies; the read's deterministic id/range/source/length are visible in the
-conversation sent on the continuation and reconstructable from persisted evidence. No new audit
-event or public model contract is required. The retrieved chunk is visible only in that step's
-or replan's local continuation; it is not copied into a persisted `Observation` or future base
-history. The resulting model decision is persisted in the usual way. A resume rebuilds from the
-persisted task and can request the same id/range again.
+`source` is exactly `result` or `observation`. The reply is assistant **textual content**, never a
+provider tool call or registered operational tool. After trimming ordinary leading/trailing JSON
+whitespace, the entire text must be one JSON object, with exactly these five case-sensitive keys,
+correct JSON types, no duplicates or extras, the exact discriminator, and an integer offset and
+length. Markdown fences or any surrounding prose invalidate it. The OpenAI-compatible
+JSON-schema fallback adapter must preserve this exact object as a runtime directive before its
+normal final/tool JSON validation; native tool mode must likewise pass the textual object to
+Runtime. A native response containing both provider tool calls and a textual EvidenceRead claim
+is invalid. Plan/replan parsing must recognize a valid read before malformed-plan validation;
+it does not use the single plan corrective re-ask. Initial planning has no prior evidence and
+does not accept EvidenceRead.
+
+A response **claims** a runtime directive when its whole trimmed text is a JSON object with a
+top-level `runtime` key, or when it begins with a JSON object prefix whose first complete key is
+`runtime` (including a truncated object). A `runtime` value other than `EvidenceRead/v1`,
+missing/wrong fields, extra keys, duplicates, bad JSON, fences around a would-be request, or
+prose accompanying a JSON object containing `runtime` is a malformed claimed directive. For
+the last two forms recognition is limited to a literal `"runtime"` key in the fenced/object
+text; no fuzzy search for IDs or arbitrary words. Malformed claims produce a fixed bounded
+error continuation and audit result `Malformed`; they never access the store or become an
+ordinary final answer. Text with no such claim follows existing final/plan/tool parsing.
+
+`source=result` reads exactly persisted `ToolCallResult.Output`; a null `Result` or null `Output`
+is `UnavailableSource`, while an empty output is valid and immediately ends. It does not fall
+back to Observation. `source=observation` reads exactly persisted `PlanStep.Observation`; null is
+`UnavailableSource`, empty is valid and ends. This source includes the unchanged runtime-authored
+verification annotation. Both sources are current-task-only; no files, database objects, other
+tasks, or package tools are addressable. The step instruction and compact record describe both
+source lengths and the ability to read beyond character 4,000.
+
+Offsets count UTF-16 code units from zero; `length` is 1–4000. Valid ranges return at most
+`min(length, source.Length-offset)` code units. An offset equal to length returns
+`EndOfEvidence`; negative, greater-than-end or surrogate-splitting boundaries are `OutOfRange`.
+Validation and errors disclose no evidence contents. Replies use fixed markers and existing
+tool-output escaping; marker/JSON overhead is at most 256 code units. The fragment is only in
+the same logical call's local continuation, never copied into future base history. Each read
+request, including malformed and rejected ones, consumes one of **four** slots per logical step
+or replan. A fifth is audited as `LimitExceeded` and terminates that logical call with a bounded
+persisted failure; neither malformed directives nor provider retries reset the counter. At most
+four read continuations occur. The successfully read fragment returns to the same logical model
+conversation, then ordinary plan/replan/step response handling resumes.
+
+Add one metadata-only `EvidenceReadAuditEvent` to `bOps.Abstractions.AuditEvent`'s derived-type
+registration. Its fields are `TaskId` (base), `StepIndex` for a step or triggering replan index,
+`PlanRevision` for a replan (nullable for a step), `EvidenceId` (bounded raw claimed value or
+null), `Source` (`result`/`observation` or null), `Offset` and `RequestedLength` (nullable when
+malformed), `ReturnedLength` (always 0 on rejection), and `ResultCode` (closed enum): `Success`,
+`EndOfEvidence`, `Malformed`, `InvalidId`, `CrossTaskRejected`, `MissingStep`,
+`UnavailableSource`, `OutOfRange`, `LimitExceeded`, `AttemptBudgetInterrupted`. A duplicate
+index is `InvalidId`; a non-tool/synthetic index is `MissingStep`. Audit every attempted read
+once before a continuation or termination, including interrupted reads. Never place retrieved
+raw evidence in this event. Existing `ModelCallRecord` and model-call audit still record each
+model attempt and known usage; payload-retention settings do not affect the read audit.
 
 ### 3. HARDEN-9 and replan compatibility
 
@@ -213,87 +258,109 @@ observation remains listed even if a range was read. ADR-0042's Diagnostic struc
 exception stays unchanged. The evidence rule is at most 2,000 characters and the digest at most
 4,608; account for both as fixed prompt costs.
 
+Persist an additive nullable `PlanStep.VerificationStatus` of the existing enum type for new
+tool-call steps, populated directly from the runtime's verification outcome. Null means absent
+or unknown (including legacy steps). The existing Observation suffix includes arbitrary
+verification detail and can contain status-looking text, so it is **not** a safe source for
+parsing a typed status. This additive public JSON field needs no SQLite column migration;
+legacy rows deserialize null. Keep the Observation suffix for model-visible detail and never
+rewrite it or Result.Output. Compact `v` and archive verification counts use only the typed
+field. In particular `Refuted` remains visible after the full step leaves recent history.
+
 `ReplanAsync` receives the goal, the current plan revision only (a deterministic projection of
-at most 2,048 characters), and the same compact/last-K history of the completed tool-call steps.
-It does not append `latestObservation` a second time and does not resend historical observations
-outside K. Current revision number and the triggering step index remain explicit. The typed
-`o/f/c` fields preserve historical failures and partial/unavailable conditions, with evidence ids
-for range reads. The most recent K observations remain verbatim. No earlier `AgentPlan` revision
-or full plan rationale history is included. At the lifetime cap of 60 steps, compact history is
-at most `60 × 256 = 15,360` characters; after K the increment per step is at most 256 characters,
-independent of historical observation size. The goal and current plan are per-task fixed inputs.
+at most 2,048 characters), bounded archive/compact/recent history, and the **step that directly
+triggered replan verbatim** as current triggering context. This holds even when configured or
+aggressive K=0. Do not duplicate it if it is already in the recent K window; exclude it from
+old-history compaction in that case. Current revision number and triggering index are explicit.
+No earlier plan revision or full plan-rationale history is included. With the 4,500-unit fixture
+turn bound, a K=0 replan has a separate 4,500-unit trigger plus 3,712 units of bounded older
+history. Historical growth plateaus independently of total task lifetime.
 
 ### 4. Overflow recovery and budgets
 
-ADR-0039 never retries `ContextOverflow` with the same request. At the Runtime caller boundary,
-the first classified `ContextOverflow` for a step, plan or replan rebuilds the request once with
-K=0 (all completed tool-call steps use the same 256-character records). The current requested
-evidence chunk, if any, remains available and bounded; older read continuations are omitted.
-For this recovery request only, bound the goal projection to 2,048 characters (deterministic
-head/tail with omitted count) and the current plan projection to 1,024 characters. The initial
-plan call has no step history, so this goal projection is its only possible reduction; when the
-goal is already below the cap there is no variable context left to reduce without changing the
-fixed provider/tool schema, and the mandated single retry still occurs. Persisted goal and plan
-stay complete. The rebuilt request is a new logical model call through `CallModelAsync`. The first failed attempt
-and the second attempt each keep their ADR-0039 `ModelCallRecord` and audit event; any reported
-usage counts toward the lifetime budget. A second `ContextOverflow` in that caller ends
-`AgentTaskStatus.Failed` with `TaskTerminalKind.ModelFailure` and
-`FailureKind.ContextOverflow`, with the existing bounded failure step. No second compaction,
-provider retry of overflow, or retry loop is permitted. Other failure kinds retain ADR-0039's
-normal retry policy; an overflow after a transient retry still gets only this one compact
-rebuild. The aggressive form does not disable evidence reads, but the four-read cap still wins.
+ADR-0039 never retries `ModelFailureKind.ContextOverflow` with the same request. Here
+"compactable historical context" means at least one completed historical tool-call step is
+currently carried verbatim by K and can move to compact/archive form; the replan trigger does
+not qualify because it must stay verbatim. At the Runtime caller boundary, the first overflow
+**only when compactable historical context exists** rebuilds
+with aggressive K=0 and retries exactly once. The bounded M records and archive remain; the
+replan triggering step stays verbatim. Goal and current-plan projections on this recovery request
+are capped at 2,048 and 1,024 code units by deterministic head/tail projection. Persisted values
+remain complete. An initial plan has no compactable history: its overflow terminates the logical
+call as `Failed/ModelFailure/ContextOverflow` without an identical retry. The same rule applies
+to any other call lacking compactable history. Both attempted calls keep their ADR-0039
+`ModelCallRecord` and audit; known usage counts. A second overflow terminates with that same
+classified reason and bounded failure step. No provider retry multiplies this one compaction
+retry. After a successful aggressive retry, all EvidenceRead continuations and other model
+continuations of **that logical call** remain aggressive; the next normal step/replan restores
+configured K. EvidenceRead stays available under its four-request limit.
 
-Ship `Agent:MaxTotalTokens=350000` in both `AgentRunnerOptions` and API defaults, validate it as
-positive, and retain an explicit operator override. The current 15-step attempt and 60-step
-lifetime caps stay. A 269,452-token real 12-step diagnostic fits with about 30% headroom; at
-the observed 12,832–19,797 prompt tokens per call, 350,000 allows normal 15-step work and
-prevents repeated 60-step resumes from spending without limit. The 47 KB schema portion remains
-a fixed per-call cost until the separate relevance work. Count reported prompt plus completion
-tokens for planning, steps, replans, disclosure asks, read continuations and overflow retries
-once, with ADR-0040 lifetime accounting on every save/resume. Check `>=` before starting any
-new call and check again after each response (budget exhaustion wins over accepting a final
-answer or issuing another read/replan); a crossing call can exceed the cap by that one call's
-usage. End `BudgetExceeded/TokenBudget`. The task view already exposes effective cumulative
-`Accounting.TokensUsed`; no view change is needed. Provider calls with no usage cannot be
-charged as exact tokens under ADR-0040; record that limitation rather than treating zero as
-proof of zero cost.
+Ship `Agent:MaxTotalTokens=350000` in `AgentRunnerOptions` and API defaults. This is a finite
+**emergency ceiling**, not a target; retain nullable explicit operator opt-out and validate
+non-null as positive (no clamping). The current 15-step attempt and 60-step lifetime caps stay.
+The 269,452-token incident justifies a ceiling with headroom, not a guaranteed 60-step run.
+Count known prompt plus completion usage for **every** model attempt, including failed/retried
+attempts, planning, steps, replans, disclosure asks, EvidenceRead continuations and overflow
+retries, cumulatively across resumes. EvidenceRead continuations are full, potentially expensive
+model calls. A token cap may therefore stop the task before `MaxLifetimeSteps`; token budget
+wins first. The separately measured tool schemas remain a fixed per-call cost. Check `>=` before
+starting another model call and after each response. ADR-0040 counts only provider-reported
+usage: absent usage remains null in its persisted `ModelCallRecord` and `ModelCallAuditEvent`,
+and `TaskState.Accounting.TokensUsed` is then a lower bound, not an invented estimate.
 
-Ship nullable `Agent:MaxAttemptDuration=01:00:00`, validated positive when non-null; explicit
-`null` disables this one budget. Measure monotonic elapsed time
-from attempt admission, reset only when a new execution attempt is admitted, and pass remaining
-time as a linked cancellation/deadline to model calls, waits, tool calls and evidence reads;
-operator cancellation remains `Cancelled`. The 60-minute default permits a normal 12–15-step
-troubleshooting attempt while limiting a run of repeated 5-minute model-call budgets and
-30-second tools. An exhausted duration ends `AgentTaskStatus.BudgetExceeded` with a new additive
-`TaskTerminalKind.AttemptDurationBudget`; this enum member is the sole necessary
-`bOps.Abstractions` addition, because existing `TokenBudget` and `DelegationBudget` would report
-the wrong reason. It is not a persisted-schema rewrite or new state. It cannot be bypassed by a
-model-call retry within the same attempt; resume gets a new duration allowance subject to the
-unchanged lifetime token/step/replan limits.
+When a response brings known cumulative usage to or above the cap, preserve the paid call before
+terminating. Create **one
+synthetic non-tool `PlanStep`** at the next persisted step index, carrying the crossing call's
+`ModelCalls`, a fixed runtime-authored token-crossing description, `ToolCall=null`, `Result=null`,
+and bounded final text if the response had final text. Plan/replan crossing calls are recorded
+there too; the same `ModelCallRecord` must not also be attached to a plan/other step. Do not
+accept the response as a successful task final answer, execute a tool, read evidence, retry or
+replan afterward. End `BudgetExceeded/TokenBudget`. This bookkeeping step is excluded from
+executable-step and evidence-id resolution, is not a HARDEN-9 final-response marker, and counts
+in task state/audit and cumulative usage. If a crossing response occurs during an initial plan,
+the synthetic step is still persisted; no plan is accepted from it.
+
+Ship nullable `Agent:MaxAttemptDuration=01:00:00`; explicit null opts out and non-null must be
+positive. Validate `VerbatimHistorySteps` as integer 0–15 (fixed upper bound matching the shipped
+`MaxSteps` default); values outside that range fail `Validate()`. Validate `MaxAttemptDuration`
+as at most 24 hours as well, without clamping. Use `TimeProvider` for deterministic active-time
+accounting, starting at attempt admission and resetting only for a newly admitted attempt.
+Pause accounting **immediately before** awaiting explicit human approval and resume after a
+decision; caller cancellation still cancels approval waiting. Model-provider calls, runtime
+planning/replanning, EvidenceRead processing and continuations, retry waits and tool execution
+consume active duration. Approval latency does not.
+
+Use a dedicated attempt-budget cancellation signal distinct from caller cancellation and the
+existing provider/tool timeout signals. At expiry, stop in-flight work, persist and audit the
+model-call record or deterministic tool interruption/failure record (or EvidenceRead audit with
+`AttemptBudgetInterrupted`), then terminate `BudgetExceeded/AttemptDurationBudget`. A model
+expiry does not use HARDEN-2 timeout retry or replan; a tool expiry does not retry or replan; a
+read expiry does not continue its read loop. No operation is silently abandoned. Caller
+cancellation remains `Cancelled`, ordinary provider/tool timeout retains `Timeout`, and operator
+rejection retains its existing approval semantics. The additive
+`TaskTerminalKind.AttemptDurationBudget` gives this terminal reason without a new task status.
 
 ### 5. E2E-13 and review obligations
 
-A fake model drives 40 executable steps across at least two attempts (15 + 15 + 10, with accepted
-resumes). Its tool returns deterministic large outputs, including one output over 10,000
-characters with a sentinel after offset 4,000. The fake requests an older `ev1` range containing
-that sentinel and uses it in a later decision. Assert that all original `Result.Output` and
-`Observation` values remain byte-identical, that ids resolve after resume only for their own
-task, and that ADR-0042's digest still comes from persisted shortened/partial evidence. Also
-exercise invalid ranges, the four-read cap, both overflow outcomes and a default-config
-`BudgetExceeded` across resume without a live provider.
+A fake model drives 40 executable steps across **two resume boundaries** (15 + 15 + 10). Use
+bounded tool-call arguments and observations so each recent verbatim turn is at most 4,500 UTF-16
+code units. Measure pre-provider normal-step **and replan** historical components at steps 10,
+20 and 40. The exact maximum at all three points is
+`K*4500 + M*256 + archive(512) + headers(128)` = **17,212** at K=3, M=12. At step 10 the
+archive may be absent; at steps 20 and 40 assert the same maximum, with no rising allowance.
+For a replan, count the trigger only once; at K=0 the separate trigger is at most 4,500 and
+the older historical maximum is 3,712. Report fixed system/goal/current-plan/tool schemas,
+HARDEN-9 rule and digest (at most 6,608), and bounded EvidenceRead continuations separately.
+Do not hide these fixed costs in the history assertion.
 
-Measure the pre-provider `ModelRequest` at steps 10, 20 and 40 in UTF-16 characters, separately
-reporting (a) fixed system/goal/current-plan and schema cost, (b) recent history, (c) compact
-history, (d) HARDEN-9 rule/digest and (e) a read continuation if present. Use the same bounded
-tool-call arguments and 4,000-character observations in the fixture; each recent turn including
-its tool-call envelope is at most 4,500 characters. The historical-history acceptance formula is
-`H(n) <= 3*4500 + max(0,n-3)*256` for n >= 3. Thus step 10 <= 15,292, step 20 <= 17,852 and
-step 40 <= 22,972 historical characters; allow no more than 16,000 / 19,000 / 24,000 respectively
-in the actual fixture. Add the measured fixed/schema cost and at most 6,608 HARDEN-9 characters
-separately; one read adds at most 4,256 characters plus its small request turn. This demonstrates
-that 30 more observations add no more than 7,680 historical characters instead of 120,000.
-The production bound is `fixed task/prompt/schema + bounded recent K turns + 256*(60-K) +
-6,608 HARDEN-9 + bounded read turns`; fixed schema cost is reported, not reduced by HARDEN-8.
+After an old record moves into the archive, request a `source=result` range containing a
+sentinel beyond character 4,000; use it in a later decision. Assert the persisted full
+`Result.Output` and `Observation` remain byte-identical, `source=observation` returns the
+persisted verification annotation, `v=Refuted` survives compaction, and the HARDEN-9 digest
+still reflects persisted shortening/partial evidence. Exercise invalid, duplicate, cross-task,
+missing and non-tool ids; malformed claims in native and fallback modes; the fifth-read limit;
+initial-plan overflow without retry; one aggressive overflow retry; duration interruption;
+and a default token-budget crossing with a persisted synthetic step. No live provider is needed.
 
 Before acceptance, independent review must verify unchanged persisted evidence and audit, access
 limited to the current task, retrieval past 4,000 characters, deterministic replan/request sizes,
