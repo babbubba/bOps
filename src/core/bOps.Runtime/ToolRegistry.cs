@@ -34,6 +34,14 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
 
         var manifest = tool.Manifest;
 
+        // ADR-0042 §5: the description of a runtime rejection is a reserved token, so no step description equal to it can
+        // be a tool's. Without this a tool of that name would be indistinguishable from an unknown-tool rejection.
+        if (string.Equals(manifest.Name, RuntimeStepTokens.Denied, StringComparison.Ordinal))
+        {
+            throw new ToolRegistrationException(manifest.Name,
+                $"the name is reserved: the runtime writes '{RuntimeStepTokens.Denied}' as the description of every call it refuses.");
+        }
+
         foreach (var parameter in manifest.Parameters)
         {
             ValidateConstraints(manifest.Name, parameter);
