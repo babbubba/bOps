@@ -348,8 +348,8 @@ public sealed class EvidenceLimitationsDigestTests
         var instruction = EvidenceLimitationsDigest.DiagnosticIntroduction;
         foreach (var phrase in new[]
         {
-            "required JSON", "no prose", "Replaces E8's prose section",
-            "supported by existing evidence", "materially affected", "Never create a finding for a limitation",
+            "Required JSON only", "no prose", "Replaces E8's prose section",
+            "supported findings it materially affects", "Never create a finding for a limitation",
             "add/change/invent evidenceIds", "change severity to carry one",
             "Never attach unrelated limitations or drop supported findings", "Unmatched limitations stay outside JSON",
         })
@@ -364,9 +364,53 @@ public sealed class EvidenceLimitationsDigestTests
         var fixedText = digest.Length - Entries(digest).Sum(entry => entry.Length + 1);
 
         Assert.StartsWith("EvidenceLimitations/v2\n" + instruction, digest, StringComparison.Ordinal);
-        Assert.Equal(512, fixedText); // version, instruction and worst-case omission line, in UTF-16 code units
-        Assert.Equal(3840, digest.Length); // actual worst-case fixture, including sixteen bounded entries
+        Assert.Equal(EvidenceLimitationsDigest.FixedText(44, diagnostic: true).Length, fixedText);
+        Assert.Equal(485, fixedText);
+        Assert.Equal(3813, digest.Length);
+        Assert.True(fixedText <= EvidenceLimitationsDigest.MaxFixedCharacters, $"Actual fixed text: {fixedText} UTF-16 code units.");
         Assert.True(digest.Length <= 4608, $"Actual Diagnostic digest: {digest.Length} UTF-16 code units.");
+    }
+
+    [Fact]
+    public void DiagnosticV2_HundredOmissions_KeepExactCountWithinBounds()
+    {
+        var steps = Enumerable.Range(0, 116).Select(i => ToolStep(i, "test.t", Partial())).ToArray();
+        var built = EvidenceLimitationsDigest.Build(steps, diagnostic: true)!;
+        var fixedText = built.Text.Length - Entries(built.Text).Sum(entry => entry.Length + 1);
+
+        Assert.Equal(100, built.OmittedCount);
+        Assert.Contains("\n100 earlier listed step(s) are not shown", built.Text, StringComparison.Ordinal);
+        Assert.Equal(EvidenceLimitationsDigest.FixedText(100, diagnostic: true).Length, fixedText);
+        Assert.Equal(486, fixedText);
+        Assert.True(fixedText <= EvidenceLimitationsDigest.MaxFixedCharacters, $"Fixed text: {fixedText} UTF-16 code units.");
+        Assert.True(built.Text.Length <= EvidenceLimitationsDigest.MaxCharacters, $"Digest: {built.Text.Length} UTF-16 code units.");
+    }
+
+    [Fact]
+    public void DiagnosticV2_MaximumOmittedCount_UsesInvariantDecimalWithinFixedBound()
+    {
+        var invariantText = EvidenceLimitationsDigest.FixedText(int.MaxValue, diagnostic: true);
+        var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            var alternateCulture = (System.Globalization.CultureInfo)System.Globalization.CultureInfo.InvariantCulture.Clone();
+            alternateCulture.NumberFormat.NumberGroupSeparator = "_";
+            alternateCulture.NumberFormat.NativeDigits = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+            System.Globalization.CultureInfo.CurrentCulture = alternateCulture;
+            var fixedText = EvidenceLimitationsDigest.FixedText(int.MaxValue, diagnostic: true);
+
+            Assert.Contains("\n2147483647 earlier listed step(s) are not shown", fixedText, StringComparison.Ordinal);
+            Assert.Equal(493, fixedText.Length);
+            Assert.True(fixedText.Length <= EvidenceLimitationsDigest.MaxFixedCharacters, $"Fixed text: {fixedText.Length} UTF-16 code units.");
+            Assert.Equal(4605, fixedText.Length + EvidenceLimitationsDigest.MaxEntries * (EvidenceLimitationsDigest.MaxEntryCharacters + 1));
+            Assert.True(fixedText.Length + EvidenceLimitationsDigest.MaxEntries * (EvidenceLimitationsDigest.MaxEntryCharacters + 1)
+                <= EvidenceLimitationsDigest.MaxCharacters);
+            Assert.Equal(invariantText, fixedText);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]

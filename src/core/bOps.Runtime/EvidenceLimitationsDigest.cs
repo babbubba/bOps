@@ -51,8 +51,8 @@ internal static class EvidenceLimitationsDigest
         "and the final answer must disclose these limitations under the heading Evidence limitations.";
 
     internal const string DiagnosticIntroduction =
-        "Only required JSON; no prose, Evidence limitations heading or fence. Replaces E8's prose section. " +
-        "A limitation is not a Finding. Qualify a summary only if supported by existing evidence and materially affected. " +
+        "Required JSON only; no prose, Evidence limitations heading or fence. Replaces E8's prose section. " +
+        "A limitation is not a Finding. Qualify only supported findings it materially affects. " +
         "Never create a finding for a limitation, add/change/invent evidenceIds or change severity " +
         "to carry one. Never attach unrelated limitations or drop supported findings. Unmatched limitations stay outside JSON.";
 
@@ -88,14 +88,7 @@ internal static class EvidenceLimitationsDigest
         var shown = listed.Count > MaxEntries ? listed.GetRange(listed.Count - MaxEntries, MaxEntries) : listed;
         var omitted = listed.Count - shown.Count;
 
-        var text = new StringBuilder();
-        text.Append(Version).Append('\n').Append(diagnostic ? DiagnosticIntroduction : Introduction);
-        if (omitted > 0)
-        {
-            text.Append('\n').Append(string.Create(
-                CultureInfo.InvariantCulture,
-                $"{omitted} earlier listed step(s) are not shown, so this list is not complete."));
-        }
+        var text = new StringBuilder(FixedText(omitted, diagnostic));
 
         foreach (var entry in shown)
         {
@@ -103,6 +96,20 @@ internal static class EvidenceLimitationsDigest
         }
 
         return new EvidenceLimitations(text.ToString(), shown.Count, omitted);
+    }
+
+    /// <summary>The production fixed text, including the invariant decimal omission count.</summary>
+    internal static string FixedText(int omitted, bool diagnostic)
+    {
+        var text = new StringBuilder(Version).Append('\n').Append(diagnostic ? DiagnosticIntroduction : Introduction);
+        if (omitted > 0)
+        {
+            text.Append('\n').Append(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{omitted} earlier listed step(s) are not shown, so this list is not complete."));
+        }
+
+        return text.ToString();
     }
 
     /// <summary>One line for the step at <paramref name="position"/>, or <c>null</c> when it is not a limitation.</summary>
