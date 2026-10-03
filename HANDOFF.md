@@ -4,14 +4,14 @@
 
 - V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
-- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); the HARDEN-9 architecture is accepted (ADR-0042, ADR-0032 HARDEN-9 amendment, D-038) and its implementation is next; HARDEN-8 follows HARDEN-9.
+- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); the HARDEN-9 architecture is accepted (ADR-0042, ADR-0032 HARDEN-9 amendment, D-038) and implemented on `feat/harden-09-evidence-reasoning` (validated locally, not pushed, awaiting independent implementation review); HARDEN-8 follows HARDEN-9.
 - HARDEN-5 (Windows `storage.health`) merged through PR #61; HARDEN-6 (typed `ToolParameter` constraints, `FailureKind`, `Completeness`, 94 constrained parameters, Windows/Linux validated, CI green) merged through PR #62.
 - The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next action: **HARDEN-9 implementation — evidence reasoning and limitation disclosure**, see
+Next action: **independent implementation review of HARDEN-9 — evidence reasoning and limitation disclosure**, see
 [`agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md`](agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md). The architecture is
-accepted; the implementation has not started.
+accepted and implemented; nothing is pushed, no PR exists. HARDEN-8 has not started.
 
 ## Handoff — 2026-09-24 (historical)
 

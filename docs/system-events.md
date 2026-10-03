@@ -26,11 +26,12 @@ Every argument is optional. A value out of range is rejected with the reason, ne
 | `eventId` | Windows: the event id (`7036`). Linux: the 32-digit hexadecimal `MESSAGE_ID`. |
 | `channel` | Windows: a channel such as `Microsoft-Windows-Kernel-Power/Thermal-Operational` (default: `System` and `Application`). Linux: a journal transport: `kernel`, `journal`, `syslog`, `stdout`, `driver` or `audit` (default: all). |
 | `text` | Case-insensitive text the message must contain, up to 256 characters. It is matched against the first 2000 characters of the message, the same part the result can show. |
+| `excludeSources` | Comma-separated sources to leave out (below): at most 8 names of at most 128 characters, 1024 characters in all. Echoed in the result. |
 | `limit` | Events (raw) or groups (aggregate) to return, 1 to 500 (default 50). |
 | `maxOutputBytes` | Size of the result, 4096 to 65536 (default 32768). |
 
-Names (`source`, `eventId`, `channel`) accept letters, digits and ``space _ . @ : / ( ) -`` only, so a value can
-never carry query syntax.
+Names (`source`, `eventId`, `channel`, and each entry of `excludeSources`) accept letters, digits and
+``space _ . @ : / ( ) -`` only, so a value can never carry query syntax.
 
 Two rules involve more than one argument. They are checked first, in this order, and only the first one that fails
 is reported:
@@ -40,6 +41,31 @@ is reported:
    aggregate; raw mode is limited to windowMinutes up to 10080 (7 days)."
 
 A call without `mode` behaves exactly as before HARDEN-7: raw rows over at most seven days.
+
+### Leaving out noisy sources (`excludeSources`)
+
+A host often logs one very frequent source — typically the process that runs bOps itself — and its records can fill the
+`limit`, the byte budget and, on Windows, the scan ceiling, pushing out other records. `excludeSources` removes named
+sources before grouping, the `limit` and the byte budget, in both modes, without hiding that it did:
+
+- **Grammar.** A comma-separated string. Each entry is trimmed and must be non-empty, at most 128 characters, and use the
+  `source` character set; at most 8 entries and 1024 characters in all (the total prevails: eight 128-character entries do
+  not fit). Two entries equal ignoring case, an empty entry (`a,,b`, a trailing comma) and an entry equal to `source` are
+  rejected with the reason; nothing is corrected. A syntactically valid name that matches nothing is accepted and echoed —
+  whether a source logged in the window is not knowable beforehand. `null` means the argument is absent.
+- **What is matched.** The `source` value the result shows, exactly and ignoring case: the Windows provider name, or on
+  Linux the syslog identifier, else the unit, else the command name, else `unknown`. A Linux record whose identifier is `x`
+  and whose unit is `x.service` is excluded by `x`, not by `x.service`, unlike the `source` filter, which also matches the unit.
+- **Windows** excludes natively, in the Event Log query itself (`Provider[@Name!='…' and …]`, one term per name, using the
+  spelling the provider registered on the machine), so excluded records are neither read nor counted towards the scan
+  ceiling; the shared filter then removes any record the native comparison missed. **Linux** applies the shared filter
+  after reading, because journald matches cannot be negated: excluded records are scanned and count towards the scan
+  ceiling, and no journal expression is ever built from an entry.
+- **Echo.** Every result has a top-level `excludeSources` array right after `window` — `[]` when nothing was excluded,
+  otherwise the accepted names in the caller's spelling, sorted. It is part of the envelope and is never cut by the byte
+  budget. No count of excluded records is reported (Windows cannot count what it did not read).
+- **An excluded source was not looked at.** `complete: true` then means complete for the filtered question, and the
+  absence of a source is never evidence that it logged nothing.
 
 ## Result
 
@@ -53,6 +79,7 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
   "complete": true,
   "truncated": false,
   "window": { "fromUtc": "2026-09-21T11:00:00.0000000Z", "toUtc": "2026-09-21T12:00:00.0000000Z" },
+  "excludeSources": [],
   "coverage": {
     "requestedFromUtc": "2026-09-21T11:00:00.0000000Z",
     "requestedToUtc": "2026-09-21T12:00:00.0000000Z",
@@ -80,7 +107,8 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
 ```
 
 The rows are the schema-1 rows, unchanged. Schema 2 adds `mode`, `coverage` and each source's `examinedFromUtc`, and
-makes `complete` stricter (below).
+makes `complete` stricter (below). The always-present `excludeSources` echo (above) is additive and stays within schema 2:
+an empty array is exactly the behaviour before it existed.
 
 An aggregate result (`mode: aggregate`) has the same envelope with `observedGroups`, `returnedGroups` and `groups`
 in place of `returnedEvents` and `events`:
@@ -164,3 +192,5 @@ Both are the operator's choice; nothing in bOps changes group membership.
 - "Any disk errors?" `source: disk`, `eventId: 7` (Windows), or `text: I/O error` (Linux).
 - "What went wrong in the last 20 minutes?" `minSeverity: error`, `windowMinutes: 20`.
 - "Which errors have repeated over the last three months?" `mode: aggregate`, `windowDays: 90`, `minSeverity: error`.
+- "…apart from this host's own noise?" the same, plus `excludeSources: .NET Runtime` — the result echoes the exclusion, and
+  that source was not looked at.
