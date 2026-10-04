@@ -1,6 +1,8 @@
 # ADR-0043 — Browser web session: a bounded, revocable server-side session behind a hardened cookie
 
-Status: Proposed — awaiting independent architecture/security review
+Status: Accepted (2026-10-05, operator decision; independent security architecture review of `f347ab4` CHANGES REQUIRED
+with blocker B-1, resolved in `0406469`; independent B-1 delta security review PASS — see "Operator acceptance
+(2026-10-05)")
 Date: 2026-10-05
 
 Amends [ADR-0018](0018-bops-api-minimal-surface.md) (the `bOps.Api` surface) for **authentication only**: it adds a second
@@ -11,7 +13,7 @@ mutations") unchanged in meaning: §9 below *is* the CSRF handling ADR-0037 dele
 type changes. Governs HARDEN-10 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md);
 [plan](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) §9, finding F-16, defect C-21; documents the
-F-26 constraint). **No implementation may start before this ADR is Accepted by the operator** (packet ADR gate).
+F-26 constraint). Accepted by the operator on 2026-10-05 (packet ADR gate satisfied; implementation may proceed).
 
 ## Context
 
@@ -925,3 +927,15 @@ cookie authenticates a mutation only through the CSRF gate of ADR-0043"; residua
 - In-flight requests validated just before logout complete (§5.4).
 - Rotated-key rows persist (unusable) until presented or expired (§4).
 - Key or role changes still require a host restart, exactly as for Bearer.
+
+## Operator acceptance (2026-10-05)
+
+Accepted by the operator on 2026-10-05. The independent security architecture review of `f347ab4` returned CHANGES
+REQUIRED with one blocker, **B-1**: a valid binding proved only that the bound credential's secret was unchanged, not
+that Bearer resolution would select the same configuration entry for that secret, so a session could keep authority
+that the same key no longer had under Bearer (an earlier entry sharing the secret). `0406469` resolved B-1 by adding the
+mandatory Bearer-equivalence check (§2, §4 validation order steps 6–7, cases D and E, §17 rows 29–30, the
+`Session_IsInvalidated_WhenItsSecretNowResolvesToAnotherBearerCredential` test of §18). The independent B-1 delta
+security review of `0406469` returned PASS. Recorded as decision D-040. The architecture is unchanged by the
+acceptance; the reviews' non-blocking observations are not implementation obligations unless a section above already
+requires the same behaviour. HARDEN-10 implementation may start.
