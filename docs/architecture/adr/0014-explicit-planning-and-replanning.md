@@ -101,9 +101,10 @@ not `AgentPlanner`, "because planning and execution are not yet separated in V0.
 - `TaskState`/`PlanStep` are breaking shape changes, acceptable under D-012: `bOps.Abstractions`
   stays on `0.x` until V1.0 specifically so changes like this do not require a migration story.
 
-## HARDEN-8 amendment — context and budget economy (Proposed; architecture corrected after second delta review; final delta review pending)
+## HARDEN-8 amendment — context and budget economy (Accepted 2026-10-04)
 
-This amendment is not Accepted and authorizes no implementation yet. It supplements the original
+This amendment was accepted on 2026-10-04 after the final independent architecture delta review
+passed. Implementation may begin; no further architecture gate remains. It supplements the original
 PLAN/REPLAN decision; ADR-0039 model failure containment, ADR-0040 resume accounting and ADR-0042
 evidence reasoning remain authoritative at their respective boundaries. The source baseline is
 `main` at `ad4d196` (HARDEN-9 merged in PR #74). The 12-step, zero-replan diagnostic that used
