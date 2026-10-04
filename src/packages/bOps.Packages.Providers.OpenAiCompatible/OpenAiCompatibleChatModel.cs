@@ -87,6 +87,13 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             var text = completion.Body.Choices[0].Message.Content ?? string.Empty;
             lastDetails = completion.Details;
 
+            // HARDEN-8: internal runtime directives are assistant text, never fake operational tools. Preserve a claimed
+            // directive verbatim for Runtime before the fallback adapter applies its ordinary final/tool JSON schema.
+            if (LooksLikeRuntimeClaim(text))
+            {
+                return new ModelResponse(text, [], false, MapUsage(completion.Body.Usage)) { Details = completion.Details };
+            }
+
             if (TryParseFallbackJson(text, out var parsed))
             {
                 var usage = MapUsage(completion.Body.Usage);
@@ -114,6 +121,41 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
         throw ProviderFailures.Malformed(
             options.Provider, "did not return valid JSON tool-call output after one corrective re-ask.", 200, lastDetails);
+    }
+
+    private static bool LooksLikeRuntimeClaim(string text)
+    {
+        try
+        {
+            if (StrictJson.Parse(text.Trim()) is JsonObject root && root.ContainsKey("runtime"))
+            {
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+            // Truncated, fenced and prose-wrapped claims are recognized by their object prefix below.
+        }
+
+        const string key = "\"runtime\"";
+        var objectStart = text.IndexOf('{');
+        while (objectStart >= 0)
+        {
+            var position = objectStart + 1;
+            while (position < text.Length && char.IsWhiteSpace(text[position]))
+            {
+                position++;
+            }
+
+            if (text.AsSpan(position).StartsWith(key, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            objectStart = text.IndexOf('{', objectStart + 1);
+        }
+
+        return false;
     }
 
     /// <summary>A reply that parsed, with what was sent and received so the call can be understood afterwards.</summary>

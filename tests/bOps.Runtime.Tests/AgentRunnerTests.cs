@@ -562,6 +562,7 @@ public sealed class AgentRunnerTests
         var result = await CreateRunner(model, registry, audit, policyEngine: policy).RunAsync("restart the thing", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(VerificationStatus.Confirmed, result.Steps[0].VerificationStatus);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Confirmed });
         Assert.Contains(model.Requests[2].History, turn =>
             turn.Content != null && turn.Content.Contains("Verification: Confirmed", StringComparison.Ordinal));
@@ -585,6 +586,7 @@ public sealed class AgentRunnerTests
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(2, result.Plans.Count);
+        Assert.Equal(VerificationStatus.Refuted, result.Steps[0].VerificationStatus);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Refuted });
         Assert.Contains(model.Requests[2].History, turn =>
             turn.Content != null && turn.Content.Contains("Verification: Refuted — still stopped", StringComparison.Ordinal));
@@ -610,6 +612,7 @@ public sealed class AgentRunnerTests
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Single(result.Plans);
+        Assert.Equal(VerificationStatus.Inconclusive, result.Steps[0].VerificationStatus);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Tool: "test.highrisk", Verification: VerificationStatus.Inconclusive });
     }
 

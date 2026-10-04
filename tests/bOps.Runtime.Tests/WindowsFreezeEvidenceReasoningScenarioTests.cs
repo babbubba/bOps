@@ -61,9 +61,12 @@ public sealed class WindowsFreezeEvidenceReasoningScenarioTests
         Assert.Contains("- step 7: storage.health — completeness Partial", rule, StringComparison.Ordinal);
 
         var observations = string.Join("\n", finalRequest.History.Where(turn => turn.Role == ChatRole.Tool).Select(turn => turn.Content));
-        Assert.Contains("\"kernelCrash\":3", observations, StringComparison.Ordinal);
-        Assert.Contains("\"kind\":\"kernel-live-dump\"", observations, StringComparison.Ordinal);
-        Assert.Contains("\"timestampKind\":\"reported\"", observations, StringComparison.Ordinal);
+        var bounded = string.Join("\n", finalRequest.History.Where(turn => turn.Role == ChatRole.User).Select(turn => turn.Content));
+        Assert.Contains("BOPS_HISTORY/v1", bounded, StringComparison.Ordinal);
+        Assert.Contains($"ev1:{state.Id:N}:2", bounded, StringComparison.Ordinal);
+        Assert.Contains($"ev1:{state.Id:N}:3", bounded, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"kernelCrash\":3", observations, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"kind\":\"kernel-live-dump\"", observations, StringComparison.Ordinal);
         Assert.DoesNotContain("pagefile", observations, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("installedDriverVersion", observations, StringComparison.Ordinal);
 

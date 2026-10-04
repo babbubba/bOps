@@ -62,6 +62,9 @@ public enum TaskTerminalKind
 
     /// <summary>A resume acquired the task but no executor admitted the new execution attempt, so it never ran.</summary>
     NotAdmitted = 12,
+
+    /// <summary>The execution attempt exhausted its active-work duration budget.</summary>
+    AttemptDurationBudget = 13,
 }
 
 /// <summary>Why the latest execution attempt ended. Carries no free text: the operator-facing failure text stays on the synthetic failure step (ADR-0039).</summary>

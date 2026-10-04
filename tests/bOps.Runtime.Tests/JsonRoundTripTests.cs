@@ -266,6 +266,37 @@ public sealed class JsonRoundTripTests
     }
 
     [Fact]
+    public void EvidenceReadAuditEvent_RoundTrips_AsItsBaseType_WithoutEvidencePayload()
+    {
+        AuditEvent value = new EvidenceReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            Node = SampleNode,
+            TaskId = Guid.NewGuid(),
+            StepIndex = null,
+            Actor = SampleActor,
+            PlanRevision = null,
+            EvidenceId = "ev1:11111111222233334444555555555555:7",
+            Source = "result",
+            Offset = 4000,
+            RequestedLength = 100,
+            ReturnedLength = 100,
+            ResultCode = EvidenceReadResultCode.Success,
+        };
+
+        var json = JsonSerializer.Serialize(value, Options);
+        var result = JsonSerializer.Deserialize<AuditEvent>(json, Options);
+
+        var typed = Assert.IsType<EvidenceReadAuditEvent>(result);
+        Assert.Contains("\"StepIndex\":null", json, StringComparison.Ordinal);
+        Assert.Null(typed.StepIndex);
+        Assert.Null(typed.PlanRevision);
+        Assert.Equal(EvidenceReadResultCode.Success, typed.ResultCode);
+        Assert.Equal(100, typed.ReturnedLength);
+        Assert.DoesNotContain("evidence payload", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SettingsChangedAuditEvent_RoundTrips_AsItsBaseType_WithSentinelTaskCoordinates()
     {
         AuditEvent value = new SettingsChangedAuditEvent
@@ -395,7 +426,10 @@ public sealed class JsonRoundTripTests
             new ModelToolCall("call-1", "system.cpu", ToolArguments.Empty),
             ToolCallResult.Success("42% CPU"),
             "42% CPU",
-            PlanRevision: 0);
+            PlanRevision: 0)
+        {
+            VerificationStatus = VerificationStatus.Confirmed,
+        };
 
         var result = RoundTrip(value);
 
@@ -405,6 +439,18 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Result, result.Result);
         Assert.Equal(value.Observation, result.Observation);
         Assert.Equal(value.PlanRevision, result.PlanRevision);
+        Assert.Equal(VerificationStatus.Confirmed, result.VerificationStatus);
+    }
+
+    [Fact]
+    public void PlanStep_PersistedBeforeHardenEight_DeserializesWithoutVerificationStatus()
+    {
+        const string json =
+            """{"Index":0,"Description":"legacy","ToolCall":null,"Result":null,"Observation":null,"PlanRevision":0}""";
+
+        var result = JsonSerializer.Deserialize<PlanStep>(json, Options)!;
+
+        Assert.Null(result.VerificationStatus);
     }
 
     [Fact]

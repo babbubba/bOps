@@ -185,6 +185,13 @@ public sealed record PlanStep
     /// <summary>The execution attempt that produced this step (ADR-0040 §1); <c>null</c> in a step recorded before execution attempts were kept, read as 1.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ExecutionAttempt { get; init; }
+
+    /// <summary>
+    /// The typed outcome of runtime post-action verification. <c>null</c> means no verification was recorded (including
+    /// persisted tasks written before HARDEN-8); model-facing compaction never infers this value from observation text.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VerificationStatus? VerificationStatus { get; init; }
 }
 
 /// <summary>

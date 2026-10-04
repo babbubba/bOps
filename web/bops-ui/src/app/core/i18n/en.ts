@@ -70,6 +70,7 @@ export const en = {
   'enum.terminalKind.RuntimeFailure': 'Unexpected runtime failure',
   'enum.terminalKind.Cancelled': 'Cancelled',
   'enum.terminalKind.NotAdmitted': 'Could not start: bOps was busy',
+  'enum.terminalKind.AttemptDurationBudget': 'Attempt duration budget exhausted',
   'enum.trust.Unverified': 'Unverified',
   'enum.trust.Community': 'Community',
   'enum.trust.Verified': 'Verified',

@@ -71,6 +71,7 @@ export const it: Messages = {
   'enum.terminalKind.RuntimeFailure': 'Errore imprevisto del runtime',
   'enum.terminalKind.Cancelled': 'Annullato',
   'enum.terminalKind.NotAdmitted': 'Non avviato: bOps era occupato',
+  'enum.terminalKind.AttemptDurationBudget': 'Budget di durata del tentativo esaurito',
   'enum.trust.Unverified': 'Non verificato',
   'enum.trust.Community': 'Community',
   'enum.trust.Verified': 'Verificato',
