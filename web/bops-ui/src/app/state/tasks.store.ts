@@ -10,6 +10,15 @@ import { describeError } from './describe-error';
 import { AgentTaskStatus, TaskState, TaskStatusRunning } from '../core/api/models';
 import { WatchConnection, watchTaskEvents } from '../core/streaming/task-events';
 import { AuthService } from '../core/auth/auth.service';
+import { Router } from '@angular/router';
+
+/** The dashboard query parameter that makes the selected task durable across a reload (ADR-0043 §15). Not a secret. */
+export const TASK_QUERY_PARAM = 'task';
+
+/** A canonical (lower-case, hyphenated) task id, as the API writes it. */
+export function isCanonicalTaskId(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
 
 interface TasksState {
   /** Which status the task list shows; Running is the live view, anything else is history. */
@@ -61,8 +70,24 @@ function isRefusal(err: unknown): boolean {
 export const TasksStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
-  withMethods((store, api = inject(BOpsApiClient), i18n = inject(I18n), auth = inject(AuthService)) => {
+  withMethods((store, api = inject(BOpsApiClient), i18n = inject(I18n), auth = inject(AuthService), router = inject(Router)) => {
     let stopWatching: (() => void) | null = null;
+
+    /**
+     * Keeps `?task=<id>` on the current route in step with the selection (ADR-0043 §15): replaced in history, other parameters
+     * kept, removed with `null`. A navigation failure never affects the selection itself.
+     */
+    function writeTaskParam(taskId: string | null): void {
+      const tree = router.parseUrl(router.url);
+      if ((tree.queryParams[TASK_QUERY_PARAM] ?? null) === taskId) return;
+      if (taskId === null) {
+        delete tree.queryParams[TASK_QUERY_PARAM];
+      } else {
+        tree.queryParams = { ...tree.queryParams, [TASK_QUERY_PARAM]: taskId };
+      }
+
+      void router.navigateByUrl(tree, { replaceUrl: true }).catch(() => undefined);
+    }
 
     function stopWatch(): void {
       stopWatching?.();
@@ -85,19 +110,22 @@ export const TasksStore = signalStore(
           },
           onConnection: (connection) => {
             // A refusal that arrives after the operator signed out (the answer to a poll already in flight) is not an expiry:
-            // signing out ends the watch, it does not leave one to be restored for whoever signs in next.
-            if (connection === 'sessionExpired' && !auth.authenticated()) return;
+            // signing out ends the watch, it does not leave one to be restored for whoever signs in next. The interceptor may
+            // already have switched to session-expired for this very 401, so only a deliberate sign-out is excluded.
+            if (connection === 'sessionExpired' && (auth.status() === 'unauthenticated' || auth.signingOut())) return;
             patchState(store, { connection });
             if (connection === 'sessionExpired') {
               patchState(store, { pendingWatch: { taskId, expectedAttempt } });
               auth.expireSession();
             }
           },
-          onError: (failure) =>
+          onError: (failure) => {
             patchState(store, {
               cancelling: false,
               error: failure === 'notFound' ? i18n.t('task.error.gone') : i18n.t('common.error.liveConnection'),
-            }),
+            });
+            if (failure === 'notFound' && store.selectedTaskId() === taskId) writeTaskParam(null);
+          },
         },
         expectedAttempt,
       );
@@ -155,6 +183,7 @@ export const TasksStore = signalStore(
         try {
           const { taskId } = await api.startTask(goal);
           patchState(store, { starting: false, selectedTaskId: taskId, selectedTask: null, cancelling: false });
+          writeTaskParam(taskId);
           watch(taskId, 1);
         } catch (err) {
           patchState(store, { starting: false, error: describeError(err, i18n) });
@@ -192,6 +221,7 @@ export const TasksStore = signalStore(
                   }
                 : null,
           });
+          writeTaskParam(taskId);
           watch(taskId, accepted.executionAttempt);
         } catch (err) {
           patchState(store, { resuming: false, error: describeError(err, i18n) });
@@ -241,6 +271,7 @@ export const TasksStore = signalStore(
           connection: 'connected',
           pendingWatch: null,
         });
+        writeTaskParam(taskId);
         try {
           const task = await api.getTask(taskId);
           if (store.selectedTaskId() !== taskId) return;
@@ -250,7 +281,9 @@ export const TasksStore = signalStore(
           }
         } catch (err) {
           if (store.selectedTaskId() === taskId) {
-            patchState(store, { error: describeError(err, i18n) });
+            const gone = err instanceof HttpErrorResponse && err.status === 404;
+            patchState(store, { error: gone ? i18n.t('task.error.gone') : describeError(err, i18n) });
+            if (gone) writeTaskParam(null);
           }
         }
       },
@@ -274,6 +307,12 @@ export const TasksStore = signalStore(
           connection: 'connected',
           pendingWatch: null,
         });
+        writeTaskParam(null);
+      },
+
+      /** Puts the current selection back into the URL (the dashboard was left and opened again). */
+      syncTaskParam(): void {
+        writeTaskParam(store.selectedTaskId());
       },
     };
   }),
@@ -298,14 +337,15 @@ export const TasksStore = signalStore(
           }
         });
 
-        // Signing out on purpose ends what the operator was following. An expiry is told apart by the watch it leaves pending:
-        // only the expiry path leaves one, so a sign-out never resumes under the next identity.
-        let wasAuthenticated = auth.authenticated();
+        // Signing out on purpose ends what the operator was following, so a sign-out never resumes under the next identity. Only
+        // the transition from signed in to unauthenticated counts: an expiry (session-expired) keeps the selection and its pending
+        // watch, and a boot that finds no session keeps the ?task= parameter for after the sign-in.
+        let previous = auth.status();
         effect(() => {
-          const authenticated = auth.authenticated();
+          const status = auth.status();
           untracked(() => {
-            if (wasAuthenticated && !authenticated && !store.pendingWatch()) store.clearSelection();
-            wasAuthenticated = authenticated;
+            if (previous === 'authenticated' && status === 'unauthenticated') store.clearSelection();
+            previous = status;
           });
         });
       },

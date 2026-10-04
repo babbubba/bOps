@@ -25,4 +25,8 @@ export class App {
   protected toggleTheme(): void {
     this.theme.toggle();
   }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
 }

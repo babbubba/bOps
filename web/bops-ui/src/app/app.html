@@ -1,6 +1,4 @@
-@if (!auth.authenticated()) {
-  <bops-login />
-} @else {
+@if (auth.authenticated()) {
 <div class="flex min-h-screen flex-col bg-bg text-text md:flex-row">
   <aside class="flex shrink-0 flex-col border-b border-default bg-surface md:w-56 md:border-b-0 md:border-r">
     <div class="flex items-center gap-2 px-4 py-4">
@@ -61,9 +59,12 @@
     <div class="border-t border-default p-2">
       <div class="px-3 py-2 text-xs text-muted">{{ auth.identity()?.displayName }}</div>
       <div class="px-3 py-1"><bops-language-switch /></div>
+      @if (auth.signOutFailed()) {
+        <p role="alert" class="px-3 py-1 text-xs text-risk-critical">{{ 'app.signOutFailed' | t }}</p>
+      }
       <button
         type="button"
-        (click)="auth.signOut()"
+        (click)="signOut()"
         class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
       >
         {{ 'app.signOut' | t }}
@@ -88,4 +89,6 @@
     <router-outlet />
   </main>
 </div>
+} @else if (auth.status() !== 'initializing') {
+  <bops-login />
 }

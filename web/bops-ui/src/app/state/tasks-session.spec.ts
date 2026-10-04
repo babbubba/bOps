@@ -49,9 +49,24 @@ describe('Task watch across sign-out and session expiry', () => {
 
   function signIn(key: string): void {
     void auth.signIn(key);
-    http.expectOne('/api/session/me').flush({ id: 'alice', displayName: 'Alice', roles: ['operator'] });
+    const login = http.expectOne('/api/session');
+    expect(login.request.body).toEqual({ apiKey: key, keepSignedIn: false });
+    login.flush({ id: 'alice', displayName: 'Alice', roles: ['operator'] });
     tick();
     TestBed.tick();
+    tick();
+  }
+
+  /** A deliberate sign-out, answered by the server with `204`. */
+  function signOut(): void {
+    void auth.signOut();
+    answerSignOut();
+  }
+
+  function answerSignOut(): void {
+    const logout = http.expectOne((request) => request.url === '/api/session' && request.method === 'DELETE');
+    expect(logout.request.headers.get('X-bOps-Request')).toBe('1');
+    logout.flush(null, { status: 204, statusText: 'No Content' });
     tick();
   }
 
@@ -80,7 +95,7 @@ describe('Task watch across sign-out and session expiry', () => {
 
     const first = taskGets();
     expect(first.length).toBe(1);
-    expect(first[0].request.headers.get('Authorization')).toBe(`Bearer ${key}`);
+    expect(first[0].request.headers.has('Authorization')).toBeFalse();
     first[0].flush(runningTask(executionAttempt));
     tick();
   }
@@ -93,7 +108,7 @@ describe('Task watch across sign-out and session expiry', () => {
   it('stops the watch and clears the pending watch on a deliberate sign-out, without an expiry, and never restores it', fakeAsync(() => {
     startWatching('key-1');
 
-    auth.signOut();
+    signOut();
     TestBed.tick();
     tick();
 
@@ -123,12 +138,13 @@ describe('Task watch across sign-out and session expiry', () => {
       tick(TASK_POLL_INTERVAL_MS);
       const inFlight = taskGets();
       expect(inFlight.length).toBe(1);
-      expect(inFlight[0].request.headers.get('Authorization')).toBe('Bearer key-1');
+      expect(inFlight[0].request.headers.has('Authorization')).toBeFalse();
 
-      auth.signOut();
+      void auth.signOut();
       if (effectsRanBefore401) TestBed.tick();
       inFlight[0].flush(null, { status: 401, statusText: 'Unauthorized' });
       tick();
+      answerSignOut();
       TestBed.tick();
       tick();
 
@@ -170,14 +186,14 @@ describe('Task watch across sign-out and session expiry', () => {
     expect(taskGets().length).toBe(0);
 
     void auth.signIn('key-2');
-    http.expectOne('/api/session/me').flush({ id: 'alice', displayName: 'Alice', roles: ['operator'] });
+    http.expectOne('/api/session').flush({ id: 'alice', displayName: 'Alice', roles: ['operator'] });
     tick();
     TestBed.tick();
     tick();
 
     const restored = taskGets();
     expect(restored.length).toBe(1);
-    expect(restored[0].request.headers.get('Authorization')).toBe('Bearer key-2');
+    expect(restored[0].request.headers.has('Authorization')).toBeFalse();
     // An answer of attempt 1 is older than the expected attempt 2: the restored watch fences it out, so it is never shown.
     restored[0].flush({ ...runningTask(1), goal: 'stale' });
     tick();
