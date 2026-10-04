@@ -127,6 +127,9 @@ public static class TaskResumePolicy
     /// <summary>The synthetic bookkeeping step written when a non-final model response crosses the token cap.</summary>
     internal const string TokenBudgetStepDescription = "Token budget crossing";
 
+    /// <summary>The synthetic bookkeeping step that owns the model calls of a logical call the attempt-duration budget interrupted.</summary>
+    internal const string AttemptDurationStepDescription = "Attempt duration interruption";
+
     /// <summary>The synthetic failure step written when a fifth EvidenceRead is attempted.</summary>
     internal const string EvidenceReadLimitStepDescription = "Evidence read limit exceeded";
 
@@ -215,7 +218,7 @@ public static class TaskResumePolicy
     internal static bool IsSyntheticFailureStep(PlanStep step) =>
         step.ToolCall is null
         && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
-            or TokenBudgetStepDescription or EvidenceReadLimitStepDescription;
+            or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription;
 
     /// <summary>Prompt plus completion tokens of every recorded model call that reported usage.</summary>
     internal static long RecordedTokens(IReadOnlyList<ModelCallRecord>? calls) =>

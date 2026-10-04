@@ -39,34 +39,36 @@ public sealed class HardenEightTests
         var steps40 = Enumerable.Range(0, 40).Select(index => Step(index, $"secret-{index}-" + new string('x', 4300),
             index == 0 ? VerificationStatus.Refuted : null)).ToList();
 
-        var at20 = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 3);
-        var at40 = BoundedHistory.Build(taskId, "goal", steps40, verbatimSteps: 3);
+        var at20 = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 3, RegisteredName);
+        var at40 = BoundedHistory.Build(taskId, "goal", steps40, verbatimSteps: 3, RegisteredName);
 
         Assert.Equal((5, 12, 3), (at20.ArchiveSteps, at20.CompactSteps, at20.VerbatimSteps));
         Assert.Equal((25, 12, 3), (at40.ArchiveSteps, at40.CompactSteps, at40.VerbatimSteps));
         Assert.DoesNotContain("secret-0", at20.BoundedBlock, StringComparison.Ordinal);
         Assert.Contains("Refuted=1", BoundedHistory.ArchiveSummary(steps20.Take(5).ToList()), StringComparison.Ordinal);
-        Assert.Contains("v=Refuted", BoundedHistory.CompactRecord(taskId, steps20[0]), StringComparison.Ordinal);
-        Assert.Contains("v=Confirmed", BoundedHistory.CompactRecord(taskId,
-            steps20[1] with { VerificationStatus = VerificationStatus.Confirmed }), StringComparison.Ordinal);
-        Assert.Contains("v=Unknown", BoundedHistory.CompactRecord(taskId,
-            steps20[2] with { VerificationStatus = null }), StringComparison.Ordinal);
+        Assert.Contains("v=Refuted;", BoundedHistory.CompactRecord(taskId, steps20[0], "test.read"), StringComparison.Ordinal);
+        Assert.Contains("v=Confirmed;", BoundedHistory.CompactRecord(taskId,
+            steps20[1] with { VerificationStatus = VerificationStatus.Confirmed }, "test.read"), StringComparison.Ordinal);
+        Assert.Contains("v=-;", BoundedHistory.CompactRecord(taskId,
+            steps20[2] with { VerificationStatus = null }, "test.read"), StringComparison.Ordinal);
         Assert.All(steps20.Skip(5).Take(12), step =>
-            Assert.InRange(BoundedHistory.CompactRecord(taskId, step).Length, 1, BoundedHistory.CompactRecordMaxCharacters));
+            Assert.InRange(BoundedHistory.CompactRecord(taskId, step, "test.read").Length, 1, BoundedHistory.CompactRecordMaxCharacters));
         Assert.InRange(BoundedHistory.ArchiveSummary(steps40.Take(25).ToList()).Length, 1, BoundedHistory.ArchiveSummaryMaxCharacters);
         Assert.True(at20.HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
         Assert.True(at40.HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
         Assert.Equal(
             JsonSerializer.Serialize(at40.Turns),
-            JsonSerializer.Serialize(BoundedHistory.Build(taskId, "goal", steps40, 3).Turns));
+            JsonSerializer.Serialize(BoundedHistory.Build(taskId, "goal", steps40, 3, RegisteredName).Turns));
 
-        var zero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0);
+        var zero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0, RegisteredName);
         Assert.Equal((8, 12, 0), (zero.ArchiveSteps, zero.CompactSteps, zero.VerbatimSteps));
 
-        var replanZero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0, requiredVerbatimStep: 19);
+        var replanZero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0, RegisteredName, requiredVerbatimStep: 19);
         Assert.Equal(1, replanZero.VerbatimSteps);
         Assert.Contains("secret-19", string.Join('\n', replanZero.Turns.Select(turn => turn.Content)), StringComparison.Ordinal);
     }
+
+    private static string? RegisteredName(PlanStep step) => step.ToolCall?.ToolName;
 
     [Fact]
     public void EvidenceIdsAndRanges_AreCurrentTaskOnly_ExactAndUtf16Bounded()

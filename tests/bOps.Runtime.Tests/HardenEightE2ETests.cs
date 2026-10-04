@@ -62,34 +62,48 @@ public sealed class HardenEightE2ETests
                 point.SystemCharacters + point.HistoryCharactersIncludingGoal + point.ToolSchemaCharacters);
         }
 
+        Assert.False(model.Measurements[10].ArchiveActive);
+        Assert.True(model.Measurements[20].ArchiveActive);
+        Assert.True(model.Measurements[40].ArchiveActive);
         Assert.True(model.Measurements[20].HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
         Assert.True(model.Measurements[40].HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
         Assert.InRange(Math.Abs(model.Measurements[40].HistoricalCharacters - model.Measurements[20].HistoricalCharacters),
             0, BoundedHistory.CompactRecordMaxCharacters);
 
+        // B5: the three replans below were produced by AgentRunner.ReplanAsync itself (plan exhaustion), and what is measured is
+        // the ModelRequest the fake model actually received for each of them, never a rebuild of what it would have been.
+        Assert.Equal([10, 20, 40], model.ReplanMeasurements.Keys.OrderBy(key => key));
+        Assert.Equal(4, completed.Plans.Count);
+        Assert.Equal(3, completed.Plans.Count(plan => plan.Revision > 0));
+        foreach (var (ordinal, replan) in model.ReplanMeasurements)
+        {
+            Assert.InRange(replan.HistoricalCharacters, 0, BoundedHistory.FixtureHistoricalMaxCharacters);
+            Assert.InRange(replan.PlanTurnCharacters, 1, AgentRunner.ReplanPlanMaxCharacters);
+            Assert.Equal(model.Measurements[ordinal].HistoricalCharacters, replan.HistoricalCharacters);
+            Assert.Equal(ordinal - 1, replan.CompletedToolSteps);
+        }
+
+        Assert.InRange(
+            Math.Abs(model.ReplanMeasurements[40].HistoricalCharacters - model.ReplanMeasurements[20].HistoricalCharacters),
+            0, BoundedHistory.CompactRecordMaxCharacters);
+
         foreach (var (ordinal, completedSteps) in new[] { (10, 9), (20, 19), (40, 39) })
         {
             var persisted = completed.Steps.Where(step => step.ToolCall is not null).Take(completedSteps).ToList();
-            var normal = BoundedHistory.Build(taskId, Goal, persisted, verbatimSteps: 3);
-            var replan = BoundedHistory.Build(taskId, Goal, persisted, verbatimSteps: 3,
-                requiredVerbatimStep: persisted[^1].Index);
-            Assert.Equal(normal.HistoricalCharacters, model.Measurements[ordinal].HistoricalCharacters);
-            Assert.InRange(replan.HistoricalCharacters, 0, BoundedHistory.FixtureHistoricalMaxCharacters);
-            Assert.Equal(normal.HistoricalCharacters, replan.HistoricalCharacters);
-
             model.Measurements[ordinal] = model.Measurements[ordinal] with
             {
                 LegacyHistoricalCharacters = LegacyHistoricalCharacters(persisted),
-                ReplanHistoricalCharacters = replan.HistoricalCharacters,
             };
         }
 
         foreach (var measurement in model.Measurements.OrderBy(item => item.Key))
         {
+            var replan = model.ReplanMeasurements[measurement.Key];
             Console.WriteLine(
                 $"E2E-13 step {measurement.Key}: before={measurement.Value.LegacyHistoricalCharacters}; " +
-                $"after={measurement.Value.HistoricalCharacters}; replan={measurement.Value.ReplanHistoricalCharacters}; " +
-                $"whole={measurement.Value.WholeRequestCharacters}; schema={measurement.Value.ToolSchemaCharacters}");
+                $"after={measurement.Value.HistoricalCharacters}; replan={replan.HistoricalCharacters}; " +
+                $"plan-turn={replan.PlanTurnCharacters}; whole={measurement.Value.WholeRequestCharacters}; " +
+                $"replan-whole={replan.WholeRequestCharacters}; schema={measurement.Value.ToolSchemaCharacters}");
         }
     }
 
@@ -114,12 +128,17 @@ public sealed class HardenEightE2ETests
 
     private sealed class E2E13Model(Guid taskId, string sentinel) : IChatModel
     {
+        // The initial plan and each replan are sized so that the call proposed once the current plan is spent is the 9th, 19th and
+        // 39th executed tool step: AgentRunner then replans on its own (ADR-0014 rule C8: a call proposed after every planned step was attempted).
+        private static readonly int[] PlanSizes = [8, 9, 19, 10];
+
         private int toolsIssued;
-        private bool planned;
+        private int plansIssued;
         private bool readRequested;
         private bool waitingForReadResult;
 
         internal Dictionary<int, PromptMeasurement> Measurements { get; } = [];
+        internal Dictionary<int, ReplanMeasurement> ReplanMeasurements { get; } = [];
         internal List<string> StepSystemPrompts { get; } = [];
         internal bool SawRetrievedSentinel { get; private set; }
 
@@ -127,10 +146,15 @@ public sealed class HardenEightE2ETests
 
         public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
         {
-            if (!planned)
+            // Planning and replanning are the only calls that offer no tools.
+            if (request.AvailableTools.Count == 0)
             {
-                planned = true;
-                return Task.FromResult(PlanningTestSupport.PlanResponse(stepCount: 50));
+                if (plansIssued > 0)
+                {
+                    RecordReplan(request);
+                }
+
+                return Task.FromResult(PlanningTestSupport.PlanResponse(stepCount: PlanSizes[plansIssued++]));
             }
 
             StepSystemPrompts.Add(request.SystemPrompt);
@@ -145,7 +169,11 @@ public sealed class HardenEightE2ETests
                     request.SystemPrompt.Length + history + schema,
                     request.SystemPrompt.Length,
                     history,
-                    schema));
+                    schema)
+                {
+                    ArchiveActive = request.History.Any(turn =>
+                        turn.Content?.Contains("archive;range=", StringComparison.Ordinal) == true),
+                });
             }
 
             if (waitingForReadResult)
@@ -173,6 +201,34 @@ public sealed class HardenEightE2ETests
             return Task.FromResult(Call(toolsIssued++));
         }
 
+        // A replan request is [goal, projected current plan, bounded history..., triggering step]: the goal and the plan are
+        // fixed costs reported on their own, and everything after them is the historical component the bound is about.
+        private void RecordReplan(ModelRequest request)
+        {
+            var ordinal = toolsIssued + 1;
+            Assert.Contains("Your previous plan no longer matches", request.SystemPrompt, StringComparison.Ordinal);
+            Assert.StartsWith("Plan (revision", request.History[1].Content, StringComparison.Ordinal);
+            var historical = HistoricalCharacters(request.History.Skip(1).ToList()); // skips the goal and, with it, the plan turn
+            var planTurn = request.History[1].Content!.Length;
+            ReplanMeasurements[ordinal] = new ReplanMeasurement(
+                historical,
+                planTurn,
+                request.SystemPrompt.Length + request.History.Sum(turn => turn.Content?.Length ?? 0),
+                CompletedToolSteps(request.History));
+        }
+
+        private static int CompletedToolSteps(IReadOnlyList<ChatTurn> turns)
+        {
+            var verbatim = turns.Count(turn => turn.ToolCalls is { Count: > 0 });
+            var block = turns.FirstOrDefault(turn =>
+                turn.Content?.Contains("<<<BOPS_HISTORY/v1>>>", StringComparison.Ordinal) == true)?.Content ?? string.Empty;
+            var compact = block.Split('\n').Count(line => line.StartsWith("s=", StringComparison.Ordinal));
+            var archived = System.Text.RegularExpressions.Regex.Match(block, @"count=(\d+)") is { Success: true } match
+                ? int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+                : 0;
+            return verbatim + compact + archived;
+        }
+
         private static ModelResponse Call(int index) =>
             new(null, [new ModelToolCall($"e2e-{index}", "test.partial", ToolArguments.Empty)], false, null);
 
@@ -189,8 +245,15 @@ public sealed class HardenEightE2ETests
         int ToolSchemaCharacters)
     {
         internal int LegacyHistoricalCharacters { get; init; }
-        internal int ReplanHistoricalCharacters { get; init; }
+        internal bool ArchiveActive { get; init; }
     }
+
+    /// <summary>What the fake model measured in the <see cref="ModelRequest"/> a real <c>ReplanAsync</c> built.</summary>
+    private sealed record ReplanMeasurement(
+        int HistoricalCharacters,
+        int PlanTurnCharacters,
+        int WholeRequestCharacters,
+        int CompletedToolSteps);
 
     private sealed class PartialEvidenceTool(string output) : ITool
     {

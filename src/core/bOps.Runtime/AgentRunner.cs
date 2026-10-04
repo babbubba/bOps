@@ -123,12 +123,36 @@ public sealed class AgentRunner(
         "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
         "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}.";
 
+    /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4).</summary>
+    internal const int AggressiveGoalMaxCharacters = 2048;
+    internal const int AggressivePlanMaxCharacters = 1024;
+    internal const int ReplanPlanMaxCharacters = 2048;
+
     /// <summary>The least call budget a retry must leave for its next attempt; a wait leaving less ends the call instead (ADR-0039 §4).</summary>
     private static readonly TimeSpan MinimumModelAttemptWindow = TimeSpan.FromSeconds(1);
 
     // The options are validated once, when the runner is built, so an incoherent model-call budget fails at start-up.
     private readonly AgentRunnerOptions options = ValidatedOptions(options);
     private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
+
+    /// <summary>
+    /// Test seam: runs <paramref name="body"/> with <paramref name="budget"/> as the active attempt budget, exactly as a model-driven
+    /// execution attempt does. No production entry point runs a delegated plan step under an attempt budget, so this is the only way
+    /// to exercise that interruption's journal and unknown-outcome handling (ADR-0030 sections 6 and 7).
+    /// </summary>
+    internal async Task<T> RunUnderAttemptBudgetAsync<T>(ActiveAttemptBudget budget, Func<Task<T>> body)
+    {
+        var prior = activeAttemptBudget.Value;
+        activeAttemptBudget.Value = budget;
+        try
+        {
+            return await body();
+        }
+        finally
+        {
+            activeAttemptBudget.Value = prior;
+        }
+    }
 
     /// <summary>Test seam: replaces the wait between model-call attempts (by default <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>).</summary>
     internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay { get; set; }
@@ -229,6 +253,12 @@ public sealed class AgentRunner(
         {
             run.TokensUsed += TaskResumePolicy.RecordedTokens(planCalls);
             return await StopForTokenCrossingAsync(run, planCalls, ct);
+        }
+        catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+        {
+            // Every completed planning call, not only the interrupted one, reported usage that CreatePlanAsync could not return.
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(planCalls);
+            return await StopForAttemptDurationAsync(run, planCalls);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -652,18 +682,21 @@ public sealed class AgentRunner(
             var logicalCall = new LogicalCallState();
             ModelRequest BuildStepRequest(bool aggressive)
             {
-                var built = BoundedHistory.Build(taskId, run.Goal, steps,
-                    aggressive ? 0 : options.VerbatimHistorySteps);
+                // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4); the
+                // persisted values stay complete and a normal request is unchanged.
+                var built = BoundedHistory.Build(taskId,
+                    aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, steps,
+                    aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName);
                 logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
                 history = [.. built.Turns, .. logicalCall.ContinuationTurns];
-                return new ModelRequest(BuildStepSystemPrompt(plan, limitations), history, ToolViewFor(delegation));
+                return new ModelRequest(BuildStepSystemPrompt(plan, limitations, aggressive), history, ToolViewFor(delegation));
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
             // same three-tier history; the logical call can switch once to aggressive K=0 after ContextOverflow.
-            var request = BuildStepRequest(aggressive: false);
             var stepCalls = new List<ModelCallRecord>();
 
+            ModelRequest request;
             ModelResponse? response = null;
             try
             {
@@ -712,6 +745,11 @@ public sealed class AgentRunner(
                     response = evidenceResolution.Response;
                     request = BuildStepRequest(logicalCall.Aggressive);
                 }
+            }
+            catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+            {
+                // HARDEN-8: the calls this logical call made (including an interrupted attempt) are persisted exactly once.
+                return await StopForAttemptDurationAsync(run, stepCalls);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -783,6 +821,12 @@ public sealed class AgentRunner(
                 run.CountStep();
                 return await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
                     TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
+            }
+            catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+            {
+                // The budget ran out before the proposed action started (it was never run): the paid call that proposed it is
+                // still persisted, once, and nothing is executed.
+                return await StopForAttemptDurationAsync(run, stepCalls);
             }
             // ADR-0038: what the model emitted after the executed call is kept on the step, so its turn can be
             // rebuilt exactly (live and on resume) without reading any provider-specific payload.
@@ -876,10 +920,10 @@ public sealed class AgentRunner(
                     run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
                     return await StopForEvidenceReadLimitAsync(run, replanCalls, ct);
                 }
-                catch (AttemptDurationBudgetExceededException)
+                catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
                 {
                     run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-                    throw;
+                    return await StopForAttemptDurationAsync(run, replanCalls);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -1747,6 +1791,16 @@ public sealed class AgentRunner(
             : null;
     }
 
+    /// <summary>
+    /// The manifest name a persisted tool-call step resolves to now (ADR-0014 HARDEN-8 §1), or <c>null</c> when it does not: a name
+    /// the provider adapter could not map to an offered tool, or one that is no longer registered or available, is never trusted
+    /// as text.
+    /// </summary>
+    private string? RegisteredToolName(PlanStep step) =>
+        step.ToolCall is { ToolNameError: null } call
+            ? registry.ResolveForExecution(call.ToolName)?.Tool.Manifest.Name
+            : null;
+
     private bool TokenBudgetExceeded(ExecutionRun run) =>
         options.MaxTotalTokens is { } tokenCap && run.TokensUsed > tokenCap;
 
@@ -1764,6 +1818,31 @@ public sealed class AgentRunner(
             ExecutionAttempt = run.ExecutionAttempt,
         });
         return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.TokenBudget, ct);
+    }
+
+    /// <summary>
+    /// Ends the attempt <see cref="TaskTerminalKind.AttemptDurationBudget"/> after the duration budget interrupted a model-backed
+    /// logical call. The calls it made were paid for and audited and are not yet owned by any persisted plan or step (the call
+    /// never produced one), so one bounded synthetic non-tool step owns them exactly once. Nothing is executed, read, retried or
+    /// replanned afterwards. Provider-reported usage is counted by the caller, exactly once.
+    /// </summary>
+    private async Task<TaskState> StopForAttemptDurationAsync(ExecutionRun run, List<ModelCallRecord> calls)
+    {
+        if (calls.Count > 0)
+        {
+            run.Steps.Add(new PlanStep(
+                run.Steps.Count,
+                TaskResumePolicy.AttemptDurationStepDescription,
+                null,
+                null,
+                "Attempt duration budget exceeded during a model call.")
+            {
+                ModelCalls = calls,
+                ExecutionAttempt = run.ExecutionAttempt,
+            });
+        }
+
+        return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
     }
 
     private async Task<TaskState> StopForEvidenceReadLimitAsync(
@@ -2075,13 +2154,16 @@ public sealed class AgentRunner(
         var tokens = 0;
         ModelRequest BuildReplanRequest(bool aggressive)
         {
-            var bounded = BoundedHistory.Build(taskId, goal, stepsSoFar,
-                aggressive ? 0 : options.VerbatimHistorySteps, triggeringStepIndex);
+            // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
+            var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
+            var bounded = BoundedHistory.Build(taskId, requestGoal, stepsSoFar,
+                aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName, triggeringStepIndex);
             logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
             var turns = new List<ChatTurn>
             {
-                ChatTurn.FromUser(goal),
-                ChatTurn.FromAssistantText(ProjectForPrompt(DescribePlan(previousPlan), 2048)),
+                ChatTurn.FromUser(requestGoal),
+                ChatTurn.FromAssistantText(ProjectForPrompt(
+                    DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)),
             };
             turns.AddRange(bounded.Turns.Skip(1));
             turns.AddRange(logicalCall.ContinuationTurns);
@@ -2443,8 +2525,7 @@ public sealed class AgentRunner(
             {
                 await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                     EvidenceReadResultCode.AttemptBudgetInterrupted, returnedLength: 0, CancellationToken.None);
-                return (response, await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
-                    TaskTerminalKind.AttemptDurationBudget, CancellationToken.None));
+                return (response, await StopForAttemptDurationAsync(run, calls));
             }
 
             EvidenceReadResult result;
@@ -2461,8 +2542,7 @@ public sealed class AgentRunner(
             {
                 await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                     EvidenceReadResultCode.AttemptBudgetInterrupted, returnedLength: 0, CancellationToken.None);
-                return (response, await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
-                    TaskTerminalKind.AttemptDurationBudget, CancellationToken.None));
+                return (response, await StopForAttemptDurationAsync(run, calls));
             }
 
             await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
@@ -3018,6 +3098,7 @@ public sealed class AgentRunner(
         }
 
         ToolCallResult result;
+        var attemptBudgetInterrupted = false;
         try
         {
             result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
@@ -3030,36 +3111,26 @@ public sealed class AgentRunner(
             {
                 FailureKind = ToolFailureKind.Timeout,
             };
-            var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, interrupted,
-                authorization, stopwatch.Elapsed, verification: null, verificationDetail: null, planRevision,
-                CancellationToken.None, skillScope, delegation);
-            throw new AttemptDurationStepInterruptedException(recorded.Step, recorded.Observation);
+
+            if (manifest.Risk == RiskLevel.Read)
+            {
+                var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, interrupted,
+                    authorization, stopwatch.Elapsed, verification: null, verificationDetail: null, planRevision,
+                    CancellationToken.None, skillScope, delegation);
+                throw new AttemptDurationStepInterruptedException(recorded.Step, recorded.Observation);
+            }
+
+            // Rule S7: an interrupted side-effecting action may have partially happened, so it is neither treated as failed nor
+            // left unverified. It continues through the ordinary verification and journal path below; only then does the
+            // attempt end (the caller never retries, replans or proposes another action).
+            result = interrupted;
+            attemptBudgetInterrupted = true;
         }
         catch (OperationCanceledException) when (delegation is not null && manifest.Risk != RiskLevel.Read)
         {
             // ADR-0030 section 6: a side-effecting step that is cancelled while it runs may or may not have taken effect. It is
             // recorded as unknown, never as failed, so nothing treats the change as absent.
-            delegation.Meter?.MarkUnknownOutcome($"step {stepIndex} ('{call.ToolName}')");
-            if (journal is not null)
-            {
-                await journal.CompleteAsync(stepIndex, new StepOutcome(StepOutcomeKind.Cancelled, timeProvider.GetUtcNow()));
-            }
-            else
-            {
-                await WriteAuditAsync(new DelegationJournalAuditEvent
-                {
-                    TimestampUtc = timeProvider.GetUtcNow(),
-                    Node = NodeId.Local,
-                    TaskId = taskId,
-                    StepIndex = stepIndex,
-                    Actor = actor,
-                    Phase = JournalPhase.Outcome,
-                    Tool = call.ToolName,
-                    ArgumentsHash = DelegationHasher.ComputeArgumentsHash(call.Arguments),
-                    Outcome = StepOutcomeKind.Cancelled,
-                }, delegation, CancellationToken.None);
-            }
-
+            await RecordUnknownDelegatedOutcomeAsync(taskId, stepIndex, actor, call, journal, delegation, verification: null);
             throw;
         }
 
@@ -3076,9 +3147,24 @@ public sealed class AgentRunner(
         // IVerifiableTool.EvaluateVerificationAsync checks the real effect against the original
         // arguments, not against how the original call reported itself. Registration (rule B3)
         // guarantees a non-Read tool implements IVerifiableTool and declares a VerificationSpec.
-        VerificationOutcome? verificationOutcome = manifest.Risk != RiskLevel.Read
-            ? await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, stepIndex, actor, skillScope, delegation, ct)
-            : null;
+        // HARDEN-8: the verification of a side-effecting action runs under its own bounded token and never under the attempt's
+        // duration token — an expired attempt must not make the action unverifiable, and a result that already happened must
+        // not be lost because the attempt ran out while it was being verified.
+        VerificationOutcome? verificationOutcome = null;
+        if (manifest.Risk != RiskLevel.Read)
+        {
+            try
+            {
+                verificationOutcome = await EvaluateVerificationAsync((IVerifiableTool)tool, manifest.Verification!, call, executionContext, stepIndex, actor, skillScope, delegation, ct);
+            }
+            catch (OperationCanceledException) when (attemptBudgetInterrupted && delegation is not null)
+            {
+                // The operator cancelled the task while the interrupted action was being verified: its outcome stays unknown,
+                // and the journal still says so before the cancellation propagates.
+                await RecordUnknownDelegatedOutcomeAsync(taskId, stepIndex, actor, call, journal, delegation, verification: null);
+                throw;
+            }
+        }
 
         if (verificationOutcome is not null)
         {
@@ -3086,7 +3172,20 @@ public sealed class AgentRunner(
         }
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, tool, result,
-            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision, ct, skillScope, delegation);
+            authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision,
+            attemptBudgetInterrupted ? CancellationToken.None : ct, skillScope, delegation);
+
+        if (attemptBudgetInterrupted)
+        {
+            // ADR-0030 sections 6 and 7: an interrupted side-effecting step is unknown, never failed; the journal outcome and the
+            // role's unknown-outcome mark are completed before the attempt ends. Verification informs, it does not settle.
+            if (delegation is not null)
+            {
+                await RecordUnknownDelegatedOutcomeAsync(taskId, stepIndex, actor, call, journal, delegation, verificationOutcome?.Status);
+            }
+
+            throw new AttemptDurationStepInterruptedException(executed.Step, executed.Observation);
+        }
 
         if (journal is not null)
         {
@@ -3100,6 +3199,42 @@ public sealed class AgentRunner(
         }
 
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
+    }
+
+    /// <summary>
+    /// ADR-0030 sections 6 and 7: a side-effecting delegated step that was stopped while it ran may or may not have taken effect.
+    /// The role is marked as having an unknown outcome and the step's outcome is journaled as <see cref="StepOutcomeKind.Cancelled"/>
+    /// (ambiguous, never failed), through the durable journal when the run has one and as an audit event otherwise.
+    /// </summary>
+    private async Task RecordUnknownDelegatedOutcomeAsync(
+        Guid taskId,
+        int stepIndex,
+        ActorIdentity actor,
+        ModelToolCall call,
+        IStepJournal? journal,
+        DelegatedExecutionScope delegation,
+        VerificationStatus? verification)
+    {
+        delegation.Meter?.MarkUnknownOutcome($"step {stepIndex} ('{call.ToolName}')");
+        if (journal is not null)
+        {
+            await journal.CompleteAsync(stepIndex, new StepOutcome(StepOutcomeKind.Cancelled, timeProvider.GetUtcNow(), verification));
+            return;
+        }
+
+        await WriteAuditAsync(new DelegationJournalAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = taskId,
+            StepIndex = stepIndex,
+            Actor = actor,
+            Phase = JournalPhase.Outcome,
+            Tool = call.ToolName,
+            ArgumentsHash = DelegationHasher.ComputeArgumentsHash(call.Arguments),
+            Outcome = StepOutcomeKind.Cancelled,
+            Verification = verification,
+        }, delegation, CancellationToken.None);
     }
 
     /// <summary>
@@ -3199,7 +3334,7 @@ public sealed class AgentRunner(
         }
 
         var verificationCall = new ModelToolCall("verification", spec.VerifyToolName, verificationArguments);
-        return new VerificationInvocation(await ExecuteWithTimeoutAsync(verifyTool, verificationCall, executionContext, ct), null);
+        return new VerificationInvocation(await ExecuteWithTimeoutAsync(verifyTool, verificationCall, executionContext, ct, linkAttemptBudget: false), null);
     }
 
     private async Task<EntitlementEvaluation> EvaluateEntitlementAsync(
@@ -3341,10 +3476,11 @@ public sealed class AgentRunner(
         ITool tool,
         ModelToolCall call,
         ToolExecutionContext executionContext,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool linkAttemptBudget = true)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
-            ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
+            ct, linkAttemptBudget ? activeAttemptBudget.Value?.Token ?? CancellationToken.None : CancellationToken.None);
         timeoutCts.CancelAfter(options.DefaultToolTimeout);
 
         try
@@ -3358,7 +3494,7 @@ public sealed class AgentRunner(
                 ? result with { FailureKind = ToolFailureKind.Timeout }
                 : result;
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
+        catch (OperationCanceledException) when (linkAttemptBudget && !ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
         {
             throw new AttemptDurationBudgetExceededException();
         }
@@ -3790,11 +3926,13 @@ public sealed class AgentRunner(
     private static int UsageTokens(ModelResponse response) =>
         (response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0);
 
-    private static string BuildStepSystemPrompt(AgentPlan plan, EvidenceLimitations? limitations)
+    private static string BuildStepSystemPrompt(AgentPlan plan, EvidenceLimitations? limitations, bool aggressive = false)
     {
+        var planText = DescribePlan(plan);
         var prompt = plan.Steps.Count == 0
             ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}"
-            : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{DescribePlan(plan)}\n\n" +
+            : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
+              $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
               "Propose the concrete tool call for the next unfinished step above, or report " +
               "completion if the goal is already achieved.";
 
@@ -3804,7 +3942,7 @@ public sealed class AgentRunner(
             : $"{prompt}\n\n{EvidenceLimitationsDigest.Delimit(limitations.Text)}";
     }
 
-    private static string DescribePlan(AgentPlan plan)
+    internal static string DescribePlan(AgentPlan plan)
     {
         if (plan.Steps.Count == 0)
         {
@@ -3848,7 +3986,7 @@ public sealed class AgentRunner(
             ? null
             : MalformedPlan(revision)(response);
 
-    private static string ProjectForPrompt(string value, int maximum)
+    internal static string ProjectForPrompt(string value, int maximum)
     {
         if (value.Length <= maximum)
         {

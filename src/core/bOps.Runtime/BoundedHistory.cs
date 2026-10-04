@@ -14,22 +14,39 @@ internal static class BoundedHistory
     internal const int CompactRecordMaxCharacters = 256;
     internal const int ArchiveSummaryMaxCharacters = 512;
     internal const int HeaderMaxCharacters = 128;
+    internal const int ToolLabelMaxCharacters = 48;
+    internal const int ArgumentDigestCharacters = 12;
     internal const int FixtureVerbatimTurnMaxCharacters = 4500;
     internal const int FixtureHistoricalMaxCharacters = 17_212;
+
+    /// <summary>The label of a tool name that does not resolve to a registered manifest (ADR-0014 HARDEN-8 §1).</summary>
+    internal const string UnknownToolLabel = "(unknown tool)";
+
+    /// <summary>The fixed, mandatory end of the archive summary: how an individual archived step is addressed.</summary>
+    internal const string ArchiveAddressabilityStatement =
+        "An individual old tool-result step is addressable by ev1:<current-task-guid>:<known-persisted-step-index>";
 
     private const string OpenHeader = "<<<BOPS_HISTORY/v1>>>";
     private const string Header = "Bounded typed history; persisted evidence: EvidenceRead/v1.";
     private const string CloseHeader = "<<<END_BOPS_HISTORY/v1>>>";
 
+    /// <param name="taskId">The current task; evidence ids are derived from it, never taken from model text.</param>
+    /// <param name="goal">The goal turn, already projected when the request is an overflow recovery.</param>
+    /// <param name="steps">The task's persisted steps.</param>
+    /// <param name="verbatimSteps">K: the newest completed tool-call steps kept verbatim.</param>
+    /// <param name="registeredToolName">The registered manifest name a tool-call step resolves to, or <c>null</c> when it does not.</param>
+    /// <param name="requiredVerbatimStep">A step that must stay verbatim whatever K says (a replan's triggering step).</param>
     internal static ModelFacingHistory Build(
         Guid taskId,
         string goal,
         IReadOnlyList<PlanStep> steps,
         int verbatimSteps,
+        Func<PlanStep, string?> registeredToolName,
         int? requiredVerbatimStep = null)
     {
         ArgumentNullException.ThrowIfNull(goal);
         ArgumentNullException.ThrowIfNull(steps);
+        ArgumentNullException.ThrowIfNull(registeredToolName);
 
         var toolSteps = steps.Where(step => step.ToolCall is not null).ToList();
         var required = requiredVerbatimStep is { } requiredIndex
@@ -49,7 +66,7 @@ internal static class BoundedHistory
         var archive = old.Take(Math.Max(0, old.Count - compact.Count)).ToList();
 
         var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
-        var boundedBlock = BuildBoundedBlock(taskId, archive, compact);
+        var boundedBlock = BuildBoundedBlock(taskId, archive, compact, registeredToolName);
         if (boundedBlock.Length > 0)
         {
             history.Add(ChatTurn.FromUser(boundedBlock));
@@ -73,50 +90,147 @@ internal static class BoundedHistory
     internal static string EvidenceId(Guid taskId, int stepIndex) =>
         string.Create(CultureInfo.InvariantCulture, $"ev1:{taskId:N}:{stepIndex}");
 
-    internal static string CompactRecord(Guid taskId, PlanStep step)
+    /// <summary>
+    /// One compact record, exactly <c>s=;e=;r=;t=;a=;o=;f=;c=;v=;nr=;no=\n</c> (ADR-0014 HARDEN-8 §1). The whole record, newline
+    /// included, is at most <paramref name="maxCharacters"/> UTF-16 code units. Only whole optional fields are ever removed, lowest
+    /// priority first (<c>a</c>, then <c>t</c>, then <c>r</c>); nothing is sliced. When the required fields alone do not fit, history
+    /// construction fails closed instead of producing a malformed record.
+    /// </summary>
+    /// <param name="taskId">The current task.</param>
+    /// <param name="step">A persisted tool-call step.</param>
+    /// <param name="registeredToolName">The registered manifest name the step resolves to, or <c>null</c> for an unresolved name.</param>
+    /// <param name="maxCharacters">The record bound; production always uses <see cref="CompactRecordMaxCharacters"/>.</param>
+    /// <exception cref="InvalidOperationException">The required fields cannot fit in the bound.</exception>
+    internal static string CompactRecord(
+        Guid taskId, PlanStep step, string? registeredToolName, int maxCharacters = CompactRecordMaxCharacters)
     {
-        var tool = step.ToolCall?.ToolNameError is null && IsCanonicalToolName(step.ToolCall?.ToolName)
-            ? step.ToolCall!.ToolName
-            : "(invalid)";
+        ArgumentNullException.ThrowIfNull(step);
+        var call = step.ToolCall ?? throw new ArgumentException("A compact record describes a tool-call step.", nameof(step));
         var result = step.Result;
-        var record = string.Create(CultureInfo.InvariantCulture,
-            $"i={step.Index};tool={tool};o={result?.Outcome.ToString() ?? "None"};" +
-            $"f={result?.FailureKind.ToString() ?? "None"};c={result?.Completeness.ToString() ?? "None"};" +
-            $"v={step.VerificationStatus?.ToString() ?? "Unknown"};ev={EvidenceId(taskId, step.Index)};" +
-            $"result={result?.Output?.Length.ToString(CultureInfo.InvariantCulture) ?? "null"};" +
-            $"observation={step.Observation?.Length.ToString(CultureInfo.InvariantCulture) ?? "null"}");
-        return TakeUtf16(record, CompactRecordMaxCharacters);
+
+        string Number(int? value) => value is { } number ? number.ToString(CultureInfo.InvariantCulture) : "-";
+
+        var index = step.Index.ToString(CultureInfo.InvariantCulture);
+        var evidenceId = EvidenceId(taskId, step.Index);
+        var revision = step.PlanRevision is { } planRevision ? planRevision.ToString(CultureInfo.InvariantCulture) : "?";
+        var tool = ToolLabel(registeredToolName);
+        var digest = DelegationHasher.ComputeArgumentsHash(call.Arguments)[..ArgumentDigestCharacters];
+        var outcome = result?.Outcome.ToString() ?? "-";
+        var failure = result is { Succeeded: false } && result.FailureKind != ToolFailureKind.Unspecified
+            ? result.FailureKind.ToString()
+            : "-";
+        var completeness = result is not null && result.Completeness != ToolResultCompleteness.Unspecified
+            ? result.Completeness.ToString()
+            : "-";
+        var verification = step.VerificationStatus?.ToString() ?? "-";
+
+        string Format(bool withRevision, bool withTool, bool withDigest) =>
+            new StringBuilder()
+                .Append("s=").Append(index).Append(';')
+                .Append("e=").Append(evidenceId).Append(';')
+                .Append(withRevision ? $"r={revision};" : string.Empty)
+                .Append(withTool ? $"t={tool};" : string.Empty)
+                .Append(withDigest ? $"a={digest};" : string.Empty)
+                .Append("o=").Append(outcome).Append(';')
+                .Append("f=").Append(failure).Append(';')
+                .Append("c=").Append(completeness).Append(';')
+                .Append("v=").Append(verification).Append(';')
+                .Append("nr=").Append(Number(result?.Output?.Length)).Append(';')
+                .Append("no=").Append(Number(step.Observation?.Length)).Append('\n')
+                .ToString();
+
+        // Priority r > t > a: the lowest-priority optional field goes first, whole, at its field boundary.
+        foreach (var (withRevision, withTool, withDigest) in new[] { (true, true, true), (true, true, false), (true, false, false), (false, false, false) })
+        {
+            var record = Format(withRevision, withTool, withDigest);
+            if (record.Length <= maxCharacters)
+            {
+                return record;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"The compact history record of step {step.Index} does not fit {maxCharacters} UTF-16 code units; history construction fails closed.");
     }
 
-    internal static string ArchiveSummary(IReadOnlyList<PlanStep> archived)
+    /// <summary>
+    /// The single aggregate of every step older than the compact window: archived range and step count (mandatory), typed counts
+    /// where present (optional, dropped whole, last first), then the fixed addressability statement (mandatory, always last). At
+    /// most <paramref name="maxCharacters"/> UTF-16 code units; it lists no evidence id and no evidence text.
+    /// </summary>
+    /// <param name="archived">The archived tool-call steps in ascending index order.</param>
+    /// <param name="maxCharacters">The bound; production always uses <see cref="ArchiveSummaryMaxCharacters"/>.</param>
+    /// <exception cref="InvalidOperationException">The mandatory fields cannot fit in the bound.</exception>
+    internal static string ArchiveSummary(IReadOnlyList<PlanStep> archived, int maxCharacters = ArchiveSummaryMaxCharacters)
     {
+        ArgumentNullException.ThrowIfNull(archived);
         if (archived.Count == 0)
         {
             return string.Empty;
         }
 
-        static string Counts<T>(IEnumerable<T> values) where T : struct, Enum =>
-            string.Join(',', Enum.GetValues<T>().Select(value =>
-                $"{value}={values.Count(candidate => EqualityComparer<T>.Default.Equals(candidate, value))}"));
+        static string Counts<T>(string name, IEnumerable<T> values) where T : struct, Enum
+        {
+            var grouped = values.GroupBy(value => value).ToDictionary(group => group.Key, group => group.Count());
+            var parts = Enum.GetValues<T>().Where(grouped.ContainsKey)
+                .Select(value => string.Create(CultureInfo.InvariantCulture, $"{value}={grouped[value]}"))
+                .ToList();
+            return parts.Count == 0 ? string.Empty : $"{name}[{string.Join(',', parts)}]";
+        }
 
-        var outcomes = archived.Where(step => step.Result is not null).Select(step => step.Result!.Outcome);
-        var failures = archived.Where(step => step.Result is not null && !step.Result.Succeeded)
-            .Select(step => step.Result!.FailureKind);
-        var completeness = archived.Where(step => step.Result is not null).Select(step => step.Result!.Completeness);
-        var verification = archived.Where(step => step.VerificationStatus is not null).Select(step => step.VerificationStatus!.Value);
-        var summary = FormattableString.Invariant(
-            $"archive i={archived[0].Index}..{archived[^1].Index};n={archived.Count};individual evidence remains addressable via EvidenceRead/v1;outcome[{Counts(outcomes)}];failure[{Counts(failures)}];complete[{Counts(completeness)}];verification[{Counts(verification)}].");
-        return TakeUtf16(summary, ArchiveSummaryMaxCharacters);
+        var withResult = archived.Where(step => step.Result is not null).ToList();
+        var optional = new[]
+        {
+            Counts("outcome", withResult.Select(step => step.Result!.Outcome)),
+            Counts("failure", withResult.Where(step => !step.Result!.Succeeded && step.Result.FailureKind != ToolFailureKind.Unspecified)
+                .Select(step => step.Result!.FailureKind)),
+            Counts("complete", withResult.Where(step => step.Result!.Completeness != ToolResultCompleteness.Unspecified)
+                .Select(step => step.Result!.Completeness)),
+            Counts("verification", archived.Where(step => step.VerificationStatus is not null).Select(step => step.VerificationStatus!.Value)),
+        }.Where(field => field.Length > 0).ToList();
+
+        var mandatory = string.Create(CultureInfo.InvariantCulture,
+            $"archive;range={archived[0].Index}..{archived[^1].Index};count={archived.Count}");
+        while (true)
+        {
+            var summary = string.Join(';', [mandatory, .. optional, ArchiveAddressabilityStatement]);
+            if (summary.Length <= maxCharacters)
+            {
+                return summary;
+            }
+
+            if (optional.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"The archive summary does not fit {maxCharacters} UTF-16 code units; history construction fails closed.");
+            }
+
+            optional.RemoveAt(optional.Count - 1);
+        }
     }
 
-    private static string BuildBoundedBlock(Guid taskId, List<PlanStep> archive, List<PlanStep> compact)
+    private static string ToolLabel(string? registeredToolName)
+    {
+        if (string.IsNullOrEmpty(registeredToolName))
+        {
+            return UnknownToolLabel;
+        }
+
+        var oneLine = new string([.. registeredToolName.Select(character => char.IsControl(character) || character == ';' ? '_' : character)]);
+        return TakeUtf16(oneLine, ToolLabelMaxCharacters);
+    }
+
+    private static string BuildBoundedBlock(
+        Guid taskId, List<PlanStep> archive, List<PlanStep> compact, Func<PlanStep, string?> registeredToolName)
     {
         if (archive.Count == 0 && compact.Count == 0)
         {
             return string.Empty;
         }
 
-        var fixedCharacters = OpenHeader.Length + Header.Length + CloseHeader.Length + 2;
+        // Open header, header, archive line and close header each end a line but the last: three delimiters. The compact
+        // records carry their own newline inside their 256 units.
+        var fixedCharacters = OpenHeader.Length + Header.Length + CloseHeader.Length + 3;
         if (fixedCharacters > HeaderMaxCharacters)
         {
             throw new InvalidOperationException("The bounded-history headers exceed their architecture limit.");
@@ -130,7 +244,7 @@ internal static class BoundedHistory
 
         foreach (var step in compact)
         {
-            builder.Append(CompactRecord(taskId, step)).Append('\n');
+            builder.Append(CompactRecord(taskId, step, registeredToolName(step)));
         }
 
         return builder.Append(CloseHeader).ToString();
@@ -152,11 +266,6 @@ internal static class BoundedHistory
                 "Not executed: only one tool call is executed per step. Ask again next step if still needed.")));
         }
     }
-
-    private static bool IsCanonicalToolName(string? name) =>
-        !string.IsNullOrEmpty(name)
-        && name.Length <= 128
-        && name.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-');
 
     internal static string TakeUtf16(string value, int maximum)
     {
