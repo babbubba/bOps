@@ -101,7 +101,11 @@ The credential loop moves out of `ApiKeyAuthenticationHandler` into one internal
 - `FindByPresentedKey(string presented)` — **the existing algorithm verbatim**: configuration order, skip empty `Id`,
   resolve the secret, skip empty secrets, SHA-256 both, `FixedTimeEquals`, first match wins. Both the Bearer handler
   (after its unchanged prefix/trim/empty handling) and `POST /api/session` (after the same trim) call it.
-- `FindBySessionBinding(string credentialId, ReadOnlySpan<byte> token, ReadOnlySpan<byte> storedBinding)` — §4.
+- `FindBySessionBinding(string credentialId, ReadOnlySpan<byte> token, ReadOnlySpan<byte> storedBinding)` — §4,
+  including the Bearer-equivalence check of §4, which is evaluated with the **same** ordered resolution as
+  `FindByPresentedKey`, not with a second, independently written loop. How the shared resolution is factored is an
+  implementation choice; there must be one ordered credential-resolution semantic, so that the same configured
+  credential set and the same secret always yield the same effective credential under Bearer and under a session.
 - `CreatePrincipal(match, scheme)` — the existing claim construction verbatim (`NameIdentifier`, `Name`, distinct
   case-insensitive `Role` claims); only the identity's authentication type differs (`bops-api-key` or
   `bops-browser-session`).
@@ -148,16 +152,63 @@ binding = HMAC-SHA256(key = token bytes (32), message)
 - The binding is keyed by the **session token**, which the server never stores. The database therefore holds no
   value that lets anyone test guesses of the API key offline — an unkeyed `SHA-256(apiKey)` fingerprint would, and
   operator-chosen keys can be low-entropy.
-- **Validation (every cookie-authenticated request):** walk `Authentication:ApiKeys` in configuration order; for each
+- **Candidate (every cookie-authenticated request):** walk `Authentication:ApiKeys` in configuration order; for each
   entry whose `Id` equals the stored `credential_id` (ordinal) and whose secret resolves non-empty, compute the
-  binding from the presented token and compare it with the stored binding using `FixedTimeEquals`. The first match is
-  the credential (this mirrors Bearer's "first matching entry"). No match → the session is invalid and its row is
-  deleted (§8).
+  binding from the presented token and compare it with the stored binding using `FixedTimeEquals`. The first entry
+  whose binding matches is the **candidate** `E`. No candidate → the session is invalid and its row is deleted (§8).
+- **Bearer equivalence (mandatory, after the binding matches).** A valid binding proves only that `E`'s current secret
+  is the one the session was created with; it does not prove that `E` is the credential Bearer would select for that
+  secret, because neither `Id` nor secret is required to be unique across entries. The handler must therefore also
+  prove
+
+  ```text
+  FindByPresentedKey(E.resolvedSecret) == E
+  ```
+
+  where `FindByPresentedKey` is the ordered Bearer resolution of §2 (configuration order, skip empty `Id`, skip empty
+  secret, SHA-256 + `FixedTimeEquals`, first match wins) and `==` means the **same configuration entry** (same
+  position in the ordered list), not merely an entry with the same `Id`. Equivalently: the first entry in Bearer order
+  whose `SecretDigest` equals `E.SecretDigest` is `E` itself. (A session can exist only for a secret that a trimmed
+  login key matched exactly, so `E`'s secret has no surrounding whitespace while its binding matches, and the digest
+  form and the presented-key form select the same entry.) The check runs on resolved secrets in memory; nothing new is
+  stored. If an **earlier** entry with **any** `Id` resolves to the same secret, Bearer would select that entry, and
+  the session is invalid: `401`, row deleted, deletion cookie, revocation category `credential_changed` (§13). There
+  is no fallback: the session neither continues as `E` nor becomes the earlier entry's identity, and neither entry's
+  roles are used. A session stays bound to its original credential identity; when current Bearer resolution no longer
+  maps its secret to that identity, the session is over.
+- **Validation order (normative)** — §8 steps 1–6 expand to:
+  1. parse and canonicalise the session token (§3);
+  2. find the persisted row by digest;
+  3. idle and absolute expiry (§6);
+  4. locate the candidate `E` by stored `credential_id` among current configuration entries;
+  5. recompute and verify the binding against `E`'s current secret (`FixedTimeEquals`);
+  6. resolve `E`'s secret through the current Bearer ordering;
+  7. require the Bearer-selected entry to be `E`;
+  8. derive the **current** claims and roles from `E` (`CreatePrincipal`);
+  9. authenticate.
+
+  Any failure in steps 4–7 → `401`, row deleted, deletion cookie (§8). Authorization policies then run normally on
+  the principal. Hence, for every valid browser session, session identity and roles equal the current Bearer identity
+  and roles for the same key — in particular session authority never exceeds current Bearer authority for that key.
+- **Deterministic cases** (`id / secret / roles`, configuration order top to bottom; session created for `ops` with
+  `K1`):
+
+  | Case | Configuration now | Bearer `K1` selects | Session result |
+  |---|---|---|---|
+  | A — normal | `ops / K1 / administrator` | `ops` | valid; roles = current roles of `ops` |
+  | B — rotated | `ops / K2 / administrator` | — (no `ops` match) | binding mismatch → `401`, row deleted |
+  | C — removed | no `ops` entry | — | no candidate → `401`, row deleted |
+  | D — same secret earlier under another id | `readonly / K1 / viewer`, then `ops / K1 / administrator` | `readonly` | binding matches `ops`, Bearer selects `readonly` → `401`, row deleted; never `ops`, never `readonly` |
+  | E — duplicate secret later | `ops / K1 / administrator`, then `readonly / K1 / viewer` | `ops` | valid; roles = current roles of `ops` |
+
+  Duplicate `Id`s and duplicate secrets remain permitted configuration (no new uniqueness rule, Bearer semantics
+  unchanged); the equivalence check alone guarantees the invariant.
 - **Credential id no longer configured** → no candidate → invalid, row deleted, `401`.
 - **Same id, secret changed (rotation)** → binding mismatch → invalid, row deleted, `401`. Changing only the
   `SecretReference` to a variable holding the *same* value is not a rotation and keeps the session.
 - **Secret resolves empty** (variable missing) → no candidate → invalid, row deleted, `401` (fail closed).
-- **Roles are re-resolved, never snapshotted.** Claims come from the matching configuration entry on every request,
+- **Roles are re-resolved, never snapshotted.** Claims come from the candidate entry `E` that passed the binding and
+  Bearer-equivalence checks, on every request,
   exactly as for Bearer. A role granted or removed takes effect at the same moment it would for a Bearer request with
   that key (the next host start, since options are snapshotted); a removed role can never survive in a session.
   A session therefore can never be more privileged than the same key presented as Bearer at that moment.
@@ -357,7 +408,8 @@ When Bearer is selected the cookie is neither looked up, touched, deleted nor CS
 2. Canonical 43-character base64url → 32 bytes (§3), else fail.
 3. `digest = SHA-256(token)`; `FindAsync(digest)`; no row → fail.
 4. Expiry (§6.2) → `DeleteAsync`, fail.
-5. Binding (§4) → no matching credential → `DeleteAsync`, fail.
+5. Credential (§4, validation order steps 4–7): candidate by stored id, binding, Bearer equivalence → no candidate,
+   binding mismatch, or Bearer resolution of the candidate's secret selecting a different entry → `DeleteAsync`, fail.
 6. Success: `ApiCredentialAuthority.CreatePrincipal(match, "bops-browser-session")`; attach an internal request feature
    carrying the digest and `last_seen_at` (used by the CSRF gate to recognise cookie authentication, by the touch, and
    by logout).
@@ -663,6 +715,7 @@ a secret (it already appears in API URLs; every read is authorized server-side).
 | API-key removal | Credential id absent → `401`, row deleted; startup sweep (§4, §5.6) |
 | API-key rotation | Binding mismatch → `401`, row deleted (§4) |
 | Stale or escalated privileges | Roles re-resolved from configuration on every request; never snapshotted (§4) |
+| Session authority diverging from Bearer (duplicate secret under an earlier entry) | Bearer-equivalence check: the candidate must be the entry Bearer selects for its secret, else `401`, row deleted (§2, §4) |
 | Unlimited session lifetime | Idle 60 min + absolute 12 h, absolute never slides, equality expires (§6) |
 | Persistent cookie outliving the session | `Max-Age` = remaining absolute lifetime; server checks regardless (§7) |
 | Database growth | Rate-limited creation, startup/opportunistic/per-session cleanup (§5.6) |
@@ -710,6 +763,8 @@ with a role policy (results assume the role is held).
 | 26 | any | any | `POST /api/session` | 11th request in the window from the address | — | **429** + `Retry-After` |
 | 27 | none | valid | `DELETE /api/session` | valid origin | Session | **204**, row deleted, deletion cookie |
 | 28 | valid Bearer | valid | `DELETE /api/session` | n/a | Bearer | **204**, browser session untouched |
+| 29 | none | bound to credential B; its secret now resolves via Bearer to an earlier credential A | GET | n/a | Session | **401**, row deleted, deletion cookie; no authority from A or B (§4 case D) |
+| 30 | none | bound to credential B; a later credential shares the secret, Bearer still resolves it to B | GET | n/a | Session | 200 as B with B's current roles (§4 case E) |
 
 Authorization policies (`bops.viewer`, `bops.operator`, `bops.approver`, `bops.administrator`) produce the same
 200/403 under rows 1 and 6–7 for the same credential and roles.
@@ -741,6 +796,12 @@ client sends `Cookie`, `Origin` and `X-bOps-Request` headers explicitly (the in-
 - **Revocation:** logout → replay 401; credential removed (restart with a configuration lacking the id) → 401 and row
   gone; rotated secret (restart with a new value) → 401 and row gone; same value under a different variable name →
   still valid; Bearer `DELETE /api/session` leaves the session valid.
+- **Bearer equivalence (§4, §17 rows 29–30):**
+  `Session_IsInvalidated_WhenItsSecretNowResolvesToAnotherBearerCredential` — configuration `ops / K / administrator`,
+  create a session; restart with `readonly / K / viewer`, `ops / K / administrator`; Bearer `K` → authenticated as
+  `readonly` with only `viewer`; the old session → `401`, deletion cookie, row gone, and a subsequent request with it
+  is still `401`. Complementary still-valid case — restart instead with `ops / K / administrator`,
+  `readonly / K / viewer`: Bearer `K` → `ops`; the old session → `200` as `ops` with `administrator`, row kept.
 - **CSRF:** the full §17 rows 7–16 for each of POST, PUT, PATCH, DELETE (parameterized), including a plugin lifecycle
   mutation and a settings mutation with a valid administrator session → 403 without the header and success with it;
   the rejected request has no side effect and its body is not read.
