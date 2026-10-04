@@ -20,10 +20,12 @@ namespace bOps.Api.Tests;
 /// </summary>
 internal sealed class TestAppFactory : WebApplicationFactory<Program>
 {
-    private const string TestApiKey = "test-api-key";
     private readonly string _secretVariableName = $"BOPS_TEST_API_KEY_{Guid.NewGuid():N}";
     private readonly string _modelProviderSecretVariableName = $"BOPS_TEST_MODEL_PROVIDER_API_KEY_{Guid.NewGuid():N}";
     private readonly string _vaultMasterKeyVariableName = $"BOPS_TEST_VAULT_MASTER_KEY_{Guid.NewGuid():N}";
+
+    /// <summary>The Bearer key of the default credential: generated per factory (ephemeral), shared between factories to restart the same host.</summary>
+    public string ApiKey { get; init; } = $"bops-test-key-{Guid.NewGuid():N}";
 
     public string TempDirectory { get; init; } = Directory.CreateTempSubdirectory("bops-api-tests-").FullName;
 
@@ -41,6 +43,9 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 
     public IPolicyEngine? PolicyEngine { get; set; }
 
+    /// <summary>Replaces <see cref="TimeProvider.System"/> for the whole host (browser-session expiry tests drive it by hand).</summary>
+    public TimeProvider? Clock { get; init; }
+
     /// <summary>Extra service registrations, applied last so they replace the host's own (for example, a decorated store).</summary>
     public Action<IServiceCollection>? ConfigureExtraServices { get; init; }
 
@@ -55,7 +60,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            Environment.SetEnvironmentVariable(_secretVariableName, TestApiKey);
+            Environment.SetEnvironmentVariable(_secretVariableName, ApiKey);
             Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, VaultMasterKey);
             var settings = new Dictionary<string, string?>
             {
@@ -73,6 +78,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
                 ["Vault:MasterKeySecret:Provider"] = "environment",
                 ["Vault:MasterKeySecret:Name"] = _vaultMasterKeyVariableName,
                 ["Settings:FilePath"] = Path.Combine(TempDirectory, "settings.json"),
+                ["BrowserSession:FilePath"] = Path.Combine(TempDirectory, "sessions.db"),
                 ["Authentication:ApiKeys:0:Id"] = "test-user",
                 ["Authentication:ApiKeys:0:DisplayName"] = "Test User",
                 ["Authentication:ApiKeys:0:Secret:Provider"] = "environment",
@@ -101,6 +107,11 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
                 services.AddSingleton(policyEngine);
             }
 
+            if (Clock is { } clock)
+            {
+                services.AddSingleton(clock);
+            }
+
             ConfigureExtraServices?.Invoke(services);
         });
     }
@@ -108,11 +119,18 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
     public new HttpClient CreateClient()
     {
         var client = base.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
         return client;
     }
 
     public HttpClient CreateAnonymousClient() => base.CreateClient();
+
+    /// <summary>
+    /// A client that neither stores nor replays cookies and sends no credential: browser-session tests set <c>Cookie</c>, <c>Origin</c>
+    /// and <c>X-bOps-Request</c> explicitly (the in-memory server is http, so a cookie jar would not replay a <c>Secure</c> cookie).
+    /// </summary>
+    public HttpClient CreateSessionClient() =>
+        CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, AllowAutoRedirect = false });
 
     protected override void Dispose(bool disposing)
     {

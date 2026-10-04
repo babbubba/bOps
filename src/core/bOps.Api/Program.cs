@@ -33,9 +33,26 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISecretProvider, EnvironmentSecretProvider>();
 builder.Services.Configure<ApiAuthenticationOptions>(builder.Configuration.GetSection("Authentication"));
+builder.Services.AddSingleton<ApiCredentialAuthority>();
+
+// ADR-0043: the browser exchanges the API key once for a server-side session in its own SQLite file. Settings are validated and the
+// store opened (schema version checked) eagerly below, so an invalid section or an unsupported database fails startup.
+builder.Services.AddSingleton(sp => BrowserSessionSettings.Load(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<IBrowserSessionStore>(sp => new SqliteBrowserSessionStore(sp.GetRequiredService<BrowserSessionSettings>().FilePath));
+builder.Services.AddSingleton<BrowserSessionService>();
+
+// ADR-0043 §8: "bops" is a policy scheme with fixed precedence — any Authorization header selects Bearer (never a downgrade to the
+// cookie), else a presented session cookie selects the browser session, else Bearer (unchanged anonymous behaviour).
 builder.Services
-    .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+    .AddAuthentication(ApiAuthenticationSchemes.Default)
+    .AddPolicyScheme(ApiAuthenticationSchemes.Default, ApiAuthenticationSchemes.Default, options =>
+        options.ForwardDefaultSelector = ApiAuthenticationSchemes.Select)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { })
+    .AddScheme<AuthenticationSchemeOptions, BrowserSessionAuthenticationHandler>(BrowserSessionAuthenticationHandler.SchemeName, _ => { });
+
+// ADR-0043 §13: an unhandled exception yields a problem body with no request data in every environment, so the developer exception
+// page (automatic in Development) can never render the Cookie or Authorization headers into a page-readable body.
+builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(ApiAuthorization.ViewerPolicy, policy => policy.RequireRole(ApiAuthorization.ViewerRole));
@@ -75,6 +92,9 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true,
             });
     });
+
+    // ADR-0043 §11: sign-in attempts are bounded per address on top of the global limiter.
+    options.AddPolicy<string, BrowserSessionLoginRateLimitPolicy>(BrowserSessionEndpoints.LoginRateLimitPolicy);
 });
 builder.Services.AddSingleton<ICapabilityProbe>(services =>
     new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
@@ -269,9 +289,17 @@ builder.Services.AddOpenTelemetry()
 
 var app = builder.Build();
 
+// ADR-0043 §5, §12: fail startup on an invalid BrowserSession section or an unsupported sessions.db, then the bounded startup sweep.
+app.Services.GetRequiredService<IBrowserSessionStore>();
+await app.Services.GetRequiredService<BrowserSessionService>().StartupCleanupAsync(CancellationToken.None);
+
+// ADR-0043 §8 pipeline order.
+app.UseExceptionHandler();
 app.UseAuthentication();
+app.UseBrowserSessionCsrf();
 app.UseRateLimiter();
 app.UseAuthorization();
+app.UseBrowserSessionTouch();
 
 var toolRegistry = app.Services.GetRequiredService<IToolRegistry>();
 
@@ -338,6 +366,7 @@ app.MapDelegationsEndpoints();
 app.MapToolsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
+app.MapBrowserSessionEndpoints();
 app.MapFilesystemDeletionEndpoints();
 app.MapPluginCatalogEndpoints();
 app.MapPluginLifecycleEndpoints();
