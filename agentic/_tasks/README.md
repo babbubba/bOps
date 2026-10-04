@@ -85,8 +85,8 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 | 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | **Completed** (PR #62) |
 | 7 | [HARDEN-7 Windows stability evidence](2026-09-25-v1.3x-harden-07-windows-stability-evidence.md) | MUST | Opus High | Opus High | **Completed** (PR #72) |
 | 8 | [HARDEN-9 evidence reasoning](2026-09-25-v1.3x-harden-09-evidence-reasoning.md) | SHOULD | Opus Medium/High | Opus Medium | **Completed — merged via PR #74** |
-| 9 | [HARDEN-8 context and budget economy](2026-09-25-v1.3x-harden-08-context-budget-economy.md) | SHOULD | Opus High | Opus High | **Implementation complete locally; independent review pending** |
-| 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | Not started |
+| 9 | [HARDEN-8 context and budget economy](2026-09-25-v1.3x-harden-08-context-budget-economy.md) | SHOULD | Opus High | Opus High | **Completed — merged via PR #75** |
+| 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | **ADR-0043 Proposed — awaiting review/acceptance** |
 | 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | Not started |
 | 12 | [HARDEN-12 UI layout and localization](2026-09-25-v1.3x-harden-12-ui-layout-localization.md) | SHOULD | Sonnet Medium | Sonnet Medium | Not started |
 | 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | Not started |
