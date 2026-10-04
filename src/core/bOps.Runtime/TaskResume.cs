@@ -124,6 +124,12 @@ public static class TaskResumePolicy
     /// <summary>The description of the synthetic step written when a resumed attempt was never admitted (ADR-0040 §4.3).</summary>
     internal const string NotStartedStepDescription = "Execution not started";
 
+    /// <summary>The synthetic bookkeeping step written when a non-final model response crosses the token cap.</summary>
+    internal const string TokenBudgetStepDescription = "Token budget crossing";
+
+    /// <summary>The synthetic failure step written when a fifth EvidenceRead is attempted.</summary>
+    internal const string EvidenceReadLimitStepDescription = "Evidence read limit exceeded";
+
     /// <summary>Decides whether an ordinary resume of <paramref name="task"/> would be accepted now, under <paramref name="options"/>.</summary>
     /// <param name="task">The task as persisted.</param>
     /// <param name="options">The budgets configured now.</param>
@@ -208,7 +214,8 @@ public static class TaskResumePolicy
     /// <summary>Whether <paramref name="step"/> is a runtime-authored failure record rather than an executed or proposed step (ADR-0040 §5.2).</summary>
     internal static bool IsSyntheticFailureStep(PlanStep step) =>
         step.ToolCall is null
-        && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription;
+        && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
+            or TokenBudgetStepDescription or EvidenceReadLimitStepDescription;
 
     /// <summary>Prompt plus completion tokens of every recorded model call that reported usage.</summary>
     internal static long RecordedTokens(IReadOnlyList<ModelCallRecord>? calls) =>

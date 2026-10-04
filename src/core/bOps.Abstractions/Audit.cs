@@ -49,6 +49,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(PluginLifecycleAuditEvent), "pluginLifecycle")]
 [JsonDerivedType(typeof(TaskExecutionFaultAuditEvent), "taskExecutionFault")]
 [JsonDerivedType(typeof(TaskLifecycleAuditEvent), "taskLifecycle")]
+[JsonDerivedType(typeof(EvidenceReadAuditEvent), "evidenceRead")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -60,8 +61,31 @@ public abstract record AuditEvent
     /// <summary>The task this event belongs to.</summary>
     public required Guid TaskId { get; init; }
 
-    /// <summary>The step, within the task, this event belongs to.</summary>
-    public required int StepIndex { get; init; }
+    /// <summary>
+    /// The step, within the task, this event belongs to. Evidence-read events expose their additive nullable member of the
+    /// same name; this frozen 1.0 integer member remains for source and binary compatibility.
+    /// </summary>
+    [JsonIgnore]
+    public int StepIndex { get; init; } = -1;
+
+    /// <summary>JSON bridge retaining the historic <c>StepIndex</c> field while allowing an evidence-read event to write null.</summary>
+    [JsonPropertyName(nameof(StepIndex))]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public int? SerializedStepIndex
+    {
+        get => this is EvidenceReadAuditEvent evidenceRead ? evidenceRead.StepIndex : StepIndex;
+        init
+        {
+            if (this is EvidenceReadAuditEvent evidenceRead)
+            {
+                evidenceRead.SetStepIndex(value);
+            }
+            else
+            {
+                StepIndex = value ?? -1;
+            }
+        }
+    }
 
     /// <summary>Who caused this event: the operator who launched the task, or who approved/rejected the step.</summary>
     public required ActorIdentity Actor { get; init; }
@@ -75,6 +99,78 @@ public abstract record AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DelegationCorrelation? Delegation { get; init; }
+}
+
+/// <summary>The closed outcome domain of one attempted internal <c>EvidenceRead/v1</c> directive (ADR-0014 HARDEN-8).</summary>
+public enum EvidenceReadResultCode
+{
+    /// <summary>A non-empty fragment was returned.</summary>
+    Success = 0,
+    /// <summary>The requested offset was exactly at the end of the source.</summary>
+    EndOfEvidence = 1,
+    /// <summary>The claimed directive did not have the exact required shape.</summary>
+    Malformed = 2,
+    /// <summary>The evidence id was malformed, noncanonical or ambiguous.</summary>
+    InvalidId = 3,
+    /// <summary>The id named a task other than the task currently executing.</summary>
+    CrossTaskRejected = 4,
+    /// <summary>No addressable tool-call step matched the id.</summary>
+    MissingStep = 5,
+    /// <summary>The selected persisted source was absent.</summary>
+    UnavailableSource = 6,
+    /// <summary>The requested UTF-16 range was invalid.</summary>
+    OutOfRange = 7,
+    /// <summary>The logical call attempted more than four reads.</summary>
+    LimitExceeded = 8,
+    /// <summary>The execution attempt's active-duration budget expired while processing the read.</summary>
+    AttemptBudgetInterrupted = 9,
+    /// <summary>Initial planning does not permit evidence reads.</summary>
+    NotAllowedInPhase = 10,
+}
+
+/// <summary>
+/// Metadata-only record of an attempted internal evidence read. It never contains evidence text, model payloads, tool
+/// arguments or datastore details and is emitted even when model-payload retention is disabled.
+/// </summary>
+public sealed record EvidenceReadAuditEvent : AuditEvent
+{
+    private int? evidenceStepIndex;
+
+    /// <summary>The step or triggering replan index; <c>null</c> during initial planning.</summary>
+    [JsonIgnore]
+    public new int? StepIndex
+    {
+        get => evidenceStepIndex;
+        init => evidenceStepIndex = value;
+    }
+
+    internal void SetStepIndex(int? value) => evidenceStepIndex = value;
+
+    /// <summary>The plan revision for a replan read; <c>null</c> for a normal step and initial planning.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PlanRevision { get; init; }
+
+    /// <summary>The bounded claimed evidence id, or <c>null</c> when it could not be read from a malformed claim.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EvidenceId { get; init; }
+
+    /// <summary>The claimed source, or <c>null</c> when malformed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Source { get; init; }
+
+    /// <summary>The requested zero-based UTF-16 offset, or <c>null</c> when malformed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Offset { get; init; }
+
+    /// <summary>The requested UTF-16 length, or <c>null</c> when malformed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? RequestedLength { get; init; }
+
+    /// <summary>The number of UTF-16 code units returned; always zero for a rejection.</summary>
+    public required int ReturnedLength { get; init; }
+
+    /// <summary>How the attempt ended.</summary>
+    public required EvidenceReadResultCode ResultCode { get; init; }
 }
 
 /// <summary>

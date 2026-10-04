@@ -208,6 +208,28 @@ public sealed class OpenAiCompatibleChatModelTests
     }
 
     [Fact]
+    public async Task CompleteAsync_InTheJsonFallback_PreservesEvidenceReadAsText_NotAFakeTool()
+    {
+        const string directive =
+            """{"runtime":"EvidenceRead/v1","evidenceId":"ev1:11111111222233334444555555555555:0","source":"result","offset":4000,"length":100}""";
+        var body = JsonSerializer.Serialize(new
+        {
+            model = "vendor/one",
+            choices = new[] { new { message = new { role = "assistant", content = directive }, finish_reason = "stop" } },
+            usage = new { prompt_tokens = 10, completion_tokens = 5 },
+        });
+        var (model, handler) = CreateModel([(HttpStatusCode.OK, body)], nativeToolCalling: false);
+
+        var result = await model.CompleteAsync(Request);
+
+        Assert.Equal(directive, result.TextResponse);
+        Assert.False(result.IsFinal);
+        Assert.Empty(result.ToolCalls);
+        Assert.Single(handler.Requests);
+        Assert.Equal(15, result.Usage!.PromptTokens + result.Usage.CompletionTokens);
+    }
+
+    [Fact]
     public async Task CompleteAsync_InTheJsonFallback_AttachesTheLastAttemptToTheFailure()
     {
         const string bad = """{"model":"vendor/one","choices":[{"message":{"role":"assistant","content":"still not json"},"finish_reason":"stop"}]}""";

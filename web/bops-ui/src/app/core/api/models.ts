@@ -39,7 +39,7 @@ export const TaskStatusCompleted: AgentTaskStatus = 1;
 export type TaskOrigin = 0 | 1 | 2;
 
 /** bOps.Abstractions.TaskTerminalKind, in declaration order (ADR-0040 §6). Append-only on the server. */
-export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
 export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   0: 'Completed',
   1: 'StepLimit',
@@ -54,6 +54,7 @@ export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   10: 'RuntimeFailure',
   11: 'Cancelled',
   12: 'NotAdmitted',
+  13: 'AttemptDurationBudget',
 };
 export const TaskTerminalModelFailure: TaskTerminalKind = 8;
 
@@ -149,6 +150,8 @@ export interface PlanStep {
   planRevision: number | null;
   /** Absent on a step stored before model calls were kept. */
   modelCalls?: ModelCallRecord[] | null;
+  /** Typed runtime verification outcome; absent for legacy and unverified steps. */
+  verificationStatus?: number | null;
 }
 
 export interface PlannedStep {

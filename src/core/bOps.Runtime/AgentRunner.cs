@@ -95,6 +95,11 @@ public sealed class AgentRunner(
         """
         Your previous plan no longer matches what you have learned. Revise it.
 
+        Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to
+        4000 UTF-16 code units from one current-task source, reply with only this exact JSON object:
+        {"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result|observation","offset":0,"length":4000}
+        The runtime will return a bounded continuation and ask for the revised plan again.
+
         Respond with ONLY a single JSON object — no prose before or after it, no markdown code
         fence — in exactly the same shape as before:
 
@@ -113,11 +118,17 @@ public sealed class AgentRunner(
         "That reply was not a single valid JSON object in the required shape. Reply again with " +
         "ONLY the JSON object — no prose, no markdown code fence.";
 
+    private const string EvidenceReadInstructions =
+        "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
+        "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
+        "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}.";
+
     /// <summary>The least call budget a retry must leave for its next attempt; a wait leaving less ends the call instead (ADR-0039 §4).</summary>
     private static readonly TimeSpan MinimumModelAttemptWindow = TimeSpan.FromSeconds(1);
 
     // The options are validated once, when the runner is built, so an incoherent model-call budget fails at start-up.
     private readonly AgentRunnerOptions options = ValidatedOptions(options);
+    private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
 
     /// <summary>Test seam: replaces the wait between model-call attempts (by default <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>).</summary>
     internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay { get; set; }
@@ -181,6 +192,7 @@ public sealed class AgentRunner(
             DelegationRole = delegation?.Correlation.Agent?.Role,
             Actor = actor,
             Delegation = delegation,
+            AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [],
             Plans = [],
         };
@@ -204,9 +216,19 @@ public sealed class AgentRunner(
         var planCalls = new List<ModelCallRecord>();
         try
         {
-            var (createdPlan, planTokens) = await CreatePlanAsync(run.TaskId, run.Actor, run.Goal, run.Delegation, planCalls, ct);
+            var (createdPlan, planTokens) = await CreatePlanAsync(
+                run.TaskId, run.Actor, run.Goal, run.Delegation, planCalls, run.TokensUsed, ct);
             plan = createdPlan;
             run.TokensUsed += planTokens;
+            if (TokenBudgetExceeded(run))
+            {
+                return await StopForTokenCrossingAsync(run, planCalls, ct);
+            }
+        }
+        catch (TokenBudgetCrossedException)
+        {
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(planCalls);
+            return await StopForTokenCrossingAsync(run, planCalls, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -370,6 +392,7 @@ public sealed class AgentRunner(
             ResumedBy = acquired.ResumedBy,
             Actor = actor,
             Delegation = null,
+            AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [.. acquired.Steps],
             Plans = [.. acquired.Plans],
             TokensUsed = accounting.TokensUsed,
@@ -532,6 +555,8 @@ public sealed class AgentRunner(
     /// </summary>
     private async Task<TaskState> ExecuteGuardedAsync(ExecutionRun run, Func<Task<TaskState>> body, CancellationToken ct)
     {
+        var priorBudget = activeAttemptBudget.Value;
+        activeAttemptBudget.Value = run.AttemptBudget;
         try
         {
             return await body();
@@ -564,6 +589,15 @@ public sealed class AgentRunner(
 
             throw;
         }
+        catch (OperationCanceledException) when (run.AttemptBudget.IsExpired && !ct.IsCancellationRequested)
+        {
+            return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
+        }
+        finally
+        {
+            activeAttemptBudget.Value = priorBudget;
+            run.AttemptBudget.Dispose();
+        }
     }
 
     /// <summary>
@@ -588,6 +622,10 @@ public sealed class AgentRunner(
         while (run.AttemptSteps < stepCap)
         {
             ct.ThrowIfCancellationRequested();
+            if (run.AttemptBudget.IsExpired)
+            {
+                throw new AttemptDurationBudgetExceededException();
+            }
             var stepIndex = steps.Count;
 
             // ADR-0030 section 6: a delegated role takes a step only inside its own step budget and deadline.
@@ -611,22 +649,68 @@ public sealed class AgentRunner(
                 stepActivity?.SetTag("bops.evidence_limitations", limitations.EntryCount);
             }
 
-            var request = new ModelRequest(BuildStepSystemPrompt(plan, limitations), history, ToolViewFor(delegation));
+            var logicalCall = new LogicalCallState();
+            ModelRequest BuildStepRequest(bool aggressive)
+            {
+                var built = BoundedHistory.Build(taskId, run.Goal, steps,
+                    aggressive ? 0 : options.VerbatimHistorySteps);
+                logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
+                history = [.. built.Turns, .. logicalCall.ContinuationTurns];
+                return new ModelRequest(BuildStepSystemPrompt(plan, limitations), history, ToolViewFor(delegation));
+            }
+
+            // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
+            // same three-tier history; the logical call can switch once to aggressive K=0 after ContextOverflow.
+            var request = BuildStepRequest(aggressive: false);
             var stepCalls = new List<ModelCallRecord>();
 
             ModelResponse? response = null;
             try
             {
-                response = await CallModelAsync(taskId, stepIndex, actor, request, delegation, stepCalls, ct);
+                response = await CallModelWithOverflowRecoveryAsync(
+                    taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
+                request = BuildStepRequest(logicalCall.Aggressive);
+                run.TokensUsed += UsageTokens(response);
+
+                if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+                {
+                    return await StopForTokenCrossingAsync(run, stepCalls, ct);
+                }
+
+                var evidenceResolution = await ResolveStepEvidenceReadsAsync(
+                    run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                if (evidenceResolution.Terminal is not null)
+                {
+                    return evidenceResolution.Terminal;
+                }
+
+                response = evidenceResolution.Response;
+                request = BuildStepRequest(logicalCall.Aggressive);
 
                 // Rule S3: a model that stops with no text and no tool call has not answered. It is asked again
                 // (with what was wrong said plainly, and without keeping the empty turn in the conversation)
                 // rather than the task being completed with nothing to show.
                 for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
                 {
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(EmptyResponseRetryInstructions));
+                    response = await CallModelWithOverflowRecoveryAsync(
+                        taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
+                    request = BuildStepRequest(logicalCall.Aggressive);
                     run.TokensUsed += UsageTokens(response);
-                    var retryRequest = request with { History = [.. history, ChatTurn.FromUser(EmptyResponseRetryInstructions)] };
-                    response = await CallModelAsync(taskId, stepIndex, actor, retryRequest, delegation, stepCalls, ct);
+                    if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+                    {
+                        return await StopForTokenCrossingAsync(run, stepCalls, ct);
+                    }
+
+                    evidenceResolution = await ResolveStepEvidenceReadsAsync(
+                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                    if (evidenceResolution.Terminal is not null)
+                    {
+                        return evidenceResolution.Terminal;
+                    }
+
+                    response = evidenceResolution.Response;
+                    request = BuildStepRequest(logicalCall.Aggressive);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -638,8 +722,6 @@ public sealed class AgentRunner(
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
                 return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
             }
-
-            run.TokensUsed += UsageTokens(response);
 
             if (IsEmptyFinal(response))
             {
@@ -680,8 +762,28 @@ public sealed class AgentRunner(
             // safe default for an ops agent; parallel execution needs its own policy story.
             var primaryCall = response.ToolCalls[0];
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
-            var (step, observation, authorization, verification) = await ExecuteStepAsync(
-                taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+            PlanStep step;
+            string observation;
+            AuthorizationKind authorization;
+            VerificationStatus? verification;
+            try
+            {
+                (step, observation, authorization, verification) = await ExecuteStepAsync(
+                    taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+            }
+            catch (AttemptDurationStepInterruptedException interrupted)
+            {
+                step = interrupted.Step with
+                {
+                    ModelCalls = stepCalls,
+                    UnexecutedToolCalls = response.ToolCalls.Count > 1 ? response.ToolCalls.Skip(1).ToList() : null,
+                    ExecutionAttempt = run.ExecutionAttempt,
+                };
+                steps.Add(step);
+                run.CountStep();
+                return await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
+                    TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
+            }
             // ADR-0038: what the model emitted after the executed call is kept on the step, so its turn can be
             // rebuilt exactly (live and on resume) without reading any provider-specific payload.
             step = step with
@@ -716,8 +818,6 @@ public sealed class AgentRunner(
                 lastPolicyDeniedTool = null;
                 consecutivePolicyDenials = 0;
             }
-
-            AddToolCallTurns(history, primaryCall, step.UnexecutedToolCalls, observation);
 
             BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
 
@@ -757,9 +857,29 @@ public sealed class AgentRunner(
                 try
                 {
                     var (newPlan, replanTokens) = await ReplanAsync(
-                        taskId, actor, run.Goal, plan, steps, observation, stepIndex, delegation, replanCalls, ct);
+                        taskId, actor, run.Goal, plan, steps, observation, stepIndex, delegation, replanCalls,
+                        run.TokensUsed, ct);
                     plan = newPlan;
                     run.TokensUsed += replanTokens;
+                    if (TokenBudgetExceeded(run))
+                    {
+                        return await StopForTokenCrossingAsync(run, replanCalls, ct);
+                    }
+                }
+                catch (TokenBudgetCrossedException)
+                {
+                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+                    return await StopForTokenCrossingAsync(run, replanCalls, ct);
+                }
+                catch (EvidenceReadLimitExceededException)
+                {
+                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+                    return await StopForEvidenceReadLimitAsync(run, replanCalls, ct);
+                }
+                catch (AttemptDurationBudgetExceededException)
+                {
+                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+                    throw;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -1627,6 +1747,41 @@ public sealed class AgentRunner(
             : null;
     }
 
+    private bool TokenBudgetExceeded(ExecutionRun run) =>
+        options.MaxTotalTokens is { } tokenCap && run.TokensUsed > tokenCap;
+
+    private async Task<TaskState> StopForTokenCrossingAsync(
+        ExecutionRun run, IReadOnlyList<ModelCallRecord> calls, CancellationToken ct)
+    {
+        run.Steps.Add(new PlanStep(
+            run.Steps.Count,
+            TaskResumePolicy.TokenBudgetStepDescription,
+            null,
+            null,
+            "Token budget exceeded after a non-final model response.")
+        {
+            ModelCalls = calls,
+            ExecutionAttempt = run.ExecutionAttempt,
+        });
+        return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.TokenBudget, ct);
+    }
+
+    private async Task<TaskState> StopForEvidenceReadLimitAsync(
+        ExecutionRun run, IReadOnlyList<ModelCallRecord> calls, CancellationToken ct)
+    {
+        run.Steps.Add(new PlanStep(
+            run.Steps.Count,
+            TaskResumePolicy.EvidenceReadLimitStepDescription,
+            null,
+            null,
+            "EvidenceRead/v1 limit exceeded")
+        {
+            ModelCalls = calls,
+            ExecutionAttempt = run.ExecutionAttempt,
+        });
+        return await FinishAsync(run, AgentTaskStatus.Failed, TaskTerminalKind.RuntimeFailure, ct);
+    }
+
     /// <summary>
     /// Every write of an executing attempt (ADR-0040 §4.4). With a store that has transitions it is accepted only while the
     /// task is still <c>(Running, this attempt)</c>; the first write of a fresh task creates it when no host did. A refused
@@ -1851,17 +2006,29 @@ public sealed class AgentRunner(
 
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>
     private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(
-        Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls, CancellationToken ct)
+        Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
+        long tokensBefore, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, delegation);
         var tokens = 0;
+        var logicalCall = new LogicalCallState();
+        ModelRequest BuildPlanningRequest(bool _) =>
+            new(systemPrompt, [.. planningHistory, .. logicalCall.ContinuationTurns], NoNativeTools);
 
-        var response = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(revision: 0));
+        var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
+            BuildPlanningRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(revision: 0));
         tokens += UsageTokens(response);
+        if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
+        {
+            throw new TokenBudgetCrossedException();
+        }
 
-        if (TryParsePlan(response.TextResponse, revision: 0) is { } plan)
+        var initialDirective = EvidenceRead.Recognize(response);
+        await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
+
+        if (initialDirective.Kind == RuntimeDirectiveRecognitionKind.None
+            && TryParsePlan(response.TextResponse, revision: 0) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -1869,14 +2036,22 @@ public sealed class AgentRunner(
         // One bounded retry against the model's own malformed reply, mirroring the JSON-schema
         // fallback pattern in OpenAiCompatibleChatModel (plan §3.1.1) — a model that ignores the
         // required format once often complies when told precisely what was wrong.
-        planningHistory.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        planningHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
-        var retryResponse = await CallModelAsync(taskId, -1, actor,
-            new ModelRequest(systemPrompt, planningHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(revision: 0));
+        var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
+            BuildPlanningRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(revision: 0));
         tokens += UsageTokens(retryResponse);
+        if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
+        {
+            throw new TokenBudgetCrossedException();
+        }
 
-        if (TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
+        var retryDirective = EvidenceRead.Recognize(retryResponse);
+        await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, retryResponse, ct);
+
+        if (retryDirective.Kind == RuntimeDirectiveRecognitionKind.None
+            && TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -1893,33 +2068,47 @@ public sealed class AgentRunner(
     private async Task<(AgentPlan Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
-        CancellationToken ct)
+        long tokensBefore, CancellationToken ct)
     {
         var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, delegation);
-        var replanHistory = new List<ChatTurn>
-        {
-            ChatTurn.FromUser(goal),
-            ChatTurn.FromAssistantText(DescribePlan(previousPlan)),
-            ChatTurn.FromUser(
-                $"Steps taken so far:\n{DescribeStepsSoFar(stepsSoFar)}\n\nMost recent observation:\n{latestObservation}"),
-        };
+        var logicalCall = new LogicalCallState();
         var tokens = 0;
+        ModelRequest BuildReplanRequest(bool aggressive)
+        {
+            var bounded = BoundedHistory.Build(taskId, goal, stepsSoFar,
+                aggressive ? 0 : options.VerbatimHistorySteps, triggeringStepIndex);
+            logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
+            var turns = new List<ChatTurn>
+            {
+                ChatTurn.FromUser(goal),
+                ChatTurn.FromAssistantText(ProjectForPrompt(DescribePlan(previousPlan), 2048)),
+            };
+            turns.AddRange(bounded.Turns.Skip(1));
+            turns.AddRange(logicalCall.ContinuationTurns);
+            return new ModelRequest(systemPrompt, turns, NoNativeTools);
+        }
 
-        var response = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(previousPlan.Revision + 1));
+        var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
+            BuildReplanRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1));
         tokens += UsageTokens(response);
+        (response, tokens) = await ResolveReplanEvidenceReadsAsync(
+            taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
+            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, ct);
 
         if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
 
-        replanHistory.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        replanHistory.Add(ChatTurn.FromUser(PlanRetryInstructions));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
-        var retryResponse = await CallModelAsync(taskId, triggeringStepIndex, actor,
-            new ModelRequest(systemPrompt, replanHistory, NoNativeTools), delegation, calls, ct, MalformedPlan(previousPlan.Revision + 1));
+        var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
+            BuildReplanRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1));
         tokens += UsageTokens(retryResponse);
+        (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
+            taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
+            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, ct);
 
         if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
         {
@@ -1935,6 +2124,107 @@ public sealed class AgentRunner(
             ModelCalls = calls,
         }, tokens);
     }
+
+    private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        IReadOnlyList<PlanStep> steps,
+        int stepIndex,
+        int planRevision,
+        DelegatedExecutionScope? delegation,
+        List<ModelCallRecord> calls,
+        LogicalCallState logicalCall,
+        Func<bool, ModelRequest> requestFactory,
+        ModelResponse initialResponse,
+        long tokensBefore,
+        int initialTokens,
+        CancellationToken ct)
+    {
+        var response = initialResponse;
+        var tokens = initialTokens;
+        if (options.MaxTotalTokens is { } initialTokenCap && tokensBefore + tokens > initialTokenCap)
+        {
+            throw new TokenBudgetCrossedException();
+        }
+
+        while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
+        {
+            logicalCall.EvidenceReadAttempts++;
+            var directive = recognition.Directive;
+            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
+            {
+                await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
+                    EvidenceReadResultCode.LimitExceeded, 0, delegation, ct);
+                throw new EvidenceReadLimitExceededException();
+            }
+
+            if (activeAttemptBudget.Value?.IsExpired == true)
+            {
+                await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
+                    EvidenceReadResultCode.AttemptBudgetInterrupted, 0, delegation, CancellationToken.None);
+                throw new AttemptDurationBudgetExceededException();
+            }
+
+            var result = recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed
+                ? new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0)
+                : EvidenceRead.Read(taskId, steps, directive!);
+            if (activeAttemptBudget.Value?.IsExpired == true)
+            {
+                await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
+                    EvidenceReadResultCode.AttemptBudgetInterrupted, 0, delegation, CancellationToken.None);
+                throw new AttemptDurationBudgetExceededException();
+            }
+
+            await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
+                result.Code, result.ReturnedLength, delegation, ct);
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
+                recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
+                    ? EvidenceRead.Reply(directive!, result)
+                    : "EvidenceRead/v1 rejected: Malformed."));
+
+            response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
+                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision));
+            tokens += UsageTokens(response);
+            if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
+            {
+                throw new TokenBudgetCrossedException();
+            }
+        }
+
+        if (options.MaxTotalTokens is { } finalTokenCap && tokensBefore + tokens > finalTokenCap)
+        {
+            throw new TokenBudgetCrossedException();
+        }
+
+        return (response, tokens);
+    }
+
+    private Task WriteEvidenceReadAuditEventAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        int? stepIndex,
+        int? planRevision,
+        EvidenceReadDirective? directive,
+        EvidenceReadResultCode resultCode,
+        int returnedLength,
+        DelegatedExecutionScope? delegation,
+        CancellationToken ct) =>
+        WriteAuditAsync(new EvidenceReadAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = taskId,
+            StepIndex = stepIndex,
+            Actor = actor,
+            PlanRevision = planRevision,
+            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            Offset = directive?.Offset,
+            RequestedLength = directive?.Length,
+            ReturnedLength = returnedLength,
+            ResultCode = resultCode,
+        }, delegation, ct);
 
     /// <summary>
     /// One logical model call (ADR-0039): a bounded loop of attempts, each under its own timeout distinct from the task's
@@ -1956,6 +2246,11 @@ public sealed class AgentRunner(
         var callStartedAt = timeProvider.GetTimestamp();
         for (var attempt = 1; ; attempt++)
         {
+            if (activeAttemptBudget.Value?.IsExpired == true)
+            {
+                throw new AttemptDurationBudgetExceededException();
+            }
+
             var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
             var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var startedAtUtc = timeProvider.GetUtcNow();
@@ -1964,6 +2259,7 @@ public sealed class AgentRunner(
             // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
             // a successful call is not a model failure and is never classified, recorded or retried as one.
             ModelResponse? response = null;
+            var attemptBudgetInterrupted = false;
             try
             {
                 response = await AttemptModelCallAsync(request, attemptTimeout, ct);
@@ -1972,6 +2268,12 @@ public sealed class AgentRunner(
             {
                 // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
                 throw;
+            }
+            catch (OperationCanceledException) when (activeAttemptBudget.Value?.IsExpired == true)
+            {
+                attemptBudgetInterrupted = true;
+                failure = new AttemptFailure(ModelFailureKind.Timeout,
+                    "The execution attempt exhausted its active-duration budget during the model call.", null, null, null);
             }
             catch (OperationCanceledException)
             {
@@ -2027,7 +2329,9 @@ public sealed class AgentRunner(
             }
 
             var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-            var (decision, delay) = DecideModelRetry(failure, attempt, callStartedAt);
+            var (decision, delay) = attemptBudgetInterrupted
+                ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
+                : DecideModelRetry(failure, attempt, callStartedAt);
             long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
             calls.Add(BuildCallRecord(startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
             {
@@ -2043,6 +2347,11 @@ public sealed class AgentRunner(
             await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, failure.Message, null,
                 failure.Details?.ActualModel, failedMs, attempt, failure.Kind, decision, delayMs, failure.StatusCode, ct);
 
+            if (attemptBudgetInterrupted)
+            {
+                throw new AttemptDurationBudgetExceededException();
+            }
+
             if (decision != ModelRetryDecision.Retry)
             {
                 throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, attempt)) { FailureKind = failure.Kind };
@@ -2055,22 +2364,197 @@ public sealed class AgentRunner(
                     taskId, attempt, failure.Kind, delayMs);
             }
 
-            await (ModelRetryDelay ?? DelayAsync)(delay!.Value, ct);
+            try
+            {
+                await DelayForRetryAsync(delay!.Value, ct);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
+            {
+                throw new AttemptDurationBudgetExceededException();
+            }
         }
+    }
+
+    /// <summary>
+    /// HARDEN-8 ContextOverflow recovery at the runtime caller boundary. A logical call with verbatim history retries once
+    /// after rebuilding at K=0; calls without compactable history and a second overflow retain ADR-0039 terminal semantics.
+    /// </summary>
+    private async Task<ModelResponse> CallModelWithOverflowRecoveryAsync(
+        Guid taskId,
+        int stepIndex,
+        ActorIdentity actor,
+        Func<bool, ModelRequest> requestFactory,
+        DelegatedExecutionScope? delegation,
+        List<ModelCallRecord> calls,
+        LogicalCallState logicalCall,
+        CancellationToken ct,
+        Func<ModelResponse, string?>? malformedOutput = null)
+    {
+        try
+        {
+            return await CallModelAsync(taskId, stepIndex, actor, requestFactory(logicalCall.Aggressive),
+                delegation, calls, ct, malformedOutput);
+        }
+        catch (ModelProtocolException ex) when (
+            ex.FailureKind == ModelFailureKind.ContextOverflow
+            && !logicalCall.OverflowRetried
+            && logicalCall.HasCompactableHistory)
+        {
+            logicalCall.OverflowRetried = true;
+            logicalCall.Aggressive = true;
+            return await CallModelAsync(taskId, stepIndex, actor, requestFactory(true),
+                delegation, calls, ct, malformedOutput);
+        }
+    }
+
+    private async Task<(ModelResponse Response, TaskState? Terminal)> ResolveStepEvidenceReadsAsync(
+        ExecutionRun run,
+        int stepIndex,
+        Func<bool, ModelRequest> requestFactory,
+        List<ModelCallRecord> calls,
+        LogicalCallState logicalCall,
+        ModelResponse initialResponse,
+        CancellationToken ct)
+    {
+        var response = initialResponse;
+        while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
+        {
+            logicalCall.EvidenceReadAttempts++;
+            var directive = recognition.Directive;
+            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
+            {
+                await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
+                    EvidenceReadResultCode.LimitExceeded, returnedLength: 0, ct);
+                run.Steps.Add(new PlanStep(
+                    run.Steps.Count,
+                    TaskResumePolicy.EvidenceReadLimitStepDescription,
+                    null,
+                    null,
+                    "EvidenceRead/v1 limit exceeded")
+                {
+                    ModelCalls = calls,
+                    ExecutionAttempt = run.ExecutionAttempt,
+                });
+                return (response, await FinishAsync(run, AgentTaskStatus.Failed,
+                    TaskTerminalKind.RuntimeFailure, ct));
+            }
+
+            if (run.AttemptBudget.IsExpired)
+            {
+                await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
+                    EvidenceReadResultCode.AttemptBudgetInterrupted, returnedLength: 0, CancellationToken.None);
+                return (response, await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
+                    TaskTerminalKind.AttemptDurationBudget, CancellationToken.None));
+            }
+
+            EvidenceReadResult result;
+            if (recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed)
+            {
+                result = new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0);
+            }
+            else
+            {
+                result = EvidenceRead.Read(run.TaskId, run.Steps, directive!);
+            }
+
+            if (run.AttemptBudget.IsExpired)
+            {
+                await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
+                    EvidenceReadResultCode.AttemptBudgetInterrupted, returnedLength: 0, CancellationToken.None);
+                return (response, await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
+                    TaskTerminalKind.AttemptDurationBudget, CancellationToken.None));
+            }
+
+            await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
+                result.Code, result.ReturnedLength, ct);
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
+                recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
+                    ? EvidenceRead.Reply(directive!, result)
+                    : "EvidenceRead/v1 rejected: Malformed."));
+
+            response = await CallModelWithOverflowRecoveryAsync(
+                run.TaskId, stepIndex, run.Actor, requestFactory, run.Delegation, calls, logicalCall, ct);
+            run.TokensUsed += UsageTokens(response);
+            if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+            {
+                return (response, await StopForTokenCrossingAsync(run, calls, ct));
+            }
+        }
+
+        return (response, null);
+    }
+
+    private Task WriteEvidenceReadAuditAsync(
+        ExecutionRun run,
+        int? stepIndex,
+        int? planRevision,
+        EvidenceReadDirective? directive,
+        EvidenceReadResultCode resultCode,
+        int returnedLength,
+        CancellationToken ct) =>
+        WriteAuditAsync(new EvidenceReadAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = run.TaskId,
+            StepIndex = stepIndex,
+            Actor = run.Actor,
+            PlanRevision = planRevision,
+            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            Offset = directive?.Offset,
+            RequestedLength = directive?.Length,
+            ReturnedLength = returnedLength,
+            ResultCode = resultCode,
+        }, run.Delegation, ct);
+
+    private async Task AuditInitialPlanningDirectiveAsync(
+        Guid taskId,
+        ActorIdentity actor,
+        DelegatedExecutionScope? delegation,
+        ModelResponse response,
+        CancellationToken ct)
+    {
+        var recognition = EvidenceRead.Recognize(response);
+        if (recognition.Kind == RuntimeDirectiveRecognitionKind.None)
+        {
+            return;
+        }
+
+        await WriteAuditAsync(new EvidenceReadAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = taskId,
+            StepIndex = null,
+            Actor = actor,
+            PlanRevision = null,
+            EvidenceId = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.EvidenceId, 128),
+            Source = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.Source, 32),
+            Offset = recognition.Directive?.Offset,
+            RequestedLength = recognition.Directive?.Length,
+            ReturnedLength = 0,
+            ResultCode = recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
+                ? EvidenceReadResultCode.NotAllowedInPhase
+                : EvidenceReadResultCode.Malformed,
+        }, delegation, ct);
     }
 
     /// <summary>One attempt, under its own timeout linked to — but distinguishable from — the task's cancellation.</summary>
     private async Task<ModelResponse> AttemptModelCallAsync(ModelRequest request, TimeSpan timeout, CancellationToken ct)
     {
         using var timeoutSource = new CancellationTokenSource(ClampTimerDue(timeout), timeProvider);
-        using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token);
+        var budgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None;
+        using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token, budgetToken);
+        using var waitSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutSource.Token, budgetToken);
         var call = model.CompleteAsync(request, attemptSource.Token);
         try
         {
             // WaitAsync on the timeout alone: an adapter that ignores its token still cannot hold the loop past the attempt
             // timeout, while the task's own cancellation keeps its existing meaning — it reaches the adapter through
             // attemptSource, and a reply the adapter already produced is not thrown away.
-            return await call.WaitAsync(timeoutSource.Token);
+            return await call.WaitAsync(waitSource.Token);
         }
         catch (OperationCanceledException) when (!call.IsCompleted)
         {
@@ -2090,6 +2574,21 @@ public sealed class AgentRunner(
     }
 
     private Task DelayAsync(TimeSpan delay, CancellationToken ct) => Task.Delay(delay, timeProvider, ct);
+
+    private async Task DelayForRetryAsync(TimeSpan delay, CancellationToken ct)
+    {
+        if (ModelRetryDelay is not null)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
+            await ModelRetryDelay(delay, linked.Token);
+            return;
+        }
+
+        using var source = CancellationTokenSource.CreateLinkedTokenSource(
+            ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
+        await DelayAsync(delay, source.Token);
+    }
 
     /// <summary>
     /// The runtime's retry decision after one failed attempt (ADR-0039 §4): only transient kinds, only while attempts remain,
@@ -2267,6 +2766,11 @@ public sealed class AgentRunner(
     private static bool IsEmptyFinal(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0) && string.IsNullOrWhiteSpace(response.TextResponse);
 
+    private static bool IsOriginalFinalAnswer(ModelResponse response) =>
+        (response.IsFinal || response.ToolCalls.Count == 0)
+        && !string.IsNullOrWhiteSpace(response.TextResponse)
+        && EvidenceRead.Recognize(response).Kind == RuntimeDirectiveRecognitionKind.None;
+
     private static string DescribeEmptyResponse(List<ModelCallRecord> calls)
     {
         var last = calls[^1];
@@ -2418,8 +2922,22 @@ public sealed class AgentRunner(
 
         if (policyDecision.Mode == PolicyMode.Approval)
         {
-            var approval = await approvalProvider.RequestApprovalAsync(
-                manifest, call.Arguments, manifest.Verification, policyDecision.Reason, ct);
+            ApprovalDecision approval;
+            activeAttemptBudget.Value?.Pause();
+            try
+            {
+                if (activeAttemptBudget.Value?.IsExpired == true)
+                {
+                    throw new AttemptDurationBudgetExceededException();
+                }
+
+                approval = await approvalProvider.RequestApprovalAsync(
+                    manifest, call.Arguments, manifest.Verification, policyDecision.Reason, ct);
+            }
+            finally
+            {
+                activeAttemptBudget.Value?.Resume();
+            }
 
             // ADR-0030 section 5: in a delegated run an agent can only request an approval. A yes from an agent, from the runtime or
             // in the name of one of the run's agents is not one, and is recorded and acted on as a refusal.
@@ -2503,6 +3021,19 @@ public sealed class AgentRunner(
         try
         {
             result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
+        }
+        catch (AttemptDurationBudgetExceededException)
+        {
+            stopwatch.Stop();
+            var interrupted = new ToolCallResult(ToolOutcome.Timeout, null,
+                "Tool execution interrupted: attempt duration budget exceeded.")
+            {
+                FailureKind = ToolFailureKind.Timeout,
+            };
+            var recorded = await RecordAsync(taskId, stepIndex, actor, call, tool, interrupted,
+                authorization, stopwatch.Elapsed, verification: null, verificationDetail: null, planRevision,
+                CancellationToken.None, skillScope, delegation);
+            throw new AttemptDurationStepInterruptedException(recorded.Step, recorded.Observation);
         }
         catch (OperationCanceledException) when (delegation is not null && manifest.Risk != RiskLevel.Read)
         {
@@ -2812,7 +3343,8 @@ public sealed class AgentRunner(
         ToolExecutionContext executionContext,
         CancellationToken ct)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
         timeoutCts.CancelAfter(options.DefaultToolTimeout);
 
         try
@@ -2825,6 +3357,10 @@ public sealed class AgentRunner(
             return result.Outcome == ToolOutcome.Timeout && result.FailureKind == ToolFailureKind.Unspecified
                 ? result with { FailureKind = ToolFailureKind.Timeout }
                 : result;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
+        {
+            throw new AttemptDurationBudgetExceededException();
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -2970,7 +3506,10 @@ public sealed class AgentRunner(
                 : $"{observationText}\nVerification: {status} — {verificationDetail}";
         }
 
-        var step = new PlanStep(stepIndex, manifest.Name, call, result, observationText, planRevision);
+        var step = new PlanStep(stepIndex, manifest.Name, call, result, observationText, planRevision)
+        {
+            VerificationStatus = verification,
+        };
         return (step, WrapToolOutput(observationText));
     }
 
@@ -3254,8 +3793,8 @@ public sealed class AgentRunner(
     private static string BuildStepSystemPrompt(AgentPlan plan, EvidenceLimitations? limitations)
     {
         var prompt = plan.Steps.Count == 0
-            ? SystemPrompt
-            : $"{SystemPrompt}\n\n{DescribePlan(plan)}\n\n" +
+            ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}"
+            : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{DescribePlan(plan)}\n\n" +
               "Propose the concrete tool call for the next unfinished step above, or report " +
               "completion if the goal is already achieved.";
 
@@ -3303,6 +3842,27 @@ public sealed class AgentRunner(
     /// </summary>
     private static Func<ModelResponse, string?> MalformedPlan(int revision) =>
         response => TryParsePlan(response.TextResponse, revision, out var problem) is null ? problem : null;
+
+    private static Func<ModelResponse, string?> MalformedPlanUnlessRuntimeDirective(int revision) =>
+        response => EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None
+            ? null
+            : MalformedPlan(revision)(response);
+
+    private static string ProjectForPrompt(string value, int maximum)
+    {
+        if (value.Length <= maximum)
+        {
+            return value;
+        }
+
+        const string marker = "\n...[projected]...\n";
+        var available = maximum - marker.Length;
+        var head = available * 2 / 3;
+        var tail = available - head;
+        if (char.IsHighSurrogate(value[head - 1])) head--;
+        if (char.IsLowSurrogate(value[value.Length - tail])) tail--;
+        return string.Concat(value.AsSpan(0, head), marker, value.AsSpan(value.Length - tail, tail));
+    }
 
     // Duplicate property names are rejected at parse time, at every depth, exactly like the provider side's StrictJson
     // (ADR-0038 review M-2): the default options accept {"steps":[…],"steps":[…]} and throw ArgumentException only on a later
@@ -3397,6 +3957,8 @@ public sealed class AgentRunner(
 
         public DelegatedExecutionScope? Delegation { get; init; }
 
+        public required ActiveAttemptBudget AttemptBudget { get; init; }
+
         public required List<PlanStep> Steps { get; init; }
 
         public required List<AgentPlan> Plans { get; init; }
@@ -3434,6 +3996,19 @@ public sealed class AgentRunner(
                 ResumedAtUtc = ResumedAtUtc,
                 ResumedBy = ResumedBy,
             };
+    }
+
+    private sealed class LogicalCallState
+    {
+        internal bool Aggressive { get; set; }
+
+        internal bool OverflowRetried { get; set; }
+
+        internal bool HasCompactableHistory { get; set; }
+
+        internal int EvidenceReadAttempts { get; set; }
+
+        internal List<ChatTurn> ContinuationTurns { get; } = [];
     }
 
     private delegate Task<ToolCallResult> EvidenceInvocation(

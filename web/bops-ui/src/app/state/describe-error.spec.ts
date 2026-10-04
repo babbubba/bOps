@@ -183,7 +183,7 @@ describe('describeError', () => {
 
   describe('terminal reason', () => {
     it('labels every terminal kind in both languages', () => {
-      for (let kind = 0; kind <= 12; kind++) {
+      for (let kind = 0; kind <= 13; kind++) {
         i18n().setLanguage('en');
         const english = describeTerminalKind({ kind: kind as TaskTerminalKind }, i18n());
         i18n().setLanguage('it');
