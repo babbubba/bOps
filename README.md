@@ -159,6 +159,22 @@ $env:BOPS_MODEL_API_KEY = '<your-openrouter-key>'          # PowerShell
 Another provider is a matter of configuration, for example
 `ModelProvider__Provider=Ollama` with `ModelProvider__BaseUrl` and `ModelProvider__Model`.
 
+The shipped agent guardrails keep three completed tool steps verbatim, cap cumulative reported usage at
+350,000 tokens, and allow 60 minutes of active work per execution attempt:
+
+```json
+"Agent": {
+  "VerbatimHistorySteps": 3,
+  "MaxTotalTokens": 350000,
+  "MaxAttemptDuration": "01:00:00"
+}
+```
+
+`VerbatimHistorySteps` accepts 0–15. The nullable token and duration budgets can be explicitly disabled;
+otherwise tokens must be positive and duration must be greater than zero and no more than 24 hours. Invalid
+values fail startup validation rather than being clamped. Human approval waiting does not consume the active
+attempt-duration budget, and reported tokens remain cumulative across resumes.
+
 **Run** — from the CLI project directory, so its `appsettings.json` is loaded (running from
 the repository root fails with `Missing 'ModelProvider' configuration section`):
 

@@ -104,7 +104,8 @@ not `AgentPlanner`, "because planning and execution are not yet separated in V0.
 ## HARDEN-8 amendment — context and budget economy (Accepted 2026-10-04)
 
 This amendment was accepted on 2026-10-04 after the final independent architecture delta review
-passed. Implementation may begin; no further architecture gate remains. It supplements the original
+passed. Implementation completed on `feat/harden-08-context-budget-economy` on 2026-10-04 and is ready
+for independent implementation review; no further architecture gate remains. It supplements the original
 PLAN/REPLAN decision; ADR-0039 model failure containment, ADR-0040 resume accounting and ADR-0042
 evidence reasoning remain authoritative at their respective boundaries. The source baseline is
 `main` at `ad4d196` (HARDEN-9 merged in PR #74). The 12-step, zero-replan diagnostic that used
