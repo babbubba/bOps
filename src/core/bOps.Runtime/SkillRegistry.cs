@@ -195,6 +195,14 @@ public sealed class SkillRegistry : ISkillRegistry
             throw new SkillRegistrationException(
                 $"Capability '{manifest.Name}' is {manifest.Risk}-risk but declares no verification.");
         }
+
+        // ADR-0044 section 9.2 (review N-7): the input schema is authoritative wherever the Capability is invoked, and a client
+        // renders a form from it, so it must be internally valid before the Capability becomes active. Refused here, never left
+        // to fail later in a lookup or a validator.
+        if (ArgumentSchema.DescribeInvalidInputSchema(manifest.InputSchema) is { } problem)
+        {
+            throw new SkillRegistrationException($"Capability '{manifest.Name}' has an invalid input schema: {problem}.");
+        }
     }
 
     private sealed record RegisteredSkill(

@@ -3,7 +3,6 @@
 
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using bOps.Abstractions;
 
 namespace bOps.Runtime;
@@ -59,12 +58,13 @@ internal static class DelegationRoleData
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(provenance);
 
-        var prefix = role.ToString().ToLowerInvariant();
+        var prefix = EvidencePrefix(role);
         var evidence = new List<Evidence>();
         foreach (var step in task.Steps)
         {
-            if (step.ToolCall is { } call && step.Result is { Succeeded: true })
+            if (ProducesEvidence(step))
             {
+                var call = step.ToolCall!;
                 evidence.Add(new Evidence($"{prefix}-{step.Index}", EvidenceKind.Fact, $"Read '{call.ToolName}'.", step.Observation, call.ToolName, now)
                 {
                     Provenance = provenance,
@@ -75,80 +75,227 @@ internal static class DelegationRoleData
         return evidence;
     }
 
+    /// <summary>The prefix of the ids of the Evidence a role records: its name in lower case.</summary>
+    internal static string EvidencePrefix(AgentRoleKind role) => role.ToString().ToLowerInvariant();
+
+    /// <summary>Whether a step of a role's loop becomes Evidence: a tool call that succeeded. Failed and denied calls never do.</summary>
+    internal static bool ProducesEvidence(PlanStep step) => step.ToolCall is not null && step.Result is { Succeeded: true };
+
+    /// <summary>
+    /// The typed limitations of a Discovery or Diagnostic role's model-loop evidence collection (ADR-0044 section 16), computed
+    /// from its persisted task when the role ends, with the ADR-0042 classification. Never asks a model, never reads tool text.
+    /// </summary>
+    internal static (IReadOnlyList<EvidenceLimitation> Limitations, int Omitted) LimitationsOf(TaskState task, AgentRoleKind role)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return EvidenceLimitationsDigest.Typed(task.Steps, role);
+    }
+
     /// <summary>The model's final reply in a loop, or <c>null</c> when it made none.</summary>
     internal static string? FinalText(TaskState task) =>
         task.Steps.LastOrDefault(FinalResponse.IsFinalStep)?.Observation;
+
+    /// <summary>The longest Diagnostic reply that is parsed, in UTF-16 code units; a longer one is refused, never cut (ADR-0044 section 17).</summary>
+    internal const int MaxReplyCharacters = 65_536;
+
+    /// <summary>The deepest nesting of the Diagnostic reply's JSON that is parsed.</summary>
+    internal const int MaxReplyDepth = 16;
+
+    /// <summary>The most findings a Diagnostic reply may carry; more is refused as a whole, never truncated.</summary>
+    internal const int MaxFindings = 64;
+
+    private static readonly JsonDocumentOptions SyntaxOptions = new() { MaxDepth = MaxReplyDepth };
+
+    private static readonly JsonDocumentOptions StrictOptions = new() { MaxDepth = MaxReplyDepth, AllowDuplicateProperties = false };
 
     /// <summary>
     /// Findings from the Diagnostic role's reply. A finding is kept only when it has a summary and cites at least one
     /// piece of Evidence, all of it recorded in this run; anything else, or a reply that is not the requested JSON, yields
     /// nothing, so a claim with no evidence behind it never becomes a Finding (ADR-0023).
     /// </summary>
-    internal static List<Finding> FindingsOf(string? reply, IReadOnlySet<string> recordedEvidenceIds)
+    internal static List<Finding> FindingsOf(string? reply, IReadOnlySet<string> recordedEvidenceIds) =>
+        ReadFindings(reply, recordedEvidenceIds).Findings;
+
+    /// <summary>
+    /// Reads the Diagnostic role's reply strictly and within bounds (ADR-0044 section 17), and says how it was read. The slice
+    /// from the first <c>{</c> to the last <c>}</c> is the only candidate — the existing containment, so prose or a fence around
+    /// one object is tolerated and two objects are not — and it must be one JSON object, at most <see cref="MaxReplyDepth"/>
+    /// deep, with no property name repeated at any depth, holding a <c>findings</c> array of at most <see cref="MaxFindings"/>
+    /// entries. Any other reply yields zero findings and a typed problem; nothing is guessed, truncated or rescued, and nothing
+    /// thrown escapes. The per-finding rules then drop, and count, entries that cite no or unrecorded evidence.
+    /// </summary>
+    internal static (List<Finding> Findings, DiagnosticReplyOutcome Outcome) ReadFindings(string? reply, IReadOnlySet<string> recordedEvidenceIds)
     {
         ArgumentNullException.ThrowIfNull(recordedEvidenceIds);
 
-        var findings = new List<Finding>();
         if (string.IsNullOrWhiteSpace(reply))
         {
-            return findings;
+            return ([], Outcome(DiagnosticReplyStatus.Absent, DiagnosticReplyProblem.None));
+        }
+
+        if (reply.Length > MaxReplyCharacters)
+        {
+            return ([], Malformed(DiagnosticReplyProblem.TooLarge));
         }
 
         var start = reply.IndexOf('{', StringComparison.Ordinal);
         var end = reply.LastIndexOf('}');
         if (start < 0 || end <= start)
         {
-            return findings;
+            return ([], Malformed(DiagnosticReplyProblem.NoJsonObject));
         }
 
-        JsonNode? root;
+        var slice = reply[start..(end + 1)];
         try
         {
-            root = JsonNode.Parse(reply[start..(end + 1)]);
-        }
-        catch (JsonException)
-        {
-            return findings;
-        }
-
-        if (root is not JsonObject { } document || document["findings"] is not JsonArray items)
-        {
-            return findings;
-        }
-
-        foreach (var item in items)
-        {
-            if (item is not JsonObject entry
-                || entry["summary"] is not JsonValue summaryNode || !summaryNode.TryGetValue<string>(out var summary) || string.IsNullOrWhiteSpace(summary)
-                || entry["evidenceIds"] is not JsonArray idNodes || idNodes.Count == 0)
+            // Syntax and depth first; then a structural walk decides a repeated name, never an exception's message; the
+            // strict parse stays as the defence-in-depth gate (HARDEN-1 convention).
+            using (var syntax = JsonDocument.Parse(slice, SyntaxOptions))
             {
-                continue;
-            }
-
-            var ids = new List<string>();
-            foreach (var idNode in idNodes)
-            {
-                if (idNode is JsonValue value && value.TryGetValue<string>(out var id) && recordedEvidenceIds.Contains(id))
+                if (HasDuplicateProperty(syntax.RootElement))
                 {
-                    ids.Add(id);
+                    return ([], Malformed(DiagnosticReplyProblem.DuplicateProperty));
                 }
             }
 
-            // Half a citation is not a citation: every cited id must be one that was recorded.
-            if (ids.Count != idNodes.Count)
+            using var document = ParseStrict(slice);
+            if (document is null)
             {
-                continue;
+                return ([], Malformed(DiagnosticReplyProblem.DuplicateProperty));
             }
 
-            findings.Add(new Finding($"finding-{findings.Count}", summary, ids, SeverityOf(entry["severity"])));
+            return Interpret(document.RootElement, recordedEvidenceIds);
         }
-
-        return findings;
+        catch (JsonException)
+        {
+            return ([], Malformed(DiagnosticReplyProblem.InvalidJson));
+        }
+        catch (InvalidOperationException)
+        {
+            // Well-formed JSON whose text cannot be read as a .NET string (an escaped lone surrogate in a name or value).
+            return ([], Malformed(DiagnosticReplyProblem.InvalidJson));
+        }
+        catch (ArgumentException)
+        {
+            // Cannot occur with the options above; caught so that nothing a model wrote can end the run through an exception.
+            return ([], Malformed(DiagnosticReplyProblem.InvalidJson));
+        }
     }
 
-    private static RiskLevel? SeverityOf(JsonNode? node)
+    private static JsonDocument? ParseStrict(string slice)
     {
-        if (node is not JsonValue value || !value.TryGetValue<string>(out var text))
+        try
+        {
+            return JsonDocument.Parse(slice, StrictOptions);
+        }
+        catch (JsonException)
+        {
+            // The slice already parsed without the duplicate check, so the strict gate refusing it can only be a repeated name.
+            return null;
+        }
+    }
+
+    private static (List<Finding>, DiagnosticReplyOutcome) Interpret(JsonElement root, IReadOnlySet<string> recordedEvidenceIds)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return ([], Malformed(DiagnosticReplyProblem.NotAnObject));
+        }
+
+        if (!root.TryGetProperty("findings", out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            return ([], Malformed(DiagnosticReplyProblem.MissingFindingsArray));
+        }
+
+        if (items.GetArrayLength() > MaxFindings)
+        {
+            return ([], Malformed(DiagnosticReplyProblem.TooManyFindings));
+        }
+
+        var findings = new List<Finding>();
+        var discarded = 0;
+        foreach (var entry in items.EnumerateArray())
+        {
+            if (FindingOf(entry, findings.Count, recordedEvidenceIds) is { } finding)
+            {
+                findings.Add(finding);
+            }
+            else
+            {
+                discarded++;
+            }
+        }
+
+        return (findings, Outcome(DiagnosticReplyStatus.Valid, DiagnosticReplyProblem.None, discarded));
+    }
+
+    private static Finding? FindingOf(JsonElement entry, int position, IReadOnlySet<string> recordedEvidenceIds)
+    {
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("summary", out var summaryNode) || summaryNode.ValueKind != JsonValueKind.String
+            || summaryNode.GetString() is not { } summary || string.IsNullOrWhiteSpace(summary)
+            || !entry.TryGetProperty("evidenceIds", out var idNodes) || idNodes.ValueKind != JsonValueKind.Array || idNodes.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var ids = new List<string>();
+        foreach (var idNode in idNodes.EnumerateArray())
+        {
+            if (idNode.ValueKind == JsonValueKind.String && idNode.GetString() is { } id && recordedEvidenceIds.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        // Half a citation is not a citation: every cited id must be one that was recorded.
+        if (ids.Count != idNodes.GetArrayLength())
+        {
+            return null;
+        }
+
+        return new Finding($"finding-{position}", summary, ids, entry.TryGetProperty("severity", out var severity) ? SeverityOf(severity) : null);
+    }
+
+    /// <summary>Whether any object at any depth repeats a property name (ordinal).</summary>
+    private static bool HasDuplicateProperty(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (!names.Add(property.Name) || HasDuplicateProperty(property.Value))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (HasDuplicateProperty(item))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    private static DiagnosticReplyOutcome Malformed(DiagnosticReplyProblem problem) => Outcome(DiagnosticReplyStatus.Malformed, problem);
+
+    private static DiagnosticReplyOutcome Outcome(DiagnosticReplyStatus status, DiagnosticReplyProblem problem, int discarded = 0) =>
+        new() { Status = status, Problem = problem, DiscardedFindings = discarded };
+
+    private static RiskLevel? SeverityOf(JsonElement node)
+    {
+        if (node.ValueKind != JsonValueKind.String || node.GetString() is not { } text)
         {
             return null;
         }

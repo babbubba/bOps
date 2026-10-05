@@ -1093,6 +1093,13 @@ public sealed class AgentRunner(
         => await PrepareSkillCoreAsync(taskId, actor, skillId, capabilityName, request, delegation: null, ct);
 
     /// <summary>
+    /// Whether a named change can be started against this runner's activated catalog (ADR-0044 section 9.2): the orchestrator's
+    /// re-check before any role starts. <c>null</c> when it can.
+    /// </summary>
+    internal CapabilityRequestRefusal? CheckCapabilityRequest(string skillId, string capabilityName, ToolArguments input) =>
+        CapabilityRequestValidator.Check(skillRegistry, skillId, capabilityName, input);
+
+    /// <summary>
     /// <see cref="PrepareSkillAsync"/> for a role of a delegated run (V1.2, ADR-0030): the Capability is refused
     /// before its code runs when the envelope does not allow the Skill, the Capability, the target, the
     /// environment, the blast radius or the time, every evidence call it makes is checked against the envelope
@@ -1169,6 +1176,15 @@ public sealed class AgentRunner(
             return await FailedPreparationAsync(
                 taskId, actor, runId, package, skillId, capabilityName, request,
                 $"Capability '{capabilityName}' does not support dry-run preparation.", emptyReport, delegation, ct);
+        }
+
+        // ADR-0044 section 9.2: the input schema is authoritative wherever a Capability is invoked, delegated or not, so input
+        // that does not conform never reaches Capability code, whichever client sent it.
+        if (ArgumentSchema.Validate(capability.Manifest.InputSchema, request.Input) is { } invalidInput)
+        {
+            return await FailedPreparationAsync(
+                taskId, actor, runId, package, skillId, capabilityName, request,
+                $"Capability '{capabilityName}' input is not valid: {invalidInput.Message}", emptyReport, delegation, ct);
         }
 
         using var invoker = new RestrictedToolInvoker(
@@ -3700,121 +3716,9 @@ public sealed class AgentRunner(
         }
     }
 
-    /// <summary>Validates exact names and JSON-native types before policy, approval or execution (rule S2).</summary>
-    private static string? ValidateArguments(ToolManifest manifest, ToolArguments arguments)
-    {
-        var supplied = arguments.ToJson();
-        var declared = manifest.Parameters.ToDictionary(parameter => parameter.Name, StringComparer.Ordinal);
-        foreach (var (name, _) in supplied)
-        {
-            if (!declared.ContainsKey(name))
-            {
-                return $"Unknown argument '{name}'.";
-            }
-        }
-
-        foreach (var parameter in manifest.Parameters.Where(p => p.Required))
-        {
-            if (!supplied.TryGetPropertyValue(parameter.Name, out var requiredValue) || requiredValue is null)
-            {
-                return $"Missing required argument '{parameter.Name}'.";
-            }
-        }
-
-        foreach (var parameter in manifest.Parameters)
-        {
-            if (!supplied.TryGetPropertyValue(parameter.Name, out var value) || value is null)
-            {
-                continue;
-            }
-
-            var valid = parameter.Type switch
-            {
-                ToolParameterType.String or ToolParameterType.Path or ToolParameterType.Duration or ToolParameterType.Enum =>
-                    value.GetValueKind() == JsonValueKind.String,
-                ToolParameterType.Integer => value is JsonValue integer && integer.TryGetValue<int>(out _),
-                ToolParameterType.Number => value is JsonValue number && number.TryGetValue<double>(out _),
-                ToolParameterType.Boolean => value.GetValueKind() is JsonValueKind.True or JsonValueKind.False,
-                ToolParameterType.PathList => value is JsonArray paths
-                    && paths.All(path => path is not null && path.GetValueKind() == JsonValueKind.String),
-                _ => false,
-            };
-
-            if (!valid)
-            {
-                return $"Argument '{parameter.Name}' is not a valid {parameter.Type}.";
-            }
-
-            if (parameter.AllowedValues is { Count: > 0 }
-                && value is JsonValue allowedValue
-                && allowedValue.TryGetValue<string>(out var text)
-                && !parameter.AllowedValues.Contains(text, StringComparer.Ordinal))
-            {
-                return $"Argument '{parameter.Name}' is not one of the allowed values.";
-            }
-
-            if (ViolatedConstraint(parameter, value) is { } violation)
-            {
-                return violation;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Checks one already type-checked argument against the typed constraints of its parameter (ADR-0022). The message names the
-    /// argument, the value and the bound so a model can correct the call; it is culture-invariant and the value is never clamped.
-    /// </summary>
-    private static string? ViolatedConstraint(ToolParameter parameter, JsonNode value)
-    {
-        var name = parameter.Name;
-        switch (parameter.Type)
-        {
-            case ToolParameterType.Integer or ToolParameterType.Number when value is JsonValue numeric && TryReadNumber(numeric, out var number):
-                if (parameter.Minimum is { } minimum && number < minimum)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' = {number} is below minimum {minimum}.");
-                }
-
-                if (parameter.Maximum is { } maximum && number > maximum)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' = {number} exceeds maximum {maximum}.");
-                }
-
-                break;
-            case ToolParameterType.String or ToolParameterType.Path when value is JsonValue textual && textual.TryGetValue<string>(out var text):
-                if (parameter.MinLength is { } minLength && text.Length < minLength)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' length {text.Length} is below minimum {minLength}.");
-                }
-
-                if (parameter.MaxLength is { } maxLength && text.Length > maxLength)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' length {text.Length} exceeds maximum {maxLength}.");
-                }
-
-                break;
-            case ToolParameterType.PathList when value is JsonArray items:
-                if (parameter.MinItems is { } minItems && items.Count < minItems)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' contains {items.Count} items, below minimum {minItems}.");
-                }
-
-                if (parameter.MaxItems is { } maxItems && items.Count > maxItems)
-                {
-                    return FormattableString.Invariant($"Argument '{name}' contains {items.Count} items, exceeding maximum {maxItems}.");
-                }
-
-                break;
-        }
-
-        return null;
-    }
-
-    /// <summary>Reads a JSON number whatever backs the node: a parsed element or a CLR value a caller built.</summary>
-    private static bool TryReadNumber(JsonValue value, out double number) =>
-        double.TryParse(value.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out number);
+    /// <summary>Validates exact names and JSON-native types before policy, approval or execution (rule S2), through the shared <see cref="ArgumentSchema"/>.</summary>
+    private static string? ValidateArguments(ToolManifest manifest, ToolArguments arguments) =>
+        ArgumentSchema.Validate(manifest.Parameters, arguments)?.Message;
 
     private string TruncateForHistory(string? output)
     {

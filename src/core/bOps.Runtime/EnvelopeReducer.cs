@@ -32,50 +32,37 @@ namespace bOps.Runtime;
 internal static class EnvelopeReducer
 {
     /// <summary>
-    /// Derives the objective's root envelope (depth 0) from the four role profiles and the operator's
-    /// request, and proves at the start that every role can be derived from it. ADR-0030 section 3 says
-    /// the root is derived "in the same way"; with one profile per role it is the most a delegation, as
-    /// configured, could ever exercise: sets are the union of the profiles', ceilings the highest any role
-    /// may reach (a read-only role counting as <see cref="RiskLevel.Read"/>), and the budgets the sum
-    /// across the roles, because they run one after another and each reserves from the run's total. The
-    /// request then only narrows it. A refusal here happens before any role has spent a token or the
-    /// operator has been asked to approve anything.
+    /// Derives the objective's root envelope (depth 0) from the profiles of the roles the request requires and the
+    /// operator's request, and proves at the start that every required role can be derived from it (ADR-0044 section 2,
+    /// amending ADR-0030 section 3). With one profile per required role it is the most the delegation, as configured,
+    /// could ever exercise: sets are the union of those profiles', ceilings the highest any of them may reach (a read-only
+    /// role counting as <see cref="RiskLevel.Read"/>), and the budgets the sum across them, because the roles run one after
+    /// another and each reserves from the run's total. A diagnosis-only root also grants no Skill and no Capability: such a
+    /// run never prepares one. A role the request does not require is never looked up and contributes nothing. The request
+    /// then only narrows the root. A refusal here happens before any role has spent a token or the operator has been asked
+    /// to approve anything.
     /// </summary>
-    /// <param name="profiles">Where the role profiles come from. A role with none refuses the whole delegation.</param>
+    /// <param name="profiles">Where the role profiles come from. A required role with none refuses the whole delegation.</param>
+    /// <param name="remediation">The request shape: whether the request names a change (ADR-0044 section 1).</param>
     /// <param name="request">What the operator limited the objective to. It can never grant.</param>
     /// <param name="originator">The operator on whose authority the run executes.</param>
     /// <param name="now">The instant delegation starts.</param>
     internal static EnvelopeReduction DeriveRoot(
-        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
-        DeriveRootAttributed(profiles, request, originator, now).Reduction;
+        IRoleProfileSource profiles, bool remediation, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        DeriveRootAttributed(profiles, remediation, request, originator, now).Reduction;
 
     /// <summary>
     /// <see cref="DeriveRoot"/> that also says which role a refusal is about, for the orchestrator's audit event (V1.2-D).
-    /// A refusal of the request itself, its deadline or its window, belongs to no role and reports <c>null</c>.
+    /// A refusal of the request itself, its deadline or its window, belongs to no role and reports <c>null</c>. Otherwise the
+    /// refusal is the first non-granted role, in pipeline order, of <see cref="ReduceRequiredRoles"/>: one reduction, of which
+    /// this and the readiness evaluator are two projections (ADR-0044 section 5).
     /// </summary>
     internal static (EnvelopeReduction Reduction, AgentRoleKind? Role) DeriveRootAttributed(
-        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
+        IRoleProfileSource profiles, bool remediation, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(originator);
-
-        var roleProfiles = new List<RoleProfile>(RoleRequirements.Pipeline.Count);
-        foreach (var role in RoleRequirements.Pipeline)
-        {
-            var profile = profiles.GetProfile(role);
-            if (profile is null)
-            {
-                return (NoProfile(role), role);
-            }
-
-            if (profile.Role != role)
-            {
-                return (WrongProfile(role, profile), role);
-            }
-
-            roleProfiles.Add(profile);
-        }
 
         if (request.DeadlineUtc is { } requestedDeadline && requestedDeadline <= now)
         {
@@ -87,26 +74,98 @@ internal static class EnvelopeReducer
             return (EnvelopeReduction.Denied(EnvelopeDimension.MaintenanceWindow, "The requested maintenance window has already ended."), null);
         }
 
-        var root = BuildRoot(roleProfiles, request, originator, now);
-
-        // Fail at the start: a role that would be refused later would waste the roles before it and an
-        // operator's approval. A role whose own window has already closed can never act either.
-        foreach (var profile in roleProfiles)
+        var reduced = ReduceRequiredRoles(profiles, remediation, request, originator, now);
+        foreach (var role in reduced.Roles)
         {
-            var reduction = ReduceForRole(root, profile.Role, profile, request, now);
-            if (reduction.IsDenied)
+            if (role.Reduction.IsDenied)
             {
-                return (reduction, profile.Role);
-            }
-
-            if (reduction.Envelope!.Window is { } window && window.EndUtc <= now)
-            {
-                return (EnvelopeReduction.Denied(
-                    EnvelopeDimension.MaintenanceWindow, $"{profile.Role} role: its maintenance window has already ended."), profile.Role);
+                return (role.Reduction, role.Role);
             }
         }
 
-        return (EnvelopeReduction.Granted(root, NarrowedDimensions(BuildRoot(roleProfiles, new DelegationAuthorityRequest(), originator, now), root)), null);
+        var root = reduced.Root!;
+        return (EnvelopeReduction.Granted(
+            root, NarrowedDimensions(BuildRoot(reduced.Profiles, remediation, new DelegationAuthorityRequest(), originator, now), root)), null);
+    }
+
+    /// <summary>
+    /// The one reduction loop (ADR-0044 section 5): for each role the request shape requires, in pipeline order, the role's
+    /// own result — no usable profile, a profile for another role, or the reduction of its profile from the root built over
+    /// the required roles that do have one, including the "own window already ended" check. Because the root is a
+    /// union/sum/maximum over those profiles, each role's result depends only on its own profile and the request (the
+    /// role-independence lemma), so a missing role does not change another's. A role the shape does not require is not
+    /// looked up at all.
+    /// </summary>
+    /// <param name="profiles">Where the role profiles come from.</param>
+    /// <param name="remediation">The request shape.</param>
+    /// <param name="request">What the operator limited the objective to; the readiness evaluator passes a non-narrowing one.</param>
+    /// <param name="originator">The operator on whose authority the run executes.</param>
+    /// <param name="now">The instant of the evaluation.</param>
+    internal static RequiredRoleReduction ReduceRequiredRoles(
+        IRoleProfileSource profiles, bool remediation, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(originator);
+
+        var required = RoleRequirements.RequiredRoles(remediation);
+        var refusals = new RoleAuthority?[required.Count];
+        var usable = new RoleProfile?[required.Count];
+        for (var i = 0; i < required.Count; i++)
+        {
+            var role = required[i];
+            var profile = profiles.GetProfile(role);
+            if (profile is null)
+            {
+                refusals[i] = new RoleAuthority(role, RoleAuthorityKind.NoProfile, NoProfile(role));
+            }
+            else if (profile.Role != role)
+            {
+                refusals[i] = new RoleAuthority(role, RoleAuthorityKind.WrongProfile, WrongProfile(role, profile));
+            }
+            else
+            {
+                usable[i] = profile;
+            }
+        }
+
+        var present = usable.OfType<RoleProfile>().ToList();
+        var root = present.Count == 0 ? null : BuildRoot(present, remediation, request, originator, now);
+
+        var results = new List<RoleAuthority>(required.Count);
+        for (var i = 0; i < required.Count; i++)
+        {
+            results.Add(refusals[i] ?? new RoleAuthority(required[i], RoleAuthorityKind.Reduced, ReduceAtStart(root!, usable[i]!, request, now)));
+        }
+
+        return new RequiredRoleReduction(root, present, results);
+    }
+
+    /// <summary>
+    /// A role's reduction as delegation start checks it: from the root, plus the refusal of a role whose own window has
+    /// already closed, because such a role could never act and would waste the roles before it and an operator's approval.
+    /// </summary>
+    private static EnvelopeReduction ReduceAtStart(AuthorityEnvelope root, RoleProfile profile, DelegationAuthorityRequest request, DateTimeOffset now)
+    {
+        var reduction = ReduceForRole(root, profile.Role, profile, request, now);
+        return !reduction.IsDenied && reduction.Envelope!.Window is { } window && window.EndUtc <= now
+            ? EnvelopeReduction.Denied(EnvelopeDimension.MaintenanceWindow, $"{profile.Role} role: its maintenance window has already ended.")
+            : reduction;
+    }
+
+    /// <summary>
+    /// Whether one configured profile is usable on its own: the reduction start would make of it with a non-narrowing request
+    /// (ADR-0044 section 11, <c>unusable_profile</c>). By the role-independence lemma this is the profile's result whatever
+    /// else is configured, so it is evaluated against a root built from that profile alone, with its own Skills and
+    /// Capabilities (a Diagnostic role treats both as optional, so the request shape cannot change its result).
+    /// </summary>
+    internal static EnvelopeReduction ReduceConfiguredProfile(RoleProfile profile, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        var request = new DelegationAuthorityRequest();
+        var root = BuildRoot([profile], remediation: true, request, ActorIdentity.RuntimeSystem, now);
+        return ReduceAtStart(root, profile, request, now);
     }
 
     /// <summary>
@@ -229,8 +288,13 @@ internal static class EnvelopeReducer
         return EnvelopeReduction.Granted(envelope, NarrowedDimensions(parent, envelope));
     }
 
+    /// <summary>
+    /// <c>Build</c> of ADR-0044 section 2 followed by the request's narrowing: the union of the sets, the highest capped risk and
+    /// blast radius, the saturating sum of steps, tokens and durations. For a diagnosis-only shape the Skills and Capabilities
+    /// are forced empty, which only removes authority such a run never uses.
+    /// </summary>
     private static AuthorityEnvelope BuildRoot(
-        IReadOnlyList<RoleProfile> profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
+        IReadOnlyList<RoleProfile> profiles, bool remediation, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now)
     {
         var maxRisk = profiles.Max(p => Min(p.MaxRisk, RoleRequirements.RiskCap(p.Role)));
         var maxBlastRadius = profiles.Max(p => p.MaxBlastRadius);
@@ -242,8 +306,8 @@ internal static class EnvelopeReducer
         return new AuthorityEnvelope(
             originator,
             Depth: RoleRequirements.RoleDepth - 1,
-            NarrowTo(Union(profiles.Select(p => p.AllowedSkills)), request.AllowedSkills),
-            NarrowTo(Union(profiles.Select(p => p.AllowedCapabilities)), request.AllowedCapabilities),
+            remediation ? NarrowTo(Union(profiles.Select(p => p.AllowedSkills)), request.AllowedSkills) : [],
+            remediation ? NarrowTo(Union(profiles.Select(p => p.AllowedCapabilities)), request.AllowedCapabilities) : [],
             NarrowTo(Union(profiles.Select(p => p.AllowedTools)), request.AllowedTools),
             request.MaxRisk is { } risk ? Min(risk, maxRisk) : maxRisk,
             request.MaxBlastRadius is { } blast ? Min(blast, maxBlastRadius) : maxBlastRadius,
@@ -412,11 +476,32 @@ internal static class EnvelopeReducer
     private static DateTimeOffset AddSaturating(DateTimeOffset start, TimeSpan duration) =>
         duration > DateTimeOffset.MaxValue - start ? DateTimeOffset.MaxValue : start + duration;
 
-    private static EnvelopeReduction NoProfile(AgentRoleKind role) =>
-        EnvelopeReduction.Denied(
-            EnvelopeDimension.Profile,
-            $"{role} role: no usable profile is configured. Delegation stays off until the operator configures one for every role.");
+    /// <summary>The refusal of a required role with no usable profile. The same text for readiness and start (ADR-0044 section 6.2).</summary>
+    internal static EnvelopeReduction NoProfile(AgentRoleKind role) =>
+        EnvelopeReduction.Denied(EnvelopeDimension.Profile, $"{role} role: no usable profile is configured.");
 
     private static EnvelopeReduction WrongProfile(AgentRoleKind role, RoleProfile profile) =>
         EnvelopeReduction.Denied(EnvelopeDimension.Profile, $"{role} role: the profile supplied is for the {profile.Role} role.");
 }
+
+/// <summary>How a required role's result in the reduction loop came about.</summary>
+internal enum RoleAuthorityKind
+{
+    /// <summary>The source has no profile for the role.</summary>
+    NoProfile,
+
+    /// <summary>The source returned a profile for another role.</summary>
+    WrongProfile,
+
+    /// <summary>The role's profile was reduced from the root: granted, or refused naming the dimension.</summary>
+    Reduced,
+}
+
+/// <summary>One required role's own result in the reduction loop: a granted envelope, or the refusal naming its dimension.</summary>
+internal sealed record RoleAuthority(AgentRoleKind Role, RoleAuthorityKind Kind, EnvelopeReduction Reduction);
+
+/// <summary>
+/// The result of <see cref="EnvelopeReducer.ReduceRequiredRoles"/>: the root built over the required roles that have a usable
+/// profile (<c>null</c> when none has), those profiles, and one result per required role in pipeline order.
+/// </summary>
+internal sealed record RequiredRoleReduction(AuthorityEnvelope? Root, IReadOnlyList<RoleProfile> Profiles, IReadOnlyList<RoleAuthority> Roles);

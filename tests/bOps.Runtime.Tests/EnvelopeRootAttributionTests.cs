@@ -15,6 +15,16 @@ public sealed class EnvelopeRootAttributionTests
     private static readonly ActorIdentity Operator = ActorIdentity.FromOperatingSystemUser("operator");
     private static readonly DateTimeOffset Now = new(2026, 9, 19, 12, 0, 0, TimeSpan.Zero);
 
+    // These tests describe the remediation shape (ADR-0044 section 1: all four roles required). The diagnosis-only shape is
+    // covered by RequestDependentAuthorityTests.
+    private static EnvelopeReduction DeriveRemediationRoot(
+        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        EnvelopeReducer.DeriveRoot(profiles, remediation: true, request, originator, now);
+
+    private static (EnvelopeReduction Reduction, AgentRoleKind? Role) DeriveRemediationRootAttributed(
+        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        EnvelopeReducer.DeriveRootAttributed(profiles, remediation: true, request, originator, now);
+
     private sealed class Profiles(Dictionary<AgentRoleKind, RoleProfile> byRole) : IRoleProfileSource
     {
         public RoleProfile? GetProfile(AgentRoleKind role) => byRole.GetValueOrDefault(role);
@@ -39,12 +49,12 @@ public sealed class EnvelopeRootAttributionTests
     {
         var source = new Profiles(All());
 
-        var (reduction, role) = EnvelopeReducer.DeriveRootAttributed(source, new DelegationAuthorityRequest(), Operator, Now);
+        var (reduction, role) = DeriveRemediationRootAttributed(source, new DelegationAuthorityRequest(), Operator, Now);
 
         Assert.False(reduction.IsDenied);
         Assert.Null(role);
         Assert.Equal(
-            DelegationHasher.ComputeEnvelopeHash(EnvelopeReducer.DeriveRoot(source, new DelegationAuthorityRequest(), Operator, Now).Envelope!),
+            DelegationHasher.ComputeEnvelopeHash(DeriveRemediationRoot(source, new DelegationAuthorityRequest(), Operator, Now).Envelope!),
             DelegationHasher.ComputeEnvelopeHash(reduction.Envelope!));
     }
 
@@ -58,7 +68,7 @@ public sealed class EnvelopeRootAttributionTests
         var byRole = All();
         byRole.Remove(missing);
 
-        var (reduction, role) = EnvelopeReducer.DeriveRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
+        var (reduction, role) = DeriveRemediationRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
 
         Assert.Equal(EnvelopeDimension.Profile, reduction.Denial!.Dimension);
         Assert.Equal(missing, role);
@@ -71,7 +81,7 @@ public sealed class EnvelopeRootAttributionTests
         var byRole = All();
         byRole[AgentRoleKind.Remediation] = Profile(AgentRoleKind.Remediation, risk: RiskLevel.Read);
 
-        var (reduction, role) = EnvelopeReducer.DeriveRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
+        var (reduction, role) = DeriveRemediationRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
 
         Assert.True(reduction.IsDenied);
         Assert.Equal(AgentRoleKind.Remediation, role);
@@ -83,7 +93,7 @@ public sealed class EnvelopeRootAttributionTests
         var byRole = All();
         byRole[AgentRoleKind.Verification] = Profile(AgentRoleKind.Verification, window: new MaintenanceWindow(Now.AddHours(-2), Now.AddHours(-1)));
 
-        var (reduction, role) = EnvelopeReducer.DeriveRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
+        var (reduction, role) = DeriveRemediationRootAttributed(new Profiles(byRole), new DelegationAuthorityRequest(), Operator, Now);
 
         Assert.True(reduction.IsDenied);
         Assert.Equal(AgentRoleKind.Verification, role);
@@ -94,9 +104,9 @@ public sealed class EnvelopeRootAttributionTests
     {
         var source = new Profiles(All());
 
-        var (pastDeadline, deadlineRole) = EnvelopeReducer.DeriveRootAttributed(
+        var (pastDeadline, deadlineRole) = DeriveRemediationRootAttributed(
             source, new DelegationAuthorityRequest(DeadlineUtc: Now.AddMinutes(-1)), Operator, Now);
-        var (pastWindow, windowRole) = EnvelopeReducer.DeriveRootAttributed(
+        var (pastWindow, windowRole) = DeriveRemediationRootAttributed(
             source, new DelegationAuthorityRequest(Window: new MaintenanceWindow(Now.AddHours(-2), Now.AddHours(-1))), Operator, Now);
 
         Assert.Equal(EnvelopeDimension.Deadline, pastDeadline.Denial!.Dimension);

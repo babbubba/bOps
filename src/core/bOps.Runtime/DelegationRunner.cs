@@ -62,6 +62,9 @@ public sealed class DelegationRunner(
 
     private const int MaximumMessageLength = 500;
 
+    /// <summary>The fixed failure of the <see cref="BeginRoleAsync"/> guard (ADR-0044 section 1).</summary>
+    internal const string RoleNotRequired = "Role not required by this request.";
+
     /// <summary>Where the agent of each role comes from. The runtime is the only source of an agent id (ADR-0030 section 1); a test replaces it to make two roles collide.</summary>
     internal Func<AgentId> AgentIds { get; init; } = AgentId.New;
 
@@ -326,7 +329,8 @@ public sealed class DelegationRunner(
 
     private async Task RunPipelineAsync(RunState state, CancellationToken ct)
     {
-        var (reduction, deniedRole) = EnvelopeReducer.DeriveRootAttributed(profiles, state.Request.Authority, state.Actor, state.CreatedAt);
+        var (reduction, deniedRole) = EnvelopeReducer.DeriveRootAttributed(
+            profiles, state.RequiresRemediation, state.Request.Authority, state.Actor, state.CreatedAt);
         if (reduction.IsDenied)
         {
             // No root exists, so the authority in force for the refusal is nothing at all.
@@ -354,7 +358,15 @@ public sealed class DelegationRunner(
 
         if (state.Request.Remediation is { } remediation && await PrepareCheckAsync(state, remediation, ct) is { } refused)
         {
-            state.End(DelegationStatus.Denied, refused.Reason, refused);
+            if (refused.Denial is { } denial)
+            {
+                state.End(DelegationStatus.Denied, denial.Reason, denial);
+            }
+            else
+            {
+                state.End(DelegationStatus.Failed, Bounded(refused.Failure!));
+            }
+
             return;
         }
 
@@ -378,7 +390,9 @@ public sealed class DelegationRunner(
 
         var discoveryEvidence = DelegationRoleData.EvidenceOf(
             discoveryTask, AgentRoleKind.Discovery, discovery.Provenance(state.Id), timeProvider.GetUtcNow());
-        await CompleteRoleAsync(state, discovery, DelegationRoleStatus.Completed, new SkillReport(discoveryEvidence, [], null), null, null, ct);
+        await CompleteRoleAsync(
+            state, discovery, DelegationRoleStatus.Completed, new SkillReport(discoveryEvidence, [], null), null, null, ct,
+            LoopRecord.Of(discoveryTask, AgentRoleKind.Discovery));
 
         await RunFromDiagnosticAsync(state, discoveryEvidence, ct);
     }
@@ -404,8 +418,9 @@ public sealed class DelegationRunner(
             .. discoveryEvidence,
             .. DelegationRoleData.EvidenceOf(diagnosticTask, AgentRoleKind.Diagnostic, provenance, timeProvider.GetUtcNow()),
         ];
-        var findings = DelegationRoleData.FindingsOf(
+        var (findings, findingsReply) = DelegationRoleData.ReadFindings(
             DelegationRoleData.FinalText(diagnosticTask), evidence.Select(e => e.Id).ToHashSet(StringComparer.Ordinal));
+        var record = LoopRecord.Of(diagnosticTask, AgentRoleKind.Diagnostic) with { FindingsReply = findingsReply };
 
         PreparedSkillRun? prepared = null;
         if (state.Request.Remediation is { } toPrepare)
@@ -416,13 +431,13 @@ public sealed class DelegationRunner(
             {
                 if (BudgetEnd(diagnostic) is (var budgetStatus, var budgetReason))
                 {
-                    await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, budgetReason, ct);
+                    await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, budgetReason, ct, record);
                     state.End(budgetStatus, budgetReason);
                     return;
                 }
 
                 var why = Bounded(preparedRun.ErrorMessage ?? "The Capability could not prepare a plan.");
-                await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, why, ct);
+                await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Failed, null, null, why, ct, record);
                 state.End(DelegationStatus.Failed, why);
                 return;
             }
@@ -433,7 +448,7 @@ public sealed class DelegationRunner(
         }
 
         var plan = prepared?.Report.Plan;
-        await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Completed, new SkillReport(evidence, findings, plan), null, null, ct);
+        await CompleteRoleAsync(state, diagnostic, DelegationRoleStatus.Completed, new SkillReport(evidence, findings, plan), null, null, ct, record);
 
         // No plan, or a dry run that would execute nothing, ends as a completed diagnosis. It is a result, not an error.
         if (prepared is null || plan is null || prepared.Request.DryRun)
@@ -711,9 +726,11 @@ public sealed class DelegationRunner(
 
     /// <summary>
     /// Before any role starts, and so before any model call: a named change must be one the Diagnostic role may prepare and
-    /// the Remediation role may run, at that target, environment and blast radius, or delegation is refused.
+    /// the Remediation role may run, at that target, environment and blast radius, or delegation is refused. It must also be
+    /// an activated Capability whose input conforms to its declared schema (ADR-0044 section 9.2), checked again here because
+    /// the catalog may have changed since a client checked it; a change that is not is a failure, not a denial of authority.
     /// </summary>
-    private async Task<DelegationDenial?> PrepareCheckAsync(RunState state, DelegationRemediation remediation, CancellationToken ct)
+    private async Task<PrepareRefusal?> PrepareCheckAsync(RunState state, DelegationRemediation remediation, CancellationToken ct)
     {
         var skill = new SkillExecutionScope(
             Guid.NewGuid(), remediation.SkillId, remediation.CapabilityName,
@@ -726,7 +743,7 @@ public sealed class DelegationRunner(
             if (reduction.IsDenied)
             {
                 await WriteDenialAsync(state, role, reduction.Denial!, ct);
-                return reduction.Denial;
+                return new PrepareRefusal(reduction.Denial, null);
             }
 
             var scope = DelegatedExecutionScope.For(state.Id, new AgentIdentity(AgentId.New(), role), reduction.Envelope!);
@@ -734,12 +751,20 @@ public sealed class DelegationRunner(
             {
                 var denial = new DelegationDenial(refusal.Dimension ?? EnvelopeDimension.Profile, refusal.Reason);
                 await WriteDenialAsync(state, role, denial, ct);
-                return denial;
+                return new PrepareRefusal(denial, null);
             }
+        }
+
+        if (runner.CheckCapabilityRequest(remediation.SkillId, remediation.CapabilityName, remediation.Request.Input) is { } invalid)
+        {
+            return new PrepareRefusal(null, invalid.Message);
         }
 
         return null;
     }
+
+    /// <summary>Why a named change was refused before any role started: a denial of authority, or a failure of the request itself.</summary>
+    private sealed record PrepareRefusal(DelegationDenial? Denial, string? Failure);
 
     /// <summary>
     /// What is left of the run's budget for the next role (ADR-0030 section 6): the root envelope with what the roles before
@@ -806,6 +831,15 @@ public sealed class DelegationRunner(
     {
         ct.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow();
+
+        // Defence in depth (ADR-0044 section 1): a role the stored request does not require never begins, so no later change
+        // can start Remediation or Verification for a diagnosis. No current path reaches this.
+        if (!RoleRequirements.RequiredRoles(state.RequiresRemediation).Contains(role))
+        {
+            logger.LogError("Delegation {DelegationId}: the {Role} role is not required by this request and was not begun", state.Id, role);
+            state.End(DelegationStatus.Failed, RoleNotRequired);
+            return null;
+        }
 
         // Reaching the deadline is not a denial of authority: it ends the run (ADR-0031 section 3). Checked before the
         // role's envelope is asked for, so an exhausted parent is never handed to the reduction to be refused.
@@ -878,9 +912,11 @@ public sealed class DelegationRunner(
     }
 
     private async Task CompleteRoleAsync(
-        RunState state, ActiveRole role, DelegationRoleStatus status, SkillReport? report, VerificationReport? verification, string? error, CancellationToken ct)
+        RunState state, ActiveRole role, DelegationRoleStatus status, SkillReport? report, VerificationReport? verification, string? error, CancellationToken ct,
+        LoopRecord? record = null)
     {
         // Reconciled when the role ends (ADR-0030 section 6): what it spent comes off what the run has left for the next role.
+        // A model role's typed limitations and reply outcome (ADR-0044 section 16) are persisted with it, before any approval.
         var consumed = role.Scope.Meter?.Consumed ?? BudgetConsumption.Empty;
         var index = state.Roles.FindIndex(r => r.Agent.Id == role.Agent.Id);
         state.Roles[index] = state.Roles[index] with
@@ -891,6 +927,9 @@ public sealed class DelegationRunner(
             Report = report,
             Verification = verification,
             ErrorMessage = error,
+            EvidenceLimitations = record?.Limitations,
+            EvidenceLimitationsOmitted = record?.Omitted ?? 0,
+            FindingsReply = record?.FindingsReply,
         };
         state.Spend(consumed);
         state.Active = null;
@@ -950,9 +989,24 @@ public sealed class DelegationRunner(
             why = stoppedReason;
         }
 
-        await CompleteRoleAsync(state, role, status == DelegationStatus.Cancelled ? DelegationRoleStatus.Cancelled : DelegationRoleStatus.Failed, null, null, why, ct);
+        await CompleteRoleAsync(
+            state, role, status == DelegationStatus.Cancelled ? DelegationRoleStatus.Cancelled : DelegationRoleStatus.Failed, null, null, why, ct,
+            LoopRecord.Of(task, role.Agent.Role));
         state.End(status, why);
         return true;
+    }
+
+    /// <summary>
+    /// What a Discovery or Diagnostic role's model loop recorded about its evidence collection (ADR-0044 section 16): the typed
+    /// limitations of its persisted task, how many were left out, and, for Diagnostic, how its final reply was read.
+    /// </summary>
+    private sealed record LoopRecord(IReadOnlyList<EvidenceLimitation> Limitations, int Omitted, DiagnosticReplyOutcome? FindingsReply)
+    {
+        public static LoopRecord Of(TaskState task, AgentRoleKind role)
+        {
+            var (limitations, omitted) = DelegationRoleData.LimitationsOf(task, role);
+            return new LoopRecord(limitations, omitted, null);
+        }
     }
 
     /// <summary>Why an approved plan did not complete: forbidden by policy or the envelope, rejected by a human at a step, or refused for another reason.</summary>
@@ -1308,6 +1362,9 @@ public sealed class DelegationRunner(
         public Guid Id { get; } = id;
 
         public DelegationRequest Request { get; } = request;
+
+        /// <summary>The request shape (ADR-0044 section 1): whether the stored request names a change. Immutable for the run.</summary>
+        public bool RequiresRemediation => Request.Remediation is not null;
 
         public ActorIdentity Actor { get; } = actor;
 
