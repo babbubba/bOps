@@ -290,7 +290,7 @@ Start from [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) and
 | | |
 |---|---|
 | **V1.3** (local diagnostic surface, entitlement boundary, plugin lifecycle) | Implemented and merged; not tagged or released |
-| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-10 complete; HARDEN-11 architecture proposed (ADR-0044), awaiting acceptance |
+| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-10 complete; HARDEN-11 architecture accepted (ADR-0044), implementation next |
 | **V1.4 and later** | Planned; not implemented |
 
 The latest tagged build is the `v1.2.0-preview.8` pre-release (runtime archives, SBOMs and

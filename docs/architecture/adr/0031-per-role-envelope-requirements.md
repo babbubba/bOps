@@ -2,8 +2,8 @@
 
 Status: Accepted
 Accepted: 2026-09-19 by the operator
-Amended by: [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) (**Proposed** 2026-10-05, not yet
-accepted) — §1 and §5: the table applies to the roles the request requires; a *required* role with no usable profile
+Amended by: [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) (Accepted 2026-10-05, D-041)
+— §1 and §5: the table applies to the roles the request requires; a *required* role with no usable profile
 denies delegation, a role the request does not require needs none
 
 Amends ADR-0030 §3 (and where §1's role profiles live). The three choices below were made by the

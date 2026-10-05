@@ -942,3 +942,34 @@ from an invalid Bearer to the cookie; role snapshots; a session table in `tasks.
 file); the developer exception page is replaced by a request-data-free problem response in every environment; the UI
 must be opened at exactly a configured origin. Residual risks: the shared `localhost` cookie jar across ports and an
 open polling tab living to the absolute limit (ADR-0043 §16, Residual risks).
+
+### D-041 — V1.3.x HARDEN-11: request-dependent delegation authority and operability (ADR-0044)
+
+**Decision.** Accepted 2026-10-05 (operator decision after the independent HARDEN-11 authority/security architecture
+review, PASS, blockers 0, non-blocking N-1…N-13 incorporated; N-1, N-5 and N-7 are mandatory Phase-1 obligations). A
+diagnosis-only delegation (`Remediation == null`) requires only Discovery and Diagnostic; a remediation request
+(dry run included) still requires all four roles, unchanged and fail-closed. The root envelope is built from the
+required roles only (diagnosis-only: no Skills or Capabilities, `MaxRisk ≤ Read`); a not-required role's absence or
+valid profile can neither block nor widen the run, while a malformed one still fails the whole policy load. Readiness
+(`GET /api/delegations/readiness`, `bops delegate readiness`) is a runtime projection of the reducer reporting
+profile/role-shape readiness — four states (`ready`, `missing`, `malformed` = present but not usable, `notRequired`),
+snake_case `reasonCode`, unknown codes treated as not ready — not specific-request executability: the selected Skill,
+Capability, target, environment and input are validated at submit and start. `bops delegate profiles init --read-only`
+lists today's available Read tools by exact name (no wildcard), emits YAML safely and verifies it through
+`PolicyConfigLoader` before output, with fixed budgets per role (15 steps, 150,000 tokens, 30 minutes, `read`,
+`single`, `[local]`), and `--overwrite` refuses anything but a generator-equivalent file. Typed evidence-limitation
+metadata (`EvidenceLimitation`, `DiagnosticReplyOutcome`, on `DelegationRoleRun`) is an additive `bOps.Abstractions`
+contract covering role model-loop evidence. `CapabilityManifest.InputSchema` is validated at Skill registration and
+before Capability code on every Capability invocation, delegated or not. Diagnostic JSON with a duplicate key at any
+depth fails closed with zero findings.
+
+**Rejected.** Inert generated Remediation/Verification profiles; `Optional` R/V in the ADR-0031 table; a root from all
+present profiles; partial policy loading; readiness computed in API or UI; a fifth readiness state; request-aware
+readiness in HARDEN-11; YAML merge; `FindingsOf` first-complete-object tolerance; limitations as `Evidence`, `Finding`
+or `SkillReport` fields.
+
+**Consequences.** A fresh installation can diagnose after one reviewable read-only step; mutation still needs four
+hand-written profiles. Additive public contract (four `bOps.Abstractions` types and three init properties, two
+`viewer` endpoints, typed `400` codes, three CLI commands, exit code `8`). Capability input validation is a deliberate
+tightening outside delegation. Sensitive Capability input stays persisted as plain JSON in the delegation store; no
+encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 starts next.

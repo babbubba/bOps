@@ -6,10 +6,10 @@ acceptance (2026-10-03)")
 Date: 2026-10-02
 Accepted amendment: "HARDEN-9 implementation-review amendment — delegated Diagnostic structured output" (2026-10-03,
 at the end of this document) — no disclosure re-ask for the delegated Diagnostic role's structured JSON
-HARDEN-11 gap: addressed by [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) §16–§17
-(**Proposed** 2026-10-05, not yet accepted) — typed evidence-limitation metadata in delegation results and the plan
-approval view; strict `FindingsOf` (first-complete-object tolerance rejected)
 reply; digest and evidence rule still apply.
+HARDEN-11 gap: addressed by [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) §16–§17
+(Accepted 2026-10-05, D-041) — typed evidence-limitation metadata in delegation results and the plan approval view;
+strict `FindingsOf` (first-complete-object tolerance rejected)
 
 Governs the runtime part of HARDEN-9 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md); plan
