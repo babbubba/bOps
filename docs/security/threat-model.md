@@ -23,7 +23,8 @@ Plane transport is a separate boundary and is not implemented in V1.0.
 ## Trust boundaries
 
 1. **Operator to CLI/API.** CLI identity comes from the local OS account. API identity comes from
-   a bearer credential resolved by the host; no client-supplied display field is identity.
+   a configured API credential, presented directly as Bearer or through a browser session bound to that
+   credential, and resolved by the host; no client-supplied display field is identity.
 2. **Runtime to LLM provider.** Prompts and tool schemas leave the machine. Secrets never enter
    prompt history. Provider responses are untrusted protocol data.
 3. **Runtime to tool package.** The runtime validates arguments and policy first, but an in-process
