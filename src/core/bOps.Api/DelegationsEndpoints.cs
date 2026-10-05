@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Security.Claims;
+using System.Text.Json;
 using bOps.Abstractions;
 using bOps.Runtime;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 
 namespace bOps.Api;
 
@@ -26,17 +29,79 @@ internal static class DelegationsEndpoints
 
         group.MapPost("/", StartAsync).RequireAuthorization(ApiAuthorization.OperatorPolicy);
         group.MapGet("/", ListAsync).RequireAuthorization(ApiAuthorization.ViewerPolicy);
+        group.MapGet("/readiness", Readiness).RequireAuthorization(ApiAuthorization.ViewerPolicy);
         group.MapGet("/{id:guid}", ReadAsync).RequireAuthorization(ApiAuthorization.ViewerPolicy);
         group.MapPost("/{id:guid}/cancel", CancelAsync).RequireAuthorization(ApiAuthorization.OperatorPolicy);
         group.MapPost("/{id:guid}/resume", ResumeAsync).RequireAuthorization(ApiAuthorization.OperatorPolicy);
         group.MapPost("/{id:guid}/reconcile", ReconcileAsync).RequireAuthorization(ApiAuthorization.AdministratorPolicy);
-        group.MapGet("/approvals", (ApiPlanApprovalProvider approvals) => Results.Ok(approvals.ListPending()))
-            .RequireAuthorization(ApiAuthorization.ApproverPolicy);
+        group.MapGet("/approvals", ListApprovalsAsync).RequireAuthorization(ApiAuthorization.ApproverPolicy);
         group.MapPost("/{id:guid}/approval", RespondAsync).RequireAuthorization(ApiAuthorization.ApproverPolicy);
     }
 
+    /// <summary>
+    /// <c>GET /api/delegations/readiness?remediation=false|true</c> (ADR-0044 sections 5 and 6): the runtime's readiness evaluator
+    /// for that request shape over this host's profiles, policy load state and available tools. Reads configuration, executes and
+    /// writes nothing, so it is not audited. Only <c>remediation</c> is read; it defaults to <c>false</c>.
+    /// </summary>
+    private static IResult Readiness(
+        HttpContext http, IRoleProfileSource profiles, LoadedPolicy policy, IToolRegistry tools, TimeProvider timeProvider)
+    {
+        http.Response.Headers.CacheControl = "no-store";
+        var values = http.Request.Query["remediation"];
+        bool remediation;
+        if (values.Count == 0)
+        {
+            remediation = false;
+        }
+        else if (values.Count == 1 && string.Equals(values[0], "true", StringComparison.OrdinalIgnoreCase))
+        {
+            remediation = true;
+        }
+        else if (values.Count == 1 && string.Equals(values[0], "false", StringComparison.OrdinalIgnoreCase))
+        {
+            remediation = false;
+        }
+        else
+        {
+            return Results.BadRequest(new { message = "'remediation' is true or false." });
+        }
+
+        var readiness = DelegationReadinessEvaluator.Evaluate(profiles, policy.State, tools.GetAvailableManifests(), remediation, timeProvider.GetUtcNow());
+        return Results.Ok(DelegationReadinessView.From(readiness));
+    }
+
+    /// <summary>
+    /// The plans waiting for a person, each with the persisted limitation metadata of its run's Discovery and Diagnostic roles
+    /// (ADR-0044 section 16), joined by delegation id. A run that cannot be loaded is shown as "limitations unavailable", never as
+    /// "no limitations".
+    /// </summary>
+    private static async Task<IResult> ListApprovalsAsync(ApiPlanApprovalProvider approvals, IDelegationStore store, ILoggerFactory loggers, HttpContext http)
+    {
+        var pending = approvals.ListPending();
+        var views = new List<PendingPlanApproval>(pending.Count);
+        foreach (var plan in pending)
+        {
+            DelegationRun? run;
+            try
+            {
+                run = await store.LoadAsync(plan.DelegationId, http.RequestAborted);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                loggers.CreateLogger("bOps.Api.Delegations").LogWarning(ex, "Delegation {DelegationId}: its run could not be loaded for the approval view", plan.DelegationId);
+                run = null;
+            }
+
+            views.Add(DelegationViews.WithLimitations(plan, run));
+        }
+
+        return Results.Ok(views);
+    }
+
+    private static readonly JsonDocumentOptions StrictBody = new() { AllowDuplicateProperties = false };
+
     private static async Task<IResult> StartAsync(
-        StartDelegationRequest request, DelegationLauncher launcher, ClaimsPrincipal principal, HttpContext http)
+        HttpContext http, DelegationLauncher launcher, ISkillRegistry skills, IOptions<JsonOptions> json, ClaimsPrincipal principal)
     {
         var key = http.Request.Headers["Idempotency-Key"].FirstOrDefault();
         if (key is { Length: > MaximumIdempotencyKeyLength })
@@ -44,10 +109,44 @@ internal static class DelegationsEndpoints
             return Results.BadRequest(new { message = $"Idempotency-Key must not exceed {MaximumIdempotencyKeyLength} characters." });
         }
 
+        if (!http.Request.HasJsonContentType())
+        {
+            return Results.Problem(statusCode: StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        // ADR-0044 section 9.3 (review N-8): the only change to binding is that a property repeated anywhere in the body, input
+        // included, is refused instead of first- or last-wins. Casing, unknown members and numbers bind exactly as before,
+        // through the same serializer options the endpoint used.
+        StartDelegationRequest? request;
+        try
+        {
+            using var body = await JsonDocument.ParseAsync(http.Request.Body, StrictBody, http.RequestAborted);
+            request = body.RootElement.Deserialize<StartDelegationRequest>(json.Value.SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return Results.BadRequest(new { message = "The request body is not strict JSON: it is malformed, or a property is repeated.", code = "malformed_json" });
+        }
+
+        if (request is null)
+        {
+            return Results.BadRequest(new { message = "The request body must be a JSON object.", code = "malformed_json" });
+        }
+
         var (delegation, error) = ToRequest(request);
         if (delegation is null)
         {
             return Results.BadRequest(new { message = error });
+        }
+
+        // ADR-0044 section 9.2: an unknown Capability or input that does not conform to its schema is refused here, before a run
+        // exists and before any model call. The runner checks again, and the preparation path once more before Capability code.
+        if (delegation.Remediation is { } change
+            && CapabilityRequestValidator.Check(skills, change.SkillId, change.CapabilityName, change.Request.Input) is { } refused)
+        {
+            return refused.Code == CapabilityRequestValidator.UnknownCapability
+                ? Results.BadRequest(new { message = refused.Message, code = refused.Code })
+                : Results.BadRequest(new { message = refused.Message, code = refused.Code, parameter = refused.Parameter });
         }
 
         var id = await launcher.TryStartAsync(delegation, AgentsEndpoints.ApiActor(principal), string.IsNullOrWhiteSpace(key) ? null : key, http.RequestAborted);
