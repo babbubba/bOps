@@ -71,9 +71,11 @@ cd src/core/bOps.Api
 dotnet run
 ```
 
-Clients authenticate with `Authorization: Bearer <BOPS_API_KEY>` only. Query-string credentials are not
-supported. The shipped configuration defines one key, `local-operator`, holding the roles
-`viewer,operator,approver,administrator`.
+CLI and API clients authenticate with `Authorization: Bearer <BOPS_API_KEY>`. Query-string credentials are
+not supported. The shipped configuration defines one key, `local-operator`, holding the roles
+`viewer,operator,approver,administrator`. The web UI signs in with the same key once and then uses a
+browser session (see [section 3](#3-web-ui)); a request that carries an `Authorization` header is always
+authenticated as Bearer, never by the session cookie.
 
 Because `BOPS_VAULT_MASTER_KEY` is referenced by the shipped configuration, the API will not start
 without it. To run without the vault, see [section 5](#5-encrypted-vault).
@@ -85,11 +87,44 @@ plugin files in the API's working directory (all paths are configurable in `apps
 
 The Angular UI in `web/bops-ui` is a client of the local API. `npm start` serves it on
 `http://localhost:4200` and proxies `/api` to `http://localhost:5080` (`proxy.conf.json`), so start the
-API first. On the sign-in screen enter the value of `BOPS_API_KEY`; the UI validates it against
-`/api/session/me`.
+API first. The dev server with this same-origin proxy is the only supported browser topology: bOps does
+not host the built SPA itself (production SPA hosting is deferred, F-26), and no CORS policy exists.
 
-The UI keeps the API key in memory only (a signal in `AuthService`); it is lost on page refresh and you
-sign in again. The Settings page is visible to administrators only and needs the vault.
+**Signing in (ADR-0043).** On the sign-in screen enter the value of `BOPS_API_KEY`. The UI sends it once
+to `POST /api/session` and receives a browser session in the cookie `__Host-bops_session` (`HttpOnly`,
+`Secure`, `SameSite=Strict`, `Path=/`, no `Domain`); the key is not kept by the page and never enters
+browser storage or a URL. A refresh restores the session through `GET /api/session/me`, and the dashboard
+keeps the task you are following in its URL (`/dashboard?task=<id>`), so its live view resumes after F5.
+The key needs the `viewer` role to open the UI.
+
+- **Session lifetime.** A session ends on sign-out, after `BrowserSession:IdleTimeout` without an
+  accepted request (default 1 hour; the UI's background polling counts, so an open dashboard stays
+  signed in) and at `BrowserSession:AbsoluteTimeout` at the latest (default 12 hours; never extended).
+  By default the cookie is a browser-session cookie; **Keep me signed in on this device** makes it
+  survive a browser restart, up to the remaining absolute lifetime. Leave it off on a shared computer.
+- **Removing or rotating a key** (and restarting the API) ends that key's browser sessions at their next
+  request, as does any change that makes the key resolve to a different configured credential. Role
+  changes apply to existing sessions at the next start, exactly as for Bearer.
+- **Open the UI at exactly a configured origin.** Cookie-authenticated changes (and sign-in itself) are
+  accepted only from `BrowserSession:Origins` (default `http://localhost:4200`); `http://127.0.0.1:4200`
+  is a different origin and is refused unless you add it.
+- **Revoke every browser session:** stop the API and delete `sessions.db` (`BrowserSession:FilePath`);
+  browsers simply sign in again. The file holds no key and no usable token.
+- **Sign-in attempts** are limited to 10 per minute per client address.
+
+| Key | Default | Valid values |
+|---|---|---|
+| `BrowserSession:Origins` | `http://localhost:4200` | One comma-separated string (not an array) of 1–8 origins, each exactly `scheme://host[:port]`; `http` only for `localhost`, `127.0.0.1` or `[::1]` |
+| `BrowserSession:IdleTimeout` | `01:00:00` | `00:05:00`–`1.00:00:00`, whole seconds, not longer than `AbsoluteTimeout` |
+| `BrowserSession:AbsoluteTimeout` | `12:00:00` | `00:15:00`–`7.00:00:00`, whole seconds |
+| `BrowserSession:FilePath` | `sessions.db` | Non-empty path |
+
+An invalid value stops the API at start-up with a message naming the key. There is no setting to relax the
+cookie attributes or the origin check. Browsing untrusted local web applications (any `http://localhost`
+port) in the same browser profile exposes the session cookie to them; see the
+[threat model](security/threat-model.md#api-spoofing-and-privilege-escalation).
+
+The Settings page is visible to administrators only and needs the vault.
 
 ## 4. Provider configuration
 
@@ -200,6 +235,8 @@ them), plus `audit.jsonl` if you keep the audit chain (`bops audit verify` check
 - Losing only the master key: `vault.dat` cannot be decrypted, so it is unusable; you must start a new
   vault and re-enter the provider keys. A copied vault file alone is inert.
 - Losing `plugins.json` means reinstalling plugins.
+- `sessions.db` (browser sessions) needs no backup: it holds no secret usable without a cookie, and losing
+  it only signs browsers out.
 
 No recovery beyond this is promised.
 
@@ -244,14 +281,19 @@ npm ci
 npm start        # http://localhost:4200
 ```
 
-Other npm scripts: `npm run build`, `npm test`, `npm run lint:i18n`.
+Other npm scripts: `npm run build`, `npm test`, `npm run lint:i18n`, and `npm run e2e` — the E2E-8
+browser-session gate (Playwright, installed Google Chrome and Playwright's Firefox; `npx playwright install
+firefox` once). It starts its own test-only API host (`tests/bOps.Api.E2EHost`, a gated fake model, a
+per-run generated key) and `ng serve`, so ports 4200, 4300, 4301, 5080 and 5099 must be free and no
+regular API may be running.
 
 ## 11. Production notes
 
 - Bind the API to loopback, or put TLS and an authenticated reverse proxy in front of it. The launch
   profile's `localhost:5080` is a development setting only.
 - The API and CLI run with the privileges of their host account; bOps does not elevate.
-- Credentials travel only in the `Authorization: Bearer` header, never in a query string.
+- Credentials travel only in the `Authorization: Bearer` header or, for the web UI, once in the
+  `POST /api/session` JSON body and then as the `HttpOnly` session cookie; never in a query string.
 - When the API is started by a service manager or container launcher, inject the environment variables
   there.
 

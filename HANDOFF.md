@@ -1,17 +1,17 @@
 # Handoff — V1.3 implemented and merged; V1.3.x hardening active
 
-## Current handoff — 2026-10-03
+## Current handoff — 2026-10-05
 
 - V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
-- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); HARDEN-9 is complete and merged through PR #74 (`ad4d196`); HARDEN-8's ADR-0014 amendment is Proposed and awaits independent architecture review.
+- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); HARDEN-9 is complete and merged through PR #74 (`ad4d196`); HARDEN-8 is complete and merged through PR #75 (`0e006c4`). HARDEN-10's browser-session ADR-0043 is Accepted (2026-10-05, D-040) and its implementation is complete on `feat/harden-10-browser-session`; the independent security review passed (PASS) and the branch is ready for PR / remote CI (not merged).
 - HARDEN-5 (Windows `storage.health`) merged through PR #61; HARDEN-6 (typed `ToolParameter` constraints, `FailureKind`, `Completeness`, 94 constrained parameters, Windows/Linux validated, CI green) merged through PR #62.
 - The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next action: **independent architecture review of HARDEN-8 — context and budget economy**, see
-[`agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md`](agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md)
-and the Proposed ADR-0014 amendment. HARDEN-8 runtime implementation has not started.
+Next action: **remote CI and merge decision for HARDEN-10 — browser session** (then HARDEN-11), see
+[`agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md`](agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md)
+and the Accepted [ADR-0043](docs/architecture/adr/0043-browser-web-session.md).
 
 ## Handoff — 2026-09-24 (historical)
 

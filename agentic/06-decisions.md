@@ -918,3 +918,27 @@ finding because of an unrelated limitation; a generic exemption for delegated ro
 **Consequences.** The HARDEN-9 runtime correction may proceed but remains unimplemented and unverified. HARDEN-11 owns
 evaluation of typed limitation metadata in delegation results and approval visibility, and `FindingsOf` parsing
 hardening as defence in depth; HARDEN-9 does not depend on completion of those follow-ups.
+
+### D-040 — V1.3.x HARDEN-10: browser web session (ADR-0043)
+
+**Decision.** Accepted 2026-10-05 (operator decision after the independent security architecture review, CHANGES
+REQUIRED with blocker B-1, resolved in `0406469`, and the B-1 delta security review, PASS). The browser exchanges the
+API key once (`POST /api/session`, JSON body only, origin-gated, rate-limited) for an opaque 256-bit server-side session
+in the cookie `__Host-bops_session` (`HttpOnly`, `Secure` always, `SameSite=Strict`, `Path=/`, no `Domain`;
+browser-session cookie by default, `Max-Age` = remaining absolute lifetime with "keep me signed in"). The server stores
+only `SHA-256(token)` and a token-keyed binding to the credential id and its current secret, in its own `sessions.db`.
+One ordered credential resolution (`ApiCredentialAuthority`) serves Bearer and sessions; a session is valid only while
+current Bearer resolution of its credential's secret selects that same configuration entry, and its roles are
+re-resolved on every request. Idle 60 min, absolute 12 h, equality expires, absolute never slides. A policy scheme
+selects Bearer whenever an `Authorization` header is present (never a downgrade to the cookie). Cookie-authenticated
+unsafe requests need `X-bOps-Request: 1` and an `Origin` (or, only without `Origin`, `Referer`) equal to a configured
+`BrowserSession:Origins` tuple. Bearer clients are unchanged.
+
+**Rejected.** The key in browser storage; ASP.NET Core cookie authentication with a ticket store; antiforgery tokens;
+comparing `Origin` with `Host` or forwarded headers; a peppered token digest; an unkeyed key fingerprint; falling back
+from an invalid Bearer to the cookie; role snapshots; a session table in `tasks.db`; token rotation; CORS.
+
+**Consequences.** Additive public contract (two endpoints, a second scheme, a configuration section, a third SQLite
+file); the developer exception page is replaced by a request-data-free problem response in every environment; the UI
+must be opened at exactly a configured origin. Residual risks: the shared `localhost` cookie jar across ports and an
+open polling tab living to the absolute limit (ADR-0043 §16, Residual risks).

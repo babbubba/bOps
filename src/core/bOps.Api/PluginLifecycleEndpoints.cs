@@ -19,10 +19,12 @@ namespace bOps.Api;
 /// or marketplace operation.
 /// </summary>
 /// <remarks>
-/// <b>CSRF.</b> The API authenticates with an explicit <c>Authorization: Bearer</c> credential only (<see cref="ApiKeyAuthenticationHandler"/>);
-/// there is no cookie or other ambient credential a browser could attach to a forged cross-site request, so the API has — and needs — no
-/// antiforgery mechanism, and none is invented here. The upload is a raw <c>application/zip</c> body (never a form), so it also never
-/// enters form/antiforgery binding, which would materialise the archive; every JSON body requires <c>application/json</c>.
+/// <b>CSRF.</b> The browser-session cookie authenticates a mutation only through the CSRF gate of ADR-0043
+/// (<see cref="BrowserSessionCsrf"/>: <c>X-bOps-Request: 1</c> and a configured <c>Origin</c>, checked before rate limiting,
+/// authorization and any body read); an explicit <c>Authorization: Bearer</c> credential (<see cref="ApiKeyAuthenticationHandler"/>) is not
+/// an ambient credential and is not gated. No other antiforgery mechanism is invented here. The upload is a raw <c>application/zip</c> body
+/// (never a form), so it also never enters form/antiforgery binding, which would materialise the archive; every JSON body requires
+/// <c>application/json</c>.
 /// </remarks>
 internal static class PluginLifecycleEndpoints
 {

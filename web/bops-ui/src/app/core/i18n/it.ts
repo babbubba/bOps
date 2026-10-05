@@ -16,6 +16,7 @@ export const it: Messages = {
   'app.nav.plugins': 'Plugin',
   'app.nav.settings': 'Impostazioni',
   'app.signOut': 'Esci',
+  'app.signOutFailed': 'Uscita non confermata — riprova.',
   'app.theme.light': 'Tema chiaro',
   'app.theme.dark': 'Tema scuro',
   'app.language.label': 'Lingua',
@@ -25,11 +26,19 @@ export const it: Messages = {
   'login.title': 'Accedi a bOps',
   'login.hint': "Usa la chiave API indicata nella configurazione dell'host locale.",
   'login.apiKey': 'Chiave API',
-  'login.keyNote': 'La chiave resta solo nella memoria di questa pagina e non finisce mai in un URL né nello storage del browser.',
+  'login.keyNote':
+    'La chiave viene scambiata una sola volta con una sessione del browser e non è conservata dalla pagina né nello storage del browser. La sessione termina quando esci, dopo un periodo di inattività o alla sua durata massima.',
+  'login.keepSignedIn': 'Mantieni l’accesso su questo dispositivo',
+  'login.keepSignedInHint': 'Mantiene la sessione anche dopo il riavvio del browser su questo dispositivo, fino alla sua durata massima. Lascialo disattivato su un computer condiviso.',
   'login.submit': 'Accedi',
   'login.submitting': 'Accesso in corso…',
   'login.error.failed': 'Autenticazione non riuscita. Controlla la chiave API locale e riprova.',
+  'login.error.viewerRequired': 'Questa chiave non può aprire l’interfaccia web (serve il ruolo viewer).',
+  'login.error.origin': 'Apri bOps al suo indirizzo configurato (per esempio http://localhost:4200) e riprova.',
+  'login.error.rateLimited': 'Troppi tentativi di accesso; riprova tra {seconds} s.',
   'login.sessionExpired': 'La sessione è scaduta. Accedi di nuovo: il task che stavi seguendo riprenderà ad aggiornarsi.',
+  'login.unavailable': 'L’API di bOps non è raggiungibile, quindi non è stato possibile verificare la sessione.',
+  'login.retry': 'Riprova',
 
   // ---- shared ----
   'common.loading': 'Caricamento…',

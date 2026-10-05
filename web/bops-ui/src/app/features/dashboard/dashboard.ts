@@ -1,8 +1,9 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import {
   AgentTaskStatus,
   AgentTaskStatusName,
@@ -18,16 +19,17 @@ import { modelServed } from '../../shared/model-call-format';
 import { StatusBadge } from '../../shared/status-badge';
 import { isInterrupted, lastFailedModelReason } from '../../shared/task-lifecycle';
 import { describeModelFailure, describeRefusal, describeTerminalKind } from '../../state/describe-error';
-import { TasksStore } from '../../state/tasks.store';
+import { TASK_QUERY_PARAM, TasksStore, isCanonicalTaskId } from '../../state/tasks.store';
 
 @Component({
   selector: 'bops-dashboard',
   imports: [FormsModule, StatusBadge, TranslatePipe],
   templateUrl: './dashboard.html',
 })
-export class Dashboard {
+export class Dashboard implements OnInit {
   protected readonly tasks = inject(TasksStore);
   protected readonly i18n = inject(I18n);
+  private readonly route = inject(ActivatedRoute, { optional: true });
   protected readonly goal = signal('');
 
   protected readonly modelServed = modelServed;
@@ -36,6 +38,21 @@ export class Dashboard {
 
   /** Steps whose model-call details are open. Closed by default: the panel is for the curious, not the default view. */
   private readonly openModelInfo = signal<ReadonlySet<string>>(new Set());
+
+  /**
+   * ADR-0043 §15: after a reload the selected task comes back from `?task=<uuid>`. Read once: a canonical id that differs from the
+   * store's selection is selected (which fetches it and, when it is running, resumes the HARDEN-4 watch from its attempt); a
+   * malformed value is removed and ignored; no parameter puts the current selection, if any, back into the URL.
+   */
+  ngOnInit(): void {
+    if (!this.route) return;
+    const requested = this.route.snapshot.queryParamMap.get(TASK_QUERY_PARAM);
+    if (!isCanonicalTaskId(requested)) {
+      this.tasks.syncTaskParam();
+    } else if (requested !== this.tasks.selectedTaskId()) {
+      void this.tasks.selectTask(requested);
+    }
+  }
 
   protected modelInfoKey(taskId: string, stepIndex: number): string {
     return `${taskId}:${stepIndex}`;

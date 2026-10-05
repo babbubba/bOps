@@ -242,7 +242,7 @@ describe('switching language', () => {
           provideHttpClient(),
           provideHttpClientTesting(),
           provideRouter([]),
-          { provide: AuthService, useValue: { authenticated: signal(true), identity: identity(['viewer']), signOut: () => undefined } },
+          { provide: AuthService, useValue: { status: signal('authenticated'), authenticated: signal(true), signOutFailed: signal(false), identity: identity(['viewer']), signOut: () => undefined } },
         ],
       });
       const fixture = TestBed.createComponent(App);
@@ -314,7 +314,7 @@ describe('switching language', () => {
     it('translates the login error at display time', async () => {
       TestBed.configureTestingModule({
         imports: [Login],
-        providers: [{ provide: AuthService, useValue: { signIn: () => Promise.reject(new Error('nope')), sessionExpired: signal(false) } }],
+        providers: [{ provide: AuthService, useValue: { signIn: () => Promise.reject(new Error('nope')), sessionExpired: signal(false), unavailable: signal(false) } }],
       });
       const fixture = TestBed.createComponent(Login);
       fixture.detectChanges();

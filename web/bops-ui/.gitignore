@@ -41,3 +41,7 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Playwright (E2E-8): outputs are never committed (tracing, video and HAR are off; see playwright.config.ts)
+/test-results
+/playwright-report

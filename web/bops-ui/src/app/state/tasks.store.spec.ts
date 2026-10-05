@@ -3,9 +3,9 @@
 
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { discardPeriodicTasks, fakeAsync, TestBed, tick } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { BOpsApiClient } from '../core/api/bops-api-client';
-import { AuthService } from '../core/auth/auth.service';
+import { AuthService, AuthStatus } from '../core/auth/auth.service';
 import { PlanStep, TaskResumeAcceptedResponse, TaskState } from '../core/api/models';
 import { TASK_POLL_INTERVAL_MS, backoffMs } from '../core/streaming/task-events';
 import { TasksStore } from './tasks.store';
@@ -75,8 +75,13 @@ function refusal(status: number, code: string, headers?: Record<string, string>)
 
 describe('TasksStore', () => {
   let api: jasmine.SpyObj<BOpsApiClient>;
-  let authenticated: ReturnType<typeof signal<boolean>>;
-  let auth: { authenticated: ReturnType<typeof signal<boolean>>; expireSession: jasmine.Spy };
+  let status: ReturnType<typeof signal<AuthStatus>>;
+  let auth: {
+    status: ReturnType<typeof signal<AuthStatus>>;
+    authenticated: () => boolean;
+    signingOut: ReturnType<typeof signal<boolean>>;
+    expireSession: jasmine.Spy;
+  };
 
   beforeEach(() => {
     api = jasmine.createSpyObj<BOpsApiClient>('BOpsApiClient', ['listTasks', 'startTask', 'resumeTask', 'cancelTask', 'getTask']);
@@ -86,8 +91,15 @@ describe('TasksStore', () => {
     api.cancelTask.and.resolveTo();
     api.getTask.and.resolveTo(task('selected'));
 
-    authenticated = signal(true);
-    auth = { authenticated, expireSession: jasmine.createSpy('expireSession').and.callFake(() => authenticated.set(false)) };
+    status = signal<AuthStatus>('authenticated');
+    auth = {
+      status,
+      authenticated: computed(() => status() === 'authenticated'),
+      signingOut: signal(false),
+      expireSession: jasmine.createSpy('expireSession').and.callFake(() => {
+        if (status() === 'authenticated') status.set('session-expired');
+      }),
+    };
 
     TestBed.configureTestingModule({
       providers: [TasksStore, { provide: BOpsApiClient, useValue: api }, { provide: AuthService, useValue: auth }],
@@ -582,7 +594,7 @@ describe('TasksStore', () => {
       expect(api.getTask).not.toHaveBeenCalled();
 
       api.getTask.and.resolveTo(task('t', 0, { executionAttempt: 2, steps: [step] }));
-      authenticated.set(true);
+      status.set('authenticated');
       TestBed.tick();
       tick();
 
@@ -591,6 +603,51 @@ describe('TasksStore', () => {
       expect(store.pendingWatch()).toBeNull();
       expect(store.selectedTask()?.steps.length).toBe(1);
       finish(store);
+    }));
+
+    it('keeps the watch to restore when the interceptor already switched to session-expired for the same 401', fakeAsync(() => {
+      const store = TestBed.inject(TasksStore);
+      api.getTask.and.resolveTo(task('t', 0, { executionAttempt: 3 }));
+      void store.selectTask('t');
+      tick();
+
+      // The real interceptor turns the 401 into session-expired before the watcher reports it to the store.
+      api.getTask.and.callFake(() => {
+        auth.expireSession();
+        return Promise.reject(new HttpErrorResponse({ status: 401 }));
+      });
+      tick(TASK_POLL_INTERVAL_MS);
+
+      expect(status()).toBe('session-expired');
+      expect(store.connection()).toBe('sessionExpired');
+      expect(store.pendingWatch()).toEqual({ taskId: 't', expectedAttempt: 3 });
+      expect(store.selectedTaskId()).toBe('t');
+
+      api.getTask.and.resolveTo(task('t', 0, { executionAttempt: 3 }));
+      status.set('authenticated');
+      TestBed.tick();
+      tick();
+      expect(store.connection()).toBe('connected');
+      expect(store.pendingWatch()).toBeNull();
+      finish(store);
+    }));
+
+    it('clears the selection on a deliberate sign-out, but never on an expiry', fakeAsync(() => {
+      const store = TestBed.inject(TasksStore);
+      api.getTask.and.resolveTo(task('t', 1));
+      void store.selectTask('t');
+      tick();
+
+      status.set('session-expired');
+      TestBed.tick();
+      expect(store.selectedTaskId()).toBe('t');
+
+      status.set('authenticated');
+      TestBed.tick();
+      status.set('unauthenticated');
+      TestBed.tick();
+      expect(store.selectedTaskId()).toBeNull();
+      discardPeriodicTasks();
     }));
 
     it('does not restore a watch for a task that is no longer selected', fakeAsync(() => {
@@ -603,7 +660,7 @@ describe('TasksStore', () => {
       store.clearSelection();
 
       api.getTask.calls.reset();
-      authenticated.set(true);
+      status.set('authenticated');
       TestBed.tick();
       tick(TASK_POLL_INTERVAL_MS * 3);
 

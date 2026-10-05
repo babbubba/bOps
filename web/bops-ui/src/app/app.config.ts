@@ -13,6 +13,7 @@ import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
+import { AuthService } from './core/auth/auth.service';
 import { I18n } from './core/i18n/i18n';
 
 export const appConfig: ApplicationConfig = {
@@ -25,5 +26,8 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => {
       inject(I18n);
     }),
+    // ADR-0043 §14.2: the root component (and with it every polling store) is created only after the browser session was asked
+    // about, so nothing polls before the status is known. restore() never rejects and gives up after 10 s (unavailable).
+    provideAppInitializer(() => inject(AuthService).restore()),
   ],
 };

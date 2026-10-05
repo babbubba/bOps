@@ -160,7 +160,7 @@ describe('Dashboard task lifecycle against a fake API', () => {
       imports: [Dashboard],
       providers: [
         provideHttpClient(withInterceptors([(request) => backend.handle(request)])),
-        { provide: AuthService, useValue: { authenticated: signal(true), expireSession: () => undefined } },
+        { provide: AuthService, useValue: { status: signal('authenticated'), authenticated: signal(true), signingOut: signal(false), expireSession: () => undefined } },
       ],
     });
   });

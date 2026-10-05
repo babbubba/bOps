@@ -15,6 +15,7 @@ export const en = {
   'app.nav.plugins': 'Plugins',
   'app.nav.settings': 'Settings',
   'app.signOut': 'Sign out',
+  'app.signOutFailed': 'Sign-out could not be confirmed — try again.',
   'app.theme.light': 'Light mode',
   'app.theme.dark': 'Dark mode',
   'app.language.label': 'Language',
@@ -24,11 +25,19 @@ export const en = {
   'login.title': 'Sign in to bOps',
   'login.hint': 'Use the API key referenced by the local host configuration.',
   'login.apiKey': 'API key',
-  'login.keyNote': "The key is kept only in this page's memory and is never placed in a URL or browser storage.",
+  'login.keyNote':
+    'The key is exchanged once for a browser session and is not kept by the page or stored in the browser. The session ends when you sign out, after a period without activity, or at its maximum lifetime.',
+  'login.keepSignedIn': 'Keep me signed in on this device',
+  'login.keepSignedInHint': 'Keeps the session across browser restarts on this device, up to its maximum lifetime. Leave it off on a shared computer.',
   'login.submit': 'Sign in',
   'login.submitting': 'Signing in…',
   'login.error.failed': 'Authentication failed. Check the local API key and try again.',
+  'login.error.viewerRequired': 'This key cannot open the web UI (viewer role required).',
+  'login.error.origin': 'Open bOps at its configured address (for example http://localhost:4200) and try again.',
+  'login.error.rateLimited': 'Too many sign-in attempts; try again in {seconds} s.',
   'login.sessionExpired': 'Your session expired. Sign in again: the task you were following will start updating again.',
+  'login.unavailable': 'The bOps API is unreachable, so your session could not be checked.',
+  'login.retry': 'Retry',
 
   // ---- shared ----
   'common.loading': 'Loading…',

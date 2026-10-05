@@ -16,6 +16,15 @@
       </p>
     }
 
+    @if (auth.unavailable()) {
+      <div role="alert" class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-risk-high bg-risk-high/10 px-3 py-2 text-sm">
+        <span>{{ 'login.unavailable' | t }}</span>
+        <button type="button" (click)="retry()" class="shrink-0 rounded-md border border-default px-2 py-1 text-xs font-medium hover:bg-accent/5">
+          {{ 'login.retry' | t }}
+        </button>
+      </div>
+    }
+
     <label for="api-key" class="mb-1 block text-sm font-medium">{{ 'login.apiKey' | t }}</label>
     <input
       id="api-key"
@@ -23,19 +32,34 @@
       type="password"
       autocomplete="current-password"
       required
-      [ngModel]="token()"
-      (ngModelChange)="token.set($event)"
+      [ngModel]="apiKey()"
+      (ngModelChange)="apiKey.set($event)"
       class="w-full rounded-lg border border-default bg-bg px-3 py-2 outline-none focus:border-accent"
     />
     <p class="mt-2 text-xs text-muted">{{ 'login.keyNote' | t }}</p>
 
-    @if (error(); as errorKey) {
-      <p class="mt-3 text-sm text-risk-critical">{{ errorKey | t }}</p>
+    <label class="mt-4 flex items-start gap-2 text-sm">
+      <input
+        id="keep-signed-in"
+        name="keep-signed-in"
+        type="checkbox"
+        [ngModel]="keepSignedIn()"
+        (ngModelChange)="keepSignedIn.set($event)"
+        class="mt-0.5"
+      />
+      <span>
+        <span class="font-medium">{{ 'login.keepSignedIn' | t }}</span>
+        <span class="mt-0.5 block text-xs text-muted">{{ 'login.keepSignedInHint' | t }}</span>
+      </span>
+    </label>
+
+    @if (error(); as failure) {
+      <p class="mt-3 text-sm text-risk-critical">{{ failure.key | t: failure.params }}</p>
     }
 
     <button
       type="submit"
-      [disabled]="submitting() || !token().trim()"
+      [disabled]="submitting() || !apiKey().trim()"
       class="mt-5 w-full rounded-lg bg-accent px-4 py-2 font-medium text-white disabled:opacity-50"
     >
       {{ (submitting() ? 'login.submitting' : 'login.submit') | t }}
