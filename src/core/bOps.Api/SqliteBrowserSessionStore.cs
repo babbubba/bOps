@@ -74,7 +74,9 @@ internal sealed class SqliteBrowserSessionStore : IBrowserSessionStore
         }
 
         FilePath = fullPath;
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = fullPath, Pooling = true }.ToString();
+        // Unpooled: each operation opens and closes the file (cheap for SQLite), so no connection outlives the call that needed it and
+        // a process-wide pool reset elsewhere can never invalidate a session lookup in flight.
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = fullPath, Pooling = false }.ToString();
         EnsureSchema();
     }
 
