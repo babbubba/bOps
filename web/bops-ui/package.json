@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "lint:i18n": "node scripts/check-i18n.mjs --self-test && node scripts/check-i18n.mjs"
+    "lint:i18n": "node scripts/check-i18n.mjs --self-test && node scripts/check-i18n.mjs",
+    "e2e": "playwright test"
   },
   "prettier": {
     "printWidth": 100,
@@ -38,6 +39,7 @@
     "@angular/build": "^20.3.37",
     "@angular/cli": "^20.3.37",
     "@angular/compiler-cli": "^20.3.33",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/jasmine": "~5.1.0",
     "jasmine-core": "~5.9.0",

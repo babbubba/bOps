@@ -10,6 +10,8 @@
     <!-- Every type here is internal (CA1515 — this is an application, not a library); the test
          project needs the top-level Program marker and the endpoint/DTO types it exercises directly. -->
     <InternalsVisibleTo Include="bOps.Api.Tests" />
+    <!-- E2E-8 (ADR-0043 §18.1): the test-only host that runs this composition root on Kestrel for the Playwright gate. -->
+    <InternalsVisibleTo Include="bOps.Api.E2EHost" />
   </ItemGroup>
 
   <ItemGroup>
