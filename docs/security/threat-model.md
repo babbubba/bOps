@@ -59,7 +59,7 @@ that proposal is still independently validated, authorized and audited.
 
 ### API spoofing and privilege escalation
 
-All `/api` operations require an authenticated bearer key. Read endpoints require `viewer`, task
+All `/api` operations require an authenticated bearer key or browser session (ADR-0043). Read endpoints require `viewer`, task
 mutation requires `operator`, and approval decisions require `approver`. Keys are compared in
 constant time, never accepted in a URL, and configured by secret reference. `ActorIdentity` is
 derived from claims established by the authentication handler. Rate and concurrency limits bound
@@ -68,6 +68,20 @@ abuse; idempotency keys prevent duplicate task creation during safe retries.
 Residual risk: bearer keys are replayable while valid. V1.0 is local-only and expects TLS or a
 loopback/reverse-proxy boundary. Rotation means replacing the referenced secret and restarting the
 host. Remote multi-tenant identity belongs to the later Control Plane milestone.
+
+The web UI exchanges the key once (`POST /api/session`) for a server-side browser session in the
+`__Host-bops_session` cookie (`HttpOnly`, `Secure`, `SameSite=Strict`, host-only; ADR-0043). Only a
+digest of the session token and a token-keyed binding to the credential are stored (`sessions.db`); a
+session authenticates only while current Bearer resolution of its credential's secret selects that same
+credential, with its current roles, so it never exceeds the key's Bearer authority. Sessions are bounded
+(idle and absolute expiry), revoked by logout, key removal or rotation, and any `Authorization` header
+takes precedence over the cookie. The cookie authenticates a mutation only through the CSRF gate:
+`X-bOps-Request: 1` and an `Origin` (or `Referer`) equal to a configured UI origin. Residual risks
+(ADR-0043 §16): every web server the operator's browser visits on any `localhost` port receives the
+cookie (CSRF from such pages is blocked; token disclosure to a malicious local listener is not), so do not
+browse untrusted local web apps in the same browser profile; an open, polling dashboard stays signed in
+up to the absolute lifetime; script injected into the UI could act as the operator while the session
+lives, but can no longer read the long-lived API key.
 
 ### Secret disclosure
 
@@ -105,7 +119,8 @@ existing signature and publisher-trust path remains the only trust authority, an
 loads a plugin.
 
 Every mutation goes through one lifecycle service and is administrator-only over the API, authenticated by an explicit
-bearer credential (ambient cookies never authenticate a mutation). A mutation carries a lifecycle ETag precondition
+bearer credential or the browser-session cookie, which authenticates a mutation only through the CSRF gate of ADR-0043. A
+mutation carries a lifecycle ETag precondition
 (`If-Match` to replace, `If-None-Match: *` to create), may carry an `Idempotency-Key` scoped to node, actor and key, and is
 serialized per plugin. Install and replacement are journaled so an interruption at any step is reconciled at start-up,
 and a failed install or activation never replaces the last known-good generation. Install and replacement never enable;
