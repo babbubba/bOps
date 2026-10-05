@@ -23,11 +23,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
+    Usage: bops "<goal>" | bops resume <task-id> | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;
 
 if (args.Length == 0)
@@ -96,6 +97,12 @@ else
 
 var builder = Host.CreateApplicationBuilder();
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
+if (delegateInvocation is { NeedsNoModel: true })
+{
+    // ADR-0044 section 10.1: standard output carries only the generated YAML or the report, so it can be redirected to a file;
+    // the host's log lines go to standard error.
+    builder.Services.Configure<ConsoleLoggerOptions>(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+}
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -203,6 +210,20 @@ chatModelRegistry.Register(new PackageId("bops.packages.providers.openai"), host
 chatModelRegistry.Register(new PackageId("bops.packages.providers.deepseek"), host.Services.GetRequiredService<DeepSeekProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), host.Services.GetRequiredService<AnthropicProviderPackage>());
 
+// ADR-0044 section 4: the policy is loaded once per process, and the host keeps why it is what it is and where it came from.
+var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Policy");
+var cliPolicy = await LoadPolicyAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
+
+// ADR-0044 sections 10–12: readiness and the profile commands read configuration only. They compose the tool registry, the
+// enabled plugins, the capability probe and the policy loader above, and never create a chat model, so a missing
+// 'ModelProvider' section does not affect them.
+if (delegateInvocation is { NeedsNoModel: true })
+{
+    return await new DelegateSetupCommand(
+            cliPolicy, toolRegistry.GetAvailableManifests(), host.Services.GetRequiredService<TimeProvider>(), Console.Out, Console.Error)
+        .RunAsync(delegateInvocation);
+}
+
 var configuredModelOptions = builder.Configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
     ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");
 var modelOptions = new ChatModelOptions(
@@ -223,8 +244,8 @@ var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOpt
 // ADR-0039: the runtime's model-call attempt timeout must fire before the provider's outer transport timeout.
 runnerOptions.Validate(modelOptions.EffectiveRequestTimeout);
 
-var policyLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Policy");
-var (policyEngine, policyConfig) = await LoadPolicyAsync(builder.Configuration["Policy:FilePath"] ?? "policy.yaml", policyLogger);
+var policyEngine = new PolicyEngine(cliPolicy.Config);
+var policyConfig = cliPolicy.Config;
 var approvalProvider = new ConsoleApprovalProvider();
 
 // V0.7 (ADR-0017): a plain SQLite file next to the audit log — every task is persisted as it
@@ -254,7 +275,7 @@ if (delegateInvocation is not null)
     var delegationRunner = new DelegationRunner(
         runner,
         new PolicyRoleProfileSource(policyConfig),
-        new ConsolePlanApprovalProvider(Console.In, Console.Out, actor),
+        new ConsolePlanApprovalProvider(Console.In, Console.Out, actor, delegationStore),
         host.Services.GetRequiredService<IAuditSink>(),
         host.Services.GetRequiredService<TimeProvider>(),
         host.Services.GetRequiredService<ILogger<DelegationRunner>>(),
@@ -268,7 +289,7 @@ if (delegateInvocation is not null)
         interrupt.Cancel();
     };
 
-    return await new DelegateCommand(delegationRunner, delegationStore, actor, Console.Out, Console.Error)
+    return await new DelegateCommand(delegationRunner, delegationStore, skillRegistry, actor, Console.Out, Console.Error)
         .RunAsync(delegateInvocation, interrupt.Token);
 }
 
@@ -319,36 +340,38 @@ static void PrintTranscript(TaskState task)
 // to load means the operator tried to configure something and got it wrong; falling back to the
 // safe default there could silently be *more* permissive than what they thought they had
 // configured, so everything above Read is forbidden instead, until the file is fixed.
-static async Task<(IPolicyEngine Engine, PolicyConfig Config)> LoadPolicyAsync(string filePath, ILogger logger)
+static async Task<CliPolicy> LoadPolicyAsync(string filePath, ILogger logger)
 {
-    if (!File.Exists(filePath))
+    // ADR-0044 section 4: the absolute resolved path and the load state are logged, never the file's contents.
+    var path = Path.GetFullPath(filePath);
+    if (!File.Exists(path))
     {
         if (logger.IsEnabled(LogLevel.Information))
         {
             logger.LogInformation(
-                "No policy file at '{Path}'; using the built-in default (Read/Low automatic, Medium/High approval, Critical forbidden).",
-                filePath);
+                "Policy file '{Path}' ({State}): no file; using the built-in default (Read/Low automatic, Medium/High approval, Critical forbidden).",
+                path, PolicyLoadState.NoFile);
         }
 
-        return (new PolicyEngine(PolicyConfig.SafeDefault), PolicyConfig.SafeDefault);
+        return new CliPolicy(PolicyConfig.SafeDefault, PolicyLoadState.NoFile, path, null);
     }
 
     try
     {
-        var yaml = await File.ReadAllTextAsync(filePath);
+        var yaml = await File.ReadAllTextAsync(path);
         var config = PolicyConfigLoader.Load(yaml);
 
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Loaded policy from '{Path}'.", filePath);
+            logger.LogInformation("Policy file '{Path}' ({State}).", path, PolicyLoadState.Loaded);
         }
 
-        return (new PolicyEngine(config), config);
+        return new CliPolicy(config, PolicyLoadState.Loaded, path, null);
     }
     catch (PolicyConfigurationException ex)
     {
-        logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
-        return (new PolicyEngine(PolicyConfig.AllForbidden), PolicyConfig.AllForbidden);
+        logger.LogError(ex, "Policy file '{Path}' ({State}): it could not be loaded; every tool above Read is forbidden until it is fixed.", path, PolicyLoadState.LoadFailed);
+        return new CliPolicy(PolicyConfig.AllForbidden, PolicyLoadState.LoadFailed, path, ex.Message);
     }
 }
 

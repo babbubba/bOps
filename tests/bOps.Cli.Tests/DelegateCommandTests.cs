@@ -264,11 +264,11 @@ public sealed class DelegateCommandTests : IDisposable
         var output = new StringWriter();
         var error = new StringWriter();
         var runner = new DelegationRunner(
-            agent, profiles ?? new Profiles(SampleProfiles()), new ConsolePlanApprovalProvider(new StringReader(typed), output, Operator), audit,
+            agent, profiles ?? new Profiles(SampleProfiles()), new ConsolePlanApprovalProvider(new StringReader(typed), output, Operator, store), audit,
             TimeProvider.System, NullLogger<DelegationRunner>.Instance, diesAfterIntent ? new DiesAfterIntent(store) : store);
         return new Rig
         {
-            Command = new DelegateCommand(runner, diesAfterIntent ? new DiesAfterIntent(store) : store, Operator, output, error),
+            Command = new DelegateCommand(runner, diesAfterIntent ? new DiesAfterIntent(store) : store, skills, Operator, output, error),
             Store = store,
             Runner = runner,
             Model = chat,
@@ -588,5 +588,85 @@ public sealed class DelegateCommandTests : IDisposable
 
         Assert.Equal(1, code);
         Assert.Contains("not waiting for reconciliation", rig.Error.ToString(), StringComparison.Ordinal);
+    }
+
+    // ---- HARDEN-11: a named change is checked before a run exists; limitations are shown, never "none" for "not recorded" ----
+
+    [Fact]
+    public async Task Start_OfAnUnknownCapability_ExitsOne_BeforeARunExistsOrTheModelIsAsked()
+    {
+        var rig = NewRig();
+
+        var code = await rig.Command.RunAsync(Parse("Fix it", "--skill", "sample.skill", "--capability", "sample.nope", "--target", "local", "--environment", "test"));
+
+        Assert.Equal(1, code);
+        Assert.Contains("unknown_capability", rig.Error.ToString(), StringComparison.Ordinal);
+        Assert.Empty(await rig.Store.ListRecentAsync(10));
+    }
+
+    [Fact]
+    public async Task Start_WithInputTheCapabilitySchemaRefuses_ExitsOne_AndRunsNothing()
+    {
+        var rig = NewRig();
+
+        var code = await rig.Command.RunAsync(Parse(Fix("--input", "{\"unexpected\":1}")));
+
+        Assert.Equal(1, code);
+        Assert.Contains("capability_input_invalid", rig.Error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("unexpected", rig.Error.ToString(), StringComparison.Ordinal);
+        Assert.Empty(await rig.Store.ListRecentAsync(10));
+        Assert.Equal(0, rig.Restart.Executions);
+    }
+
+    [Fact]
+    public async Task ADiagnosis_PrintsEachModelRolesRecordedLimitations_AndTheDiagnosticReply()
+    {
+        var rig = NewRig("");
+
+        await rig.Command.RunAsync(Parse("Why is the service slow?"));
+
+        var shown = rig.Output.ToString();
+        Assert.Contains("Discovery evidence limitations: none recorded for this role's model-loop evidence.", shown, StringComparison.Ordinal);
+        Assert.Contains("Diagnostic evidence limitations: none recorded for this role's model-loop evidence.", shown, StringComparison.Ordinal);
+        Assert.Contains("Diagnostic reply: Valid.", shown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Status_OfARunStoredWithoutLimitations_SaysNotRecorded_NeverNone()
+    {
+        var rig = NewRig();
+        var run = new DelegationRun
+        {
+            Id = Guid.NewGuid(), Node = NodeId.Local, Actor = Operator, Objective = "old", Status = DelegationStatus.DiagnosisCompleted, RootEnvelope = Root(),
+            Roles =
+            [
+                new DelegationRoleRun
+                {
+                    Agent = new AgentIdentity(AgentId.New(), AgentRoleKind.Discovery), Envelope = Root() with { Depth = 1 },
+                    Status = DelegationRoleStatus.Completed, Consumed = BudgetConsumption.Empty,
+                },
+            ],
+            Journal = [], CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        await rig.Store.StartAsync(run);
+
+        await rig.Command.RunAsync(Parse("status", run.Id.ToString()));
+
+        Assert.Contains("Discovery evidence limitations: not recorded.", rig.Output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("none recorded", rig.Output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ThePlanApprovalPrompt_ShowsTheRunsPersistedLimitations()
+    {
+        var rig = NewRig("n\n");
+
+        await rig.Command.RunAsync(Parse(Fix()));
+
+        var shown = rig.Output.ToString();
+        var prompt = shown[shown.IndexOf("Plan approval required", StringComparison.Ordinal)..];
+        Assert.Contains("Evidence limitations:", prompt, StringComparison.Ordinal);
+        Assert.Contains("Discovery evidence limitations: none recorded for this role's model-loop evidence.", prompt, StringComparison.Ordinal);
+        Assert.Contains("Diagnostic reply: Valid.", prompt, StringComparison.Ordinal);
     }
 }

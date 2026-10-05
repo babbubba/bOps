@@ -16,6 +16,9 @@ internal enum DelegateAction
     Resume,
     Cancel,
     Reconcile,
+    Readiness,
+    ProfilesInit,
+    ProfilesCheck,
 }
 
 /// <summary>A parsed <c>bops delegate</c> command line.</summary>
@@ -35,6 +38,18 @@ internal sealed record DelegateInvocation
     public ReconciliationAction? Decision { get; init; }
 
     public string? Note { get; init; }
+
+    /// <summary>The request shape asked about, for <see cref="DelegateAction.Readiness"/>.</summary>
+    public bool Remediation { get; init; }
+
+    /// <summary>Write the generated file instead of printing it, for <see cref="DelegateAction.ProfilesInit"/>.</summary>
+    public bool Write { get; init; }
+
+    /// <summary>Replace an existing generator-equivalent file, for <see cref="DelegateAction.ProfilesInit"/> with <see cref="Write"/>.</summary>
+    public bool Overwrite { get; init; }
+
+    /// <summary>Whether the action reads configuration only and needs no model provider (ADR-0044 section 10.1).</summary>
+    public bool NeedsNoModel => Action is DelegateAction.Readiness or DelegateAction.ProfilesInit or DelegateAction.ProfilesCheck;
 }
 
 /// <summary>Reads the arguments that follow <c>bops delegate</c>. Returns either the invocation or a message saying what is wrong with them.</summary>
@@ -48,9 +63,14 @@ internal static class DelegateArguments
                bops delegate resume <run-id>
                bops delegate cancel <run-id>
                bops delegate reconcile <run-id> --accept|--abandon [--note <text>]
-        Without --skill and its companions the run only diagnoses. Exit codes: 0 completed or diagnosed, 1 failed or a usage error,
-        2 denied or blocked by policy, 3 rejected or abandoned by an operator, 4 requires reconciliation, 5 budget or deadline
-        exceeded, 6 verification did not confirm, 10 not finished, 130 cancelled.
+               bops delegate readiness [--remediation]
+               bops delegate profiles init --read-only [--write [--overwrite]]
+               bops delegate profiles check
+        Without --skill and its companions the run only diagnoses, and needs only the Discovery and Diagnostic profiles.
+        Exit codes: 0 completed or diagnosed (readiness: ready; profiles check: no drift), 1 failed or a usage error,
+        2 denied or blocked by policy (readiness: not ready; profiles check: delegation blocked), 3 rejected or abandoned by an
+        operator, 4 requires reconciliation, 5 budget or deadline exceeded, 6 verification did not confirm, 8 profiles check found
+        informational drift only, 10 not finished, 130 cancelled.
         """;
 
     private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase)
@@ -61,13 +81,16 @@ internal static class DelegateArguments
 
     private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "--dry-run", "--accept", "--abandon" };
 
+    /// <summary>The strict reading of <c>--input</c> (ADR-0044 section 9.3): a repeated key is refused, never first- or last-wins.</summary>
+    private static readonly JsonDocumentOptions StrictInput = new() { AllowDuplicateProperties = false };
+
     public static (DelegateInvocation? Invocation, string? Error) Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
 
         if (args.Length == 0)
         {
-            return (null, "Say what to delegate, or one of: status, resume, cancel, reconcile.");
+            return (null, "Say what to delegate, or one of: status, resume, cancel, reconcile, readiness, profiles.");
         }
 
         var verb = args[0].ToLowerInvariant();
@@ -77,8 +100,61 @@ internal static class DelegateArguments
             "resume" => ParseRunCommand(DelegateAction.Resume, args),
             "cancel" => ParseRunCommand(DelegateAction.Cancel, args),
             "reconcile" => ParseReconcile(args),
+            "readiness" => ParseReadiness(args),
+            "profiles" => ParseProfiles(args),
             _ => ParseStart(args),
         };
+    }
+
+    private static (DelegateInvocation?, string?) ParseReadiness(string[] args)
+    {
+        var rest = args[1..];
+        if (rest.Length == 0)
+        {
+            return (new DelegateInvocation { Action = DelegateAction.Readiness }, null);
+        }
+
+        return rest is [var only] && string.Equals(only, "--remediation", StringComparison.OrdinalIgnoreCase)
+            ? (new DelegateInvocation { Action = DelegateAction.Readiness, Remediation = true }, null)
+            : (null, "'readiness' takes only --remediation.");
+    }
+
+    private static (DelegateInvocation?, string?) ParseProfiles(string[] args)
+    {
+        if (args.Length >= 2 && string.Equals(args[1], "check", StringComparison.OrdinalIgnoreCase))
+        {
+            return args.Length == 2
+                ? (new DelegateInvocation { Action = DelegateAction.ProfilesCheck }, null)
+                : (null, "'profiles check' takes no options.");
+        }
+
+        if (args.Length < 2 || !string.Equals(args[1], "init", StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, "'profiles' is followed by 'init --read-only' or 'check'.");
+        }
+
+        var flags = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var flag in args[2..])
+        {
+            var lower = flag.ToLowerInvariant();
+            if (lower is not ("--read-only" or "--write" or "--overwrite") || !flags.Add(lower))
+            {
+                return (null, $"'profiles init' does not take '{flag}'.");
+            }
+        }
+
+        // --read-only is mandatory: no other generation mode exists, so the command is never mistaken for one that grants mutation.
+        if (!flags.Contains("--read-only"))
+        {
+            return (null, "'profiles init' generates read-only profiles only, and says so: add --read-only.");
+        }
+
+        if (flags.Contains("--overwrite") && !flags.Contains("--write"))
+        {
+            return (null, "--overwrite is used only with --write.");
+        }
+
+        return (new DelegateInvocation { Action = DelegateAction.ProfilesInit, Write = flags.Contains("--write"), Overwrite = flags.Contains("--overwrite") }, null);
     }
 
     private static (DelegateInvocation?, string?) ParseRunCommand(DelegateAction action, string[] args)
@@ -165,12 +241,12 @@ internal static class DelegateArguments
             try
             {
                 input = options.GetValueOrDefault("--input") is { } json
-                    ? ToolArguments.FromJson(JsonNode.Parse(json) as JsonObject ?? throw new JsonException("not an object"))
+                    ? ToolArguments.FromJson(JsonNode.Parse(json, documentOptions: StrictInput) as JsonObject ?? throw new JsonException("not an object"))
                     : ToolArguments.Empty;
             }
             catch (JsonException)
             {
-                return (null, "--input must be a JSON object.");
+                return (null, "--input must be one strict JSON object, with no property repeated.");
             }
 
             remediation = new DelegationRemediation(
@@ -249,7 +325,8 @@ internal static class DelegateArguments
 /// says how it ended in words and in the process exit code. It owns no policy: the runner decides everything, and this only
 /// carries the operator's request in and the outcome out.
 /// </summary>
-internal sealed class DelegateCommand(DelegationRunner runner, IDelegationStore store, ActorIdentity actor, TextWriter output, TextWriter error)
+internal sealed class DelegateCommand(
+    DelegationRunner runner, IDelegationStore store, ISkillRegistry skills, ActorIdentity actor, TextWriter output, TextWriter error)
 {
     /// <summary>The exit code for how a run stands. Documented in <see cref="DelegateArguments.Usage"/>.</summary>
     internal static int ExitCodeFor(DelegationStatus status) => status switch
@@ -275,7 +352,16 @@ internal sealed class DelegateCommand(DelegationRunner runner, IDelegationStore 
             switch (invocation.Action)
             {
                 case DelegateAction.Start:
-                    run = await runner.StartAsync(invocation.Request!, actor, idempotencyKey: invocation.IdempotencyKey, ct: ct);
+                    // ADR-0044 section 9.2: an unknown Capability or input that does not conform to its schema is refused before a
+                    // run exists and before any model call. The runner checks again before any role starts.
+                    if (invocation.Request!.Remediation is { } change
+                        && CapabilityRequestValidator.Check(skills, change.SkillId, change.CapabilityName, change.Request.Input) is { } refused)
+                    {
+                        await error.WriteLineAsync($"The change cannot be started ({refused.Code}): {refused.Message}");
+                        return 1;
+                    }
+
+                    run = await runner.StartAsync(invocation.Request, actor, idempotencyKey: invocation.IdempotencyKey, ct: ct);
                     break;
                 case DelegateAction.Status:
                     run = await store.LoadAsync(invocation.RunId!.Value, ct) ?? throw new InvalidOperationException($"No delegation run {invocation.RunId} is stored.");
@@ -286,9 +372,12 @@ internal sealed class DelegateCommand(DelegationRunner runner, IDelegationStore 
                 case DelegateAction.Cancel:
                     run = await runner.CancelAsync(invocation.RunId!.Value, actor, ct);
                     break;
-                default:
+                case DelegateAction.Reconcile:
                     run = await runner.ReconcileAsync(invocation.RunId!.Value, invocation.Decision!.Value, actor, invocation.Note, ct);
                     break;
+                default:
+                    // readiness and profiles are configuration commands (DelegateSetupCommand); they never reach a run.
+                    throw new InvalidOperationException($"'{invocation.Action}' is not a run command.");
             }
 
             await PrintAsync(run);
@@ -311,6 +400,10 @@ internal sealed class DelegateCommand(DelegationRunner runner, IDelegationStore 
             await output.WriteLineAsync(
                 $"  {role.Agent.Role,-12} {role.Status,-9} {role.Consumed.Steps} steps, {role.Consumed.Tokens} tokens"
                 + (role.Verification is { } verification ? $", verification {verification.Status}" : string.Empty));
+            foreach (var line in LimitationText.Lines(role))
+            {
+                await output.WriteLineAsync($"    {line}");
+            }
         }
 
         if (run.PlanHash is not null)
