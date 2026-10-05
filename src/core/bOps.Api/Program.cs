@@ -294,7 +294,13 @@ app.Services.GetRequiredService<IBrowserSessionStore>();
 await app.Services.GetRequiredService<BrowserSessionService>().StartupCleanupAsync(CancellationToken.None);
 
 // ADR-0043 §8 pipeline order.
-app.UseExceptionHandler();
+// A framework request error (malformed JSON, oversized body) keeps its own 4xx status; everything else is a 500. No request data is echoed.
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    StatusCodeSelector = exception => exception is BadHttpRequestException badRequest
+        ? badRequest.StatusCode
+        : StatusCodes.Status500InternalServerError,
+});
 app.UseAuthentication();
 app.UseBrowserSessionCsrf();
 app.UseRateLimiter();
