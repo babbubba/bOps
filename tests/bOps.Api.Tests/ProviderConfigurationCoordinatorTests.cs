@@ -294,6 +294,43 @@ public sealed class ProviderConfigurationCoordinatorTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UpdatingAFallbackProvidersProfile_PublishesTheProposedProfile_KeepsTheExplicitFallbackModel(bool hostOwned)
+    {
+        using var rig = new Rig();
+        rig.Coordinator.SetProfile("Anthropic", new("https://old.anthropic.test", "profile-default", false, null));
+        if (hostOwned)
+        {
+            rig.Configuration["ModelProvider:Fallbacks:0:Provider"] = "Anthropic";
+            rig.Configuration["ModelProvider:Fallbacks:0:Model"] = "fallback-special";
+            rig.Coordinator.SetProfile("Anthropic", new("https://old.anthropic.test", "profile-default", false, null));
+        }
+        else
+            rig.Coordinator.SetFallbacks([new("Anthropic", "fallback-special")]);
+        var oldPin = rig.Coordinator.Current.Pin;
+        Assert.Equal(hostOwned ? "configuration" : "settings", rig.Coordinator.Current.FallbackSource);
+
+        rig.Coordinator.SetProfile("Anthropic", new("https://new.anthropic.test", "changed-profile-default", true, null));
+
+        var current = rig.Coordinator.Current.Pin;
+        var candidate = Assert.Single(current.Fallbacks);
+        Assert.Equal("Anthropic", candidate.ProviderId);
+        Assert.Equal("https://new.anthropic.test", candidate.BaseUrl);
+        Assert.True(candidate.SupportsNativeToolCalling);
+        Assert.Equal("fallback-special", candidate.Model);
+        Assert.NotEqual(oldPin.SnapshotHash, current.SnapshotHash);
+        Assert.True(current.Generation > oldPin.Generation);
+        var oldCandidate = Assert.Single(oldPin.Fallbacks);
+        Assert.Equal("https://old.anthropic.test", oldCandidate.BaseUrl);
+        Assert.False(oldCandidate.SupportsNativeToolCalling);
+
+        var restarted = new ProviderConfigurationCoordinator(rig.Configuration, rig.Settings, rig.Registry, rig.Secrets, rig.Vault);
+        Assert.Equal(current.Fallbacks, restarted.Current.Pin.Fallbacks);
+        Assert.Equal(current.SnapshotHash, restarted.Current.Pin.SnapshotHash);
+    }
+
     [Fact]
     public void ConfigurationOwnedFallbacks_ShadowSettings_AndTheStoredListIsPreserved()
     {

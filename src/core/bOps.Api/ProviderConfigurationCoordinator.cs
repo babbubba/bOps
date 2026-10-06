@@ -193,13 +193,13 @@ internal sealed class ProviderConfigurationCoordinator(
         // A Settings proposal is validated on its own merits even while host configuration shadows it, so an
         // invalid list can never be persisted dormant and later become effective.
         if (fallbackOverride is not null && fallbackSource == "configuration")
-            BuildFallbacks(ToEntries(fallbackOverride), id, model.Value, configured.RequestTimeout);
+            BuildFallbacks(ToEntries(fallbackOverride), id, model.Value, configured.RequestTimeout, profileOverride);
         var pin = new PinnedProviderConfiguration(1, 0, id, baseUrl.Value, model.Value, native.Value,
             timeout, environmentOwned ? "environment" : storedId is null ? "default" : "settings",
             baseUrl.Source, model.Source, native.Source,
             HasEnvironmentField("RequestTimeout") ? "environment" : "default", string.Empty)
         {
-            Fallbacks = BuildFallbacks(fallbackEntries, id, model.Value, configured.RequestTimeout),
+            Fallbacks = BuildFallbacks(fallbackEntries, id, model.Value, configured.RequestTimeout, profileOverride),
         };
         pin = pin with { SnapshotHash = Hash(pin) };
         // Local validation: a package must be able to construct the adapter without a network call.
@@ -277,7 +277,8 @@ internal sealed class ProviderConfigurationCoordinator(
         stored.Select(entry => new FallbackConfiguration { Provider = entry.Provider, Model = entry.Model }).ToList();
 
     private List<PinnedProviderCandidate> BuildFallbacks(
-        List<FallbackConfiguration> configured, string primaryProvider, string primaryModel, TimeSpan? requestTimeout)
+        List<FallbackConfiguration> configured, string primaryProvider, string primaryModel, TimeSpan? requestTimeout,
+        ProviderProfile? profileOverride = null)
     {
         if (configured.Count > 3)
             throw new ArgumentException("At most three model fallback candidates may be configured.");
@@ -290,7 +291,8 @@ internal sealed class ProviderConfigurationCoordinator(
                 throw new ArgumentException("A fallback model must be nonblank and at most 256 characters.");
             if (!tuples.Add($"{id}\u001f{entry.Model}"))
                 throw new ArgumentException("Duplicate provider/model candidates are not allowed in the fallback chain.");
-            var profile = settings.FindProviderProfile(id);
+            var profile = profileOverride is not null && Canonical(profileOverride.ProviderId).Equals(id, StringComparison.OrdinalIgnoreCase)
+                ? profileOverride : settings.FindProviderProfile(id);
             var providerDefaults = configuration.GetSection("ModelProvider").Get<ChatModelOptions>()!;
             var baseUrl = profile?.BaseUrl ??
                 (id.Equals(providerDefaults.Provider, StringComparison.OrdinalIgnoreCase) ? providerDefaults.BaseUrl : null);
