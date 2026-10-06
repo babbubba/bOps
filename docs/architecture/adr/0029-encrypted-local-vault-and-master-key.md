@@ -3,7 +3,7 @@
 Status: Accepted
 Date: 2026-09-17
 
-> **HARDEN-13 forward reference (ADR-0045 Accepted, 2026-10-06; implementation not started).**
+> **HARDEN-13 forward reference (ADR-0045 Accepted, 2026-10-06; implemented by HARDEN-13).**
 > [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) proposes to
 > supersede only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
 > approved-in-principle host-level fallback chain. The durable execution pin contains non-secret
@@ -274,7 +274,8 @@ understands immediately why those fields look empty for this one event type.
   than left implicit.
 - Provider selection and secret changes require a restart to take effect, consistent with today's
   composition-root-only resolution of `ModelProvider` — the UI must say so rather than imply a live
-  switch.
+  switch. *(Superseded by ADR-0045: Settings changes now apply to new executions without a restart and a
+  credential change to the next model attempt.)*
 - A provider's endpoint/model/tool-calling support (`ProviderProfile`) and its API key are
   deliberately split across two stores with different threat models (plain JSON vs. encrypted
   vault) but the same provider id as their join key; a caller must read both to fully describe one

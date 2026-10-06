@@ -147,8 +147,9 @@ release workflow or commercial-repository product change was made.
   provider, each of `BaseUrl`/`Model`/`SupportsNativeToolCalling` falls back field-by-field to the
   `appsettings.json` default for anything the stored profile has not set. For the API key: the
   existing environment-secret resolution is tried first and wins if non-empty; only then does the
-  vault apply, keyed by the effective provider id. Settings changes take effect on next restart, the
-  same as `ModelProvider` always has.
+  vault apply, keyed by the effective provider id. Settings changes originally took effect on next restart; ADR-0045
+  (HARDEN-13) supersedes that: provider/model/profile changes now apply to new executions without a restart and a
+  credential change applies to the next model attempt (see `docs/operator-configuration.md` §4).
 - **Endpoints (`SettingsEndpoints.cs`).** `GET /api/settings`, `PUT /api/settings/active-provider`,
   `PUT`/`DELETE /api/settings/providers/{id}/key`, `PUT /api/settings/providers/{id}/profile` — all
   under a new `ApiAuthorization.AdministratorPolicy` (`bops.administrator` role). Every mutation

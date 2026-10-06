@@ -553,7 +553,7 @@ no runtime behavior yet — a documented, deliberate gap.
 metadata from the vault, profile from `settings.json`) joined only by provider id — a caller must
 read both to fully describe one provider. Provider selection and profile/key changes take effect on
 the next restart, matching the existing composition-root-only resolution of `ModelProvider` — no
-live-reconfiguration of `IChatModelRegistry` was introduced. See ADR-0029 for the full design,
+live-reconfiguration of `IChatModelRegistry` was introduced *(restart-to-apply superseded by ADR-0045/D-042)*. See ADR-0029 for the full design,
 including the precedence rule (`ProviderResolution`), the masking formula, and the documented
 Windows ACL-hardening gap.
 

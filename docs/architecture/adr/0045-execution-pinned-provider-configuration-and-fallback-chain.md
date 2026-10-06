@@ -10,9 +10,11 @@ ADR also governs HARDEN-13 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md);
 [plan](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md), finding F-17).
 
-Architecture accepted. Block B1 (live configuration, durable non-secret execution pinning and
-per-attempt current credentials) is implemented locally and awaits targeted review. The ordered
-fallback chain and final Settings UI/docs/E2E pass remain pending.
+Architecture accepted. Blocks B1 (live configuration, durable non-secret execution pinning and
+per-attempt current credentials), B2a/B2b (ordered fallback chain, Settings fallback API and audit
+observability) are implemented and independently reviewed. Block B3 (Settings UI, router disclosure,
+documentation and the final deterministic E2Es) is implemented and awaits the independent final
+HARDEN-13 review.
 
 ## Context
 
