@@ -6,7 +6,7 @@ import { discardPeriodicTasks, fakeAsync, TestBed, tick } from '@angular/core/te
 import { signal } from '@angular/core';
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { AuthService } from '../core/auth/auth.service';
-import { Delegation, PendingPlanApproval } from '../core/api/models';
+import { Delegation, DelegationReadiness, PendingPlanApproval } from '../core/api/models';
 import { DelegationsStore } from './delegations.store';
 
 function run(overrides: Partial<Delegation> = {}): Delegation {
@@ -60,6 +60,8 @@ describe('DelegationsStore', () => {
       'resumeDelegation',
       'reconcileDelegation',
       'respondToPlanApproval',
+      'getDelegationReadiness',
+      'getSkills',
     ]);
     api.listDelegations.and.resolveTo([]);
     api.listPendingPlanApprovals.and.resolveTo([]);
@@ -142,7 +144,7 @@ describe('DelegationsStore', () => {
     tick();
 
     expect(id).toBeUndefined();
-    expect(store.error()).toBe('No.');
+    expect(store.submitError()).toBe('No.');
     expect(store.busy()).toBeFalse();
     discardPeriodicTasks();
   }));
@@ -188,6 +190,119 @@ describe('DelegationsStore', () => {
     expect(api.cancelDelegation).toHaveBeenCalledOnceWith('run-1');
     expect(api.resumeDelegation).toHaveBeenCalledOnceWith('run-2');
     expect(api.reconcileDelegation).toHaveBeenCalledOnceWith('run-3', 'abandon', 'gone');
+    discardPeriodicTasks();
+  }));
+
+  // ---- readiness and catalog (ADR-0044 §13) ----
+
+  function answer(remediation: boolean, ready: boolean): DelegationReadiness {
+    return { remediation, ready, policy: 'loaded', roles: [], profileDriftCount: 0, evaluatedAtUtc: '2026-10-05T12:00:00Z' };
+  }
+
+  it('keeps only the answer to the latest readiness request, so a slow answer for the other shape never wins', fakeAsync(() => {
+    let releaseDiagnosis!: (value: DelegationReadiness) => void;
+    api.getDelegationReadiness.and.callFake((remediation: boolean) =>
+      remediation ? Promise.resolve(answer(true, false)) : new Promise<DelegationReadiness>((resolve) => (releaseDiagnosis = resolve)));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+
+    void store.loadReadiness(false);
+    void store.loadReadiness(true);
+    tick();
+    releaseDiagnosis(answer(false, true));
+    tick();
+
+    expect(store.readiness()).toEqual(answer(true, false));
+    expect(store.readinessLoading()).toBeFalse();
+    discardPeriodicTasks();
+  }));
+
+  it('never shows an answer for another shape than the one asked about', fakeAsync(() => {
+    api.getDelegationReadiness.and.resolveTo(answer(true, true));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+
+    void store.loadReadiness(false);
+    tick();
+
+    expect(store.readiness()).toBeNull();
+    expect(store.readinessFailure()).toBe('server');
+    discardPeriodicTasks();
+  }));
+
+  for (const [status, failure] of [[0, 'unreachable'], [401, 'sessionExpired'], [403, 'forbidden'], [500, 'server'], [502, 'server']] as const) {
+    it(`turns a ${status} into the ${failure} failure, with no readiness`, fakeAsync(() => {
+      api.getDelegationReadiness.and.rejectWith(new HttpErrorResponse({ status }));
+      const store = TestBed.inject(DelegationsStore);
+      tick();
+
+      void store.loadReadiness(false);
+      tick();
+
+      expect(store.readiness()).toBeNull();
+      expect(store.readinessFailure()).toBe(failure);
+      discardPeriodicTasks();
+    }));
+  }
+
+  it('backs off after a 429 and asks again', fakeAsync(() => {
+    let calls = 0;
+    api.getDelegationReadiness.and.callFake(() =>
+      ++calls === 1 ? Promise.reject(new HttpErrorResponse({ status: 429 })) : Promise.resolve(answer(false, true)));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+
+    void store.loadReadiness(false);
+    tick();
+    expect(store.readinessFailure()).toBe('rateLimited');
+
+    tick(5000);
+    expect(api.getDelegationReadiness).toHaveBeenCalledTimes(2);
+    expect(store.readiness()).toEqual(answer(false, true));
+    discardPeriodicTasks();
+  }));
+
+  it('asks again when the browser comes back online after the API was unreachable', fakeAsync(() => {
+    let calls = 0;
+    api.getDelegationReadiness.and.callFake(() =>
+      ++calls === 1 ? Promise.reject(new HttpErrorResponse({ status: 0 })) : Promise.resolve(answer(false, true)));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+    void store.loadReadiness(false);
+    tick();
+
+    window.dispatchEvent(new Event('online'));
+    tick();
+
+    expect(store.readiness()).toEqual(answer(false, true));
+    discardPeriodicTasks();
+  }));
+
+  it('loads the catalog, and treats a failure as no catalog with a reason, never as an empty one', fakeAsync(() => {
+    api.getSkills.and.rejectWith(new HttpErrorResponse({ status: 500, error: { message: 'Down.' } }));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+
+    void store.loadCatalog();
+    tick();
+
+    expect(store.catalog()).toBeNull();
+    expect(store.catalogError()).toBe('Down.');
+    discardPeriodicTasks();
+  }));
+
+  it('reads the catalog again after a start refused for an unknown Capability or invalid input', fakeAsync(() => {
+    api.getSkills.and.resolveTo({ skills: [] });
+    api.startDelegation.and.rejectWith(new HttpErrorResponse({ status: 400, error: { code: 'unknown_capability', message: 'Not in the catalog.' } }));
+    const store = TestBed.inject(DelegationsStore);
+    tick();
+
+    void store.start({ objective: 'x' });
+    tick();
+
+    expect(store.submitError()).toBe('Not in the catalog.');
+    expect(api.getSkills).toHaveBeenCalledTimes(1);
+    expect(store.error()).toBeNull();
     discardPeriodicTasks();
   }));
 });

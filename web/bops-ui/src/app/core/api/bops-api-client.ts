@@ -7,6 +7,8 @@ import { firstValueFrom } from 'rxjs';
 import {
   AgentTaskStatus,
   Delegation,
+  DelegationReadiness,
+  SkillCatalog,
   PendingPlanApproval,
   StartDelegationRequest,
   AgentTaskStatusName,
@@ -238,5 +240,15 @@ export class BOpsApiClient {
 
   respondToPlanApproval(id: string, planHash: string, approved: boolean, note?: string): Promise<void> {
     return firstValueFrom(this.http.post<void>(`/api/delegations/${id}/approval`, { planHash, approved, note }));
+  }
+
+  /** Role/profile readiness for a request shape (ADR-0044 §6). The server decides; the UI only renders. */
+  getDelegationReadiness(remediation: boolean): Promise<DelegationReadiness> {
+    return firstValueFrom(this.http.get<DelegationReadiness>(`/api/delegations/readiness?remediation=${remediation}`));
+  }
+
+  /** The activated Skill/Capability catalog with each Capability's input schema (ADR-0044 §8). */
+  getSkills(): Promise<SkillCatalog> {
+    return firstValueFrom(this.http.get<SkillCatalog>('/api/skills'));
   }
 }

@@ -4,8 +4,8 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AuthService } from '../../core/auth/auth.service';
-import { Delegation, PendingPlanApproval } from '../../core/api/models';
-import { DelegationsStore } from '../../state/delegations.store';
+import { CatalogSkill, Delegation, DelegationReadiness, PendingPlanApproval } from '../../core/api/models';
+import { DelegationsStore, ReadinessFailure } from '../../state/delegations.store';
 import { Delegations } from './delegations';
 
 const injected = '<img src=x onerror="window.__pwned=true">';
@@ -63,6 +63,51 @@ function run(overrides: Partial<Delegation> = {}): Delegation {
   };
 }
 
+function readiness(remediation: boolean, ready: boolean, states: [string, string, string, string], codes?: string[]): DelegationReadiness {
+  const roles = ['Discovery', 'Diagnostic', 'Remediation', 'Verification'];
+  const codeOf = (state: string): string =>
+    ({ ready: 'ready', notRequired: 'not_required', missing: 'profile_missing', malformed: 'reduction_denied' })[state] ?? 'something_new';
+  return {
+    remediation,
+    ready,
+    policy: 'loaded',
+    roles: roles.map((role, i) => ({
+      role,
+      state: states[i],
+      dimension: states[i] === 'missing' ? 'Profile' : null,
+      reasonCode: codes?.[i] ?? codeOf(states[i]),
+      reason: states[i] === 'missing' ? `${role} role: no usable profile is configured.` : null,
+    })),
+    profileDriftCount: 0,
+    evaluatedAtUtc: '2026-10-05T12:00:00Z',
+  };
+}
+
+/** What the server answers for each shape in a test; a test replaces entries before acting. */
+let answers: Record<string, DelegationReadiness | undefined> = {};
+
+const skill: CatalogSkill = {
+  skillId: 'service.skill',
+  package: 'bops.packages.service',
+  trust: 'Official',
+  capabilities: [
+    {
+      name: 'service.restore',
+      version: '1.0.0',
+      description: 'Restores a stopped service.',
+      risk: 'High',
+      supportsDryRun: false,
+      inputSchema: [
+        { name: 'serviceName', type: 'String', description: 'The service.', required: true, sensitive: false, allowedValues: null, minimum: null, maximum: null, minLength: 2, maxLength: 8, minItems: null, maxItems: null },
+        { name: 'retries', type: 'Integer', description: 'Retries.', required: false, sensitive: false, allowedValues: null, minimum: 0, maximum: 5, minLength: null, maxLength: null, minItems: null, maxItems: null },
+        { name: 'mode', type: 'Enum', description: 'How.', required: false, sensitive: false, allowedValues: ['fast', 'safe'], minimum: null, maximum: null, minLength: null, maxLength: null, minItems: null, maxItems: null },
+        { name: 'password', type: 'String', description: 'A secret.', required: false, sensitive: true, allowedValues: null, minimum: null, maximum: null, minLength: 12, maxLength: null, minItems: null, maxItems: null },
+      ],
+    },
+    { name: 'service.noop', version: '2.0.0', description: 'Takes nothing.', risk: 'Low', supportsDryRun: true, inputSchema: [] },
+  ],
+};
+
 const waitingPlan: PendingPlanApproval = {
   delegationId: 'run-1',
   planHash: 'hash-77',
@@ -86,11 +131,21 @@ describe('Delegations', () => {
     loading: ReturnType<typeof signal<boolean>>;
     busy: ReturnType<typeof signal<boolean>>;
     error: ReturnType<typeof signal<string | null>>;
+    readiness: ReturnType<typeof signal<DelegationReadiness | null>>;
+    readinessLoading: ReturnType<typeof signal<boolean>>;
+    readinessFailure: ReturnType<typeof signal<ReadinessFailure | null>>;
+    catalog: ReturnType<typeof signal<CatalogSkill[] | null>>;
+    catalogError: ReturnType<typeof signal<string | null>>;
+    submitError: ReturnType<typeof signal<string | null>>;
     start: jasmine.Spy;
     cancel: jasmine.Spy;
     resume: jasmine.Spy;
     reconcile: jasmine.Spy;
     decidePlan: jasmine.Spy;
+    loadReadiness: jasmine.Spy;
+    loadCatalog: jasmine.Spy;
+    retryReadiness: jasmine.Spy;
+    clearSubmitError: jasmine.Spy;
   };
 
   const text = (): string => (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -104,11 +159,24 @@ describe('Delegations', () => {
       loading: signal(false),
       busy: signal(false),
       error: signal<string | null>(null),
+      readiness: signal<DelegationReadiness | null>(null),
+      readinessLoading: signal(false),
+      readinessFailure: signal<ReadinessFailure | null>(null),
+      catalog: signal<CatalogSkill[] | null>([skill]),
+      catalogError: signal<string | null>(null),
+      submitError: signal<string | null>(null),
       start: jasmine.createSpy('start').and.resolveTo('run-9'),
       cancel: jasmine.createSpy('cancel').and.resolveTo(),
       resume: jasmine.createSpy('resume').and.resolveTo(),
       reconcile: jasmine.createSpy('reconcile').and.resolveTo(),
       decidePlan: jasmine.createSpy('decidePlan').and.resolveTo(),
+      // Like the real store: the latest request decides which answer is shown; the server's answer is fixed per shape by the test.
+      loadReadiness: jasmine.createSpy('loadReadiness').and.callFake(async (remediation: boolean) => {
+        store.readiness.set(answers[String(remediation)] ?? null);
+      }),
+      loadCatalog: jasmine.createSpy('loadCatalog').and.resolveTo(),
+      retryReadiness: jasmine.createSpy('retryReadiness').and.resolveTo(),
+      clearSubmitError: jasmine.createSpy('clearSubmitError'),
     };
     await TestBed.configureTestingModule({
       imports: [Delegations],
@@ -256,52 +324,323 @@ describe('Delegations', () => {
     expect(text()).not.toContain('Start a delegation');
   });
 
-  it('starts a diagnosis, then a change with its companions, each with the same key until it succeeds', async () => {
-    await setup(['viewer', 'operator'], []);
-    const component = fixture.componentInstance as unknown as {
-      objective: { set(v: string): void };
-      withChange: { set(v: boolean): void };
-      skillId: { set(v: string): void };
-      capabilityName: { set(v: string): void };
-      target: { set(v: string): void };
-      environment: { set(v: string): void };
-      start(): Promise<void>;
-      canStart(): boolean;
+  // ---- the start form (ADR-0044 §9, §13) ----
+
+  type Form = {
+    objective: { set(v: string): void };
+    setWithChange(v: boolean): void;
+    setSkill(v: string): void;
+    setCapability(v: string): void;
+    setValue(name: string, v: unknown): void;
+    target: { set(v: string): void };
+    environment: { set(v: string): void };
+    rawText: { set(v: string): void };
+    setRawMode(v: boolean): void;
+    start(): Promise<void>;
+    canStart(): boolean;
+    readinessAllowsSubmit(): boolean;
+  };
+  const form = (): Form => fixture.componentInstance as unknown as Form;
+  const submit = (): HTMLButtonElement => button('Start')!;
+  const readinessPanel = (): HTMLElement => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="readiness"]')!;
+  const roleState = (role: string): string | null | undefined =>
+    readinessPanel().querySelector(`li[data-role="${role}"]`)?.getAttribute('data-state');
+
+  async function operator(): Promise<void> {
+    answers = {
+      false: readiness(false, true, ['ready', 'ready', 'notRequired', 'notRequired']),
+      true: readiness(true, true, ['ready', 'ready', 'ready', 'ready']),
     };
+    await setup(['viewer', 'operator'], []);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
 
-    expect(component.canStart()).toBeFalse();
-    component.objective.set('  Look into nginx  ');
-    expect(component.canStart()).toBeTrue();
-    await component.start();
+  async function chooseChange(capability = 'service.restore'): Promise<void> {
+    form().setWithChange(true);
+    await fixture.whenStable();
+    form().setSkill('service.skill');
+    form().setCapability(capability);
+    form().target.set('web-1');
+    form().environment.set('prod');
+    fixture.detectChanges();
+  }
+
+  it('asks readiness for a diagnosis on load and shows all four roles from the server, with its fixed wording', async () => {
+    answers = { false: readiness(false, false, ['missing', 'missing', 'notRequired', 'notRequired']) };
+    await setup(['viewer', 'operator'], []);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(store.loadReadiness).toHaveBeenCalledOnceWith(false);
+    expect(store.loadCatalog).toHaveBeenCalled();
+    expect(['Discovery', 'Diagnostic', 'Remediation', 'Verification'].map(roleState)).toEqual(['missing', 'missing', 'notRequired', 'notRequired']);
+    expect(readinessPanel().textContent).toContain('Discovery role: no usable profile is configured.');
+    expect(readinessPanel().textContent).toContain('Missing');
+    expect(readinessPanel().textContent).toContain('Not required');
+    expect(readinessPanel().textContent).toContain('not all usable for this type of delegation');
+    expect(text()).not.toContain('executable');
+    form().objective.set('Why is nginx slow?');
+    fixture.detectChanges();
+    expect(submit().disabled).toBeTrue();
+  });
+
+  it('enables Submit for a diagnosis only when the server says ready, and starts it', async () => {
+    await operator();
+    form().objective.set('  Look into nginx  ');
+    fixture.detectChanges();
+
+    expect(readinessPanel().textContent).toContain('The required role profiles are usable for this type of delegation.');
+    expect(submit().disabled).toBeFalse();
+    await form().start();
     expect(store.start.calls.mostRecent().args[0]).toEqual({ objective: 'Look into nginx' });
-    const firstKey = store.start.calls.mostRecent().args[1] as string;
-    expect(firstKey).toBeTruthy();
+  });
 
-    component.objective.set('Fix nginx');
-    component.withChange.set(true);
-    expect(component.canStart()).toBeFalse();
-    component.skillId.set('service.skill');
-    component.capabilityName.set('service.restore');
-    component.target.set('web-1');
-    expect(component.canStart()).toBeFalse();
-    component.environment.set('prod');
-    expect(component.canStart()).toBeTrue();
-    await component.start();
-    const request = store.start.calls.mostRecent().args[0];
-    expect(request.remediation).toEqual({ skillId: 'service.skill', capabilityName: 'service.restore', target: 'web-1', environment: 'prod', blastRadius: 'single', dryRun: false });
-    expect(store.start.calls.mostRecent().args[1]).not.toBe(firstKey);
+  it('asks readiness again whenever the change toggle flips, and keeps Submit off until the matching answer arrives', async () => {
+    await operator();
+    answers['true'] = readiness(true, false, ['ready', 'ready', 'missing', 'missing']);
+    form().objective.set('Fix nginx');
+
+    form().setWithChange(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.loadReadiness).toHaveBeenCalledWith(true);
+    expect(['Discovery', 'Diagnostic', 'Remediation', 'Verification'].map(roleState)).toEqual(['ready', 'ready', 'missing', 'missing']);
+    expect(text()).toContain('The selected change, target, environment and input are validated when you submit.');
+    expect(form().readinessAllowsSubmit()).toBeFalse();
+
+    form().setWithChange(false);
+    await fixture.whenStable();
+    expect(store.loadReadiness.calls.mostRecent().args).toEqual([false]);
+    expect(form().readinessAllowsSubmit()).toBeTrue();
+  });
+
+  it('never shows an answer for the other shape as this one, and keeps Submit off while readiness loads', async () => {
+    await operator();
+    form().objective.set('Fix');
+    store.readiness.set(answers['true']!);
+    fixture.detectChanges();
+    expect(form().readinessAllowsSubmit()).toBeFalse();
+
+    store.readiness.set(answers['false']!);
+    store.readinessLoading.set(true);
+    fixture.detectChanges();
+    expect(submit().disabled).toBeTrue();
+    expect(readinessPanel().textContent).toContain('Checking the role profiles');
+  });
+
+  for (const [failure, message] of [
+    ['sessionExpired', 'Session expired'],
+    ['forbidden', 'lacks the viewer role'],
+    ['rateLimited', 'Too many requests'],
+    ['server', 'could not evaluate readiness'],
+    ['unreachable', 'unreachable'],
+  ] as const) {
+    it(`fails closed when readiness cannot be obtained (${failure})`, async () => {
+      await operator();
+      form().objective.set('Look');
+      store.readiness.set(null);
+      store.readinessFailure.set(failure);
+      fixture.detectChanges();
+
+      expect(readinessPanel().textContent).toContain(message);
+      expect(submit().disabled).toBeTrue();
+      expect(readinessPanel().textContent).not.toContain('usable for this type of delegation.');
+    });
+  }
+
+  it('treats an unknown reason code as not ready, even when the answer says ready', async () => {
+    answers = { false: readiness(false, true, ['ready', 'ready', 'notRequired', 'notRequired'], ['ready', 'quota_exceeded', 'not_required', 'not_required']) };
+    await setup(['viewer', 'operator'], []);
+    await fixture.whenStable();
+    form().objective.set('Look');
+    fixture.detectChanges();
+
+    expect(readinessPanel().querySelector('li[data-role="Diagnostic"]')!.textContent).toContain('Not ready');
+    expect(submit().disabled).toBeTrue();
+  });
+
+  it('chooses the Skill and Capability from the catalog and generates the input form from its schema', async () => {
+    await operator();
+    await chooseChange();
+
+    const params = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-parameter]')).map((e) => e.getAttribute('data-parameter'));
+    expect(params).toEqual(['serviceName', 'retries', 'mode', 'password']);
+    expect((fixture.nativeElement as HTMLElement).querySelector('#input-password')!.getAttribute('type')).toBe('password');
+    expect((fixture.nativeElement as HTMLElement).querySelector('select#input-mode')).not.toBeNull();
+    expect(text()).toContain('This Capability does not support a dry run.');
+    expect(text()).not.toContain('Skill' + 'Id');
+
+    form().objective.set('Fix nginx');
+    form().setValue('serviceName', 'x');
+    fixture.detectChanges();
+    expect(text()).toContain('serviceName needs at least 2 characters.');
+    expect(form().canStart()).toBeFalse();
+
+    form().setValue('serviceName', 'nginx');
+    form().setValue('retries', '2');
+    fixture.detectChanges();
+    expect(form().canStart()).toBeTrue();
+    expect(submit().disabled).toBeFalse();
+    await form().start();
+    expect(store.start.calls.mostRecent().args[0].remediation).toEqual({
+      skillId: 'service.skill', capabilityName: 'service.restore', target: 'web-1', environment: 'prod', blastRadius: 'single', dryRun: false,
+      input: { serviceName: 'nginx', retries: 2 },
+    });
+  });
+
+  it('says a Capability without input takes none', async () => {
+    await operator();
+    await chooseChange('service.noop');
+
+    expect(text()).toContain('This capability takes no input.');
+  });
+
+  it('never echoes a Sensitive value in a client-side message', async () => {
+    await operator();
+    await chooseChange();
+    form().setValue('serviceName', 'nginx');
+    form().setValue('password', 'hunter2');
+    fixture.detectChanges();
+
+    expect(text()).toContain('password needs at least 12 characters.');
+    expect(text()).not.toContain('hunter2');
+  });
+
+  it('refuses a Skill catalog it could not load as a reason to prepare no change, never as an empty valid one', async () => {
+    await operator();
+    store.catalog.set(null);
+    store.catalogError.set('bOps could not be reached.');
+    form().objective.set('Fix');
+    form().setWithChange(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).toContain('The Skill catalog could not be loaded');
+    expect(form().canStart()).toBeFalse();
+    expect(submit().disabled).toBeTrue();
+  });
+
+  it('offers raw JSON as an advanced mode that sends exactly one object, and finds a duplicate key before parsing', async () => {
+    await operator();
+    await chooseChange();
+    form().objective.set('Fix');
+    form().setValue('serviceName', 'web');
+    form().setRawMode(true);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('textarea[aria-label="Capability input as JSON"]')).not.toBeNull();
+
+    form().rawText.set('{"serviceName":"web","serviceName":"db"}');
+    fixture.detectChanges();
+    expect(text()).toContain('Duplicate key: serviceName.');
+    expect(submit().disabled).toBeTrue();
+
+    form().rawText.set('{"serviceName":');
+    fixture.detectChanges();
+    expect(text()).toContain('Not valid JSON.');
+    expect(submit().disabled).toBeTrue();
+
+    form().rawText.set('{"serviceName":"db","mode":"safe"}');
+    fixture.detectChanges();
+    expect(submit().disabled).toBeFalse();
+    await form().start();
+    expect(store.start.calls.mostRecent().args[0].remediation.input).toEqual({ serviceName: 'db', mode: 'safe' });
+  });
+
+  it('keeps the JSON editor open on switching back when the form cannot show the object', async () => {
+    await operator();
+    await chooseChange();
+    form().setRawMode(true);
+    form().rawText.set('{"serviceName":"db","extra":1}');
+    form().setRawMode(false);
+    fixture.detectChanges();
+
+    expect(text()).toContain('Unknown field: extra.');
+    expect((fixture.nativeElement as HTMLElement).querySelector('textarea[aria-label="Capability input as JSON"]')).not.toBeNull();
+  });
+
+  it('shows a refused submit beside the form and leaves the readiness panel as it was', async () => {
+    await operator();
+    form().setWithChange(true);
+    await fixture.whenStable();
+    store.submitError.set('Capability input is not valid: Unknown argument \'x\'.');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="submit-error"]')!.textContent).toContain('Not started:');
+    expect(['Discovery', 'Diagnostic', 'Remediation', 'Verification'].map(roleState)).toEqual(['ready', 'ready', 'ready', 'ready']);
+    expect(readinessPanel().textContent).not.toContain('Not started');
   });
 
   it('keeps the same key when a start was refused, so a retry cannot start a second run', async () => {
-    await setup(['viewer', 'operator'], []);
+    await operator();
     store.start.and.resolveTo(undefined);
-    const component = fixture.componentInstance as unknown as { objective: { set(v: string): void }; start(): Promise<void> };
-    component.objective.set('Look');
+    form().objective.set('Look');
 
-    await component.start();
-    await component.start();
+    await form().start();
+    await form().start();
 
     expect(store.start.calls.argsFor(0)[1]).toBe(store.start.calls.argsFor(1)[1]);
+  });
+
+  // ---- typed evidence limitations (ADR-0044 §16) ----
+
+  it('renders typed limitations per model role, and never shows "not recorded" as none', async () => {
+    const discovery = {
+      ...run().roles[1],
+      evidenceLimitations: [
+        { stepIndex: 0, toolName: 'system.events', unknownTool: false, outcome: 'Success', failureKind: 'Unspecified', completeness: 'Partial', shortenedFromCharacters: null, evidenceId: 'discovery-0' },
+        { stepIndex: 1, toolName: null, unknownTool: true, outcome: 'Failure', failureKind: 'Validation', completeness: 'Unspecified', shortenedFromCharacters: null, evidenceId: null },
+      ],
+      evidenceLimitationsOmitted: 3,
+      findings: [{ id: 'f1', summary: 'Cited partial evidence.', severity: null, evidenceIds: ['discovery-0'], restsOnLimitedEvidence: true }],
+    };
+    const diagnostic = { ...run().roles[1], role: 'Diagnostic', agentId: 'agent-2', evidenceLimitations: [], findingsReply: { status: 'Malformed', problem: 'DuplicateProperty', discardedFindings: 0 }, findings: [] };
+    const historical = { ...run().roles[1], role: 'Discovery', agentId: 'agent-0', evidenceLimitations: null, findings: [] };
+    await setup(['viewer'], [run({ roles: [discovery, diagnostic, historical] })]);
+    await open();
+
+    const blocks = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="role-limitations"]')).map((b) => b.textContent ?? '');
+    expect(blocks.length).toBe(3);
+    expect(blocks.join('|')).toContain('step 0: system.events — completeness Partial (evidence discovery-0)');
+    expect(blocks.join('|')).toContain('step 1: (unknown tool) — outcome Failure, failure Validation (no evidence produced)');
+    expect(blocks.join('|')).toContain('3 earlier limitations are not listed.');
+    expect(blocks.join('|')).toContain("No recorded limitations for this role's model-loop evidence.");
+    expect(blocks.join('|')).toContain('Diagnostic reply: Malformed, DuplicateProperty');
+    expect(blocks.join('|')).toContain('Not recorded.');
+    expect(text()).toContain('rests on limited evidence');
+  });
+
+  it('shows the plan limitations to the approver, and "unavailable" — never none — when the run could not be read', async () => {
+    const waiting = run({ status: 'Running', awaitingPlanApproval: true, runningInThisHost: true, planHash: null, approval: null });
+    const withLimitations: PendingPlanApproval = {
+      ...waitingPlan,
+      findings: [{ ...waitingPlan.findings[0], restsOnLimitedEvidence: true }],
+      limitations: {
+        available: true,
+        roles: [
+          { role: 'Discovery', recorded: true, evidenceLimitations: [{ stepIndex: 2, toolName: 'disk.read', unknownTool: false, outcome: 'Failure', failureKind: 'Environment', completeness: 'Unspecified', shortenedFromCharacters: null, evidenceId: null }], evidenceLimitationsOmitted: 0, findingsReply: null },
+          { role: 'Diagnostic', recorded: false, evidenceLimitations: null, evidenceLimitationsOmitted: 0, findingsReply: null },
+        ],
+      },
+    };
+    await setup(['viewer', 'approver'], [waiting], [withLimitations]);
+    await open();
+
+    const shown = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="plan-limitations"]')!.textContent ?? '';
+    expect(shown).toContain('step 2: disk.read — outcome Failure, failure Environment (no evidence produced)');
+    expect(shown).toContain('Not recorded.');
+    expect(text()).toContain('rests on limited evidence');
+    TestBed.resetTestingModule();
+
+    await setup(['viewer', 'approver'], [waiting], [{ ...waitingPlan, limitations: { available: false, roles: [] } }]);
+    await open();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="plan-limitations"]')!.textContent).toContain('Limitations unavailable / not recorded.');
+    TestBed.resetTestingModule();
+
+    await setup(['viewer', 'approver'], [waiting], [waitingPlan]);
+    await open();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="plan-limitations"]')!.textContent).toContain('Limitations unavailable / not recorded.');
+    expect(text()).not.toContain('No recorded limitations');
   });
 
   it('shows the API error', async () => {
