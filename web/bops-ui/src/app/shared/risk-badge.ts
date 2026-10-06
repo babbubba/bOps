@@ -16,7 +16,12 @@ const RISK_CLASSES: Record<RiskLevel, string> = {
 @Component({
   selector: 'bops-risk-badge',
   template: `
-    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="cssClass()">
+    <span
+      class="inline-flex max-w-48 shrink-0 items-center truncate whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+      [class]="cssClass()"
+      [attr.title]="label()"
+      [attr.aria-label]="label()"
+    >
       {{ label() }}
     </span>
   `,

@@ -19,7 +19,12 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
 @Component({
   selector: 'bops-status-badge',
   template: `
-    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium" [class]="cssClass()">
+    <span
+      class="inline-flex max-w-48 shrink-0 items-center gap-1.5 truncate whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+      [class]="cssClass()"
+      [attr.title]="label()"
+      [attr.aria-label]="label()"
+    >
       @if (interrupted()) {
         <span class="h-1.5 w-1.5 rounded-full border border-current"></span>
       } @else if (status() === 0) {

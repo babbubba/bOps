@@ -34,12 +34,12 @@
   </section>
 
   <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
-    <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
-      <div class="mb-3 flex items-center justify-between gap-2">
+    <section class="min-w-0 rounded-xl border border-default bg-surface p-4 shadow-sm">
+      <div class="mb-3 min-w-0">
         <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
           {{ (isLive() ? 'dashboard.list.running' : 'dashboard.list.history') | t }}
         </h2>
-        <div class="flex items-center gap-2">
+        <div class="mt-2 flex min-w-0 flex-wrap items-end gap-2">
           @if (!isLive()) {
             <button
               type="button"
@@ -49,17 +49,21 @@
               {{ 'dashboard.list.refresh' | t }}
             </button>
           }
-          <select
-            [attr.aria-label]="'dashboard.list.statusFilter' | t"
-            (change)="onFilterChange($event)"
-            class="rounded-lg border border-default bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
-          >
-            @for (option of statusOptions; track option.value) {
-              <option [value]="option.value" [selected]="option.value === tasks.statusFilter()">
-                {{ i18n.label('taskStatus', option.label) }}
-              </option>
-            }
-          </select>
+          <div class="min-w-0 w-full max-w-56">
+            <label for="task-status-filter" class="mb-1 block text-xs text-muted">{{ 'dashboard.list.statusFilter' | t }}</label>
+            <select
+              id="task-status-filter"
+              [attr.aria-label]="'dashboard.list.statusFilter' | t"
+              (change)="onFilterChange($event)"
+              class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
+            >
+              @for (option of statusOptions; track option.value) {
+                <option [value]="option.value" [selected]="option.value === tasks.statusFilter()">
+                  {{ i18n.label('taskStatus', option.label) }}
+                </option>
+              }
+            </select>
+          </div>
         </div>
       </div>
 
@@ -84,7 +88,7 @@
                   : 'border-default hover:bg-bg'"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <span class="truncate font-medium">{{ shortGoal(task.goal) }}</span>
+                  <span class="min-w-0 flex-1 truncate font-medium" [attr.title]="task.goal" [attr.aria-label]="task.goal">{{ shortGoal(task.goal) }}</span>
                   <bops-status-badge [status]="task.status" [interrupted]="isInterrupted(task)" />
                 </div>
                 <div class="mt-1 text-xs text-muted">{{ 'dashboard.task.meta' | t: { count: task.steps.length, time: formatTime(task.createdAtUtc) } }}</div>
@@ -100,7 +104,7 @@
       }
     </section>
 
-    <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+    <section class="min-w-0 rounded-xl border border-default bg-surface p-4 shadow-sm">
       @if (!tasks.selectedTask()) {
         <div class="flex h-full flex-col items-center justify-center gap-2 py-16 text-center text-muted">
           <p class="text-sm">{{ 'dashboard.detail.empty' | t }}</p>
@@ -108,9 +112,9 @@
       } @else {
         @let task = tasks.selectedTask()!;
         <div class="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 class="text-base font-semibold">{{ task.goal }}</h2>
-            <p class="text-xs text-muted">{{ 'dashboard.detail.taskId' | t: { id: task.id } }}</p>
+          <div class="min-w-0 break-words">
+            <h2 class="break-words text-base font-semibold">{{ task.goal }}</h2>
+            <p class="break-all text-xs text-muted">{{ 'dashboard.detail.taskId' | t: { id: task.id } }}</p>
           </div>
           <bops-status-badge [status]="task.status" [interrupted]="isInterrupted(task)" />
         </div>
@@ -184,8 +188,8 @@
           <ol class="flex flex-col gap-3">
             @for (step of task.steps; track step.index) {
               <li class="rounded-lg border border-default p-3">
-                <div class="flex items-center justify-between gap-2 text-sm font-medium">
-                  <span>
+                <div class="flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
+                  <span class="min-w-0 break-words">
                     {{ 'dashboard.step.title' | t: { number: step.index + 1 } }}
                     @if (step.toolCall) {
                       <span class="text-muted">· {{ step.toolCall.toolName }}</span>

@@ -14,13 +14,13 @@
       [class]="notice.kind === 'success' ? 'border-status-completed text-status-completed' : 'border-risk-high text-risk-high'"
       [attr.role]="notice.kind === 'success' ? 'status' : 'alert'"
     >
-      <p>{{ notice.text }}</p>
-      <button type="button" class="text-xs underline" (click)="plugins.clearNotice()">{{ 'plugins.notice.dismiss' | t }}</button>
+      <p class="min-w-0 break-words">{{ notice.text }}</p>
+      <button type="button" class="shrink-0 text-xs underline" (click)="plugins.clearNotice()">{{ 'plugins.notice.dismiss' | t }}</button>
     </div>
   }
 
   <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
-    <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+    <section class="min-w-0 rounded-xl border border-default bg-surface p-4 shadow-sm">
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">{{ 'plugins.installed' | t: { count: plugins.totalCount() } }}</h2>
       </div>
@@ -29,7 +29,7 @@
         <select
           [attr.aria-label]="'plugins.filter.enabledAria' | t"
           (change)="onEnabledFilterChange($any($event.target).value)"
-          class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+          class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
         >
           <option value="">{{ 'plugins.filter.allStates' | t }}</option>
           <option value="true">{{ 'plugins.enabled' | t }}</option>
@@ -38,7 +38,7 @@
         <select
           [attr.aria-label]="'plugins.filter.trustAria' | t"
           (change)="onTrustFilterChange($any($event.target).value)"
-          class="rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+          class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
         >
           <option value="">{{ 'plugins.filter.anyTrust' | t }}</option>
           @for (level of trustLevels; track level) {
@@ -57,7 +57,7 @@
             [attr.aria-label]="'plugins.upload.fileAria' | t"
             [disabled]="plugins.mutating()"
             (change)="onInstallFile($event)"
-            class="text-xs"
+            class="min-w-0 max-w-full text-xs"
           />
           <p class="text-xs text-muted">{{ 'plugins.upload.hint' | t }}</p>
           <button
@@ -93,7 +93,7 @@
                   : 'border-default hover:bg-bg'"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <span class="truncate font-medium">{{ entry.id }}</span>
+                  <span class="min-w-0 flex-1 truncate font-medium" [attr.title]="entry.id" [attr.aria-label]="entry.id">{{ entry.id }}</span>
                   @if (entry.lifecycleFailure || entry.loadError) {
                     <span class="text-xs font-semibold text-status-failed">{{ 'plugins.errorBadge' | t }}</span>
                   }
@@ -106,7 +106,7 @@
       }
     </section>
 
-    <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+    <section class="min-w-0 rounded-xl border border-default bg-surface p-4 shadow-sm">
       @if (!selectedPlugin(); as _) {
         <div class="flex h-full flex-col items-center justify-center gap-2 py-16 text-center text-muted">
           <p class="text-sm">{{ 'plugins.detail.empty' | t }}</p>
@@ -114,23 +114,23 @@
       } @else {
         @let plugin = selectedPlugin()!;
         <div class="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 class="text-base font-semibold">{{ plugin.id }}</h2>
-            <p class="text-xs text-muted">{{ 'plugins.detail.meta' | t: { version: plugin.version, publisher: plugin.publisher, time: formatTime(plugin.installedAtUtc) } }}</p>
+          <div class="min-w-0 break-words">
+            <h2 class="break-all text-base font-semibold">{{ plugin.id }}</h2>
+            <p class="break-words text-xs text-muted">{{ 'plugins.detail.meta' | t: { version: plugin.version, publisher: plugin.publisher, time: formatTime(plugin.installedAtUtc) } }}</p>
           </div>
         </div>
 
         <div class="mb-4 flex flex-wrap gap-2 text-xs font-medium">
-          <span class="rounded-full px-2 py-0.5" [class]="plugin.enabled ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'">
+          <span class="max-w-full truncate whitespace-nowrap rounded-full px-2 py-0.5" [class]="plugin.enabled ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'" [attr.title]="(plugin.enabled ? 'plugins.enabled' : 'plugins.disabled') | t" [attr.aria-label]="(plugin.enabled ? 'plugins.enabled' : 'plugins.disabled') | t">
             {{ (plugin.enabled ? 'plugins.enabled' : 'plugins.disabled') | t }}
           </span>
-          <span class="rounded-full px-2 py-0.5" [class]="plugin.loaded ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'">
+          <span class="max-w-full truncate whitespace-nowrap rounded-full px-2 py-0.5" [class]="plugin.loaded ? 'bg-status-completed/15 text-status-completed' : 'bg-status-neutral/15 text-status-neutral'" [attr.title]="(plugin.loaded ? 'plugins.loaded' : 'plugins.notLoaded') | t" [attr.aria-label]="(plugin.loaded ? 'plugins.loaded' : 'plugins.notLoaded') | t">
             {{ (plugin.loaded ? 'plugins.loaded' : 'plugins.notLoaded') | t }}
           </span>
-          <span class="rounded-full px-2 py-0.5" [class]="plugin.compatible ? 'bg-status-completed/15 text-status-completed' : 'bg-status-failed/15 text-status-failed'">
+          <span class="max-w-full truncate whitespace-nowrap rounded-full px-2 py-0.5" [class]="plugin.compatible ? 'bg-status-completed/15 text-status-completed' : 'bg-status-failed/15 text-status-failed'" [attr.title]="(plugin.compatible ? 'plugins.compatible' : 'plugins.incompatible') | t" [attr.aria-label]="(plugin.compatible ? 'plugins.compatible' : 'plugins.incompatible') | t">
             {{ (plugin.compatible ? 'plugins.compatible' : 'plugins.incompatible') | t }}
           </span>
-          <span class="rounded-full bg-accent/10 px-2 py-0.5 text-accent">{{ 'plugins.trustBadge' | t: { level: i18n.label('trust', trustLevelName[plugin.trust]) } }}</span>
+          <span class="max-w-full truncate whitespace-nowrap rounded-full bg-accent/10 px-2 py-0.5 text-accent" [attr.title]="'plugins.trustBadge' | t: { level: i18n.label('trust', trustLevelName[plugin.trust]) }" [attr.aria-label]="'plugins.trustBadge' | t: { level: i18n.label('trust', trustLevelName[plugin.trust]) }">{{ 'plugins.trustBadge' | t: { level: i18n.label('trust', trustLevelName[plugin.trust]) } }}</span>
         </div>
 
         <dl class="mb-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -143,7 +143,7 @@
         @if (plugin.lifecycleFailure) {
           <div class="mb-4 rounded-lg border border-risk-high bg-bg p-3 text-sm text-risk-high" role="alert">
             <p class="font-semibold">{{ 'plugins.lifecycleFailure' | t }}</p>
-            <p class="mt-1">{{ plugin.lifecycleFailure }}</p>
+            <p class="mt-1 break-words">{{ plugin.lifecycleFailure }}</p>
           </div>
         }
 
@@ -177,7 +177,7 @@
                   [attr.aria-label]="'plugins.upload.fileAria' | t"
                   [disabled]="plugins.mutating()"
                   (change)="onReplaceFile($event)"
-                  class="text-xs"
+                  class="min-w-0 max-w-full text-xs"
                 />
                 <button
                   type="button"
@@ -195,11 +195,11 @@
         @if (plugin.loadError) {
           <div class="mb-4 rounded-lg border border-risk-high bg-bg p-3 text-sm text-risk-high" role="alert">
             <p class="font-semibold">{{ 'plugins.loadError' | t }}</p>
-            <p class="mt-1">{{ plugin.loadError }}</p>
+            <p class="mt-1 break-words">{{ plugin.loadError }}</p>
           </div>
         }
 
-        <dl class="mb-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-4">
+        <dl class="mb-4 grid grid-cols-1 gap-x-4 gap-y-3 text-sm sm:grid-cols-2 md:grid-cols-4">
           <div>
             <dt class="text-xs text-muted">{{ 'plugins.signature' | t }}</dt>
             <dd>{{ (plugin.signaturePresent ? (plugin.verified ? 'plugins.signature.verified' : 'plugins.signature.unverified') : 'plugins.signature.absent') | t }}</dd>
@@ -237,7 +237,7 @@
           } @else {
             <ul class="flex flex-wrap gap-1.5">
               @for (capability of plugin.declaredCapabilities; track capability) {
-                <li class="rounded-full bg-bg px-2 py-0.5 text-xs">{{ capability }}</li>
+                <li class="max-w-full truncate whitespace-nowrap rounded-full bg-bg px-2 py-0.5 text-xs" [attr.title]="capability" [attr.aria-label]="capability">{{ capability }}</li>
               }
             </ul>
           }
@@ -250,7 +250,7 @@
           } @else {
             <ul class="flex flex-col gap-1 text-sm">
               @for (dependency of plugin.dependencies; track dependency.name) {
-                <li>{{ dependency.name }}&#64;{{ dependency.version }}</li>
+                <li class="break-all">{{ dependency.name }}&#64;{{ dependency.version }}</li>
               }
             </ul>
           }
@@ -269,13 +269,13 @@
         (keydown.escape)="cancelConfirmation()"
       >
         @if (pending.kind === 'enable') {
-          <h2 id="plugin-confirm-title" class="text-base font-semibold">{{ 'plugins.confirm.enableTitle' | t: { id: pending.entry.id, version: pending.entry.version } }}</h2>
+          <h2 id="plugin-confirm-title" class="break-words text-base font-semibold">{{ 'plugins.confirm.enableTitle' | t: { id: pending.entry.id, version: pending.entry.version } }}</h2>
           <p id="plugin-confirm-body" class="mt-2 text-sm font-medium text-risk-high">{{ 'plugins.confirm.enableWarning' | t }}</p>
         } @else {
-          <h2 id="plugin-confirm-title" class="text-base font-semibold">{{ 'plugins.confirm.recoverTitle' | t: { id: pending.entry.id } }}</h2>
+          <h2 id="plugin-confirm-title" class="break-words text-base font-semibold">{{ 'plugins.confirm.recoverTitle' | t: { id: pending.entry.id } }}</h2>
           <p id="plugin-confirm-body" class="mt-2 text-sm">{{ 'plugins.confirm.recoverBody' | t: { version: pending.entry.version, state: stateLabel(pending.entry.lifecycleState) } }}</p>
         }
-        <div class="mt-4 flex justify-end gap-2">
+        <div class="mt-4 flex flex-wrap justify-end gap-2">
           <button type="button" class="rounded-lg border border-default px-3 py-1.5 text-sm" [disabled]="plugins.mutating()" (click)="cancelConfirmation()">
             {{ 'plugins.confirm.cancel' | t }}
           </button>

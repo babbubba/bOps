@@ -40,7 +40,7 @@
         } @else if (store.readiness(); as readiness) {
           <ul class="mt-1 space-y-1 text-xs">
             @for (role of readiness.roles; track role.role) {
-              <li [attr.data-role]="role.role" [attr.data-state]="role.state">
+              <li class="break-words" [attr.data-role]="role.role" [attr.data-state]="role.state">
                 <span class="font-semibold">{{ i18n.label('delegationRole', role.role) }}</span>:
                 <span [class.text-status-completed]="roleReady(role)" [class.text-status-blocked]="!roleReady(role)">{{ stateLabel(role) }}</span>
                 @if (role.dimension) { <span class="text-muted"> [{{ role.dimension }}]</span> }
@@ -69,21 +69,21 @@
           <p class="mt-2 text-sm text-muted">{{ 'delegations.catalog.empty' | t }}</p>
         } @else {
           <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <select [attr.aria-label]="'delegations.start.skill' | t" [ngModel]="skillId()" (ngModelChange)="setSkill($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+            <select [attr.aria-label]="'delegations.start.skill' | t" [ngModel]="skillId()" (ngModelChange)="setSkill($event)" class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
               <option value="">{{ 'delegations.catalog.chooseSkill' | t }}</option>
               @for (skill of skills(); track skill.skillId) {
                 <option [value]="skill.skillId">{{ skill.skillId }}</option>
               }
             </select>
-            <select [attr.aria-label]="'delegations.start.capability' | t" [ngModel]="capabilityName()" (ngModelChange)="setCapability($event)" [disabled]="selectedSkill() === null" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+            <select [attr.aria-label]="'delegations.start.capability' | t" [ngModel]="capabilityName()" (ngModelChange)="setCapability($event)" [disabled]="selectedSkill() === null" class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
               <option value="">{{ 'delegations.catalog.chooseCapability' | t }}</option>
               @for (capability of selectedSkill()?.capabilities ?? []; track capability.name) {
                 <option [value]="capability.name">{{ capability.name }}</option>
               }
             </select>
-            <input [attr.aria-label]="'delegations.start.target' | t" [placeholder]="'delegations.start.target' | t" [ngModel]="target()" (ngModelChange)="target.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-            <input [attr.aria-label]="'delegations.start.environment' | t" [placeholder]="'delegations.start.environment' | t" [ngModel]="environment()" (ngModelChange)="environment.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-            <select [attr.aria-label]="'delegations.start.blastRadius' | t" [ngModel]="blastRadius()" (ngModelChange)="blastRadius.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+            <input [attr.aria-label]="'delegations.start.target' | t" [placeholder]="'delegations.start.target' | t" [ngModel]="target()" (ngModelChange)="target.set($event)" class="min-w-0 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+            <input [attr.aria-label]="'delegations.start.environment' | t" [placeholder]="'delegations.start.environment' | t" [ngModel]="environment()" (ngModelChange)="environment.set($event)" class="min-w-0 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+            <select [attr.aria-label]="'delegations.start.blastRadius' | t" [ngModel]="blastRadius()" (ngModelChange)="blastRadius.set($event)" class="min-w-0 w-full max-w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
               <option value="single">{{ i18n.label('blastRadius', 'single') }}</option>
               <option value="multiple">{{ i18n.label('blastRadius', 'multiple') }}</option>
               <option value="fleet">{{ i18n.label('blastRadius', 'fleet') }}</option>
@@ -96,7 +96,7 @@
 
           @if (selectedCapability(); as capability) {
             <div class="mt-3 rounded-lg border border-default p-3" [attr.aria-label]="'delegations.input.aria' | t">
-              <p class="text-xs text-muted">{{ capability.description }}</p>
+              <p class="break-words text-xs text-muted">{{ capability.description }}</p>
               <p class="text-xs text-muted">{{ 'delegations.catalog.capabilityMeta' | t: { version: capability.version, risk: i18n.label('risk', capability.risk) } }}</p>
               @if (capability.supportsDryRun === false) {
                 <p class="text-xs text-muted">{{ 'delegations.catalog.noDryRun' | t }}</p>
@@ -112,13 +112,13 @@
                       {{ parameter.name }}
                       @if (parameter.required) { <span class="text-risk-critical">*</span> }
                     </label>
-                    <p class="text-xs text-muted">{{ parameter.description }}</p>
+                    <p class="break-words text-xs text-muted">{{ parameter.description }}</p>
                     @switch (parameter.type) {
                       @case ('Boolean') {
                         @if (parameter.required) {
                           <input type="checkbox" [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="booleanValue(parameter.name) === 'true'" (ngModelChange)="setValue(parameter.name, $event)" />
                         } @else {
-                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="booleanValue(parameter.name)" (ngModelChange)="setBoolean(parameter.name, $event)" class="rounded-lg border border-default bg-bg px-2 py-1 text-sm">
+                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="booleanValue(parameter.name)" (ngModelChange)="setBoolean(parameter.name, $event)" class="min-w-0 max-w-full rounded-lg border border-default bg-bg px-2 py-1 text-sm">
                             <option value="">{{ 'delegations.input.unset' | t }}</option>
                             <option value="true">{{ 'delegations.input.true' | t }}</option>
                             <option value="false">{{ 'delegations.input.false' | t }}</option>
@@ -127,8 +127,8 @@
                       }
                       @case ('PathList') {
                         @for (entry of listValue(parameter.name); track $index) {
-                          <div class="mt-1 flex gap-2">
-                            <input [attr.aria-label]="parameter.name" [ngModel]="entry" (ngModelChange)="setEntry(parameter.name, $index, $event)" class="flex-1 rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
+                          <div class="mt-1 flex min-w-0 flex-wrap gap-2">
+                            <input [attr.aria-label]="parameter.name" [ngModel]="entry" (ngModelChange)="setEntry(parameter.name, $index, $event)" class="min-w-0 flex-1 rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
                             <button type="button" (click)="removeEntry(parameter.name, $index)" class="rounded border border-default px-2 text-xs hover:bg-bg">{{ 'delegations.input.remove' | t }}</button>
                           </div>
                         }
@@ -142,7 +142,7 @@
                       }
                       @default {
                         @if (isChoice(parameter)) {
-                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="rounded-lg border border-default bg-bg px-2 py-1 text-sm">
+                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="min-w-0 max-w-full rounded-lg border border-default bg-bg px-2 py-1 text-sm">
                             <option value="">{{ 'delegations.input.choose' | t }}</option>
                             @for (choice of parameter.allowedValues ?? []; track choice) {
                               <option [value]="choice">{{ choice }}</option>
@@ -154,7 +154,7 @@
                       }
                     }
                     @if (problemFor(parameter.name); as problem) {
-                      <p class="mt-1 text-xs text-risk-critical">{{ describe(problem) }}</p>
+                      <p class="mt-1 break-words text-xs text-risk-critical">{{ describe(problem) }}</p>
                     }
                   </div>
                 }
@@ -169,7 +169,7 @@
                   class="mt-1 w-full rounded-lg border border-default bg-bg px-2 py-1 font-mono text-xs"
                 ></textarea>
                 @for (problem of input().problems; track $index) {
-                  <p class="mt-1 text-xs text-risk-critical" data-testid="raw-problem">{{ describe(problem) }}</p>
+                  <p class="mt-1 break-words text-xs text-risk-critical" data-testid="raw-problem">{{ describe(problem) }}</p>
                 }
               }
 
@@ -194,15 +194,15 @@
         {{ 'delegations.start.submit' | t }}
       </button>
       @if (store.submitError(); as submitError) {
-        <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.refused' | t: { reason: submitError } }}</p>
+        <p class="mt-2 break-words text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.refused' | t: { reason: submitError } }}</p>
       } @else if (startDenial(); as denial) {
-        <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.denied' | t: { dimension: denial.dimension, reason: denial.reason } }}</p>
+        <p class="mt-2 break-words text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.denied' | t: { dimension: denial.dimension, reason: denial.reason } }}</p>
       }
     </section>
   }
 
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <section [attr.aria-label]="'delegations.list.aria' | t" class="lg:col-span-1">
+    <section [attr.aria-label]="'delegations.list.aria' | t" class="min-w-0 lg:col-span-1">
       @if (store.loading() && store.runs().length === 0) {
         <p class="text-sm text-muted">{{ 'common.loading' | t }}</p>
       } @else if (store.runs().length === 0) {
@@ -217,11 +217,11 @@
                 [class.border-accent]="selectedId() === run.id"
                 class="w-full rounded-xl border border-default bg-surface p-3 text-left shadow-sm hover:bg-bg"
               >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)">{{ i18n.label('delegationStatus', run.status) }}</span>
+                <div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <span class="inline-flex max-w-48 shrink-0 items-center truncate whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)" [attr.title]="statusLabel(run.status)" [attr.aria-label]="statusLabel(run.status)">{{ statusLabel(run.status) }}</span>
                   <span class="text-xs text-muted">{{ formatTime(run.createdAtUtc) }}</span>
                 </div>
-                <p class="mt-1 line-clamp-2 text-sm">{{ run.objective }}</p>
+                <p class="mt-1 min-w-0 line-clamp-2 break-words text-sm" [attr.title]="run.objective" [attr.aria-label]="run.objective">{{ run.objective }}</p>
                 @if (run.awaitingPlanApproval) {
                   <p class="mt-1 text-xs font-semibold text-risk-high">{{ 'delegations.list.planWaiting' | t }}</p>
                 }
@@ -232,24 +232,24 @@
       }
     </section>
 
-    <section [attr.aria-label]="'delegations.detail.aria' | t" class="lg:col-span-2">
+    <section [attr.aria-label]="'delegations.detail.aria' | t" class="min-w-0 lg:col-span-2">
       @if (selected(); as run) {
         <div class="flex flex-col gap-4">
           <div class="rounded-xl border border-default bg-surface p-4 shadow-sm">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)">{{ i18n.label('delegationStatus', run.status) }}</span>
+            <div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span class="inline-flex max-w-48 shrink-0 items-center truncate whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium" [class]="statusClass(run.status)" [attr.title]="statusLabel(run.status)" [attr.aria-label]="statusLabel(run.status)">{{ statusLabel(run.status) }}</span>
               <code class="break-all text-xs text-muted">{{ run.id }}</code>
             </div>
-            <p class="mt-2 text-sm font-medium">{{ run.objective }}</p>
+            <p class="mt-2 break-words text-sm font-medium">{{ run.objective }}</p>
             <p class="mt-1 text-xs text-muted">
               {{ 'delegations.detail.startedBy' | t: { name: run.actorDisplayName ?? run.actorId, time: formatTime(run.createdAtUtc) } }}
               @if (run.resumeCount > 0) { {{ 'delegations.detail.resumed' | t: { count: run.resumeCount } }} }
             </p>
 
             @if (run.denial) {
-              <p class="mt-2 text-sm text-status-blocked">{{ 'delegations.detail.refused' | t: { dimension: run.denial.dimension, reason: run.denial.reason } }}</p>
+              <p class="mt-2 break-words text-sm text-status-blocked">{{ 'delegations.detail.refused' | t: { dimension: run.denial.dimension, reason: run.denial.reason } }}</p>
             } @else if (run.errorMessage) {
-              <p class="mt-2 text-sm text-risk-critical">{{ run.errorMessage }}</p>
+              <p class="mt-2 break-words text-sm text-risk-critical">{{ run.errorMessage }}</p>
             }
 
             <div class="mt-3 flex flex-wrap gap-2">
@@ -280,7 +280,7 @@
                   (ngModelChange)="setNote(run.id, $event)"
                   class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm"
                 />
-                <div class="mt-3 flex gap-2">
+                <div class="mt-3 flex flex-wrap gap-2">
                   <button type="button" (click)="reconcile(run, 'accept')" [disabled]="store.busy()" class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40">{{ 'delegations.reconcile.accept' | t }}</button>
                   <button type="button" (click)="reconcile(run, 'abandon')" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">{{ 'delegations.reconcile.abandon' | t }}</button>
                 </div>
@@ -294,18 +294,18 @@
             <section class="rounded-xl border border-risk-high bg-surface p-4 shadow-sm" [attr.aria-label]="'delegations.plan.aria' | t">
               <p class="font-semibold">{{ 'delegations.plan.waiting' | t }}</p>
               @if (pendingPlan(); as plan) {
-                <p class="mt-1 text-sm">
+                <p class="mt-1 break-words text-sm">
                   {{ 'delegations.plan.summary' | t: { skill: plan.skillId, capability: plan.capabilityName, target: plan.target, environment: plan.environment, blast: i18n.label('blastRadius', plan.blastRadius) } }}
                 </p>
                 <p class="mt-2 text-xs text-muted">{{ 'delegations.plan.hash' | t }}</p>
                 <code class="block break-all rounded bg-bg px-2 py-1 text-xs">{{ plan.planHash }}</code>
-                <p class="mt-2 text-sm">{{ plan.rationale }}</p>
+                <p class="mt-2 break-words text-sm">{{ plan.rationale }}</p>
 
                 <p class="mt-3 text-xs font-medium text-muted">{{ 'delegations.plan.steps' | t }}</p>
                 <ol class="mt-1 space-y-1 text-sm">
                   @for (step of plan.steps; track step.index) {
-                    <li>
-                      <code class="font-semibold">{{ step.tool }}</code>
+                    <li class="break-words">
+                      <code class="break-all font-semibold">{{ step.tool }}</code>
                       <code class="ml-2 break-all text-xs">{{ json(step.arguments) }}</code>
                       @if (step.description) { <span class="block text-xs text-muted">{{ step.description }}</span> }
                     </li>
@@ -315,7 +315,7 @@
                 <p class="mt-3 text-xs font-medium text-muted">{{ 'delegations.plan.findings' | t }}</p>
                 <ul class="mt-1 space-y-1 text-sm">
                   @for (finding of plan.findings; track finding.id) {
-                    <li>
+                    <li class="break-words">
                       @if (finding.severity) { <span class="font-semibold">[{{ i18n.label('risk', finding.severity) }}]</span> }
                       {{ finding.summary }}
                       <span class="text-xs text-muted">{{ 'delegations.evidenceRef' | t: { ids: finding.evidenceIds.join(', ') } }}</span>
@@ -338,7 +338,7 @@
                       } @else {
                         <ul class="text-xs">
                           @for (limitation of limited.evidenceLimitations; track limitation.stepIndex) {
-                            <li>{{ limitationLine(limitation) }}</li>
+                            <li class="break-words">{{ limitationLine(limitation) }}</li>
                           }
                         </ul>
                         @if (limited.evidenceLimitationsOmitted > 0) {
@@ -355,10 +355,10 @@
                 @if (plan.authority; as authority) {
                   <p class="mt-3 text-xs font-medium text-muted">{{ 'delegations.plan.authority' | t }}</p>
                   <dl class="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs md:grid-cols-2">
-                    <div><dt class="inline text-muted">{{ 'delegations.plan.tools' | t }}: </dt><dd class="inline">{{ authority.tools.join(', ') }}</dd></div>
+                    <div class="min-w-0"><dt class="inline text-muted">{{ 'delegations.plan.tools' | t }}: </dt><dd class="inline break-all">{{ authority.tools.join(', ') }}</dd></div>
                     <div><dt class="inline text-muted">{{ 'delegations.plan.upTo' | t }}: </dt><dd class="inline">{{ 'delegations.plan.upToValue' | t: { risk: i18n.label('risk', authority.maxRisk), blast: i18n.label('blastRadius', authority.maxBlastRadius) } }}</dd></div>
-                    <div><dt class="inline text-muted">{{ 'delegations.plan.targets' | t }}: </dt><dd class="inline">{{ authority.targets.join(', ') }}</dd></div>
-                    <div><dt class="inline text-muted">{{ 'delegations.plan.environments' | t }}: </dt><dd class="inline">{{ authority.environments.join(', ') }}</dd></div>
+                    <div class="min-w-0"><dt class="inline text-muted">{{ 'delegations.plan.targets' | t }}: </dt><dd class="inline break-all">{{ authority.targets.join(', ') }}</dd></div>
+                    <div class="min-w-0"><dt class="inline text-muted">{{ 'delegations.plan.environments' | t }}: </dt><dd class="inline break-all">{{ authority.environments.join(', ') }}</dd></div>
                     <div><dt class="inline text-muted">{{ 'delegations.plan.budget' | t }}: </dt><dd class="inline">{{ 'delegations.plan.budgetValue' | t: { count: authority.maxSteps, time: formatTime(authority.deadlineUtc) } }}</dd></div>
                   </dl>
                 }
@@ -372,7 +372,7 @@
                     (ngModelChange)="setNote(plan.delegationId, $event)"
                     class="mt-3 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm"
                   />
-                  <div class="mt-3 flex gap-2">
+                  <div class="mt-3 flex flex-wrap gap-2">
                     <button type="button" (click)="decide(plan, true)" [disabled]="store.busy()" class="rounded-lg bg-status-completed px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40">{{ 'delegations.plan.approve' | t }}</button>
                     <button type="button" (click)="decide(plan, false)" [disabled]="store.busy()" class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-40">{{ 'delegations.plan.reject' | t }}</button>
                   </div>
@@ -410,7 +410,7 @@
                     <p class="mt-2 text-xs font-medium text-muted">{{ 'delegations.roles.findings' | t }}</p>
                     <ul class="mt-1 space-y-1 text-sm">
                       @for (finding of role.findings; track finding.id) {
-                        <li>
+                        <li class="break-words">
                           @if (finding.severity) { <span class="font-semibold">[{{ i18n.label('risk', finding.severity) }}]</span> }
                           {{ finding.summary }}
                           <span class="text-xs text-muted">{{ 'delegations.evidenceRef' | t: { ids: finding.evidenceIds.join(', ') } }}</span>
@@ -430,7 +430,7 @@
                       } @else {
                         <ul class="text-xs">
                           @for (limitation of role.evidenceLimitations; track limitation.stepIndex) {
-                            <li>{{ limitationLine(limitation) }}</li>
+                            <li class="break-words">{{ limitationLine(limitation) }}</li>
                           }
                         </ul>
                         @if ((role.evidenceLimitationsOmitted ?? 0) > 0) {
@@ -449,9 +449,9 @@
                       <tbody>
                         @for (item of role.evidence; track item.id) {
                           <tr class="border-t border-default">
-                            <td class="w-28 break-all px-1 py-1 align-top"><code>{{ item.id }}</code></td>
-                            <td class="w-24 px-1 py-1 align-top">{{ i18n.label('evidenceKind', item.kind) }}</td>
-                            <td class="w-32 break-all px-1 py-1 align-top">{{ item.sourceTool }}</td>
+                            <td class="w-1/5 break-all px-1 py-1 align-top"><code>{{ item.id }}</code></td>
+                            <td class="w-1/5 break-words px-1 py-1 align-top">{{ i18n.label('evidenceKind', item.kind) }}</td>
+                            <td class="w-1/4 break-all px-1 py-1 align-top">{{ item.sourceTool }}</td>
                             <td class="break-words px-1 py-1">{{ item.description }}</td>
                           </tr>
                         }
@@ -460,7 +460,7 @@
                   }
 
                   @if (role.errorMessage) {
-                    <p class="mt-2 text-sm text-risk-critical">{{ role.errorMessage }}</p>
+                    <p class="mt-2 break-words text-sm text-risk-critical">{{ role.errorMessage }}</p>
                   }
                 </li>
               }
@@ -484,9 +484,9 @@
               <h2 class="text-sm font-semibold">{{ 'delegations.journal.heading' | t }}</h2>
               <ol class="mt-2 space-y-1 text-sm">
                 @for (entry of run.journal; track entry.stepIndex) {
-                  <li>
+                  <li class="break-words">
                     <span class="text-muted">{{ entry.stepIndex }}</span>
-                    <code class="ml-2 font-semibold">{{ entry.tool }}</code>
+                    <code class="ml-2 break-all font-semibold">{{ entry.tool }}</code>
                     <span class="ml-2">
                       {{ journalOutcome(entry) }}
                       @if (entry.verification) { {{ 'delegations.journal.verification' | t: { status: i18n.label('verification', entry.verification) } }} }
