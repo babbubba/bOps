@@ -253,9 +253,12 @@ internal sealed class ProviderConfigurationCoordinator(
     {
         var content = string.Join('\u001f', pin.SchemaVersion, pin.ProviderId, pin.BaseUrl, pin.Model,
             pin.SupportsNativeToolCalling, pin.RequestTimeout?.Ticks, pin.ProviderSource, pin.BaseUrlSource,
-            pin.ModelSource, pin.SupportsNativeToolCallingSource, pin.RequestTimeoutSource,
-            string.Join('\u001e', pin.Fallbacks.Select(candidate => string.Join('\u001d', candidate.ProviderId,
-                candidate.BaseUrl, candidate.Model, candidate.SupportsNativeToolCalling, candidate.RequestTimeout?.Ticks))));
+            pin.ModelSource, pin.SupportsNativeToolCallingSource, pin.RequestTimeoutSource);
+        // An empty chain adds no immutable configuration, so it must hash exactly as a pin stored before fallbacks existed.
+        if (pin.Fallbacks.Count > 0)
+            content += '\u001f' + string.Join('\u001e', pin.Fallbacks.Select(candidate => string.Join('\u001d',
+                candidate.ProviderId, candidate.BaseUrl, candidate.Model, candidate.SupportsNativeToolCalling,
+                candidate.RequestTimeout?.Ticks)));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
     }
 
