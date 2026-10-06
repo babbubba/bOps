@@ -410,6 +410,7 @@ export const en = {
   'delegations.journal.unknown': 'outcome not known',
   'delegations.journal.verification': '· verification {status}',
   'delegations.start.refused': 'Not started: {reason}',
+  'delegations.start.denied': 'Not started — refused on {dimension}: {reason}',
   'delegations.readiness.aria': 'Role readiness',
   'delegations.readiness.heading': 'Role readiness for this type of delegation',
   'delegations.readiness.loading': 'Checking the role profiles…',

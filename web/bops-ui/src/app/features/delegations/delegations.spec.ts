@@ -489,6 +489,40 @@ describe('Delegations', () => {
     });
   });
 
+  it('shows a start the runtime refuses as a submit error beside the form, and leaves the readiness panel as it was', async () => {
+    await operator();
+    await chooseChange();
+    form().objective.set('Fix nginx');
+    form().setValue('serviceName', 'nginx');
+    fixture.detectChanges();
+    const asked = store.loadReadiness.calls.count();
+    await form().start();
+    fixture.detectChanges();
+    const panelBefore = readinessPanel().textContent;
+
+    store.runs.set([run({ id: 'run-9', status: 'Denied', denial: { dimension: 'Targets', reason: 'web-1 is outside the role profile.' }, roles: [], planHash: null, approval: null, journal: [] })]);
+    fixture.detectChanges();
+
+    const error = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="submit-error"]');
+    expect(error?.textContent).toContain('Not started — refused on Targets: web-1 is outside the role profile.');
+    expect(readinessPanel().textContent).toBe(panelBefore);
+    expect(readinessPanel().textContent).toContain('The required role profiles are usable for this type of delegation.');
+    expect(readinessPanel().textContent).toContain('The selected change, target, environment and input are validated when you submit.');
+    expect(store.loadReadiness.calls.count()).toBe(asked);
+    expect(text()).not.toContain('executable');
+  });
+
+  it('never reports a denial after a role ran as a refused start', async () => {
+    await operator();
+    form().objective.set('Look');
+    fixture.detectChanges();
+    await form().start();
+    store.runs.set([run({ id: 'run-9', status: 'Denied', denial: { dimension: 'Tools', reason: 'Later.' }, planHash: null, approval: null, journal: [] })]);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="submit-error"]')).toBeNull();
+  });
+
   it('says a Capability without input takes none', async () => {
     await operator();
     await chooseChange('service.noop');

@@ -411,6 +411,7 @@ export const it: Messages = {
   'delegations.journal.unknown': 'esito non noto',
   'delegations.journal.verification': '· verifica: {status}',
   'delegations.start.refused': 'Non avviata: {reason}',
+  'delegations.start.denied': 'Non avviata — rifiutata su {dimension}: {reason}',
   'delegations.readiness.aria': 'Prontezza dei ruoli',
   'delegations.readiness.heading': 'Prontezza dei ruoli per questo tipo di delega',
   'delegations.readiness.loading': 'Verifica dei profili dei ruoli…',

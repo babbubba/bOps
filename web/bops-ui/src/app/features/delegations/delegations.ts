@@ -95,6 +95,18 @@ export class Delegations {
 
   // ---- start form ----
   protected readonly starting = signal(false);
+  private readonly submittedId = signal<string | null>(null);
+
+  /**
+   * The runtime's refusal of the run this form just started, when it was refused before any role ran (a start `Denied` naming a
+   * dimension, e.g. a target outside the Remediation profile). It is the submit's result, shown beside the form; it never changes
+   * what the readiness panel says, which is about the role profiles only.
+   */
+  protected readonly startDenial = computed<{ dimension: string; reason: string } | null>(() => {
+    const id = this.submittedId();
+    const run = id === null ? undefined : this.store.runs().find((r) => r.id === id);
+    return run?.status === 'Denied' && run.denial !== null && run.roles.length === 0 ? run.denial : null;
+  });
   protected readonly objective = signal('');
   protected readonly withChange = signal(false);
   protected readonly skillId = signal('');
@@ -406,14 +418,14 @@ export class Delegations {
         };
       }
 
+      this.submittedId.set(null);
       const id = await this.store.start(request, this.idempotencyKey);
       if (id !== undefined) {
+        // The prepared change, and with it the readiness shown for it, stay as they are: a start the runtime then refuses is
+        // reported beside the form (startDenial) while the panel keeps showing the same role readiness (ADR-0044 §13).
+        this.submittedId.set(id);
         this.selectedId.set(id);
         this.objective.set('');
-        if (this.withChange()) {
-          this.setWithChange(false);
-        }
-
         this.idempotencyKey = crypto.randomUUID();
       }
     } finally {

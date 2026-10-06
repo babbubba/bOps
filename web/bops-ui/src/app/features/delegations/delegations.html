@@ -195,6 +195,8 @@
       </button>
       @if (store.submitError(); as submitError) {
         <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.refused' | t: { reason: submitError } }}</p>
+      } @else if (startDenial(); as denial) {
+        <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.denied' | t: { dimension: denial.dimension, reason: denial.reason } }}</p>
       }
     </section>
   }
