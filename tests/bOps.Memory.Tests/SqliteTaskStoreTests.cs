@@ -48,6 +48,80 @@ public sealed class SqliteTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task FallbackChainAndStickyOrdinal_SurviveStoreReopen_WithoutASecret()
+    {
+        var pin = new PinnedProviderConfiguration(1, 7, "OpenRouter", "https://openrouter.test", "primary-x",
+            true, null, "settings", "settings", "settings", "settings", "default", "safe-hash")
+        {
+            Fallbacks = [new PinnedProviderCandidate("Anthropic", "https://api.anthropic.test", "sonnet-x", false, TimeSpan.FromSeconds(30))],
+            FallbackOrdinal = 1,
+        };
+        var task = SampleTask(AgentTaskStatus.Running) with { PinnedProviderConfiguration = pin };
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+
+        var loaded = (await new SqliteTaskStore(_filePath).LoadAsync(task.Id))!.PinnedProviderConfiguration!;
+
+        Assert.Equal(1, loaded.FallbackOrdinal);
+        Assert.Equal(pin.Fallbacks.Single(), Assert.Single(loaded.Fallbacks));
+        Assert.Equal(pin.SnapshotHash, loaded.SnapshotHash);
+        using var connection = new SqliteConnection($"Data Source={_filePath}");
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT state_json FROM tasks WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", task.Id.ToString());
+        var json = (string)(await command.ExecuteScalarAsync())!;
+        Assert.DoesNotContain("apiKey", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AB1Pin_WithoutFallbackFields_LoadsWithSafeDefaults_AndIsNotRewritten()
+    {
+        var pin = new PinnedProviderConfiguration(1, 7, "OpenRouter", "https://openrouter.test", "primary-x",
+            true, null, "settings", "settings", "settings", "settings", "default", "safe-hash")
+        {
+            Fallbacks = [new PinnedProviderCandidate("Anthropic", "https://api.anthropic.test", "sonnet-x", false, null)],
+            FallbackOrdinal = 1,
+        };
+        var task = SampleTask(AgentTaskStatus.Running) with { PinnedProviderConfiguration = pin };
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+        string legacyJson;
+        using (var connection = new SqliteConnection($"Data Source={_filePath}"))
+        {
+            await connection.OpenAsync();
+            using var read = connection.CreateCommand();
+            read.CommandText = "SELECT state_json FROM tasks WHERE id = $id;";
+            read.Parameters.AddWithValue("$id", task.Id.ToString());
+            var node = System.Text.Json.Nodes.JsonNode.Parse((string)(await read.ExecuteScalarAsync())!)!.AsObject();
+            var pinNode = node.First(p => p.Key.Equals("pinnedProviderConfiguration", StringComparison.OrdinalIgnoreCase)).Value!.AsObject();
+            foreach (var key in pinNode.Select(p => p.Key).Where(k =>
+                k.Equals("fallbacks", StringComparison.OrdinalIgnoreCase) || k.Equals("fallbackOrdinal", StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                pinNode.Remove(key);
+            }
+
+            legacyJson = node.ToJsonString();
+            using var write = connection.CreateCommand();
+            write.CommandText = "UPDATE tasks SET state_json = $json WHERE id = $id;";
+            write.Parameters.AddWithValue("$json", legacyJson);
+            write.Parameters.AddWithValue("$id", task.Id.ToString());
+            await write.ExecuteNonQueryAsync();
+        }
+
+        var loaded = (await new SqliteTaskStore(_filePath).LoadAsync(task.Id))!.PinnedProviderConfiguration!;
+
+        Assert.Empty(loaded.Fallbacks);
+        Assert.Equal(0, loaded.FallbackOrdinal);
+        Assert.Equal(pin.SnapshotHash, loaded.SnapshotHash);
+        using var check = new SqliteConnection($"Data Source={_filePath}");
+        await check.OpenAsync();
+        using var stored = check.CreateCommand();
+        stored.CommandText = "SELECT state_json FROM tasks WHERE id = $id;";
+        stored.Parameters.AddWithValue("$id", task.Id.ToString());
+        Assert.Equal(legacyJson, (string)(await stored.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReturnsNull_ForAnUnknownTaskId()
     {
         var store = new SqliteTaskStore(_filePath);
