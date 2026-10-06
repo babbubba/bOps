@@ -12,7 +12,8 @@ import { join } from 'node:path';
  * http://localhost:4200 in front of the real bOps.Api composition on Kestrel at http://localhost:5080 (the test-only
  * `tests/bOps.Api.E2EHost`, whose only substitution is a gated fake model). The API key is generated here, per run, handed to the
  * host and the test through the environment, and never printed. Tracing, video and HAR are off: they would record request
- * headers, i.e. the session cookie.
+ * headers, i.e. the session cookie. E2E-9 and E2E-10 (ADR-0044 §21) run on the same topology and state directory, with the real
+ * `bops` CLI writing the API's `policy.yaml`.
  */
 process.env['BOPS_E2E_API_KEY'] ??= randomBytes(32).toString('base64url');
 process.env['BOPS_E2E_STATE_DIR'] ??= mkdtempSync(join(tmpdir(), 'bops-e2e-8-'));
