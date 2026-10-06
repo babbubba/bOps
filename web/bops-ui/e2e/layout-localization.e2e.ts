@@ -269,7 +269,7 @@ async function assertGeometry(
       document.documentElement,
       document.body,
       ...body.querySelectorAll(
-        'main, aside, form, section, article, [role="alert"], [role="status"]',
+        'main, aside, form, section, article, div.rounded-xl.border, div.rounded-lg.border, li.rounded-xl.border, li.rounded-lg.border, [role="alert"], [role="status"]',
       ),
     ].filter(
       (element, index, all) =>
@@ -297,7 +297,7 @@ async function assertGeometry(
           document.documentElement,
           document.body,
           ...body.querySelectorAll(
-            'main, aside, form, section, article, [role="alert"], [role="status"]',
+            'main, aside, form, section, article, div.rounded-xl.border, div.rounded-lg.border, li.rounded-xl.border, li.rounded-lg.border, [role="alert"], [role="status"]',
           ),
         ].filter(
           (element, index, all) =>

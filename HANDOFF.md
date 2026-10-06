@@ -6,13 +6,14 @@
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
 - V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); HARDEN-9 is complete and merged through PR #74 (`ad4d196`); HARDEN-8 is complete and merged through PR #75 (`0e006c4`). HARDEN-10 (browser session, ADR-0043 Accepted, D-040) is complete and merged through PR #76 (`99530507b20058ce4b7869912d97165218d8f737`).
 - HARDEN-11 (delegation operability): [ADR-0044](docs/architecture/adr/0044-request-dependent-delegation-authority-and-operability.md) is **Accepted** (2026-10-05, D-041) on `feat/harden-11-delegation-operability` (not pushed) after the independent authority/security review PASS (blockers 0, non-blocking N-1…N-13 incorporated) and operator decisions A–E. **Phase 1 implementation complete locally (2026-10-06)** in `31ce346`…`006e4e7`, not pushed, no PR; ready for the independent implementation authority/security review. Validation and Windows/Linux platform evidence are recorded in the packet.
+- HARDEN-12 (UI layout/localization): **implementation complete locally — ready for independent UI review** on `fix/harden-12-ui-layout-localization` (not pushed, no PR). Block A is `fa1f536`; E2E-12 is `e53718e`: 96/96 matrix cases, 540 geometry assertions, 64 en/it screenshots, targeted 320/288 Dashboard and 375 mobile-nav regressions green; Angular 420/420, build/i18n green, existing Playwright 11 passed / 1 intentional skip. No backend or behavior changes and no Block-B production CSS fix.
 - HARDEN-5 (Windows `storage.health`) merged through PR #61; HARDEN-6 (typed `ToolParameter` constraints, `FailureKind`, `Completeness`, 94 constrained parameters, Windows/Linux validated, CI green) merged through PR #62.
 - The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next action: **independent implementation authority/security review of HARDEN-11 Phase 1 — delegation operability**, see
-[`agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md`](agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md)
-and the Accepted [ADR-0044](docs/architecture/adr/0044-request-dependent-delegation-authority-and-operability.md).
+Next action for the current packet: **independent UI review of HARDEN-12**, see
+[`agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md`](agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md).
+HARDEN-13 is next in canonical order but has not started. The independent HARDEN-11 implementation authority/security review also remains pending.
 
 ## Handoff — 2026-09-24 (historical)
 
