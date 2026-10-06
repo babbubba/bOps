@@ -14,6 +14,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- HARDEN-14 adds a repeatable end-to-end composition gate for all fourteen reliability scenarios.
+  It includes a mandatory real-Linux-Docker diagnosis, a sample-plugin mutation flow with plan and
+  step approval plus independent verification, the complete registered first-party tool catalog
+  against the strict provider, and the existing resume, provider-failure, delegation, browser-session,
+  localization and long-session scenarios. Windows and Ubuntu CI, Angular build/headless/i18n,
+  Playwright, dependency review and the quality aggregate are green in run `37543992327` (PR #85).
+
 - A diagnosis-only delegation no longer needs mutation-capable profiles (ADR-0044, HARDEN-11). The role set a delegation requires
   now depends on the request: a diagnosis requires Discovery and Diagnostic, a run that prepares a change still requires all four,
   unchanged and fail-closed; the root authority is derived from the required roles only, and a diagnosis root has no Skill or

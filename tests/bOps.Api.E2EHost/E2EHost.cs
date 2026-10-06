@@ -127,6 +127,11 @@ internal sealed class E2EFactory(string state, string vaultVariable, GatedChatMo
             ["Authentication:ApiKeys:0:Secret:Name"] = E2EHost.KeyVariable,
             ["Authentication:ApiKeys:0:Roles"] = "viewer,operator,approver,administrator",
             // A released model call never waits long, but a held one may wait for the test: no attempt timeout or retry may fire.
+            // Admission still requires the selected credential even though execution receives the injected fake model. Reuse the
+            // per-process random test secret so the host never depends on or prints a developer's real provider credential.
+            ["ModelProvider:ApiKeySecret:Provider"] = "environment",
+            ["ModelProvider:ApiKeySecret:Name"] = vaultVariable,
+            ["ModelProvider:RequestTimeout"] = "00:15:00",
             ["Agent:ModelCallAttemptTimeout"] = "00:10:00",
             ["Agent:ModelCallBudget"] = "00:30:00",
         }));
