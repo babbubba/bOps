@@ -67,14 +67,16 @@ public sealed class WindowsProcessActionToolsTests
         return Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the test process.");
     }
 
-    // mshta.exe (built into every Windows edition, client and server) opens a genuine, classic
-    // Win32 top-level window and then just sits on it — unlike notepad.exe, which on modern
-    // Windows client editions is a thin launcher stub for a packaged app and exits within
-    // milliseconds of spawning the real (differently-PID'd) window, making it an unreliable
-    // target for this test.
+    // Windows PowerShell owns the WinForms window in this process. This avoids mshta.exe, which
+    // application-control policy may terminate immediately, and notepad.exe, which can hand the
+    // window to a packaged process with a different PID.
     private static Process StartWindowedProcess()
     {
-        var startInfo = new ProcessStartInfo("mshta.exe", "about:blank")
+        const string script = "Add-Type -AssemblyName System.Windows.Forms; " +
+            "$form = New-Object System.Windows.Forms.Form; " +
+            "$form.Text = 'bOps process.stop test'; " +
+            "[void]$form.ShowDialog()";
+        var startInfo = new ProcessStartInfo("powershell.exe", $"-NoProfile -Sta -Command \"{script}\"")
         {
             UseShellExecute = false,
         };
@@ -133,7 +135,7 @@ public sealed class WindowsProcessActionToolsTests
     {
         using var process = StartWindowedProcess();
         // CloseMainWindow() needs the window to exist. WaitForInputIdle returns after a fixed time whether or not one has appeared, and on a
-        // loaded CI runner mshta can take longer than that, so wait for the window itself.
+        // loaded CI runner PowerShell can take longer than that, so wait for the window itself.
         Assert.True(
             await WaitForMainWindowAsync(process, TimeSpan.FromSeconds(60)),
             "The test process never showed a main window, so process.stop had nothing to close.");

@@ -32,6 +32,11 @@
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Filesystem\bOps.Packages.Filesystem.csproj" />
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Web\bOps.Packages.Web.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.OpenAiCompatible\bOps.Packages.Providers.OpenAiCompatible.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\bOps.Packages.Providers.OpenAiCompatible.Tests\StrictOpenAiProvider.cs" Link="Wire\StrictOpenAiProvider.cs" />
   </ItemGroup>
 
 </Project>
