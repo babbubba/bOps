@@ -20,11 +20,45 @@ public sealed record PinnedProviderConfiguration(
     string RequestTimeoutSource,
     string SnapshotHash)
 {
-    /// <summary>The explicit ordered fallback candidates, excluding the primary.</summary>
-    public IReadOnlyList<PinnedProviderCandidate> Fallbacks { get; init; } = [];
+    private IReadOnlyList<PinnedProviderCandidate>? fallbacks;
+
+    /// <summary>
+    /// The explicit ordered fallback candidates, excluding the primary. A pin stored before fallback existed (or one whose
+    /// serializer supplied no value) reads as an empty chain, never as <c>null</c>.
+    /// </summary>
+    public IReadOnlyList<PinnedProviderCandidate> Fallbacks
+    {
+        get => fallbacks ?? [];
+        init => fallbacks = value;
+    }
 
     /// <summary>The sticky candidate ordinal for this execution. Excluded from <see cref="SnapshotHash"/>.</summary>
     public int FallbackOrdinal { get; set; }
+
+    /// <summary>Value equality, comparing the fallback chain element by element rather than by list reference.</summary>
+    public bool Equals(PinnedProviderConfiguration? other) =>
+        other is not null &&
+        SchemaVersion == other.SchemaVersion && Generation == other.Generation &&
+        ProviderId == other.ProviderId && BaseUrl == other.BaseUrl && Model == other.Model &&
+        SupportsNativeToolCalling == other.SupportsNativeToolCalling && RequestTimeout == other.RequestTimeout &&
+        ProviderSource == other.ProviderSource && BaseUrlSource == other.BaseUrlSource && ModelSource == other.ModelSource &&
+        SupportsNativeToolCallingSource == other.SupportsNativeToolCallingSource &&
+        RequestTimeoutSource == other.RequestTimeoutSource && SnapshotHash == other.SnapshotHash &&
+        FallbackOrdinal == other.FallbackOrdinal && Fallbacks.SequenceEqual(other.Fallbacks);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(SchemaVersion);
+        hash.Add(Generation);
+        hash.Add(ProviderId);
+        hash.Add(Model);
+        hash.Add(SnapshotHash);
+        hash.Add(FallbackOrdinal);
+        foreach (var candidate in Fallbacks) hash.Add(candidate);
+        return hash.ToHashCode();
+    }
 }
 
 /// <summary>One non-secret fallback candidate captured in an execution pin.</summary>
