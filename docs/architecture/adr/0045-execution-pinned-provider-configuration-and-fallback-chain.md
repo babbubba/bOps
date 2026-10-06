@@ -1,6 +1,6 @@
 # ADR-0045 — Execution-pinned provider configuration and ordered fallback chain
 
-Status: Proposed — awaiting operator acceptance
+Status: Accepted (2026-10-06, operator decision after the independent architecture review and the targeted B-1 delta review PASS — blockers 0)
 Date: 2026-10-06
 
 Supersedes only the restart-to-apply consequence of
@@ -10,9 +10,9 @@ ADR also governs HARDEN-13 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md);
 [plan](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md), finding F-17).
 
-Nothing here is implemented yet. The operator has selected the shipped bootstrap default and approved
-the fallback chain in principle, but this ADR remains Proposed until independent architecture review
-and final operator acceptance. Implementation must not begin before that gate passes.
+Architecture accepted; implementation not started. The operator selected the shipped bootstrap default and approved
+the fallback chain, and the independent architecture review (including the targeted B-1 delta review) passed
+with no blockers. Block B implementation may now begin.
 
 ## Context
 

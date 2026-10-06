@@ -5,8 +5,7 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries except D-042 have status **Accepted**; D-042 is **Proposed** and has no authority until
-the operator accepts it. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries have status **Accepted**; D-042 was accepted 2026-10-06 (architecture only; implementation not started). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -975,10 +974,9 @@ hand-written profiles. Additive public contract (four `bOps.Abstractions` types 
 tightening outside delegation. Sensitive Capability input stays persisted as plain JSON in the delegation store; no
 encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 starts next.
 
-### D-042 — PROPOSED — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
+### D-042 — ACCEPTED (architecture; implementation not started) — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
 
-**Proposal (operator decisions incorporated; awaiting independent architecture review and final operator
-acceptance).** Settings-driven provider, endpoint, model and native-tool capability changes publish one immutable
+**Decision (operator decisions incorporated; accepted 2026-10-06 after independent architecture review and the targeted B-1 delta review PASS).** Settings-driven provider, endpoint, model and native-tool capability changes publish one immutable
 effective configuration for subsequently admitted executions without an API restart. One ordinary task, or one whole
 delegated D/D/R/V run, durably pins that non-secret configuration across model calls, approval waits, execution attempts
 and restart/resume. Credentials are excluded from the pin and resolved from the existing secret authority for the
@@ -1012,8 +1010,8 @@ credentials; persisting plaintext or an unkeyed secret fingerprint; resuming und
 discovery, scoring or cost/health routing; fallback on permanent or unknown failures; per-call or process-global
 fallback stickiness.
 
-**Consequences if accepted.** ADR-0045 supersedes only ADR-0029's restart-to-apply consequence. Settings must expose
+**Consequences.** ADR-0045 supersedes only ADR-0029's restart-to-apply consequence. Settings must expose
 persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
 gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
 publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
-explicit list is empty. No HARDEN-13 production implementation is authorized while this decision remains Proposed.
+explicit list is empty. HARDEN-13 Block B implementation is now authorized; none has started.
