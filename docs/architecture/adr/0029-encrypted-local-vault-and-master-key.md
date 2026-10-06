@@ -6,7 +6,10 @@ Date: 2026-09-17
 > **HARDEN-13 forward reference (Proposed, 2026-10-06).**
 > [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) proposes to
 > supersede only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
-> optional host-level fallback chain. Until ADR-0045 is accepted and implemented, the current
+> approved-in-principle host-level fallback chain. The durable execution pin contains non-secret
+> provider/model/request configuration only; every model attempt resolves the current credential for
+> its pinned provider through this ADR's existing secret authority. HARDEN-13 neither preserves nor
+> persists historical credentials. Until ADR-0045 is accepted and implemented, the current
 > restart-required behavior documented below remains authoritative.
 
 ## Context

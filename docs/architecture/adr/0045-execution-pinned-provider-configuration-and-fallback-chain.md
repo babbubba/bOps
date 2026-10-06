@@ -10,9 +10,9 @@ ADR also governs HARDEN-13 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md);
 [plan](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md), finding F-17).
 
-Nothing here is implemented yet. In particular, the model candidate in §10 is a recommendation,
-not an accepted shipped default. Implementation must not begin until the operator accepts this ADR
-and chooses the default.
+Nothing here is implemented yet. The operator has selected the shipped bootstrap default and approved
+the fallback chain in principle, but this ADR remains Proposed until independent architecture review
+and final operator acceptance. Implementation must not begin before that gate passes.
 
 ## Context
 
@@ -80,10 +80,13 @@ it must never disappear behind one successful final event.
 
 ### 4. HARDEN-13 requirement
 
-A Settings change to provider, model, endpoint, tool-calling capability or credential must affect a
-subsequently started execution without restarting the API. It must not change an execution already
-in progress. The optional fallback feature must be explicitly configured, ordered, bounded and
-host-owned. Router mode remains supported but is not a reproducible troubleshooting default.
+A Settings change to provider, model, endpoint or tool-calling capability must affect a subsequently
+started execution without restarting the API. It must not change an execution already in progress.
+A credential change is the deliberate exception: it must affect the next model attempt, including an
+attempt in an already-admitted execution, because rotation may revoke or replace a compromised key.
+The approved fallback feature must be explicitly configured, ordered, bounded and host-owned. The
+shipped `OpenRouter` / `openrouter/free` bootstrap remains intentionally non-deterministic and must
+never be presented as suitable for reproducible troubleshooting or remediation.
 
 ## Decision
 
@@ -96,17 +99,20 @@ The product will name and expose three different states:
   environment override and is not therefore necessarily in use.
 - **Effective configuration** is one immutable, validated `EffectiveProviderConfiguration` published
   by the API host. It contains a primary plus an ordered fallback chain, field provenance, a monotonic
-  generation and credential bindings. One atomic reference is the only source used when a new
-  execution starts.
+  generation and safe credential source/availability metadata. It contains no credential value or
+  historical credential reference. One atomic reference is the only source used when a new execution
+  starts.
 - **Pinned execution configuration** is the safe durable projection of one effective generation,
-  plus the execution's current sticky fallback ordinal. It belongs to one top-level durable execution
-  and never follows subsequent Settings changes.
+  plus the execution's current sticky fallback ordinal. It contains only non-secret provider and
+  request configuration, belongs to one top-level durable execution and never follows subsequent
+  provider/profile Settings changes. Credentials are deliberately not pinned.
 
 The Settings API will return all persisted values, the effective primary/fallback descriptors, the
 effective generation, per-field source (`environment`, `settings`, `default`), and whether a
-persisted value is shadowed. It returns credential presence, source and an opaque version only;
-never plaintext. A successful mutation response states whether it was published for new executions
-or persisted-but-shadowed. The UI must not use “active” for a shadowed value.
+persisted value is shadowed. It returns credential presence and source only, never plaintext, a
+credential hash or a historical-secret version. A successful mutation response states whether it
+was published for new executions or persisted-but-shadowed. The UI must not use “active” for a
+shadowed value.
 
 ### 6. Consistency and publication
 
@@ -119,13 +125,16 @@ For each mutation it:
 2. creates a complete proposed state from one persisted settings revision and one vault revision;
 3. validates it without making a provider network call;
 4. persists the changed store atomically;
-5. builds the complete effective configuration, including credential bindings;
+5. builds the complete effective non-secret configuration and current credential availability/source
+   metadata;
 6. publishes it with one atomic reference replacement and increments its generation; and
 7. releases the gate.
 
-A task/delegation start reads that reference exactly once. It consequently receives wholly A or
-wholly B, never provider from B with model or key from A. No gate is held while constructing prompts,
-waiting for approval, calling a provider or running a task. `SettingsStore` gains a revision and
+A task/delegation start reads that reference exactly once. It consequently receives wholly non-secret
+configuration A or wholly B, never provider from B with model or endpoint from A. The credential is
+intentionally outside this pinned tuple and is resolved from the current authority for the pinned
+candidate at each attempt. No gate is held while constructing prompts, waiting for approval, calling
+a provider or running a task. `SettingsStore` gains a revision and
 in-process writer serialization equivalent to `VaultStore`; stale writes return conflict rather than
 silently overwriting another change. The coordinator is the only API write path to either provider
 store while the process is running. The CLI vault-rotation procedure remains an offline maintenance
@@ -134,6 +143,13 @@ operation requiring the API to be stopped.
 Persistence precedes publication. If persistence fails, nothing is published. If the process stops
 after persistence and before publication, startup deterministically rebuilds the effective snapshot
 from the persisted state. There is no silent rollback to the preceding configuration.
+
+A credential-only Settings mutation atomically replaces or removes the current vault value under the
+same short coordinator gate and refreshes the safe presence/source view. It does not rewrite an
+execution pin or require a new non-secret configuration hash: subsequent attempts resolve the new
+current value by pinned provider id. A combined profile-and-key operation is serialized, validates
+the complete non-secret proposal plus credential availability, persists both changes before
+publication and never routes one provider's key to another provider.
 
 ### 7. Environment precedence
 
@@ -151,16 +167,19 @@ ADR-0029's explicit environment precedence is preserved and made visible:
    field. This closes the current ambiguity where a merged configuration value can be mistaken for a
    JSON default. The immutable result remains one atomic tuple even when its fields have different
    declared sources.
-3. The configured `ApiKeySecret` is resolved first. A non-empty result is the effective credential
-   and shadows the provider's vault entry. If the reference resolves to null/empty, the active
-   provider's vault credential is used, as ADR-0029 specifies. The Settings view says which source
-   wins and whether a stored vault key is shadowed.
+3. On every attempt, the current configured `ApiKeySecret` applicable to the pinned provider is
+   resolved first. A non-empty result is the current credential and shadows that provider's vault
+   entry. If the reference resolves to null/empty, the pinned provider's current vault credential is
+   used, as ADR-0029 specifies. The Settings view says which source wins and whether a stored vault
+   key is shadowed. The secret value itself is never part of the effective or pinned snapshot.
 4. Environment fallback entries, when explicitly present, own the whole ordered fallback list.
    Otherwise the Settings-stored list wins, then the shipped empty default.
 
-This precedence is evaluated at every publication, not at every model call. Environment variables
-are not polled in the background; changing the process environment outside Settings requires a host
-configuration reload/restart. The live guarantee applies to Settings mutations.
+Non-secret provider/profile/fallback precedence is evaluated at every publication, not at every model
+call. Credential precedence is the explicit exception and is evaluated for the pinned provider on
+every attempt. Environment variables are not polled in the background; changing the process
+environment outside Settings requires a host configuration reload/restart. Settings vault
+rotation/removal is immediately visible to the next attempt without restart.
 
 ### 8. Pinning scope and model lifetime
 
@@ -174,18 +193,22 @@ It is not an individual model call, `AgentRunner` invocation, role or execution 
 scope would let Discovery and Diagnostic disagree; an attempt-level scope would let Resume change the
 model mid-task; a call-level scope is the reported defect.
 
-At admission, an internal host `IExecutionChatModelFactory` receives one effective snapshot, creates
-the underlying provider models and returns one execution-scoped `IChatModel`. The host creates an
-execution-scoped `AgentRunner` with that model using the existing constructor. For delegation it
-creates one execution-scoped `DelegationRunner` over that runner. Runtime still sees exactly one
-`IChatModel`; it does not resolve services, provider ids, profiles or secrets.
+At admission, an internal host `IExecutionChatModelFactory` receives one effective non-secret
+snapshot and returns one execution-scoped `IChatModel`. That model owns pinned candidate descriptors
+and uses a narrow host-owned current-credential resolver when each provider attempt is made. The host
+creates an execution-scoped `AgentRunner` with that model using the existing constructor. For
+delegation it creates one execution-scoped `DelegationRunner` over that runner. Runtime still sees
+exactly one `IChatModel`; it does not resolve services, provider ids, profiles or secrets.
 
 Provider model objects are lightweight execution-scoped adapters over factory-managed `HttpClient`
-instances. Making `IChatModel` transient by itself is not the design: the factory and durable pin are
-the consistency boundary. Existing public `AgentRunner(IChatModel, ...)` and `IChatModel` contracts
-remain usable by tests and non-API hosts.
+instances, but they must not capture a credential for their entire execution lifetime. The host
+resolves the current credential and binds it only for the individual attempt, either through an
+attempt-scoped adapter or an equivalent narrow provider-factory contract. Making `IChatModel`
+transient by itself is not the design: the factory and durable non-secret pin are the configuration
+consistency boundary. Existing public `AgentRunner(IChatModel, ...)` and `IChatModel` contracts remain
+usable by tests and non-API hosts.
 
-### 9. Durable pin and credential binding
+### 9. Durable non-secret pin and late-bound credentials
 
 `TaskState` and `DelegationRun` gain an additive optional `PinnedProviderConfiguration`. Old records
 without one use a migration rule: the first accepted resume captures the then-effective snapshot,
@@ -196,27 +219,28 @@ The durable projection contains only safe data:
 - schema version and effective generation;
 - primary and ordered fallback provider ids, base URLs, requested models, native-tool flags and
   request timeouts;
-- effective non-secret supported parameters;
+- relevant effective first-party non-secret request configuration; `ExtraParameters` remains
+  persisted-only and is not added to the HARDEN-13 pin or acceptance criteria;
 - field provenance and a snapshot hash;
-- an opaque credential binding id/version for each candidate;
 - current sticky fallback ordinal.
 
-No credential plaintext, authorization header or reversible unkeyed credential fingerprint is stored
-in task, delegation, audit or Settings data.
+No credential plaintext, authorization header, credential hash, historical secret version or
+credential correlation identifier is stored in task, delegation, audit or Settings data.
 
-To make restart/resume deterministic, the vault maintains immutable encrypted credential versions.
-Resolving an environment credential or current provider vault entry for a new execution creates or
-references a provider-bound encrypted credential lease. The durable pin stores only its opaque id and
-version. A lease is bound by authenticated data to its provider id and cannot be resolved for another
-provider. Rotation creates a new current version; it does not mutate leases held by resumable
-executions. Terminal/non-resumable executions release their lease, and retention cleanup may delete an
-unreferenced retired version. Clearing a current Settings key never destroys a still-referenced lease.
+Credentials are late-bound for every model attempt. The host resolves the **current** credential from
+ADR-0029's existing authority for the pinned candidate provider, and that credential lives only in
+attempt memory. It is never copied into `EffectiveProviderConfiguration` or
+`PinnedProviderConfiguration`. Provider/profile pinning therefore remains deterministic while key
+rotation is immediately effective for the next attempt in both new and already-running executions.
+This exception is intentional: a rotated key may be compromised or revoked, so preserving its use
+for reproducibility would be a security defect.
 
-If the exact pinned non-secret provider package or credential lease cannot be reconstructed after a
-restart, Resume fails closed before a model call with an actionable “pinned provider configuration is
-unavailable” result. It never substitutes the current Settings provider or credential. A deployment
-without an active encrypted vault can run and pin credentials in memory, but such an execution is
-explicitly non-resumable across process restart; the API exposes that limitation before start.
+After restart, Resume reconstructs the exact pinned non-secret provider/model/endpoint/tool/fallback
+configuration and resolves the current credential only when an attempt needs it. If the pinned
+provider package can no longer instantiate that safe configuration, or the current credential for a
+pinned candidate is unavailable, Resume or the next attempt fails explicitly. It never substitutes
+the current Settings provider/model and never requires a historical credential lease. An invalid
+current credential produces `Authentication` and cannot trigger fallback.
 
 Consequences for required scenarios:
 
@@ -226,38 +250,36 @@ Consequences for required scenarios:
 | Task resumes after a model-call failure | It reuses its durable snapshot and sticky fallback ordinal. |
 | Delegation waits for plan approval; Settings changes | The whole run, including post-approval roles, keeps its original snapshot. |
 | Delegation resumes after approval or interruption | It reconstructs the stored delegation snapshot, never current Settings. |
-| API restarts before a resumable task continues | It reconstructs the exact non-secret snapshot and credential lease; if either is unavailable, Resume is refused. |
-| Administrator rotates a key during an active execution | Existing execution keeps its leased version; new executions lease the new version. |
+| API restarts before a resumable task continues | It reconstructs the exact non-secret snapshot and late-binds the current credential; unavailable provider configuration or credential fails/refuses resume. |
+| Administrator rotates a key during an active execution | The execution remains on its pinned provider/model, and its next model attempt uses the new current key. |
+| Administrator removes a key during an active execution | The execution remains pinned, but its next required model attempt fails explicitly; missing credentials are not transient and cannot activate fallback. |
 
-### 10. Fixed shipped default — operator decision required
+### 10. Shipped bootstrap default — operator decision recorded
 
-Both API and CLI shipped configuration should use the same fixed provider/model to avoid host drift.
-The model must support the Chat Completions or native Messages adapter that bOps currently implements,
-reliable native tools, and a stable model id. A router alias is not a candidate. Availability must be
-rechecked against the provider's official model list in the implementation session.
+The operator selected **OpenRouter / `openrouter/free`** as the shared API and CLI bootstrap default.
+It is a zero-cost getting-started, evaluation and non-critical exploration mode, and requires an
+OpenRouter API key. It is intentionally a router alias: the actual model can change on every call and
+must remain visible through the existing requested/actual model-call and audit information. bOps must
+never imply that this bootstrap is deterministic.
 
-| Candidate | Native tools | Determinism/stability | Credential | Operational implications | Assessment |
-|---|---|---|---|---|---|
-| **OpenAI / `gpt-4.1-2025-04-14`** | Yes; supported by the existing OpenAI-compatible function-call path | Dated snapshot, so behavior is more reproducible than a rolling alias | OpenAI API key | Hosted dependency and account quota; exact snapshot can later be retired and must be reviewed during upgrades | **Recommended**: fixed, tool-capable, existing adapter, least ambiguity for shipped troubleshooting behavior |
-| **Anthropic / `claude-sonnet-4-6`** | Yes; covered by the native Anthropic tool-use adapter | Active direct model id, but not a dated immutable snapshot | Anthropic API key | Uses the distinct native adapter, so it is a strong compatibility choice but makes that adapter the fresh-install path | Suitable alternative, less reproducible than the dated recommendation |
-| **DeepSeek / `deepseek-flash`** | Tool calls are supported by the existing OpenAI-compatible path | Direct provider but a rolling model name, so less reproducible than a dated snapshot | DeepSeek API key | Hosted dependency; changes behind the name require closer troubleshooting records | Supported but not suitable as the deterministic shipped default |
+For important troubleshooting, reproducible analysis and especially remediation, documentation and
+Settings must recommend selecting a specific model explicitly. Settings will display: “The actual
+model may change on every call; not recommended for troubleshooting sessions.” Router selection is
+performed inside a provider; the fallback chain below is an administrator-owned cross-candidate
+recovery policy. They are not the same mechanism and must not share a name.
 
-Candidate status was checked on 2026-10-06 against the providers' official documentation:
-[OpenAI GPT-4.1 model and snapshot support](https://developers.openai.com/api/docs/models/gpt-4.1),
-[Anthropic model status](https://docs.anthropic.com/en/docs/about-claude/model-deprecations), and
-[DeepSeek API change log](https://api-docs.deepseek.com/updates/). These are
-time-sensitive facts, which is why implementation must recheck them before changing shipped config.
+Block B Getting Started/operator documentation must state:
 
-**Recommendation: OpenAI / `gpt-4.1-2025-04-14`. OPERATOR DECISION REQUIRED.** Cost is not the
-architectural criterion. A fresh install still requires the selected provider's credential, as it
-does today.
+1. the shipped default requires an OpenRouter API key;
+2. how to configure that key through Settings;
+3. `openrouter/free` may select a different actual model on different calls;
+4. important troubleshooting, reproducible analysis and remediation should use an explicitly selected
+   specific model; and
+5. model-call/audit information exposes the actual model when the provider reports it.
 
-OpenRouter remains supported. `openrouter/free` and other router-selection models are classified as
-supported, non-deterministic exploration modes and not recommended for reproducible troubleshooting.
-When such a model is effective, Settings will display: “The actual model may change on every call;
-not recommended for troubleshooting sessions.” Router selection is performed inside a provider;
-the fallback chain below is an administrator-owned cross-candidate recovery policy. They are not the
-same mechanism and must not share a name.
+C-20 is therefore mitigated through explicit disclosure, actual-model visibility, easy live
+provider/model selection and the serious-work recommendation. HARDEN-13 does not attempt to make the
+operator-selected bootstrap deterministic.
 
 ### 11. Ordered fallback chain
 
@@ -279,8 +301,9 @@ The ordered configuration shape is:
 }
 ```
 
-Each entry names an already registered provider and a non-blank model. Endpoint, tool capability and
-credential come only from that provider's own effective profile/binding. The list is explicit,
+Each entry names an already registered provider and a non-blank model. Endpoint and tool capability
+come only from that provider's own pinned effective profile; its current credential comes only from
+that provider's per-attempt authority. The list is explicit,
 ordered and bounded (maximum three fallback entries). Duplicate provider/model tuples and the
 primary tuple are rejected; there is no cycle, discovery, implicit vendor or health-based insertion.
 A different model on the same provider is allowed only as an explicit distinct tuple. An empty or
@@ -363,60 +386,64 @@ Save-time validation is local and deterministic:
 - `BaseUrl` is an absolute HTTP/HTTPS URI;
 - supported non-secret parameters have valid names/types/bounds;
 - primary and fallback tuples are unique and chain length is bounded;
-- a candidate requiring a credential has one resolvable through its own binding;
+- a candidate newly activated or added to a chain and requiring a credential has one currently
+  resolvable through its own provider-scoped authority;
 - the provider package can construct the adapter from the proposed options.
 
 Saving does not make a live network request and does not prove account validity, model availability
-or provider health. An inactive profile may be stored without a credential, but it cannot be made
-effective or added to the fallback chain until its required credential is present. Provider-package
-metadata must distinguish local/no-credential providers from providers that require one; it belongs
-to registration/host composition, not Runtime vendor logic.
+or provider health. An inactive profile may be stored without a credential, but it cannot be newly
+activated or added to the fallback chain until its required credential is present. Explicit removal
+of a current credential is nevertheless always allowed as a security revocation: availability becomes
+false immediately, new execution admission and the next attempt fail explicitly, and the old value is
+not retained. Provider-package metadata must distinguish local/no-credential providers from providers
+that require one; it belongs to registration/host composition, not Runtime vendor logic.
 
-A malformed URL, blank model, unregistered provider, missing required secret, unsupported parameter
-or adapter-construction failure rejects the mutation before publication. A syntactically valid
-provider that is offline is accepted and fails at execution as `Unreachable`; a valid-looking key
-that receives 401 fails as `Authentication` and never falls back. The system never silently keeps
-using the preceding configuration while claiming the new one is active.
+A malformed URL, blank model, unregistered provider, missing required secret during activation/chain
+addition, unsupported parameter or adapter-construction failure rejects that configuration mutation
+before publication. Credential removal follows the explicit revocation rule above rather than this
+activation rule. A syntactically valid provider that is offline is accepted and fails at execution as
+`Unreachable`; a valid-looking key that receives 401 fails as `Authentication` and never falls back.
+The system never silently keeps using the preceding configuration or credential while claiming the
+new state is active.
 
 ### 14. Audit and persisted call records
 
 Every underlying provider attempt remains one `ModelCallRecord` and one `ModelCallAuditEvent`. The
-existing fields retain their meaning for compatibility: `Provider`/`Model` identify the configured
-candidate actually called, and `ActualModel` is what that provider reports.
+existing fields retain their meaning for compatibility: `Provider` identifies the configured
+provider candidate actually called, `RequestedModel`/`Model` identifies the model requested from that
+candidate, and `ActualModel` is what that provider reports.
 
 Additive optional fields record:
 
 - `PrimaryProvider` and `PrimaryModel` — the pinned requested primary;
-- `ActualProvider` — the actual fallback/provider candidate invoked (equal to `Provider` for new
-  direct records, but explicit so a fallback is queryable without interpreting legacy fields);
 - `FallbackOrdinal` — 0 for primary, 1..N for configured fallbacks;
 - `ProviderAttempt` — attempt number within that candidate;
 - `ConfigurationGeneration` and safe snapshot hash;
 - the existing normalized `FailureKind`, model-attempt ordinal and retry decision; a fallback
   transition is distinguishable from same-provider retry and chain exhaustion.
 
-`RequestedModel`/`Model` remains the model requested from that attempt's candidate;
-`ActualModel` remains nullable when the provider does not report one. Router upstream provider is
-not guessed: `ActualProvider` is the configured provider bOps called (for example `OpenRouter`), not
-an inferred upstream vendor. If a provider later reports a safe upstream provider id, it requires a
-separate explicitly named field.
+No separate `ActualProvider` field is added because existing `Provider` already records the actual
+configured provider candidate bOps invoked; duplicating it would create competing semantics. For
+router mode that value is `OpenRouter`, while `ActualModel` remains the provider-reported upstream
+model when available. bOps does not guess an upstream vendor. If a provider later reports a safe
+upstream provider id, that would require a separately named field outside this decision.
 
-No event or record contains the credential binding id if that id could be used to resolve a secret,
-and no secret value, hash or header is audited. Configuration mutation audit additionally records
-the resulting generation and whether the mutation was effective or shadowed, never the value.
+No event or record contains a secret value, historical secret version, credential correlation id,
+credential hash, header or Authorization data. Configuration mutation audit additionally records the
+resulting generation and whether the mutation was effective or shadowed, never the value.
 
 ### 15. Security controls
 
 | Threat | Architectural control |
 |---|---|
 | Switch to an unconfigured provider | Registry validation; explicit primary/fallback tuples only; fail before publication. |
-| Secret cross-routing | Provider-bound authenticated credential lease; each candidate resolves only its own binding. |
-| TOCTOU across provider/profile/key | One coordinator gate for mutation and one immutable atomic publication; execution reads once. |
+| Secret cross-routing | Per-attempt resolver is scoped to the pinned candidate provider and uses only that provider's current configured authority. |
+| TOCTOU across provider/profile configuration | One coordinator gate for mutation and one immutable atomic publication; execution reads non-secret configuration once. Credential rotation is intentionally late-bound and independently atomic in the vault. |
 | Fallback after authentication/permanent failure | Allow-list of four transient kinds; every other/current/future kind fails closed. |
 | Fallback loops | Ordered bounded list, duplicate rejection, monotonic sticky ordinal, no backward transition. |
 | Stale or misleading Settings UI | Persisted/effective/pinned terminology, generation, per-field provenance and shadow state. |
 | Partially applied configuration | Validate complete proposal, atomically persist changed store, atomically publish complete snapshot. |
-| API key in task/audit snapshot | Only opaque lease/version in durable pin; ciphertext stays in the vault; plaintext is execution memory only. |
+| API key in task/audit snapshot | No credential identifier/version/value is in the durable pin; ciphertext stays in the existing vault and plaintext is attempt memory only. |
 | Authority/task semantics change | Snapshot selection is host composition only; AgentRunner policy, delegation envelope and approval paths are unchanged. |
 | Retry/resource multiplication | Maximum three fallbacks, per-candidate attempt cap, one unchanged global call budget/deadline and no cycling. |
 | Settings change during approval wait | Entire `DelegationRun` owns one durable snapshot across every role and wait. |
@@ -428,18 +455,26 @@ Block B/C must prove at least:
 
 1. provider A is used, Settings changes to B without restart, a new task uses B, and the running task remains A;
 2. same provider model X to Y affects the next task without restart;
-3. key rotation affects the next execution, while the active execution keeps its old encrypted lease and no plaintext reaches task/audit persistence;
-4. environment-owned provider/configuration continues to win and Settings reports the persisted value as shadowed;
-5. a concurrent mutation/start observes wholly A or wholly B, never a mixed tuple;
-6. primary 429 exhausts same-provider retries, then fallback runs, with every attempt and transition audited;
-7. timeout and unreachable can fallback;
-8. authentication, quota exceeded, invalid request, context overflow, malformed response and unknown never fallback;
-9. fallback order is deterministic, sticky and never cycles;
-10. Settings changes do not mutate an in-flight primary or fallback chain;
-11. ordinary and delegated resume reconstruct the pin across approval, interruption and restart; unavailable exact leases refuse resume;
-12. router models remain configurable and the English/Italian warning appears;
-13. fresh API and CLI configuration resolves to the operator-approved fixed model;
-14. stale Settings writes conflict and invalid proposals never replace the published generation.
+3. a task starts pinned to provider A/model X, A's key rotates without restart, and the next attempt in
+   that execution remains A/X but uses the new key; the old key is not retained or persisted by
+   HARDEN-13 and audit contains no secret;
+4. removing A's key while that execution is active makes its next required attempt fail explicitly;
+   missing or invalid credentials are not transient, and `Authentication` never triggers fallback;
+5. environment-owned provider/configuration continues to win and Settings reports the persisted value as shadowed;
+6. a concurrent mutation/start observes wholly non-secret configuration A or wholly B, never a mixed tuple;
+7. primary 429 exhausts same-provider retries, then fallback runs, with every attempt and transition audited;
+8. timeout and unreachable can fallback;
+9. authentication, quota exceeded, invalid request, context overflow, malformed response and unknown never fallback;
+10. fallback order is deterministic, sticky and never cycles;
+11. Settings changes do not mutate an in-flight primary or fallback chain;
+12. ordinary and delegated resume reconstruct the non-secret pin across approval, interruption and
+    restart, use the current credential, and refuse when the pinned configuration or current
+    credential is unavailable;
+13. the `OpenRouter` / `openrouter/free` bootstrap remains configurable, requires a key, shows the
+    English/Italian warning, and records actual model information when reported;
+14. Getting Started recommends an explicit specific model for important troubleshooting, reproducible
+    analysis and remediation;
+15. stale Settings writes conflict and invalid proposals never replace the published generation.
 
 Gating E2E uses deterministic fake/local providers:
 
@@ -461,8 +496,9 @@ Live external-provider smoke remains optional and non-gating.
   determinism and makes approval waits a provider-switch boundary.
 - **Pin per role or execution attempt.** Rejected: Discovery/Diagnostic or initial/resume calls could
   use different models in one objective.
-- **Pin only provider/model and resolve endpoint/key live.** Rejected: it permits mixed tuples,
-  secret cross-routing and key changes midway through a run.
+- **Resolve endpoint or other non-secret provider configuration live with the credential.** Rejected:
+  it permits mixed provider/model/request tuples. Only the credential is late-bound, as an explicit
+  security exception to configuration pinning.
 - **Persist credential plaintext in the task row.** Rejected: expands secret exposure into task
   databases, API views, backups and serialization contracts.
 - **Persist an unkeyed credential hash.** Rejected: it creates an offline verification oracle for
@@ -479,20 +515,28 @@ Live external-provider smoke remains optional and non-gating.
 ## Consequences
 
 - Settings changes become live for subsequently admitted API executions with no restart.
-- Active ordinary and delegated work remains deterministic across calls, approvals and resumes.
-- The host gains an immutable configuration coordinator, execution factory, encrypted credential
-  leases and `FallbackChatModel`; Runtime remains vendor-agnostic and is constructed with one model.
+- Active ordinary and delegated work keeps deterministic non-secret provider/model/request
+  configuration across calls, approvals and resumes.
+- Key rotation/removal is effective on the next model attempt, including in an active execution; the
+  pinned provider/model/configuration does not change.
+- The host gains an immutable configuration coordinator, execution factory, per-attempt current
+  credential resolution and `FallbackChatModel`; Runtime remains vendor-agnostic and is constructed
+  with one model.
 - `TaskState`, `DelegationRun` and model-call/audit records receive additive optional fields. A narrow
   routing directive/logical-call identity may require an additive `bOps.Abstractions` change if an
   internal equivalent cannot preserve the one-attempt audit contract cleanly.
-- Fallback support is implemented but disabled by an empty list. No provider is ever implicit.
-- Router mode stays supported and visible as non-deterministic.
-- An exact resume can fail closed when its registered provider package or credential lease is no
-  longer available. That is intentionally safer than silently changing provider or key.
+- The approved fallback support is disabled by an empty list. No provider is ever implicit.
+- `OpenRouter` / `openrouter/free` remains the disclosed non-deterministic bootstrap default; serious
+  work is directed to an explicitly selected specific model.
+- An exact resume can fail closed when its registered provider package, pinned configuration or
+  current credential is unavailable. That is intentionally safer than silently changing provider or
+  model.
 - ADR-0029's statement that Settings changes require restart is superseded by this decision only
   after operator acceptance and implementation.
 
-## Operator acceptance required
+## Review and acceptance gate
 
-1. Accept or reject this execution-pinning, encrypted credential-lease and fallback-chain architecture.
-2. Select the shipped default provider/model; the recommendation is OpenAI / `gpt-4.1-2025-04-14`.
+The operator decisions are recorded: the bootstrap default is `OpenRouter` / `openrouter/free`, and
+the ordered host-level fallback chain is approved in principle. No operator design choice remains
+open. Independent architecture review is the only remaining Block A gate; after it passes, the
+operator can mark this ADR Accepted and authorize Block B.

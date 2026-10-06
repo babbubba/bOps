@@ -977,27 +977,34 @@ encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 st
 
 ### D-042 — PROPOSED — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
 
-**Proposal (awaiting operator acceptance).** Settings-driven provider, endpoint, model, native-tool capability and
-credential changes publish one immutable effective configuration for subsequently admitted executions without an API
-restart. One ordinary task, or one whole delegated D/D/R/V run, pins that configuration across model calls, approval
-waits, execution attempts and restart/resume. The safe non-secret snapshot and opaque provider-bound credential lease
-are durable; plaintext remains only in the encrypted vault and execution memory. An exact snapshot that cannot be
-reconstructed refuses resume rather than substituting current Settings. Explicit environment configuration retains
-precedence and Settings reports persisted-but-shadowed values. An optional, explicit, ordered host-level **fallback
-chain** advances only after same-provider retries exhaust on `Transient`, `RateLimited`, `Timeout` or `Unreachable`, is
-sticky and monotonic for that execution, never resets global budgets/deadlines, and never falls back on any other
-current or future failure kind by default. Runtime remains provider-neutral and receives one execution-scoped
-`IChatModel`. Router mode is supported but distinct from a fallback chain and is not recommended for reproducible
-troubleshooting. The proposed shipped default is OpenAI / `gpt-4.1-2025-04-14`; the operator must choose it or another
-candidate before implementation.
+**Proposal (operator decisions incorporated; awaiting independent architecture review and final operator
+acceptance).** Settings-driven provider, endpoint, model and native-tool capability changes publish one immutable
+effective configuration for subsequently admitted executions without an API restart. One ordinary task, or one whole
+delegated D/D/R/V run, durably pins that non-secret configuration across model calls, approval waits, execution attempts
+and restart/resume. Credentials are excluded from the pin and resolved from the existing secret authority for the
+pinned candidate on every attempt; rotation/removal therefore affects the next attempt even in an active execution.
+Plaintext remains only in the existing vault/secret path and attempt memory. An exact non-secret snapshot that cannot
+be reconstructed, or a missing current credential, fails/refuses resume rather than substituting current Settings.
+Explicit environment configuration retains precedence and Settings reports persisted-but-shadowed values. The
+operator approved in principle an explicit, ordered host-level **fallback chain** that advances only after
+same-provider retries exhaust on `Transient`, `RateLimited`, `Timeout` or `Unreachable`, is sticky and monotonic for
+that execution, never resets global budgets/deadlines, and never falls back on any other current or future failure kind
+by default. Runtime remains provider-neutral and receives one execution-scoped `IChatModel`.
 
-**Alternatives proposed for rejection.** Reload or resolve a process-global model mid-task; transient lifetime without
-an atomic snapshot; pinning per call, role or execution attempt; persisting plaintext or an unkeyed secret fingerprint;
-resuming under current Settings; automatic provider discovery, scoring or cost/health routing; fallback on permanent or
-unknown failures; per-call or process-global fallback stickiness.
+The operator selected `OpenRouter` / `openrouter/free` as the shipped zero-cost bootstrap default. It requires an
+OpenRouter API key and is intentionally non-deterministic: actual models can vary per call and remain visible in
+model-call/audit information. Getting Started and Settings must disclose that behavior and recommend an explicitly
+selected specific model for important troubleshooting, reproducible analysis and especially remediation. Router mode
+is distinct from the fallback chain.
+
+**Alternatives proposed for rejection.** Reload or resolve non-secret provider configuration mid-task; transient
+lifetime without an atomic snapshot; pinning per call, role or execution attempt; pinning or preserving historical
+credentials; persisting plaintext or an unkeyed secret fingerprint; resuming under current Settings; automatic provider
+discovery, scoring or cost/health routing; fallback on permanent or unknown failures; per-call or process-global
+fallback stickiness.
 
 **Consequences if accepted.** ADR-0045 supersedes only ADR-0029's restart-to-apply consequence. Settings must expose
 persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
-gain additive primary/actual/fallback metadata, and the host gains atomic configuration publication, encrypted
-credential leases and `FallbackChatModel`. Fallback support is disabled when its explicit list is empty. No HARDEN-13
-production implementation is authorized while this decision remains Proposed.
+gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
+publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
+explicit list is empty. No HARDEN-13 production implementation is authorized while this decision remains Proposed.
