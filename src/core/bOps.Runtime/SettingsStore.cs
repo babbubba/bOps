@@ -13,6 +13,7 @@ namespace bOps.Runtime;
 public sealed class SettingsStore(string settingsFilePath, TimeProvider timeProvider)
 {
     private const int CurrentSchemaVersion = 1;
+    private const int MaxFallbacks = 3;
     private readonly object _writeGate = new();
 
     /// <summary>Optimistic revision of the persisted settings file.</summary>
@@ -28,6 +29,31 @@ public sealed class SettingsStore(string settingsFilePath, TimeProvider timeProv
     /// <summary>The stored profile for a provider, or <c>null</c> if none is stored.</summary>
     public ProviderProfile? FindProviderProfile(string providerId) =>
         LoadAll().Providers.GetValueOrDefault(providerId);
+
+    /// <summary>The administrator's ordered fallback list; empty when none is stored (fallback disabled).</summary>
+    public IReadOnlyList<FallbackSetting> Fallbacks => LoadAll().Fallbacks ?? [];
+
+    /// <summary>Replaces the ordered fallback list (an empty list clears it). Shape only; the API validates providers.</summary>
+    public void SetFallbacks(IReadOnlyList<FallbackSetting> fallbacks, int? expectedRevision = null)
+    {
+        ArgumentNullException.ThrowIfNull(fallbacks);
+        if (fallbacks.Count > MaxFallbacks)
+        {
+            throw new ArgumentException($"At most {MaxFallbacks} model fallback candidates may be stored.", nameof(fallbacks));
+        }
+
+        if (fallbacks.Any(entry => entry is null || string.IsNullOrWhiteSpace(entry.Provider) || string.IsNullOrWhiteSpace(entry.Model)))
+        {
+            throw new ArgumentException("Every fallback needs a nonblank provider and model.", nameof(fallbacks));
+        }
+
+        lock (_writeGate)
+        {
+            var file = LoadAll();
+            CheckRevision(file, expectedRevision);
+            SaveAll(file with { Fallbacks = fallbacks.Count == 0 ? null : [.. fallbacks], Revision = checked(file.Revision + 1) });
+        }
+    }
 
     /// <summary>Persists the active provider id.</summary>
     public void SetActiveProviderId(string providerId, int? expectedRevision = null)

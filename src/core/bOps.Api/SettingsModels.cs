@@ -55,7 +55,30 @@ internal sealed record SettingsView(
     public string EffectiveRequestTimeoutSource { get; init; } = string.Empty;
     public bool EffectiveCredentialAvailable { get; init; }
     public string EffectiveCredentialSource { get; init; } = "none";
+
+    /// <summary>The administrator's stored ordered fallback list, whether or not it is currently effective.</summary>
+    public IReadOnlyList<FallbackEntryView> PersistedFallbacks { get; init; } = [];
+
+    /// <summary>The ordered fallback candidates new executions are pinned with.</summary>
+    public IReadOnlyList<EffectiveFallbackView> EffectiveFallbacks { get; init; } = [];
+
+    /// <summary><c>settings</c>, <c>configuration</c> (host-owned, shadows Settings) or <c>default</c> (none).</summary>
+    public string EffectiveFallbackSource { get; init; } = "default";
+
+    public bool PersistedFallbacksShadowed { get; init; }
 }
+
+/// <summary>One stored fallback entry: provider and model only.</summary>
+internal sealed record FallbackEntryView(string Provider, string Model);
+
+/// <summary>One effective fallback candidate. <see cref="CredentialAvailable"/> is advisory and never gates admission.</summary>
+#pragma warning disable CA1056 // BaseUrl is configuration-bound, same as ChatModelOptions.BaseUrl.
+internal sealed record EffectiveFallbackView(
+    int Ordinal, string Provider, string Model, string BaseUrl, bool SupportsNativeToolCalling, bool CredentialAvailable);
+#pragma warning restore CA1056
+
+/// <summary>Replaces the ordered fallback list (at most three); an empty list clears it.</summary>
+internal sealed record SetFallbacksRequest(IReadOnlyList<FallbackEntryView>? Fallbacks, int? ExpectedRevision = null);
 
 /// <summary>Sets or replaces a provider's API key. Write-only: never echoes the key back.</summary>
 internal sealed record SetProviderKeyRequest(string ApiKey, int ExpectedVersion);

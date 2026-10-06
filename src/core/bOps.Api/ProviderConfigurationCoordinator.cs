@@ -10,7 +10,14 @@ namespace bOps.Api;
 
 /// <summary>One immutable non-secret generation, published for new executions only (ADR-0045).</summary>
 internal sealed record EffectiveProviderConfiguration(
-    PinnedProviderConfiguration Pin, bool PrimaryCredentialAvailable, string PrimaryCredentialSource);
+    PinnedProviderConfiguration Pin, bool PrimaryCredentialAvailable, string PrimaryCredentialSource)
+{
+    /// <summary>Who owns the effective fallback list: <c>configuration</c>, <c>settings</c> or <c>default</c> (empty).</summary>
+    public string FallbackSource { get; init; } = "default";
+
+    /// <summary>Safe per-candidate readiness, parallel to <see cref="PinnedProviderConfiguration.Fallbacks"/>. Informational only.</summary>
+    public IReadOnlyList<bool> FallbackCredentialAvailable { get; init; } = [];
+}
 
 /// <summary>Serializes API provider writes and publishes one complete effective tuple after persistence.</summary>
 internal sealed class ProviderConfigurationCoordinator(
@@ -57,6 +64,24 @@ internal sealed class ProviderConfigurationCoordinator(
             if (proposed.Pin.ProviderId.Equals(canonical, StringComparison.OrdinalIgnoreCase))
                 RequireCredential(canonical);
             settings.SetActiveProviderId(canonical, expectedRevision);
+            return Publish(proposed).Pin.SnapshotHash != previousHash;
+        }
+    }
+
+    /// <summary>Replaces (or, when empty, clears) the persisted ordered fallback list and publishes the new tuple.</summary>
+    internal bool SetFallbacks(IReadOnlyList<FallbackSetting> requested, int? expectedRevision = null)
+    {
+        ArgumentNullException.ThrowIfNull(requested);
+        lock (_gate)
+        {
+            var previousHash = Current.Pin.SnapshotHash;
+            var canonical = requested
+                .Select(entry => entry is null ? throw new ArgumentException("A fallback entry is required.")
+                    : new FallbackSetting(Canonical(entry.Provider ?? string.Empty), entry.Model ?? string.Empty))
+                .ToList();
+            // Build validates count, shape, duplicates and the primary tuple before anything is persisted.
+            var proposed = Build(fallbackOverride: canonical);
+            settings.SetFallbacks(canonical, expectedRevision);
             return Publish(proposed).Pin.SnapshotHash != previousHash;
         }
     }
@@ -140,7 +165,9 @@ internal sealed class ProviderConfigurationCoordinator(
         return published;
     }
 
-    private EffectiveProviderConfiguration Build(string? activeOverride = null, ProviderProfile? profileOverride = null)
+    private EffectiveProviderConfiguration Build(
+        string? activeOverride = null, ProviderProfile? profileOverride = null,
+        IReadOnlyList<FallbackSetting>? fallbackOverride = null)
     {
         var configured = configuration.GetSection("ModelProvider").Get<ChatModelOptions>()
             ?? throw new InvalidOperationException("Missing 'ModelProvider' configuration section.");
@@ -162,12 +189,13 @@ internal sealed class ProviderConfigurationCoordinator(
         ValidateShape(baseUrl.Value, model.Value);
         if (timeout is { } value && value <= TimeSpan.Zero)
             throw new ArgumentException("The provider request timeout must be positive.");
+        var (fallbackEntries, fallbackSource) = ResolveFallbackEntries(fallbackOverride);
         var pin = new PinnedProviderConfiguration(1, 0, id, baseUrl.Value, model.Value, native.Value,
             timeout, environmentOwned ? "environment" : storedId is null ? "default" : "settings",
             baseUrl.Source, model.Source, native.Source,
             HasEnvironmentField("RequestTimeout") ? "environment" : "default", string.Empty)
         {
-            Fallbacks = BuildFallbacks(id, model.Value, configured.RequestTimeout),
+            Fallbacks = BuildFallbacks(fallbackEntries, id, model.Value, configured.RequestTimeout),
         };
         pin = pin with { SnapshotHash = Hash(pin) };
         // Local validation: a package must be able to construct the adapter without a network call.
@@ -176,7 +204,17 @@ internal sealed class ProviderConfigurationCoordinator(
         registry.Create(new ChatModelOptions(id, pin.BaseUrl, null, pin.Model, pin.SupportsNativeToolCalling)
             { RequestTimeout = pin.RequestTimeout });
         var credential = new ProviderCredentialResolver(configuration, environmentSecrets, vault).Availability(id);
-        return new EffectiveProviderConfiguration(pin, credential.Available, credential.Source);
+        return new EffectiveProviderConfiguration(pin, credential.Available, credential.Source)
+        {
+            FallbackSource = fallbackSource,
+            FallbackCredentialAvailable = FallbackReadiness(pin),
+        };
+    }
+
+    private List<bool> FallbackReadiness(PinnedProviderConfiguration pin)
+    {
+        var resolver = new ProviderCredentialResolver(configuration, environmentSecrets, vault);
+        return pin.Fallbacks.Select(candidate => resolver.Availability(candidate.ProviderId).Available).ToList();
     }
 
     private void RefreshCredentialMetadata()
@@ -188,6 +226,7 @@ internal sealed class ProviderConfigurationCoordinator(
         {
             PrimaryCredentialAvailable = credential.Available,
             PrimaryCredentialSource = credential.Source,
+            FallbackCredentialAvailable = FallbackReadiness(current.Pin),
         });
     }
 
@@ -221,10 +260,19 @@ internal sealed class ProviderConfigurationCoordinator(
             throw new ArgumentException($"'{providerId}' has no usable current credential.");
     }
 
-    private List<PinnedProviderCandidate> BuildFallbacks(
-        string primaryProvider, string primaryModel, TimeSpan? requestTimeout)
+    /// <summary>Host configuration owns the whole list when it names any entry (ADR-0045 §7); otherwise Settings does.</summary>
+    private (List<FallbackConfiguration> Entries, string Source) ResolveFallbackEntries(IReadOnlyList<FallbackSetting>? proposed)
     {
         var configured = configuration.GetSection("ModelProvider:Fallbacks").Get<List<FallbackConfiguration>>() ?? [];
+        if (configured.Count > 0) return (configured, "configuration");
+        var stored = proposed ?? settings.Fallbacks;
+        return (stored.Select(entry => new FallbackConfiguration { Provider = entry.Provider, Model = entry.Model }).ToList(),
+            stored.Count > 0 ? "settings" : "default");
+    }
+
+    private List<PinnedProviderCandidate> BuildFallbacks(
+        List<FallbackConfiguration> configured, string primaryProvider, string primaryModel, TimeSpan? requestTimeout)
+    {
         if (configured.Count > 3)
             throw new ArgumentException("At most three model fallback candidates may be configured.");
         var tuples = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { $"{primaryProvider}\u001f{primaryModel}" };
