@@ -35,6 +35,26 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Fallbacks_AreAdditive_OrderedBoundedAndClearable_AndGuardedByRevision()
+    {
+        File.WriteAllText(SettingsPath, "{\"SchemaVersion\":1,\"ActiveProviderId\":\"Anthropic\",\"Providers\":{},\"Revision\":4}");
+        var store = CreateStore();
+        Assert.Empty(store.Fallbacks);
+
+        store.SetFallbacks([new("Anthropic", "b"), new("OpenRouter", "a")], expectedRevision: 4);
+        Assert.Equal([("Anthropic", "b"), ("OpenRouter", "a")], CreateStore().Fallbacks.Select(f => (f.Provider, f.Model)));
+        Assert.Equal(5, store.Revision);
+        Assert.Throws<SettingsConcurrencyException>(() => store.SetFallbacks([new("Anthropic", "x")], expectedRevision: 4));
+        Assert.Throws<ArgumentException>(() => store.SetFallbacks([new("A", "1"), new("A", "2"), new("A", "3"), new("A", "4")]));
+        Assert.Throws<ArgumentException>(() => store.SetFallbacks([new("A", " ")]));
+        Assert.Equal(5, store.Revision);
+
+        store.SetFallbacks([], expectedRevision: 5);
+        Assert.Empty(CreateStore().Fallbacks);
+        Assert.Equal("Anthropic", CreateStore().ActiveProviderId);
+    }
+
+    [Fact]
     public void ActiveProviderId_IsNull_WhenNoSettingsFileExistsYet()
     {
         Assert.Null(CreateStore().ActiveProviderId);

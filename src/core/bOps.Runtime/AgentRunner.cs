@@ -2825,6 +2825,8 @@ public sealed class AgentRunner(
             ProviderStatusCode = statusCode,
             ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
             ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
+            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
+            PrimaryModel = pinnedProviderConfiguration?.Model,
         }, delegation, ct);
 
     /// <summary>What one failed attempt amounted to, in provider-neutral terms, with its message already sanitized.</summary>
@@ -2843,6 +2845,8 @@ public sealed class AgentRunner(
         {
             ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
             ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
+            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
+            PrimaryModel = pinnedProviderConfiguration?.Model,
         };
     }
 

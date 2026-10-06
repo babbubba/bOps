@@ -55,6 +55,26 @@ internal static class SettingsEndpoints
             return Results.NoContent();
         });
 
+        group.MapPut("/fallbacks", async (
+            SetFallbacksRequest request, ProviderConfigurationCoordinator coordinator, SettingsStore settingsStore,
+            IAuditSink audit, TimeProvider timeProvider, ClaimsPrincipal principal, HttpContext http) =>
+        {
+            if (request.Fallbacks is null || request.Fallbacks.Any(entry => entry is null))
+            {
+                return Results.BadRequest(new { message = "'fallbacks' is required and may not contain null entries." });
+            }
+
+            var operation = request.Fallbacks.Count == 0 ? SettingsChangeOperation.Clear
+                : settingsStore.Fallbacks.Count == 0 ? SettingsChangeOperation.Set : SettingsChangeOperation.Replace;
+            return await ApplyFallbacks(request.Fallbacks.Select(entry => new FallbackSetting(entry.Provider, entry.Model)).ToList(),
+                request.ExpectedRevision, operation, coordinator, audit, timeProvider, principal, http);
+        });
+
+        group.MapDelete("/fallbacks", async (
+            int? expectedRevision, ProviderConfigurationCoordinator coordinator,
+            IAuditSink audit, TimeProvider timeProvider, ClaimsPrincipal principal, HttpContext http) =>
+            await ApplyFallbacks([], expectedRevision, SettingsChangeOperation.Clear, coordinator, audit, timeProvider, principal, http));
+
         group.MapPut("/providers/{providerId}/profile", async (
             string providerId, SetProviderProfileRequest request, ProviderConfigurationCoordinator coordinator,
             IAuditSink audit, TimeProvider timeProvider, ClaimsPrincipal principal, HttpContext http) =>
@@ -146,6 +166,34 @@ internal static class SettingsEndpoints
         });
     }
 
+    private static async Task<IResult> ApplyFallbacks(
+        List<FallbackSetting> fallbacks, int? expectedRevision, SettingsChangeOperation operation,
+        ProviderConfigurationCoordinator coordinator, IAuditSink audit, TimeProvider timeProvider,
+        ClaimsPrincipal principal, HttpContext http)
+    {
+        var subject = string.Join(',', fallbacks.Select(entry => $"{entry.Provider}/{entry.Model}"));
+        try
+        {
+            var published = coordinator.SetFallbacks(fallbacks, expectedRevision);
+            var effect = published ? "published"
+                : coordinator.Current.FallbackSource == "configuration" ? "persisted-but-shadowed" : "unchanged";
+            MutationHeaders(http, coordinator, effect);
+            await Audit(audit, timeProvider, principal, "provider.fallbacks", operation, subject,
+                SettingsChangeOutcome.Success, coordinator.Current.Pin.Generation, effect);
+            return Results.NoContent();
+        }
+        catch (SettingsConcurrencyException ex)
+        {
+            await Audit(audit, timeProvider, principal, "provider.fallbacks", operation, subject, SettingsChangeOutcome.Failure);
+            return Results.Conflict(new { message = ex.Message, currentRevision = ex.ActualRevision });
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ProviderNotSupportedException)
+        {
+            await Audit(audit, timeProvider, principal, "provider.fallbacks", operation, subject, SettingsChangeOutcome.Failure);
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }
+
     private static SettingsView BuildView(
         IConfiguration configuration, SettingsStore settingsStore, VaultStore vaultStore, IChatModelRegistry registry,
         ProviderConfigurationCoordinator coordinator, ProviderCredentialResolver credentials)
@@ -222,6 +270,12 @@ internal static class SettingsEndpoints
             EffectiveRequestTimeoutSource = effective.RequestTimeoutSource,
             EffectiveCredentialAvailable = published.PrimaryCredentialAvailable,
             EffectiveCredentialSource = published.PrimaryCredentialSource,
+            PersistedFallbacks = settingsStore.Fallbacks.Select(entry => new FallbackEntryView(entry.Provider, entry.Model)).ToList(),
+            EffectiveFallbackSource = published.FallbackSource,
+            PersistedFallbacksShadowed = published.FallbackSource == "configuration" && settingsStore.Fallbacks.Count > 0,
+            EffectiveFallbacks = effective.Fallbacks.Select((candidate, index) => new EffectiveFallbackView(
+                index + 1, candidate.ProviderId, candidate.Model, candidate.BaseUrl, candidate.SupportsNativeToolCalling,
+                index < published.FallbackCredentialAvailable.Count && published.FallbackCredentialAvailable[index])).ToList(),
         };
     }
 

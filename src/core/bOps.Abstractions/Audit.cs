@@ -427,6 +427,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>The hash of the non-secret provider configuration used for this call, when pinned.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ConfigurationSnapshotHash { get; init; }
+
+    /// <summary>The pinned primary provider of the execution this call belongs to, when pinned (ADR-0045); <see cref="Provider"/> stays the candidate actually invoked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PrimaryProvider { get; init; }
+
+    /// <summary>The pinned primary model of the execution this call belongs to, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PrimaryModel { get; init; }
 }
 
 /// <summary>

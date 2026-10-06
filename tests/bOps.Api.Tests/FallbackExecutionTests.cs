@@ -357,6 +357,12 @@ public sealed class FallbackExecutionTests
             (int)ModelRetryDecision.Fallback,
             Assert.Single(modelEvents, e => e["RetryDecision"] is not null)["RetryDecision"]!.GetValue<int>());
         Assert.Contains(modelEvents, e => e["Model"]!.GetValue<string>() == "sonnet-x");
+        // The pinned primary is explicit on every attempt, so a fallback is never inferred from a Provider change alone.
+        Assert.All(modelEvents, e => Assert.Equal(
+            ("OpenRouter", "openrouter/free", stored.PinnedProviderConfiguration.SnapshotHash),
+            (e["PrimaryProvider"]!.GetValue<string>(), e["PrimaryModel"]!.GetValue<string>(),
+                e["ConfigurationSnapshotHash"]!.GetValue<string>())));
+        Assert.All(ModelCalls(stored), call => Assert.Equal(("OpenRouter", "openrouter/free"), (call.PrimaryProvider, call.PrimaryModel)));
     }
 
     // Test G
