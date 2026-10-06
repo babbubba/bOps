@@ -276,6 +276,65 @@ public sealed class SqliteDelegationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task TypedLimitations_AndTheDiagnosticReplyOutcome_RoundTripThroughTheStore()
+    {
+        var store = new SqliteDelegationStore(_filePath);
+        var run = Run();
+        var limited = run with
+        {
+            Roles =
+            [
+                run.Roles[0] with
+                {
+                    EvidenceLimitations =
+                    [
+                        new EvidenceLimitation
+                        {
+                            StepIndex = 2, ToolName = "system.events", Outcome = ToolOutcome.Success, FailureKind = ToolFailureKind.Unspecified,
+                            Completeness = ToolResultCompleteness.Partial, EvidenceId = "diagnostic-2",
+                        },
+                    ],
+                    EvidenceLimitationsOmitted = 3,
+                    FindingsReply = new DiagnosticReplyOutcome { Status = DiagnosticReplyStatus.Malformed, Problem = DiagnosticReplyProblem.TooManyFindings },
+                },
+            ],
+        };
+
+        await store.StartAsync(limited);
+        var loaded = Assert.Single((await store.LoadAsync(run.Id))!.Roles);
+
+        Assert.Equal(limited.Roles[0].EvidenceLimitations, loaded.EvidenceLimitations);
+        Assert.Equal(3, loaded.EvidenceLimitationsOmitted);
+        Assert.Equal(limited.Roles[0].FindingsReply, loaded.FindingsReply);
+    }
+
+    [Fact]
+    public async Task ARunStoredWithoutLimitations_AsBeforeTheContract_LoadsAsNotRecorded()
+    {
+        var store = new SqliteDelegationStore(_filePath);
+        var run = Run();
+        await store.StartAsync(run);
+
+        string json;
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = _filePath }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT run_json FROM delegations WHERE id = $id";
+            command.Parameters.AddWithValue("$id", run.Id.ToString());
+            json = (string)(await command.ExecuteScalarAsync())!;
+        }
+
+        var loaded = Assert.Single((await store.LoadAsync(run.Id))!.Roles);
+
+        Assert.DoesNotContain("EvidenceLimitations", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("FindingsReply", json, StringComparison.Ordinal);
+        Assert.Null(loaded.EvidenceLimitations);
+        Assert.Equal(0, loaded.EvidenceLimitationsOmitted);
+        Assert.Null(loaded.FindingsReply);
+    }
+
+    [Fact]
     public void TheFile_IsReadableByItsOwnerOnly_OnUnix()
     {
         if (OperatingSystem.IsWindows())

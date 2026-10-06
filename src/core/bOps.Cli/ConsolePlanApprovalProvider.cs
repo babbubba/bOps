@@ -7,11 +7,13 @@ namespace bOps.Cli;
 
 /// <summary>
 /// Asks the operator at the console to approve or reject one plan of a delegated run by its hash (ADR-0030 sections 2 and 5).
-/// It shows what is being authorized: the plan's hash and steps, the findings the plan rests on, and the authority the change
-/// will run under. The decision is the person at the terminal's, never an agent's; the runtime refuses any that is not. Anything
-/// but an explicit yes, including a closed input, is a no.
+/// It shows what is being authorized: the plan's hash and steps, the findings the plan rests on, the persisted evidence
+/// limitations of the run's Discovery and Diagnostic roles (ADR-0044 section 16, read from <paramref name="store"/> by delegation
+/// id; a run that cannot be read shows them as unavailable, never as none), and the authority the change will run under. The
+/// decision is the person at the terminal's, never an agent's; the runtime refuses any that is not. Anything but an explicit
+/// yes, including a closed input, is a no.
 /// </summary>
-internal sealed class ConsolePlanApprovalProvider(TextReader input, TextWriter output, ActorIdentity approver) : IPlanApprovalProvider
+internal sealed class ConsolePlanApprovalProvider(TextReader input, TextWriter output, ActorIdentity approver, IDelegationStore? store) : IPlanApprovalProvider
 {
     /// <inheritdoc />
     public async Task<ApprovalDecision> RequestPlanApprovalAsync(PlanApprovalRequest request, CancellationToken ct = default)
@@ -33,6 +35,9 @@ internal sealed class ConsolePlanApprovalProvider(TextReader input, TextWriter o
             }
         }
 
+        var run = await LoadRunAsync(request.DelegationId, ct);
+        var limited = run is null ? null : LimitationText.LimitedEvidenceIds(run);
+
         await output.WriteLineAsync("  Findings:");
         if (request.Findings.Count == 0)
         {
@@ -42,9 +47,11 @@ internal sealed class ConsolePlanApprovalProvider(TextReader input, TextWriter o
         foreach (var finding in request.Findings)
         {
             var severity = finding.Severity is { } level ? $"[{level}] " : string.Empty;
-            await output.WriteLineAsync($"    {severity}{finding.Summary} (evidence: {string.Join(", ", finding.EvidenceIds)})");
+            var marker = limited is not null && finding.EvidenceIds.Any(limited.Contains) ? " [rests on limited evidence]" : string.Empty;
+            await output.WriteLineAsync($"    {severity}{finding.Summary} (evidence: {string.Join(", ", finding.EvidenceIds)}){marker}");
         }
 
+        await WriteLimitationsAsync(run);
         await WriteAuthorityAsync(request.Authority);
         await output.WriteAsync("Approve exactly this plan? [y/N] ");
 
@@ -61,6 +68,48 @@ internal sealed class ConsolePlanApprovalProvider(TextReader input, TextWriter o
         }
 
         return new ApprovalDecision(approved, approver, note);
+    }
+
+    private async Task<DelegationRun?> LoadRunAsync(Guid delegationId, CancellationToken ct)
+    {
+        if (store is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await store.LoadAsync(delegationId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Shown as unavailable below; the approval itself is not affected.
+            return null;
+        }
+    }
+
+    private async Task WriteLimitationsAsync(DelegationRun? run)
+    {
+        await output.WriteLineAsync("  Evidence limitations:");
+        if (run is null)
+        {
+            await output.WriteLineAsync("    unavailable / not recorded (the run could not be read).");
+            return;
+        }
+
+        foreach (var kind in new[] { AgentRoleKind.Discovery, AgentRoleKind.Diagnostic })
+        {
+            if (run.Roles.LastOrDefault(r => r.Agent.Role == kind && r.Status == DelegationRoleStatus.Completed) is not { } role)
+            {
+                await output.WriteLineAsync($"    {kind} evidence limitations: not recorded.");
+                continue;
+            }
+
+            foreach (var line in LimitationText.Lines(role))
+            {
+                await output.WriteLineAsync($"    {line}");
+            }
+        }
     }
 
     private async Task WriteAuthorityAsync(AuthorityEnvelope? authority)

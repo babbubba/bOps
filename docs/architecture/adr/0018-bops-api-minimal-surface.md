@@ -8,6 +8,9 @@ admission, 409/501/503 bodies, start 503 body, task view fields (`executionAttem
 Amended by: [ADR-0043](0043-browser-web-session.md) (Accepted 2026-10-05) — authentication only: a
 browser session exchanged once for the API key (`POST`/`DELETE /api/session`, `GET /api/session/me` under either scheme),
 cookie `__Host-bops_session`, Bearer precedence, CSRF gate for cookie-authenticated unsafe requests; Bearer unchanged
+Amended by: [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) (Accepted 2026-10-05, D-041)
+— `GET /api/delegations/readiness` and `GET /api/skills` (`viewer`); `POST /api/delegations` duplicate-key rejection and
+typed `400` codes; delegation and plan-approval views gain typed evidence-limitation fields
 
 ## Context
 

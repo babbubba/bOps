@@ -20,13 +20,24 @@ internal sealed record PendingPlanApproval(
     string Rationale,
     IReadOnlyList<PendingPlanStep> Steps,
     IReadOnlyList<PendingPlanFinding> Findings,
-    PendingPlanAuthority? Authority);
+    PendingPlanAuthority? Authority)
+{
+    /// <summary>
+    /// The persisted limitation metadata of the run's Discovery and Diagnostic roles (ADR-0044 section 16), joined by the endpoint
+    /// from the store by <see cref="DelegationId"/>; <c>null</c> only as built by the provider, before that join.
+    /// </summary>
+    public PlanLimitationsView? Limitations { get; init; }
+}
 
 /// <summary>One step of a plan waiting for approval.</summary>
 internal sealed record PendingPlanStep(int Index, string Tool, JsonObject Arguments, string? Description);
 
 /// <summary>One finding the plan rests on. The evidence itself is not sent: only which evidence it cites.</summary>
-internal sealed record PendingPlanFinding(string Id, string Summary, string? Severity, IReadOnlyList<string> EvidenceIds);
+internal sealed record PendingPlanFinding(string Id, string Summary, string? Severity, IReadOnlyList<string> EvidenceIds)
+{
+    /// <summary>Whether the finding cites Evidence typed as limited; <c>null</c> when the run's limitations are unavailable or not recorded.</summary>
+    public bool? RestsOnLimitedEvidence { get; init; }
+}
 
 /// <summary>The authority the change will run under, so the approver sees what the plan is allowed to touch.</summary>
 internal sealed record PendingPlanAuthority(

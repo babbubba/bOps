@@ -293,6 +293,9 @@ var app = builder.Build();
 app.Services.GetRequiredService<IBrowserSessionStore>();
 await app.Services.GetRequiredService<BrowserSessionService>().StartupCleanupAsync(CancellationToken.None);
 
+// ADR-0044 section 4: the policy is read once, at start, which logs its absolute path and load state (never its contents).
+app.Services.GetRequiredService<LoadedPolicy>();
+
 // ADR-0043 §8 pipeline order.
 // A framework request error (malformed JSON, oversized body) keeps its own 4xx status; everything else is a 500. No request data is echoed.
 app.UseExceptionHandler(new ExceptionHandlerOptions
@@ -370,6 +373,7 @@ app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
 app.MapDelegationsEndpoints();
 app.MapToolsEndpoints();
+app.MapSkillsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
 app.MapBrowserSessionEndpoints();
@@ -389,39 +393,44 @@ await app.RunAsync();
 // genuinely synchronous file I/O rather than blocking on the async version).
 static LoadedPolicy LoadPolicy(string filePath, ILogger logger)
 {
-    if (!File.Exists(filePath))
+    // ADR-0044 section 4: the absolute resolved path and the load state are logged at start, never the file's contents.
+    var path = Path.GetFullPath(filePath);
+    if (!File.Exists(path))
     {
         if (logger.IsEnabled(LogLevel.Information))
         {
             logger.LogInformation(
-                "No policy file at '{Path}'; using the built-in default (Read/Low automatic, Medium/High approval, Critical forbidden).",
-                filePath);
+                "Policy file '{Path}' ({State}): no file; using the built-in default (Read/Low automatic, Medium/High approval, Critical forbidden).",
+                path, PolicyLoadState.NoFile);
         }
 
-        return new LoadedPolicy(new PolicyEngine(PolicyConfig.SafeDefault), PolicyConfig.SafeDefault);
+        return new LoadedPolicy(new PolicyEngine(PolicyConfig.SafeDefault), PolicyConfig.SafeDefault, PolicyLoadState.NoFile, path);
     }
 
     try
     {
-        var yaml = File.ReadAllText(filePath);
+        var yaml = File.ReadAllText(path);
         var config = PolicyConfigLoader.Load(yaml);
 
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Loaded policy from '{Path}'.", filePath);
+            logger.LogInformation("Policy file '{Path}' ({State}).", path, PolicyLoadState.Loaded);
         }
 
-        return new LoadedPolicy(new PolicyEngine(config), config);
+        return new LoadedPolicy(new PolicyEngine(config), config, PolicyLoadState.Loaded, path);
     }
     catch (PolicyConfigurationException ex)
     {
-        logger.LogError(ex, "'{Path}' could not be loaded; every tool above Read is forbidden until it is fixed.", filePath);
-        return new LoadedPolicy(new PolicyEngine(PolicyConfig.AllForbidden), PolicyConfig.AllForbidden);
+        logger.LogError(ex, "Policy file '{Path}' ({State}): it could not be loaded; every tool above Read is forbidden until it is fixed.", path, PolicyLoadState.LoadFailed);
+        return new LoadedPolicy(new PolicyEngine(PolicyConfig.AllForbidden), PolicyConfig.AllForbidden, PolicyLoadState.LoadFailed, path);
     }
 }
 
-/// <summary>The policy the host loaded, as the engine that evaluates it and the config it came from.</summary>
-internal sealed record LoadedPolicy(IPolicyEngine Engine, PolicyConfig Config);
+/// <summary>
+/// The policy the host loaded, as the engine that evaluates it and the config it came from, plus why it is what it is (ADR-0044
+/// section 4) and the absolute path it was read from. The loader's message stays in the host log; it is never sent over HTTP.
+/// </summary>
+internal sealed record LoadedPolicy(IPolicyEngine Engine, PolicyConfig Config, PolicyLoadState State, string Path);
 
 /// <summary>Marker partial class so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/> can target this top-level-statements entry point. Internal, like every other type in this application (CA1515) — visible to the test project via <c>InternalsVisibleTo</c>.</summary>
 internal partial class Program;

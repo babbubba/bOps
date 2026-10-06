@@ -36,6 +36,17 @@ internal static class RoleRequirements
     internal static IReadOnlyList<AgentRoleKind> Pipeline { get; } =
         [AgentRoleKind.Discovery, AgentRoleKind.Diagnostic, AgentRoleKind.Remediation, AgentRoleKind.Verification];
 
+    private static readonly IReadOnlyList<AgentRoleKind> DiagnosisRoles = [AgentRoleKind.Discovery, AgentRoleKind.Diagnostic];
+
+    /// <summary>
+    /// The roles a delegation requires, in pipeline order (ADR-0044 section 1): Discovery and Diagnostic for a diagnosis-only
+    /// request, all four for a request that names a change (a dry run included). The request shape is the only input: never
+    /// the profiles, the model, a package or a client. This is the one definition; the reducer, the orchestrator and the
+    /// readiness evaluator call it, and nothing else carries a role table.
+    /// </summary>
+    /// <param name="remediation">Whether the request names a change (<c>Remediation != null</c>).</param>
+    internal static IReadOnlyList<AgentRoleKind> RequiredRoles(bool remediation) => remediation ? Pipeline : DiagnosisRoles;
+
     /// <summary>Whether the role only ever reads. Everything but Remediation does (ADR-0030 section 2).</summary>
     internal static bool IsReadOnly(AgentRoleKind role)
     {

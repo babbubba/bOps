@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -311,6 +313,22 @@ public sealed record DelegationRoleRun
 
     /// <summary>A bounded failure explanation, or <c>null</c>.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// The limitations of a Discovery or Diagnostic role's model-loop evidence collection (ADR-0044 section 16), at most 64, the
+    /// most recent kept. <c>null</c> means not recorded (a role of another kind, or one stored before this was recorded), which is
+    /// not the same as an empty list: empty means recorded, and none in the covered scope.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<EvidenceLimitation>? EvidenceLimitations { get; init; }
+
+    /// <summary>How many further limitations were recorded beyond those in <see cref="EvidenceLimitations"/>; 0 when none were left out.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int EvidenceLimitationsOmitted { get; init; }
+
+    /// <summary>How the Diagnostic role's final reply was read; <c>null</c> for another role, or when not recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DiagnosticReplyOutcome? FindingsReply { get; init; }
 }
 
 /// <summary>

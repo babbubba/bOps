@@ -22,34 +22,182 @@
         class="mt-2 w-full rounded-lg border border-default bg-bg px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
       ></textarea>
       <label class="mt-2 flex items-center gap-2 text-sm">
-        <input type="checkbox" [attr.aria-label]="'delegations.start.prepareChangeAria' | t" [ngModel]="withChange()" (ngModelChange)="withChange.set($event)" />
+        <input type="checkbox" [attr.aria-label]="'delegations.start.prepareChangeAria' | t" [ngModel]="withChange()" (ngModelChange)="setWithChange($event)" />
         <span>{{ 'delegations.start.prepareChange' | t }}</span>
       </label>
+
+      <section class="mt-3 rounded-lg border border-default p-3" [attr.aria-label]="'delegations.readiness.aria' | t" data-testid="readiness">
+        <h3 class="text-xs font-semibold">{{ 'delegations.readiness.heading' | t }}</h3>
+        @if (store.readinessLoading()) {
+          <p class="mt-1 text-xs text-muted">{{ 'delegations.readiness.loading' | t }}</p>
+        } @else if (store.readinessFailure(); as failure) {
+          <div class="mt-1 flex flex-wrap items-center gap-2" role="alert">
+            <p class="text-xs text-risk-critical">{{ failureText(failure) }}</p>
+            @if (failure === 'server' || failure === 'unreachable') {
+              <button type="button" (click)="store.retryReadiness()" class="rounded border border-default px-2 py-0.5 text-xs hover:bg-bg">{{ 'delegations.readiness.retry' | t }}</button>
+            }
+          </div>
+        } @else if (store.readiness(); as readiness) {
+          <ul class="mt-1 space-y-1 text-xs">
+            @for (role of readiness.roles; track role.role) {
+              <li [attr.data-role]="role.role" [attr.data-state]="role.state">
+                <span class="font-semibold">{{ i18n.label('delegationRole', role.role) }}</span>:
+                <span [class.text-status-completed]="roleReady(role)" [class.text-status-blocked]="!roleReady(role)">{{ stateLabel(role) }}</span>
+                @if (role.dimension) { <span class="text-muted"> [{{ role.dimension }}]</span> }
+                @if (role.reason) { <span class="text-muted"> — {{ role.reason }}</span> }
+              </li>
+            }
+          </ul>
+          <p class="mt-2 text-xs" data-testid="readiness-summary">
+            {{ (readinessAllowsSubmit() ? 'delegations.readiness.ready' : 'delegations.readiness.notReady') | t }}
+          </p>
+          @if (readiness.remediation) {
+            <p class="mt-1 text-xs text-muted" data-testid="readiness-note">{{ 'delegations.readiness.changeNote' | t }}</p>
+          }
+          @if (readiness.profileDriftCount > 0) {
+            <p class="mt-1 text-xs text-muted">{{ 'delegations.readiness.drift' | t: { count: readiness.profileDriftCount } }}</p>
+          }
+        }
+      </section>
+
       @if (withChange()) {
-        <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <input [attr.aria-label]="'delegations.start.skill' | t" [placeholder]="'delegations.start.skill' | t" [ngModel]="skillId()" (ngModelChange)="skillId.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-          <input [attr.aria-label]="'delegations.start.capability' | t" [placeholder]="'delegations.start.capability' | t" [ngModel]="capabilityName()" (ngModelChange)="capabilityName.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-          <input [attr.aria-label]="'delegations.start.target' | t" [placeholder]="'delegations.start.target' | t" [ngModel]="target()" (ngModelChange)="target.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-          <input [attr.aria-label]="'delegations.start.environment' | t" [placeholder]="'delegations.start.environment' | t" [ngModel]="environment()" (ngModelChange)="environment.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
-          <select [attr.aria-label]="'delegations.start.blastRadius' | t" [ngModel]="blastRadius()" (ngModelChange)="blastRadius.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
-            <option value="single">{{ i18n.label('blastRadius', 'single') }}</option>
-            <option value="multiple">{{ i18n.label('blastRadius', 'multiple') }}</option>
-            <option value="fleet">{{ i18n.label('blastRadius', 'fleet') }}</option>
-          </select>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" [ngModel]="dryRun()" (ngModelChange)="dryRun.set($event)" />
-            <span>{{ 'delegations.start.dryRun' | t }}</span>
-          </label>
-        </div>
+        @if (store.catalogError(); as catalogError) {
+          <p class="mt-2 text-sm text-risk-critical" role="alert">{{ 'delegations.catalog.failed' | t: { reason: catalogError } }}</p>
+        } @else if (store.catalog() === null) {
+          <p class="mt-2 text-sm text-muted">{{ 'common.loading' | t }}</p>
+        } @else if (skills().length === 0) {
+          <p class="mt-2 text-sm text-muted">{{ 'delegations.catalog.empty' | t }}</p>
+        } @else {
+          <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <select [attr.aria-label]="'delegations.start.skill' | t" [ngModel]="skillId()" (ngModelChange)="setSkill($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+              <option value="">{{ 'delegations.catalog.chooseSkill' | t }}</option>
+              @for (skill of skills(); track skill.skillId) {
+                <option [value]="skill.skillId">{{ skill.skillId }}</option>
+              }
+            </select>
+            <select [attr.aria-label]="'delegations.start.capability' | t" [ngModel]="capabilityName()" (ngModelChange)="setCapability($event)" [disabled]="selectedSkill() === null" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+              <option value="">{{ 'delegations.catalog.chooseCapability' | t }}</option>
+              @for (capability of selectedSkill()?.capabilities ?? []; track capability.name) {
+                <option [value]="capability.name">{{ capability.name }}</option>
+              }
+            </select>
+            <input [attr.aria-label]="'delegations.start.target' | t" [placeholder]="'delegations.start.target' | t" [ngModel]="target()" (ngModelChange)="target.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+            <input [attr.aria-label]="'delegations.start.environment' | t" [placeholder]="'delegations.start.environment' | t" [ngModel]="environment()" (ngModelChange)="environment.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm" />
+            <select [attr.aria-label]="'delegations.start.blastRadius' | t" [ngModel]="blastRadius()" (ngModelChange)="blastRadius.set($event)" class="rounded-lg border border-default bg-bg px-3 py-1.5 text-sm">
+              <option value="single">{{ i18n.label('blastRadius', 'single') }}</option>
+              <option value="multiple">{{ i18n.label('blastRadius', 'multiple') }}</option>
+              <option value="fleet">{{ i18n.label('blastRadius', 'fleet') }}</option>
+            </select>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" [attr.aria-label]="'delegations.start.dryRun' | t" [ngModel]="dryRun()" (ngModelChange)="dryRun.set($event)" [disabled]="selectedCapability()?.supportsDryRun === false" />
+              <span>{{ 'delegations.start.dryRun' | t }}</span>
+            </label>
+          </div>
+
+          @if (selectedCapability(); as capability) {
+            <div class="mt-3 rounded-lg border border-default p-3" [attr.aria-label]="'delegations.input.aria' | t">
+              <p class="text-xs text-muted">{{ capability.description }}</p>
+              <p class="text-xs text-muted">{{ 'delegations.catalog.capabilityMeta' | t: { version: capability.version, risk: i18n.label('risk', capability.risk) } }}</p>
+              @if (capability.supportsDryRun === false) {
+                <p class="text-xs text-muted">{{ 'delegations.catalog.noDryRun' | t }}</p>
+              }
+
+              @if (!rawMode()) {
+                @if (schema().length === 0) {
+                  <p class="mt-2 text-sm text-muted">{{ 'delegations.input.none' | t }}</p>
+                }
+                @for (parameter of schema(); track parameter.name) {
+                  <div class="mt-2" [attr.data-parameter]="parameter.name">
+                    <label class="block text-xs font-medium" [attr.for]="'input-' + parameter.name">
+                      {{ parameter.name }}
+                      @if (parameter.required) { <span class="text-risk-critical">*</span> }
+                    </label>
+                    <p class="text-xs text-muted">{{ parameter.description }}</p>
+                    @switch (parameter.type) {
+                      @case ('Boolean') {
+                        @if (parameter.required) {
+                          <input type="checkbox" [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="booleanValue(parameter.name) === 'true'" (ngModelChange)="setValue(parameter.name, $event)" />
+                        } @else {
+                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="booleanValue(parameter.name)" (ngModelChange)="setBoolean(parameter.name, $event)" class="rounded-lg border border-default bg-bg px-2 py-1 text-sm">
+                            <option value="">{{ 'delegations.input.unset' | t }}</option>
+                            <option value="true">{{ 'delegations.input.true' | t }}</option>
+                            <option value="false">{{ 'delegations.input.false' | t }}</option>
+                          </select>
+                        }
+                      }
+                      @case ('PathList') {
+                        @for (entry of listValue(parameter.name); track $index) {
+                          <div class="mt-1 flex gap-2">
+                            <input [attr.aria-label]="parameter.name" [ngModel]="entry" (ngModelChange)="setEntry(parameter.name, $index, $event)" class="flex-1 rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
+                            <button type="button" (click)="removeEntry(parameter.name, $index)" class="rounded border border-default px-2 text-xs hover:bg-bg">{{ 'delegations.input.remove' | t }}</button>
+                          </div>
+                        }
+                        <button type="button" (click)="addEntry(parameter.name)" class="mt-1 rounded border border-default px-2 py-0.5 text-xs hover:bg-bg">{{ 'delegations.input.add' | t }}</button>
+                      }
+                      @case ('Integer') {
+                        <input type="text" inputmode="numeric" [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="w-full rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
+                      }
+                      @case ('Number') {
+                        <input type="text" inputmode="decimal" [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="w-full rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
+                      }
+                      @default {
+                        @if (isChoice(parameter)) {
+                          <select [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="rounded-lg border border-default bg-bg px-2 py-1 text-sm">
+                            <option value="">{{ 'delegations.input.choose' | t }}</option>
+                            @for (choice of parameter.allowedValues ?? []; track choice) {
+                              <option [value]="choice">{{ choice }}</option>
+                            }
+                          </select>
+                        } @else {
+                          <input [type]="parameter.sensitive ? 'password' : 'text'" autocomplete="off" [id]="'input-' + parameter.name" [attr.aria-label]="parameter.name" [ngModel]="textValue(parameter.name)" (ngModelChange)="setValue(parameter.name, $event)" class="w-full rounded-lg border border-default bg-bg px-2 py-1 text-sm" />
+                        }
+                      }
+                    }
+                    @if (problemFor(parameter.name); as problem) {
+                      <p class="mt-1 text-xs text-risk-critical">{{ describe(problem) }}</p>
+                    }
+                  </div>
+                }
+              } @else {
+                <p class="mt-2 text-xs text-muted">{{ 'delegations.input.rawNote' | t }}</p>
+                <textarea
+                  [attr.aria-label]="'delegations.input.rawAria' | t"
+                  rows="6"
+                  spellcheck="false"
+                  [ngModel]="rawText()"
+                  (ngModelChange)="rawText.set($event)"
+                  class="mt-1 w-full rounded-lg border border-default bg-bg px-2 py-1 font-mono text-xs"
+                ></textarea>
+                @for (problem of input().problems; track $index) {
+                  <p class="mt-1 text-xs text-risk-critical" data-testid="raw-problem">{{ describe(problem) }}</p>
+                }
+              }
+
+              <label class="mt-3 flex items-center gap-2 text-xs">
+                <input type="checkbox" [attr.aria-label]="'delegations.input.advanced' | t" [ngModel]="rawMode()" (ngModelChange)="setRawMode($event)" />
+                <span>{{ 'delegations.input.advanced' | t }}</span>
+              </label>
+              @if (rawSwitchProblem(); as switchProblem) {
+                <p class="mt-1 text-xs text-risk-critical">{{ describe(switchProblem) }}</p>
+              }
+            </div>
+          }
+        }
       }
+
       <button
         type="button"
         (click)="start()"
-        [disabled]="!canStart() || starting()"
+        [disabled]="!canStart() || !readinessAllowsSubmit() || starting()"
         class="mt-3 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {{ 'delegations.start.submit' | t }}
       </button>
+      @if (store.submitError(); as submitError) {
+        <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.refused' | t: { reason: submitError } }}</p>
+      } @else if (startDenial(); as denial) {
+        <p class="mt-2 text-sm text-risk-critical" role="alert" data-testid="submit-error">{{ 'delegations.start.denied' | t: { dimension: denial.dimension, reason: denial.reason } }}</p>
+      }
     </section>
   }
 
@@ -171,9 +319,38 @@
                       @if (finding.severity) { <span class="font-semibold">[{{ i18n.label('risk', finding.severity) }}]</span> }
                       {{ finding.summary }}
                       <span class="text-xs text-muted">{{ 'delegations.evidenceRef' | t: { ids: finding.evidenceIds.join(', ') } }}</span>
+                      @if (finding.restsOnLimitedEvidence === true) { <span class="text-xs font-semibold text-risk-high">{{ 'delegations.limitations.restsOn' | t }}</span> }
                     </li>
                   }
                 </ul>
+
+                <section class="mt-3" [attr.aria-label]="'delegations.limitations.planAria' | t" data-testid="plan-limitations">
+                  <p class="text-xs font-medium text-muted">{{ 'delegations.limitations.planHeading' | t }}</p>
+                  @if (plan.limitations?.available !== true) {
+                    <p class="mt-1 text-xs">{{ 'delegations.limitations.unavailable' | t }}</p>
+                  } @else {
+                    @for (limited of plan.limitations!.roles; track limited.role) {
+                      <p class="mt-1 text-xs font-semibold">{{ 'delegations.limitations.roleHeading' | t: { role: i18n.label('delegationRole', limited.role) } }}</p>
+                      @if (!limited.recorded || limited.evidenceLimitations === null) {
+                        <p class="text-xs">{{ 'delegations.limitations.notRecorded' | t }}</p>
+                      } @else if (limited.evidenceLimitations.length === 0) {
+                        <p class="text-xs">{{ 'delegations.limitations.none' | t }}</p>
+                      } @else {
+                        <ul class="text-xs">
+                          @for (limitation of limited.evidenceLimitations; track limitation.stepIndex) {
+                            <li>{{ limitationLine(limitation) }}</li>
+                          }
+                        </ul>
+                        @if (limited.evidenceLimitationsOmitted > 0) {
+                          <p class="text-xs text-muted">{{ 'delegations.limitations.omitted' | t: { count: limited.evidenceLimitationsOmitted } }}</p>
+                        }
+                      }
+                      @if (limited.findingsReply; as reply) {
+                        <p class="text-xs text-muted">{{ replyLine(reply) }}</p>
+                      }
+                    }
+                  }
+                </section>
 
                 @if (plan.authority; as authority) {
                   <p class="mt-3 text-xs font-medium text-muted">{{ 'delegations.plan.authority' | t }}</p>
@@ -237,9 +414,33 @@
                           @if (finding.severity) { <span class="font-semibold">[{{ i18n.label('risk', finding.severity) }}]</span> }
                           {{ finding.summary }}
                           <span class="text-xs text-muted">{{ 'delegations.evidenceRef' | t: { ids: finding.evidenceIds.join(', ') } }}</span>
+                          @if (finding.restsOnLimitedEvidence === true) { <span class="text-xs font-semibold text-risk-high">{{ 'delegations.limitations.restsOn' | t }}</span> }
                         </li>
                       }
                     </ul>
+                  }
+
+                  @if (isModelRole(role.role)) {
+                    <div class="mt-2" data-testid="role-limitations">
+                      <p class="text-xs font-medium text-muted">{{ 'delegations.limitations.heading' | t }}</p>
+                      @if (role.evidenceLimitations === null || role.evidenceLimitations === undefined) {
+                        <p class="text-xs">{{ 'delegations.limitations.notRecorded' | t }}</p>
+                      } @else if (role.evidenceLimitations.length === 0) {
+                        <p class="text-xs">{{ 'delegations.limitations.none' | t }}</p>
+                      } @else {
+                        <ul class="text-xs">
+                          @for (limitation of role.evidenceLimitations; track limitation.stepIndex) {
+                            <li>{{ limitationLine(limitation) }}</li>
+                          }
+                        </ul>
+                        @if ((role.evidenceLimitationsOmitted ?? 0) > 0) {
+                          <p class="text-xs text-muted">{{ 'delegations.limitations.omitted' | t: { count: role.evidenceLimitationsOmitted ?? 0 } }}</p>
+                        }
+                      }
+                      @if (role.findingsReply; as reply) {
+                        <p class="text-xs text-muted">{{ replyLine(reply) }}</p>
+                      }
+                    </div>
                   }
 
                   @if (role.evidence.length > 0) {

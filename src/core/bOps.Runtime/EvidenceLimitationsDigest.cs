@@ -64,22 +64,7 @@ internal static class EvidenceLimitationsDigest
     /// </summary>
     internal static EvidenceLimitations? Build(IReadOnlyList<PlanStep> steps, bool diagnostic = false)
     {
-        ArgumentNullException.ThrowIfNull(steps);
-
-        var ordered = steps
-            .Where(step => step.ToolCall is not null && step.Result is not null)
-            .OrderBy(step => step.Index)
-            .ToList();
-
-        var listed = new List<string>();
-        for (var position = 0; position < ordered.Count; position++)
-        {
-            if (Entry(ordered, position) is { } entry)
-            {
-                listed.Add(entry);
-            }
-        }
-
+        var listed = Classify(steps).Select(Render).ToList();
         if (listed.Count == 0)
         {
             return null;
@@ -112,47 +97,105 @@ internal static class EvidenceLimitationsDigest
         return text.ToString();
     }
 
-    /// <summary>One line for the step at <paramref name="position"/>, or <c>null</c> when it is not a limitation.</summary>
-    private static string? Entry(List<PlanStep> ordered, int position)
+    /// <summary>The most typed limitations a delegated role records (ADR-0044 section 16); the most recent are kept.</summary>
+    internal const int MaxRecordedLimitations = 64;
+
+    /// <summary>
+    /// The listed steps of <paramref name="steps"/> (all execution attempts), in ascending index, as typed entries: the one
+    /// classification both the digest text and the typed <see cref="EvidenceLimitation"/> metadata are built from, so the two
+    /// cannot disagree. Uses typed fields and persisted step data only.
+    /// </summary>
+    internal static List<LimitedStep> Classify(IReadOnlyList<PlanStep> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+
+        var ordered = steps
+            .Where(step => step.ToolCall is not null && step.Result is not null)
+            .OrderBy(step => step.Index)
+            .ToList();
+
+        var listed = new List<LimitedStep>();
+        for (var position = 0; position < ordered.Count; position++)
+        {
+            if (ClassifyAt(ordered, position) is { } entry)
+            {
+                listed.Add(entry);
+            }
+        }
+
+        return listed;
+    }
+
+    /// <summary>
+    /// The typed limitations of a delegated role's model loop (ADR-0044 section 16): at most <see cref="MaxRecordedLimitations"/>,
+    /// the most recent kept, and how many earlier ones were left out. An entry's <see cref="EvidenceLimitation.EvidenceId"/> is the
+    /// id of the Evidence the step produced (<c>"&lt;role&gt;-&lt;index&gt;"</c>, the id <see cref="DelegationRoleData.EvidenceOf"/>
+    /// gives it) when it produced one, and <c>null</c> otherwise: no id is ever manufactured.
+    /// </summary>
+    internal static (IReadOnlyList<EvidenceLimitation> Limitations, int Omitted) Typed(IReadOnlyList<PlanStep> steps, AgentRoleKind role)
+    {
+        var listed = Classify(steps);
+        var kept = listed.Count > MaxRecordedLimitations ? listed.GetRange(listed.Count - MaxRecordedLimitations, MaxRecordedLimitations) : listed;
+        var prefix = DelegationRoleData.EvidencePrefix(role);
+        var limitations = kept.Select(entry => new EvidenceLimitation
+        {
+            StepIndex = entry.Step.Index,
+            ToolName = entry.UnknownTool || !IsCanonicalToolName(entry.Step.ToolCall!.ToolName) ? null : entry.Step.ToolCall.ToolName,
+            UnknownTool = entry.UnknownTool,
+            Outcome = entry.Step.Result!.Outcome,
+            FailureKind = entry.Step.Result.FailureKind,
+            Completeness = entry.Step.Result.Completeness,
+            ShortenedFromCharacters = entry.ShortenedFromCharacters,
+            EvidenceId = DelegationRoleData.ProducesEvidence(entry.Step) ? $"{prefix}-{entry.Step.Index}" : null,
+        }).ToList();
+        return (limitations, listed.Count - kept.Count);
+    }
+
+    /// <summary>The step at <paramref name="position"/> as a typed entry, or <c>null</c> when it is not a limitation.</summary>
+    private static LimitedStep? ClassifyAt(List<PlanStep> ordered, int position)
     {
         var step = ordered[position];
         var result = step.Result!;
         var unknownTool = IsUnknownToolRejection(step);
 
-        var facts = new List<string>(3);
-        var listed = false;
+        var completenessListed = result.Completeness is ToolResultCompleteness.Partial or ToolResultCompleteness.Unavailable;
 
-        if (result.Completeness is ToolResultCompleteness.Partial or ToolResultCompleteness.Unavailable)
+        // Rule 2: every failure that is not a Validation one is listed and never superseded. Rule 3: a Validation failure is
+        // listed unless a later step on the same resolved tool succeeded; an unknown-tool rejection has no resolved name, so
+        // nothing supersedes it.
+        var failureListed = result.Outcome != ToolOutcome.Success
+            && (result.FailureKind != ToolFailureKind.Validation || unknownTool || !IsSuperseded(ordered, position));
+
+        int? shortenedFrom = result.Outcome == ToolOutcome.Success && IsShortened(step, result) ? result.Output!.Length : null;
+
+        return completenessListed || failureListed || shortenedFrom is not null
+            ? new LimitedStep(step, unknownTool, completenessListed, failureListed, shortenedFrom)
+            : null;
+    }
+
+    /// <summary>One digest line, rendered from a typed entry only.</summary>
+    private static string Render(LimitedStep entry)
+    {
+        var result = entry.Step.Result!;
+        var facts = new List<string>(3);
+        if (entry.CompletenessListed)
         {
             facts.Add($"completeness {result.Completeness}");
-            listed = true;
         }
 
-        if (result.Outcome != ToolOutcome.Success)
+        if (entry.FailureListed)
         {
-            // Rule 2: every failure that is not a Validation one is listed and never superseded. Rule 3: a Validation
-            // failure is listed unless a later step on the same resolved tool succeeded; an unknown-tool rejection has no
-            // resolved name, so nothing supersedes it.
-            if (result.FailureKind != ToolFailureKind.Validation || unknownTool || !IsSuperseded(ordered, position))
-            {
-                facts.Add($"outcome {result.Outcome}, failure {result.FailureKind}");
-                listed = true;
-            }
-        }
-        else if (IsShortened(step, result))
-        {
-            facts.Add(string.Create(CultureInfo.InvariantCulture, $"observation shortened from {result.Output!.Length} characters"));
-            listed = true;
+            facts.Add($"outcome {result.Outcome}, failure {result.FailureKind}");
         }
 
-        if (!listed)
+        if (entry.ShortenedFromCharacters is { } length)
         {
-            return null;
+            facts.Add(string.Create(CultureInfo.InvariantCulture, $"observation shortened from {length} characters"));
         }
 
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"- step {step.Index}: {ToolLabel(step, unknownTool)} — {string.Join("; ", facts)}");
+            $"- step {entry.Step.Index}: {ToolLabel(entry.Step, entry.UnknownTool)} — {string.Join("; ", facts)}");
         return line.Length <= MaxEntryCharacters ? line : line[..MaxEntryCharacters];
     }
 
@@ -229,6 +272,14 @@ internal static class EvidenceLimitationsDigest
         return true;
     }
 }
+
+/// <summary>One listed step, classified once: which facts make it a limitation. Both the digest line and the typed metadata come from it.</summary>
+/// <param name="Step">The persisted step.</param>
+/// <param name="UnknownTool">Whether it is a rejection of a name that resolved to no tool.</param>
+/// <param name="CompletenessListed">Whether its completeness is <c>Partial</c> or <c>Unavailable</c>.</param>
+/// <param name="FailureListed">Whether its failure is listed (not a superseded Validation failure).</param>
+/// <param name="ShortenedFromCharacters">The output length when a successful result's observation was shortened.</param>
+internal sealed record LimitedStep(PlanStep Step, bool UnknownTool, bool CompletenessListed, bool FailureListed, int? ShortenedFromCharacters);
 
 /// <summary>A built digest.</summary>
 /// <param name="Text">The digest, starting with its version line; at most <see cref="EvidenceLimitationsDigest.MaxCharacters"/> characters.</param>

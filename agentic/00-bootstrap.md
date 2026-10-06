@@ -10,8 +10,10 @@ policy, approval, post-action verification and complete audit. The LLM proposes;
 decides and executes. V1.2 multi-agent orchestration is complete and released as
 `v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The active work is the
 V1.3.x reliability hardening train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`),
-executed one HARDEN packet at a time; HARDEN-1 through HARDEN-9 are complete and the next packet is
-HARDEN-10 (ADR-0043 Accepted; implementation complete, independent security review PASS, ready for PR / remote CI). All gates are defined only by the consolidated roadmap.
+executed one HARDEN packet at a time; HARDEN-1 through HARDEN-10 are complete (HARDEN-10 merged via PR #76) and the
+current packet is HARDEN-11 (ADR-0044 Accepted 2026-10-05, D-041; Phase 1 implementation complete locally 2026-10-06,
+not pushed — the independent implementation authority/security review is the next executable work). All gates are defined only by the consolidated
+roadmap.
 
 ## Required read order
 

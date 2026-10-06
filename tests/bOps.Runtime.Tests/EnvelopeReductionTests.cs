@@ -20,6 +20,16 @@ public sealed class EnvelopeReductionTests
 
     private static readonly DelegationAuthorityRequest NoRequest = new();
 
+    // These tests describe the remediation shape (ADR-0044 section 1: all four roles required). The diagnosis-only shape is
+    // covered by RequestDependentAuthorityTests.
+    private static EnvelopeReduction DeriveRemediationRoot(
+        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        EnvelopeReducer.DeriveRoot(profiles, remediation: true, request, originator, now);
+
+    private static (EnvelopeReduction Reduction, AgentRoleKind? Role) DeriveRemediationRootAttributed(
+        IRoleProfileSource profiles, DelegationAuthorityRequest request, ActorIdentity originator, DateTimeOffset now) =>
+        EnvelopeReducer.DeriveRootAttributed(profiles, remediation: true, request, originator, now);
+
     public static TheoryData<AgentRoleKind> Roles()
     {
         var data = new TheoryData<AgentRoleKind>();
@@ -617,7 +627,7 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_IsTheUnionOfWhatTheRolesMayDo()
     {
-        var root = Granted(EnvelopeReducer.DeriveRoot(AllProfiles(), NoRequest, Operator, T0));
+        var root = Granted(DeriveRemediationRoot(AllProfiles(), NoRequest, Operator, T0));
 
         Assert.Equal(0, root.Depth);
         Assert.Equal(Operator, root.Originator);
@@ -641,7 +651,7 @@ public sealed class EnvelopeReductionTests
     {
         var request = new DelegationAuthorityRequest(AllowedTools: ["system.cpu", "system.memory", "evil.tool"], MaxSteps: 20, AllowedEnvironments: ["staging"]);
 
-        var reduction = EnvelopeReducer.DeriveRoot(AllProfiles(), request, Operator, T0);
+        var reduction = DeriveRemediationRoot(AllProfiles(), request, Operator, T0);
 
         var root = Granted(reduction);
         Assert.Equal(["system.cpu", "system.memory"], root.AllowedTools);
@@ -656,7 +666,7 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_WithNoRequest_ReducesNothing()
     {
-        Assert.Empty(EnvelopeReducer.DeriveRoot(AllProfiles(), NoRequest, Operator, T0).ReducedDimensions);
+        Assert.Empty(DeriveRemediationRoot(AllProfiles(), NoRequest, Operator, T0).ReducedDimensions);
     }
 
     [Theory]
@@ -665,7 +675,7 @@ public sealed class EnvelopeReductionTests
     {
         var present = Pipeline.Where(r => r != missing).Select(ProfileFor).ToArray();
 
-        var denial = Denied(EnvelopeReducer.DeriveRoot(new FixedProfiles(present), NoRequest, Operator, T0));
+        var denial = Denied(DeriveRemediationRoot(new FixedProfiles(present), NoRequest, Operator, T0));
 
         Assert.Equal(EnvelopeDimension.Profile, denial.Dimension);
         Assert.Contains(missing.ToString(), denial.Reason, StringComparison.Ordinal);
@@ -674,7 +684,7 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_WhenASourceReturnsTheWrongRolesProfile_RefusesTheWholeDelegation()
     {
-        var denial = Denied(EnvelopeReducer.DeriveRoot(new WrongRoleSource(), NoRequest, Operator, T0));
+        var denial = Denied(DeriveRemediationRoot(new WrongRoleSource(), NoRequest, Operator, T0));
 
         Assert.Equal(EnvelopeDimension.Profile, denial.Dimension);
     }
@@ -686,7 +696,7 @@ public sealed class EnvelopeReductionTests
         // had approved a plan. Deriving the root checks every role up front instead.
         var readOnlyRequest = new DelegationAuthorityRequest(MaxRisk: RiskLevel.Read);
 
-        var denial = Denied(EnvelopeReducer.DeriveRoot(AllProfiles(), readOnlyRequest, Operator, T0));
+        var denial = Denied(DeriveRemediationRoot(AllProfiles(), readOnlyRequest, Operator, T0));
 
         Assert.Equal(EnvelopeDimension.Risk, denial.Dimension);
         Assert.Contains(nameof(AgentRoleKind.Remediation), denial.Reason, StringComparison.Ordinal);
@@ -695,9 +705,9 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_RefusesARequestThatLeavesARequiredDimensionEmpty()
     {
-        var noTargets = Denied(EnvelopeReducer.DeriveRoot(AllProfiles(), new DelegationAuthorityRequest(AllowedTargets: []), Operator, T0));
-        var noSteps = Denied(EnvelopeReducer.DeriveRoot(AllProfiles(), new DelegationAuthorityRequest(MaxSteps: 0), Operator, T0));
-        var noTokens = Denied(EnvelopeReducer.DeriveRoot(AllProfiles(), new DelegationAuthorityRequest(MaxTokens: 0), Operator, T0));
+        var noTargets = Denied(DeriveRemediationRoot(AllProfiles(), new DelegationAuthorityRequest(AllowedTargets: []), Operator, T0));
+        var noSteps = Denied(DeriveRemediationRoot(AllProfiles(), new DelegationAuthorityRequest(MaxSteps: 0), Operator, T0));
+        var noTokens = Denied(DeriveRemediationRoot(AllProfiles(), new DelegationAuthorityRequest(MaxTokens: 0), Operator, T0));
 
         Assert.Equal(EnvelopeDimension.Targets, noTargets.Dimension);
         Assert.Equal(EnvelopeDimension.Steps, noSteps.Dimension);
@@ -707,8 +717,8 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_RefusesADeadlineAlreadyPast_ButAcceptsOneInTheFuture()
     {
-        var past = Denied(EnvelopeReducer.DeriveRoot(AllProfiles(), new DelegationAuthorityRequest(DeadlineUtc: T0), Operator, T0));
-        var future = Granted(EnvelopeReducer.DeriveRoot(AllProfiles(), new DelegationAuthorityRequest(DeadlineUtc: T0.AddMinutes(20)), Operator, T0));
+        var past = Denied(DeriveRemediationRoot(AllProfiles(), new DelegationAuthorityRequest(DeadlineUtc: T0), Operator, T0));
+        var future = Granted(DeriveRemediationRoot(AllProfiles(), new DelegationAuthorityRequest(DeadlineUtc: T0.AddMinutes(20)), Operator, T0));
 
         Assert.Equal(EnvelopeDimension.Deadline, past.Dimension);
         Assert.Equal(T0.AddMinutes(20), future.Budget.DeadlineUtc);
@@ -717,9 +727,9 @@ public sealed class EnvelopeReductionTests
     [Fact]
     public void DeriveRoot_RefusesAWindowThatHasAlreadyEnded_ButAcceptsAnOpenOne()
     {
-        var ended = Denied(EnvelopeReducer.DeriveRoot(
+        var ended = Denied(DeriveRemediationRoot(
             AllProfiles(), new DelegationAuthorityRequest(Window: new MaintenanceWindow(T0.AddHours(-2), T0.AddHours(-1))), Operator, T0));
-        var open = Granted(EnvelopeReducer.DeriveRoot(
+        var open = Granted(DeriveRemediationRoot(
             AllProfiles(), new DelegationAuthorityRequest(Window: new MaintenanceWindow(T0.AddHours(-1), T0.AddHours(1))), Operator, T0));
 
         Assert.Equal(EnvelopeDimension.MaintenanceWindow, ended.Dimension);
@@ -732,7 +742,7 @@ public sealed class EnvelopeReductionTests
         var expired = RemediationProfile() with { Window = new MaintenanceWindow(T0.AddHours(-2), T0.AddHours(-1)) };
         var source = new FixedProfiles(DiscoveryProfile(), DiagnosticProfile(), expired, VerificationProfile());
 
-        var denial = Denied(EnvelopeReducer.DeriveRoot(source, NoRequest, Operator, T0));
+        var denial = Denied(DeriveRemediationRoot(source, NoRequest, Operator, T0));
 
         Assert.Equal(EnvelopeDimension.MaintenanceWindow, denial.Dimension);
         Assert.Contains(nameof(AgentRoleKind.Remediation), denial.Reason, StringComparison.Ordinal);
@@ -742,7 +752,7 @@ public sealed class EnvelopeReductionTests
     public void DeriveRoot_EveryRolesEnvelopeIsInsideTheRoot()
     {
         var request = new DelegationAuthorityRequest(AllowedTargets: ["node-1"], MaxTokens: 45_000);
-        var root = Granted(EnvelopeReducer.DeriveRoot(AllProfiles(), request, Operator, T0));
+        var root = Granted(DeriveRemediationRoot(AllProfiles(), request, Operator, T0));
 
         foreach (var role in Pipeline)
         {
@@ -760,7 +770,7 @@ public sealed class EnvelopeReductionTests
         var alsoHuge = DiagnosticProfile() with { MaxSteps = int.MaxValue, MaxTokens = int.MaxValue };
         var source = new FixedProfiles(huge, alsoHuge, RemediationProfile(), VerificationProfile());
 
-        var root = Granted(EnvelopeReducer.DeriveRoot(source, NoRequest, Operator, T0));
+        var root = Granted(DeriveRemediationRoot(source, NoRequest, Operator, T0));
 
         Assert.Equal(int.MaxValue, root.Budget.MaxSteps);
         Assert.Equal(int.MaxValue, root.Budget.MaxTokens);
@@ -771,9 +781,9 @@ public sealed class EnvelopeReductionTests
     {
         Assert.Throws<ArgumentNullException>(() => EnvelopeReducer.ReduceForRole(null!, AgentRoleKind.Discovery, DiscoveryProfile(), NoRequest, T0));
         Assert.Throws<ArgumentNullException>(() => EnvelopeReducer.ReduceForRole(Parent(), AgentRoleKind.Discovery, DiscoveryProfile(), null!, T0));
-        Assert.Throws<ArgumentNullException>(() => EnvelopeReducer.DeriveRoot(null!, NoRequest, Operator, T0));
-        Assert.Throws<ArgumentNullException>(() => EnvelopeReducer.DeriveRoot(AllProfiles(), null!, Operator, T0));
-        Assert.Throws<ArgumentNullException>(() => EnvelopeReducer.DeriveRoot(AllProfiles(), NoRequest, null!, T0));
+        Assert.Throws<ArgumentNullException>(() => DeriveRemediationRoot(null!, NoRequest, Operator, T0));
+        Assert.Throws<ArgumentNullException>(() => DeriveRemediationRoot(AllProfiles(), null!, Operator, T0));
+        Assert.Throws<ArgumentNullException>(() => DeriveRemediationRoot(AllProfiles(), NoRequest, null!, T0));
         Assert.Throws<ArgumentOutOfRangeException>(() => EnvelopeReducer.ReduceForRole(Parent(), (AgentRoleKind)99, null, NoRequest, T0));
     }
 

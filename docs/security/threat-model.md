@@ -263,6 +263,42 @@ every role has a step, token and deadline budget.
 
 Residual risk: no four-eyes rule; an `approver` can read plan arguments; an in-process package still has the host's privileges (S8).
 
+### Request-dependent roles, readiness and capability input (V1.3.x, ADR-0044)
+
+**A diagnosis cannot reach a non-`Read` tool.** A diagnosis-only request requires only Discovery and Diagnostic, and its root
+authority is derived from those two profiles alone, with no Skill and no Capability. Both roles are held to `Read` whatever their
+profiles grant, so a Remediation profile, present or absent, adds nothing to a diagnosis; a role the request does not require never
+runs. Every step still goes through the envelope check before the policy engine, which can only deny. Property tests over random
+profiles and both request shapes, with policy and execution spies on the delegated and the provider paths, show that no diagnosis
+reaches a tool above `Read` and that a remediation still requires all four roles, as before.
+
+**Generated profiles are not the boundary.** `bops delegate profiles init --read-only` writes Discovery and Diagnostic profiles that
+list the available `Read` tools by exact name, with finite budgets; it never writes a Remediation or Verification profile, a Skill,
+a Capability or anything above `Read`, and it parses its own output back through the real loader before printing or writing. It
+runs only when an operator runs it, never at startup, by the API or by the UI. Even a hand-edited Discovery profile that lists a
+mutating tool cannot make a diagnosis mutate: the role cap and the envelope hold whatever the file says. `--overwrite` replaces only
+a file that is still exactly what the generator writes apart from its tool list, re-checked just before the replacement, so it
+cannot silently discard or broaden hand-written authority. The policy file stays fail-closed as a whole: a malformed section still
+makes the entire policy `AllForbidden`.
+
+**Readiness discloses configuration shape to `viewer`.** `GET /api/delegations/readiness` tells a `viewer` which roles have usable
+profiles, the dimension and reason the reducer would deny with, whether `policy.yaml` exists or failed to load, and the drift count.
+It does not send the file, its path or the loader's message (those stay in the host log), and it executes nothing. Readiness is not
+authority: a start re-derives everything, and a selected change outside the Remediation profile is still refused at start.
+
+**Capability input.** Input is validated against the Capability's declared schema at the start of a delegation (API `400`, CLI
+exit `1`, no run created) and again before any Capability code runs, on every Capability invocation, delegated or not; nothing is
+coerced or clamped, and an inconsistent schema is refused when its Skill registers. The value of a `sensitive` parameter never
+appears in an error, log line, audit text or UI message. Capability input is, however, stored with the run as plain JSON in the
+delegation database: there is no separate secret storage for it, so the protection boundary of the database files applies, and an
+operator should not pass secrets as Capability input where that boundary is not enough. The start body is strict JSON: a repeated
+property is refused, never first- or last-wins.
+
+**Strict Diagnostic JSON.** The Diagnostic reply is parsed strictly and within bounds (65,536 characters, depth 16, 64 findings).
+A repeated property at any depth, an oversized or non-JSON reply yields zero findings and a typed `findingsReply` outcome; no
+exception escapes and nothing is guessed. Every finding still cites only Evidence recorded in the run (ADR-0023). Typed evidence
+limitations are runtime-authored from typed step fields and carry no tool output or model text.
+
 ### Limits of the authority envelope
 
 The envelope of a delegated role is a real control and has edges. These are stated where they were found (V1.2-C2, C3, D and G);

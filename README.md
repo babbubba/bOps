@@ -58,8 +58,20 @@ bops delegate "find out why this production server is intermittently unavailable
   really `ACTIVE`) before it reports success.
 - `bops resume` continues a failed, cancelled or budget-stopped task as a new execution attempt.
 - `bops delegate` runs an objective through four roles — Discovery, Diagnostic, Remediation,
-  Verification — each with less authority than you. A change needs your approval of the plan,
-  identified by its hash. See [Delegation](docs/agents/delegation.md).
+  Verification — each with less authority than you. A diagnosis needs only Discovery and
+  Diagnostic and stays read-only; a change needs all four and your approval of the plan,
+  identified by its hash. Delegation is off until you configure role profiles; for a diagnosis,
+  `bops delegate profiles init --read-only` generates read-only ones for you to review. See
+  [Delegation](docs/agents/delegation.md) and [its setup](docs/agents/delegation-policy.md).
+
+`bops delegate` exit codes:
+
+| Command | Exit codes |
+|---|---|
+| `bops delegate "<objective>"`, `status`, `resume`, `cancel`, `reconcile` | `0` completed or diagnosed · `1` failed or usage error · `2` denied or blocked by policy · `3` rejected or abandoned · `4` requires reconciliation · `5` budget or deadline exceeded · `6` verification did not confirm · `10` not finished · `130` cancelled |
+| `bops delegate readiness [--remediation]` | `0` ready · `2` not ready · `1` usage or composition error |
+| `bops delegate profiles init --read-only [--write [--overwrite]]` | `0` printed or written · `1` usage error, refusal or I/O error |
+| `bops delegate profiles check` | `0` no drift · `2` drift that blocks delegation for some request shape · `8` informational drift only · `1` usage or composition error |
 
 ## How it works
 
@@ -290,12 +302,12 @@ Start from [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) and
 | | |
 |---|---|
 | **V1.3** (local diagnostic surface, entitlement boundary, plugin lifecycle) | Implemented and merged; not tagged or released |
-| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-7 complete; HARDEN-9 next |
+| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-10 complete; HARDEN-11 implemented locally (ADR-0044), awaiting independent review |
 | **V1.4 and later** | Planned; not implemented |
 
 The latest tagged build is the `v1.2.0-preview.8` pre-release (runtime archives, SBOMs and
 checksums, not a NuGet publication). bOps is a **preview**, not a production-endorsed release.
-The public SDK, `bOps.Abstractions`, is versioned `1.3.0-preview.1`.
+The public SDK, `bOps.Abstractions`, is versioned `1.3.0-preview.2`.
 
 Plan and progress: [consolidated roadmap](agentic/_plans/2026-09-16-consolidated-roadmap.md) ·
 [hardening plan](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) ·

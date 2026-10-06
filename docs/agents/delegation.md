@@ -24,6 +24,42 @@ Discovery -> Diagnostic -> [a person approves the plan by its hash] -> Remediati
 No plan means the run ends as a diagnosis (`DiagnosisCompleted`). A plan that is not approved ends as `Rejected`. Neither is an
 error. Roles cannot start other roles, so the depth is exactly one and cycles cannot occur.
 
+## Which roles a request needs
+
+The roles a run requires depend on what it asks for (ADR-0044). A **diagnosis** (no change prepared) requires Discovery and
+Diagnostic; a request that **prepares a change** requires all four. The run's root authority is derived from the required roles'
+profiles only, so a Remediation or Verification profile, present or absent, neither enables nor restricts a diagnosis, and a role
+the request does not require never runs. A required role without a usable profile denies the run before any model call, naming
+that role. The remediation path is unchanged: all four profiles, the plan approved by its hash, independent verification.
+
+**A diagnosis is read-only by construction.** Discovery and Diagnostic are held to `Read` whatever their profiles say, and a
+diagnosis root carries no Skill and no Capability, so nothing a diagnosis can call has a side effect; every call still goes
+through the envelope check and the policy engine. A diagnosis can therefore run with only the read-only profiles that
+`bops delegate profiles init --read-only` generates ([delegation-policy.md](delegation-policy.md)), and bOps never creates a
+profile by itself.
+
+**Readiness** answers in advance, for each request shape, whether the required roles' profiles are usable, with the reducer's own
+reason and dimension: `bops delegate readiness [--remediation]`, `GET /api/delegations/readiness`, and the panel next to the start
+form. It is about the role profiles only: the selected change, target, environment and input are validated when the run starts.
+
+## What a role could not see
+
+Evidence can be incomplete: a read that failed or was refused, an output marked partial or unavailable, an observation that was
+shortened. When Discovery or Diagnostic ends, the runtime records these as **typed limitations** of that role's model-loop evidence
+(at most 64, the most recent, with a count of the rest), from the same classification that feeds the evidence-limitations
+section of an ordinary task's answer (ADR-0042). An entry names the step, the tool, the outcome, failure kind and completeness, the
+length before shortening, and the id of the Evidence the step produced — or no id when it produced none; none is ever made up. It
+carries no tool output, argument, error text or model text, and no model decides what is in it.
+
+A finding is marked as **resting on limited evidence** when it cites Evidence that is itself typed as limited — an exact join of
+ids, never a judgement of materiality. The mark never adds, removes or changes a finding. The CLI, the API and the dashboard show
+the limitations per role beside the findings, and before a plan is approved; a run recorded before this existed shows "not
+recorded", never "none".
+
+The Diagnostic reply must be one JSON object. It is read strictly and within bounds (65,536 characters, depth 16, 64 findings): a
+property repeated at any depth, a reply that is too large, not JSON or without a `findings` array yields zero findings and a visible
+`findingsReply` outcome, never a guess and never an exception. Every finding still cites only Evidence recorded in the run.
+
 ## Authority only shrinks
 
 Each role runs under an **authority envelope**: the Skills and Capabilities it may prepare, the tools it may call, the highest risk
@@ -88,9 +124,9 @@ Telemetry never carries output or arguments.
 
 | Surface | Use |
 |---|---|
-| CLI | `bops delegate "<objective>" [--skill --capability --target --environment ...]`, `bops delegate status\|resume\|cancel <run-id>`, `bops delegate reconcile <run-id> --accept\|--abandon`. Exit codes are in the README. The plan is approved at the console. |
-| API | `/api/delegations`, role-gated: [reference](delegations-api.md). |
-| Dashboard | The Delegations view: roles in order, findings and the evidence they cite, the plan hash and its approval, the verification verdict, the journal, and any step awaiting reconciliation. |
+| CLI | `bops delegate "<objective>" [--skill --capability --target --environment --input ...]`, `bops delegate status\|resume\|cancel <run-id>`, `bops delegate reconcile <run-id> --accept\|--abandon`; `bops delegate readiness [--remediation]`, `bops delegate profiles init --read-only [--write [--overwrite]]`, `bops delegate profiles check`. Exit codes are in the README. The plan is approved at the console, with the run's evidence limitations shown first. |
+| API | `/api/delegations`, `/api/delegations/readiness` and `/api/skills`, role-gated: [reference](delegations-api.md). |
+| Dashboard | The Delegations view: the role readiness for the request being prepared (Start stays disabled until the server says ready), the change chosen from the Skill catalog with its input as a form generated from the Capability's schema (raw JSON as an advanced fallback), roles in order, findings and the evidence they cite, the evidence limitations per role, the plan hash and its approval, the verification verdict, the journal, and any step awaiting reconciliation. |
 
 ## What it does not do
 

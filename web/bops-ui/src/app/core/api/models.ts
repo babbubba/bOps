@@ -415,6 +415,101 @@ export interface DelegationFinding {
   summary: string;
   severity: string | null;
   evidenceIds: string[];
+  /**
+   * `true` only when the finding cites Evidence that is itself typed as limited (ADR-0044 §16); `false` means only that no cited
+   * Evidence item is marked limited, never that the finding is unaffected; `null`/absent when the run recorded no limitations.
+   */
+  restsOnLimitedEvidence?: boolean | null;
+}
+
+/** One typed limitation of a role's model-loop evidence collection (ADR-0044 §16). Enums by name; no tool or model text. */
+export interface EvidenceLimitation {
+  stepIndex: number;
+  toolName: string | null;
+  unknownTool: boolean;
+  outcome: string;
+  failureKind: string;
+  completeness: string;
+  shortenedFromCharacters: number | null;
+  evidenceId: string | null;
+}
+
+/** How the Diagnostic role's final reply was read: `status` Valid, Absent or Malformed, and its `problem`. */
+export interface DiagnosticReply {
+  status: string;
+  problem: string;
+  discardedFindings: number;
+}
+
+/** The limitation metadata of a run's model roles beside a pending plan; `available: false` when the run could not be read. */
+export interface PlanLimitations {
+  available: boolean;
+  roles: {
+    role: string;
+    recorded: boolean;
+    evidenceLimitations: EvidenceLimitation[] | null;
+    evidenceLimitationsOmitted: number;
+    findingsReply: DiagnosticReply | null;
+  }[];
+}
+
+// ---- Delegation readiness (GET /api/delegations/readiness, ADR-0044 §6) ----
+
+/** One role. `state` is `ready`, `missing`, `malformed` (shown as "Not usable") or `notRequired`; clients branch on `reasonCode`. */
+export interface RoleReadiness {
+  role: string;
+  state: string;
+  dimension: string | null;
+  reasonCode: string;
+  reason: string | null;
+}
+
+/** Role/profile readiness for a request shape. `ready` is authoritative; it never says a particular change will be accepted. */
+export interface DelegationReadiness {
+  remediation: boolean;
+  ready: boolean;
+  policy: string;
+  roles: RoleReadiness[];
+  profileDriftCount: number;
+  evaluatedAtUtc: string;
+}
+
+// ---- Skill catalog (GET /api/skills, ADR-0044 §8) ----
+
+/** `ToolParameter` field for field; `type` is one of the eight `ToolParameterType` names. */
+export interface InputParameter {
+  name: string;
+  type: 'String' | 'Integer' | 'Number' | 'Boolean' | 'Path' | 'Duration' | 'Enum' | 'PathList' | string;
+  description: string;
+  required: boolean;
+  sensitive: boolean;
+  allowedValues: string[] | null;
+  minimum: number | null;
+  maximum: number | null;
+  minLength: number | null;
+  maxLength: number | null;
+  minItems: number | null;
+  maxItems: number | null;
+}
+
+export interface CatalogCapability {
+  name: string;
+  version: string;
+  description: string;
+  risk: string;
+  supportsDryRun: boolean;
+  inputSchema: InputParameter[];
+}
+
+export interface CatalogSkill {
+  skillId: string;
+  package: string;
+  trust: string;
+  capabilities: CatalogCapability[];
+}
+
+export interface SkillCatalog {
+  skills: CatalogSkill[];
 }
 
 export interface DelegationVerification {
@@ -436,6 +531,10 @@ export interface DelegationRole {
   planHash: string | null;
   verification: DelegationVerification | null;
   errorMessage: string | null;
+  /** The role's model-loop evidence limitations; `null`/absent = not recorded, never "none". */
+  evidenceLimitations?: EvidenceLimitation[] | null;
+  evidenceLimitationsOmitted?: number;
+  findingsReply?: DiagnosticReply | null;
 }
 
 export interface DelegationStep {
@@ -478,7 +577,9 @@ export interface PendingPlanApproval {
   blastRadius: string;
   rationale: string;
   steps: { index: number; tool: string; arguments: Record<string, unknown>; description: string | null }[];
-  findings: { id: string; summary: string; severity: string | null; evidenceIds: string[] }[];
+  findings: { id: string; summary: string; severity: string | null; evidenceIds: string[]; restsOnLimitedEvidence?: boolean | null }[];
+  /** The run's persisted model-role limitations, joined by the API; absent or `available: false` means unavailable, never none. */
+  limitations?: PlanLimitations | null;
   authority: {
     tools: string[];
     maxRisk: string;
@@ -501,6 +602,8 @@ export interface StartDelegationRequest {
     environment: string;
     blastRadius?: string;
     dryRun: boolean;
+    /** The Capability input, one object from either the schema form or the advanced JSON editor. */
+    input?: Record<string, unknown>;
   };
 }
 

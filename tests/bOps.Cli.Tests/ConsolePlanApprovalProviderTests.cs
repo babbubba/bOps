@@ -30,10 +30,10 @@ public sealed class ConsolePlanApprovalProviderTests
         Operator, Depth: 1, ["service.skill"], ["service.restore"], ["service.restart", "service.status"], RiskLevel.High, BlastRadius.Single,
         ["web-1"], ["prod"], new DelegationBudget(6, 0, Now.AddMinutes(10)), new MaintenanceWindow(Now, Now.AddHours(1)));
 
-    private static async Task<(ApprovalDecision Decision, string Shown)> AskAsync(PlanApprovalRequest request, string typed)
+    private static async Task<(ApprovalDecision Decision, string Shown)> AskAsync(PlanApprovalRequest request, string typed, IDelegationStore? store = null)
     {
         var output = new StringWriter();
-        var provider = new ConsolePlanApprovalProvider(new StringReader(typed), output, Operator);
+        var provider = new ConsolePlanApprovalProvider(new StringReader(typed), output, Operator, store);
         var decision = await provider.RequestPlanApprovalAsync(request);
         return (decision, output.ToString());
     }
@@ -104,5 +104,16 @@ public sealed class ConsolePlanApprovalProviderTests
 
         Assert.True(decision.Approved);
         Assert.Null(decision.Note);
+    }
+
+    [Fact]
+    public async Task WithoutARunToReadLimitationsFrom_SaysUnavailable_NeverNone()
+    {
+        var (_, shown) = await AskAsync(Request(Envelope()), "n\n", store: null);
+
+        Assert.Contains("Evidence limitations:", shown, StringComparison.Ordinal);
+        Assert.Contains("unavailable / not recorded", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain("none recorded", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain("rests on limited evidence", shown, StringComparison.Ordinal);
     }
 }
