@@ -4,7 +4,7 @@
 
 - V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
-- V1.3.x reliability hardening is the active workstream. HARDEN-1 through HARDEN-7 are complete (HARDEN-7 merged through PR #72); HARDEN-9 is complete and merged through PR #74 (`ad4d196`); HARDEN-8 is complete and merged through PR #75 (`0e006c4`). HARDEN-10 (browser session, ADR-0043 Accepted, D-040) is complete and merged through PR #76 (`99530507b20058ce4b7869912d97165218d8f737`).
+- V1.3.x reliability hardening is at its final integration gate. HARDEN-1 through HARDEN-13 are complete and merged; HARDEN-14 has passed E2E-1…14 and DoD A–D and is ready for integration via PR #85. The train remains open until that implementation and its closeout record are merged.
 - HARDEN-11 (delegation operability): **Completed and merged via PR #77** (`12a03165ef458ecb3b36625d955731e34671c6f8`). [ADR-0044](docs/architecture/adr/0044-request-dependent-delegation-authority-and-operability.md) and D-041 are **Accepted**; the independent implementation authority/security review passed.
 - HARDEN-12 (UI layout/localization): **Completed and merged via PR #79** (`86bf74857a2435daee6177cd5cf78aae4e6198eb`). The independent UI review passed; E2E-12 and the recorded Angular/build/i18n evidence are green.
 - HARDEN-13 (provider lifecycle/default/fallback): **Completed and merged to `main` via PR #83** (`3bed13e3274570a3928ac64706be6246c0d9a978`). [ADR-0045](docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md) and D-042 are **Accepted**. B1 was independently reviewed PASS; B2a (PR #80), B2b (PR #81) and B3 (PR #82, merge commit `3177b5694d962ce3fc56527fa6bfa60f25b268ee`) were independently reviewed PASS and merged. All executable final-review gates passed: API Release build, E2E-4, live Settings A→B, FallbackExecutionTests 8/8, focused backend regressions 34/34, SettingsStore 15/15, Architecture 87/87, Settings UI 43/43, Angular 441/441, production build, i18n and E2E-12. Blockers: 0; non-blockers: 0. The bootstrap remains `OpenRouter` / `openrouter/free`, with a specific model recommended for serious or reproducible work.
@@ -12,7 +12,7 @@
 - The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
 - The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
 
-Next executable packet: **HARDEN-14 — end-to-end composition gate**. HARDEN-14 is **not started**.
+Next action: merge **PR #85 — HARDEN-14 end-to-end composition gate** after its green CI, then land the separate docs-only train closeout. No later reliability packet is authorized.
 
 ## Handoff — 2026-09-24 (historical)
 
