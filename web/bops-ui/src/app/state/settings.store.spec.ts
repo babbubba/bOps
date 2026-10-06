@@ -4,33 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { BOpsApiClient } from '../core/api/bops-api-client';
-import { SettingsView } from '../core/api/models';
+import { settingsViewFixture } from '../features/settings/settings.testing';
 import { SettingsStore } from './settings.store';
 
-function view(overrides: Partial<SettingsView> = {}): SettingsView {
-  return {
-    vaultVersion: 0,
-    activeProviderId: null,
-    activeProviderSource: 'Default',
-    providers: [
-      {
-        providerId: 'Anthropic',
-        isActive: false,
-        hasStoredKey: false,
-        keyMaskPrefix: null,
-        keyMaskSuffix: null,
-        keyPlaintextLength: null,
-        keyUpdatedUtc: null,
-        baseUrl: null,
-        model: null,
-        supportsNativeToolCalling: null,
-        extraParameters: null,
-        profileUpdatedUtc: null,
-      },
-    ],
-    ...overrides,
-  };
-}
+const view = settingsViewFixture;
 
 describe('SettingsStore', () => {
   let api: jasmine.SpyObj<BOpsApiClient>;
@@ -38,6 +15,7 @@ describe('SettingsStore', () => {
   beforeEach(() => {
     api = jasmine.createSpyObj<BOpsApiClient>('BOpsApiClient', [
       'getSettings', 'setProviderKey', 'clearProviderKey', 'setProviderProfile', 'setActiveProvider',
+      'setFallbacks', 'clearFallbacks',
     ]);
     api.getSettings.and.resolveTo(view());
 
@@ -172,5 +150,65 @@ describe('SettingsStore', () => {
     tick();
 
     expect(api.setActiveProvider).toHaveBeenCalledOnceWith('Anthropic');
+  }));
+
+  it('setFallbacks sends the whole ordered list with the loaded settings revision', fakeAsync(() => {
+    api.getSettings.and.resolveTo(view({ settingsRevision: 4 }));
+    api.setFallbacks.and.resolveTo();
+    const store = TestBed.inject(SettingsStore);
+    void store.refresh();
+    tick();
+
+    const list = [{ provider: 'OpenAI', model: 'gpt-4.1' }, { provider: 'Anthropic', model: 'claude-sonnet-4-5' }];
+    let result: boolean | undefined;
+    void store.setFallbacks(list).then((r) => (result = r));
+    tick();
+
+    expect(api.setFallbacks).toHaveBeenCalledOnceWith(list, 4);
+    expect(result).toBeTrue();
+    expect(api.getSettings).toHaveBeenCalledTimes(2);
+  }));
+
+  it('clearFallbacks uses the delete operation with the loaded revision', fakeAsync(() => {
+    api.getSettings.and.resolveTo(view({ settingsRevision: 9 }));
+    api.clearFallbacks.and.resolveTo();
+    const store = TestBed.inject(SettingsStore);
+    void store.refresh();
+    tick();
+
+    void store.clearFallbacks();
+    tick();
+
+    expect(api.clearFallbacks).toHaveBeenCalledOnceWith(9);
+    expect(api.setFallbacks).not.toHaveBeenCalled();
+  }));
+
+  it('a stale fallback write reports a conflict and refreshes to the latest revision', fakeAsync(() => {
+    api.setFallbacks.and.rejectWith(new HttpErrorResponse({ status: 409, error: { message: 'stale revision' } }));
+    const store = TestBed.inject(SettingsStore);
+    void store.refresh();
+    tick();
+
+    let result: boolean | undefined;
+    void store.setFallbacks([{ provider: 'OpenAI', model: 'gpt-4.1' }]).then((r) => (result = r));
+    tick();
+
+    expect(result).toBeFalse();
+    expect(store.conflict()).toBeTrue();
+    expect(store.error()).toBe('stale revision');
+    expect(api.getSettings).toHaveBeenCalledTimes(2);
+  }));
+
+  it('surfaces a validation rejection of the chain through the shared error state', fakeAsync(() => {
+    api.setFallbacks.and.rejectWith(new HttpErrorResponse({ status: 400, error: { message: 'duplicate fallback candidate' } }));
+    const store = TestBed.inject(SettingsStore);
+    void store.refresh();
+    tick();
+
+    void store.setFallbacks([{ provider: 'OpenAI', model: 'gpt-4.1' }, { provider: 'OpenAI', model: 'gpt-4.1' }]);
+    tick();
+
+    expect(store.conflict()).toBeFalse();
+    expect(store.error()).toBe('duplicate fallback candidate');
   }));
 });

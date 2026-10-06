@@ -300,7 +300,7 @@ export const it: Messages = {
 
   // ---- settings ----
   'settings.title': 'Impostazioni',
-  'settings.subtitle': 'Endpoint, modello e chiave API del provider, gestiti interamente da qui (ADR-0029). Le modifiche hanno effetto al riavvio successivo.',
+  'settings.subtitle': 'Provider, endpoint, modello, catena di fallback e chiave API, gestiti da qui (ADR-0029, ADR-0045). Le modifiche si applicano subito ai nuovi task, senza riavvio; un task già in esecuzione mantiene la configurazione con cui è partito. Una chiave API modificata vale dalla chiamata successiva al modello.',
   'settings.adminRequired': 'Per vedere o modificare le Impostazioni serve il ruolo di amministratore.',
   'settings.error.notAvailable':
     'Le Impostazioni non sono disponibili su questo host: l’API le offre solo se il vault delle credenziali è configurato (Vault:MasterKeySecret, vedi il README).',
@@ -331,6 +331,43 @@ export const it: Messages = {
   'settings.profile.nativeToolCalling': 'Supporta la chiamata nativa degli strumenti',
   'settings.profile.save': 'Salva endpoint e modello',
   'settings.profile.makeActive': 'Rendi attivo',
+  'settings.effective.model': 'Modello effettivo',
+  'settings.effective.credential': 'Credenziale',
+  'settings.effective.generation': 'Generazione di configurazione {generation}. I nuovi task usano i valori effettivi mostrati qui; un task già in esecuzione mantiene la configurazione con cui è partito.',
+  'settings.credential.available': 'Credenziale disponibile',
+  'settings.credential.unavailable': 'Nessuna credenziale utilizzabile trovata',
+  'settings.selection.shadowed': '«{provider}» è selezionato nelle Impostazioni ma non è in vigore: una variabile d’ambiente dell’host sovrascrive il provider, quindi quello mostrato sopra è il provider usato dai nuovi task.',
+  'settings.selection.shadowedBadge': 'Selezione salvata — non in vigore',
+  'settings.profile.shadowedFields': 'Valori salvati sovrascritti dalla configurazione dell’host e non in vigore per:',
+  'settings.router.warning': 'Il modello effettivo può cambiare a ogni chiamata; non è consigliato per sessioni di troubleshooting.',
+  'settings.router.guidance':
+    'Questo router predefinito serve per iniziare e per le valutazioni, e la capacità gratuita può essere limitata. Per un lavoro serio o riproducibile, seleziona qui sotto un modello specifico.',
+  'settings.fallback.heading': 'Catena di fallback',
+  'settings.fallback.explain':
+    'Un elenco esplicito e ordinato di al massimo {max} candidati che configuri tu. Se il modello corrente continua a fallire con un errore temporaneo o di capacità dopo i propri tentativi, viene provato il candidato successivo. È una politica di recupero sotto il tuo controllo, non l’instradamento lato provider di un modello router.',
+  'settings.fallback.effective.heading': 'Catena effettiva',
+  'settings.fallback.effective.none': 'Nessun fallback è in vigore: un modello che fallisce non viene sostituito da un altro.',
+  'settings.fallback.source.configuration': 'Gestita dalla configurazione dell’host ({name}) — ha la precedenza sull’elenco salvato.',
+  'settings.fallback.source.settings': 'Presa dall’elenco salvato nelle Impostazioni.',
+  'settings.fallback.source.default': 'Nessuna catena configurata (impostazione predefinita).',
+  'settings.fallback.credentialAdvisory':
+    'Lo stato della credenziale è solo indicativo. Un candidato senza credenziale fallisce con un errore di autenticazione se un’esecuzione lo raggiunge; non blocca mai un’esecuzione.',
+  'settings.fallback.persisted.heading': 'Elenco salvato (modificabile)',
+  'settings.fallback.persisted.none': 'Nessun candidato di fallback salvato.',
+  'settings.fallback.shadowed':
+    'Non in uso: la configurazione dell’host ({name}) gestisce la catena effettiva, quindi modificare questo elenco salvato non cambia i fallback usati dai nuovi task.',
+  'settings.fallback.provider.aria': 'Provider del candidato di fallback {n}',
+  'settings.fallback.model.aria': 'Modello del candidato di fallback {n}',
+  'settings.fallback.moveUp': 'Sposta prima il candidato di fallback {n}',
+  'settings.fallback.moveDown': 'Sposta dopo il candidato di fallback {n}',
+  'settings.fallback.remove': 'Rimuovi il candidato di fallback {n}',
+  'settings.fallback.add': 'Aggiungi candidato',
+  'settings.fallback.save': 'Salva catena',
+  'settings.fallback.discard': 'Annulla modifiche',
+  'settings.fallback.clear': 'Svuota catena',
+  'settings.fallback.limit': 'Al massimo {max} candidati; l’ordine è quello in cui vengono provati.',
+  'settings.fallback.limitReached': 'È stato raggiunto il massimo.',
+  'settings.fallback.noCredentials': 'I candidati di fallback non contengono credenziali. La chiave API di ogni provider si gestisce nella sua scheda qui sotto.',
 
   // ---- delegations ----
   'delegations.title': 'Deleghe',

@@ -13,6 +13,7 @@ import { Delegations } from '../../features/delegations/delegations';
 import { Login } from '../../features/login/login';
 import { Plugins } from '../../features/plugins/plugins';
 import { Settings } from '../../features/settings/settings';
+import { settingsProviderFixture, settingsViewFixture } from '../../features/settings/settings.testing';
 import { ApprovalsStore } from '../../state/approvals.store';
 import { DelegationsStore } from '../../state/delegations.store';
 import { PluginsStore } from '../../state/plugins.store';
@@ -160,10 +161,10 @@ describe('switching language', () => {
         {
           provide: SettingsStore,
           useValue: {
-            view: signal({
-              vaultVersion: 0, activeProviderId: 'Anthropic', activeProviderSource: 'EnvironmentOverride',
-              providers: [{ providerId: 'Anthropic', isActive: true, hasStoredKey: false, keyMaskPrefix: null, keyMaskSuffix: null, keyPlaintextLength: null, keyUpdatedUtc: null, baseUrl: null, model: null, supportsNativeToolCalling: true, extraParameters: null, profileUpdatedUtc: null }],
-            }),
+            view: signal(settingsViewFixture({
+              activeProviderId: 'Anthropic', activeProviderSource: 'EnvironmentOverride', effectiveModel: 'claude-sonnet-4-5',
+              providers: [settingsProviderFixture({ providerId: 'Anthropic', isActive: true, supportsNativeToolCalling: true })],
+            })),
             loading: signal(false),
             saving: signal(false),
             error: signal(null),

@@ -194,27 +194,82 @@ async function layoutFixture(route: Route): Promise<void> {
     ];
   } else if (path === '/api/plugins') body = { entries: [plugin], totalCount: 1 };
   else if (path === '/api/settings') {
+    const longProvider = 'provider-with-an-intentionally-long-stable-identifier';
+    const longModel = 'model-with-an-intentionally-long-versioned-identifier-for-layout-evidence';
+    const longUrl = 'https://provider.example.test/an/intentionally/long/api/base/path/for/layout/evidence';
     body = {
       vaultVersion: 1,
-      activeProviderId: 'provider-with-an-intentionally-long-stable-identifier',
+      activeProviderId: 'OpenRouter',
       activeProviderSource: 'Default',
       providers: [
         {
-          providerId: 'provider-with-an-intentionally-long-stable-identifier',
+          providerId: 'OpenRouter',
           isActive: true,
           hasStoredKey: true,
           keyMaskPrefix: 'abcd',
           keyMaskSuffix: 'wxyz',
           keyPlaintextLength: 40,
           keyUpdatedUtc: '2026-10-06T08:15:00Z',
-          baseUrl:
-            'https://provider.example.test/an/intentionally/long/api/base/path/for/layout/evidence',
-          model: 'model-with-an-intentionally-long-versioned-identifier-for-layout-evidence',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          model: 'openrouter/free',
           supportsNativeToolCalling: true,
           extraParameters: null,
           profileUpdatedUtc: '2026-10-06T08:15:00Z',
+          hasUsableCredential: true,
+          credentialSource: 'vault',
+          isPersistedSelectionShadowed: false,
+          shadowedFields: [],
+          extraParametersPersistedOnly: true,
+        },
+        {
+          providerId: longProvider,
+          isActive: false,
+          hasStoredKey: true,
+          keyMaskPrefix: 'abcd',
+          keyMaskSuffix: 'wxyz',
+          keyPlaintextLength: 40,
+          keyUpdatedUtc: '2026-10-06T08:15:00Z',
+          baseUrl: longUrl,
+          model: longModel,
+          supportsNativeToolCalling: true,
+          extraParameters: null,
+          profileUpdatedUtc: '2026-10-06T08:15:00Z',
+          hasUsableCredential: false,
+          credentialSource: 'none',
+          isPersistedSelectionShadowed: true,
+          shadowedFields: ['baseUrl', 'model', 'supportsNativeToolCalling'],
+          extraParametersPersistedOnly: true,
         },
       ],
+      settingsRevision: 3,
+      configurationGeneration: 12,
+      persistedActiveProviderId: longProvider,
+      persistedActiveProviderShadowed: true,
+      effectiveBaseUrl: 'https://openrouter.ai/api/v1',
+      effectiveModel: 'openrouter/free',
+      effectiveSupportsNativeToolCalling: true,
+      effectiveBaseUrlSource: 'environment',
+      effectiveModelSource: 'environment',
+      effectiveToolCallingSource: 'default',
+      effectiveCredentialAvailable: true,
+      effectiveCredentialSource: 'vault',
+      persistedFallbacks: [
+        { provider: longProvider, model: longModel },
+        { provider: 'Anthropic', model: 'claude-sonnet-4-5' },
+        { provider: 'OpenAI', model: longModel },
+      ],
+      effectiveFallbacks: [
+        {
+          ordinal: 1,
+          provider: longProvider,
+          model: longModel,
+          baseUrl: longUrl,
+          supportsNativeToolCalling: true,
+          credentialAvailable: false,
+        },
+      ],
+      effectiveFallbackSource: 'configuration',
+      persistedFallbacksShadowed: true,
     };
   } else {
     await route.continue();
