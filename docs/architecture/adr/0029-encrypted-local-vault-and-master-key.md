@@ -9,7 +9,10 @@ Date: 2026-09-17
 > approved-in-principle host-level fallback chain. The durable execution pin contains non-secret
 > provider/model/request configuration only; every model attempt resolves the current credential for
 > its pinned provider through this ADR's existing secret authority. HARDEN-13 neither preserves nor
-> persists historical credentials. Until ADR-0045 is accepted and implemented, the current
+> persists historical credentials. ADR-0045 also narrows this ADR's "Configuration precedence"
+> wording: `ModelProvider:ApiKeySecret` is bound only to the merged `ModelProvider:Provider` value
+> (before any Settings selection) and is never applied to another provider, whether Settings-selected,
+> fallback or resumed; other providers use only their own provider-keyed vault entry. Until ADR-0045 is accepted and implemented, the current
 > restart-required behavior documented below remains authoritative.
 
 ## Context

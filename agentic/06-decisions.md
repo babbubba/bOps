@@ -991,6 +991,15 @@ same-provider retries exhaust on `Transient`, `RateLimited`, `Timeout` or `Unrea
 that execution, never resets global budgets/deadlines, and never falls back on any other current or future failure kind
 by default. Runtime remains provider-neutral and receives one execution-scoped `IChatModel`.
 
+Review B-1 correction: the block-level `ModelProvider:ApiKeySecret` is bound only to the merged
+`ModelProvider:Provider` value (before Settings selection) and is never used for any other provider (Settings-selected,
+fallback or resumed); every other provider uses only its own provider-keyed vault entry, narrowing ADR-0029's "active
+provider" wording. `AgentRunner` remains the sole owner of same-provider retries; `FallbackChatModel` owns only candidate
+advancement via a narrow provider-neutral handshake. `AttemptsExhausted`/`RetryAfterExceedsLimit` on an allowed kind may
+advance when a candidate and global budget remain; `BudgetExhausted` is terminal. A fallback transition is an additive
+append-only audit decision, with independent `ProviderAttempt` and `FallbackOrdinal`. A fallback candidate with no usable
+credential fails as `Authentication` without skipping; admission requires the primary credential only.
+
 The operator selected `OpenRouter` / `openrouter/free` as the shipped zero-cost bootstrap default. It requires an
 OpenRouter API key and is intentionally non-deterministic: actual models can vary per call and remain visible in
 model-call/audit information. Getting Started and Settings must disclose that behavior and recommend an explicitly

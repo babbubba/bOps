@@ -167,11 +167,36 @@ ADR-0029's explicit environment precedence is preserved and made visible:
    field. This closes the current ambiguity where a merged configuration value can be mistaken for a
    JSON default. The immutable result remains one atomic tuple even when its fields have different
    declared sources.
-3. On every attempt, the current configured `ApiKeySecret` applicable to the pinned provider is
-   resolved first. A non-empty result is the current credential and shadows that provider's vault
-   entry. If the reference resolves to null/empty, the pinned provider's current vault credential is
-   used, as ADR-0029 specifies. The Settings view says which source wins and whether a stored vault
-   key is shadowed. The secret value itself is never part of the effective or pinned snapshot.
+3. **The block-level `ModelProvider:ApiKeySecret` is provider-bound.** Let
+   `ConfiguredPrimaryProviderId` be the merged `IConfiguration` value of `ModelProvider:Provider`
+   after ordinary ASP.NET configuration/environment precedence and *before* any `SettingsStore`
+   active-provider selection (appsettings `Provider = openrouter` with no override → `openrouter`;
+   `ModelProvider__Provider = anthropic` → `anthropic`). The block-level `ApiKeySecret` belongs
+   **only** to `ConfiguredPrimaryProviderId`. On every attempt the credential for candidate
+   provider `P` is resolved as follows:
+   - **`P == ConfiguredPrimaryProviderId`:** resolve `ModelProvider:ApiKeySecret` if configured;
+     a non-empty result is the current credential and shadows that provider's vault entry. If it
+     resolves to null/empty, use `P`'s current vault entry, as ADR-0029 specifies.
+   - **`P != ConfiguredPrimaryProviderId`:** `ModelProvider:ApiKeySecret` is categorically
+     ineligible and is never read for `P`. Only the credential belonging to `P` in the
+     provider-keyed vault (the provider-keyed configured authority) is used.
+
+   This applies equally to a Settings-selected active provider, every fallback candidate and every
+   resumed execution. A credential belonging to provider A is never sent to provider B. This
+   **narrows** ADR-0029's ambiguous "effective active provider" wording, under which the block-level
+   reference was applied to whichever provider was active; the shipped
+   `BOPS_MODELPROVIDER_API_KEY` reference is therefore the OpenRouter bootstrap key and is not
+   offered to a Settings-selected Anthropic. Environment-only deployments are unchanged: with
+   `ModelProvider__Provider = anthropic` and an Anthropic credential behind `ApiKeySecret`, the
+   secret is bound to Anthropic and works as before.
+
+   **Settings provenance.** The Settings view reports per provider whether a usable credential
+   exists and its source (`environment` only for `ConfiguredPrimaryProviderId`, otherwise `vault`
+   or none). If Settings selects B while the configured provider is A, B never appears to use A's
+   environment credential: it shows its own vault credential or "no usable credential". If an
+   environment provider override makes A effective, B is shown as persisted/shadowed, not
+   effective. The view never exposes plaintext, a secret hash, a secret value or a reusable
+   credential identifier. The secret value is never part of the effective or pinned snapshot.
 4. Environment fallback entries, when explicitly present, own the whole ordered fallback list.
    Otherwise the Settings-stored list wins, then the shipped empty default.
 
@@ -302,8 +327,10 @@ The ordered configuration shape is:
 ```
 
 Each entry names an already registered provider and a non-blank model. Endpoint and tool capability
-come only from that provider's own pinned effective profile; its current credential comes only from
-that provider's per-attempt authority. The list is explicit,
+come only from that provider's own pinned effective profile. Entries contain no secrets. For
+fallback candidate N, only the current credential belonging to that candidate's provider is
+resolved, per §7.3: if the candidate is not `ConfiguredPrimaryProviderId`, the block-level
+`ModelProvider:ApiKeySecret` is categorically ineligible and never consulted. The list is explicit,
 ordered and bounded (maximum three fallback entries). Duplicate provider/model tuples and the
 primary tuple are rejected; there is no cycle, discovery, implicit vendor or health-based insertion.
 A different model on the same provider is allowed only as an explicit distinct tuple. An empty or
@@ -340,6 +367,44 @@ can stop earlier when starting from a sticky later ordinal. No candidate is revi
 possible. A fallback transition does not wait for the failed provider's `Retry-After`; that delay was
 already honored during the provider's same-provider attempts and is not authority to delay another
 provider. The global remaining time must still leave the minimum attempt window.
+
+**Ownership of the transition.** `AgentRunner` remains the single owner of same-provider retry
+policy: attempt count, backoff delay, `Retry-After` handling, `ModelCallBudget` and
+`ModelRetryDecision`. `FallbackChatModel` owns only candidate advancement: the ordered chain, the
+current candidate and the sticky ordinal. It does not run, duplicate or reimplement a retry loop,
+and no retry policy moves into provider adapters. The narrow provider-neutral handshake is the
+routing directive above, in both directions: the runner, when same-candidate retry processing ends
+for a reason listed below, tells the model "same-candidate retry is exhausted; advance"; the model
+selects the next configured candidate (or reports the chain exhausted) without the runner knowing
+which provider follows. Runtime gains no provider names, no HTTP-status routing and no service
+location. The handshake is an additive provider-neutral contract (or an equivalent internal
+control surface), not a routing subsystem.
+
+**Retry-to-fallback handoff.** For an allowed kind (list below), when `DecideModelRetry` would
+end the call with:
+
+- `AttemptsExhausted` or `RetryAfterExceedsLimit` — the candidate advances, provided another
+  configured candidate exists and the remaining global `ModelCallBudget`/execution budget still
+  leaves room for a permitted attempt (`MinimumModelAttemptWindow`). The failed candidate's
+  `Retry-After` is not waited out (see above);
+- `BudgetExhausted` — remains terminal; fallback never advances, as that would spend an already
+  exhausted global budget;
+- a non-allowed kind — terminal regardless of the retry decision.
+
+**Two independent ordinals.** `ProviderAttempt` is the attempt number within the current
+candidate; `FallbackOrdinal` is 0 for the primary, 1 for the first fallback, and so on. One counter
+is never used for both. The global model-call budget is shared across all candidates; no
+transition resets `ModelCallBudget`, execution duration, task/delegation budgets or role budgets,
+and the total attempt count stays bounded by the ceiling above.
+
+**Missing fallback credential.** If the execution has advanced to a fallback candidate and that
+candidate has no usable current credential, the attempt fails as `Authentication`, which
+terminates the logical model call. The chain does not silently skip to a later fallback, never
+supplies another provider's credential, never returns to an earlier candidate, and the sticky
+ordinal stays where it advanced. Admission requires a usable primary credential only: fallback
+credentials may be unavailable at admission because they might never be needed. A readiness view
+may show an unavailable fallback credential as a warning; it never blocks an otherwise usable
+primary execution, and no background provider health checking is added.
 
 Fallback is permitted only when the candidate exhausted its same-provider retries with:
 
@@ -390,6 +455,12 @@ Save-time validation is local and deterministic:
   resolvable through its own provider-scoped authority;
 - the provider package can construct the adapter from the proposed options.
 
+Provider ids are validated against the registry with the existing case-insensitive semantics and
+stored in the registered canonical spelling; comparisons, including the `ConfiguredPrimaryProviderId`
+binding of §7.3, are case-insensitive. The save-time credential check applies to a newly added
+fallback, but execution admission checks the primary credential only (§11): a fallback credential
+removed or never present later is an attempt-time `Authentication` failure, not an admission failure.
+
 Saving does not make a live network request and does not prove account validity, model availability
 or provider health. An inactive profile may be stored without a credential, but it cannot be newly
 activated or added to the fallback chain until its required credential is present. Explicit removal
@@ -419,8 +490,13 @@ Additive optional fields record:
 - `FallbackOrdinal` — 0 for primary, 1..N for configured fallbacks;
 - `ProviderAttempt` — attempt number within that candidate;
 - `ConfigurationGeneration` and safe snapshot hash;
-- the existing normalized `FailureKind`, model-attempt ordinal and retry decision; a fallback
-  transition is distinguishable from same-provider retry and chain exhaustion.
+- the existing normalized `FailureKind`, model-attempt ordinal and retry decision. A fallback
+  transition is represented by a new **append-only** `ModelRetryDecision` value, `Fallback` (no
+  existing value is renumbered; an equivalent additive provider-neutral representation is
+  acceptable if it keeps the distinction explicit and testable). The audit must distinguish:
+  `Retry` (same candidate again), `Fallback` (advance to the next candidate), `AttemptsExhausted`
+  (no candidate remains) and `BudgetExhausted` (the global budget prevents another attempt).
+  `ProviderAttempt` and `FallbackOrdinal` are separate fields (§11).
 
 No separate `ActualProvider` field is added because existing `Provider` already records the actual
 configured provider candidate bOps invoked; duplicating it would create competing semantics. For
@@ -437,7 +513,7 @@ resulting generation and whether the mutation was effective or shadowed, never t
 | Threat | Architectural control |
 |---|---|
 | Switch to an unconfigured provider | Registry validation; explicit primary/fallback tuples only; fail before publication. |
-| Secret cross-routing | Per-attempt resolver is scoped to the pinned candidate provider and uses only that provider's current configured authority. |
+| Secret cross-routing | Per-attempt resolver is scoped to the candidate provider. The block-level `ModelProvider:ApiKeySecret` is bound to `ConfiguredPrimaryProviderId` only and is never read for any other provider (Settings-selected, fallback or resumed); other providers use only their own provider-keyed vault entry (§7.3). |
 | TOCTOU across provider/profile configuration | One coordinator gate for mutation and one immutable atomic publication; execution reads non-secret configuration once. Credential rotation is intentionally late-bound and independently atomic in the vault. |
 | Fallback after authentication/permanent failure | Allow-list of four transient kinds; every other/current/future kind fails closed. |
 | Fallback loops | Ordered bounded list, duplicate rejection, monotonic sticky ordinal, no backward transition. |
@@ -476,6 +552,30 @@ Block B/C must prove at least:
     analysis and remediation;
 15. stale Settings writes conflict and invalid proposals never replace the published generation.
 
+Security and handoff regression tests (review B-1, NB-1..NB-3), using fake providers that record the
+credential they receive:
+
+- **A — Settings-selected different provider.** Block provider `openrouter` with block-level
+  `ApiKeySecret` = `OPENROUTER_KEY`; Settings active provider `anthropic`; vault `anthropic` →
+  `ANTHROPIC_KEY`. Anthropic receives `ANTHROPIC_KEY` and never `OPENROUTER_KEY`.
+- **B — Fallback cross-provider isolation.** Primary `openrouter` with `OPENROUTER_KEY`; fallback
+  `anthropic`; vault `anthropic` → `ANTHROPIC_KEY`; the primary fails with an allowed kind. The
+  fallback receives `ANTHROPIC_KEY` and never `OPENROUTER_KEY`.
+- **C — Environment primary override.** `ModelProvider__Provider = anthropic` with block-level
+  `ApiKeySecret` = `ANTHROPIC_ENV_KEY`; the block-level secret is valid for `anthropic`.
+- **D — Missing fallback credential.** Valid primary credential, no fallback credential; the primary
+  exhausts with an allowed kind. Fallback resolution fails as `Authentication`, no later candidate is
+  attempted and no foreign credential is supplied.
+- **E — `RetryAfterExceedsLimit`.** The primary returns `RateLimited` with `Retry-After` above the
+  retry limit, a fallback exists and the global budget permits an attempt; the candidate advances
+  rather than the call terminating.
+- **F — `BudgetExhausted`.** A primary transient failure leaves insufficient global budget; no
+  fallback candidate is attempted.
+- **G — Audit transition.** `Retry`, `Fallback`, `AttemptsExhausted` and `BudgetExhausted` are
+  distinguishable in the records and events, with `ProviderAttempt` and `FallbackOrdinal` independent.
+- **H — Settings provenance.** Settings-selected B never reports A's environment credential; an
+  environment override makes A effective and B shadowed.
+
 Gating E2E uses deterministic fake/local providers:
 
 - E2E-4 variant: scripted transient primary exhaustion reaches the ordered fallback inside the
@@ -484,6 +584,23 @@ Gating E2E uses deterministic fake/local providers:
   proves B/Y, and audit proves A never changed and B never used A.
 
 Live external-provider smoke remains optional and non-gating.
+
+### 17. Block B implementation/test obligations (review NB-4..NB-6)
+
+These are obligations on the implementation, not open design questions:
+
+- Direct resume of a delegated role `TaskState` is either refused or inherits the owning
+  `DelegationRun` pin; it never captures current Settings as a legacy ordinary task.
+- The pin is persisted atomically with `TaskState`/`DelegationRun` admission, before the first
+  model call.
+- The immutable snapshot hash excludes the mutable sticky fallback ordinal.
+- Whether a credential-only mutation increments the configuration generation is defined explicitly
+  in the implementation design. Credentials stay outside the immutable snapshot hash either way.
+- A legacy unpinned resume under current Settings, if retained, is explicitly identified, audited
+  and surfaced in the resume response.
+- An invalid or missing persisted provider on resume fails closed; an invalid persisted fallback at
+  startup produces an explicit, visible state rather than a silent drop.
+- Provider-id canonical casing is documented consistently with the case-insensitive registry (§13).
 
 ## Alternatives considered
 
