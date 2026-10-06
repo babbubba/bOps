@@ -14,6 +14,27 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- A diagnosis-only delegation no longer needs mutation-capable profiles (ADR-0044, HARDEN-11). The role set a delegation requires
+  now depends on the request: a diagnosis requires Discovery and Diagnostic, a run that prepares a change still requires all four,
+  unchanged and fail-closed; the root authority is derived from the required roles only, and a diagnosis root has no Skill or
+  Capability, so a diagnosis can never reach a tool above `Read`. New: `GET /api/delegations/readiness?remediation=false|true`
+  (viewer; the runtime's own reducer per role — `ready`, `missing`, `malformed`, `notRequired` — with a typed `reasonCode`, the
+  reason and dimension, the policy load state and a drift count; never the policy file or the loader's message), `GET /api/skills`
+  (viewer; the activated Skills with each Capability's input schema and risk), `bops delegate readiness [--remediation]`,
+  `bops delegate profiles init --read-only [--write [--overwrite]]` (prints, or atomically writes, Discovery and Diagnostic profiles
+  listing the available `Read` tools by exact name with finite budgets; parsed back through the real loader; never a Remediation or
+  Verification profile, a Skill or a Capability; never overwrites silently, and `--overwrite` only refreshes the tool list of a
+  file that is still generator-equal) and `bops delegate profiles check` (drift; new exit code `8` for informational drift only).
+  Capability input is validated against the Capability's `InputSchema` at delegation start (`400 unknown_capability`,
+  `capability_input_invalid`) and before every Capability preparation, delegated or not, with no coercion and never echoing a
+  `sensitive` value; an inconsistent schema is refused when its Skill registers. `POST /api/delegations` rejects duplicate JSON
+  properties (`400 malformed_json`). The Delegations page shows role readiness for the request being prepared and enables Start only
+  when the server says ready, picks the change from the catalog and builds its input from the schema (raw JSON as an advanced
+  fallback that detects duplicate keys). The Diagnostic reply is parsed strictly and within bounds (65,536 characters, depth 16,
+  64 findings; a duplicate property at any depth yields zero findings), and Discovery and Diagnostic record typed evidence
+  limitations shown in the CLI, the API (run and plan-approval views, `restsOnLimitedEvidence` per finding) and the UI.
+  `bOps.Abstractions` `1.3.0-preview.2` adds `EvidenceLimitation`, `DiagnosticReplyOutcome`, `DiagnosticReplyStatus`,
+  `DiagnosticReplyProblem` and three init properties on `DelegationRoleRun`; all additive.
 - Resume is now a persisted state-machine transition (ADR-0040, HARDEN-3). `POST /api/agents/tasks/{id}/resume` used to accept any
   status, answer 202 before anything was written (a reader kept seeing the old terminal state), throw after the 202 for a task
   without a plan, resume `MaxStepsReached` into zero work, reset the token budget, and resume delegated role tasks outside their

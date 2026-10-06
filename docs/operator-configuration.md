@@ -47,7 +47,10 @@ The CLI does **not** load `appsettings.Development.json` unless you set `DOTNET_
 It has no `Vault` section of its own (see [section 7](#7-vault-key-rotation)).
 
 Without a `policy.yaml`, bOps uses a built-in safe default: read and low-risk tools run automatically,
-medium and high risk ask for approval, critical is forbidden.
+medium and high risk ask for approval, critical is forbidden. That default has no delegation role
+profiles, so delegation is off. `bops delegate readiness`, `bops delegate profiles init --read-only` and
+`bops delegate profiles check` need no model provider and no `ModelProvider` section
+([delegation setup](agents/delegation-policy.md)).
 
 ## 2. API configuration
 
@@ -82,6 +85,15 @@ without it. To run without the vault, see [section 5](#5-encrypted-vault).
 
 Tasks run through the API persist to `tasks.db`, `audit.jsonl`, `settings.json`, `vault.dat` and the
 plugin files in the API's working directory (all paths are configurable in `appsettings.json`).
+
+**One `policy.yaml` for both hosts.** `Policy:FilePath` (default `policy.yaml`, relative to the working
+directory) is read by the API and by the CLI independently; point both at the same file (for example
+`Policy__FilePath` with an absolute path) so `bops delegate profiles init --read-only --write` writes the
+file the API uses. The API reads it **only at start** and logs its resolved path and load state
+(`NoFile`, `Loaded` or `LoadFailed`, never the file's contents): restart the API after changing it.
+`GET /api/delegations/readiness` and `bops delegate readiness` then report the same role readiness when
+both hosts load the same file and plugins. Nothing creates or changes this file automatically
+([delegation setup](agents/delegation-policy.md)).
 
 ## 3. Web UI
 
