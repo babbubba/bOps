@@ -380,6 +380,38 @@ export interface SettingsProviderView {
   supportsNativeToolCalling: boolean | null;
   extraParameters: Record<string, string> | null;
   profileUpdatedUtc: string | null;
+  /** ADR-0045: a usable credential exists for this provider right now (advisory; carries no key material). */
+  hasUsableCredential: boolean;
+  /** ADR-0045: `environment`, `vault` or `none`. Where the usable credential comes from, never its value. */
+  credentialSource: string;
+  /** ADR-0045: this provider is the persisted selection, but another provider is effective (host-owned). */
+  isPersistedSelectionShadowed: boolean;
+  /** ADR-0045: the persisted profile fields (`baseUrl`, `model`, `supportsNativeToolCalling`) a host variable overrides. */
+  shadowedFields: string[];
+  /** ADR-0045: `extraParameters` is stored and returned but consumed by no provider. */
+  extraParametersPersistedOnly: boolean;
+}
+
+/** Where one effective, non-secret value came from (ADR-0045 section 7). */
+export type EffectiveFieldSource = 'environment' | 'settings' | 'default';
+
+/** Where the effective fallback chain came from: host `configuration` shadows `settings`; `default` is the empty chain. */
+export type EffectiveFallbackSource = 'configuration' | 'settings' | 'default';
+
+/** bOps.Api.FallbackEntryView (ADR-0045): one stored fallback candidate, provider and model only — never a secret. */
+export interface FallbackEntry {
+  provider: string;
+  model: string;
+}
+
+/** bOps.Api.EffectiveFallbackView (ADR-0045): one candidate new executions are pinned with. `credentialAvailable` is advisory only. */
+export interface EffectiveFallback {
+  ordinal: number;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  supportsNativeToolCalling: boolean;
+  credentialAvailable: boolean;
 }
 
 /** bOps.Api.SettingsView (ADR-0029, GET /api/settings). `vaultVersion` must be echoed back as `expectedVersion` on every key write. */
@@ -388,6 +420,35 @@ export interface SettingsView {
   activeProviderId: string | null;
   activeProviderSource: ActiveProviderSource;
   providers: SettingsProviderView[];
+  /** Concurrency token for non-key Settings writes (selection, profile, fallback chain). */
+  settingsRevision: number;
+  /** Monotonic generation of the effective configuration new executions are pinned with. */
+  configurationGeneration: number;
+  /** The provider selected in Settings, whether or not it is effective. */
+  persistedActiveProviderId: string | null;
+  /** True when `persistedActiveProviderId` is stored but another provider is effective. */
+  persistedActiveProviderShadowed: boolean;
+  effectiveBaseUrl: string;
+  effectiveModel: string;
+  effectiveSupportsNativeToolCalling: boolean;
+  effectiveBaseUrlSource: EffectiveFieldSource | string;
+  effectiveModelSource: EffectiveFieldSource | string;
+  effectiveToolCallingSource: EffectiveFieldSource | string;
+  effectiveCredentialAvailable: boolean;
+  effectiveCredentialSource: string;
+  /** The administrator's stored ordered fallback list, whether or not it is currently effective. */
+  persistedFallbacks: FallbackEntry[];
+  /** The ordered candidates new executions are pinned with. */
+  effectiveFallbacks: EffectiveFallback[];
+  effectiveFallbackSource: EffectiveFallbackSource | string;
+  /** True when a stored fallback list exists but host configuration owns the effective list. */
+  persistedFallbacksShadowed: boolean;
+}
+
+/** bOps.Api.SetFallbacksRequest (ADR-0045, PUT /api/settings/fallbacks): the complete ordered list; an empty list clears it. */
+export interface SetFallbacksRequest {
+  fallbacks: FallbackEntry[];
+  expectedRevision: number;
 }
 
 /** bOps.Api.SetProviderProfileRequest (ADR-0029, PUT /api/settings/providers/{id}/profile). */

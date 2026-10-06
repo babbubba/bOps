@@ -66,7 +66,12 @@ internal static class ProviderResolution
         var (providerId, source) = ResolveActiveProvider(configuration, settingsStore);
         var profile = source == Source.EnvironmentOverride ? null : settingsStore.FindProviderProfile(providerId);
 
-        var resolvedKey = configured.ApiKeySecret is not null ? environmentSecretProvider.GetSecret(configured.ApiKeySecret) : null;
+        // ADR-0045 B-1: the block secret belongs to the configured primary, never to an
+        // independently selected Settings provider.
+        var configuredPrimary = configuration["ModelProvider:Provider"];
+        var eligible = string.Equals(providerId, configuredPrimary, StringComparison.OrdinalIgnoreCase);
+        var resolvedKey = eligible && configured.ApiKeySecret is not null
+            ? environmentSecretProvider.GetSecret(configured.ApiKeySecret) : null;
         if (string.IsNullOrEmpty(resolvedKey) && vaultSecretProvider is not null)
         {
             resolvedKey = vaultSecretProvider.GetSecret(new SecretReference("vault", providerId));
@@ -74,13 +79,20 @@ internal static class ProviderResolution
 
         return new ChatModelOptions(
             providerId,
-            profile?.BaseUrl ?? configured.BaseUrl,
-            configured.ApiKeySecret,
-            profile?.Model ?? configured.Model,
-            profile?.SupportsNativeToolCalling ?? configured.SupportsNativeToolCalling)
+            Field("BaseUrl", profile?.BaseUrl, configured.BaseUrl),
+            eligible ? configured.ApiKeySecret : null,
+            Field("Model", profile?.Model, configured.Model),
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ModelProvider__SupportsNativeToolCalling"))
+                ? configured.SupportsNativeToolCalling
+                : profile?.SupportsNativeToolCalling ?? configured.SupportsNativeToolCalling)
         {
             ResolvedApiKey = resolvedKey,
             RequestTimeout = configured.RequestTimeout,
         };
     }
+
+    private static T Field<T>(string name, T? stored, T configured) =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable($"ModelProvider__{name}"))
+            ? configured
+            : stored ?? configured;
 }

@@ -28,7 +28,10 @@ internal sealed record DelegationView(
     DelegationDenialView? Denial,
     string? ErrorMessage,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc)
+{
+    public bool LegacyConfigurationMigrated { get; init; }
+}
 
 internal sealed record DelegationApprovalView(string PlanHash, string ApproverId, string? ApproverDisplayName, DateTimeOffset ApprovedAtUtc);
 
@@ -124,7 +127,10 @@ internal static class DelegationViews
             run.Denial is { } denial ? new DelegationDenialView(denial.Dimension.ToString(), Bound(denial.Reason)!) : null,
             Bound(run.ErrorMessage),
             run.CreatedAtUtc,
-            run.UpdatedAtUtc);
+            run.UpdatedAtUtc)
+        {
+            LegacyConfigurationMigrated = run.LegacyConfigurationMigrated,
+        };
     }
 
     private static DelegationRoleView Role(DelegationRoleRun role, DelegationRun run) => new(

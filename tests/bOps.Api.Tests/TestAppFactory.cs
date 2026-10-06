@@ -61,6 +61,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, config) =>
         {
             Environment.SetEnvironmentVariable(_secretVariableName, ApiKey);
+            Environment.SetEnvironmentVariable(_modelProviderSecretVariableName, "test-model-provider-key");
             Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, VaultMasterKey);
             var settings = new Dictionary<string, string?>
             {
@@ -139,6 +140,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
         if (disposing)
         {
             Environment.SetEnvironmentVariable(_secretVariableName, null);
+            Environment.SetEnvironmentVariable(_modelProviderSecretVariableName, null);
             Environment.SetEnvironmentVariable(_vaultMasterKeyVariableName, null);
         }
 

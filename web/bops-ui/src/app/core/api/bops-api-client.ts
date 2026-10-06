@@ -14,6 +14,7 @@ import {
   AgentTaskStatusName,
   DeletionManifestPage,
   DeletionManifestSummary,
+  FallbackEntry,
   PackageTrustLevel,
   PendingApproval,
   PluginCatalogEntry,
@@ -198,6 +199,14 @@ export class BOpsApiClient {
     return firstValueFrom(
       this.http.put<void>(`/api/settings/providers/${encodeURIComponent(providerId)}/profile`, request),
     );
+  }
+
+  setFallbacks(fallbacks: FallbackEntry[], expectedRevision: number): Promise<void> {
+    return firstValueFrom(this.http.put<void>('/api/settings/fallbacks', { fallbacks, expectedRevision }));
+  }
+
+  clearFallbacks(expectedRevision: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/settings/fallbacks?expectedRevision=${expectedRevision}`));
   }
 
   setActiveProvider(providerId: string): Promise<void> {

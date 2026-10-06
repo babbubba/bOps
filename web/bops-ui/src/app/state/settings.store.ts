@@ -7,7 +7,7 @@ import { patchState, signalStore, withMethods, withState } from '@ngrx/signals';
 import { BOpsApiClient } from '../core/api/bops-api-client';
 import { I18n } from '../core/i18n/i18n';
 import { describeError } from './describe-error';
-import { SetProviderProfileRequest, SettingsView } from '../core/api/models';
+import { FallbackEntry, SetProviderProfileRequest, SettingsView } from '../core/api/models';
 
 interface SettingsState {
   view: SettingsView | null;
@@ -81,6 +81,17 @@ export const SettingsStore = signalStore(
 
       setProviderProfile(providerId: string, request: SetProviderProfileRequest): Promise<boolean> {
         return mutate(() => api.setProviderProfile(providerId, request));
+      },
+
+      /** Replaces the whole ordered fallback list (ADR-0045); echoes the revision the page loaded so a stale write conflicts. */
+      setFallbacks(fallbacks: FallbackEntry[]): Promise<boolean> {
+        const expectedRevision = store.view()?.settingsRevision ?? 0;
+        return mutate(() => api.setFallbacks(fallbacks, expectedRevision));
+      },
+
+      clearFallbacks(): Promise<boolean> {
+        const expectedRevision = store.view()?.settingsRevision ?? 0;
+        return mutate(() => api.clearFallbacks(expectedRevision));
       },
 
       setActiveProvider(providerId: string): Promise<boolean> {

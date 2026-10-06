@@ -13,6 +13,11 @@ namespace bOps.Runtime;
 public sealed class SettingsStore(string settingsFilePath, TimeProvider timeProvider)
 {
     private const int CurrentSchemaVersion = 1;
+    private const int MaxFallbacks = 3;
+    private readonly object _writeGate = new();
+
+    /// <summary>Optimistic revision of the persisted settings file.</summary>
+    public int Revision => LoadAll().Revision;
 
     /// <summary>The administrator's chosen active provider id, or <c>null</c> if none has been set.</summary>
     public string? ActiveProviderId => LoadAll().ActiveProviderId;
@@ -25,20 +30,49 @@ public sealed class SettingsStore(string settingsFilePath, TimeProvider timeProv
     public ProviderProfile? FindProviderProfile(string providerId) =>
         LoadAll().Providers.GetValueOrDefault(providerId);
 
+    /// <summary>The administrator's ordered fallback list; empty when none is stored (fallback disabled).</summary>
+    public IReadOnlyList<FallbackSetting> Fallbacks => LoadAll().Fallbacks ?? [];
+
+    /// <summary>Replaces the ordered fallback list (an empty list clears it). Shape only; the API validates providers.</summary>
+    public void SetFallbacks(IReadOnlyList<FallbackSetting> fallbacks, int? expectedRevision = null)
+    {
+        ArgumentNullException.ThrowIfNull(fallbacks);
+        if (fallbacks.Count > MaxFallbacks)
+        {
+            throw new ArgumentException($"At most {MaxFallbacks} model fallback candidates may be stored.", nameof(fallbacks));
+        }
+
+        if (fallbacks.Any(entry => entry is null || string.IsNullOrWhiteSpace(entry.Provider) || string.IsNullOrWhiteSpace(entry.Model)))
+        {
+            throw new ArgumentException("Every fallback needs a nonblank provider and model.", nameof(fallbacks));
+        }
+
+        lock (_writeGate)
+        {
+            var file = LoadAll();
+            CheckRevision(file, expectedRevision);
+            SaveAll(file with { Fallbacks = fallbacks.Count == 0 ? null : [.. fallbacks], Revision = checked(file.Revision + 1) });
+        }
+    }
+
     /// <summary>Persists the active provider id.</summary>
-    public void SetActiveProviderId(string providerId)
+    public void SetActiveProviderId(string providerId, int? expectedRevision = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
 
-        var file = LoadAll();
-        SaveAll(file with { ActiveProviderId = providerId });
+        lock (_writeGate)
+        {
+            var file = LoadAll();
+            CheckRevision(file, expectedRevision);
+            SaveAll(file with { ActiveProviderId = providerId, Revision = checked(file.Revision + 1) });
+        }
     }
 
     /// <summary>Stores (or replaces) a provider's non-secret profile.</summary>
 #pragma warning disable CA1054 // baseUrl is configuration-bound, same as ChatModelOptions.BaseUrl.
     public void SetProviderProfile(
         string providerId, string baseUrl, string model, bool supportsNativeToolCalling,
-        IReadOnlyDictionary<string, string>? extraParameters)
+        IReadOnlyDictionary<string, string>? extraParameters, int? expectedRevision = null)
 #pragma warning restore CA1054
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
@@ -48,23 +82,39 @@ public sealed class SettingsStore(string settingsFilePath, TimeProvider timeProv
             throw new ArgumentException($"'{baseUrl}' is not an absolute http/https URL.", nameof(baseUrl));
         }
 
-        var file = LoadAll();
-        file.Providers[providerId] = new ProviderProfile(
-            providerId, baseUrl, model, supportsNativeToolCalling,
-            extraParameters is null ? [] : new Dictionary<string, string>(extraParameters),
-            timeProvider.GetUtcNow());
-        SaveAll(file);
+        lock (_writeGate)
+        {
+            var file = LoadAll();
+            CheckRevision(file, expectedRevision);
+            file.Providers[providerId] = new ProviderProfile(
+                providerId, baseUrl, model, supportsNativeToolCalling,
+                extraParameters is null ? [] : new Dictionary<string, string>(extraParameters),
+                timeProvider.GetUtcNow());
+            SaveAll(file with { Revision = checked(file.Revision + 1) });
+        }
     }
 
     /// <summary>Removes a provider's stored profile, if any.</summary>
-    public void RemoveProviderProfile(string providerId)
+    public void RemoveProviderProfile(string providerId, int? expectedRevision = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
 
-        var file = LoadAll();
-        if (file.Providers.Remove(providerId))
+        lock (_writeGate)
         {
-            SaveAll(file);
+            var file = LoadAll();
+            CheckRevision(file, expectedRevision);
+            if (file.Providers.Remove(providerId))
+            {
+                SaveAll(file with { Revision = checked(file.Revision + 1) });
+            }
+        }
+    }
+
+    private static void CheckRevision(SettingsFile file, int? expectedRevision)
+    {
+        if (expectedRevision is { } expected && expected != file.Revision)
+        {
+            throw new SettingsConcurrencyException(expected, file.Revision);
         }
     }
 

@@ -10,13 +10,11 @@ internal static class ProvidersEndpoints
 {
     internal static void MapProvidersEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/providers", (IChatModelRegistry registry, IConfiguration configuration, ISecretProvider secretProvider) =>
+        app.MapGet("/api/providers", (IChatModelRegistry registry, ProviderConfigurationCoordinator coordinator) =>
         {
-            var options = configuration.GetSection("ModelProvider").Get<ChatModelOptions>();
-            var active = options is null
-                ? null
-                : new ActiveProviderInfo(options.Provider, options.Model, options.BaseUrl,
-                    options.ApiKeySecret is not null && !string.IsNullOrEmpty(secretProvider.GetSecret(options.ApiKeySecret)));
+            var effective = coordinator.Current;
+            var active = new ActiveProviderInfo(effective.Pin.ProviderId, effective.Pin.Model,
+                effective.Pin.BaseUrl, effective.PrimaryCredentialSource != "none");
 
             return Results.Ok(new ProvidersResponse(registry.RegisteredProviderIds, active));
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);

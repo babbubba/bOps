@@ -299,7 +299,7 @@ export const en = {
 
   // ---- settings ----
   'settings.title': 'Settings',
-  'settings.subtitle': 'Provider endpoint, model and API key, fully managed from here (ADR-0029). Changes take effect on the next restart.',
+  'settings.subtitle': 'Provider, endpoint, model, fallback chain and API key, managed from here (ADR-0029, ADR-0045). Changes apply to new tasks immediately, without a restart; a task that is already running keeps the configuration it started with. A changed API key applies to its next model call.',
   'settings.adminRequired': 'The administrator role is required to view or change Settings.',
   'settings.error.notAvailable':
     'Settings are not available on this host: the API only offers them when the credential vault is configured (Vault:MasterKeySecret, see the README).',
@@ -330,6 +330,43 @@ export const en = {
   'settings.profile.nativeToolCalling': 'Supports native tool calling',
   'settings.profile.save': 'Save endpoint and model',
   'settings.profile.makeActive': 'Make active',
+  'settings.effective.model': 'Effective model',
+  'settings.effective.credential': 'Credential',
+  'settings.effective.generation': 'Configuration generation {generation}. New tasks use the effective values shown here; a task already running keeps the configuration it started with.',
+  'settings.credential.available': 'Credential available',
+  'settings.credential.unavailable': 'No usable credential found',
+  'settings.selection.shadowed': "'{provider}' is selected in Settings but is not in effect: a host environment variable overrides the provider, so the provider shown above is the one new tasks use.",
+  'settings.selection.shadowedBadge': 'Stored selection — not in effect',
+  'settings.profile.shadowedFields': 'Stored values overridden by host configuration and not in effect for:',
+  'settings.router.warning': 'The actual model may change on every call; not recommended for troubleshooting sessions.',
+  'settings.router.guidance':
+    'This router default is meant for getting started and evaluation, and free capacity may be rate limited. For serious or reproducible work, select a specific model below.',
+  'settings.fallback.heading': 'Fallback chain',
+  'settings.fallback.explain':
+    'An explicit, ordered list of up to {max} candidates that you configure. When the current model keeps failing with a temporary or capacity error after its own retries, the next candidate is tried. It is a recovery policy you control, not the provider-side routing of a router model.',
+  'settings.fallback.effective.heading': 'Effective chain',
+  'settings.fallback.effective.none': 'No fallback is in effect: a failing model is not replaced by another one.',
+  'settings.fallback.source.configuration': 'Owned by host configuration ({name}) — it overrides the stored list.',
+  'settings.fallback.source.settings': 'Taken from the list stored in Settings.',
+  'settings.fallback.source.default': 'No chain is configured (the default).',
+  'settings.fallback.credentialAdvisory':
+    'Credential status is advisory only. A candidate without a credential fails with an authentication error if a run reaches it; it never blocks a run.',
+  'settings.fallback.persisted.heading': 'Stored list (editable)',
+  'settings.fallback.persisted.none': 'No fallback candidates are stored.',
+  'settings.fallback.shadowed':
+    'Not in use: host configuration ({name}) owns the effective chain, so editing this stored list does not change which fallbacks new tasks use.',
+  'settings.fallback.provider.aria': 'Provider of fallback candidate {n}',
+  'settings.fallback.model.aria': 'Model of fallback candidate {n}',
+  'settings.fallback.moveUp': 'Move fallback candidate {n} earlier',
+  'settings.fallback.moveDown': 'Move fallback candidate {n} later',
+  'settings.fallback.remove': 'Remove fallback candidate {n}',
+  'settings.fallback.add': 'Add candidate',
+  'settings.fallback.save': 'Save chain',
+  'settings.fallback.discard': 'Discard edits',
+  'settings.fallback.clear': 'Clear chain',
+  'settings.fallback.limit': 'At most {max} candidates; their order is the order they are tried.',
+  'settings.fallback.limitReached': 'The maximum has been reached.',
+  'settings.fallback.noCredentials': "Fallback candidates hold no credentials. Each provider's API key is managed in its own card below.",
 
   // ---- delegations ----
   'delegations.title': 'Delegations',

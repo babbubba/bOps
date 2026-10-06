@@ -12,6 +12,7 @@ namespace bOps.Api;
 internal enum DelegationResumeResult
 {
     Started,
+    StartedLegacyMigrated,
     NotFound,
     AlreadyRunning,
     NotResumable,
@@ -30,7 +31,9 @@ internal sealed class DelegationLauncher(
     IAuditSink audit,
     TimeProvider timeProvider,
     AgentTaskLauncherOptions options,
-    ILogger<DelegationLauncher> logger) : IDisposable
+    ILogger<DelegationLauncher> logger,
+    ProviderConfigurationCoordinator? coordinator = null,
+    ExecutionRunnerFactory? executionRunners = null) : IDisposable
 {
     private static readonly TimeSpan RegistrationTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan CancellationTimeout = TimeSpan.FromSeconds(10);
@@ -62,9 +65,24 @@ internal sealed class DelegationLauncher(
         }
 
         var id = Guid.NewGuid();
+        PinnedProviderConfiguration? pin;
+        DelegationRunner executionRunner;
+        try
+        {
+            pin = coordinator is null ? null : coordinator.Current.Pin with { FallbackOrdinal = 0 };
+            if (pin is not null) coordinator!.EnsureAdmission(pin);
+            executionRunner = pin is null ? runner : executionRunners?.CreateDelegation(pin, id)
+                ?? throw new InvalidOperationException("No execution runner factory is registered.");
+        }
+        catch
+        {
+            _capacity.Release();
+            throw;
+        }
         var live = new Live();
         _running[id] = live;
-        live.Completion = RunDetachedAsync(id, actor, live, token => runner.StartAsync(request, actor, id, idempotencyKey, token));
+        live.Completion = RunDetachedAsync(id, actor, live,
+            token => executionRunner.StartAsync(request, actor, id, idempotencyKey, token));
 
         var deadline = timeProvider.GetUtcNow() + RegistrationTimeout;
         while (true)
@@ -109,6 +127,18 @@ internal sealed class DelegationLauncher(
             return DelegationResumeResult.NotResumable;
         }
 
+        var migrated = coordinator is not null && stored.PinnedProviderConfiguration is null;
+        var pin = stored.PinnedProviderConfiguration;
+        if (coordinator is not null)
+        {
+            pin ??= coordinator.Current.Pin;
+            coordinator.ValidatePin(pin);
+        }
+
+        var resumeRunner = pin is { } pinned
+            ? executionRunners?.CreateDelegation(pinned, delegationId) ?? throw new InvalidOperationException("No execution runner factory is registered.")
+            : runner;
+
         if (!await _capacity.WaitAsync(0, ct))
         {
             return DelegationResumeResult.AtCapacity;
@@ -122,8 +152,32 @@ internal sealed class DelegationLauncher(
             return DelegationResumeResult.AlreadyRunning;
         }
 
-        live.Completion = RunDetachedAsync(delegationId, actor, live, token => runner.ResumeAsync(delegationId, actor, token));
-        return DelegationResumeResult.Started;
+        if (migrated)
+        {
+            try
+            {
+                // The first accepted resume owns the pin. Persist it before model use.
+                stored = stored with { PinnedProviderConfiguration = pin, LegacyConfigurationMigrated = true };
+                await store.SaveAsync(stored, CancellationToken.None);
+                await audit.WriteAsync(new DelegationLifecycleAuditEvent
+                {
+                    TimestampUtc = timeProvider.GetUtcNow(), Node = NodeId.Local, TaskId = stored.Id,
+                    StepIndex = -1, Actor = actor, Stage = DelegationStage.Resumed,
+                    Status = stored.Status, LegacyConfigurationMigrated = true,
+                }, CancellationToken.None);
+            }
+            catch
+            {
+                _running.TryRemove(delegationId, out _);
+                live.Cancellation.Dispose();
+                _capacity.Release();
+                throw;
+            }
+        }
+
+        live.Completion = RunDetachedAsync(delegationId, actor, live,
+            token => resumeRunner.ResumeAsync(delegationId, actor, token));
+        return migrated ? DelegationResumeResult.StartedLegacyMigrated : DelegationResumeResult.Started;
     }
 
     /// <summary>

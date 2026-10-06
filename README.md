@@ -171,6 +171,43 @@ $env:BOPS_MODEL_API_KEY = '<your-openrouter-key>'          # PowerShell
 Another provider is a matter of configuration, for example
 `ModelProvider__Provider=Ollama` with `ModelProvider__BaseUrl` and `ModelProvider__Model`.
 
+### First run: the OpenRouter bootstrap default
+
+A fresh installation uses **OpenRouter** with the model **`openrouter/free`**. That is a zero-cost way to
+get started, evaluate bOps and explore non-critical questions. Know what it is before you rely on it:
+
+- **An OpenRouter API key is required.** Without one the first model call fails with an authentication
+  error. With the web UI, open **Settings**, expand the **OpenRouter** card, paste the key and press
+  **Set**. The key is write-only, stored encrypted in the vault (see
+  [Encrypted vault](docs/operator-configuration.md#5-encrypted-vault)) and never shown again. The CLI reads
+  it from `BOPS_MODEL_API_KEY`, the API from `BOPS_MODELPROVIDER_API_KEY` or the vault.
+- **`openrouter/free` is a router alias, not one model.** OpenRouter picks the upstream model for each call,
+  so the actual model can differ from one call to the next. bOps does not hide this: Settings shows
+  "The actual model may change on every call; not recommended for troubleshooting sessions." whenever this
+  is the effective configuration.
+- **Select a specific model for serious work.** For important troubleshooting, reproducible analysis and
+  anything that remediates a machine, choose an explicit model in **Settings → Configure → Endpoint and
+  model** (or `ModelProvider__Model`). Changes apply to new tasks without restarting the API.
+- **See what actually answered.** Every model call records the model that was *requested* and the one the
+  provider reports as *actual*. The Dashboard shows `requested → actual` on each model call, and the audit
+  log's model-call events carry the same `Model` and `ActualModel` fields. When the provider does not report
+  a model, only the requested one is known.
+- **Free capacity is limited.** The free tier is rate limited and may answer `429` or fail transiently.
+  bOps retries within bounds and audits every attempt, but it cannot promise availability or latency of an
+  external free service.
+
+### Fallback chain (optional)
+
+A **fallback chain** is a separate feature, configured by an administrator in Settings (or with
+`ModelProvider:Fallbacks` in host configuration): an explicit, ordered list of at most three
+`{ Provider, Model }` candidates. When the current model still fails with a transient, rate-limit, timeout
+or unreachable error after its own bounded retries, the next candidate is tried within the same execution
+deadline. It never reacts to authentication, quota, invalid-request, context-overflow or malformed-response
+failures, and an empty list (the default) disables it. It is a recovery policy you control, **not** the
+provider-side routing that `openrouter/free` performs, and it does not make an external provider's
+availability or output deterministic. Each attempt, including the transition to a fallback, is audited.
+Details: [ADR-0045](docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md).
+
 The shipped agent guardrails keep three completed tool steps verbatim, cap cumulative reported usage at
 350,000 tokens, and allow 60 minutes of active work per execution attempt:
 

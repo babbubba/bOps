@@ -3,6 +3,20 @@
 Status: Accepted
 Date: 2026-09-17
 
+> **HARDEN-13 forward reference (ADR-0045 Accepted, 2026-10-06; implemented by HARDEN-13).**
+> [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) supersedes
+> only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
+> approved-in-principle host-level fallback chain. The durable execution pin contains non-secret
+> provider/model/request configuration only; every model attempt resolves the current credential for
+> its pinned provider through this ADR's existing secret authority. HARDEN-13 neither preserves nor
+> persists historical credentials. ADR-0045 also narrows this ADR's "Configuration precedence"
+> wording: `ModelProvider:ApiKeySecret` is bound only to the merged `ModelProvider:Provider` value
+> (before any Settings selection) and is never applied to another provider, whether Settings-selected,
+> fallback or resumed; other providers use only their own provider-keyed vault entry. HARDEN-13 has implemented that decision, so live
+> Settings semantics are now the implemented behaviour; the restart-required behavior documented below
+> is historical. This ADR's vault, masking, master-key, provider-profile and environment-precedence
+> decisions otherwise remain in force.
+
 ## Context
 
 V1.1-G lets an authenticated administrator persist the active LLM provider and its API key from
@@ -262,7 +276,8 @@ understands immediately why those fields look empty for this one event type.
   than left implicit.
 - Provider selection and secret changes require a restart to take effect, consistent with today's
   composition-root-only resolution of `ModelProvider` — the UI must say so rather than imply a live
-  switch.
+  switch. *(Superseded by ADR-0045: Settings changes now apply to new executions without a restart and a
+  credential change to the next model attempt.)*
 - A provider's endpoint/model/tool-calling support (`ProviderProfile`) and its API key are
   deliberately split across two stores with different threat models (plain JSON vs. encrypted
   vault) but the same provider id as their join key; a caller must read both to fully describe one

@@ -20,7 +20,8 @@ internal sealed record TaskResumeAcceptedResponse(
     int ExecutionAttempt,
     bool Executing,
     bool Resumable,
-    TaskErrorResponse? ResumeBlockedReason);
+    TaskErrorResponse? ResumeBlockedReason,
+    bool LegacyConfigurationMigrated = false);
 
 /// <summary>The body of a refused task request (409, 501, 503): a stable <see cref="Code"/> and an operator <see cref="Message"/>.</summary>
 internal sealed record TaskErrorResponse(string Code, string Message);
@@ -33,7 +34,7 @@ internal sealed record DelegationRemediationBody(
     string SkillId, string CapabilityName, string Target, string Environment, string? BlastRadius, bool DryRun, System.Text.Json.Nodes.JsonObject? Input);
 
 /// <summary>Response of <c>POST /api/delegations</c> and <c>POST /api/delegations/{id}/resume</c>: the run exists, it has not finished.</summary>
-internal sealed record DelegationAcceptedResponse(Guid DelegationId);
+internal sealed record DelegationAcceptedResponse(Guid DelegationId, bool LegacyConfigurationMigrated = false);
 
 /// <summary>Body of <c>POST /api/delegations/{id}/reconcile</c>. <see cref="Decision"/> is <c>accept</c> (the unsettled steps are done) or <c>abandon</c> (end the run).</summary>
 internal sealed record ReconcileDelegationRequest(string Decision, string? Note);
@@ -55,15 +56,13 @@ internal sealed record PrepareDeletionManifestRequest(
     int? MaxDurationMilliseconds);
 
 /// <summary>
-/// Response of <c>GET /api/providers</c> (ADR-0019). <see cref="Active"/> is <c>null</c> if the
-/// host has no valid <c>ModelProvider</c> configuration section at all — distinct from a
-/// configured-but-keyless provider, which still reports with <see cref="ActiveProviderInfo.HasApiKey"/> false.
+/// Response of <c>GET /api/providers</c> (ADR-0019). <see cref="Active"/> describes the
+/// currently published effective provider; the nullable shape preserves the existing API contract.
 /// </summary>
 internal sealed record ProvidersResponse(IReadOnlyList<string> RegisteredProviderIds, ActiveProviderInfo? Active);
 
 /// <summary>
-/// The provider this host is actually configured to use. Never carries the API key's value
-/// (ADR-0019) — only whether one is present, since this endpoint has no authentication (ADR-0018)
-/// and is reachable by anyone who can reach the host.
+/// The provider newly admitted executions use. Never carries the API key's value (ADR-0019),
+/// only whether a current API key exists.
 /// </summary>
 internal sealed record ActiveProviderInfo(string Provider, string Model, string BaseUrl, bool HasApiKey);

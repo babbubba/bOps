@@ -22,7 +22,14 @@ internal sealed record SettingsProviderView(
     string? Model,
     bool? SupportsNativeToolCalling,
     IReadOnlyDictionary<string, string>? ExtraParameters,
-    DateTimeOffset? ProfileUpdatedUtc);
+    DateTimeOffset? ProfileUpdatedUtc)
+{
+    public bool HasUsableCredential { get; init; }
+    public string CredentialSource { get; init; } = "none";
+    public bool IsPersistedSelectionShadowed { get; init; }
+    public IReadOnlyList<string> ShadowedFields { get; init; } = [];
+    public bool ExtraParametersPersistedOnly { get; init; } = true;
+}
 
 /// <summary>
 /// The full Settings view (ADR-0029). <see cref="VaultVersion"/> is the optimistic-concurrency
@@ -32,7 +39,46 @@ internal sealed record SettingsView(
     int VaultVersion,
     string? ActiveProviderId,
     string ActiveProviderSource,
-    IReadOnlyList<SettingsProviderView> Providers);
+    IReadOnlyList<SettingsProviderView> Providers)
+{
+    public int SettingsRevision { get; init; }
+    public long ConfigurationGeneration { get; init; }
+    public string? PersistedActiveProviderId { get; init; }
+    public bool PersistedActiveProviderShadowed { get; init; }
+    public string EffectiveBaseUrl { get; init; } = string.Empty;
+    public string EffectiveModel { get; init; } = string.Empty;
+    public bool EffectiveSupportsNativeToolCalling { get; init; }
+    public TimeSpan? EffectiveRequestTimeout { get; init; }
+    public string EffectiveBaseUrlSource { get; init; } = string.Empty;
+    public string EffectiveModelSource { get; init; } = string.Empty;
+    public string EffectiveToolCallingSource { get; init; } = string.Empty;
+    public string EffectiveRequestTimeoutSource { get; init; } = string.Empty;
+    public bool EffectiveCredentialAvailable { get; init; }
+    public string EffectiveCredentialSource { get; init; } = "none";
+
+    /// <summary>The administrator's stored ordered fallback list, whether or not it is currently effective.</summary>
+    public IReadOnlyList<FallbackEntryView> PersistedFallbacks { get; init; } = [];
+
+    /// <summary>The ordered fallback candidates new executions are pinned with.</summary>
+    public IReadOnlyList<EffectiveFallbackView> EffectiveFallbacks { get; init; } = [];
+
+    /// <summary><c>settings</c>, <c>configuration</c> (host-owned, shadows Settings) or <c>default</c> (none).</summary>
+    public string EffectiveFallbackSource { get; init; } = "default";
+
+    public bool PersistedFallbacksShadowed { get; init; }
+}
+
+/// <summary>One stored fallback entry: provider and model only.</summary>
+internal sealed record FallbackEntryView(string Provider, string Model);
+
+/// <summary>One effective fallback candidate. <see cref="CredentialAvailable"/> is advisory and never gates admission.</summary>
+#pragma warning disable CA1056 // BaseUrl is configuration-bound, same as ChatModelOptions.BaseUrl.
+internal sealed record EffectiveFallbackView(
+    int Ordinal, string Provider, string Model, string BaseUrl, bool SupportsNativeToolCalling, bool CredentialAvailable);
+#pragma warning restore CA1056
+
+/// <summary>Replaces the ordered fallback list (at most three); an empty list clears it.</summary>
+internal sealed record SetFallbacksRequest(IReadOnlyList<FallbackEntryView>? Fallbacks, int? ExpectedRevision = null);
 
 /// <summary>Sets or replaces a provider's API key. Write-only: never echoes the key back.</summary>
 internal sealed record SetProviderKeyRequest(string ApiKey, int ExpectedVersion);
@@ -40,8 +86,9 @@ internal sealed record SetProviderKeyRequest(string ApiKey, int ExpectedVersion)
 /// <summary>Sets or replaces a provider's non-secret profile.</summary>
 #pragma warning disable CA1056 // BaseUrl is configuration-bound, same as ChatModelOptions.BaseUrl.
 internal sealed record SetProviderProfileRequest(
-    string BaseUrl, string Model, bool SupportsNativeToolCalling, Dictionary<string, string>? ExtraParameters);
+    string BaseUrl, string Model, bool SupportsNativeToolCalling, Dictionary<string, string>? ExtraParameters,
+    int? ExpectedRevision = null);
 #pragma warning restore CA1056
 
 /// <summary>Selects the active provider.</summary>
-internal sealed record SetActiveProviderRequest(string ProviderId);
+internal sealed record SetActiveProviderRequest(string ProviderId, int? ExpectedRevision = null);

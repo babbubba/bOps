@@ -401,4 +401,12 @@ public sealed record DelegationRun
 
     /// <summary>When the run was last written.</summary>
     public required DateTimeOffset UpdatedAtUtc { get; init; }
+
+    /// <summary>The non-secret provider configuration shared by every role in this run.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
+
+    /// <summary>Whether this pre-ADR-0045 run captured its first provider pin on resume.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyConfigurationMigrated { get; init; }
 }

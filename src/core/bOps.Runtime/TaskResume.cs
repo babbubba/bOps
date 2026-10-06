@@ -72,7 +72,8 @@ public enum TaskResumeOutcome
 /// <param name="Outcome">What happened.</param>
 /// <param name="Task">For <see cref="TaskResumeOutcome.Acquired"/>, the persisted snapshot of the new execution attempt; for a refusal, the task as read.</param>
 /// <param name="Refusal">Why the resume was refused, for <see cref="TaskResumeOutcome.Refused"/>.</param>
-public sealed record TaskResumeAcquisition(TaskResumeOutcome Outcome, TaskState? Task, TaskResumeRefusal? Refusal);
+public sealed record TaskResumeAcquisition(TaskResumeOutcome Outcome, TaskState? Task, TaskResumeRefusal? Refusal,
+    bool LegacyConfigurationMigrated = false);
 
 /// <summary>Thrown by <see cref="AgentRunner.ResumeAsync"/> when the task cannot be resumed; nothing was executed or written.</summary>
 public sealed class TaskResumeRefusedException : Exception

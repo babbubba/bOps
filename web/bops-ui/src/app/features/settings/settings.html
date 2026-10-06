@@ -19,7 +19,7 @@
     @if (settings.loading() && !settings.view()) {
       <p class="text-sm text-muted">{{ 'common.loading' | t }}</p>
     } @else if (settings.view(); as view) {
-      <section class="rounded-xl border border-default bg-surface p-4 shadow-sm">
+      <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" data-testid="effective-primary">
         <h2 class="text-sm font-semibold text-muted">{{ 'settings.activeProvider' | t }}</h2>
         <p class="mt-1 break-all text-lg font-medium">{{ view.activeProviderId ?? '—' }}</p>
         <p class="mt-1 text-xs text-muted">
@@ -29,6 +29,165 @@
             @default { {{ 'settings.source.default' | t: { name: 'appsettings.json' } }} }
           }
         </p>
+        <dl class="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-xs text-muted">{{ 'settings.effective.model' | t }}</dt>
+            <dd class="truncate" [attr.title]="view.effectiveModel" [attr.aria-label]="view.effectiveModel" data-testid="effective-model">{{ view.effectiveModel }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-muted">{{ 'settings.effective.credential' | t }}</dt>
+            <dd>{{ (view.effectiveCredentialAvailable ? 'settings.credential.available' : 'settings.credential.unavailable') | t }}</dd>
+          </div>
+        </dl>
+        <p class="mt-2 text-xs text-muted">{{ 'settings.effective.generation' | t: { generation: view.configurationGeneration } }}</p>
+
+        @if (view.persistedActiveProviderShadowed) {
+          <p class="mt-3 rounded-lg border border-risk-high bg-risk-high/10 p-2 text-sm" role="note" data-testid="selection-shadowed">
+            {{ 'settings.selection.shadowed' | t: { provider: view.persistedActiveProviderId ?? '—' } }}
+          </p>
+        }
+
+        @if (routerEffective()) {
+          <div class="mt-3 rounded-lg border border-risk-high bg-risk-high/10 p-3 text-sm" role="note" data-testid="router-notice">
+            <p class="font-semibold">{{ 'settings.router.warning' | t }}</p>
+            <p class="mt-1">{{ 'settings.router.guidance' | t }}</p>
+          </div>
+        }
+      </section>
+
+      <section class="rounded-xl border border-default bg-surface p-4 shadow-sm" aria-labelledby="fallback-heading" data-testid="fallback-chain">
+        <h2 id="fallback-heading" class="text-sm font-semibold text-muted">{{ 'settings.fallback.heading' | t }}</h2>
+        <p class="mt-1 text-sm">{{ 'settings.fallback.explain' | t: { max: maxFallbacks } }}</p>
+
+        <h3 class="mt-4 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'settings.fallback.effective.heading' | t }}</h3>
+        <p class="mt-1 text-xs text-muted" data-testid="effective-fallback-source">
+          @switch (view.effectiveFallbackSource) {
+            @case ('configuration') { {{ 'settings.fallback.source.configuration' | t: { name: 'ModelProvider:Fallbacks' } }} }
+            @case ('settings') { {{ 'settings.fallback.source.settings' | t }} }
+            @default { {{ 'settings.fallback.source.default' | t }} }
+          }
+        </p>
+        @if (view.effectiveFallbacks.length === 0) {
+          <p class="mt-2 text-sm text-muted" data-testid="effective-fallback-empty">{{ 'settings.fallback.effective.none' | t }}</p>
+        } @else {
+          <ol class="mt-2 flex flex-col gap-2" data-testid="effective-fallbacks">
+            @for (candidate of view.effectiveFallbacks; track candidate.ordinal) {
+              <li class="min-w-0 rounded-lg border border-default p-2 text-sm" data-testid="effective-fallback">
+                <div class="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <span class="font-semibold">{{ candidate.ordinal }}.</span>
+                  <span class="min-w-0 break-all font-medium">{{ candidate.provider }}</span>
+                  <span class="min-w-0 break-all text-muted" [attr.title]="candidate.model" [attr.aria-label]="candidate.model">{{ candidate.model }}</span>
+                </div>
+                <p class="mt-1 text-xs" [class.text-risk-high]="!candidate.credentialAvailable" [class.text-muted]="candidate.credentialAvailable">
+                  {{ (candidate.credentialAvailable ? 'settings.credential.available' : 'settings.credential.unavailable') | t }}
+                </p>
+              </li>
+            }
+          </ol>
+          <p class="mt-2 text-xs text-muted">{{ 'settings.fallback.credentialAdvisory' | t }}</p>
+        }
+
+        <h3 class="mt-4 text-xs font-semibold text-muted uppercase tracking-wide">{{ 'settings.fallback.persisted.heading' | t }}</h3>
+        @if (view.persistedFallbacksShadowed) {
+          <p class="mt-1 rounded-lg border border-risk-high bg-risk-high/10 p-2 text-sm" role="note" data-testid="fallback-shadowed">
+            {{ 'settings.fallback.shadowed' | t: { name: 'ModelProvider:Fallbacks' } }}
+          </p>
+        }
+
+        @if (fallbackRows().length === 0) {
+          <p class="mt-2 text-sm text-muted" data-testid="persisted-fallback-empty">{{ 'settings.fallback.persisted.none' | t }}</p>
+        }
+        <ol class="mt-2 flex flex-col gap-2" data-testid="persisted-fallbacks">
+          @for (row of fallbackRows(); track $index; let i = $index; let first = $first; let last = $last) {
+            <li class="flex min-w-0 flex-col gap-2 rounded-lg border border-default p-2 sm:flex-row sm:items-center" data-testid="persisted-fallback">
+              <span class="font-semibold sm:w-6">{{ i + 1 }}.</span>
+              <select
+                class="min-w-0 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm sm:w-40"
+                [attr.aria-label]="'settings.fallback.provider.aria' | t: { n: i + 1 }"
+                (change)="updateFallback(i, 'provider', $any($event.target).value)"
+              >
+                @for (id of providerOptions(); track id) {
+                  <option [value]="id" [selected]="id === row.provider">{{ id }}</option>
+                }
+                @if (!providerOptions().includes(row.provider)) {
+                  <option [value]="row.provider" selected>{{ row.provider }}</option>
+                }
+              </select>
+              <input
+                type="text"
+                class="min-w-0 flex-1 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+                [placeholder]="'settings.profile.modelPlaceholder' | t"
+                [attr.aria-label]="'settings.fallback.model.aria' | t: { n: i + 1 }"
+                [attr.title]="row.model"
+                [value]="row.model"
+                (input)="updateFallback(i, 'model', $any($event.target).value)"
+              />
+              <div class="flex gap-1">
+                <button
+                  type="button"
+                  class="rounded-lg border border-default px-2 py-1 text-sm hover:bg-bg disabled:opacity-50"
+                  [disabled]="first || settings.saving()"
+                  [attr.aria-label]="'settings.fallback.moveUp' | t: { n: i + 1 }"
+                  (click)="moveFallback(i, -1)"
+                >↑</button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-default px-2 py-1 text-sm hover:bg-bg disabled:opacity-50"
+                  [disabled]="last || settings.saving()"
+                  [attr.aria-label]="'settings.fallback.moveDown' | t: { n: i + 1 }"
+                  (click)="moveFallback(i, 1)"
+                >↓</button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-risk-high px-2 py-1 text-sm text-risk-high disabled:opacity-50"
+                  [disabled]="settings.saving()"
+                  [attr.aria-label]="'settings.fallback.remove' | t: { n: i + 1 }"
+                  (click)="removeFallback(i)"
+                >✕</button>
+              </div>
+            </li>
+          }
+        </ol>
+
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-50"
+            data-testid="fallback-add"
+            [disabled]="settings.saving() || fallbackRows().length >= maxFallbacks"
+            (click)="addFallback()"
+          >{{ 'settings.fallback.add' | t }}</button>
+          <button
+            type="button"
+            class="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
+            data-testid="fallback-save"
+            [disabled]="settings.saving() || !fallbackDirty() || !fallbackComplete()"
+            (click)="saveFallbacks()"
+          >{{ 'settings.fallback.save' | t }}</button>
+          @if (fallbackDirty()) {
+            <button
+              type="button"
+              class="rounded-lg border border-default px-3 py-1.5 text-sm font-medium hover:bg-bg disabled:opacity-50"
+              data-testid="fallback-discard"
+              [disabled]="settings.saving()"
+              (click)="discardFallbackEdits()"
+            >{{ 'settings.fallback.discard' | t }}</button>
+          }
+          <button
+            type="button"
+            class="rounded-lg border border-risk-high px-3 py-1.5 text-sm font-medium text-risk-high disabled:opacity-50"
+            data-testid="fallback-clear"
+            [disabled]="settings.saving() || view.persistedFallbacks.length === 0"
+            (click)="clearFallbacks()"
+          >{{ 'settings.fallback.clear' | t }}</button>
+        </div>
+        <p class="mt-2 text-xs text-muted">
+          {{ 'settings.fallback.limit' | t: { max: maxFallbacks } }}
+          @if (fallbackRows().length >= maxFallbacks) {
+            <span data-testid="fallback-limit-reached">{{ 'settings.fallback.limitReached' | t }}</span>
+          }
+        </p>
+        <p class="mt-1 text-xs text-muted">{{ 'settings.fallback.noCredentials' | t }}</p>
       </section>
 
       <section class="flex flex-col gap-3">
@@ -39,6 +198,9 @@
                 <h3 class="min-w-0 break-all text-base font-semibold">{{ provider.providerId }}</h3>
                 @if (provider.isActive) {
                   <span class="rounded-full bg-status-completed/15 px-2 py-0.5 text-xs font-medium text-status-completed">{{ 'settings.active' | t }}</span>
+                }
+                @if (provider.isPersistedSelectionShadowed) {
+                  <span class="rounded-full bg-risk-high/15 px-2 py-0.5 text-xs font-medium text-risk-high" data-testid="selection-shadowed-badge">{{ 'settings.selection.shadowedBadge' | t }}</span>
                 }
               </div>
               <button
@@ -74,6 +236,15 @@
                 <dd>{{ provider.supportsNativeToolCalling === null ? '—' : ((provider.supportsNativeToolCalling ? 'settings.yes' : 'settings.no') | t) }}</dd>
               </div>
             </dl>
+
+            @if (provider.shadowedFields.length > 0) {
+              <p class="mt-2 text-xs text-risk-high" role="note" data-testid="fields-shadowed">
+                {{ 'settings.profile.shadowedFields' | t }}
+                @for (key of shadowedFieldLabelKeys(provider); track key; let last = $last) {
+                  {{ key | t }}{{ last ? '' : ', ' }}
+                }
+              </p>
+            }
 
             @if (expandedProviderId() === provider.providerId) {
               <div class="mt-4 flex flex-col gap-4 border-t border-default pt-4">

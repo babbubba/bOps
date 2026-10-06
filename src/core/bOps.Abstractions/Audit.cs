@@ -396,6 +396,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ModelAttempt { get; init; }
 
+    /// <summary>The attempt number within the current provider candidate.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProviderAttempt { get; init; }
+
+    /// <summary>Zero for the primary, then one-based for configured fallback candidates.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FallbackOrdinal { get; init; }
+
     /// <summary>Why this attempt failed, in provider-neutral terms; present only when <see cref="Outcome"/> is <see cref="ModelCallOutcome.Failure"/> and the attempt was classified.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ModelFailureKind? FailureKind { get; init; }
@@ -411,6 +419,22 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>The provider's status code for this attempt, when a response was obtained.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ProviderStatusCode { get; init; }
+
+    /// <summary>The non-secret provider configuration generation used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ConfigurationGeneration { get; init; }
+
+    /// <summary>The hash of the non-secret provider configuration used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConfigurationSnapshotHash { get; init; }
+
+    /// <summary>The pinned primary provider of the execution this call belongs to, when pinned (ADR-0045); <see cref="Provider"/> stays the candidate actually invoked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PrimaryProvider { get; init; }
+
+    /// <summary>The pinned primary model of the execution this call belongs to, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PrimaryModel { get; init; }
 }
 
 /// <summary>
@@ -457,6 +481,9 @@ public enum TaskLifecycleStage
 /// </summary>
 public sealed record TaskLifecycleAuditEvent : AuditEvent
 {
+    /// <summary>True only when a legacy unpinned task captured its first durable provider pin during resume.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyConfigurationMigrated { get; init; }
     /// <summary>What happened.</summary>
     public required TaskLifecycleStage Stage { get; init; }
 
@@ -679,6 +706,13 @@ public enum SettingsChangeOutcome
 /// </summary>
 public sealed record SettingsChangedAuditEvent : AuditEvent
 {
+    /// <summary>The safe effective generation after a successful mutation, when recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ConfigurationGeneration { get; init; }
+
+    /// <summary>Whether the write published a new tuple, remained shadowed or inactive, or changed only a credential.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PublicationEffect { get; init; }
     /// <summary>The setting that changed, for example <c>"provider.apiKey"</c> or <c>"provider.active"</c>.</summary>
     public required string SettingName { get; init; }
 

@@ -66,10 +66,30 @@ internal static class AgentsEndpoints
         // ADR-0040 §4.3: 202 only once the task has been atomically moved to Running under a new execution attempt AND the
         // launcher has admitted that attempt. A reader after the 202 never sees the pre-resume terminal state.
         group.MapPost("/{id:guid}/resume", async (Guid id, AgentRunner runner, AgentTaskLauncher launcher,
+            ITaskStore store, ProviderConfigurationCoordinator coordinator,
             ClaimsPrincipal principal, HttpContext http) =>
         {
             var actor = ApiActor(principal);
-            var acquisition = await runner.TryAcquireResumeAsync(id, actor, http.RequestAborted);
+            var existing = await store.LoadAsync(id, http.RequestAborted);
+            if (existing?.Origin == TaskOrigin.Delegated)
+            {
+                // A role task is owned by its DelegationRun. Keep the runtime's audited, stable refusal,
+                // but do not let ordinary resume inspect or create any provider configuration for it.
+                var delegated = await runner.TryAcquireResumeAsync(id, actor, http.RequestAborted);
+                var refusal = delegated.Refusal!;
+                return Results.Conflict(new TaskErrorResponse(refusal.Code, refusal.Message));
+            }
+            if (existing?.PinnedProviderConfiguration is { } persistedPin)
+            {
+                try { coordinator.ValidatePin(persistedPin); }
+                catch (Exception ex) when (ex is InvalidOperationException or ProviderNotSupportedException or ArgumentException)
+                {
+                    return Results.Conflict(new TaskErrorResponse("pinned_provider_unavailable", ex.Message));
+                }
+            }
+            var legacyPin = existing is not null && existing.PinnedProviderConfiguration is null
+                ? coordinator.Current.Pin : null;
+            var acquisition = await runner.TryAcquireResumeAsync(id, actor, legacyPin, http.RequestAborted);
             switch (acquisition.Outcome)
             {
                 case TaskResumeOutcome.NotFound:
@@ -95,7 +115,8 @@ internal static class AgentsEndpoints
             var blocked = runner.EvaluateResume(acquired).Refusal;
             return Results.Accepted($"/api/agents/tasks/{id}", new TaskResumeAcceptedResponse(
                 id, acquired.Status, acquired.ExecutionAttempt, Executing: true, Resumable: false,
-                blocked is null ? null : new TaskErrorResponse(blocked.Code, blocked.Message)));
+                blocked is null ? null : new TaskErrorResponse(blocked.Code, blocked.Message),
+                acquisition.LegacyConfigurationMigrated));
         }).RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
         group.MapDelete("/{id:guid}", (Guid id, AgentTaskLauncher launcher) =>

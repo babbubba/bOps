@@ -15,6 +15,7 @@ namespace bOps.Api.Tests;
 /// configured at all (<see cref="VaultSecretProvider"/> absent), the original environment-only
 /// resolution is completely unaffected.
 /// </summary>
+[Collection("ProviderEnvironment")]
 public sealed class ProviderResolutionTests : IDisposable
 {
     private const string EnvironmentOverrideVariable = "ModelProvider__Provider";
@@ -144,5 +145,30 @@ public sealed class ProviderResolutionTests : IDisposable
         Assert.Equal("Anthropic", options.Provider);
         Assert.Equal("https://api.anthropic.com", options.BaseUrl);
         Assert.Equal("claude-sonnet-4-5", options.Model);
+    }
+
+    [Fact]
+    public void ResolveEffectiveModelOptions_DoesNotCrossRouteTheConfiguredPrimarySecret()
+    {
+        var variableName = $"BOPS_TEST_MODEL_KEY_{Guid.NewGuid():N}";
+        Environment.SetEnvironmentVariable(variableName, "OPENROUTER_KEY");
+        using var vaultStore = new VaultStore(
+            Path.Combine(_dir.FullName, "vault.dat"), VaultCipher.DeriveKey("correct-horse-battery-staple-test-key"), TimeProvider.System);
+        vaultStore.Set("Anthropic", "ANTHROPIC_KEY", expectedVersion: 0);
+        var settings = CreateSettingsStore();
+        settings.SetProviderProfile("Anthropic", "https://api.anthropic.com", "sonnet-x", true, null);
+        settings.SetActiveProviderId("Anthropic");
+        try
+        {
+            var options = ProviderResolution.ResolveEffectiveModelOptions(BuildConfiguration(variableName), settings,
+                _environmentSecretProvider, new VaultSecretProvider(vaultStore));
+            Assert.Equal("Anthropic", options.Provider);
+            Assert.Equal("ANTHROPIC_KEY", options.ResolvedApiKey);
+            Assert.Null(options.ApiKeySecret);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, null);
+        }
     }
 }

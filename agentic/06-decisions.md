@@ -5,7 +5,7 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries have status **Accepted**; D-042 was accepted 2026-10-06 (HARDEN-13 B3 implemented; executable final-review gates passed; PR #82 integration pending). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -553,7 +553,7 @@ no runtime behavior yet — a documented, deliberate gap.
 metadata from the vault, profile from `settings.json`) joined only by provider id — a caller must
 read both to fully describe one provider. Provider selection and profile/key changes take effect on
 the next restart, matching the existing composition-root-only resolution of `ModelProvider` — no
-live-reconfiguration of `IChatModelRegistry` was introduced. See ADR-0029 for the full design,
+live-reconfiguration of `IChatModelRegistry` was introduced *(restart-to-apply superseded by ADR-0045/D-042)*. See ADR-0029 for the full design,
 including the precedence rule (`ProviderResolution`), the masking formula, and the documented
 Windows ACL-hardening gap.
 
@@ -973,3 +973,45 @@ hand-written profiles. Additive public contract (four `bOps.Abstractions` types 
 `viewer` endpoints, typed `400` codes, three CLI commands, exit code `8`). Capability input validation is a deliberate
 tightening outside delegation. Sensitive Capability input stays persisted as plain JSON in the delegation store; no
 encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 starts next.
+
+### D-042 — ACCEPTED (architecture; B1, B2a, B2b merged; B3 implemented; executable final-review gates passed; PR #82 integration pending) — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
+
+**Decision (operator decisions incorporated; accepted 2026-10-06 after independent architecture review and the targeted B-1 delta review PASS).** Settings-driven provider, endpoint, model and native-tool capability changes publish one immutable
+effective configuration for subsequently admitted executions without an API restart. One ordinary task, or one whole
+delegated D/D/R/V run, durably pins that non-secret configuration across model calls, approval waits, execution attempts
+and restart/resume. Credentials are excluded from the pin and resolved from the existing secret authority for the
+pinned candidate on every attempt; rotation/removal therefore affects the next attempt even in an active execution.
+Plaintext remains only in the existing vault/secret path and attempt memory. An exact non-secret snapshot that cannot
+be reconstructed, or a missing current credential, fails/refuses resume rather than substituting current Settings.
+Explicit environment configuration retains precedence and Settings reports persisted-but-shadowed values. The
+operator approved in principle an explicit, ordered host-level **fallback chain** that advances only after
+same-provider retries exhaust on `Transient`, `RateLimited`, `Timeout` or `Unreachable`, is sticky and monotonic for
+that execution, never resets global budgets/deadlines, and never falls back on any other current or future failure kind
+by default. Runtime remains provider-neutral and receives one execution-scoped `IChatModel`.
+
+Review B-1 correction: the block-level `ModelProvider:ApiKeySecret` is bound only to the merged
+`ModelProvider:Provider` value (before Settings selection) and is never used for any other provider (Settings-selected,
+fallback or resumed); every other provider uses only its own provider-keyed vault entry, narrowing ADR-0029's "active
+provider" wording. `AgentRunner` remains the sole owner of same-provider retries; `FallbackChatModel` owns only candidate
+advancement via a narrow provider-neutral handshake. `AttemptsExhausted`/`RetryAfterExceedsLimit` on an allowed kind may
+advance when a candidate and global budget remain; `BudgetExhausted` is terminal. A fallback transition is an additive
+append-only audit decision, with independent `ProviderAttempt` and `FallbackOrdinal`. A fallback candidate with no usable
+credential fails as `Authentication` without skipping; admission requires the primary credential only.
+
+The operator selected `OpenRouter` / `openrouter/free` as the shipped zero-cost bootstrap default. It requires an
+OpenRouter API key and is intentionally non-deterministic: actual models can vary per call and remain visible in
+model-call/audit information. Getting Started and Settings must disclose that behavior and recommend an explicitly
+selected specific model for important troubleshooting, reproducible analysis and especially remediation. Router mode
+is distinct from the fallback chain.
+
+**Alternatives proposed for rejection.** Reload or resolve non-secret provider configuration mid-task; transient
+lifetime without an atomic snapshot; pinning per call, role or execution attempt; pinning or preserving historical
+credentials; persisting plaintext or an unkeyed secret fingerprint; resuming under current Settings; automatic provider
+discovery, scoring or cost/health routing; fallback on permanent or unknown failures; per-call or process-global
+fallback stickiness.
+
+**Consequences.** ADR-0045 supersedes only ADR-0029's restart-to-apply consequence. Settings must expose
+persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
+gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
+publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
+explicit list is empty. HARDEN-13 Block B implementation was authorized on acceptance; B1, B2a and B2b are merged and B3 is implemented on PR #82, with executable final-review gates passed and the documentation delta / integration pending.
