@@ -4,16 +4,18 @@ Status: Accepted
 Date: 2026-09-17
 
 > **HARDEN-13 forward reference (ADR-0045 Accepted, 2026-10-06; implemented by HARDEN-13).**
-> [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) proposes to
-> supersede only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
+> [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) supersedes
+> only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
 > approved-in-principle host-level fallback chain. The durable execution pin contains non-secret
 > provider/model/request configuration only; every model attempt resolves the current credential for
 > its pinned provider through this ADR's existing secret authority. HARDEN-13 neither preserves nor
 > persists historical credentials. ADR-0045 also narrows this ADR's "Configuration precedence"
 > wording: `ModelProvider:ApiKeySecret` is bound only to the merged `ModelProvider:Provider` value
 > (before any Settings selection) and is never applied to another provider, whether Settings-selected,
-> fallback or resumed; other providers use only their own provider-keyed vault entry. Until ADR-0045 is implemented, the current
-> restart-required behavior documented below remains authoritative.
+> fallback or resumed; other providers use only their own provider-keyed vault entry. HARDEN-13 has implemented that decision, so live
+> Settings semantics are now the implemented behaviour; the restart-required behavior documented below
+> is historical. This ADR's vault, masking, master-key, provider-profile and environment-precedence
+> decisions otherwise remain in force.
 
 ## Context
 
