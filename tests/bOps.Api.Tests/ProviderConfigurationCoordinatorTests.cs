@@ -143,6 +143,60 @@ public sealed class ProviderConfigurationCoordinatorTests
                 rig.Secrets, rig.Vault).ValidatePin(storedPin));
     }
 
+    private static string LegacyHash(PinnedProviderConfiguration p) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            string.Join('\u001f', p.SchemaVersion, p.ProviderId, p.BaseUrl, p.Model, p.SupportsNativeToolCalling,
+                p.RequestTimeout?.Ticks, p.ProviderSource, p.BaseUrlSource, p.ModelSource,
+                p.SupportsNativeToolCallingSource, p.RequestTimeoutSource))));
+
+    [Fact]
+    public void LegacyPin_WithRealLegacyHash_ValidatesAndMatchesEmptyChainHash()
+    {
+        using var rig = new Rig();
+        var template = new PinnedProviderConfiguration(1, 3, "OpenRouter", "https://openrouter.test", "model-x",
+            false, null, "settings", "settings", "settings", "settings", "default", "");
+        var stored = JsonSerializer.Deserialize<PinnedProviderConfiguration>(
+            $$"""
+            {"SchemaVersion":1,"Generation":3,"ProviderId":"OpenRouter","BaseUrl":"https://openrouter.test","Model":"model-x",
+            "SupportsNativeToolCalling":false,"RequestTimeout":null,"ProviderSource":"settings","BaseUrlSource":"settings",
+            "ModelSource":"settings","SupportsNativeToolCallingSource":"settings","RequestTimeoutSource":"default",
+            "SnapshotHash":"{{LegacyHash(template)}}"}
+            """)!;
+        Assert.Empty(stored.Fallbacks);
+        Assert.Equal(0, stored.FallbackOrdinal);
+        rig.Coordinator.ValidatePin(stored);
+
+        var current = rig.Coordinator.Current.Pin;
+        Assert.Empty(current.Fallbacks);
+        Assert.Equal(LegacyHash(current), current.SnapshotHash);
+    }
+
+    [Fact]
+    public void FallbackChain_ChangesSnapshotHash_ButOrdinalDoesNot()
+    {
+        using var rig = new Rig();
+        var baseline = rig.Coordinator.Current.Pin;
+        rig.Coordinator.SetProfile("Anthropic", new("https://api.anthropic.test", "sonnet-x", true, null));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ModelProvider:Provider"] = "OpenRouter",
+            ["ModelProvider:BaseUrl"] = "https://openrouter.test",
+            ["ModelProvider:Model"] = "openrouter/free",
+            ["ModelProvider:SupportsNativeToolCalling"] = "true",
+            ["ModelProvider:ApiKeySecret:Provider"] = "fake",
+            ["ModelProvider:ApiKeySecret:Name"] = "OPENROUTER",
+            ["ModelProvider:Fallbacks:0:Provider"] = "Anthropic",
+            ["ModelProvider:Fallbacks:0:Model"] = "sonnet-x",
+        }).Build();
+        var chained = new ProviderConfigurationCoordinator(configuration, rig.Settings, rig.Registry, rig.Secrets, rig.Vault)
+            .Current.Pin;
+        Assert.Single(chained.Fallbacks);
+        Assert.NotEqual(baseline.SnapshotHash, chained.SnapshotHash);
+
+        var advanced = chained with { FallbackOrdinal = 1 };
+        Assert.Equal(chained.SnapshotHash, advanced.SnapshotHash);
+    }
+
     private sealed class Rig : IDisposable
     {
         private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("bops-harden13-");

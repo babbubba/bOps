@@ -95,6 +95,25 @@ public sealed class SqliteDelegationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task FallbackChainAndStickyOrdinal_SurviveStoreReopen_OnADelegationRun()
+    {
+        var pin = new PinnedProviderConfiguration(1, 3, "OpenRouter", "https://openrouter.test", "model-x",
+            false, null, "settings", "settings", "settings", "settings", "default", "safe-hash")
+        {
+            Fallbacks = [new PinnedProviderCandidate("Anthropic", "https://api.anthropic.test", "sonnet-x", true, null)],
+            FallbackOrdinal = 1,
+        };
+        var run = Run() with { PinnedProviderConfiguration = pin };
+        await new SqliteDelegationStore(_filePath).StartAsync(run);
+        await new SqliteDelegationStore(_filePath).SaveAsync(run with { PinnedProviderConfiguration = pin });
+
+        var loaded = (await new SqliteDelegationStore(_filePath).LoadAsync(run.Id))!.PinnedProviderConfiguration!;
+
+        Assert.Equal(1, loaded.FallbackOrdinal);
+        Assert.Equal(pin.Fallbacks.Single(), Assert.Single(loaded.Fallbacks));
+    }
+
+    [Fact]
     public async Task StartAsync_ThenLoadAsync_KeepsTheRequestTheRunWasStartedWith_SoItCanBeResumed()
     {
         var store = new SqliteDelegationStore(_filePath);
