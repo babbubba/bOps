@@ -55,7 +55,8 @@ public sealed class AgentRunner(
     AgentRunnerOptions options,
     ISkillRegistry? skillRegistry = null,
     IEntitlementService? entitlementService = null,
-    PinnedProviderConfiguration? pinnedProviderConfiguration = null)
+    PinnedProviderConfiguration? pinnedProviderConfiguration = null,
+    Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -217,7 +218,7 @@ public sealed class AgentRunner(
             DelegationRole = delegation?.Correlation.Agent?.Role,
             Actor = actor,
             Delegation = delegation,
-            PinnedProviderConfiguration = pinnedProviderConfiguration,
+            PinnedProviderConfiguration = CurrentPinnedProviderConfiguration(),
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [],
             Plans = [],
@@ -2357,8 +2358,12 @@ public sealed class AgentRunner(
         List<ModelCallRecord> calls, CancellationToken ct, Func<ModelResponse, string?>? malformedOutput = null)
     {
         var callStartedAt = timeProvider.GetTimestamp();
-        for (var attempt = 1; ; attempt++)
+        var modelAttempt = 0;
+        var providerAttempt = 0;
+        while (true)
         {
+            modelAttempt++;
+            providerAttempt++;
             if (activeAttemptBudget.Value?.IsExpired == true)
             {
                 throw new AttemptDurationBudgetExceededException();
@@ -2368,6 +2373,9 @@ public sealed class AgentRunner(
             var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var startedAtUtc = timeProvider.GetUtcNow();
             var startedAt = timeProvider.GetTimestamp();
+            var descriptor = model.Descriptor;
+            var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
+                ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
             AttemptFailure? failure = null;
             // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
             // a successful call is not a model failure and is never classified, recorded or retried as one.
@@ -2415,24 +2423,30 @@ public sealed class AgentRunner(
                 if (malformedOutput?.Invoke(response) is { } problem)
                 {
                     var reason = ModelFailureText.Sanitize(problem);
-                    calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Failure, response.Usage, response.Details, reason) with
+                    calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Failure, response.Usage, response.Details, reason) with
                     {
-                        ModelAttempt = attempt,
+                        ModelAttempt = modelAttempt,
+                        ProviderAttempt = providerAttempt,
+                        FallbackOrdinal = fallbackOrdinal,
                         FailureKind = ModelFailureKind.MalformedResponse,
                         RetryDecision = ModelRetryDecision.NotRetryable,
                     });
                     await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, reason, response.Usage,
-                        response.Details?.ActualModel, elapsedMs, attempt, ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable,
+                        descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
+                        ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable,
                         null, null, ct);
                     return response;
                 }
 
-                calls.Add(BuildCallRecord(startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null) with
+                calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null) with
                 {
-                    ModelAttempt = attempt,
+                    ModelAttempt = modelAttempt,
+                    ProviderAttempt = providerAttempt,
+                    FallbackOrdinal = fallbackOrdinal,
                 });
                 await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Success, null, response.Usage,
-                    response.Details?.ActualModel, elapsedMs, attempt, null, null, null, null, ct);
+                    descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
+                    null, null, null, null, ct);
                 return response;
             }
 
@@ -2444,11 +2458,26 @@ public sealed class AgentRunner(
             var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
             var (decision, delay) = attemptBudgetInterrupted
                 ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
-                : DecideModelRetry(failure, attempt, callStartedAt);
-            long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
-            calls.Add(BuildCallRecord(startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
+                : DecideModelRetry(failure, providerAttempt, callStartedAt);
+            if ((decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit) &&
+                ModelFailureText.IsRetryable(failure.Kind) && model is IFallbackChatModelControl fallback && fallback.HasNextCandidate)
             {
-                ModelAttempt = attempt,
+                var remainingForFallback = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+                if (remainingForFallback < MinimumModelAttemptWindow || activeAttemptBudget.Value?.IsExpired == true)
+                {
+                    decision = ModelRetryDecision.BudgetExhausted;
+                }
+                else if (fallback.TryAdvance())
+                {
+                    decision = ModelRetryDecision.Fallback;
+                }
+            }
+            long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
+            calls.Add(BuildCallRecord(descriptor, startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
+            {
+                ModelAttempt = modelAttempt,
+                ProviderAttempt = providerAttempt,
+                FallbackOrdinal = fallbackOrdinal,
                 FailureKind = failure.Kind,
                 RetryDecision = decision,
                 RetryDelayMs = delayMs,
@@ -2458,23 +2487,32 @@ public sealed class AgentRunner(
             // call (ADR-0013, ADR-0039 §5). StepIndex is -1 for the initial plan call, and the triggering step's index for a
             // replan — see ADR-0014.
             await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, failure.Message, null,
-                failure.Details?.ActualModel, failedMs, attempt, failure.Kind, decision, delayMs, failure.StatusCode, ct);
+                descriptor, failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt, fallbackOrdinal,
+                failure.Kind, decision, delayMs, failure.StatusCode, ct);
 
             if (attemptBudgetInterrupted)
             {
                 throw new AttemptDurationBudgetExceededException();
             }
 
+            if (decision == ModelRetryDecision.Fallback)
+            {
+                if (pinnedProviderConfiguration is not null && persistPinnedProviderConfiguration is not null)
+                    await persistPinnedProviderConfiguration(taskId, pinnedProviderConfiguration, CancellationToken.None);
+                providerAttempt = 0;
+                continue;
+            }
+
             if (decision != ModelRetryDecision.Retry)
             {
-                throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, attempt)) { FailureKind = failure.Kind };
+                throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, providerAttempt)) { FailureKind = failure.Kind };
             }
 
             if (logger.IsEnabled(LogLevel.Warning))
             {
                 logger.LogWarning(
                     "Task {TaskId}: model call attempt {Attempt} failed ({Kind}); retrying in {DelayMs} ms",
-                    taskId, attempt, failure.Kind, delayMs);
+                    taskId, providerAttempt, failure.Kind, delayMs);
             }
 
             try
@@ -2761,7 +2799,8 @@ public sealed class AgentRunner(
 
     private Task WriteModelCallAuditAsync(
         Guid taskId, int stepIndex, ActorIdentity actor, DelegatedExecutionScope? delegation, ModelCallOutcome outcome, string? error,
-        ModelUsage? usage, string? actualModel, long durationMs, int attempt, ModelFailureKind? kind, ModelRetryDecision? decision,
+        ModelUsage? usage, ChatModelDescriptor descriptor, string? actualModel, long durationMs, int modelAttempt,
+        int providerAttempt, int fallbackOrdinal, ModelFailureKind? kind, ModelRetryDecision? decision,
         long? retryDelayMs, int? statusCode, CancellationToken ct) =>
         WriteAuditAsync(new ModelCallAuditEvent
         {
@@ -2770,14 +2809,16 @@ public sealed class AgentRunner(
             TaskId = taskId,
             StepIndex = stepIndex,
             Actor = actor,
-            Provider = model.Descriptor.ProviderId,
-            Model = model.Descriptor.ModelId,
+            Provider = descriptor.ProviderId,
+            Model = descriptor.ModelId,
             Outcome = outcome,
             ErrorMessage = error,
             Usage = usage,
             ActualModel = actualModel,
             DurationMs = durationMs,
-            ModelAttempt = attempt,
+            ModelAttempt = modelAttempt,
+            ProviderAttempt = providerAttempt,
+            FallbackOrdinal = fallbackOrdinal,
             FailureKind = kind,
             RetryDecision = decision,
             RetryDelayMs = retryDelayMs,
@@ -2791,17 +2832,25 @@ public sealed class AgentRunner(
         ModelFailureKind Kind, string Message, int? StatusCode, TimeSpan? RetryAfter, ModelCallDetails? Details);
 
     private ModelCallRecord BuildCallRecord(
-        DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome, ModelUsage? usage, ModelCallDetails? details, string? error)
+        ChatModelDescriptor descriptor, DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome,
+        ModelUsage? usage, ModelCallDetails? details, string? error)
     {
         var request = CapPayload(details?.RequestJson, out var requestCut);
         var reply = CapPayload(details?.ResponseJson, out var replyCut);
         return new ModelCallRecord(
-            model.Descriptor.ProviderId, model.Descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
+            descriptor.ProviderId, descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
             details?.FinishReason, error, request, reply, requestCut || replyCut)
         {
             ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
             ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
         };
+    }
+
+    private PinnedProviderConfiguration? CurrentPinnedProviderConfiguration()
+    {
+        if (pinnedProviderConfiguration is not null && model is IFallbackChatModelControl fallback)
+            pinnedProviderConfiguration.FallbackOrdinal = fallback.FallbackOrdinal;
+        return pinnedProviderConfiguration;
     }
 
     /// <summary>Bounds a recorded body to <see cref="AgentRunnerOptions.MaxModelPayloadCharacters"/> (0 keeps none), saying so when it cuts.</summary>

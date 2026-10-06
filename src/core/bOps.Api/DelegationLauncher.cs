@@ -69,9 +69,9 @@ internal sealed class DelegationLauncher(
         DelegationRunner executionRunner;
         try
         {
-            pin = coordinator?.Current.Pin;
+            pin = coordinator is null ? null : coordinator.Current.Pin with { FallbackOrdinal = 0 };
             if (pin is not null) coordinator!.EnsureAdmission(pin);
-            executionRunner = pin is null ? runner : executionRunners?.CreateDelegation(pin)
+            executionRunner = pin is null ? runner : executionRunners?.CreateDelegation(pin, id)
                 ?? throw new InvalidOperationException("No execution runner factory is registered.");
         }
         catch
@@ -136,7 +136,7 @@ internal sealed class DelegationLauncher(
         }
 
         var resumeRunner = pin is { } pinned
-            ? executionRunners?.CreateDelegation(pinned) ?? throw new InvalidOperationException("No execution runner factory is registered.")
+            ? executionRunners?.CreateDelegation(pinned, delegationId) ?? throw new InvalidOperationException("No execution runner factory is registered.")
             : runner;
 
         if (!await _capacity.WaitAsync(0, ct))

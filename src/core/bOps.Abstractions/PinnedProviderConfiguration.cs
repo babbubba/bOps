@@ -18,5 +18,22 @@ public sealed record PinnedProviderConfiguration(
     string ModelSource,
     string SupportsNativeToolCallingSource,
     string RequestTimeoutSource,
-    string SnapshotHash);
+    string SnapshotHash)
+{
+    /// <summary>The explicit ordered fallback candidates, excluding the primary.</summary>
+    public IReadOnlyList<PinnedProviderCandidate> Fallbacks { get; init; } = [];
+
+    /// <summary>The sticky candidate ordinal for this execution. Excluded from <see cref="SnapshotHash"/>.</summary>
+    public int FallbackOrdinal { get; set; }
+}
+
+/// <summary>One non-secret fallback candidate captured in an execution pin.</summary>
+#pragma warning disable CA1054, CA1056 // Configuration-bound URL is serialized as a string.
+public sealed record PinnedProviderCandidate(
+    string ProviderId,
+    string BaseUrl,
+    string Model,
+    bool SupportsNativeToolCalling,
+    TimeSpan? RequestTimeout);
+#pragma warning restore CA1054, CA1056
 #pragma warning restore CA1054, CA1056

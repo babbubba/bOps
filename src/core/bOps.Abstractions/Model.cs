@@ -255,6 +255,22 @@ public interface IChatModel
 }
 
 /// <summary>
+/// Provider-neutral control surface for an execution-scoped ordered fallback model. The runtime owns retry policy;
+/// an implementation owns only monotonic candidate selection.
+/// </summary>
+public interface IFallbackChatModelControl : IChatModel
+{
+    /// <summary>The current candidate ordinal: zero is the primary.</summary>
+    int FallbackOrdinal { get; }
+
+    /// <summary>Whether one later configured candidate remains.</summary>
+    bool HasNextCandidate { get; }
+
+    /// <summary>Advances exactly once to the next configured candidate, or returns false when none remains.</summary>
+    bool TryAdvance();
+}
+
+/// <summary>
 /// Thrown by an <see cref="IChatModel"/> adapter when a provider's response cannot be turned
 /// into a valid <see cref="ModelResponse"/> — malformed JSON, a schema mismatch, or (in the
 /// JSON-schema-fallback strategy) a model that will not comply with the required output shape
@@ -357,4 +373,7 @@ public enum ModelRetryDecision
 
     /// <summary>The provider asked to wait longer than the configured maximum retry delay.</summary>
     RetryAfterExceedsLimit,
+
+    /// <summary>The next attempt uses the next configured fallback candidate.</summary>
+    Fallback,
 }

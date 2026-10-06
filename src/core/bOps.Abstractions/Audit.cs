@@ -396,6 +396,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ModelAttempt { get; init; }
 
+    /// <summary>The attempt number within the current provider candidate.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProviderAttempt { get; init; }
+
+    /// <summary>Zero for the primary, then one-based for configured fallback candidates.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FallbackOrdinal { get; init; }
+
     /// <summary>Why this attempt failed, in provider-neutral terms; present only when <see cref="Outcome"/> is <see cref="ModelCallOutcome.Failure"/> and the attempt was classified.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ModelFailureKind? FailureKind { get; init; }

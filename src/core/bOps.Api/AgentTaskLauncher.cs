@@ -42,7 +42,7 @@ internal sealed class AgentTaskLauncher(
         AgentRunner executionRunner;
         try
         {
-            pin = coordinator?.Current.Pin;
+            pin = coordinator is null ? null : coordinator.Current.Pin with { FallbackOrdinal = 0 };
             if (pin is not null) coordinator!.EnsureAdmission(pin);
             executionRunner = pin is null ? runner : executionRunners?.CreateAgent(pin)
                 ?? throw new InvalidOperationException("No execution runner factory is registered.");
