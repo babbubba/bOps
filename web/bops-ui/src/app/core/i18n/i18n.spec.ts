@@ -6,6 +6,7 @@ import { en } from './en';
 import { I18n } from './i18n';
 import { LANGUAGES } from './languages';
 import type { MessageKey } from './messages';
+import { pseudoLocalize } from './pseudo-locale';
 
 const placeholders = (text: string): string[] => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 
@@ -69,6 +70,45 @@ describe('the catalogues', () => {
       'enum.trust.Community',
     ];
     expect(untranslated.filter((key) => !sameInBoth.includes(key))).toEqual([]);
+  });
+});
+
+describe('the test-only pseudo-locale', () => {
+  it('expands visible copy deterministically while preserving placeholders and markup', () => {
+    const source = 'Approve <strong>{count}</strong> permanent deletion requests';
+    const pseudo = pseudoLocalize(source);
+    const visibleSource = source.replace(/(\{\w+\}|<[^>]*>)/g, '');
+    const visiblePseudo = pseudo.replace(/(\{\w+\}|<[^>]*>|[⟦⟧])/g, '');
+
+    expect(pseudo).toBe(pseudoLocalize(source));
+    expect(pseudo).toContain('<strong>{count}</strong>');
+    expect(visiblePseudo.length).toBeGreaterThan(visibleSource.length * 1.35);
+    expect(visiblePseudo.length).toBeLessThan(visibleSource.length * 1.65);
+    expect(pseudo.startsWith('⟦')).toBeTrue();
+    expect(pseudo.endsWith('⟧')).toBeTrue();
+  });
+
+  it('is generated from real English keys and is not a production language option', () => {
+    const i18n = service();
+    i18n.setTestLanguage('pseudo');
+
+    expect(i18n.available.map((language) => language.code)).toEqual(['en', 'it']);
+    expect(i18n.t('app.signOut')).toContain('Sïgñ');
+    expect(i18n.t('dashboard.task.meta', { count: 2, time: '10:00' })).toContain('2');
+    expect(i18n.t('dashboard.task.meta', { count: 2, time: '10:00' })).toContain('10:00');
+    expect(document.documentElement.lang).toBe('en-x-pseudo');
+  });
+
+  it('can be selected explicitly by the E2E query parameter', () => {
+    const original = `${location.pathname}${location.search}${location.hash}`;
+    try {
+      history.replaceState(null, '', `${location.pathname}?bops-test-locale=pseudo`);
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(I18n).language()).toBe('pseudo');
+    } finally {
+      history.replaceState(null, '', original);
+      TestBed.resetTestingModule();
+    }
   });
 });
 
@@ -274,6 +314,14 @@ describe('I18n', () => {
       expect(i18n.label('delegationRole', 'Remediation')).toBe('Correzione');
       expect(i18n.label('taskStatus', 'Failed')).toBe('Fallito');
       expect(i18n.label('blastRadius', 'Single')).toBe('Singolo');
+    });
+
+    it('uses human-readable English task statuses without changing enum values', () => {
+      const i18n = service();
+      expect(i18n.label('taskStatus', 'MaxStepsReached')).toBe('Max steps reached');
+      expect(i18n.label('taskStatus', 'BudgetExceeded')).toBe('Budget exceeded');
+      expect(i18n.label('taskStatus', 'PolicyBlocked')).toBe('Blocked by policy');
+      expect(i18n.label('taskStatus', 'ReplanLimitReached')).toBe('Replanning limit reached');
     });
 
     it('show a value the catalogues do not know as the server sent it, and nothing for no value', () => {

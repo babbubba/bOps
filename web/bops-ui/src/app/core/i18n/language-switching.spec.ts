@@ -258,6 +258,7 @@ describe('switching language', () => {
       const [english, italian] = languageButtons(fixture);
 
       expect(languageButtons(fixture).length).toBe(2);
+      expect(languageButtons(fixture).map((button) => button.textContent?.trim())).not.toContain('pseudo');
       expect(english.textContent?.trim()).toBe('en');
       expect(english.getAttribute('aria-pressed')).toBe('true');
       expect(italian.getAttribute('aria-pressed')).toBe('false');

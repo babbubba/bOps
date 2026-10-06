@@ -5,8 +5,11 @@ import { Injectable, isDevMode, signal } from '@angular/core';
 import { en } from './en';
 import { AVAILABLE_LANGUAGES, DEFAULT_LANGUAGE, Language, LANGUAGES, isLanguage } from './languages';
 import type { MessageKey, MessageParams, TranslationKey } from './messages';
+import { PSEUDO_LOCALE, PseudoLocale, pseudoLocalize } from './pseudo-locale';
 
 const STORAGE_KEY = 'bops-ui-language';
+const TEST_LOCALE_QUERY = 'bops-test-locale';
+type ActiveLanguage = Language | PseudoLocale;
 
 /** The enum groups whose labels live in the catalogues (`enum.<group>.<name>`). */
 export type EnumGroup =
@@ -34,7 +37,7 @@ export type EnumGroup =
 @Injectable({ providedIn: 'root' })
 export class I18n {
   readonly available = AVAILABLE_LANGUAGES;
-  readonly language = signal<Language>(this.readInitial());
+  readonly language = signal<ActiveLanguage>(this.readInitial());
 
   private readonly reported = new Set<string>();
 
@@ -54,6 +57,16 @@ export class I18n {
     } catch {
       // Best-effort only: the choice then lasts for this session.
     }
+  }
+
+  /** Enables generated long copy for unit/E2E layout tests without adding a third user-selectable language. */
+  setTestLanguage(language: PseudoLocale): void {
+    if (language !== PSEUDO_LOCALE) {
+      return;
+    }
+
+    this.language.set(language);
+    this.apply(language);
   }
 
   /**
@@ -89,16 +102,16 @@ export class I18n {
 
   /** A time of day in the active language, not the browser's. */
   time(iso: string): string {
-    return new Date(iso).toLocaleTimeString(this.language());
+    return new Date(iso).toLocaleTimeString(this.formattingLanguage());
   }
 
   /** A date and time in the active language. */
   dateTime(iso: string | null): string {
-    return iso ? new Date(iso).toLocaleString(this.language()) : '';
+    return iso ? new Date(iso).toLocaleString(this.formattingLanguage()) : '';
   }
 
   number(value: number, options?: Intl.NumberFormatOptions): string {
-    return new Intl.NumberFormat(this.language(), options).format(value);
+    return new Intl.NumberFormat(this.formattingLanguage(), options).format(value);
   }
 
   /** A size in the binary units the API's manifests are counted in (the unit symbols are not words and are not translated). */
@@ -144,7 +157,7 @@ export class I18n {
   private resolve(key: TranslationKey, params?: MessageParams): string {
     const count = params?.['count'];
     if (typeof count === 'number' && this.has(`${key}.other`)) {
-      const category = new Intl.PluralRules(this.language()).select(count);
+      const category = new Intl.PluralRules(this.formattingLanguage()).select(count);
       return this.lookup(`${key}.${category}`) ?? this.lookup(`${key}.other`) ?? '';
     }
 
@@ -156,7 +169,13 @@ export class I18n {
   }
 
   private lookup(key: string): string | undefined {
-    const active = LANGUAGES[this.language()].messages as Record<string, string>;
+    const language = this.language();
+    if (language === PSEUDO_LOCALE) {
+      const source = (en as Record<string, string>)[key];
+      return source === undefined ? undefined : pseudoLocalize(source);
+    }
+
+    const active = LANGUAGES[language].messages as Record<string, string>;
     const own = Object.prototype.hasOwnProperty.call(active, key) ? active[key] : undefined;
     if (own !== undefined) {
       return own;
@@ -171,7 +190,11 @@ export class I18n {
     return fallback;
   }
 
-  private readInitial(): Language {
+  private readInitial(): ActiveLanguage {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).get(TEST_LOCALE_QUERY) === PSEUDO_LOCALE) {
+      return PSEUDO_LOCALE;
+    }
+
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (isLanguage(stored)) {
@@ -185,7 +208,12 @@ export class I18n {
     return preferred.startsWith('it') ? 'it' : DEFAULT_LANGUAGE;
   }
 
-  private apply(language: Language): void {
-    document.documentElement.lang = language;
+  private formattingLanguage(): Language {
+    const language = this.language();
+    return language === PSEUDO_LOCALE ? DEFAULT_LANGUAGE : language;
+  }
+
+  private apply(language: ActiveLanguage): void {
+    document.documentElement.lang = language === PSEUDO_LOCALE ? 'en-x-pseudo' : language;
   }
 }

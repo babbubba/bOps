@@ -1,6 +1,6 @@
 @if (auth.authenticated()) {
 <div class="flex min-h-screen flex-col bg-bg text-text md:flex-row">
-  <aside class="flex shrink-0 flex-col border-b border-default bg-surface md:w-56 md:border-b-0 md:border-r">
+  <aside class="flex max-w-full shrink-0 flex-col border-b border-default bg-surface md:w-56 md:border-b-0 md:border-r">
     <div class="flex items-center gap-2 px-4 py-4">
       <div class="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-[#0b0f19]">
         <img src="logo.png" alt="" class="h-[90px] w-[90px] -translate-y-[14px] object-cover" />
@@ -8,18 +8,18 @@
       <span class="text-base font-semibold">bOps</span>
     </div>
 
-    <nav class="flex flex-1 flex-row gap-1 px-2 pb-2 md:flex-col md:pb-4">
+    <nav class="flex max-w-full flex-1 flex-row gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:overflow-x-visible md:pb-4">
       <a
         routerLink="/dashboard"
         routerLinkActive="bg-accent/10 text-accent"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+        class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {{ 'app.nav.dashboard' | t }}
       </a>
       <a
         routerLink="/approvals"
         routerLinkActive="bg-accent/10 text-accent"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+        class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {{ 'app.nav.approvals' | t }}
         @if (approvals.pending().length > 0) {
@@ -31,7 +31,7 @@
       <a
         routerLink="/delegations"
         routerLinkActive="bg-accent/10 text-accent"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+        class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {{ 'app.nav.delegations' | t }}
         @if (delegations.awaitingApproval().length > 0) {
@@ -43,21 +43,21 @@
       <a
         routerLink="/plugins"
         routerLinkActive="bg-accent/10 text-accent"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+        class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {{ 'app.nav.plugins' | t }}
       </a>
       <a
         routerLink="/settings"
         routerLinkActive="bg-accent/10 text-accent"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text"
+        class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-accent/5 hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {{ 'app.nav.settings' | t }}
       </a>
     </nav>
 
     <div class="border-t border-default p-2">
-      <div class="px-3 py-2 text-xs text-muted">{{ auth.identity()?.displayName }}</div>
+      <div class="break-words px-3 py-2 text-xs text-muted">{{ auth.identity()?.displayName }}</div>
       <div class="px-3 py-1"><bops-language-switch /></div>
       @if (auth.signOutFailed()) {
         <p role="alert" class="px-3 py-1 text-xs text-risk-critical">{{ 'app.signOutFailed' | t }}</p>

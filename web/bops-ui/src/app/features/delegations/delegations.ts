@@ -329,6 +329,10 @@ export class Delegations {
     return STATUS_CLASSES[status] ?? NEUTRAL_CLASS;
   }
 
+  protected statusLabel(status: string): string {
+    return this.i18n.label('delegationStatus', status);
+  }
+
   protected noteFor(id: string): string {
     return this.notes()[id] ?? '';
   }
