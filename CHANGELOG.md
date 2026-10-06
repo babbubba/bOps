@@ -19,7 +19,8 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   step approval plus independent verification, the complete registered first-party tool catalog
   against the strict provider, and the existing resume, provider-failure, delegation, browser-session,
   localization and long-session scenarios. Windows and Ubuntu CI, Angular build/headless/i18n,
-  Playwright, dependency review and the quality aggregate are green in run `37543992327` (PR #85).
+  Playwright, dependency review and the quality aggregate are green in runs `37543992327` and
+  `37545207950`; PR #85 merged as `83084fc251b6173cb60bd1473abac635506c8343`, closing the train.
 
 - A diagnosis-only delegation no longer needs mutation-capable profiles (ADR-0044, HARDEN-11). The role set a delegation requires
   now depends on the request: a diagnosis requires Discovery and Diagnostic, a run that prepares a change still requires all four,
