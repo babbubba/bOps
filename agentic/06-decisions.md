@@ -1014,4 +1014,4 @@ fallback stickiness.
 persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
 gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
 publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
-explicit list is empty. HARDEN-13 Block B implementation was authorized on acceptance; B1, B2a and B2b are merged and B3 is implemented on PR #82, awaiting the final independent review.
+explicit list is empty. HARDEN-13 Block B implementation was authorized on acceptance; B1, B2a and B2b are merged and B3 is implemented on PR #82, with executable final-review gates passed and the documentation delta / integration pending.
