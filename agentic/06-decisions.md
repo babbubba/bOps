@@ -5,7 +5,8 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries have status **Accepted**. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries except D-042 have status **Accepted**; D-042 is **Proposed** and has no authority until
+the operator accepts it. D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -973,3 +974,30 @@ hand-written profiles. Additive public contract (four `bOps.Abstractions` types 
 `viewer` endpoints, typed `400` codes, three CLI commands, exit code `8`). Capability input validation is a deliberate
 tightening outside delegation. Sensitive Capability input stays persisted as plain JSON in the delegation store; no
 encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 starts next.
+
+### D-042 — PROPOSED — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
+
+**Proposal (awaiting operator acceptance).** Settings-driven provider, endpoint, model, native-tool capability and
+credential changes publish one immutable effective configuration for subsequently admitted executions without an API
+restart. One ordinary task, or one whole delegated D/D/R/V run, pins that configuration across model calls, approval
+waits, execution attempts and restart/resume. The safe non-secret snapshot and opaque provider-bound credential lease
+are durable; plaintext remains only in the encrypted vault and execution memory. An exact snapshot that cannot be
+reconstructed refuses resume rather than substituting current Settings. Explicit environment configuration retains
+precedence and Settings reports persisted-but-shadowed values. An optional, explicit, ordered host-level **fallback
+chain** advances only after same-provider retries exhaust on `Transient`, `RateLimited`, `Timeout` or `Unreachable`, is
+sticky and monotonic for that execution, never resets global budgets/deadlines, and never falls back on any other
+current or future failure kind by default. Runtime remains provider-neutral and receives one execution-scoped
+`IChatModel`. Router mode is supported but distinct from a fallback chain and is not recommended for reproducible
+troubleshooting. The proposed shipped default is OpenAI / `gpt-4.1-2025-04-14`; the operator must choose it or another
+candidate before implementation.
+
+**Alternatives proposed for rejection.** Reload or resolve a process-global model mid-task; transient lifetime without
+an atomic snapshot; pinning per call, role or execution attempt; persisting plaintext or an unkeyed secret fingerprint;
+resuming under current Settings; automatic provider discovery, scoring or cost/health routing; fallback on permanent or
+unknown failures; per-call or process-global fallback stickiness.
+
+**Consequences if accepted.** ADR-0045 supersedes only ADR-0029's restart-to-apply consequence. Settings must expose
+persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
+gain additive primary/actual/fallback metadata, and the host gains atomic configuration publication, encrypted
+credential leases and `FallbackChatModel`. Fallback support is disabled when its explicit list is empty. No HARDEN-13
+production implementation is authorized while this decision remains Proposed.

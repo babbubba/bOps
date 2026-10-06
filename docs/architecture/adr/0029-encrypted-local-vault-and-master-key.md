@@ -3,6 +3,12 @@
 Status: Accepted
 Date: 2026-09-17
 
+> **HARDEN-13 forward reference (Proposed, 2026-10-06).**
+> [ADR-0045](0045-execution-pinned-provider-configuration-and-fallback-chain.md) proposes to
+> supersede only this ADR's restart-to-apply consequence with execution-pinned live Settings and an
+> optional host-level fallback chain. Until ADR-0045 is accepted and implemented, the current
+> restart-required behavior documented below remains authoritative.
+
 ## Context
 
 V1.1-G lets an authenticated administrator persist the active LLM provider and its API key from
