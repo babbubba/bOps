@@ -411,6 +411,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>The provider's status code for this attempt, when a response was obtained.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ProviderStatusCode { get; init; }
+
+    /// <summary>The non-secret provider configuration generation used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ConfigurationGeneration { get; init; }
+
+    /// <summary>The hash of the non-secret provider configuration used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConfigurationSnapshotHash { get; init; }
 }
 
 /// <summary>
@@ -457,6 +465,9 @@ public enum TaskLifecycleStage
 /// </summary>
 public sealed record TaskLifecycleAuditEvent : AuditEvent
 {
+    /// <summary>True only when a legacy unpinned task captured its first durable provider pin during resume.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyConfigurationMigrated { get; init; }
     /// <summary>What happened.</summary>
     public required TaskLifecycleStage Stage { get; init; }
 
@@ -679,6 +690,13 @@ public enum SettingsChangeOutcome
 /// </summary>
 public sealed record SettingsChangedAuditEvent : AuditEvent
 {
+    /// <summary>The safe effective generation after a successful mutation, when recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ConfigurationGeneration { get; init; }
+
+    /// <summary>Whether the write published a new tuple, remained shadowed or inactive, or changed only a credential.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PublicationEffect { get; init; }
     /// <summary>The setting that changed, for example <c>"provider.apiKey"</c> or <c>"provider.active"</c>.</summary>
     public required string SettingName { get; init; }
 

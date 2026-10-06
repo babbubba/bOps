@@ -22,7 +22,9 @@ internal sealed class AgentTaskLauncher(
     ITaskStore taskStore,
     TimeProvider timeProvider,
     AgentTaskLauncherOptions options,
-    ILogger<AgentTaskLauncher> logger) : IDisposable
+    ILogger<AgentTaskLauncher> logger,
+    ProviderConfigurationCoordinator? coordinator = null,
+    ExecutionRunnerFactory? executionRunners = null) : IDisposable
 {
     private readonly SemaphoreSlim _capacity = new(Math.Max(1, options.MaxConcurrentTasks));
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid TaskId, int ExecutionAttempt), CancellationTokenSource> _running = new();
@@ -36,11 +38,26 @@ internal sealed class AgentTaskLauncher(
         }
 
         var taskId = Guid.NewGuid();
+        PinnedProviderConfiguration? pin;
+        AgentRunner executionRunner;
+        try
+        {
+            pin = coordinator?.Current.Pin;
+            if (pin is not null) coordinator!.EnsureAdmission(pin);
+            executionRunner = pin is null ? runner : executionRunners?.CreateAgent(pin)
+                ?? throw new InvalidOperationException("No execution runner factory is registered.");
+        }
+        catch
+        {
+            _capacity.Release();
+            throw;
+        }
         // ADR-0040 §8: the runtime-side host records the origin; no request can set it.
         var initial = new TaskState(taskId, NodeId.Local, goal, AgentTaskStatus.Running, [], [], timeProvider.GetUtcNow())
         {
             Origin = TaskOrigin.Ordinary,
             Accounting = TaskAccounting.None,
+            PinnedProviderConfiguration = pin,
         };
         try
         {
@@ -62,7 +79,8 @@ internal sealed class AgentTaskLauncher(
             throw;
         }
 
-        if (!TryRunDetached(initial, actor, token => runner.RunAsync(goal, actor, taskId: taskId, ct: token)))
+        if (!TryRunDetached(initial, actor, executionRunner,
+                token => executionRunner.RunAsync(goal, actor, taskId: taskId, ct: token)))
         {
             throw new InvalidOperationException($"The newly allocated task id '{taskId}' is already running.");
         }
@@ -78,6 +96,9 @@ internal sealed class AgentTaskLauncher(
     public bool TryAdmit(TaskState acquired, ActorIdentity actor)
     {
         ArgumentNullException.ThrowIfNull(acquired);
+        var executionRunner = acquired.PinnedProviderConfiguration is { } pin
+            ? executionRunners?.CreateAgent(pin) ?? throw new InvalidOperationException("No execution runner factory is registered.")
+            : runner;
         try
         {
             if (!_capacity.Wait(0))
@@ -90,7 +111,8 @@ internal sealed class AgentTaskLauncher(
             return false;
         }
 
-        return TryRunDetached(acquired, actor, token => runner.ExecuteAcquiredResumeAsync(acquired, actor, token));
+        return TryRunDetached(acquired, actor, executionRunner,
+            token => executionRunner.ExecuteAcquiredResumeAsync(acquired, actor, token));
     }
 
     /// <summary>Whether an execution attempt of <paramref name="taskId"/> is registered in this host.</summary>
@@ -116,7 +138,8 @@ internal sealed class AgentTaskLauncher(
     /// set for the duration so a nested approval request can recover which task raised it. Owns one execution slot, taken
     /// by the caller; releases it when the run ends, or at once when the run cannot be registered.
     /// </summary>
-    private bool TryRunDetached(TaskState execution, ActorIdentity actor, Func<CancellationToken, Task<TaskState>> invoke)
+    private bool TryRunDetached(TaskState execution, ActorIdentity actor, AgentRunner executionRunner,
+        Func<CancellationToken, Task<TaskState>> invoke)
     {
         var taskId = execution.Id;
         var executionAttempt = execution.ExecutionAttempt;
@@ -139,7 +162,7 @@ internal sealed class AgentTaskLauncher(
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
                 // Fenced (ADR-0040 §4.5): only this attempt, still Running, becomes Cancelled. Never throws.
-                await runner.CompleteCancellationAsync(taskId, executionAttempt, actor, execution, CancellationToken.None);
+                await executionRunner.CompleteCancellationAsync(taskId, executionAttempt, actor, execution, CancellationToken.None);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellation.IsCancellationRequested)
             {
@@ -150,7 +173,7 @@ internal sealed class AgentTaskLauncher(
                 // attempt is never overwritten (ADR-0040 §4.5).
                 logger.LogError(ex, "Task {TaskId}: background execution failed unexpectedly", taskId);
                 // Never throws for a store or audit failure (it logs them), so nothing escapes this detached task.
-                await runner.ContainEscapedFailureAsync(taskId, executionAttempt, actor, execution, ex, CancellationToken.None);
+                await executionRunner.ContainEscapedFailureAsync(taskId, executionAttempt, actor, execution, ex, CancellationToken.None);
             }
             finally
             {

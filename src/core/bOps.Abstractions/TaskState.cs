@@ -136,6 +136,14 @@ public sealed record ModelCallRecord
     /// <summary>The provider's status code for this attempt, when a response was obtained.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ProviderStatusCode { get; init; }
+
+    /// <summary>The non-secret provider configuration generation used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ConfigurationGeneration { get; init; }
+
+    /// <summary>The hash of the non-secret provider configuration used for this call, when pinned.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConfigurationSnapshotHash { get; init; }
 }
 
 /// <summary>One iteration of the agent loop: the tool call requested (if any), its result, and the observation fed back to the model.</summary>
@@ -273,4 +281,8 @@ public sealed record TaskState
     /// <summary>Who resumed the task into its current execution attempt; <c>null</c> for the initial execution.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ActorIdentity? ResumedBy { get; init; }
+
+    /// <summary>The safe provider configuration selected at admission; null on records predating ADR-0045.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
 }

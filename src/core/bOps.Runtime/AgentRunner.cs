@@ -54,7 +54,8 @@ public sealed class AgentRunner(
     ILogger<AgentRunner> logger,
     AgentRunnerOptions options,
     ISkillRegistry? skillRegistry = null,
-    IEntitlementService? entitlementService = null)
+    IEntitlementService? entitlementService = null,
+    PinnedProviderConfiguration? pinnedProviderConfiguration = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -216,6 +217,7 @@ public sealed class AgentRunner(
             DelegationRole = delegation?.Correlation.Agent?.Role,
             Actor = actor,
             Delegation = delegation,
+            PinnedProviderConfiguration = pinnedProviderConfiguration,
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [],
             Plans = [],
@@ -225,6 +227,8 @@ public sealed class AgentRunner(
         taskActivity?.SetTag("bops.task_id", run.TaskId);
         taskActivity?.SetTag("bops.node", NodeId.Local.Value);
 
+        // The safe pin is durable before any model attempt, including a delegated role task.
+        await taskStore.SaveAsync(run.Build(AgentTaskStatus.Running), CancellationToken.None);
         await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
         return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, [ChatTurn.FromUser(goal)], taskActivity, ct), ct);
     }
@@ -319,17 +323,23 @@ public sealed class AgentRunner(
     /// <param name="taskId">The task to resume.</param>
     /// <param name="actor">Who asked for the resume.</param>
     /// <param name="ct">Cancels the read; once the transition is attempted it is not abandoned half-way.</param>
-    public async Task<TaskResumeAcquisition> TryAcquireResumeAsync(Guid taskId, ActorIdentity actor, CancellationToken ct = default)
+    public Task<TaskResumeAcquisition> TryAcquireResumeAsync(Guid taskId, ActorIdentity actor, CancellationToken ct = default) =>
+        TryAcquireResumeAsync(taskId, actor, null, ct);
+
+    /// <summary>Acquires a resume and atomically pins a legacy unpinned task when supplied by the host.</summary>
+    public async Task<TaskResumeAcquisition> TryAcquireResumeAsync(Guid taskId, ActorIdentity actor,
+        PinnedProviderConfiguration? legacyPin, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(actor);
 
         var task = await taskStore.LoadAsync(taskId, ct);
         return task is null
             ? new TaskResumeAcquisition(TaskResumeOutcome.NotFound, null, null)
-            : await AcquireResumeAsync(task, actor, ct);
+            : await AcquireResumeAsync(task, actor, ct, legacyPin);
     }
 
-    private async Task<TaskResumeAcquisition> AcquireResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct)
+    private async Task<TaskResumeAcquisition> AcquireResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct,
+        PinnedProviderConfiguration? legacyPin = null)
     {
         var decision = EvaluateResume(task);
         if (!decision.Resumable)
@@ -353,6 +363,7 @@ public sealed class AgentRunner(
             TerminalReason = null,
             // ADR-0040 §5.4: a task stored without accounting gets its derived record materialized by this write, once.
             Accounting = TaskResumePolicy.EffectiveAccounting(task),
+            PinnedProviderConfiguration = task.PinnedProviderConfiguration ?? legacyPin,
         };
 
         // From here nothing is abandoned half-way: the transition either happened or did not, and is audited either way.
@@ -365,7 +376,9 @@ public sealed class AgentRunner(
         try
         {
             await WriteAuditAsync(
-                LifecycleEvent(acquired, TaskLifecycleStage.ResumeAccepted, actor) with { PriorStatus = task.Status }, null, CancellationToken.None);
+                LifecycleEvent(acquired, TaskLifecycleStage.ResumeAccepted, actor) with
+                { PriorStatus = task.Status, LegacyConfigurationMigrated = task.PinnedProviderConfiguration is null && legacyPin is not null },
+                null, CancellationToken.None);
         }
         catch (Exception auditFailure)
         {
@@ -375,7 +388,8 @@ public sealed class AgentRunner(
             throw;
         }
 
-        return new TaskResumeAcquisition(TaskResumeOutcome.Acquired, acquired, null);
+        return new TaskResumeAcquisition(TaskResumeOutcome.Acquired, acquired, null,
+            task.PinnedProviderConfiguration is null && legacyPin is not null);
     }
 
     private async Task<TaskResumeAcquisition> RejectResumeAsync(TaskState task, ActorIdentity actor, TaskResumeRefusal refusal, CancellationToken ct)
@@ -422,6 +436,7 @@ public sealed class AgentRunner(
             ResumedBy = acquired.ResumedBy,
             Actor = actor,
             Delegation = null,
+            PinnedProviderConfiguration = acquired.PinnedProviderConfiguration,
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [.. acquired.Steps],
             Plans = [.. acquired.Plans],
@@ -2767,6 +2782,8 @@ public sealed class AgentRunner(
             RetryDecision = decision,
             RetryDelayMs = retryDelayMs,
             ProviderStatusCode = statusCode,
+            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
+            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
         }, delegation, ct);
 
     /// <summary>What one failed attempt amounted to, in provider-neutral terms, with its message already sanitized.</summary>
@@ -2780,7 +2797,11 @@ public sealed class AgentRunner(
         var reply = CapPayload(details?.ResponseJson, out var replyCut);
         return new ModelCallRecord(
             model.Descriptor.ProviderId, model.Descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
-            details?.FinishReason, error, request, reply, requestCut || replyCut);
+            details?.FinishReason, error, request, reply, requestCut || replyCut)
+        {
+            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
+            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
+        };
     }
 
     /// <summary>Bounds a recorded body to <see cref="AgentRunnerOptions.MaxModelPayloadCharacters"/> (0 keeps none), saying so when it cuts.</summary>
@@ -3999,6 +4020,8 @@ public sealed class AgentRunner(
 
         public DelegatedExecutionScope? Delegation { get; init; }
 
+        public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
+
         public required ActiveAttemptBudget AttemptBudget { get; init; }
 
         public required List<PlanStep> Steps { get; init; }
@@ -4037,6 +4060,7 @@ public sealed class AgentRunner(
                 TerminalReason = terminalReason,
                 ResumedAtUtc = ResumedAtUtc,
                 ResumedBy = ResumedBy,
+                PinnedProviderConfiguration = PinnedProviderConfiguration,
             };
     }
 

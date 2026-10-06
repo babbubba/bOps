@@ -439,11 +439,22 @@ public sealed class DelegationsEndpointsTests
     [Fact]
     public async Task Start_ARunOfAChange_WaitsForAnApprover_ThenRunsTheApprovedPlan_AndIsVerified()
     {
-        using var host = NewHost();
+        using var host = NewHost(roles: ["viewer", "operator", "approver", "administrator"]);
 
         var id = await StartAsync(host.Client, Fix());
         var waiting = await WaitForAsync(host.Client, id, view => view.AwaitingPlanApproval);
         var pending = await WaitForPendingPlanAsync(host.Client, id);
+        var delegationStore = host.Factory.Services.GetRequiredService<IDelegationStore>();
+        var originalPin = (await delegationStore.LoadAsync(id))!.PinnedProviderConfiguration;
+        Assert.Equal("OpenRouter", originalPin!.ProviderId);
+
+        await host.Client.PutAsJsonAsync("/api/settings/providers/Anthropic/profile",
+            new { baseUrl = "https://api.anthropic.test", model = "sonnet-x",
+                supportsNativeToolCalling = true, extraParameters = (Dictionary<string, string>?)null });
+        await host.Client.PutAsJsonAsync("/api/settings/providers/Anthropic/key",
+            new { apiKey = "ANTHROPIC_KEY", expectedVersion = 0 });
+        var switched = await host.Client.PutAsJsonAsync("/api/settings/active-provider", new { providerId = "Anthropic" });
+        Assert.Equal(HttpStatusCode.NoContent, switched.StatusCode);
 
         Assert.True(waiting.RunningInThisHost);
         Assert.Equal(nameof(DelegationStatus.Running), waiting.Status);
@@ -468,6 +479,13 @@ public sealed class DelegationsEndpointsTests
         Assert.Equal(nameof(VerificationStatus.Confirmed), verification.Verification!.Status);
         Assert.Equal(nameof(StepOutcomeKind.Succeeded), Assert.Single(done.Journal).Outcome);
         Assert.Empty(await PendingAsync(host.Client));
+        Assert.Equal(originalPin, (await delegationStore.LoadAsync(id))!.PinnedProviderConfiguration);
+        var childTasks = await host.Factory.Services.GetRequiredService<ITaskStore>()
+            .ListByStatusAsync(AgentTaskStatus.Completed);
+        var ownedChildren = childTasks.Where(task => task.DelegationId == id).ToList();
+        Assert.NotEmpty(ownedChildren);
+        Assert.All(ownedChildren,
+            task => Assert.Equal(originalPin, task.PinnedProviderConfiguration));
     }
 
     [Fact]
@@ -760,6 +778,7 @@ public sealed class DelegationsEndpointsTests
         var response = await host.Client.PostAsync(new Uri($"/api/delegations/{id}/resume", UriKind.Relative), null);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.True((await response.Content.ReadFromJsonAsync<DelegationAcceptedResponse>())!.LegacyConfigurationMigrated);
         var pending = await WaitForPendingPlanAsync(host.Client, id);
         Assert.Equal(0, host.Restart.Executions);
         Assert.Equal(HttpStatusCode.NoContent, (await DecideAsync(host.Client, id, pending.PlanHash, approved: true)).StatusCode);

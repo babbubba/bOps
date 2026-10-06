@@ -10,9 +10,9 @@ ADR also governs HARDEN-13 of the V1.3.x reliability train
 ([packet](../../../agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md);
 [plan](../../../agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md), finding F-17).
 
-Architecture accepted; implementation not started. The operator selected the shipped bootstrap default and approved
-the fallback chain, and the independent architecture review (including the targeted B-1 delta review) passed
-with no blockers. Block B implementation may now begin.
+Architecture accepted. Block B1 (live configuration, durable non-secret execution pinning and
+per-attempt current credentials) is implemented locally and awaits targeted review. The ordered
+fallback chain and final Settings UI/docs/E2E pass remain pending.
 
 ## Context
 

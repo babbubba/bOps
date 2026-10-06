@@ -36,6 +36,18 @@ public sealed class SqliteTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SafeProviderPin_SurvivesStoreReopen_WithoutASecret()
+    {
+        var pin = new PinnedProviderConfiguration(1, 7, "Anthropic", "https://api.anthropic.test", "sonnet-x",
+            true, TimeSpan.FromSeconds(45), "settings", "settings", "settings", "settings", "default", "safe-hash");
+        var task = SampleTask(AgentTaskStatus.Running) with { PinnedProviderConfiguration = pin };
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+
+        var loaded = await new SqliteTaskStore(_filePath).LoadAsync(task.Id);
+        Assert.Equal(pin, loaded!.PinnedProviderConfiguration);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReturnsNull_ForAnUnknownTaskId()
     {
         var store = new SqliteTaskStore(_filePath);

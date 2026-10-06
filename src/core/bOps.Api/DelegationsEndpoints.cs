@@ -149,7 +149,16 @@ internal static class DelegationsEndpoints
                 : Results.BadRequest(new { message = refused.Message, code = refused.Code, parameter = refused.Parameter });
         }
 
-        var id = await launcher.TryStartAsync(delegation, AgentsEndpoints.ApiActor(principal), string.IsNullOrWhiteSpace(key) ? null : key, http.RequestAborted);
+        Guid? id;
+        try
+        {
+            id = await launcher.TryStartAsync(delegation, AgentsEndpoints.ApiActor(principal),
+                string.IsNullOrWhiteSpace(key) ? null : key, http.RequestAborted);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ProviderNotSupportedException)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
         return id is null
             ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
             : Results.Accepted($"/api/delegations/{id}", new DelegationAcceptedResponse(id.Value));
@@ -211,10 +220,21 @@ internal static class DelegationsEndpoints
 
     private static async Task<IResult> ResumeAsync(Guid id, DelegationLauncher launcher, ClaimsPrincipal principal, HttpContext http)
     {
-        var result = await launcher.TryResumeAsync(id, AgentsEndpoints.ApiActor(principal), http.RequestAborted);
+        DelegationResumeResult result;
+        try
+        {
+            result = await launcher.TryResumeAsync(id, AgentsEndpoints.ApiActor(principal), http.RequestAborted);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ProviderNotSupportedException)
+        {
+            return Results.Conflict(new { message = ex.Message, code = "pinned_provider_unavailable" });
+        }
         return result switch
         {
-            DelegationResumeResult.Started => Results.Accepted($"/api/delegations/{id}", new DelegationAcceptedResponse(id)),
+            DelegationResumeResult.Started => Results.Accepted($"/api/delegations/{id}",
+                new DelegationAcceptedResponse(id)),
+            DelegationResumeResult.StartedLegacyMigrated => Results.Accepted($"/api/delegations/{id}",
+                new DelegationAcceptedResponse(id, true)),
             DelegationResumeResult.NotFound => Results.NotFound(new { message = $"No delegation run with id '{id}'." }),
             DelegationResumeResult.AlreadyRunning => Results.Conflict(new { message = "This host is already executing the run." }),
             DelegationResumeResult.NotResumable => Results.Conflict(new { message = "Only a run that is running or waiting for its plan's approval can be resumed." }),

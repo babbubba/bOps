@@ -55,7 +55,8 @@ public sealed class DelegationRunner(
     TimeProvider timeProvider,
     ILogger<DelegationRunner> logger,
     IDelegationStore? store = null,
-    int maximumResumes = DelegationRunner.DefaultMaximumResumes)
+    int maximumResumes = DelegationRunner.DefaultMaximumResumes,
+    PinnedProviderConfiguration? pinnedProviderConfiguration = null)
 {
     /// <summary>How many times a run may be resumed before it is ended as failed, so a run that crashes every time cannot loop forever (ADR-0030 section 6).</summary>
     public const int DefaultMaximumResumes = 3;
@@ -96,7 +97,8 @@ public sealed class DelegationRunner(
         }
 
         ct.ThrowIfCancellationRequested();
-        using var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow()) { IdempotencyKey = idempotencyKey };
+        using var state = new RunState(delegationId ?? Guid.NewGuid(), request, actor, timeProvider.GetUtcNow())
+        { IdempotencyKey = idempotencyKey, PinnedProviderConfiguration = pinnedProviderConfiguration };
 
         try
         {
@@ -138,7 +140,7 @@ public sealed class DelegationRunner(
 
         var stored = await RequireStore().LoadAsync(delegationId, CancellationToken.None)
             ?? throw new InvalidOperationException($"No delegation run {delegationId} is stored.");
-        if (stored.Status != DelegationStatus.Running)
+        if (stored.Status is not (DelegationStatus.Running or DelegationStatus.AwaitingApproval))
         {
             return stored;
         }
@@ -1117,6 +1119,8 @@ public sealed class DelegationRunner(
             ErrorMessage = state.Error,
             CreatedAtUtc = state.CreatedAt,
             UpdatedAtUtc = timeProvider.GetUtcNow(),
+            PinnedProviderConfiguration = state.PinnedProviderConfiguration,
+            LegacyConfigurationMigrated = state.LegacyConfigurationMigrated,
         };
 
     /// <summary>Stores the run as it stands. A write that fails stops the run: what it cannot store it cannot resume, so it must not go on. Never cancelled by the caller's token.</summary>
@@ -1376,6 +1380,10 @@ public sealed class DelegationRunner(
 
         public string? IdempotencyKey { get; init; }
 
+        public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
+
+        public bool LegacyConfigurationMigrated { get; init; }
+
         /// <summary>The run an earlier start with the same key created, when this start is a repeat and has nothing to run.</summary>
         public DelegationRun? Existing { get; set; }
 
@@ -1395,6 +1403,8 @@ public sealed class DelegationRunner(
                 IdempotencyKey = stored.IdempotencyKey,
                 ResumeCount = stored.ResumeCount,
                 PlanHash = stored.PlanHash,
+                PinnedProviderConfiguration = stored.PinnedProviderConfiguration,
+                LegacyConfigurationMigrated = stored.LegacyConfigurationMigrated,
             };
             state.SetRoot(stored.RootEnvelope);
             state.Roles.AddRange(stored.Roles);

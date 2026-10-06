@@ -22,7 +22,14 @@ internal sealed record SettingsProviderView(
     string? Model,
     bool? SupportsNativeToolCalling,
     IReadOnlyDictionary<string, string>? ExtraParameters,
-    DateTimeOffset? ProfileUpdatedUtc);
+    DateTimeOffset? ProfileUpdatedUtc)
+{
+    public bool HasUsableCredential { get; init; }
+    public string CredentialSource { get; init; } = "none";
+    public bool IsPersistedSelectionShadowed { get; init; }
+    public IReadOnlyList<string> ShadowedFields { get; init; } = [];
+    public bool ExtraParametersPersistedOnly { get; init; } = true;
+}
 
 /// <summary>
 /// The full Settings view (ADR-0029). <see cref="VaultVersion"/> is the optimistic-concurrency
@@ -32,7 +39,23 @@ internal sealed record SettingsView(
     int VaultVersion,
     string? ActiveProviderId,
     string ActiveProviderSource,
-    IReadOnlyList<SettingsProviderView> Providers);
+    IReadOnlyList<SettingsProviderView> Providers)
+{
+    public int SettingsRevision { get; init; }
+    public long ConfigurationGeneration { get; init; }
+    public string? PersistedActiveProviderId { get; init; }
+    public bool PersistedActiveProviderShadowed { get; init; }
+    public string EffectiveBaseUrl { get; init; } = string.Empty;
+    public string EffectiveModel { get; init; } = string.Empty;
+    public bool EffectiveSupportsNativeToolCalling { get; init; }
+    public TimeSpan? EffectiveRequestTimeout { get; init; }
+    public string EffectiveBaseUrlSource { get; init; } = string.Empty;
+    public string EffectiveModelSource { get; init; } = string.Empty;
+    public string EffectiveToolCallingSource { get; init; } = string.Empty;
+    public string EffectiveRequestTimeoutSource { get; init; } = string.Empty;
+    public bool EffectiveCredentialAvailable { get; init; }
+    public string EffectiveCredentialSource { get; init; } = "none";
+}
 
 /// <summary>Sets or replaces a provider's API key. Write-only: never echoes the key back.</summary>
 internal sealed record SetProviderKeyRequest(string ApiKey, int ExpectedVersion);
@@ -40,8 +63,9 @@ internal sealed record SetProviderKeyRequest(string ApiKey, int ExpectedVersion)
 /// <summary>Sets or replaces a provider's non-secret profile.</summary>
 #pragma warning disable CA1056 // BaseUrl is configuration-bound, same as ChatModelOptions.BaseUrl.
 internal sealed record SetProviderProfileRequest(
-    string BaseUrl, string Model, bool SupportsNativeToolCalling, Dictionary<string, string>? ExtraParameters);
+    string BaseUrl, string Model, bool SupportsNativeToolCalling, Dictionary<string, string>? ExtraParameters,
+    int? ExpectedRevision = null);
 #pragma warning restore CA1056
 
 /// <summary>Selects the active provider.</summary>
-internal sealed record SetActiveProviderRequest(string ProviderId);
+internal sealed record SetActiveProviderRequest(string ProviderId, int? ExpectedRevision = null);

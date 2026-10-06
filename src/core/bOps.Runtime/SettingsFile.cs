@@ -8,4 +8,4 @@ namespace bOps.Runtime;
 /// administrator's chosen active provider id, and every provider's non-secret profile
 /// (endpoint, model, tool-calling support, extras) keyed by provider id.
 /// </summary>
-public sealed record SettingsFile(int SchemaVersion, string? ActiveProviderId, Dictionary<string, ProviderProfile> Providers);
+public sealed record SettingsFile(int SchemaVersion, string? ActiveProviderId, Dictionary<string, ProviderProfile> Providers, int Revision = 0);

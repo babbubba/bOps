@@ -135,28 +135,16 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IPolicyEngine>(sp => sp.GetRequiredService<LoadedPolicy>().Engine);
 builder.Services.AddSingleton<IRoleProfileSource>(sp => new PolicyRoleProfileSource(sp.GetRequiredService<LoadedPolicy>().Config));
 
-// Resolved lazily, on the first request that needs it — by then every provider package below has
-// already registered with IChatModelRegistry. Lazy resolution also means a test can replace this
-// registration outright (ConfigureTestServices) without ever needing a real 'ModelProvider'
-// configuration section or a live provider.
-builder.Services.AddSingleton<IChatModel>(sp =>
-{
-    var modelOptions = ProviderResolution.ResolveEffectiveModelOptions(
-        builder.Configuration,
-        sp.GetRequiredService<SettingsStore>(),
-        sp.GetRequiredService<ISecretProvider>(),
-        sp.GetService<VaultSecretProvider>());
-    // ADR-0039: the runtime's model-call attempt timeout must fire before the provider's outer transport timeout.
-    (builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions())
-        .Validate(modelOptions.EffectiveRequestTimeout);
-    return sp.GetRequiredService<IChatModelRegistry>().Create(modelOptions);
-});
+builder.Services.AddSingleton<ProviderCredentialResolver>();
+builder.Services.AddSingleton<ProviderConfigurationCoordinator>();
+builder.Services.AddSingleton<ExecutionChatModelFactory>();
+builder.Services.AddSingleton<ExecutionRunnerFactory>();
 
 builder.Services.AddSingleton(sp =>
 {
     var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
     return new AgentRunner(
-        sp.GetRequiredService<IChatModel>(),
+        sp.GetService<IChatModel>() ?? new NoExecutionChatModel(),
         sp.GetRequiredService<IToolRegistry>(),
         sp.GetRequiredService<IPolicyEngine>(),
         sp.GetRequiredService<IApprovalProvider>(),

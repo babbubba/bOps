@@ -20,6 +20,21 @@ public sealed class SettingsStoreTests : IDisposable
     private SettingsStore CreateStore() => new(SettingsPath, _time);
 
     [Fact]
+    public void LegacyFileWithoutRevision_RemainsReadableAndGetsAnOptimisticRevisionOnWrite()
+    {
+        File.WriteAllText(SettingsPath,
+            "{\"SchemaVersion\":1,\"ActiveProviderId\":\"Anthropic\",\"Providers\":{}}");
+        var store = CreateStore();
+        Assert.Equal(0, store.Revision);
+        Assert.Equal("Anthropic", store.ActiveProviderId);
+        store.SetActiveProviderId("OpenRouter", expectedRevision: 0);
+        Assert.Equal(1, CreateStore().Revision);
+        Assert.Throws<SettingsConcurrencyException>(() =>
+            store.SetActiveProviderId("Anthropic", expectedRevision: 0));
+        Assert.Equal("OpenRouter", store.ActiveProviderId);
+    }
+
+    [Fact]
     public void ActiveProviderId_IsNull_WhenNoSettingsFileExistsYet()
     {
         Assert.Null(CreateStore().ActiveProviderId);

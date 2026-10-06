@@ -41,6 +41,9 @@ public enum DelegationStage
 /// </summary>
 public sealed record DelegationLifecycleAuditEvent : AuditEvent
 {
+    /// <summary>True only on the one resume that migrates a legacy unpinned run.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyConfigurationMigrated { get; init; }
     /// <summary>Which transition this is.</summary>
     public required DelegationStage Stage { get; init; }
 

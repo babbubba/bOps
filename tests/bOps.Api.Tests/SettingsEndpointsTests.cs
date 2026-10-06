@@ -155,6 +155,27 @@ public sealed class SettingsEndpointsTests
     }
 
     [Fact]
+    public async Task StaleProfileWrite_ConflictsWithoutPublishingOrReplacingTheStoredProfile()
+    {
+        using var factory = new TestAppFactory { Roles = AdministratorRoles };
+        using var client = factory.CreateClient();
+        var first = await client.PutAsJsonAsync(new Uri("/api/settings/providers/Anthropic/profile", UriKind.Relative),
+            new { baseUrl = "https://api.anthropic.test", model = "sonnet-x",
+                supportsNativeToolCalling = true, extraParameters = (Dictionary<string, string>?)null, expectedRevision = 0 });
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        var before = await client.GetFromJsonAsync<SettingsView>("/api/settings", ResponseJsonOptions);
+
+        var stale = await client.PutAsJsonAsync(new Uri("/api/settings/providers/Anthropic/profile", UriKind.Relative),
+            new { baseUrl = "https://api.anthropic.changed", model = "sonnet-y",
+                supportsNativeToolCalling = false, extraParameters = (Dictionary<string, string>?)null, expectedRevision = 0 });
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        var after = await client.GetFromJsonAsync<SettingsView>("/api/settings", ResponseJsonOptions);
+        Assert.Equal(before!.SettingsRevision, after!.SettingsRevision);
+        Assert.Equal(before.ConfigurationGeneration, after.ConfigurationGeneration);
+        Assert.Equal("sonnet-x", after.Providers.Single(provider => provider.ProviderId == "Anthropic").Model);
+    }
+
+    [Fact]
     public async Task SetActiveProvider_RejectsAnUnregisteredProviderId()
     {
         using var factory = new TestAppFactory { Roles = AdministratorRoles };
@@ -179,13 +200,16 @@ public sealed class SettingsEndpointsTests
     }
 
     [Fact]
-    public async Task SetActiveProvider_SucceedsOnceAProfileIsStored()
+    public async Task SetActiveProvider_SucceedsOnceAProfileAndCredentialAreStored()
     {
         using var factory = new TestAppFactory { Roles = AdministratorRoles };
         using var client = factory.CreateClient();
         await client.PutAsJsonAsync(
             new Uri("/api/settings/providers/Anthropic/profile", UriKind.Relative),
             new { baseUrl = "https://api.anthropic.com", model = "claude-sonnet-4-5", supportsNativeToolCalling = true, extraParameters = (Dictionary<string, string>?)null });
+        await client.PutAsJsonAsync(
+            new Uri("/api/settings/providers/Anthropic/key", UriKind.Relative),
+            new { apiKey = "anthropic-test-key", expectedVersion = 0 });
 
         var response = await client.PutAsJsonAsync(
             new Uri("/api/settings/active-provider", UriKind.Relative), new { providerId = "Anthropic" });

@@ -24,8 +24,7 @@ public sealed class ProvidersEndpointsTests
     [Fact]
     public async Task GetProviders_ReportsTheConfiguredActiveProvider_WithoutTheApiKeyValue()
     {
-        // TestAppFactory preserves the shipped provider/model but replaces the secret reference
-        // with a unique unset environment variable so developer credentials cannot affect this test.
+        // TestAppFactory provides a unique test credential so developer credentials cannot affect this test.
         using var factory = new TestAppFactory { ChatModel = new QueueChatModel() };
         using var client = factory.CreateClient();
 
@@ -34,6 +33,28 @@ public sealed class ProvidersEndpointsTests
         Assert.NotNull(providers!.Active);
         Assert.Equal("OpenRouter", providers.Active!.Provider);
         Assert.Equal("openrouter/free", providers.Active.Model);
+        Assert.True(providers.Active.HasApiKey);
+    }
+
+    [Fact]
+    public async Task GetProviders_ReportsAKeylessLocalProviderWithoutAnApiKey()
+    {
+        using var factory = new TestAppFactory
+        {
+            ChatModel = new QueueChatModel(),
+            Roles = ["viewer", "operator", "approver", "administrator"],
+        };
+        using var client = factory.CreateClient();
+
+        var profile = await client.PutAsJsonAsync("/api/settings/providers/Ollama/profile",
+            new { baseUrl = "http://localhost:11434", model = "llama3", supportsNativeToolCalling = true,
+                extraParameters = (Dictionary<string, string>?)null });
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, profile.StatusCode);
+        var selected = await client.PutAsJsonAsync("/api/settings/active-provider", new { providerId = "Ollama" });
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, selected.StatusCode);
+
+        var providers = await client.GetFromJsonAsync<ProvidersResponse>("/api/providers");
+        Assert.Equal("Ollama", providers!.Active!.Provider);
         Assert.False(providers.Active.HasApiKey);
     }
 }

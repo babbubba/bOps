@@ -82,6 +82,19 @@ public sealed class SqliteDelegationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SafeProviderPinAndLegacyMigrationFlag_SurviveStoreReopen()
+    {
+        var pin = new PinnedProviderConfiguration(1, 3, "OpenRouter", "https://openrouter.test", "model-x",
+            false, null, "settings", "settings", "settings", "settings", "default", "safe-hash");
+        var run = Run() with { PinnedProviderConfiguration = pin, LegacyConfigurationMigrated = true };
+        await new SqliteDelegationStore(_filePath).StartAsync(run);
+
+        var loaded = await new SqliteDelegationStore(_filePath).LoadAsync(run.Id);
+        Assert.Equal(pin, loaded!.PinnedProviderConfiguration);
+        Assert.True(loaded.LegacyConfigurationMigrated);
+    }
+
+    [Fact]
     public async Task StartAsync_ThenLoadAsync_KeepsTheRequestTheRunWasStartedWith_SoItCanBeResumed()
     {
         var store = new SqliteDelegationStore(_filePath);
