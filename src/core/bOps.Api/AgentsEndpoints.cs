@@ -71,6 +71,14 @@ internal static class AgentsEndpoints
         {
             var actor = ApiActor(principal);
             var existing = await store.LoadAsync(id, http.RequestAborted);
+            if (existing?.Origin == TaskOrigin.Delegated)
+            {
+                // A role task is owned by its DelegationRun. Keep the runtime's audited, stable refusal,
+                // but do not let ordinary resume inspect or create any provider configuration for it.
+                var delegated = await runner.TryAcquireResumeAsync(id, actor, http.RequestAborted);
+                var refusal = delegated.Refusal!;
+                return Results.Conflict(new TaskErrorResponse(refusal.Code, refusal.Message));
+            }
             if (existing?.PinnedProviderConfiguration is { } persistedPin)
             {
                 try { coordinator.ValidatePin(persistedPin); }

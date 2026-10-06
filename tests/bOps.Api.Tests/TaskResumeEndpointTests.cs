@@ -72,7 +72,8 @@ public sealed class TaskResumeEndpointTests
         var model = new GatedChatModel(QueueChatModel.Final("resumed and done"));
         using var factory = new TestAppFactory { ChatModel = model };
         using var client = factory.CreateClient();
-        var stored = await SeedAsync(factory, Stored(AgentTaskStatus.Failed));
+        var pin = factory.Services.GetRequiredService<ProviderConfigurationCoordinator>().Current.Pin;
+        var stored = await SeedAsync(factory, Stored(AgentTaskStatus.Failed) with { PinnedProviderConfiguration = pin });
 
         var response = await ResumeAsync(client, stored.Id);
 
@@ -84,6 +85,7 @@ public sealed class TaskResumeEndpointTests
         Assert.True(accepted["executing"]!.GetValue<bool>());
         Assert.False(accepted["resumable"]!.GetValue<bool>());
         Assert.Equal("task_running", accepted["resumeBlockedReason"]!["code"]!.GetValue<string>());
+        Assert.False(accepted["legacyConfigurationMigrated"]!.GetValue<bool>());
 
         var immediately = await GetAsync(client, stored.Id);
         Assert.Equal((int)AgentTaskStatus.Running, Status(immediately));
@@ -222,6 +224,64 @@ public sealed class TaskResumeEndpointTests
         Assert.Equal([(TaskLifecycleStage.ResumeRejected, 1)], LifecycleStages(factory, stored.Id));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADelegatedTask_IsRefusedBeforeProviderResolution_AndItsOwnerIsUntouched(bool hasPersistedPin)
+    {
+        var registry = new FailingChatModelRegistry();
+        var model = new GatedChatModel();
+        using var factory = new TestAppFactory
+        {
+            ChatModel = model,
+            ConfigureExtraServices = services => services.AddSingleton<IChatModelRegistry>(registry),
+        };
+        using var client = factory.CreateClient();
+        var now = DateTimeOffset.UtcNow;
+        var ownerActor = new ActorIdentity("api-user", "delegation-owner", "Delegation owner");
+        var owner = new DelegationRun
+        {
+            Id = Guid.NewGuid(),
+            Node = NodeId.Local,
+            Actor = ownerActor,
+            Objective = "owned delegated work",
+            Status = DelegationStatus.DiagnosisCompleted,
+            RootEnvelope = new AuthorityEnvelope(ownerActor, 0, [], [], [], RiskLevel.Read, BlastRadius.Single, [], [],
+                new DelegationBudget(0, 0, now.AddHours(1))),
+            Roles = [],
+            Journal = [],
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        await factory.Services.GetRequiredService<IDelegationStore>().StartAsync(owner);
+        var stored = await SeedAsync(factory, Stored(AgentTaskStatus.Failed, TaskOrigin.Delegated) with
+        {
+            DelegationId = owner.Id,
+            DelegationRole = AgentRoleKind.Diagnostic,
+            PinnedProviderConfiguration = hasPersistedPin
+                ? new PinnedProviderConfiguration(1, 1, "unsupported", "https://provider.invalid", "model", false,
+                    null, "test", "test", "test", "test", "test", "deliberately-invalid")
+                : null,
+        });
+        var ownerBefore = JsonSerializer.Serialize(await factory.Services.GetRequiredService<IDelegationStore>().LoadAsync(owner.Id));
+
+        var response = await ResumeAsync(client, stored.Id);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+        Assert.Equal("task_delegated", body["code"]!.GetValue<string>());
+        Assert.Equal(0, registry.CreateCalls); // no Current build, pin validation, adapter, or execution runner
+        Assert.Equal(0, model.Calls);
+        var after = await factory.Services.GetRequiredService<ITaskStore>().LoadAsync(stored.Id);
+        Assert.NotNull(after);
+        Assert.Equal(stored.PinnedProviderConfiguration, after.PinnedProviderConfiguration);
+        Assert.Equal((stored.Status, stored.ExecutionAttempt, stored.DelegationId),
+            (after.Status, after.ExecutionAttempt, after.DelegationId));
+        Assert.Equal(ownerBefore,
+            JsonSerializer.Serialize(await factory.Services.GetRequiredService<IDelegationStore>().LoadAsync(owner.Id)));
+        Assert.Equal([(TaskLifecycleStage.ResumeRejected, 1)], LifecycleStages(factory, stored.Id));
+    }
+
     // C-12: a persisted Running task with no executor in this host is distinguishable (executing: false) — and still not
     // resumable (H3-05).
     [Fact]
@@ -314,6 +374,31 @@ public sealed class TaskResumeEndpointTests
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, ct);
             throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    /// <summary>Accepts startup registration, but fails and counts any attempt to construct a provider adapter.</summary>
+    private sealed class FailingChatModelRegistry : IChatModelRegistry
+    {
+        private readonly HashSet<string> _providerIds = new(StringComparer.OrdinalIgnoreCase);
+        private int _createCalls;
+
+        public int CreateCalls => Volatile.Read(ref _createCalls);
+
+        public IReadOnlyList<string> RegisteredProviderIds => [.. _providerIds];
+
+        public void Register(PackageId package, IModelProviderPackage provider)
+        {
+            foreach (var providerId in provider.SupportedProviderIds)
+            {
+                _providerIds.Add(providerId);
+            }
+        }
+
+        public IChatModel Create(ChatModelOptions options)
+        {
+            Interlocked.Increment(ref _createCalls);
+            throw new InvalidOperationException("Provider resolution must not run for an ordinary resume of a delegated task.");
         }
     }
 }
