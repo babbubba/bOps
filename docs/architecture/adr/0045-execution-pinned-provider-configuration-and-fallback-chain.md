@@ -12,9 +12,10 @@ ADR also governs HARDEN-13 of the V1.3.x reliability train
 
 Architecture accepted. Blocks B1 (live configuration, durable non-secret execution pinning and
 per-attempt current credentials), B2a/B2b (ordered fallback chain, Settings fallback API and audit
-observability) are implemented and independently reviewed. Block B3 (Settings UI, router disclosure,
-documentation and the final deterministic E2Es) is implemented. The executable final HARDEN-13
-review gates have passed; documentation consistency and PR #82 integration remain.
+observability) and B3 (Settings UI, router disclosure, documentation and the final deterministic E2Es)
+are implemented and independently reviewed PASS. The executable final HARDEN-13 review gates passed;
+B3 merged through PR #82 and the completed packet merged to `main` through PR #83
+(`3bed13e3274570a3928ac64706be6246c0d9a978`).
 
 ## Context
 
@@ -658,6 +659,6 @@ These are obligations on the implementation, not open design questions:
 The operator decisions are recorded: the bootstrap default is `OpenRouter` / `openrouter/free`, and
 the ordered host-level fallback chain is approved in principle. No operator design choice remained
 open. This gate is satisfied: the architecture review passed, the targeted B-1 delta review passed,
-and the operator accepted this ADR on 2026-10-06. Block B was authorized and implemented, and the
-HARDEN-13 executable final-review gates have now passed; PR #82 integration remains before the
-packet is formally complete.
+and the operator accepted this ADR on 2026-10-06. Block B was authorized, implemented and independently
+reviewed; all executable final-review gates passed. B3 merged through PR #82, and HARDEN-13 was formally
+completed by the final integration merge through PR #83 (`3bed13e3274570a3928ac64706be6246c0d9a978`).

@@ -11,8 +11,12 @@ decides and executes. V1.2 multi-agent orchestration is complete and released as
 `v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The active work is the
 V1.3.x reliability hardening train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`),
 executed one HARDEN packet at a time; HARDEN-1 through HARDEN-10 are complete (HARDEN-10 merged via PR #76), HARDEN-11
-implementation is complete locally with its independent authority/security review pending, and HARDEN-12 implementation is
-complete locally (2026-10-06), not pushed, ready for independent UI review. HARDEN-13: B1/B2a/B2b complete and reviewed (B2a #80, B2b #81 merged); B3 implemented on PR #82 (open) and executable final-review gates passed; documentation consistency delta and PR #82 integration remain. HARDEN-13 is not complete; HARDEN-14 has not started. All gates are defined only by the consolidated
+is completed and merged via PR #77 (`12a03165ef458ecb3b36625d955731e34671c6f8`) after its independent
+implementation authority/security review PASS, and HARDEN-12 is completed and merged via PR #79
+(`86bf74857a2435daee6177cd5cf78aae4e6198eb`) after its independent UI review PASS. HARDEN-13 is completed and merged
+to `main` via PR #83 (`3bed13e3274570a3928ac64706be6246c0d9a978`): ADR-0045/D-042 are Accepted; B1, B2a
+(PR #80), B2b (PR #81) and B3 (PR #82) passed independent review; all executable final-review gates passed; blockers 0,
+non-blockers 0. HARDEN-14 is the next executable packet and is not started. All gates are defined only by the consolidated
 roadmap.
 
 ## Required read order

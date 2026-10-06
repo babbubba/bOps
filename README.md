@@ -339,7 +339,7 @@ Start from [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) and
 | | |
 |---|---|
 | **V1.3** (local diagnostic surface, entitlement boundary, plugin lifecycle) | Implemented and merged; not tagged or released |
-| **V1.3.x reliability hardening** | In progress — through HARDEN-10 complete; HARDEN-11 implemented locally awaiting authority/security review; HARDEN-12 implemented locally awaiting independent UI review |
+| **V1.3.x reliability hardening** | In progress — HARDEN-1 through HARDEN-13 completed and merged; HARDEN-14 is the next executable packet and is not started |
 | **V1.4 and later** | Planned; not implemented |
 
 The latest tagged build is the `v1.2.0-preview.8` pre-release (runtime archives, SBOMs and
