@@ -310,6 +310,44 @@ public sealed class ProviderConfigurationCoordinatorTests
         Assert.Equal(["model-c"], rig.Settings.Fallbacks.Select(f => f.Model));
     }
 
+    [Fact]
+    public void ShadowedSettingsFallbacks_AreValidatedBeforePersistence_AndHostChainStaysEffective()
+    {
+        using var rig = new Rig();
+        rig.Coordinator.SetProfile("Anthropic", new("https://api.anthropic.test", "sonnet-x", true, null));
+        rig.Coordinator.SetFallbacks([new("Anthropic", "model-b")]);
+        rig.Configuration["ModelProvider:Fallbacks:0:Provider"] = "Anthropic";
+        rig.Configuration["ModelProvider:Fallbacks:0:Model"] = "host-model";
+        rig.Coordinator.SetFallbacks([new("Anthropic", "model-b")]);
+        var published = rig.Coordinator.Current;
+        var revision = rig.Settings.Revision;
+        Assert.Equal("configuration", published.FallbackSource);
+
+        Assert.Throws<ProviderNotSupportedException>(() => rig.Coordinator.SetFallbacks([new("Nope", "m")]));
+        Assert.Throws<ArgumentException>(() => rig.Coordinator.SetFallbacks([new("Anthropic", "x"), new("anthropic", "X")]));
+        Assert.Throws<ArgumentException>(() => rig.Coordinator.SetFallbacks([new("OpenRouter", "openrouter/free")]));
+        Assert.Throws<ArgumentException>(() => rig.Coordinator.SetFallbacks([new("Anthropic", " ")]));
+        Assert.Throws<ArgumentException>(() => rig.Coordinator.SetFallbacks(
+            [new("Anthropic", "a"), new("Anthropic", "b"), new("Anthropic", "c"), new("Anthropic", "d")]));
+
+        Assert.Equal(revision, rig.Settings.Revision);
+        Assert.Equal(["model-b"], rig.Settings.Fallbacks.Select(f => f.Model));
+        Assert.Same(published, rig.Coordinator.Current);
+        Assert.Equal(["host-model"], rig.Coordinator.Current.Pin.Fallbacks.Select(f => f.Model));
+
+        Assert.False(rig.Coordinator.SetFallbacks([new("Anthropic", "model-valid")]));
+        Assert.Equal(["model-valid"], rig.Settings.Fallbacks.Select(f => f.Model));
+        Assert.Equal("configuration", rig.Coordinator.Current.FallbackSource);
+        Assert.Equal(published.Pin.SnapshotHash, rig.Coordinator.Current.Pin.SnapshotHash);
+        Assert.Equal(published.Pin.Generation, rig.Coordinator.Current.Pin.Generation);
+
+        var withoutHostFallbacks = new ConfigurationBuilder().AddInMemoryCollection(rig.Configuration.AsEnumerable()
+            .Where(pair => !pair.Key.StartsWith("ModelProvider:Fallbacks", StringComparison.Ordinal))).Build();
+        var recreated = new ProviderConfigurationCoordinator(withoutHostFallbacks, rig.Settings, rig.Registry, rig.Secrets, rig.Vault);
+        Assert.Equal("settings", recreated.Current.FallbackSource);
+        Assert.Equal(["model-valid"], recreated.Current.Pin.Fallbacks.Select(f => f.Model));
+    }
+
     private sealed class Rig : IDisposable
     {
         private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("bops-harden13-");

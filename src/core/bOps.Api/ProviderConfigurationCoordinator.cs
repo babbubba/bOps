@@ -190,6 +190,10 @@ internal sealed class ProviderConfigurationCoordinator(
         if (timeout is { } value && value <= TimeSpan.Zero)
             throw new ArgumentException("The provider request timeout must be positive.");
         var (fallbackEntries, fallbackSource) = ResolveFallbackEntries(fallbackOverride);
+        // A Settings proposal is validated on its own merits even while host configuration shadows it, so an
+        // invalid list can never be persisted dormant and later become effective.
+        if (fallbackOverride is not null && fallbackSource == "configuration")
+            BuildFallbacks(ToEntries(fallbackOverride), id, model.Value, configured.RequestTimeout);
         var pin = new PinnedProviderConfiguration(1, 0, id, baseUrl.Value, model.Value, native.Value,
             timeout, environmentOwned ? "environment" : storedId is null ? "default" : "settings",
             baseUrl.Source, model.Source, native.Source,
@@ -266,9 +270,11 @@ internal sealed class ProviderConfigurationCoordinator(
         var configured = configuration.GetSection("ModelProvider:Fallbacks").Get<List<FallbackConfiguration>>() ?? [];
         if (configured.Count > 0) return (configured, "configuration");
         var stored = proposed ?? settings.Fallbacks;
-        return (stored.Select(entry => new FallbackConfiguration { Provider = entry.Provider, Model = entry.Model }).ToList(),
-            stored.Count > 0 ? "settings" : "default");
+        return (ToEntries(stored), stored.Count > 0 ? "settings" : "default");
     }
+
+    private static List<FallbackConfiguration> ToEntries(IReadOnlyList<FallbackSetting> stored) =>
+        stored.Select(entry => new FallbackConfiguration { Provider = entry.Provider, Model = entry.Model }).ToList();
 
     private List<PinnedProviderCandidate> BuildFallbacks(
         List<FallbackConfiguration> configured, string primaryProvider, string primaryModel, TimeSpan? requestTimeout)
