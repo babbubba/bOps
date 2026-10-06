@@ -145,16 +145,63 @@ Supported providers and their status are listed in the README's
 [Providers](../README.md#providers) section; the wire contract is in
 [ADR-0038](architecture/adr/0038-provider-wire-contract.md).
 
-On the API, the effective configuration is resolved as follows:
+On the API there are three distinct states
+([ADR-0045](architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md)):
+
+- **Persisted** configuration is what Settings stores (`settings.json`, the vault). A persisted value can be
+  *shadowed* by the host and then is not in use.
+- **Effective** configuration is the single immutable snapshot the API publishes: primary provider, endpoint,
+  model, tool-calling capability, ordered fallback chain, a generation number and where each value came from.
+  `GET /api/settings` returns it next to the persisted values, and the Settings page labels shadowed values as
+  *not in effect* rather than active.
+- **Pinned** configuration is the non-secret part of one effective generation copied into one task or one whole
+  delegation run when it is admitted. It survives approval waits, resume and API restarts.
+
+Resolution of the effective configuration:
 
 - If the real environment variable `ModelProvider__Provider` is set, that environment configuration wins
-  and the Settings profile is not consulted.
+  and the Settings profile is not consulted; the stored selection is reported as shadowed.
 - Otherwise the provider chosen in Settings supplies its endpoint and model, falling back field by field
-  to the `ModelProvider` block.
-- The API key: a value resolved from the environment reference (`BOPS_MODELPROVIDER_API_KEY`) wins
-  outright; only when it is empty is the key stored in the vault for that provider used.
+  to the `ModelProvider` block. A real environment variable for one field (`ModelProvider__BaseUrl`,
+  `ModelProvider__Model`, `ModelProvider__SupportsNativeToolCalling`, `ModelProvider__RequestTimeout`) overrides
+  only that field.
+- **Fallback chain precedence:** if `ModelProvider:Fallbacks` is present in host configuration it owns the whole
+  ordered list and the list stored in Settings is shadowed (still saved, but not effective, and editing it does
+  not change what new tasks use). Otherwise the Settings list applies, otherwise there is no fallback.
+- The block-level `ModelProvider:ApiKeySecret` (`BOPS_MODELPROVIDER_API_KEY`) belongs only to the provider named
+  by the merged `ModelProvider:Provider`; every other provider (a Settings-selected one, every fallback candidate)
+  uses only its own key in the vault. A key is never sent to a different provider.
 
-Settings changes take effect on the next API restart.
+### When a change takes effect
+
+Settings changes **no longer require an API restart**:
+
+| Change | Takes effect |
+|---|---|
+| Active provider, endpoint, model, tool-calling capability | The next task or delegation run started. A task already running (including one waiting for plan approval, or resumed later) keeps the configuration it was pinned with. |
+| Fallback chain (Settings) | The next task started, unless host `ModelProvider:Fallbacks` shadows it. |
+| API key set, rotated or removed | The **next model attempt**, including in an execution already running: credentials are late-bound and never pinned, so a revoked key stops being used immediately. A removed key makes the next attempt fail with an authentication error; it never triggers fallback. |
+| Environment variables, `appsettings.json` | Host configuration reload or API restart (the environment is not polled). |
+
+A syntactically valid but unreachable provider is accepted and fails at execution time; saving makes no
+network call. `ExtraParameters` is stored and returned by the API but no provider consumes it, so it has no
+effect today.
+
+### Router default and fallback chain
+
+The shipped default is OpenRouter / `openrouter/free`, a provider-side **router**: the upstream model can change
+on every call, and Settings warns about it. Use it to get started; select a specific model for serious,
+reproducible or remediating work. The requested and actual model of each call are recorded in the dashboard and
+in the audit log (`Model`, `ActualModel`).
+
+The **fallback chain** is a different mechanism: at most three administrator-configured `{ Provider, Model }`
+candidates tried in order, only after the current candidate exhausted its own retries with a transient,
+rate-limited, timeout or unreachable failure. Authentication, quota, invalid-request, context-overflow,
+malformed-response and unknown failures never fall back. Once an execution moves to a later candidate it stays
+there. Fallback candidates hold no credentials; a candidate without a usable key is shown as such in Settings
+(advisory only) and fails with an authentication error if a run reaches it. Audit records carry
+`PrimaryProvider`/`PrimaryModel`, the candidate actually called, `FallbackOrdinal`, `ProviderAttempt`, the
+configuration generation and a `Fallback` retry decision at each transition.
 
 ## 5. Encrypted vault
 

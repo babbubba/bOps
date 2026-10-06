@@ -89,5 +89,5 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 | 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | **Completed — merged via PR #76** |
 | 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | **Implementation complete locally — ready for independent implementation authority/security review** (ADR-0044, D-041) |
 | 12 | [HARDEN-12 UI layout and localization](2026-09-25-v1.3x-harden-12-ui-layout-localization.md) | SHOULD | Sonnet Medium | Sonnet Medium | **Implementation complete locally — ready for independent UI review** |
-| 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | Not started |
+| 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | **B3 implemented — executable final review passed; documentation delta / PR #82 integration pending** |
 | 14 | [HARDEN-14 end-to-end composition gate](2026-09-25-v1.3x-harden-14-e2e-composition-gate.md) | GATE | Sonnet High | Opus Medium/High | Not started |

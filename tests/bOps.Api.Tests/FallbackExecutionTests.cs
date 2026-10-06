@@ -225,7 +225,14 @@ public sealed class FallbackExecutionTests
     }
 
     /// <summary>Boots the host with the chain: configured primary, then the given fallbacks (provider, model).</summary>
-    private static Host NewHost(Book book, params (string Provider, string Model)[] fallbacks)
+    private static Host NewHost(Book book, params (string Provider, string Model)[] fallbacks) =>
+        NewHostWithRetries(book, maxAttempts: 1, fallbacks);
+
+    /// <summary>
+    /// As <see cref="NewHost"/>, with the real same-provider retry loop (<paramref name="maxAttempts"/> attempts per candidate) and a
+    /// zero backoff so a scripted storm is deterministic and instant. Retry ownership stays in the runner; only its inputs change.
+    /// </summary>
+    private static Host NewHostWithRetries(Book book, int maxAttempts, params (string Provider, string Model)[] fallbacks)
     {
 #pragma warning disable CA2000 // Ownership passes to the returned Host.
         var factory = new TestAppFactory
@@ -233,7 +240,11 @@ public sealed class FallbackExecutionTests
         {
             PolicyEngine = new FixedPolicyEngine(PolicyMode.Automatic),
             Roles = ["viewer", "operator", "approver", "administrator"],
-            ExtraConfiguration = new Dictionary<string, string?> { ["Agent:ModelCallMaxAttempts"] = "1" },
+            ExtraConfiguration = new Dictionary<string, string?>
+            {
+                ["Agent:ModelCallMaxAttempts"] = maxAttempts.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Agent:ModelRetryBaseDelay"] = "00:00:00",
+            },
             ConfigureExtraServices = services =>
             {
                 services.RemoveAll<IChatModelRegistry>();
@@ -433,6 +444,175 @@ public sealed class FallbackExecutionTests
         Assert.Equal(1, book.CallsTo(Secondary));
         Assert.Equal(VaultKey, Assert.Single(book.Calls).Key);
         Assert.Equal(1, completed.PinnedProviderConfiguration!.FallbackOrdinal);
+    }
+
+    // ---- final deterministic E2Es (HARDEN-13 B3, ADR-0045 section 16) ----
+
+    private static async Task<Guid> StartOnly(Host host)
+    {
+        var response = await host.Client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("test"));
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<TaskAcceptedResponse>())!.TaskId;
+    }
+
+    /// <summary>The audit log's decoded events, in order; each node is the event body (<c>EventJson</c>), never the chain envelope.</summary>
+    private static List<JsonObject> AuditEvents(Host host) =>
+        host.AuditText.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonNode.Parse(JsonNode.Parse(line)!["EventJson"]!.GetValue<string>())!.AsObject()).ToList();
+
+    private static List<JsonObject> ModelEvents(Host host, Guid taskId) =>
+        AuditEvents(host).Where(e => e["TaskId"]?.GetValue<string>() == taskId.ToString() && e["FallbackOrdinal"] is not null).ToList();
+
+    // E2E-4 fallback variant: a scripted capacity/transient storm exhausts the primary's real same-provider retry policy, and the
+    // execution advances to the configured fallback inside the one existing deadline, leaving attempt-level evidence.
+    [Fact]
+    public async Task E2E4_PrimaryRetryExhaustion_AdvancesToTheConfiguredFallback_WithAttemptLevelEvidence()
+    {
+        const int attempts = 3;
+        var book = new Book()
+            .Script(Primary, Fail(ModelFailureKind.RateLimited), Fail(ModelFailureKind.Transient), Fail(ModelFailureKind.Unreachable))
+            .Script(Secondary, Plan(), CallInfo(), Final("recovered"));
+        using var host = NewHostWithRetries(book, attempts, ("Anthropic", "sonnet-x"));
+        var generation = host.Coordinator.Current.Pin.Generation;
+
+        var task = await StartAndWait(host);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        // The primary was attempted exactly its own retry budget, all of it before the fallback was touched; the fallback then
+        // served the planning call and, being sticky, every later call, so the primary was never retried.
+        Assert.Equal([Primary, Primary, Primary, Secondary, Secondary, Secondary], book.Calls.Select(c => c.Candidate));
+        Assert.All(book.Calls.Where(c => c.Candidate == Primary), call => Assert.Equal(PrimaryBlockKey, call.Key));
+        Assert.All(book.Calls.Where(c => c.Candidate == Secondary), call => Assert.Equal(VaultKey, call.Key));
+
+        // Durable model-call evidence for the one logical planning call that crossed the transition.
+        var stored = (await host.Tasks.LoadAsync(task.Id))!;
+        var planning = Assert.Single(stored.Plans).ModelCalls!;
+        Assert.True(planning.Count <= attempts * 2, "the ceiling is N x (1 + configured fallbacks)");
+        Assert.Equal(["OpenRouter", "OpenRouter", "OpenRouter", "Anthropic"], planning.Select(c => c.Provider));
+        Assert.Equal(["openrouter/free", "openrouter/free", "openrouter/free", "sonnet-x"], planning.Select(c => c.RequestedModel));
+        // ProviderAttempt counts within a candidate and restarts; ModelAttempt keeps counting through the whole logical call
+        // (one budget, never reset); FallbackOrdinal advances exactly once.
+        Assert.Equal([1, 2, 3, 1], planning.Select(c => c.ProviderAttempt!.Value));
+        Assert.Equal([1, 2, 3, 4], planning.Select(c => c.ModelAttempt!.Value));
+        Assert.Equal([0, 0, 0, 1], planning.Select(c => c.FallbackOrdinal!.Value));
+        Assert.Equal(
+            [ModelFailureKind.RateLimited, ModelFailureKind.Transient, ModelFailureKind.Unreachable],
+            planning.Take(3).Select(c => c.FailureKind!.Value));
+        // Same-provider retries first, then an explicit Fallback transition, then success.
+        Assert.Equal(
+            [ModelRetryDecision.Retry, ModelRetryDecision.Retry, ModelRetryDecision.Fallback],
+            planning.Take(3).Select(c => c.RetryDecision!.Value));
+        Assert.All(planning.Take(2), call => Assert.NotNull(call.RetryDelayMs));
+        Assert.Null(planning[2].RetryDelayMs); // a fallback does not wait out the failed provider's delay
+        Assert.Equal(ModelCallOutcome.Success, planning[3].Outcome);
+        Assert.Null(planning[3].FailureKind);
+        // Requested/actual identity stays coherent: every attempt records the pinned primary and one pinned snapshot.
+        Assert.All(planning, call => Assert.Equal(
+            ("OpenRouter", "openrouter/free", stored.PinnedProviderConfiguration!.SnapshotHash, generation),
+            (call.PrimaryProvider, call.PrimaryModel, call.ConfigurationSnapshotHash, call.ConfigurationGeneration!.Value)));
+        Assert.Equal(1, stored.PinnedProviderConfiguration!.FallbackOrdinal);
+        Assert.Equal(generation, host.Coordinator.Current.Pin.Generation); // the transition published nothing
+
+        // The same story from the audit log: one event per provider attempt, in order.
+        var events = ModelEvents(host, task.Id);
+        Assert.Equal(
+            ["OpenRouter:0:1", "OpenRouter:0:2", "OpenRouter:0:3", "Anthropic:1:1", "Anthropic:1:1", "Anthropic:1:1"],
+            events.Select(e => $"{e["Provider"]}:{e["FallbackOrdinal"]}:{e["ProviderAttempt"]}"));
+        Assert.Equal(
+            [(int)ModelRetryDecision.Retry, (int)ModelRetryDecision.Retry, (int)ModelRetryDecision.Fallback],
+            events.Take(3).Select(e => e["RetryDecision"]!.GetValue<int>()));
+        Assert.All(events, e => Assert.Equal("openrouter/free", e["PrimaryModel"]!.GetValue<string>()));
+        var serialised = JsonSerializer.Serialize(stored) + host.AuditText;
+        Assert.DoesNotContain(PrimaryBlockKey, serialised, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultKey, serialised, StringComparison.Ordinal);
+    }
+
+    // Live-settings E2E: ONE API process. Task A starts on A/X and is still running when Settings change to B/Y through the real
+    // Settings API; task B pins B/Y; task A keeps A/X for every later call; the audit log shows neither ever crossed over.
+    [Fact]
+    public async Task LiveSettings_AToB_WithoutRestart_PinsEachTaskToItsOwnProviderAndModel()
+    {
+        const string A = Primary; // OpenRouter / openrouter/free
+        const string B = "Anthropic/sonnet-y";
+        using var release = new ManualResetEventSlim();
+        var reachedLastCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<ModelResponse> HoldThenFinish() => () =>
+        {
+            reachedLastCall.TrySetResult();
+            if (!release.Wait(PollTimeout)) throw new TimeoutException("Task A was never released.");
+            return Final("A finished")();
+        };
+        var book = new Book()
+            .Script(A, Plan(), CallInfo(), HoldThenFinish())
+            .Script(B, Plan(), Final("B finished"));
+        using var host = NewHost(book);
+
+        // 1-3. Task A is running on A/X: it has planned, taken a step, and is inside its third model call.
+        var idA = await StartOnly(host);
+        await reachedLastCall.Task.WaitAsync(PollTimeout);
+        var runningA = (await host.Tasks.LoadAsync(idA))!;
+        Assert.Equal(AgentTaskStatus.Running, runningA.Status);
+        var pinA = Assert.IsType<PinnedProviderConfiguration>(runningA.PinnedProviderConfiguration);
+        Assert.Equal(("OpenRouter", "openrouter/free"), (pinA.ProviderId, pinA.Model));
+        Assert.Equal(3, book.CallsTo(A));
+
+        // 4-5. Settings change to B/Y through the real API of the same running process: no restart, no new host.
+        var profile = await host.Client.PutAsJsonAsync("/api/settings/providers/Anthropic/profile",
+            new { baseUrl = "https://api.anthropic.test", model = "sonnet-y", supportsNativeToolCalling = false,
+                extraParameters = (Dictionary<string, string>?)null });
+        Assert.Equal(HttpStatusCode.NoContent, profile.StatusCode);
+        var selected = await host.Client.PutAsJsonAsync("/api/settings/active-provider", new { providerId = "Anthropic" });
+        Assert.Equal(HttpStatusCode.NoContent, selected.StatusCode);
+        Assert.Equal("published", selected.Headers.GetValues("X-bOps-Settings-Effect").Single());
+
+        // 6-7. Task B starts under the new effective configuration while A is still in flight.
+        var idB = await StartOnly(host);
+        var taskB = await WaitTerminal(host.Tasks, idB);
+        Assert.Equal(AgentTaskStatus.Completed, taskB.Status);
+        var pinB = Assert.IsType<PinnedProviderConfiguration>(taskB.PinnedProviderConfiguration);
+        Assert.Equal(("Anthropic", "sonnet-y", "https://api.anthropic.test"), (pinB.ProviderId, pinB.Model, pinB.BaseUrl));
+        Assert.True(pinB.Generation > pinA.Generation);
+        Assert.NotEqual(pinA.SnapshotHash, pinB.SnapshotHash);
+        Assert.Equal(3, book.CallsTo(A)); // B did not touch A/X while A was held
+
+        // 8. Task A resumes its own work after the change and still runs on A/X.
+        release.Set();
+        var taskA = await WaitTerminal(host.Tasks, idA);
+        Assert.Equal(AgentTaskStatus.Completed, taskA.Status);
+        var finalPinA = Assert.IsType<PinnedProviderConfiguration>(taskA.PinnedProviderConfiguration);
+        Assert.Equal(
+            (pinA.Generation, pinA.ProviderId, pinA.Model, pinA.BaseUrl, pinA.SnapshotHash, pinA.FallbackOrdinal),
+            (finalPinA.Generation, finalPinA.ProviderId, finalPinA.Model, finalPinA.BaseUrl, finalPinA.SnapshotHash, finalPinA.FallbackOrdinal));
+        var callsA = ModelCalls(taskA).ToList();
+        var callsB = ModelCalls(taskB).ToList();
+        Assert.Equal(3, callsA.Count);
+        Assert.Equal(2, callsB.Count);
+        Assert.All(callsA, c => Assert.Equal(("OpenRouter", "openrouter/free", pinA.Generation, pinA.SnapshotHash),
+            (c.Provider, c.RequestedModel, c.ConfigurationGeneration!.Value, c.ConfigurationSnapshotHash)));
+        Assert.All(callsB, c => Assert.Equal(("Anthropic", "sonnet-y", pinB.Generation, pinB.SnapshotHash),
+            (c.Provider, c.RequestedModel, c.ConfigurationGeneration!.Value, c.ConfigurationSnapshotHash)));
+        Assert.Equal(3, book.CallsTo(A));
+        Assert.Equal(2, book.CallsTo(B));
+        Assert.Equal(0, book.CallsTo("Anthropic/sonnet-x"));
+        Assert.All(book.Calls.Where(c => c.Candidate == A), call => Assert.Equal(PrimaryBlockKey, call.Key));
+        Assert.All(book.Calls.Where(c => c.Candidate == B), call => Assert.Equal(VaultKey, call.Key));
+
+        // 9. The audit log: A never switched, B never used A/X, and the generation evidence is coherent.
+        var eventsA = ModelEvents(host, idA);
+        var eventsB = ModelEvents(host, idB);
+        Assert.Equal(3, eventsA.Count);
+        Assert.Equal(2, eventsB.Count);
+        Assert.All(eventsA, e => Assert.Equal(("OpenRouter", "openrouter/free", pinA.SnapshotHash),
+            (e["Provider"]!.GetValue<string>(), e["Model"]!.GetValue<string>(), e["ConfigurationSnapshotHash"]!.GetValue<string>())));
+        Assert.All(eventsB, e => Assert.Equal(("Anthropic", "sonnet-y", pinB.SnapshotHash),
+            (e["Provider"]!.GetValue<string>(), e["Model"]!.GetValue<string>(), e["ConfigurationSnapshotHash"]!.GetValue<string>())));
+        Assert.All(eventsA.Concat(eventsB), e => Assert.Equal(0, e["FallbackOrdinal"]!.GetValue<int>()));
+        var published = Assert.Single(AuditEvents(host), e =>
+            e["SettingName"]?.GetValue<string>() == "provider.active" && e["PublicationEffect"]?.GetValue<string>() == "published");
+        Assert.Equal(pinB.Generation, published["ConfigurationGeneration"]!.GetValue<long>());
+        var serialised = JsonSerializer.Serialize(taskA) + JsonSerializer.Serialize(taskB) + host.AuditText;
+        Assert.DoesNotContain(PrimaryBlockKey, serialised, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultKey, serialised, StringComparison.Ordinal);
     }
 
     // ---- delegation ----

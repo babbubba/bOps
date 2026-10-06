@@ -5,7 +5,7 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries have status **Accepted**; D-042 was accepted 2026-10-06 (architecture only; implementation not started). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries have status **Accepted**; D-042 was accepted 2026-10-06 (HARDEN-13 B3 implemented; executable final-review gates passed; PR #82 integration pending). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -553,7 +553,7 @@ no runtime behavior yet — a documented, deliberate gap.
 metadata from the vault, profile from `settings.json`) joined only by provider id — a caller must
 read both to fully describe one provider. Provider selection and profile/key changes take effect on
 the next restart, matching the existing composition-root-only resolution of `ModelProvider` — no
-live-reconfiguration of `IChatModelRegistry` was introduced. See ADR-0029 for the full design,
+live-reconfiguration of `IChatModelRegistry` was introduced *(restart-to-apply superseded by ADR-0045/D-042)*. See ADR-0029 for the full design,
 including the precedence rule (`ProviderResolution`), the masking formula, and the documented
 Windows ACL-hardening gap.
 
@@ -974,7 +974,7 @@ hand-written profiles. Additive public contract (four `bOps.Abstractions` types 
 tightening outside delegation. Sensitive Capability input stays persisted as plain JSON in the delegation store; no
 encrypted secret storage is introduced. HARDEN-11 is not implemented; Phase 1 starts next.
 
-### D-042 — ACCEPTED (architecture; implementation not started) — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
+### D-042 — ACCEPTED (architecture; B1, B2a, B2b merged; B3 implemented; executable final-review gates passed; PR #82 integration pending) — V1.3.x HARDEN-13: execution-pinned live provider configuration and fallback chain (ADR-0045)
 
 **Decision (operator decisions incorporated; accepted 2026-10-06 after independent architecture review and the targeted B-1 delta review PASS).** Settings-driven provider, endpoint, model and native-tool capability changes publish one immutable
 effective configuration for subsequently admitted executions without an API restart. One ordinary task, or one whole
@@ -1014,4 +1014,4 @@ fallback stickiness.
 persisted/effective/shadowed state, task and delegation persistence gains an additive safe pin, model attempt records
 gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
 publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
-explicit list is empty. HARDEN-13 Block B implementation is now authorized; none has started.
+explicit list is empty. HARDEN-13 Block B implementation was authorized on acceptance; B1, B2a and B2b are merged and B3 is implemented on PR #82, with executable final-review gates passed and the documentation delta / integration pending.

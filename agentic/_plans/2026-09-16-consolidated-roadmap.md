@@ -454,7 +454,7 @@ layout. The train HARDEN-1 … HARDEN-14 hardens V1.3 before any V1.4 work; it a
 **Plan.** `agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md` (full review, findings,
 execution order, dependency gates, Definition of Done).
 **Tasks.** `agentic/_tasks/2026-09-25-v1.3x-harden-NN-*.md` — one packet at a time, in the plan's
-canonical order; through HARDEN-10 completed/merged; HARDEN-11 implementation complete locally awaiting independent authority/security review; HARDEN-12 implementation complete locally, ready for independent UI review. HARDEN-13 is next and has not started.
+canonical order; through HARDEN-10 completed/merged; HARDEN-11 implementation complete locally awaiting independent authority/security review; HARDEN-12 implementation complete locally, ready for independent UI review. HARDEN-13 complete through B2 (merged, reviewed); B3 implemented on PR #82 with executable final-review gates passed; documentation consistency delta and PR #82 integration pending, so HARDEN-13 is not complete and HARDEN-14 is blocked.
 
 ## 11. V1.4 — Managed Agent, Community Coordinator and secure node transport
 
