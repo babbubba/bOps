@@ -8,16 +8,12 @@ documents; it does not duplicate or supersede their rules.
 bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
 policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
 decides and executes. V1.2 multi-agent orchestration is complete and released as
-`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The active work is the
-V1.3.x reliability hardening train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`),
-executed one HARDEN packet at a time; HARDEN-1 through HARDEN-10 are complete (HARDEN-10 merged via PR #76), HARDEN-11
-is completed and merged via PR #77 (`12a03165ef458ecb3b36625d955731e34671c6f8`) after its independent
-implementation authority/security review PASS, and HARDEN-12 is completed and merged via PR #79
-(`86bf74857a2435daee6177cd5cf78aae4e6198eb`) after its independent UI review PASS. HARDEN-13 is completed and merged
-to `main` via PR #83 (`3bed13e3274570a3928ac64706be6246c0d9a978`): ADR-0045/D-042 are Accepted; B1, B2a
-(PR #80), B2b (PR #81) and B3 (PR #82) passed independent review; all executable final-review gates passed; blockers 0,
-non-blockers 0. HARDEN-14 is the next executable packet and is not started. All gates are defined only by the consolidated
-roadmap.
+`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The V1.3.x reliability hardening
+train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`) is closed: HARDEN-1 through
+HARDEN-14 are complete and merged, with the final E2E-1…14/DoD A–D gate integrated through PR #85
+(`83084fc251b6173cb60bd1473abac635506c8343`). There is no next reliability packet. V1.4 remains
+planned and not started; explicit operator authorization is required before beginning it. All gates
+are defined only by the consolidated roadmap.
 
 ## Required read order
 

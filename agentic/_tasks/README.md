@@ -34,7 +34,7 @@ snapshots under `agentic/obsolete/`.
 | 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
-| active | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **HARDEN-1 through HARDEN-13 completed/merged; HARDEN-14 is the next executable packet and is not started** (packet map below) | alto / molto alto per packet |
+| completed | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **Closed — HARDEN-1 through HARDEN-14 completed and merged; HARDEN-14 via PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`) | alto / molto alto per packet |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
 tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
@@ -90,4 +90,4 @@ operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cav
 | 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | **Completed — PR #77** (`12a03165ef458ecb3b36625d955731e34671c6f8`); independent implementation authority/security review PASS |
 | 12 | [HARDEN-12 UI layout and localization](2026-09-25-v1.3x-harden-12-ui-layout-localization.md) | SHOULD | Sonnet Medium | Sonnet Medium | **Completed — PR #79** (`86bf74857a2435daee6177cd5cf78aae4e6198eb`); independent UI review PASS |
 | 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | **Completed — PR #83** (`3bed13e3274570a3928ac64706be6246c0d9a978`); final independent review PASS |
-| 14 | [HARDEN-14 end-to-end composition gate](2026-09-25-v1.3x-harden-14-e2e-composition-gate.md) | GATE | Sonnet High | Opus Medium/High | **Next executable packet — not started** |
+| 14 | [HARDEN-14 end-to-end composition gate](2026-09-25-v1.3x-harden-14-e2e-composition-gate.md) | GATE | Sonnet High | Opus Medium/High | **Completed — PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`); E2E-1…14 and DoD A–D passed |
