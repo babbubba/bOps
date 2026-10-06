@@ -18,9 +18,10 @@ delegation side of F-05; operator case B). One ADR, not two: the authority chang
 catalog and the typed limitation metadata are one delegation-operability decision with one lifecycle, and the
 limitation contract only becomes reachable through the delegation views this ADR defines.
 
-Nothing here is implemented yet. The ADR was independently reviewed (PASS) and accepted by the operator on 2026-10-05;
-HARDEN-11 Phase 1 implementation may start. The review's clarifications are incorporated in the sections they concern;
-N-1 (§10.2), N-5 (§20 P1) and N-7 (§9.2) are **mandatory Phase-1 obligations**.
+The ADR was independently reviewed (PASS) and accepted by the operator on 2026-10-05. HARDEN-11 subsequently
+implemented these decisions, passed the independent implementation authority/security review and merged through PR #77
+(`12a03165ef458ecb3b36625d955731e34671c6f8`). The review's clarifications are incorporated in the sections they concern;
+N-1 (§10.2), N-5 (§20 P1) and N-7 (§9.2) were **mandatory Phase-1 obligations**.
 
 ## Context
 
