@@ -186,7 +186,7 @@ public sealed class FinalResponseTests
         // empty reply on the step call, then the answer; then a heading-less answer is restated by the re-ask.
         var tool = new ResultTool("test.partial", Partial());
         var model = new FakeChatModel(
-            Plan(), Call("test.partial"),
+            Plan("test.partial"), Call("test.partial"),
             new ModelResponse(null, [], true, null), Final(OriginalAnswer), Final(DisclosedAnswer));
 
         var state = await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("goal", Actor);

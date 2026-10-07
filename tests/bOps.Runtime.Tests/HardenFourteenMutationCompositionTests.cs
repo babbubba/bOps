@@ -42,7 +42,7 @@ public sealed class HardenFourteenMutationCompositionTests
             var policy = new RecordingPolicy();
             var agent = new AgentRunner(
                 new FakeChatModel(
-                    PlanningTestSupport.PlanResponse(stepCount: 1),
+                    PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "sample.echo"),
                     Call("discovery-echo", "sample.echo", EchoArguments("diagnose marker readiness")),
                     Final("Discovery evidence collected."),
                     PlanningTestSupport.PlanResponse(stepCount: 0),

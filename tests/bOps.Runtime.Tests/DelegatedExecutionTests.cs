@@ -95,7 +95,7 @@ public sealed class DelegatedExecutionTests
     public async Task RunDelegatedAsync_RunsAnAllowedReadCall_AndCorrelatesEveryEventItWrites()
     {
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("sample.read"), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"), Final());
         var harness = Create(model, tools: [new FakeReadTool("sample.read", "42% CPU")]);
 
         var result = await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -125,7 +125,8 @@ public sealed class DelegatedExecutionTests
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
         var other = new RecordingReadTool("sample.other", []);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.other"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.other"), Call("sample.other"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [new FakeReadTool("sample.read"), other]);
 
         var result = await harness.Runner.RunDelegatedAsync("look around", Operator, scope);
@@ -133,16 +134,11 @@ public sealed class DelegatedExecutionTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(0, other.ExecutionCount);
         Assert.Empty(harness.Policy.Contexts);
-        var decision = Assert.Single(harness.Audit.Events.OfType<PolicyDecisionAuditEvent>());
-        Assert.Equal(PolicyMode.Forbidden, decision.Mode);
-        Assert.Equal("sample.other", decision.Tool);
-        Assert.Contains("authority envelope", decision.Reason, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(scope.Correlation, decision.Delegation);
         var call = Assert.Single(harness.Audit.Events.OfType<ToolCallAuditEvent>());
-        Assert.Equal(AuthorizationKind.PolicyDenied, call.Authorization);
+        Assert.Equal(AuthorizationKind.UnknownTool, call.Authorization);
         Assert.Equal(ToolOutcome.Denied, call.Outcome);
         Assert.Equal(scope.Correlation, call.Delegation);
-        Assert.Contains(result.Steps, step => step.Observation!.Contains("authority envelope", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Steps, step => step.Observation!.Contains("not offered", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -150,9 +146,11 @@ public sealed class DelegatedExecutionTests
     {
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.other"), PlanningTestSupport.PlanResponse(revision: 1), Call("sample.other"));
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Call("sample.read"));
         var harness = Create(
-            model, options: new AgentRunnerOptions { MaxConsecutivePolicyDenials = 2 },
+            model, policy: new StubPolicyEngine(PolicyMode.Forbidden),
+            options: new AgentRunnerOptions { MaxConsecutivePolicyDenials = 2 },
             tools: [new FakeReadTool("sample.read"), new FakeReadTool("sample.other")]);
 
         var result = await harness.Runner.RunDelegatedAsync("look around", Operator, scope);
@@ -167,7 +165,8 @@ public sealed class DelegatedExecutionTests
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
         var read = new RecordingReadTool("sample.read", []);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.read"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Forbidden, "policy says no"), tools: [read]);
 
         var result = await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -185,7 +184,7 @@ public sealed class DelegatedExecutionTests
     {
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
         var harness = Create(
-            new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("sample.read"), Final()), tools: [new FakeReadTool("sample.read")]);
+            new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"), Final()), tools: [new FakeReadTool("sample.read")]);
 
         await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
 
@@ -195,7 +194,7 @@ public sealed class DelegatedExecutionTests
         Assert.Equal(AgentRoleKind.Discovery, context.Delegation!.Agent!.Role);
 
         var plain = Create(
-            new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("sample.read"), Final()), tools: [new FakeReadTool("sample.read")]);
+            new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"), Final()), tools: [new FakeReadTool("sample.read")]);
         await plain.Runner.RunAsync("look at the cpu", Operator);
 
         var plainContext = Assert.Single(plain.Policy.Contexts);
@@ -211,7 +210,8 @@ public sealed class DelegatedExecutionTests
         var scope = new DelegatedExecutionScope(new DelegationCorrelation(Guid.NewGuid(), "0123abcd", agent), envelope: null);
         var read = new RecordingReadTool("sample.read", []);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.read"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [read]);
 
         var result = await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -219,7 +219,7 @@ public sealed class DelegatedExecutionTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(0, read.ExecutionCount);
         Assert.Empty(harness.Policy.Contexts);
-        Assert.Contains(harness.Audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.PolicyDenied });
+        Assert.Contains(harness.Audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.UnknownTool });
         Assert.All(harness.Audit.Events, e => Assert.Equal(scope.Correlation, e.Delegation));
     }
 
@@ -229,7 +229,8 @@ public sealed class DelegatedExecutionTests
         var scope = ScopeOf(Envelope(["sample.read"], originator: ActorIdentity.FromOperatingSystemUser("mallory")), AgentRoleKind.Discovery);
         var read = new RecordingReadTool("sample.read", []);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.read"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
         var harness = Create(model, tools: [read]);
 
         await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -245,7 +246,8 @@ public sealed class DelegatedExecutionTests
         var scope = ScopeOf(RemediationEnvelope(window: null, "sample.action"), AgentRoleKind.Remediation);
         var action = new CountingActionTool("sample.action");
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("sample.action"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(expectedTool: "sample.action"), Call("sample.action"),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.action"), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [new FakeReadTool("sample.read"), action]);
 
         var result = await harness.Runner.RunDelegatedAsync("fix it", Operator, scope);
@@ -259,7 +261,7 @@ public sealed class DelegatedExecutionTests
         // The same call outside delegation is what it always was.
         var plainAction = new CountingActionTool("sample.action");
         var plain = Create(
-            new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("sample.action"), Final()),
+            new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "sample.action"), Call("sample.action"), Final()),
             new StubPolicyEngine(PolicyMode.Automatic), tools: [new FakeReadTool("sample.read"), plainAction]);
         await plain.Runner.RunAsync("fix it", Operator);
         Assert.Equal(1, plainAction.ExecutionCount);
@@ -269,7 +271,7 @@ public sealed class DelegatedExecutionTests
     public async Task RunDelegatedAsync_CorrelatesThePolicyDecisionAndTheApprovalOfAnApprovedCall()
     {
         var scope = ScopeOf(DiscoveryEnvelope("sample.read"), AgentRoleKind.Discovery);
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("sample.read"), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"), Final());
         var harness = Create(
             model, new StubPolicyEngine(PolicyMode.Approval, "ask a human"), new StubApprovalProvider(approved: true),
             tools: [new FakeReadTool("sample.read")]);

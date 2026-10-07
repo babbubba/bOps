@@ -169,9 +169,9 @@ public sealed class EntitlementExecutionTests
         const int denialLimit = 2;
         var call = new ModelToolCall("repeated-denial", mutation.Manifest.Name, ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1), new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 2));
+            PlanningTestSupport.PlanResponse(expectedTool: mutation.Manifest.Name), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: mutation.Manifest.Name), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 2, expectedTool: mutation.Manifest.Name));
         var registry = Registry(mutation, EntitlementApplicability.Governed);
         registry.Register(new PackageId("test.package"), new FakeReadTool());
         var audit = new RecordingAuditSink();
@@ -201,9 +201,9 @@ public sealed class EntitlementExecutionTests
         });
         var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1), new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 2), new ModelResponse("done", [], true, null));
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: tool.Manifest.Name), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 2, expectedTool: tool.Manifest.Name), new ModelResponse("done", [], true, null));
         var runner = new AgentRunner(model, registry, new StubPolicyEngine(PolicyMode.Automatic), new NeverCalledApprovalProvider(),
             new RecordingAuditSink(), new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
             new AgentRunnerOptions { DefaultToolTimeout = TimeSpan.FromMilliseconds(25), MaxReplans = 3 }, entitlementService: service);
@@ -279,8 +279,8 @@ public sealed class EntitlementExecutionTests
         var registry = Registry(tool, EntitlementApplicability.Governed);
         var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.FromJson(new JsonObject { ["secret"] = secret }));
         var audit = new RecordingAuditSink();
-        var runner = new AgentRunner(new FakeChatModel(PlanningTestSupport.PlanResponse(), new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1), new ModelResponse("done", [], true, null)), registry,
+        var runner = new AgentRunner(new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name), new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: tool.Manifest.Name), new ModelResponse("done", [], true, null)), registry,
             new StubPolicyEngine(PolicyMode.Automatic), new NeverCalledApprovalProvider(), audit, new InMemoryTaskStore(),
             new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance, new AgentRunnerOptions(),
             entitlementService: new RecordingEntitlementService(request => Denied(request.Binding)));
@@ -451,9 +451,9 @@ public sealed class EntitlementExecutionTests
     }
 
     private static FakeChatModel ModelFor(string tool) => new(
-        PlanningTestSupport.PlanResponse(),
+        PlanningTestSupport.PlanResponse(expectedTool: tool),
         new ModelResponse(null, [new ModelToolCall("call-1", tool, ToolArguments.Empty)], false, null),
-        PlanningTestSupport.PlanResponse(revision: 1),
+        PlanningTestSupport.PlanResponse(revision: 1, expectedTool: tool),
         new ModelResponse("done", [], true, null));
 
     private static EntitlementDecision Allowed(RequestBinding binding) =>

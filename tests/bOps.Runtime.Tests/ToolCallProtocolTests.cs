@@ -84,7 +84,7 @@ public sealed class ToolCallProtocolTests
     [Fact]
     public async Task H1_09_ASingleToolCall_KeepsAValidHistory_AndRecordsNoUnexecutedCalls()
     {
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Calls(Call("call-a", "test.a")), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "test.a"), Calls(Call("call-a", "test.a")), Final());
 
         var result = await CreateRunner(model, Registry(new FakeReadTool("test.a", "result-a"))).RunAsync("goal", Actor);
 
@@ -101,7 +101,7 @@ public sealed class ToolCallProtocolTests
         var c = new RecordingReadTool("test.c", []);
         var audit = new RecordingAuditSink();
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.a"),
             Calls(Call("call-a", "test.a"), Call("call-b", "test.b"), Call("call-c", "test.c")),
             Final());
 
@@ -134,7 +134,7 @@ public sealed class ToolCallProtocolTests
     public async Task H1_HIST2_H1_HIST5_ResumeRebuildsTheSameTurns_FromTheStoredStateAlone()
     {
         var liveModel = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.a"),
             Calls(Call("call-a", "test.a"), Call("call-b", "test.b"), Call("call-c", "test.c")),
             Final());
         var tools = new ITool[] { new FakeReadTool("test.a", "result-a"), new FakeReadTool("test.b"), new FakeReadTool("test.c") };
@@ -212,7 +212,7 @@ public sealed class ToolCallProtocolTests
     {
         var audit = new RecordingAuditSink();
         var policy = new RecordingPolicyEngine();
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Calls(Call("call-1", "fs.size")), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "fs.size"), Calls(Call("call-1", "fs.size")), Final());
 
         await CreateRunner(model, Registry(new FakeReadTool("fs.size")), audit, policy).RunAsync("goal", Actor);
 
@@ -226,10 +226,10 @@ public sealed class ToolCallProtocolTests
         var invented = Call("call-1", "does.not.exist");
         var model = new FakeChatModel(
             new ModelResponse("not a plan", [], false, null), // the plan retry is tool-free too
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "fs.size"),
             Calls(invented),
             new ModelResponse("still not a plan", [], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "system.cpu"),
             Final());
         var registry = Registry(new FakeReadTool("fs.size", parameters: [new ToolParameter("path", ToolParameterType.Path, "The secret parameter text", Required: true)]), new FakeReadTool("system.cpu"));
 
@@ -245,8 +245,40 @@ public sealed class ToolCallProtocolTests
             Assert.DoesNotContain("secret parameter", request.SystemPrompt, StringComparison.Ordinal);
         });
 
-        // The step calls are unchanged: they still offer both tools natively.
-        Assert.Equal(["fs.size", "system.cpu"], model.Requests[2].AvailableTools.Select(t => t.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["fs.size"], model.Requests[2].AvailableTools.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task AStepOffersOnlyItsExpectedAuthorizedTool()
+    {
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "test.b"),
+            Final());
+
+        await CreateRunner(model, Registry(new FakeReadTool("test.a"), new FakeReadTool("test.b"))).RunAsync("goal", Actor);
+
+        Assert.Empty(model.Requests[0].AvailableTools);
+        Assert.Equal(["test.b"], model.Requests[1].AvailableTools.Select(tool => tool.Name));
+    }
+
+    [Fact]
+    public async Task AnUnavailableExpectedToolNeverFallsBackToTheAuthorizedCatalog()
+    {
+        var tool = new RecordingReadTool("test.a", []);
+        var audit = new RecordingAuditSink();
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "missing.tool"),
+            Calls(Call("call-a", "test.a")),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
+            Final());
+
+        var result = await CreateRunner(model, Registry(tool), audit).RunAsync("goal", Actor);
+
+        Assert.Empty(model.Requests[1].AvailableTools);
+        Assert.Equal(0, tool.ExecutionCount);
+        Assert.NotEqual(ToolOutcome.Success, Assert.Single(result.Steps, step => step.ToolCall is not null).Result!.Outcome);
+        Assert.Contains(audit.Events, entry => entry is ToolCallAuditEvent { Authorization: AuthorizationKind.UnknownTool });
+        Assert.Equal(2, result.Plans.Count);
     }
 
     [Fact]

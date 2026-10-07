@@ -197,7 +197,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_EndsAsBudgetExceeded_WhenARoleTakesMoreStepsThanItsEnvelopeGrants()
     {
         var h = Create(
-            [PlanningTestSupport.PlanResponse(), Call("host.info")],
+            [PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info")],
             profiles: ProfilesWith(WithBudget(AgentRoleKind.Discovery, steps: 1)));
 
         var run = await h.Runner.StartAsync(Request(), Operator);
@@ -215,7 +215,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_EndsAsBudgetExceeded_WhenARoleSpendsMoreModelTokensThanItsEnvelopeGrants()
     {
         var h = Create(
-            [WithUsage(PlanningTestSupport.PlanResponse(), 80, 40)],
+            [WithUsage(PlanningTestSupport.PlanResponse(stepCount: 0), 80, 40)],
             profiles: ProfilesWith(WithBudget(AgentRoleKind.Discovery, steps: 10, tokens: 100)));
 
         var run = await h.Runner.StartAsync(Request(), Operator);
@@ -232,8 +232,8 @@ public sealed partial class DelegationRunnerTests
     {
         var script = new[]
         {
-            WithUsage(PlanningTestSupport.PlanResponse(), 60_000, 30_000), Call("host.info"), Final(),
-            PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-0")),
+            WithUsage(PlanningTestSupport.PlanResponse(expectedTool: "host.info"), 60_000, 30_000), Call("host.info"), Final(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-0")),
         };
         var h = Create(script);
 
@@ -306,7 +306,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_EndsAsBudgetExceeded_NotDenied_WhenTheTokensAreUsedUpBeforeARoleThatNeedsThem()
     {
         // Discovery spends exactly the run's tokens, which is within its budget; nothing is left for Diagnostic.
-        var script = new[] { WithUsage(PlanningTestSupport.PlanResponse(), 60, 40), Call("host.info"), Final() };
+        var script = new[] { WithUsage(PlanningTestSupport.PlanResponse(expectedTool: "host.info"), 60, 40), Call("host.info"), Final() };
         var h = Create(script);
 
         var run = await h.Runner.StartAsync(
@@ -390,7 +390,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_StopsARoleAtItsOwnDeadline_WhileItRuns()
     {
         var clock = new FakeTimeProvider(Start);
-        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("host.info"), Final());
+        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final());
         var model = new ActingModel(inner, onCall: 1, () => clock.Advance(TimeSpan.FromMinutes(11)));
         var h = Create(model: model, clock: clock);
 
@@ -461,7 +461,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_EndsAsCancelled_WhenCancelledDuringDiscovery()
     {
         using var cts = new CancellationTokenSource();
-        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("host.info"), Final());
+        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final());
         var h = Create(model: new ActingModel(inner, onCall: 1, cts.Cancel));
 
         var run = await h.Runner.StartAsync(Request(), Operator, ct: cts.Token);
@@ -569,7 +569,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_AuditsACancelledRun_EvenThoughItsTokenIsCancelled()
     {
         using var cts = new CancellationTokenSource();
-        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("host.info"), Final());
+        var inner = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final());
 
         // The sink refuses a cancelled token, as a real one does: the ending of the role and of the run must not depend on it.
         var h = Create(model: new ActingModel(inner, onCall: 1, cts.Cancel), auditHonoursCancellation: true);

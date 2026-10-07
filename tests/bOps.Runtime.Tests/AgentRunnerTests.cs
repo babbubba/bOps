@@ -42,7 +42,7 @@ public sealed class AgentRunnerTests
     public async Task RunAsync_CompletesImmediately_WhenTheModelReturnsAFinalResponseWithNoToolCalls()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(stepCount: 0),
             new ModelResponse("All good.", [], true, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
@@ -59,7 +59,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.read"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new FakeReadTool(output: "42% CPU"));
@@ -82,7 +82,7 @@ public sealed class AgentRunnerTests
         var tool = new RecordingContextualTool();
         var toolCall = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(tool);
@@ -102,7 +102,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "does.not.exist", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "does.not.exist"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1), // the replan an unresolved tool name triggers
             new ModelResponse("Giving up.", [], true, null));
@@ -129,7 +129,7 @@ public sealed class AgentRunnerTests
         // corrects course without needing a whole new plan.
         var toolCall = new ModelToolCall("call-1", "test.throws", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.throws"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Noted the failure.", [], true, null));
         var registry = CreateRegistryWith(new ThrowingTool());
@@ -147,9 +147,9 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.hangs", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.hangs"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.hangs"),
             new ModelResponse("Timed out.", [], true, null));
         var registry = CreateRegistryWith(new HangingTool());
         var audit = new RecordingAuditSink();
@@ -167,9 +167,9 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.highrisk"),
             new ModelResponse("Understood, not executing.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
         var audit = new RecordingAuditSink();
@@ -188,9 +188,9 @@ public sealed class AgentRunnerTests
         // fresh plan (rule C8); a second consecutive denial of the very same tool is what rule C4
         // stops, not letting the model retry forever.
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
         var audit = new RecordingAuditSink();
@@ -209,13 +209,13 @@ public sealed class AgentRunnerTests
         var callA = new ModelToolCall("call-1", "test.highrisk-a", ToolArguments.Empty);
         var callB = new ModelToolCall("call-2", "test.highrisk-b", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk-a"),
             new ModelResponse(null, [callA], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.highrisk-b"),
             new ModelResponse(null, [callB], false, null),
-            PlanningTestSupport.PlanResponse(revision: 2),
+            PlanningTestSupport.PlanResponse(revision: 2, expectedTool: "test.highrisk-a"),
             new ModelResponse(null, [callA], false, null),
-            PlanningTestSupport.PlanResponse(revision: 3),
+            PlanningTestSupport.PlanResponse(revision: 3, expectedTool: "test.highrisk-a"),
             new ModelResponse("Giving up.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool("test.highrisk-a"), new FakeHighRiskTool("test.highrisk-b"));
         var audit = new RecordingAuditSink();
@@ -291,7 +291,7 @@ public sealed class AgentRunnerTests
         var first = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
         var second = new ModelToolCall("call-2", "test.read", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.read"),
             new ModelResponse(null, [first, second], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new FakeReadTool());
@@ -314,7 +314,7 @@ public sealed class AgentRunnerTests
         var tool = new FakeReadTool(parameters: parameters);
         var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.FromJson(new JsonObject { ["password"] = "hunter2" }));
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.read"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(tool);
@@ -333,7 +333,7 @@ public sealed class AgentRunnerTests
         var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
         var usage = new ModelUsage(1000, 1000, null);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.read"),
             new ModelResponse(null, [toolCall], false, usage),
             new ModelResponse("Should not get here.", [], true, null));
         var registry = CreateRegistryWith(new FakeReadTool());
@@ -353,7 +353,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
@@ -380,7 +380,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
@@ -410,7 +410,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
@@ -437,7 +437,7 @@ public sealed class AgentRunnerTests
         // Forbidden and the Approval branch and execute unattended.
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
@@ -462,7 +462,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.approval-bound", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.approval-bound"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var tool = new ApprovalBoundHighRiskTool();
@@ -498,7 +498,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.approval-bound", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.approval-bound"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1),
             new ModelResponse("Stopped.", [], true, null));
@@ -529,7 +529,7 @@ public sealed class AgentRunnerTests
         });
         var toolCall = new ModelToolCall("call-1", "test.paths", arguments);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.paths"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var tool = new RecordingReadTool(
@@ -552,7 +552,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
@@ -573,7 +573,7 @@ public sealed class AgentRunnerTests
     {
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             PlanningTestSupport.PlanResponse(revision: 1), // a refuted verification is a deviation (rule C8)
             new ModelResponse("Trying something else.", [], true, null));
@@ -600,7 +600,7 @@ public sealed class AgentRunnerTests
         // well proceed without a whole new plan.
         var toolCall = new ModelToolCall("call-1", "test.highrisk", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Noted, moving on.", [], true, null));
         var tool = new FakeHighRiskTool(verificationOutcome: new VerificationOutcome(VerificationStatus.Inconclusive, "cannot tell"));
@@ -622,7 +622,7 @@ public sealed class AgentRunnerTests
         // agentic/04-testing-rules.md, "Verification": "a verification tool that itself fails."
         var toolCall = new ModelToolCall("call-1", "test.inspecting", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.inspecting"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new InspectingVerifiableTool("test.inspecting", "test.throws"), new ThrowingTool());
@@ -643,7 +643,7 @@ public sealed class AgentRunnerTests
         // report Confirmed on the strength of nothing (rule S4).
         var toolCall = new ModelToolCall("call-1", "test.inspecting", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.inspecting"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new InspectingVerifiableTool("test.inspecting", "does.not.exist"));
@@ -663,7 +663,7 @@ public sealed class AgentRunnerTests
         // third-party code too and must not be able to crash the loop.
         var toolCall = new ModelToolCall("call-1", "test.throwing-verification", ToolArguments.Empty);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.throwing-verification"),
             new ModelResponse(null, [toolCall], false, null),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new ThrowingVerificationTool());
@@ -782,7 +782,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(),
             new ModelResponse(null, [toolCall], false, null), // times out -> 1st replan
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.hangs"),
             new ModelResponse(null, [toolCall], false, null)); // times out again -> limit reached
         var registry = CreateRegistryWith(new HangingTool());
         var audit = new RecordingAuditSink();
@@ -798,12 +798,36 @@ public sealed class AgentRunnerTests
 /// <summary>Builds canned planning-call responses shared across <see cref="AgentRunnerTests"/>.</summary>
 internal static class PlanningTestSupport
 {
-    public static ModelResponse PlanResponse(int stepCount = 5, string rationale = "A generic test plan.", int revision = 0)
+    public static ModelResponse PlanResponseFor(params string[] expectedTools)
+    {
+        var steps = new System.Text.Json.Nodes.JsonArray();
+        for (var i = 0; i < expectedTools.Length; i++)
+        {
+            steps.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["description"] = $"step {i}",
+                ["expectedTool"] = expectedTools[i],
+            });
+        }
+
+        var json = new System.Text.Json.Nodes.JsonObject
+        {
+            ["rationale"] = "A generic test plan.",
+            ["steps"] = steps,
+        }.ToJsonString();
+        return new ModelResponse(json, [], false, null);
+    }
+
+    public static ModelResponse PlanResponse(
+        int stepCount = 5,
+        string rationale = "A generic test plan.",
+        int revision = 0,
+        string expectedTool = "test.read")
     {
         var steps = new System.Text.Json.Nodes.JsonArray();
         for (var i = 0; i < stepCount; i++)
         {
-            steps.Add(new System.Text.Json.Nodes.JsonObject { ["description"] = $"step {i}", ["expectedTool"] = null });
+            steps.Add(new System.Text.Json.Nodes.JsonObject { ["description"] = $"step {i}", ["expectedTool"] = expectedTool });
         }
 
         // `revision` is not encoded in the JSON itself — the runtime assigns the revision number

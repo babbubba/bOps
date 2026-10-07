@@ -146,15 +146,18 @@ public sealed class HardenEightE2ETests
 
         public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
         {
-            // Planning and replanning are the only calls that offer no tools.
-            if (request.AvailableTools.Count == 0)
+            // Planning and replanning are identified by their explicit protocol prompt. An exhausted
+            // execution step also offers no native tool under ADR-0046, but it is still a step call.
+            if (request.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal)
+                || request.SystemPrompt.Contains("Revise it", StringComparison.Ordinal))
             {
                 if (plansIssued > 0)
                 {
                     RecordReplan(request);
                 }
 
-                return Task.FromResult(PlanningTestSupport.PlanResponse(stepCount: PlanSizes[plansIssued++]));
+                return Task.FromResult(PlanningTestSupport.PlanResponse(
+                    stepCount: PlanSizes[plansIssued++], expectedTool: "test.partial"));
             }
 
             StepSystemPrompts.Add(request.SystemPrompt);

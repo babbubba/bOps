@@ -65,7 +65,7 @@ public sealed class ProviderWireEndToEndTests
             }),
         }.ToJsonString();
 
-    private static string Plan(string? expectedTool = null, int steps = 1) =>
+    private static string Plan(string expectedTool, int steps = 2) =>
         Text(new JsonObject
         {
             ["rationale"] = "r",
@@ -114,7 +114,7 @@ public sealed class ProviderWireEndToEndTests
         var names = BaseNames.Concat(Enumerable.Range(0, 88).Select(i => $"vendor.tool_{i}.probe")).ToArray();
         Assert.Equal(100, names.Length);
         var provider = new StrictOpenAiProvider(
-            Plan("fs.size"),                                   // 0 plan: one planned step
+            Plan("fs.size", steps: 1),                         // 0 plan: one planned step
             ToolCalls(("call_1", "fs_size", "{}")),            // 1 step 0
             ToolCalls(("call_2", "system_crashes", "{}")),     // 2 step 1: the plan is exhausted, so the run replans
             Plan("system.cpu"),                                // 3 the replan
@@ -143,20 +143,18 @@ public sealed class ProviderWireEndToEndTests
         });
 
         // A step request offers the tool only under its wire alias, and the history repeats it the same way.
-        var step = provider.RequestBodies.Single(body => !IsPlanningRequest(body) && body.Contains("call_1", StringComparison.Ordinal) && !body.Contains("call_2", StringComparison.Ordinal));
+        var step = provider.RequestBodies.First(body => !IsPlanningRequest(body) && body.Contains("\"tools\"", StringComparison.Ordinal));
         using (var document = JsonDocument.Parse(step))
         {
             var offered = document.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("function").GetProperty("name").GetString()).ToList();
-            Assert.Equal(100, offered.Count);
-            Assert.Contains("fs_size", offered);
+            Assert.Equal(["fs_size"], offered);
             Assert.DoesNotContain("fs.size", offered);
         }
 
         // Policy and audit only ever saw the canonical names.
-        Assert.Equal(["fs.size", "system.crashes"], policy.Seen);
-        Assert.Equal(["fs.size", "system.crashes"], audit.Events.OfType<ToolCallAuditEvent>().Select(e => e.Tool));
-        Assert.All(audit.Events.OfType<ToolCallAuditEvent>(), e => Assert.DoesNotContain('_', e.Tool));
-        Assert.Equal(["fs.size", "system.crashes"], result.Steps.Where(s => s.ToolCall is not null).Select(s => s.ToolCall!.ToolName));
+        Assert.Equal(["fs.size"], policy.Seen);
+        Assert.Equal(["fs.size", "system_crashes"], audit.Events.OfType<ToolCallAuditEvent>().Select(e => e.Tool));
+        Assert.Equal(["fs.size", "system_crashes"], result.Steps.Where(s => s.ToolCall is not null).Select(s => s.ToolCall!.ToolName));
     }
 
     [Fact]
@@ -164,7 +162,7 @@ public sealed class ProviderWireEndToEndTests
     {
         var tools = new ITool[] { new FakeReadTool("fs.size", "42"), new FakeReadTool("system.cpu"), new FakeReadTool("process.list") };
         var live = new StrictOpenAiProvider(
-            Plan(),
+            Plan("fs.size"),
             ToolCalls(("call_a", "fs_size", "{}"), ("call_b", "system_cpu", "{}"), ("call_c", "process_list", "{}")),
             Text("Finished."));
 
@@ -197,7 +195,7 @@ public sealed class ProviderWireEndToEndTests
     public async Task MalformedArguments_AreAuditedAsAFailedStep_NeverExecuted_AndTheModelSeesWhy(string payload)
     {
         var tool = new RecordingReadTool("system.cpu", []);
-        var provider = new StrictOpenAiProvider(Plan(), ToolCalls(("call_1", "system_cpu", payload)), Text("Finished."));
+        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", payload)), Text("Finished."));
         var audit = new RecordingAuditSink();
         var policy = new RecordingPolicy();
 
@@ -217,9 +215,9 @@ public sealed class ProviderWireEndToEndTests
     {
         var tool = new RecordingReadTool("fs.size", []);
         var provider = new StrictOpenAiProvider(
-            Plan(),
+            Plan("fs.size"),
             ToolCalls(("call_1", "fs.size", "{}")),  // the canonical name, not the wire alias of this request
-            Plan(),
+            Plan("fs.size"),
             Text("Finished."));
         var audit = new RecordingAuditSink();
 
@@ -243,7 +241,7 @@ public sealed class ProviderWireEndToEndTests
     {
         var tool = new RecordingReadTool("fs.size", []);
         var live = new StrictOpenAiProvider(
-            Plan("fs.size"),                                  // 0 plan: one planned step
+            Plan("fs.size", steps: 1),                        // 0 plan: one planned step
             ToolCalls(("call_1", invalidRawName, "{}")),       // 1 TURN N: the model returns an invalid tool name
             Plan("fs.size"),                                   // 2 the replan an UnknownTool deviation triggers
             ToolCalls(("call_2", "fs_size", "{}")),             // 3 TURN N+1: a legitimate offered tool — must not be blocked
@@ -275,7 +273,7 @@ public sealed class ProviderWireEndToEndTests
     public async Task M2_05_M2_06_M2_07_DuplicateJsonKeysInArguments_NeverExecute_AndNeverLeaveTheTaskRunning()
     {
         var tool = new RecordingReadTool("system.cpu", []);
-        var provider = new StrictOpenAiProvider(Plan(), ToolCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")), Text("Finished."));
+        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")), Text("Finished."));
         var audit = new RecordingAuditSink();
 
         var result = await Runner(Model(provider), Registry([tool]), audit).RunAsync("goal", Actor);

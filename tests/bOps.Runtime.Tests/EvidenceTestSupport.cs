@@ -63,7 +63,8 @@ internal static class EvidenceScenario
 
     internal static ModelResponse Final(string text, ModelUsage? usage = null) => new(text, [], true, usage);
 
-    internal static ModelResponse Plan() => PlanningTestSupport.PlanResponse(stepCount: 0);
+    internal static ModelResponse Plan(params string[] expectedTools) =>
+        PlanningTestSupport.PlanResponseFor(expectedTools);
 
     internal static ToolCallResult Partial(string output = "partial output") =>
         ToolCallResult.Success(output) with { Completeness = ToolResultCompleteness.Partial };

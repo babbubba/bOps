@@ -27,7 +27,7 @@ public sealed class HardenEightBlockerFixTests
         var clock = new FakeTimeProvider(Now);
         var verifier = new TokenProbeTool("test.verify-probe");
         var mutation = new MutatingTool("test.mutate", "test.verify-probe", clock, VerificationStatus.Inconclusive);
-        var model = new SequenceModel(PlanningTestSupport.PlanResponse(), Call("test.mutate"), PlanningTestSupport.PlanResponse(revision: 1), Final());
+        var model = new SequenceModel(PlanningTestSupport.PlanResponse(expectedTool: "test.mutate"), Call("test.mutate"), PlanningTestSupport.PlanResponse(revision: 1), Final());
         var audit = new RecordingAuditSink();
         var store = new InMemoryTaskStore();
 
@@ -67,7 +67,7 @@ public sealed class HardenEightBlockerFixTests
         var clock = new FakeTimeProvider(Now);
         var verifier = new TokenProbeTool("test.verify-probe", hang: true);
         var mutation = new MutatingTool("test.mutate", "test.verify-probe", clock, VerificationStatus.Confirmed);
-        var model = new SequenceModel(PlanningTestSupport.PlanResponse(), Call("test.mutate"));
+        var model = new SequenceModel(PlanningTestSupport.PlanResponse(expectedTool: "test.mutate"), Call("test.mutate"));
         var options = DurationOptions() with { DefaultToolTimeout = TimeSpan.FromMilliseconds(150) };
 
         var state = await Runner(model, new RecordingAuditSink(), options, clock: clock, tools: [mutation, verifier])
@@ -85,7 +85,7 @@ public sealed class HardenEightBlockerFixTests
     public async Task B1_ReadTool_KeepsTheAcceptedDurationBehaviour_WithNoVerification()
     {
         var clock = new FakeTimeProvider(Now);
-        var model = new SequenceModel(PlanningTestSupport.PlanResponse(), Call("test.slow"), PlanningTestSupport.PlanResponse(revision: 1));
+        var model = new SequenceModel(PlanningTestSupport.PlanResponse(expectedTool: "test.slow"), Call("test.slow"), PlanningTestSupport.PlanResponse(revision: 1));
 
         var state = await Runner(model, new RecordingAuditSink(), DurationOptions(), clock: clock, tools: [new SlowReadTool(clock)])
             .RunAsync("goal", Actor, TaskId);
@@ -521,7 +521,7 @@ public sealed class HardenEightBlockerFixTests
             Call("test.read", "c1"),
             ContextOverflow(),
             PlanningTestSupport.PlanResponse(stepCount: 5, revision: 1),
-            Final());
+            new ModelResponse("done\n\nEvidence limitations\n- the exhausted-plan proposal was not executed.", [], true, null));
 
         var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool()]).RunAsync(goal, Actor, TaskId);
 
