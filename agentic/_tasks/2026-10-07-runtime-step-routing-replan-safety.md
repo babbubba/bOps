@@ -5,7 +5,7 @@
 | ADR | [ADR-0046](../../docs/architecture/adr/0046-step-scoped-tool-routing-and-transactional-replanning.md) |
 | Baseline | `main` at `61744acdd48d8a50fc4cc682683e9da9d2bfb482` |
 | Suggested branch | `fix/step-scoped-tool-routing-replan-safety` |
-| Status | **ADR gate — implementation not started** |
+| Status | **Complete — ADR accepted and implementation validated 2026-10-07** |
 | Priority | High — live local-model runtime follow-up |
 | Recommended effort | medium/high reasoning, bounded implementation |
 

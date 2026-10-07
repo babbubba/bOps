@@ -1,6 +1,6 @@
 # ADR-0046 — Step-scoped tool routing and transactional replanning
 
-Status: **Proposed — operator direction agreed 2026-10-07; implementation blocked until acceptance**
+Status: **Accepted and implemented — 2026-10-07**
 Date: 2026-10-07
 
 ## Context
@@ -153,4 +153,6 @@ After implementation, validate with a real local-model troubleshooting run befor
 
 ## Acceptance gate
 
-Implementation begins only after operator acceptance of this ADR. The later Model & Provider Performance Registry is independent and is not a prerequisite.
+Accepted by the operator on 2026-10-07 and implemented on
+`fix/step-scoped-tool-routing-replan-safety`. The later Model & Provider Performance
+Registry remains independent and is not a prerequisite.
