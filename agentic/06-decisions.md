@@ -1040,3 +1040,24 @@ Persisted legacy or otherwise unusable routing cannot authorize an operational c
 failures remain resumable without losing the accepted plan. No public status, tool, provider, persistence or evidence
 contract changes; HARDEN-8, `EvidenceRead/v1`, provider fallback pinning and existing lifetime accounting remain
 authoritative.
+
+---
+
+### D-044 — ACCEPTED AND IMPLEMENTED — Bounded planned-step argument correction (ADR-0047, refines D-043)
+
+**Decision.** Accepted 2026-10-07. An argument-validation failure (`ToolOutcome.Failure`, `ToolFailureKind.Validation`) on
+the exact offered tool that the current planned step expects does not consume that planned step. The next execution request
+offers the same single tool once more, for one correction. A second such failure replans through the existing transactional
+path, with zero native tools. Any other tool name keeps ADR-0046 exact-name rejection. The correction increments no replan
+counter. The cursor, the spent correction and "replan required" are derived from persisted typed step data (exact tool
+name, no `ToolNameError`, the typed outcome, failure kind and verification status; never text or the step description),
+the same way live and on resume. A resumed plan whose correction was spent and then failed validation again or deviated
+(another tool, a refusal, a timeout, a refuted verification) without a committed replan, or a legacy record that
+contradicts the rule, replans before any tool is offered.
+
+**Rejected.** A new persisted `PlanStep` field; an in-memory retry counter; replanning on every validation failure;
+offering the previous and next tool together; aliases or fuzzy tool-name matching; parsing error text.
+
+**Consequences.** D-043 is unchanged in every other respect: one-tool or zero-tool step views, never the full catalog,
+runtime-owned safety path, first-call-wins, transactional replanning and all budgets. No public contract or persistence
+schema changes.

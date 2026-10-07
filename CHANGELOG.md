@@ -14,6 +14,11 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next
+  turn offers the same single tool once more, for one correction. A second validation failure replans with zero native
+  tools. The cursor and the spent correction are derived from persisted steps, so a resume can neither reset nor skip the
+  correction. ADR-0046 exact-name, one-tool step routing is unchanged.
+
 - V1.3.y makes local web search immediately testable through the development Aspire AppHost: a
   pinned SearXNG container starts with JSON enabled, a generated secret, a read-only configuration,
   loopback port `8081` and `/healthz`; Aspire injects its endpoint into the API and can omit it with

@@ -120,6 +120,12 @@ public sealed class AgentRunner(
         "Your last reply was empty: it had no text and no tool call. Either call a tool, or give your final " +
         "answer to the operator's goal in plain text.";
 
+    /// <summary>The one correction turn a planned step gets after its tool's arguments failed validation (ADR-0047).</summary>
+    private const string ArgumentCorrectionInstructions =
+        "The previous call to the offered tool failed argument validation and did not run. Call the same offered " +
+        "tool once more with arguments corrected according to that error. This is the only correction allowed for " +
+        "this plan step.";
+
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Every listed step " +
         "must have a non-empty expectedTool from the catalog. Reply again with ONLY the JSON object — " +
@@ -291,7 +297,7 @@ public sealed class AgentRunner(
 
         await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
 
-        return await ContinueAsync(run, history, plan, plannedStepCursor: 0, ct);
+        return await ContinueAsync(run, history, plan, PlannedStepPosition.Start, ct);
     }
 
     /// <summary>
@@ -477,7 +483,8 @@ public sealed class AgentRunner(
 
             var plan = run.Plans[^1];
             taskActivity?.SetTag("bops.plan_revision", plan.Revision);
-            return ContinueAsync(run, history, plan, run.Steps.Count(s => s.PlanRevision == plan.Revision), ct);
+            // ADR-0047: the cursor and the spent validation correction come from the persisted steps, exactly as live.
+            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps), ct);
         }, ct);
     }
 
@@ -659,18 +666,36 @@ public sealed class AgentRunner(
     /// attempt's own executable-step count, never by <c>Steps.Count</c> (ADR-0040 §5.1).
     /// </summary>
     private async Task<TaskState> ContinueAsync(
-        ExecutionRun run, List<ChatTurn> history, AgentPlan plan, int plannedStepCursor, CancellationToken ct)
+        ExecutionRun run, List<ChatTurn> history, AgentPlan plan, PlannedStepPosition position, CancellationToken ct)
     {
         var taskId = run.TaskId;
         var actor = run.Actor;
         var delegation = run.Delegation;
         var steps = run.Steps;
-        var plans = run.Plans;
         string? lastPolicyDeniedTool = null;
         var consecutivePolicyDenials = 0;
 
         // ADR-0040 §5.1: a fresh per-attempt budget, never more than what the task has left over its lifetime.
         var stepCap = Math.Min(options.MaxSteps, options.MaxLifetimeSteps - run.LifetimeSteps);
+
+        // ADR-0047: a resumed plan whose current step already exhausted its validation correction is replaced before any
+        // operational tool is offered again; the live loop never enters here with that position.
+        if (position.ReplanRequired)
+        {
+            // The step that made this plan revision stale, never a later synthetic failure step (a malformed replan or a
+            // provider outage records one with no plan revision): it is the replan's triggering step, as it was live.
+            var trigger = steps.Last(step => step.PlanRevision == plan.Revision);
+            var (resumedPlan, terminal) = await ReplanWithinBudgetAsync(
+                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct);
+            if (terminal is not null)
+            {
+                return terminal;
+            }
+
+            plan = resumedPlan;
+            position = PlannedStepPosition.Start;
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
+        }
 
         while (run.AttemptSteps < stepCap)
         {
@@ -712,8 +737,9 @@ public sealed class AgentRunner(
                     aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName);
                 logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
                 history = [.. built.Turns, .. logicalCall.ContinuationTurns];
-                var stepTools = StepToolViewFor(plan, plannedStepCursor, delegation);
-                return new ModelRequest(BuildStepSystemPrompt(plan, limitations, stepTools, aggressive), history, stepTools);
+                var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
+                return new ModelRequest(
+                    BuildStepSystemPrompt(plan, limitations, stepTools, position.CorrectionSpent, aggressive), history, stepTools);
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
@@ -822,9 +848,9 @@ public sealed class AgentRunner(
             // D-007: the contract allows several tool calls per model turn. V0.1 executes the
             // first and reports the rest back as not executed — sequential execution is the
             // safe default for an ops agent; parallel execution needs its own policy story.
-            var stepTools = StepToolViewFor(plan, plannedStepCursor, delegation);
+            var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
             var primaryCall = ConstrainToStepTool(response.ToolCalls[0], stepTools);
-            var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
+            var planExhausted = plan.Steps.Count > 0 && position.Cursor >= plan.Steps.Count;
             PlanStep step;
             string observation;
             AuthorizationKind authorization;
@@ -901,76 +927,29 @@ public sealed class AgentRunner(
             // the same plan is not "the model working the problem," it is the model repeating a
             // mistake with fresh words. A plain tool Failure is deliberately excluded: the model
             // already sees that observation on its very next turn and routinely corrects course
-            // (a bad argument, say) without needing a whole new plan — replanning on every minor
-            // failure would make the loop replan-happy for no benefit. A verification that comes
-            // back Inconclusive is excluded for the same reason: it is real information handed to
-            // the model, not proof the plan's assumption was wrong (rule S4: Inconclusive is
-            // never success, but it is also not evidence of failure).
+            // without needing a whole new plan — replanning on every minor failure would make the
+            // loop replan-happy for no benefit. An argument-validation failure on the planned tool
+            // keeps that planned step, and its one tool, for exactly one correction; a second one
+            // replans (ADR-0047). A verification that comes back Inconclusive is excluded for the
+            // same reason: it is real information handed to the model, not proof the plan's
+            // assumption was wrong (rule S4: Inconclusive is never success, but it is also not
+            // evidence of failure).
+            position = position.After(plan, step);
             var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
                 || step.Result?.Outcome == ToolOutcome.Timeout
-                || verification == VerificationStatus.Refuted;
+                || verification == VerificationStatus.Refuted
+                || position.ReplanRequired;
 
             if (deviated || planExhausted)
             {
-                // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
-                if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
+                var (newPlan, terminal) = await ReplanWithinBudgetAsync(run, plan, observation, stepIndex, ct);
+                if (terminal is not null)
                 {
-                    var lifetimeBound = run.LifetimeReplans >= options.MaxLifetimeReplans;
-                    logger.LogWarning(
-                        "Task {TaskId}: replan limit reached ({Scope})", taskId, lifetimeBound ? "lifetime" : "execution attempt");
-                    return await FinishAsync(run, AgentTaskStatus.ReplanLimitReached,
-                        lifetimeBound ? TaskTerminalKind.LifetimeReplanLimit : TaskTerminalKind.ReplanLimit, ct);
+                    return terminal;
                 }
 
-                var replanCalls = new List<ModelCallRecord>();
-                try
-                {
-                    var (newPlan, replanTokens) = await ReplanAsync(
-                        taskId, actor, run.Goal, plan, steps, observation, stepIndex, delegation, replanCalls,
-                        run.TokensUsed, ct);
-                    plan = newPlan;
-                    run.TokensUsed += replanTokens;
-                    if (TokenBudgetExceeded(run))
-                    {
-                        return await StopForTokenCrossingAsync(run, replanCalls, ct);
-                    }
-                }
-                catch (TokenBudgetCrossedException)
-                {
-                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-                    return await StopForTokenCrossingAsync(run, replanCalls, ct);
-                }
-                catch (EvidenceReadLimitExceededException)
-                {
-                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-                    return await StopForEvidenceReadLimitAsync(run, replanCalls, ct);
-                }
-                catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
-                {
-                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-                    return await StopForAttemptDurationAsync(run, replanCalls);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", taskId, stepIndex);
-                    run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-                    return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), replanCalls, ct);
-                }
-
-                plans.Add(plan);
-                run.AttemptReplans++;
-                run.LifetimeReplans++;
-                plannedStepCursor = 0;
-                BOpsTelemetry.ReplansTotal.Add(1);
-
-                if (await BudgetStopAsync(run, ct) is { } stoppedAfterReplan)
-                {
-                    return stoppedAfterReplan;
-                }
-            }
-            else
-            {
-                plannedStepCursor++;
+                plan = newPlan;
+                position = PlannedStepPosition.Start;
             }
 
             // V0.7 (ADR-0017): a crash between here and the next iteration must lose at most the
@@ -984,6 +963,67 @@ public sealed class AgentRunner(
             "Task {TaskId} reached its {Scope} step limit without completing", taskId, lifetimeExhausted ? "lifetime" : "execution attempt");
         return await FinishAsync(run, AgentTaskStatus.MaxStepsReached,
             lifetimeExhausted ? TaskTerminalKind.LifetimeStepLimit : TaskTerminalKind.StepLimit, ct);
+    }
+
+    /// <summary>
+    /// Rule C8's replan under the per-attempt and lifetime replan budgets (ADR-0040 §5.1), committed only when the candidate
+    /// is accepted (ADR-0046 §4). Returns the accepted plan, or the unchanged <paramref name="plan"/> with the terminal state
+    /// that ended the attempt.
+    /// </summary>
+    private async Task<(AgentPlan Plan, TaskState? Terminal)> ReplanWithinBudgetAsync(
+        ExecutionRun run, AgentPlan plan, string observation, int stepIndex, CancellationToken ct)
+    {
+        // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
+        if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
+        {
+            var lifetimeBound = run.LifetimeReplans >= options.MaxLifetimeReplans;
+            logger.LogWarning(
+                "Task {TaskId}: replan limit reached ({Scope})", run.TaskId, lifetimeBound ? "lifetime" : "execution attempt");
+            return (plan, await FinishAsync(run, AgentTaskStatus.ReplanLimitReached,
+                lifetimeBound ? TaskTerminalKind.LifetimeReplanLimit : TaskTerminalKind.ReplanLimit, ct));
+        }
+
+        var replanCalls = new List<ModelCallRecord>();
+        AgentPlan accepted;
+        try
+        {
+            (accepted, var replanTokens) = await ReplanAsync(
+                run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
+                run.TokensUsed, ct);
+            run.TokensUsed += replanTokens;
+            if (TokenBudgetExceeded(run))
+            {
+                return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+            }
+        }
+        catch (TokenBudgetCrossedException)
+        {
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+        }
+        catch (EvidenceReadLimitExceededException)
+        {
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            return (plan, await StopForEvidenceReadLimitAsync(run, replanCalls, ct));
+        }
+        catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+        {
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            return (plan, await StopForAttemptDurationAsync(run, replanCalls));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", run.TaskId, stepIndex);
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            return (plan, await FailAsync(run, FailureReason(ex), FailureKindOf(ex), replanCalls, ct));
+        }
+
+        run.Plans.Add(accepted);
+        run.AttemptReplans++;
+        run.LifetimeReplans++;
+        BOpsTelemetry.ReplansTotal.Add(1);
+
+        return (accepted, await BudgetStopAsync(run, ct));
     }
 
     /// <summary>
@@ -3944,11 +3984,13 @@ public sealed class AgentRunner(
         (response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0);
 
     private static string BuildStepSystemPrompt(
-        AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool aggressive = false)
+        AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingArguments,
+        bool aggressive = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
             ? "The single offered native tool is the current plan step's tool. Invoke it at most once, with the concrete arguments this step requires."
+              + (correctingArguments ? $" {ArgumentCorrectionInstructions}" : string.Empty)
             : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
         var prompt = plan.Steps.Count == 0
             ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
