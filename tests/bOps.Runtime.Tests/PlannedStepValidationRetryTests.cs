@@ -28,7 +28,10 @@ public sealed class PlannedStepValidationRetryTests
     private static RecordingReadTool Tool(string name) =>
         new(name, [new ToolParameter("mode", ToolParameterType.String, "Collection mode.")]);
 
-    private static AgentRunner Runner(IChatModel model, ITaskStore store, params ITool[] tools)
+    private static AgentRunner Runner(IChatModel model, ITaskStore store, params ITool[] tools) =>
+        Runner(model, store, new RecordingAuditSink(), tools);
+
+    private static AgentRunner Runner(IChatModel model, ITaskStore store, RecordingAuditSink audit, params ITool[] tools)
     {
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         foreach (var tool in tools)
@@ -37,8 +40,10 @@ public sealed class PlannedStepValidationRetryTests
         }
 
         return new AgentRunner(model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(),
-            new RecordingAuditSink(), store, TimeProvider.System, NullLogger<AgentRunner>.Instance, new AgentRunnerOptions());
+            audit, store, TimeProvider.System, NullLogger<AgentRunner>.Instance, new AgentRunnerOptions());
     }
+
+    private static ModelResponse Malformed() => new("not a plan", [], false, null);
 
     /// <summary>The shape of the real incident: an argument that belongs to another mode of the same tool.</summary>
     private static ModelResponse Invalid(string tool) => Call(tool, new JsonObject { ["sinceDays"] = 2, ["mode"] = "raw" });
@@ -233,6 +238,49 @@ public sealed class PlannedStepValidationRetryTests
     }
 
     [Fact]
+    public async Task AResumeAfterASpentCorrectionThenANotOfferedToolAndAMalformedReplan_ReplansBeforeOfferingAnyTool()
+    {
+        var store = new InMemoryTaskStore();
+        var interrupted = await Runner(
+                new FakeChatModel(
+                    PlanningTestSupport.PlanResponseFor(ToolA, ToolB, ToolC),
+                    Invalid(ToolA),
+                    Valid(ToolB),
+                    Malformed(),
+                    Malformed()),
+                store, Tool(ToolA), Tool(ToolB), Tool(ToolC))
+            .RunAsync("diagnose", Actor);
+
+        // The not-offered call is a typed rejection, not an executed call; its replan did not commit (ADR-0046 §4).
+        var rejected = interrupted.Steps[1];
+        Assert.Equal(ToolB, rejected.ToolCall!.ToolName);
+        Assert.NotNull(rejected.ToolCall.ToolNameError);
+        Assert.Equal(AgentTaskStatus.Failed, interrupted.Status);
+        Assert.Equal((TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse),
+            (interrupted.TerminalReason!.Kind, interrupted.TerminalReason.FailureKind));
+        Assert.Single(interrupted.Plans);
+        Assert.Null(interrupted.Steps[^1].PlanRevision);
+
+        var (resumeStore, persisted) = await PersistedAsync(store, interrupted.Id);
+        var (toolA, toolB, toolC) = (Tool(ToolA), Tool(ToolB), Tool(ToolC));
+        var audit = new RecordingAuditSink();
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponseFor(ToolC), Valid(ToolC), Final());
+
+        var result = await Runner(model, resumeStore, audit, toolA, toolB, toolC).ResumeAsync(persisted, Resumer);
+
+        // The first resumed request is the replan: no native tool, so neither A, nor B, nor anything else, before it commits.
+        Assert.Empty(model.Requests[0].AvailableTools);
+        Assert.Equal([ToolC], Offered(model.Requests[1]));
+        Assert.Equal((0, 0, 1), (toolA.ExecutionCount, toolB.ExecutionCount, toolC.ExecutionCount));
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(2, result.Plans.Count);
+        Assert.Equal(1, result.Accounting!.LifetimeReplans);
+
+        // The resumed replan is triggered by the rejected step of the stale plan, not by the later synthetic failure step.
+        Assert.Equal(rejected.Index, audit.Events.OfType<ModelCallAuditEvent>().First().StepIndex);
+    }
+
+    [Fact]
     public async Task ALegacyRecordThatConsumedTheFailedStep_FailsClosed_ByReplanningBeforeOfferingAnyTool()
     {
         // Written by the runtime before ADR-0047: the validation failure on A advanced the cursor, and B ran next.
@@ -319,10 +367,37 @@ public sealed class PlannedStepValidationRetryTests
     public void AnUnknownToolRejectionOfTheExpectedName_IsNotAnArgumentValidationFailure()
     {
         var plan = new AgentPlan(0, "plan", [new PlannedStep(0, "a", ToolA), new PlannedStep(1, "b", ToolB)]);
-        var rejection = new PlanStep(0, RuntimeStepTokens.Denied, new ModelToolCall("call-0", ToolA, ToolArguments.Empty),
+        var rejection = new PlanStep(0, RuntimeStepTokens.Denied,
+            new ModelToolCall("call-0", ToolA, ToolArguments.Empty) { ToolNameError = "not offered" },
             ToolCallResult.Failure("Unknown tool.") with { FailureKind = ToolFailureKind.Validation }, "ERROR (validation): Unknown tool.", 0);
 
         Assert.Equal(new PlannedStepPosition(1, false, false), PlannedStepPosition.Derive(plan, [rejection]));
+    }
+
+    public static TheoryData<string> DeviationsAfterASpentCorrection => ["not-offered", "policy-denied", "timeout", "refuted"];
+
+    [Theory]
+    [MemberData(nameof(DeviationsAfterASpentCorrection))]
+    public void ATypedDeviationAfterASpentCorrection_RequiresAReplan(string deviation)
+    {
+        var plan = new AgentPlan(0, "plan", [new PlannedStep(0, "a", ToolA), new PlannedStep(1, "b", ToolB)]);
+        var invalid = new PlanStep(0, ToolA, new ModelToolCall("call-0", ToolA, ToolArguments.Empty),
+            ToolCallResult.Failure("Invalid.") with { FailureKind = ToolFailureKind.Validation }, "ERROR (validation): Invalid.", 0);
+        var call = new ModelToolCall("call-1", ToolA, ToolArguments.Empty);
+        var next = deviation switch
+        {
+            "not-offered" => new PlanStep(1, RuntimeStepTokens.Denied, call with { ToolName = ToolB, ToolNameError = "not offered" },
+                ToolCallResult.Failure("x") with { FailureKind = ToolFailureKind.Validation }, "x", 0),
+            "policy-denied" => new PlanStep(1, RuntimeStepTokens.Denied, call,
+                ToolCallResult.Failure("x") with { FailureKind = ToolFailureKind.Authorization }, "x", 0),
+            "timeout" => new PlanStep(1, ToolA, call,
+                new ToolCallResult(ToolOutcome.Timeout, null, "x") { FailureKind = ToolFailureKind.Timeout }, "x", 0),
+            _ => new PlanStep(1, ToolA, call, ToolCallResult.Success("ok"), "ok", 0) { VerificationStatus = VerificationStatus.Refuted },
+        };
+
+        Assert.Equal(new PlannedStepPosition(0, true, true), PlannedStepPosition.Derive(plan, [invalid, next]));
+        // The same outcome without a spent correction consumes the step, as before ADR-0047 (the live loop still replans).
+        Assert.Equal(1, PlannedStepPosition.Derive(plan, [next with { Index = 0 }]).Cursor);
     }
 
     [Fact]

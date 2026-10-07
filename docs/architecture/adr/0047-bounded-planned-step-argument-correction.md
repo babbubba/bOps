@@ -64,20 +64,26 @@ the persisted steps of the current plan revision, oldest first, and the live loo
 step is an argument-validation failure on the planned tool only when all of these hold:
 
 - `PlanStep.ToolCall.ToolName` equals the current `ExpectedTool` (ordinal);
-- `ToolCall.ToolNameError` is `null`;
-- the description is not the reserved runtime token `Denied` (an unknown-tool rejection also carries
-  `ToolFailureKind.Validation`);
+- `ToolCall.ToolNameError` is `null` (an unknown or not-offered call is refused with it set, so it never qualifies, even
+  though its rejection also carries `ToolFailureKind.Validation`);
 - `Result.Outcome == Failure` and `Result.FailureKind == Validation`.
 
-Error text is never parsed. Synthetic failure steps carry no plan revision and do not count.
+Once the correction is spent, the live loop's deviations are recognised from typed data too, and each one requires a
+replan: a call of any other tool or one with a `ToolNameError`; a runtime refusal (`ToolFailureKind.Authorization`,
+assigned only by the runtime for policy, operator, envelope and entitlement denials); `ToolOutcome.Timeout`; and
+`PlanStep.VerificationStatus == Refuted`. The live loop replans on these anyway; recording the requirement in the position
+matters when that replan does not commit (ADR-0046 §4) and the task is resumed.
+
+Neither error text nor the step description is parsed. Synthetic failure steps carry no plan revision and do not count.
 
 Resume therefore reconstructs:
 
 - **after a first validation failure:** the same planned step, its single tool, and an already-spent correction, so another
   validation failure replans;
 - **after a successful correction:** the following planned step;
-- **after a second validation failure whose replan did not commit** (for example a malformed replan, ADR-0046 §4): the
-  resumed attempt replans first, before any operational tool is offered;
+- **after a spent correction followed by a second validation failure or a deviation, whose replan did not commit** (for
+  example a malformed replan, ADR-0046 §4): the resumed attempt replans first, before any operational tool is offered. That
+  replan is triggered by the last persisted step of the stale plan revision, not by a later synthetic failure step;
 - **after a record written before this ADR**, where a validation failure was followed by an executed call of another tool:
   the history contradicts the one-correction rule, so the runtime fails closed and replans first rather than guess which
   planned step was served.

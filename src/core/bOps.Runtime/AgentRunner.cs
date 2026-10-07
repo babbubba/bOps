@@ -682,9 +682,11 @@ public sealed class AgentRunner(
         // operational tool is offered again; the live loop never enters here with that position.
         if (position.ReplanRequired)
         {
-            var lastStep = steps[^1];
+            // The step that made this plan revision stale, never a later synthetic failure step (a malformed replan or a
+            // provider outage records one with no plan revision): it is the replan's triggering step, as it was live.
+            var trigger = steps.Last(step => step.PlanRevision == plan.Revision);
             var (resumedPlan, terminal) = await ReplanWithinBudgetAsync(
-                run, plan, WrapToolOutput(lastStep.Observation ?? string.Empty), lastStep.Index, ct);
+                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct);
             if (terminal is not null)
             {
                 return terminal;

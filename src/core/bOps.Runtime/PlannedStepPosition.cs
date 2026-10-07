@@ -13,7 +13,7 @@ namespace bOps.Runtime;
 /// </summary>
 /// <param name="Cursor">The index of the current <see cref="PlannedStep"/>; at or past the plan's end when it is exhausted.</param>
 /// <param name="CorrectionSpent">Whether a step of this plan revision already failed argument validation on the current planned tool.</param>
-/// <param name="ReplanRequired">Whether this plan revision may not offer another operational tool: its current step failed validation twice, or the persisted steps contradict the one-correction rule.</param>
+/// <param name="ReplanRequired">Whether this plan revision may not offer another operational tool: its current step spent its correction and then failed validation again or deviated, or the persisted steps contradict the one-correction rule.</param>
 internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionSpent, bool ReplanRequired)
 {
     /// <summary>The position at the start of a newly accepted plan.</summary>
@@ -26,8 +26,9 @@ internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionS
 
     /// <summary>
     /// The position after <paramref name="step"/>. A first argument-validation failure on the current planned tool keeps the
-    /// cursor and spends the correction; a second one requires a replan. Every other step consumes the planned step, as
-    /// before ADR-0047.
+    /// cursor and spends the correction. Once it is spent, a second validation failure, or any step the live loop treats as a
+    /// deviation, requires a replan: that replan may not have committed (ADR-0046 §4), so a resumed attempt must still see
+    /// it. Every other step consumes the planned step, as before ADR-0047.
     /// </summary>
     internal PlannedStepPosition After(AgentPlan plan, PlanStep step)
     {
@@ -42,10 +43,10 @@ internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionS
             return CorrectionSpent ? this with { ReplanRequired = true } : this with { CorrectionSpent = true };
         }
 
-        // Only the same offered tool, or a call the runtime refused before execution, can follow a spent correction. An
-        // executed call of any other tool was produced by a runtime that consumed the step on its first failure: fail
-        // closed and replan rather than guess which planned step it served.
-        if (CorrectionSpent && IsExecutedCallOfAnotherTool(step, expectedTool))
+        // Only a non-deviating call of the same offered tool can follow a spent correction. A call of any other tool (a
+        // rejected unknown or not-offered name, or an executed one in a record written before ADR-0047) or a deviation of
+        // that tool fails closed: replan rather than guess which planned step it served.
+        if (CorrectionSpent && (IsCallOfAnotherTool(step, expectedTool) || IsDeviation(step)))
         {
             return this with { ReplanRequired = true };
         }
@@ -54,19 +55,26 @@ internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionS
     }
 
     /// <summary>
-    /// The exact planned tool was offered, resolved and reached argument validation, which failed: typed result data and an
-    /// ordinal name match only, never the error text. An unknown-tool rejection also carries
-    /// <see cref="ToolFailureKind.Validation"/>, but under the reserved <see cref="RuntimeStepTokens.Denied"/> description.
+    /// The exact planned tool was offered, resolved and reached argument validation, which failed: typed data and an ordinal
+    /// name match only, never text. A not-offered or unknown name is refused with <see cref="ModelToolCall.ToolNameError"/>
+    /// set, so it never qualifies.
     /// </summary>
     private static bool IsArgumentValidationFailure(PlanStep step, string? expectedTool) =>
         !string.IsNullOrWhiteSpace(expectedTool)
         && step.ToolCall is { ToolNameError: null } call
         && string.Equals(call.ToolName, expectedTool, StringComparison.Ordinal)
-        && !string.Equals(step.Description, RuntimeStepTokens.Denied, StringComparison.Ordinal)
         && step.Result is { Outcome: ToolOutcome.Failure, FailureKind: ToolFailureKind.Validation };
 
-    private static bool IsExecutedCallOfAnotherTool(PlanStep step, string? expectedTool) =>
+    private static bool IsCallOfAnotherTool(PlanStep step, string? expectedTool) =>
         step.ToolCall is { } call
-        && !string.Equals(step.Description, RuntimeStepTokens.Denied, StringComparison.Ordinal)
-        && !string.Equals(call.ToolName, expectedTool, StringComparison.Ordinal);
+        && (call.ToolNameError is not null || !string.Equals(call.ToolName, expectedTool, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The live loop's deviations (rule C8) from typed persisted data: a policy, operator, envelope or entitlement refusal
+    /// (<see cref="ToolFailureKind.Authorization"/> is assigned by the runtime only), a timeout, or a refuted verification.
+    /// </summary>
+    private static bool IsDeviation(PlanStep step) =>
+        step.ToolCall is not null
+        && (step.Result is { FailureKind: ToolFailureKind.Authorization } or { Outcome: ToolOutcome.Timeout }
+            || step.VerificationStatus == VerificationStatus.Refuted);
 }

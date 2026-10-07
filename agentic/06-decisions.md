@@ -1050,9 +1050,10 @@ the exact offered tool that the current planned step expects does not consume th
 offers the same single tool once more, for one correction. A second such failure replans through the existing transactional
 path, with zero native tools. Any other tool name keeps ADR-0046 exact-name rejection. The correction increments no replan
 counter. The cursor, the spent correction and "replan required" are derived from persisted typed step data (exact tool
-name, no `ToolNameError`, not the runtime `Denied` token, the typed failure kind), the same way live and on resume. A
-resumed plan that already exhausted its correction, or a legacy record that contradicts the rule, replans before any tool
-is offered.
+name, no `ToolNameError`, the typed outcome, failure kind and verification status; never text or the step description),
+the same way live and on resume. A resumed plan whose correction was spent and then failed validation again or deviated
+(another tool, a refusal, a timeout, a refuted verification) without a committed replan, or a legacy record that
+contradicts the rule, replans before any tool is offered.
 
 **Rejected.** A new persisted `PlanStep` field; an in-memory retry counter; replanning on every validation failure;
 offering the previous and next tool together; aliases or fuzzy tool-name matching; parsing error text.
