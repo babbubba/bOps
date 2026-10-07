@@ -100,6 +100,8 @@ public sealed class AgentRunner(
         Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to
         4000 UTF-16 code units from one current-task source, reply with only this exact JSON object:
         {"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result|observation","offset":0,"length":4000}
+        This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch,
+        web.search, or any other tool for it; return the object above as assistant text.
         The runtime will return a bounded continuation and ask for the revised plan again.
 
         Respond with ONLY a single JSON object — no prose before or after it, no markdown code
@@ -126,7 +128,9 @@ public sealed class AgentRunner(
     private const string EvidenceReadInstructions =
         "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
         "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
-        "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}.";
+        "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}. " +
+        "This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch, " +
+        "web.search, or any other tool for it; return that exact object as assistant text.";
 
     /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4).</summary>
     internal const int AggressiveGoalMaxCharacters = 2048;

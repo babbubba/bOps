@@ -14,6 +14,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- V1.3.y makes local web search immediately testable through the development Aspire AppHost: a
+  pinned SearXNG container starts with JSON enabled, a generated secret, a read-only configuration,
+  loopback port `8081` and `/healthz`; Aspire injects its endpoint into the API and can omit it with
+  `Searxng__Enabled=false`. Getting Started now distinguishes `web.search` from Docker-independent
+  `web.fetch`, documents readiness/failure modes and identifies `EvidenceRead/v1` as an internal
+  runtime directive. Runtime and tool guidance reinforce that it is not a URL or tool call.
+
 - HARDEN-14 adds a repeatable end-to-end composition gate for all fourteen reliability scenarios.
   It includes a mandatory real-Linux-Docker diagnosis, a sample-plugin mutation flow with plan and
   step approval plus independent verification, the complete registered first-party tool catalog

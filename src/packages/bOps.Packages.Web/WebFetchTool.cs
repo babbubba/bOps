@@ -20,7 +20,7 @@ public sealed class WebFetchTool(WebFetchService fetchService) : ITool
         Description =
             "Fetches one HTTP/HTTPS URL and returns bounded text. Denies loopback/private/link-local/metadata " +
             "network destinations by default, caps redirects/response size/decompressed size, and only decodes " +
-            "an allowlisted set of textual content types.",
+            "an allowlisted set of textual content types. It does not read local files or internal runtime evidence.",
         Risk = RiskLevel.Read,
         Platforms = ["windows", "linux"],
         Requires = [],

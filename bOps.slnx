@@ -60,6 +60,7 @@
     <Project Path="src/packages/bOps.Packages.Web/bOps.Packages.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/bOps.AppHost.Tests/bOps.AppHost.Tests.csproj" />
     <Project Path="tests/bOps.Api.Tests/bOps.Api.Tests.csproj" />
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
     <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />

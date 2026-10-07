@@ -30,9 +30,10 @@ snapshots under `agentic/obsolete/`.
 | 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | **Complete and merged — PR #45** | medio |
 | 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | **Complete and merged — PR #47; integration gate complete, Windows/Linux CI green** | medio |
 | 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | **Complete and merged — PR #50** | molto alto |
-| 23 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
-| 24 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
-| 25 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+| 23 | [`V1.3.y web-tool and evidence-read operability`](2026-10-07-v1.3y-web-evidence-operability.md) | **Implemented locally — validation complete; not committed or merged** | alto |
+| 24 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
+| 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
+| 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
 | completed | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **Closed — HARDEN-1 through HARDEN-14 completed and merged; HARDEN-14 via PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`) | alto / molto alto per packet |
 

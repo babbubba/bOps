@@ -142,6 +142,19 @@ public sealed class HardenEightTests
     }
 
     [Fact]
+    public async Task EvidenceReadPrompt_SaysTheDirectiveIsNeitherAUrlNorAToolCall()
+    {
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Final());
+
+        var state = await Runner(model, new RecordingAuditSink()).RunAsync("goal", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        var prompt = model.Requests[1].SystemPrompt;
+        Assert.Contains("not a URL", prompt, StringComparison.Ordinal);
+        Assert.Contains("Do not call web.fetch, web.search, or any other tool", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task EvidenceRead_ResultBeyond4000_IsReturnedAndPersistedEvidenceStaysComplete()
     {
         var taskId = Guid.Parse("12345678-1234-1234-1234-123456789abc");

@@ -19,6 +19,13 @@ A release must regenerate this inventory from its final restored and bundled art
 checked-in snapshot is evidence for the v0.9.1 licensing gate, not a claim that every listed
 development dependency is redistributed.
 
+## External development service
+
+The development-only Aspire AppHost references and pulls the separate SearXNG container image
+`docker.io/searxng/searxng:2026.10.4-d48c4b555`. SearXNG is licensed under AGPL-3.0-or-later and
+is not linked into, packaged in or redistributed as part of the bOps CLI/API runtime artifacts.
+Its image carries its own license and source notices; upstream: https://github.com/searxng/searxng.
+
 ## License finding requiring release review
 
 The binary NuGet packages `Json.More.Net@3.0.1`, `JsonPatch.Net@5.0.2` and

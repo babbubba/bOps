@@ -29,9 +29,71 @@ and restart it — see <https://docs.searxng.org/dev/search_api.html>. If JSON o
 `web.search` reports an actionable failure naming the setting to change; it never scrapes the HTML
 results page as a fallback, and no API key is used or accepted.
 
+### Local development with Aspire
+
+`bOps.AppHost` supplies a ready-to-use development instance by default. It uses the pinned image
+`docker.io/searxng/searxng:2026.10.4-d48c4b555`, mounts
+`src/bOps.AppHost/searxng/settings.yml` read-only, generates the SearXNG server secret at AppHost
+startup, exposes only the Aspire loopback proxy on `http://localhost:8081`, and waits on
+`/healthz` before starting the API. The mounted settings explicitly include both `html` and `json`
+under `search.formats`; the limiter is off because this is a loopback-only development instance,
+not an Internet-facing deployment.
+
+```bash
+dotnet run --project src/bOps.AppHost/bOps.AppHost.csproj
+curl -fsS "http://localhost:8081/healthz"
+curl -fsS "http://localhost:8081/search?q=bOps&format=json"
+```
+
+```powershell
+dotnet run --project src/bOps.AppHost/bOps.AppHost.csproj
+Invoke-WebRequest -UseBasicParsing http://localhost:8081/healthz
+Invoke-RestMethod 'http://localhost:8081/search?q=bOps&format=json'
+```
+
+The AppHost injects an Aspire endpoint reference into the **host process** running `bops-api`; do
+not replace it with a guessed container address. Host `localhost`, a container's own `localhost`
+and the Aspire resource name are different network namespaces. If you containerize the API
+outside this development topology, configure `Web__Search__BaseUrl` with an address resolvable
+from that API container.
+
+Set `Searxng__Enabled=false` before starting the AppHost to omit the resource and its API
+configuration. This does not affect `web.fetch` or other tools. Starting `bOps.Api` or `bOps.Cli`
+directly also remains Docker-independent.
+
+### Readiness and failure diagnosis
+
+- `GET /healthz` returning `200 OK` proves the SearXNG web application is ready.
+- `/search?q=bOps&format=json` returning a JSON object proves JSON output is enabled and at least
+  one real search request completed. An empty `results` array is still valid JSON readiness.
+- A connection or DNS error means the configured endpoint is unreachable from the bOps process.
+- An HTTP error is reported with its status code.
+- A successful HTML response means `json` is absent from `search.formats`.
+- An `application/json` response that cannot be parsed is reported as malformed; it is never
+  accepted as search evidence.
+
+The API's authenticated `GET /api/tools` is the catalog the model actually sees. `web.search`
+present there means a syntactically valid endpoint was configured; it does not replace the live
+readiness checks above. `web.search` absent while `web.fetch` remains present means
+`Web:Search:BaseUrl` is empty or invalid.
+
 `query`, `category`, `language`, `safeSearch` and `timeRange` are passed through as bounded,
 validated SearXNG query parameters; `page` selects a result page. Results beyond `MaxResults` are
 dropped, duplicate URLs are removed, and each snippet is truncated to `MaxResultTextBytes`.
+
+## `EvidenceRead/v1` is internal, not web access
+
+Bounded task history may tell the model to return one exact `EvidenceRead/v1` JSON object as plain
+assistant text. The runtime recognizes that object, validates its current-task evidence id, source,
+offset and length, and returns a bounded continuation. It is not a registered tool, URL, search
+query or fetch target. The model must not encode it inside `web.fetch` or `web.search` arguments;
+their manifests and runtime prompt state this explicitly.
+
+A malformed internal directive is rejected by the runtime. A model that instead proposes an
+ordinary web tool call still goes through that tool's normal validation: `data:` and `file:` are
+not HTTP(S), fabricated names fail DNS, and none of those failures relax policy or reveal internal
+evidence. Internal reads are capped at four attempts per logical model call; exceeding the cap ends
+the task with `EvidenceRead/v1 limit exceeded` rather than looping without explanation.
 
 ## `web.fetch`: what it will and will not reach
 

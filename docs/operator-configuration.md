@@ -346,6 +346,21 @@ firefox` once). It starts its own test-only API host (`tests/bOps.Api.E2EHost`, 
 per-run generated key) and `ng serve`, so ports 4200, 4300, 4301, 5080 and 5099 must be free and no
 regular API may be running.
 
+For the integrated development topology, start Docker and run the AppHost from the repository root:
+
+```bash
+dotnet run --project src/bOps.AppHost/bOps.AppHost.csproj
+```
+
+It starts UI `4200`, API `5080`, SearXNG `8081` and the Linux test target. SearXNG is development
+infrastructure only: the AppHost supplies `Web__Search__BaseUrl` to the API and waits for its
+`/healthz`; direct API/CLI execution has no Docker requirement. Set `Searxng__Enabled=false` to omit
+it from the AppHost, or set `Web__Search__BaseUrl` on the API/CLI process to use an external trusted
+instance. Verify the local JSON API with
+`Invoke-RestMethod 'http://localhost:8081/search?q=bOps&format=json'` on PowerShell or
+`curl -fsS 'http://localhost:8081/search?q=bOps&format=json'` on bash. Full failure meanings and
+network-namespace guidance are in [the web network policy](security/web-network-policy.md).
+
 ## 11. Production notes
 
 - Bind the API to loopback, or put TLS and an authenticated reverse proxy in front of it. The launch
