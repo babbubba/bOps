@@ -211,7 +211,15 @@ internal sealed class GatedChatModel : IChatModel, IDisposable
         var phase = (Interlocked.Increment(ref _calls) - 1) % 4;
         if (phase == 0)
         {
-            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-8", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+            return new ModelResponse(new JsonObject
+            {
+                ["rationale"] = "E2E-8",
+                ["steps"] = new JsonArray
+                {
+                    new JsonObject { ["description"] = "Read CPU utilization before reload.", ["expectedTool"] = "system.cpu" },
+                    new JsonObject { ["description"] = "Read CPU utilization after reload.", ["expectedTool"] = "system.cpu" },
+                },
+            }.ToJsonString(), [], false, null);
         }
 
         Interlocked.Increment(ref _waiting);
