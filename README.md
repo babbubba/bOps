@@ -271,6 +271,41 @@ refuses to start without it unless you remove `Vault:MasterKeySecret` from its c
 authenticated reverse proxy in front of it. Vault design:
 [ADR-0029](docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md).
 
+### Aspire and optional web search
+
+With Docker running, the development AppHost starts the API, UI, Linux test target and a local
+SearXNG instance in one command. SearXNG listens through Aspire on `http://localhost:8081`; its
+repository-owned configuration enables JSON results, and Aspire injects the correct endpoint into
+the API as `Web__Search__BaseUrl`.
+
+```bash
+dotnet run --project src/bOps.AppHost/bOps.AppHost.csproj
+curl -fsS "http://localhost:8081/healthz"
+curl -fsS "http://localhost:8081/search?q=bOps&format=json"
+```
+
+```powershell
+dotnet run --project src/bOps.AppHost/bOps.AppHost.csproj
+Invoke-WebRequest -UseBasicParsing http://localhost:8081/healthz
+Invoke-RestMethod 'http://localhost:8081/search?q=bOps&format=json'
+```
+
+The Aspire dashboard reports `searxng` healthy before it starts `bops-api`. Once the API is up,
+`GET /api/tools` contains both `web.search` and `web.fetch`. An unreachable endpoint produces a
+bounded `web.search` failure; an HTML response reports that JSON is disabled; malformed JSON is
+reported separately.
+
+The distinction matters: **`web.fetch` never needs SearXNG or Docker** and fetches one public
+HTTP(S) URL under the outbound network policy. **`web.search` needs a trusted SearXNG endpoint** and
+is hidden from the model when `Web:Search:BaseUrl` is absent. To run this AppHost without SearXNG,
+set `Searxng__Enabled=false`; starting the API or CLI directly remains Docker-independent. To use an
+operator-managed instance outside Aspire, set `Web__Search__BaseUrl` on the API/CLI process.
+
+`EvidenceRead/v1` is neither tool: it is a bounded internal runtime directive for reading persisted
+evidence from the current task. It is not a URL and must never be passed to `web.fetch` or
+`web.search`. See the [web network policy and troubleshooting guide](docs/security/web-network-policy.md)
+for endpoint namespaces, JSON configuration, readiness checks and failure meanings.
+
 ## Providers
 
 Providers are packages resolved by id at start-up, not a hardcoded switch in the core.

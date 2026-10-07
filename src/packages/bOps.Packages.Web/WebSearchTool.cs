@@ -20,7 +20,7 @@ public sealed class WebSearchTool(SearxngClient client) : ITool
         Name = "web.search",
         Description =
             "Searches the web through an operator-configured SearXNG instance's JSON API. No API key. " +
-            "Never falls back to scraping an HTML search page.",
+            "Never falls back to scraping an HTML search page and does not read internal runtime evidence.",
         Risk = RiskLevel.Read,
         Platforms = ["windows", "linux"],
         Requires = [WebCapabilities.Searxng],

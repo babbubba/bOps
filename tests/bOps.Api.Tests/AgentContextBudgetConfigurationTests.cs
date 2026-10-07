@@ -22,10 +22,10 @@ public sealed class AgentContextBudgetConfigurationTests
         var options = Bind(settings);
 
         Assert.Equal("3", settings["Agent:VerbatimHistorySteps"]);
-        Assert.Equal("350000", settings["Agent:MaxTotalTokens"]);
+        Assert.Equal("450000", settings["Agent:MaxTotalTokens"]);
         Assert.Equal("01:00:00", settings["Agent:MaxAttemptDuration"]);
         Assert.Equal(3, options.VerbatimHistorySteps);
-        Assert.Equal(350_000, options.MaxTotalTokens);
+        Assert.Equal(450_000, options.MaxTotalTokens);
         Assert.Equal(TimeSpan.FromHours(1), options.MaxAttemptDuration);
         options.Validate();
     }
@@ -57,3 +57,4 @@ public sealed class AgentContextBudgetConfigurationTests
         Assert.Null(options.MaxAttemptDuration);
     }
 }
+

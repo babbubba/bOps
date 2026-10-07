@@ -1,6 +1,10 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
+using Aspire.Hosting.ApplicationModel;
+using Microsoft.Extensions.Configuration;
+
 IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
 
 // V0.5 (agentic/06-decisions.md, D-002): this AppHost orchestrates dependencies and test targets
@@ -20,6 +24,25 @@ builder.AddContainer("linux-test-target", "mcr.microsoft.com/dotnet/sdk")
     .WithEntrypoint("tail")
     .WithArgs("-f", "/dev/null");
 
+IResourceBuilder<ContainerResource>? searxng = null;
+if (builder.Configuration.GetValue("Searxng:Enabled", true))
+{
+    var searxngSecret = builder.AddParameter(
+        "searxng-secret",
+        () => Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
+        secret: true);
+    var settingsPath = Path.Combine(builder.AppHostDirectory, "searxng", "settings.yml");
+
+    searxng = builder.AddContainer("searxng", "searxng/searxng")
+        .WithImageRegistry("docker.io")
+        .WithImageTag("2026.10.4-d48c4b555")
+        .WithBindMount(settingsPath, "/etc/searxng/settings.yml", isReadOnly: true)
+        .WithEnvironment("SEARXNG_SECRET", searxngSecret)
+        .WithEnvironment("SEARXNG_PORT", "8080")
+        .WithHttpEndpoint(port: 8081, targetPort: 8080, name: "http")
+        .WithHttpHealthCheck("/healthz");
+}
+
 // V0.9 (D-002 explicitly names "from V0.9, the API and UI"): one `dotnet run` starts both
 // bOps.Api and the Angular dev server together, instead of two separate shells. Both ports are
 // pinned to match web/bops-ui/proxy.conf.json (which hardcodes http://localhost:5080 for /api)
@@ -27,6 +50,12 @@ builder.AddContainer("linux-test-target", "mcr.microsoft.com/dotnet/sdk")
 // it is simply a third way to start the same two processes.
 var api = builder.AddProject<Projects.bOps_Api>("bops-api")
     .WithHttpEndpoint(port: 5080, name: "http");
+
+if (searxng is not null)
+{
+    api.WithEnvironment("Web__Search__BaseUrl", searxng.GetEndpoint("http"))
+        .WaitFor(searxng);
+}
 
 // isProxied: false — `ng serve` always binds 4200 itself and does not read the PORT env var
 // Aspire's proxy would otherwise inject; with proxying on, DCP tries to own port 4200 for its own

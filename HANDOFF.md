@@ -1,6 +1,31 @@
-# Handoff — V1.3 implemented and merged; V1.3.x hardening active
+# Handoff — V1.3.y web-search operability implemented locally
 
-## Current handoff — 2026-10-06
+## Current handoff — 2026-10-07
+
+- V1.3.y is implemented locally and validated, but not committed, pushed or merged. The development
+  AppHost now provisions pinned SearXNG `2026.10.4-d48c4b555`, mounts JSON-enabled settings
+  read-only, generates its secret, exposes `http://localhost:8081`, waits for `/healthz`, and injects
+  `Web__Search__BaseUrl` into `bops-api`. `Searxng__Enabled=false` omits it; direct API/CLI runs are
+  still Docker-independent.
+- Real AppHost validation passed: health `200`, a JSON search returned 20 results, the live
+  `SearxngClient` test passed, and `/api/tools` exposed `web.search` plus `web.fetch`. The new
+  `bOps.AppHost.Tests` project verifies the image/tag, mount, endpoint, health dependency,
+  environment reference and disabled topology.
+- The `EvidenceRead/v1` incident was model behavior, not provider/runtime translation: the existing
+  fallback-provider regression preserves it as text and runtime recognition is exact. Prompt and
+  web-tool descriptions now state that it is not a URL or tool call; a new core regression covers
+  the wording. A Qwen smoke reached the configured endpoint but stopped at its accurate bounded
+  `401 Invalid API Key` diagnostic because the test process had no usable local-model credential.
+- README Quick start, operator configuration, web network policy, third-party notice, changelog,
+  roadmap and task index are aligned. No ADR was needed: D-002 already assigns dependencies/test
+  targets to Aspire and D-019/ADR-0028 already selects operator-owned SearXNG JSON search.
+- Release solution build passed with zero warnings; the full solution test gate excluding
+  `Category=LiveModel` passed. Focused AppHost, Web and Runtime runs passed 2, 62 and 1,542 tests.
+
+The next action is review/commit/CI for V1.3.y when the operator requests it. V1.4 remains planned
+and requires separate authorization.
+
+## Handoff — 2026-10-06 (historical)
 
 - V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
 - V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
