@@ -122,12 +122,15 @@ public sealed class FallbackExecutionTests
             Task.FromResult(book.Invoke($"{options.Provider}/{options.Model}", options.ResolvedApiKey));
     }
 
-    private static Func<ModelResponse> Plan() => () =>
+    private static Func<ModelResponse> Plan(string expectedTool) => () =>
         new ModelResponse(new JsonObject
         {
             ["rationale"] = "A plan.",
-            ["steps"] = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = null } },
+            ["steps"] = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = expectedTool } },
         }.ToJsonString(), [], false, null);
+
+    private static Func<ModelResponse> NoToolPlan() => () =>
+        new ModelResponse(new JsonObject { ["rationale"] = "No tool is needed.", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
 
     private static Func<ModelResponse> Final(string text = "Done.") => () => new ModelResponse(text, [], true, null);
 
@@ -316,7 +319,7 @@ public sealed class FallbackExecutionTests
     public async Task OrdinaryTask_FallsBackAcrossProviders_PersistsTheOrdinalFirst_UsesTheFallbackVaultKey_AndStaysSticky()
     {
         var book = new Book()
-            .Script(Primary, Plan(), Fail())
+            .Script(Primary, Plan("fbtest.info"), Fail())
             .Script(Secondary, CallInfo(), Final());
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
         var persistedAtFallbackCall = new List<int>();
@@ -381,7 +384,7 @@ public sealed class FallbackExecutionTests
     public async Task AFallbackWithoutACurrentCredential_EndsTheCallAsAuthentication_AndNeverReachesTheNextCandidate()
     {
         var book = new Book()
-            .Script(Primary, Plan(), Fail())
+            .Script(Primary, Plan("fbtest.info"), Fail())
             .Script(Secondary, Final())
             .Script("OpenRouter/openrouter/second", Final());
         using var host = NewHost(book, ("Anthropic", "sonnet-x"), ("OpenRouter", "openrouter/second"));
@@ -405,7 +408,7 @@ public sealed class FallbackExecutionTests
     public async Task AnotherExecution_StartsAtThePrimary_NoFallbackStateIsShared()
     {
         var book = new Book()
-            .Script(Primary, Plan(), Fail(), Plan(), Final("second"))
+            .Script(Primary, Plan("fbtest.info"), Fail(), NoToolPlan(), Final("second"))
             .Script(Secondary, Final("first"));
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
 
@@ -426,7 +429,7 @@ public sealed class FallbackExecutionTests
     public async Task ResumedTask_ReconstructsFromThePersistedOrdinal_AndNeverRetriesThePrimary()
     {
         var book = new Book()
-            .Script(Primary, Plan())
+            .Script(Primary, Plan("fbtest.info"))
             .Script(Secondary, Final("resumed"));
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
         var pin = host.Coordinator.Current.Pin with { FallbackOrdinal = 1 };
@@ -471,7 +474,7 @@ public sealed class FallbackExecutionTests
         const int attempts = 3;
         var book = new Book()
             .Script(Primary, Fail(ModelFailureKind.RateLimited), Fail(ModelFailureKind.Transient), Fail(ModelFailureKind.Unreachable))
-            .Script(Secondary, Plan(), CallInfo(), Final("recovered"));
+            .Script(Secondary, Plan("fbtest.info"), CallInfo(), Final("recovered"));
         using var host = NewHostWithRetries(book, attempts, ("Anthropic", "sonnet-x"));
         var generation = host.Coordinator.Current.Pin.Generation;
 
@@ -543,8 +546,8 @@ public sealed class FallbackExecutionTests
             return Final("A finished")();
         };
         var book = new Book()
-            .Script(A, Plan(), CallInfo(), HoldThenFinish())
-            .Script(B, Plan(), Final("B finished"));
+            .Script(A, Plan("fbtest.info"), CallInfo(), HoldThenFinish())
+            .Script(B, NoToolPlan(), Final("B finished"));
         using var host = NewHost(book);
 
         // 1-3. Task A is running on A/X: it has planned, taken a step, and is inside its third model call.
@@ -660,8 +663,8 @@ public sealed class FallbackExecutionTests
     {
         // Discovery: primary plan, primary fails -> fallback. Diagnostic (a later role of the SAME run) must start at the fallback.
         var book = new Book()
-            .Script(Primary, Plan(), Fail())
-            .Script(Secondary, CallInfo(), Final(), Plan(), Findings());
+            .Script(Primary, Plan("fbtest.info"), Fail())
+            .Script(Secondary, CallInfo(), Final(), NoToolPlan(), Findings());
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
 
         var id = await StartAsync(host.Client, Fix());
@@ -697,8 +700,8 @@ public sealed class FallbackExecutionTests
     public async Task ResumedDelegation_ReconstructsFromThePersistedOrdinal_ForEveryRole()
     {
         var book = new Book()
-            .Script(Primary, Plan())
-            .Script(Secondary, Plan(), CallInfo(), Final(), Plan(), Findings());
+            .Script(Primary, Plan("fbtest.info"))
+            .Script(Secondary, Plan("fbtest.info"), CallInfo(), Final(), NoToolPlan(), Findings());
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
         var actor = new ActorIdentity("api-user", "test-user", "Test User");
         var run = new DelegationRun

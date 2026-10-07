@@ -171,15 +171,18 @@ public sealed class DelegationOperabilityEndpointsTests
         }
     }
 
-    private static ModelResponse Plan() => new(
-        new JsonObject { ["rationale"] = "A plan.", ["steps"] = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = null } } }.ToJsonString(), [], false, null);
+    private static ModelResponse Plan(string expectedTool) => new(
+        new JsonObject { ["rationale"] = "A plan.", ["steps"] = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = expectedTool } } }.ToJsonString(), [], false, null);
+
+    private static ModelResponse NoToolPlan() => new(
+        new JsonObject { ["rationale"] = "No tool is needed.", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
 
     private static ModelResponse[] DiagnosisScript(string citedTool = "optest.info") =>
     [
-        Plan(),
+        Plan(citedTool),
         new ModelResponse(null, [new ModelToolCall("c1", citedTool, ToolArguments.Empty)], false, null),
         new ModelResponse("Read it.\n\nEvidence limitations\n- one read was partial.", [], true, null),
-        Plan(),
+        NoToolPlan(),
         new ModelResponse("{\"findings\":[{\"summary\":\"Something is off.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"low\"}]}", [], true, null),
     ];
 

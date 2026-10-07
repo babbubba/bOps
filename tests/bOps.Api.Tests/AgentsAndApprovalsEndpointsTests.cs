@@ -304,7 +304,7 @@ public sealed class AgentsAndApprovalsEndpointsTests
         using var factory = new TestAppFactory
         {
             ChatModel = new QueueChatModel(
-                QueueChatModel.PlanResponse(),
+                QueueChatModel.PlanResponse(expectedTools: ["system.cpu"]),
                 QueueChatModel.ToolCall("system.cpu"),
                 QueueChatModel.Final("checked cpu")),
             PolicyEngine = new FixedPolicyEngine(PolicyMode.Approval),
@@ -530,7 +530,7 @@ internal sealed class DeletionWorkflowChatModel(string root) : IChatModel
     {
         var response = _callCount++ switch
         {
-            0 => QueueChatModel.PlanResponse("prepare, approve and delete the exact tree"),
+            0 => QueueChatModel.PlanResponse("prepare, approve and delete the exact tree", "fs.delete_tree.prepare", "fs.delete_tree"),
             1 => QueueChatModel.ToolCall("fs.delete_tree.prepare", new JsonObject
             {
                 ["paths"] = new JsonArray(root),

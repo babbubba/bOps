@@ -81,7 +81,7 @@ public sealed class V11ReleaseGateTests
         using var factory = new TestAppFactory
         {
             ChatModel = new QueueChatModel(
-                QueueChatModel.PlanResponse("collect system evidence, then research on the web"),
+                QueueChatModel.PlanResponse("collect system evidence, then research on the web", "system.info", "web.fetch"),
                 QueueChatModel.ToolCall("system.info"),
                 QueueChatModel.ToolCall("web.fetch", new JsonObject { ["url"] = "http://127.0.0.1:9/internal-admin" }),
                 QueueChatModel.Final("evidence collected; the loopback destination was refused")),

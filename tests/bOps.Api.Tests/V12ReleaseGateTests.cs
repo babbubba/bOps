@@ -114,16 +114,19 @@ public sealed class V12ReleaseGateTests
         public IEnumerable<ITool> GetTools() => [];
     }
 
-    private static ModelResponse Plan()
+    private static ModelResponse Plan(string expectedTool)
     {
-        var steps = new JsonArray { new JsonObject { ["description"] = "look at the machine", ["expectedTool"] = null } };
+        var steps = new JsonArray { new JsonObject { ["description"] = "look at the machine", ["expectedTool"] = expectedTool } };
         return new ModelResponse(new JsonObject { ["rationale"] = "A plan.", ["steps"] = steps }.ToJsonString(), [], false, null);
     }
 
+    private static ModelResponse NoToolPlan() =>
+        new(new JsonObject { ["rationale"] = "No tool is needed.", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+
     private static ModelResponse[] Script() =>
     [
-        Plan(), new ModelResponse(null, [new ModelToolCall("c1", "system.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
-        Plan(), new ModelResponse("{\"findings\":[{\"summary\":\"The marker is missing.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
+        Plan("system.info"), new ModelResponse(null, [new ModelToolCall("c1", "system.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
+        NoToolPlan(), new ModelResponse("{\"findings\":[{\"summary\":\"The marker is missing.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
     ];
 
     /// <summary>The real store, until the host "dies" as the outcome of the first step is about to be recorded: nothing after that is kept.</summary>

@@ -249,8 +249,10 @@ internal static class DelegationScript
 
         if (request.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal) || request.SystemPrompt.Contains("Revise it.", StringComparison.Ordinal))
         {
-            var step = new JsonObject { ["description"] = "Read the CPU utilization.", ["expectedTool"] = diagnostic ? null : "system.cpu" };
-            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-9 diagnosis.", ["steps"] = new JsonArray { step } }.ToJsonString(), [], false, null);
+            var steps = diagnostic
+                ? new JsonArray()
+                : new JsonArray { new JsonObject { ["description"] = "Read the CPU utilization.", ["expectedTool"] = "system.cpu" } };
+            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-9 diagnosis.", ["steps"] = steps }.ToJsonString(), [], false, null);
         }
 
         if (diagnostic)
