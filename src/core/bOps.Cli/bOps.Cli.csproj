@@ -35,13 +35,19 @@
   </ItemGroup>
 
   <Target Name="CopyFirewallWindowsHelper" AfterTargets="Build">
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.Firewall.Windows.Helper\bOps.Packages.Firewall.Windows.Helper.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
-    <ItemGroup><_FirewallHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.Firewall.Windows.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.Firewall.Windows.Helper.*" /></ItemGroup>
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.Firewall.Windows.Helper\bOps.Packages.Firewall.Windows.Helper.csproj" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="RuntimeIdentifier;SelfContained" />
+    <ItemGroup>
+      <_FirewallHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.Firewall.Windows.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.Firewall.Windows.Helper.*" />
+      <ResolvedFileToPublish Include="@(_FirewallHelper)" RelativePath="%(_FirewallHelper.Filename)%(_FirewallHelper.Extension)" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
     <Copy SourceFiles="@(_FirewallHelper)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyWindowsUpdatesHelper" AfterTargets="Build">
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bOps.Packages.System.Windows.Updates.Helper.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
-    <ItemGroup><_UpdatesHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.System.Windows.Updates.Helper.*" /></ItemGroup>
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bOps.Packages.System.Windows.Updates.Helper.csproj" Targets="Build" Properties="Configuration=$(Configuration)" RemoveProperties="RuntimeIdentifier;SelfContained" />
+    <ItemGroup>
+      <_UpdatesHelper Include="$(MSBuildProjectDirectory)\..\..\packages\bOps.Packages.System.Windows.Updates.Helper\bin\$(Configuration)\net10.0-windows\bOps.Packages.System.Windows.Updates.Helper.*" />
+      <ResolvedFileToPublish Include="@(_UpdatesHelper)" RelativePath="%(_UpdatesHelper.Filename)%(_UpdatesHelper.Extension)" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
     <Copy SourceFiles="@(_UpdatesHelper)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
