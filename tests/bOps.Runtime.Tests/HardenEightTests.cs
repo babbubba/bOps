@@ -454,7 +454,7 @@ public sealed class HardenEightTests
     public async Task AttemptDuration_ExcludesHumanApprovalWaiting()
     {
         var clock = new FakeTimeProvider(Now);
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("test.approval"), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "test.approval"), Call("test.approval"), Final());
         var approval = new AdvancingApprovalProvider(clock, TimeSpan.FromHours(2));
         var options = new AgentRunnerOptions { MaxAttemptDuration = TimeSpan.FromMinutes(1) };
 
@@ -470,7 +470,7 @@ public sealed class HardenEightTests
     public async Task AttemptDuration_CancelsTool_PersistsInterruptedResult_AndDoesNotReplan()
     {
         var clock = new FakeTimeProvider(Now);
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Call("test.slow"));
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "test.slow"), Call("test.slow"));
         var audit = new RecordingAuditSink();
         var options = new AgentRunnerOptions
         {

@@ -1015,3 +1015,28 @@ persisted/effective/shadowed state, task and delegation persistence gains an add
 gain only additive non-redundant primary/fallback/generation metadata, and the host gains atomic configuration
 publication, per-attempt current-credential resolution and `FallbackChatModel`. Fallback support is disabled when its
 explicit list is empty. HARDEN-13 Block B is complete: B1 passed independent review, B2a/B2b/B3 merged through PRs #80/#81/#82 after review, all executable final-review gates passed, and the packet merged to `main` through PR #83 (`3bed13e3274570a3928ac64706be6246c0d9a978`).
+
+### D-043 — ACCEPTED AND IMPLEMENTED — Step-scoped tool routing and transactional replanning (ADR-0046)
+
+**Decision.** Accepted 2026-10-07. Every newly produced non-empty planned step names a non-empty canonical
+`expectedTool`. An execution-step request exposes only the exact current `expectedTool`, intersected with the
+existing ordinary or delegated authorized tool view; missing, exhausted, unavailable or unauthorized routing fails
+closed to zero native schemas and never restores the full catalog. The executor still supplies arguments and every
+emitted call traverses the existing policy, entitlement, approval, validation, execution and verification path.
+ADR-0038 first-call-wins behavior and `UnexecutedToolCalls` persistence remain unchanged.
+
+Replanning is transactional. Runtime keeps one corrective re-ask, but a second malformed candidate now terminates the
+attempt through the existing `Failed / ModelFailure / MalformedResponse` path. It retains both model-call records and
+their token accounting, appends no plan revision, does not reset the plan cursor, and preserves the last accepted plan
+for the existing ADR-0040 resume policy.
+
+**Rejected.** Falling back to the complete authorized catalog when routing is unusable; treating a malformed replan as
+an intentional empty plan; executing `expectedTool` without an executor-produced call; changing provider wire
+contracts; duplicate suppression; related-tool groups; provider-specific prompts; per-role model routing; a new
+Evidence Store or compaction mechanism; a new broad E2E replay.
+
+**Consequences.** Execution prompts carry at most one native tool schema, while plan/replan continue to carry none.
+Persisted legacy or otherwise unusable routing cannot authorize an operational call. Ordinary malformed-replan
+failures remain resumable without losing the accepted plan. No public status, tool, provider, persistence or evidence
+contract changes; HARDEN-8, `EvidenceRead/v1`, provider fallback pinning and existing lifetime accounting remain
+authoritative.

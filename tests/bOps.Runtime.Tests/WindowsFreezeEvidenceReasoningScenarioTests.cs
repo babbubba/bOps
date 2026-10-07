@@ -39,7 +39,7 @@ public sealed class WindowsFreezeEvidenceReasoningScenarioTests
                 "{\"health\":\"healthy\",\"partial\":true,\"reliabilityCounters\":\"requires elevation\"}")),
         };
         var model = new FakeChatModel([
-            PlanningTestSupport.PlanResponse(stepCount: evidence.Length),
+            PlanningTestSupport.PlanResponseFor([.. evidence.Select(tool => tool.Manifest.Name)]),
             .. evidence.Select((tool, index) => EvidenceScenario.Call(tool.Manifest.Name, $"call-{index}")),
             EvidenceScenario.Final(BadAnswer)]);
 

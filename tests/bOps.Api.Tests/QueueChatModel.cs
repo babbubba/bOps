@@ -23,9 +23,17 @@ internal sealed class QueueChatModel(params ModelResponse[] responses) : IChatMo
         return Task.FromResult(responses[_callCount++]);
     }
 
-    /// <summary>The canned plan response every task's initial planning call needs — an empty step list, so the loop never treats any step as plan-exhausted.</summary>
-    public static ModelResponse PlanResponse(string rationale = "test plan") =>
-        new(new JsonObject { ["rationale"] = rationale, ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+    /// <summary>The canned plan response every task's initial planning call needs.</summary>
+    public static ModelResponse PlanResponse(string rationale = "test plan", params string[] expectedTools) =>
+        new(new JsonObject
+        {
+            ["rationale"] = rationale,
+            ["steps"] = new JsonArray(expectedTools.Select((tool, index) => (JsonNode)new JsonObject
+            {
+                ["description"] = $"step {index}",
+                ["expectedTool"] = tool,
+            }).ToArray()),
+        }.ToJsonString(), [], false, null);
 
     public static ModelResponse ToolCall(string toolName, JsonObject? arguments = null) =>
         new(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), toolName, ToolArguments.FromJson(arguments ?? []))], false, null);

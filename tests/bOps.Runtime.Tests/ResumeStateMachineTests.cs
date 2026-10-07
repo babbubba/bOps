@@ -47,13 +47,14 @@ public sealed class ResumeStateMachineTests
     /// <summary>A stored task: <paramref name="executableSteps"/> tool steps, then <paramref name="failureSteps"/> synthetic failure steps.</summary>
     private static TaskState Stored(
         AgentTaskStatus status, TaskOrigin origin = TaskOrigin.Ordinary, int executableSteps = 1, int failureSteps = 0, int plans = 1,
-        TaskAccounting? accounting = null, int executionAttempt = 1, string goal = "check the disk")
+        TaskAccounting? accounting = null, int executionAttempt = 1, string goal = "check the disk", string expectedTool = "test.read")
     {
         var steps = Enumerable.Range(0, executableSteps).Select(i => ToolStep(i))
             .Concat(Enumerable.Range(executableSteps, failureSteps).Select(FailureStep))
             .ToList();
         return new TaskState(Guid.NewGuid(), NodeId.Local, goal, status, steps,
-            [.. Enumerable.Range(0, plans).Select(revision => new AgentPlan(revision, $"plan {revision}", []))], DateTimeOffset.UtcNow)
+            [.. Enumerable.Range(0, plans).Select(revision => new AgentPlan(revision, $"plan {revision}",
+                [.. Enumerable.Range(0, 100).Select(index => new PlannedStep(index, $"step {index}", expectedTool))]))], DateTimeOffset.UtcNow)
         {
             ExecutionAttempt = executionAttempt,
             Origin = origin,
@@ -117,7 +118,7 @@ public sealed class ResumeStateMachineTests
     public async Task H3_02_AFailedTaskWithNoPlan_RePlansUnderTheNewAttempt_AndProgresses()
     {
         var (store, stored) = Seeded(Stored(AgentTaskStatus.Failed, executableSteps: 0, failureSteps: 1, plans: 0));
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 0), Read(), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Read(), Final());
 
         var result = await Runner(model, store).ResumeAsync(stored, Resumer);
 
@@ -684,7 +685,7 @@ public sealed class ResumeStateMachineTests
     [Fact]
     public async Task H3_30_PolicyAndApproval_AreEnforcedAgainInAResumedAttempt()
     {
-        var (store, stored) = Seeded(Stored(AgentTaskStatus.Failed));
+        var (store, stored) = Seeded(Stored(AgentTaskStatus.Failed, expectedTool: "test.highrisk"));
         var tool = new FakeHighRiskTool();
         var approval = new CountingApprovalProvider(approved: false);
         var model = new FakeChatModel(

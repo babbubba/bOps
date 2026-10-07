@@ -148,17 +148,20 @@ public sealed class DelegationsEndpointsTests
         }
     }
 
-    private static ModelResponse Plan()
+    private static ModelResponse Plan(string expectedTool)
     {
-        var steps = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = null } };
+        var steps = new JsonArray { new JsonObject { ["description"] = "look", ["expectedTool"] = expectedTool } };
         return new ModelResponse(new JsonObject { ["rationale"] = "A plan.", ["steps"] = steps }.ToJsonString(), [], false, null);
     }
+
+    private static ModelResponse NoToolPlan() =>
+        new(new JsonObject { ["rationale"] = "No tool is needed.", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
 
     /// <summary>What Discovery and the Diagnostic role ask of the model when the run goes well.</summary>
     private static ModelResponse[] HappyScript() =>
     [
-        Plan(), new ModelResponse(null, [new ModelToolCall("c1", "delegtest.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
-        Plan(), new ModelResponse("{\"findings\":[{\"summary\":\"The service has stopped.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
+        Plan("delegtest.info"), new ModelResponse(null, [new ModelToolCall("c1", "delegtest.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
+        NoToolPlan(), new ModelResponse("{\"findings\":[{\"summary\":\"The service has stopped.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
     ];
 
     private sealed record Host(TestAppFactory Factory, HttpClient Client, RestartTool Restart) : IDisposable

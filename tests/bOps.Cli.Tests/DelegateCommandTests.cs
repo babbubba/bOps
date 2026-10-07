@@ -214,17 +214,20 @@ public sealed class DelegateCommandTests : IDisposable
                 Window: null);
         });
 
-    private static ModelResponse Plan()
+    private static ModelResponse Plan(string expectedTool)
     {
-        var steps = new System.Text.Json.Nodes.JsonArray { new System.Text.Json.Nodes.JsonObject { ["description"] = "look", ["expectedTool"] = null } };
+        var steps = new System.Text.Json.Nodes.JsonArray { new System.Text.Json.Nodes.JsonObject { ["description"] = "look", ["expectedTool"] = expectedTool } };
         var json = new System.Text.Json.Nodes.JsonObject { ["rationale"] = "A plan.", ["steps"] = steps }.ToJsonString();
         return new ModelResponse(json, [], false, null);
     }
 
+    private static ModelResponse NoToolPlan() =>
+        new(new System.Text.Json.Nodes.JsonObject { ["rationale"] = "No tool is needed.", ["steps"] = new System.Text.Json.Nodes.JsonArray() }.ToJsonString(), [], false, null);
+
     private static ModelResponse[] HappyScript() =>
     [
-        Plan(), new ModelResponse(null, [new ModelToolCall("c1", "host.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
-        Plan(), new ModelResponse("{\"findings\":[{\"summary\":\"The service has stopped.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
+        Plan("host.info"), new ModelResponse(null, [new ModelToolCall("c1", "host.info", ToolArguments.Empty)], false, null), new ModelResponse("Done.", [], true, null),
+        NoToolPlan(), new ModelResponse("{\"findings\":[{\"summary\":\"The service has stopped.\",\"evidenceIds\":[\"discovery-0\"],\"severity\":\"high\"}]}", [], true, null),
     ];
 
     private sealed class Rig

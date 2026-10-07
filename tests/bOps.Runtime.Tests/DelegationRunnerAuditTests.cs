@@ -44,7 +44,7 @@ public sealed partial class DelegationRunnerTests
             "step-rejected" => Create(policy: new SplitPolicy(PolicyMode.Approval), stepApproval: new StubApprovalProvider(approved: false)),
             "verification-failed" => Create(restart: new RestartTool(verdict: VerificationStatus.Refuted)),
             "capability-failed" => Create(capabilityThrows: true),
-            "budget-exceeded" => Create(profiles: ProfilesWith(WithBudget(AgentRoleKind.Discovery, steps: 1)), script: [PlanningTestSupport.PlanResponse(), Call("host.info"), Call("host.info"), Final()]),
+            "budget-exceeded" => Create(profiles: ProfilesWith(WithBudget(AgentRoleKind.Discovery, steps: 1)), script: [PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Call("host.info"), Final()]),
             "deadline-exceeded" => Create(clock: clock, model: new ActingModel(new FakeChatModel(HappyScript()), onCall: 1, () => clock.Advance(TimeSpan.FromHours(3)))),
             "cancelled" => Create(restart: new RestartTool(whileRunning: async ct =>
             {
@@ -89,7 +89,7 @@ public sealed partial class DelegationRunnerTests
     [Fact]
     public async Task RunAsync_ForARunThatIsNotDelegated_WritesNoCorrelationBlock_AndNoDelegationEvent()
     {
-        var h = Create([PlanningTestSupport.PlanResponse(), Final("Nothing to do.")]);
+        var h = Create([PlanningTestSupport.PlanResponse(stepCount: 0), Final("Nothing to do.")]);
 
         await h.Agent.RunAsync("Say hello.", Operator);
 
@@ -266,7 +266,7 @@ public sealed partial class DelegationRunnerTests
             var h = Create(sink: file, store: new CrashableStore());
 
             // An event of a run that is not delegated first, so old and new events share one chain.
-            await Create(sink: file, script: [PlanningTestSupport.PlanResponse(), Final("Nothing to do.")]).Agent.RunAsync("Say hello.", Operator);
+            await Create(sink: file, script: [PlanningTestSupport.PlanResponse(stepCount: 0), Final("Nothing to do.")]).Agent.RunAsync("Say hello.", Operator);
             var run = await h.Runner.StartAsync(Request(), Operator);
 
             Assert.Equal(DelegationStatus.Completed, run.Status);

@@ -471,18 +471,19 @@ public sealed class ModelCallFailureContainmentTests
     {
         var bad = Reply(new ModelResponse("""{"rationale":"r","steps":[{"description":"a","expectedTool":"x","expectedTool":"y"}]}""", [], false, null));
         var h = Create(new ScriptedChatModel(
-            Reply(PlanningTestSupport.PlanResponse(stepCount: 1)),
+            Reply(PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "no.such.tool")),
             Reply(UnknownToolCall()),
             bad,
-            bad,
-            Done()));
+            bad));
 
         var task = await h.Runner.RunAsync("check", Actor);
 
-        Assert.Equal(AgentTaskStatus.Completed, (await h.StoredAsync(task.Id)).Status);
-        Assert.Equal(2, task.Plans.Count);
-        Assert.Empty(task.Plans[1].Steps);
-        Assert.All(task.Plans[1].ModelCalls!, c => Assert.Equal(ModelFailureKind.MalformedResponse, c.FailureKind));
+        Assert.Equal(AgentTaskStatus.Failed, (await h.StoredAsync(task.Id)).Status);
+        Assert.Single(task.Plans);
+        Assert.Equal(TaskTerminalKind.ModelFailure, task.TerminalReason!.Kind);
+        Assert.Equal(ModelFailureKind.MalformedResponse, task.TerminalReason.FailureKind);
+        Assert.True(h.Runner.EvaluateResume(task).Resumable);
+        Assert.All(FailureStep(task).ModelCalls!, c => Assert.Equal(ModelFailureKind.MalformedResponse, c.FailureKind));
         Assert.Equal(2, h.ModelEvents(0).Count(e => e.FailureKind == ModelFailureKind.MalformedResponse));
     }
 

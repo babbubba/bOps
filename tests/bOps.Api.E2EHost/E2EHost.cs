@@ -211,7 +211,15 @@ internal sealed class GatedChatModel : IChatModel, IDisposable
         var phase = (Interlocked.Increment(ref _calls) - 1) % 4;
         if (phase == 0)
         {
-            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-8", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+            return new ModelResponse(new JsonObject
+            {
+                ["rationale"] = "E2E-8",
+                ["steps"] = new JsonArray
+                {
+                    new JsonObject { ["description"] = "Read CPU utilization before reload.", ["expectedTool"] = "system.cpu" },
+                    new JsonObject { ["description"] = "Read CPU utilization after reload.", ["expectedTool"] = "system.cpu" },
+                },
+            }.ToJsonString(), [], false, null);
         }
 
         Interlocked.Increment(ref _waiting);
@@ -249,8 +257,10 @@ internal static class DelegationScript
 
         if (request.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal) || request.SystemPrompt.Contains("Revise it.", StringComparison.Ordinal))
         {
-            var step = new JsonObject { ["description"] = "Read the CPU utilization.", ["expectedTool"] = diagnostic ? null : "system.cpu" };
-            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-9 diagnosis.", ["steps"] = new JsonArray { step } }.ToJsonString(), [], false, null);
+            var steps = diagnostic
+                ? new JsonArray()
+                : new JsonArray { new JsonObject { ["description"] = "Read the CPU utilization.", ["expectedTool"] = "system.cpu" } };
+            return new ModelResponse(new JsonObject { ["rationale"] = "E2E-9 diagnosis.", ["steps"] = steps }.ToJsonString(), [], false, null);
         }
 
         if (diagnostic)

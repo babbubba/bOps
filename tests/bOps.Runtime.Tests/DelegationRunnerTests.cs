@@ -303,8 +303,8 @@ public sealed partial class DelegationRunnerTests
     // Discovery: plan, one Read call, final. Diagnostic: plan, final with a finding citing the Discovery evidence.
     private static ModelResponse[] HappyScript() =>
     [
-        PlanningTestSupport.PlanResponse(), Call("host.info"), Final(),
-        PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-0")),
+        PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final(),
+        PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-0")),
     ];
 
     private static DelegationRequest Request(DelegationRemediation? remediation = null, DelegationAuthorityRequest? authority = null) =>
@@ -478,7 +478,8 @@ public sealed partial class DelegationRunnerTests
         });
         Assert.Contains(h.Model.Requests, r => r.AvailableTools.Count == 1);
         Assert.All(
-            h.Model.Requests.Where(r => r.AvailableTools.Count == 0),
+            h.Model.Requests.Where(r => r.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal)
+                || r.SystemPrompt.Contains("Revise it", StringComparison.Ordinal)),
             r => Assert.Contains("- host.info [", r.SystemPrompt, StringComparison.Ordinal));
     }
 
@@ -512,8 +513,8 @@ public sealed partial class DelegationRunnerTests
     {
         var script = new[]
         {
-            PlanningTestSupport.PlanResponse(), Call("host.info"), Final(),
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final(),
+            PlanningTestSupport.PlanResponse(stepCount: 0),
             Final(
                 "{\"findings\":[" +
                 "{\"summary\":\"Grounded.\",\"evidenceIds\":[\"discovery-0\"]}," +
@@ -545,8 +546,8 @@ public sealed partial class DelegationRunnerTests
         var partial = new ResultTool("test.partial", EvidenceScenario.Partial());
         var script = new[]
         {
-            PlanningTestSupport.PlanResponse(), Call("host.info"), Final(),
-            PlanningTestSupport.PlanResponse(), Call("test.partial"), Final(json),
+            PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final(),
+            PlanningTestSupport.PlanResponse(expectedTool: "test.partial"), Call("test.partial"), Final(json),
         };
         var h = Create(script, profiles: profiles, extraRead: partial);
 
@@ -1042,13 +1043,13 @@ public sealed partial class DelegationRunnerTests
     [Fact]
     public async Task Start_ReportsTheStatusOfANonCompletingModelLoop()
     {
-        // The model keeps proposing a tool its envelope refuses, until the loop stops itself as policy blocked.
+        // The model keeps proposing an authorized tool that policy refuses, until the loop stops itself as policy blocked.
         var script = new[]
         {
-            PlanningTestSupport.PlanResponse(), Call("service.stop"), PlanningTestSupport.PlanResponse(revision: 1),
-            Call("service.stop"), PlanningTestSupport.PlanResponse(revision: 2), Call("service.stop"),
+            PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "host.info"),
+            Call("host.info"), PlanningTestSupport.PlanResponse(revision: 2, expectedTool: "host.info"), Call("host.info"),
         };
-        var h = Create(script);
+        var h = Create(script, policy: new StubPolicyEngine(PolicyMode.Forbidden));
 
         var run = await h.Runner.StartAsync(Request(), Operator);
 
@@ -1081,7 +1082,7 @@ public sealed partial class DelegationRunnerTests
     public async Task Start_EndsAsBudgetExceeded_WhenAModelLoopUsesItsWholeStepLimit()
     {
         var h = Create(
-            [PlanningTestSupport.PlanResponse(), Call("host.info")],
+            [PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info")],
             options: new AgentRunnerOptions { MaxSteps = 1, MaxObservationCharacters = 1024 });
 
         var run = await h.Runner.StartAsync(Request(), Operator);

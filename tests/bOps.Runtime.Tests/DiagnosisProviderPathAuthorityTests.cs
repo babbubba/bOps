@@ -151,10 +151,10 @@ public sealed class DiagnosisProviderPathAuthorityTests
 
         // What the roles were offered on the wire: the Read tool only, never the mutation.
         var offered = provider.RequestBodies
-            .Where(body => !IsPlanningRequest(body))
+            .Where(body => !IsPlanningRequest(body) && body.Contains("\"tools\"", StringComparison.Ordinal))
             .Select(body => JsonNode.Parse(body)!["tools"]!.AsArray().Select(tool => tool!["function"]!["name"]!.GetValue<string>()).ToList())
             .ToList();
-        Assert.Equal(4, offered.Count); // three Discovery step calls and the Diagnostic step call
+        Assert.Equal(3, offered.Count); // two Discovery calls and the Diagnostic final-answer call
         Assert.All(offered, names => Assert.Equal(["host_info"], names));
 
         var limitation = Assert.Single(Assert.Single(run.Roles, r => r.Agent.Role == AgentRoleKind.Discovery).EvidenceLimitations!);

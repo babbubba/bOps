@@ -150,7 +150,7 @@ public sealed partial class EvidenceRuleTests
         var result = await EvidenceScenario.Runner(model, registry, new RecordingAuditSink()).RunAsync("check", EvidenceScenario.Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        Assert.Equal(5, model.Requests.Count);
+        Assert.Equal(6, model.Requests.Count); // the denied exhausted-plan call adds one disclosure restatement
         Assert.All(model.Requests, request => Assert.Contains(EvidenceRule.Text, request.SystemPrompt, StringComparison.Ordinal));
         Assert.All(model.Requests, request => Assert.Contains("<<<BOPS_TOOL_OUTPUT>>>", request.SystemPrompt, StringComparison.Ordinal));
     }

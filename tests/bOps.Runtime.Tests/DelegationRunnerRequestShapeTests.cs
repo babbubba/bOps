@@ -216,8 +216,8 @@ public sealed partial class DelegationRunnerTests
         var policy = new SpyPolicy();
         ModelResponse[] script =
         [
-            PlanningTestSupport.PlanResponse(), Call("service.restart"), PlanningTestSupport.PlanResponse(), Call("host.info"), Disclosed(),
-            PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-1")),
+            PlanningTestSupport.PlanResponse(expectedTool: "service.restart"), Call("service.restart"), PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Disclosed(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-1")),
         ];
 
         // S4: the mutation tool's name is even in both read-only profiles; the role risk cap still refuses it.
@@ -229,16 +229,15 @@ public sealed partial class DelegationRunnerTests
         Assert.Equal(0, h.Restart.ExecutionCount);
         Assert.DoesNotContain("service.restart", policy.Evaluated);
         Assert.Contains("host.info", policy.Evaluated);
-        var refusal = Assert.Single(h.Audit.Events.OfType<PolicyDecisionAuditEvent>(), e => e.Tool == "service.restart");
-        Assert.Equal(PolicyMode.Forbidden, refusal.Mode);
-        Assert.StartsWith("Authority envelope:", refusal.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(h.Audit.Events.OfType<PolicyDecisionAuditEvent>(), e => e.Tool == "service.restart");
         Assert.DoesNotContain(h.Audit.Events.OfType<ToolCallAuditEvent>(), e => e.Tool == "service.restart" && e.Outcome == ToolOutcome.Success);
 
         // The refused step is a typed limitation with no Evidence id: nothing was manufactured.
         var discovery = Role(run, AgentRoleKind.Discovery);
-        var limitation = Assert.Single(discovery.EvidenceLimitations!, l => l.ToolName == "service.restart");
+        var limitation = Assert.Single(discovery.EvidenceLimitations!, l => l.UnknownTool);
         Assert.Null(limitation.EvidenceId);
         Assert.Equal(ToolOutcome.Failure, limitation.Outcome);
+        Assert.Equal(ToolFailureKind.Validation, limitation.FailureKind);
     }
 
     [Fact]
@@ -261,8 +260,8 @@ public sealed partial class DelegationRunnerTests
         var failing = new ResultReadTool("disk.read", ToolCallResult.Failure("device not ready") with { FailureKind = ToolFailureKind.Environment });
         ModelResponse[] script =
         [
-            PlanningTestSupport.PlanResponse(), Call("disk.read"), Call("host.info"), Disclosed(),
-            PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-1")),
+            PlanningTestSupport.PlanResponseFor("disk.read", "host.info"), Call("disk.read"), Call("host.info"), Disclosed(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-1")),
         ];
         var h = Create(script, profiles: ReadOnlyProfiles(tools: ["host.info", "disk.read"]), extraRead: failing);
 
@@ -288,8 +287,8 @@ public sealed partial class DelegationRunnerTests
         var outside = new ResultReadTool("disk.read", ToolCallResult.Success("never"));
         ModelResponse[] script =
         [
-            PlanningTestSupport.PlanResponse(), Call("disk.read"), PlanningTestSupport.PlanResponse(), Disclosed(),
-            PlanningTestSupport.PlanResponse(), Final("{\"findings\":[]}"),
+            PlanningTestSupport.PlanResponse(expectedTool: "disk.read"), Call("disk.read"), PlanningTestSupport.PlanResponse(stepCount: 0), Disclosed(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final("{\"findings\":[]}"),
         ];
         var h = Create(script, profiles: ReadOnlyProfiles(tools: ["host.info"]), extraRead: outside);
 
@@ -297,7 +296,7 @@ public sealed partial class DelegationRunnerTests
 
         Assert.Equal(0, outside.ExecutionCount);
         var limitation = Assert.Single(Role(run, AgentRoleKind.Discovery).EvidenceLimitations!);
-        Assert.Equal(ToolFailureKind.Authorization, limitation.FailureKind);
+        Assert.Equal(ToolFailureKind.Validation, limitation.FailureKind);
         Assert.Null(limitation.EvidenceId);
         Assert.Equal(new DiagnosticReplyOutcome { Status = DiagnosticReplyStatus.Valid, Problem = DiagnosticReplyProblem.None }, Role(run, AgentRoleKind.Diagnostic).FindingsReply);
     }
@@ -308,8 +307,8 @@ public sealed partial class DelegationRunnerTests
         var partial = new ResultReadTool("events.read", ToolCallResult.Success("some events") with { Completeness = ToolResultCompleteness.Partial });
         ModelResponse[] script =
         [
-            PlanningTestSupport.PlanResponse(), Call("events.read"), Disclosed(),
-            PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-0")),
+            PlanningTestSupport.PlanResponse(expectedTool: "events.read"), Call("events.read"), Disclosed(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-0")),
         ];
         var h = Create(script, profiles: ReadOnlyProfiles(tools: ["host.info", "events.read"]), extraRead: partial);
 
@@ -343,8 +342,8 @@ public sealed partial class DelegationRunnerTests
     {
         ModelResponse[] script =
         [
-            PlanningTestSupport.PlanResponse(), Call("host.info"), Final(),
-            PlanningTestSupport.PlanResponse(), Final(reply),
+            PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info"), Final(),
+            PlanningTestSupport.PlanResponse(stepCount: 0), Final(reply),
         ];
         var h = Create(script, profiles: ReadOnlyProfiles());
 
@@ -477,7 +476,7 @@ public sealed partial class DelegationRunnerTests
             UpdatedAtUtc = Start,
         };
         await store.SaveAsync(stored);
-        ModelResponse[] script = [PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-0"))];
+        ModelResponse[] script = [PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-0"))];
         var h = Create(script, profiles: ReadOnlyProfiles(), store: store);
 
         var run = await WithProfiles(h, new FixedProfiles(ReadOnlyProfiles()), store).ResumeAsync(stored.Id, Operator);

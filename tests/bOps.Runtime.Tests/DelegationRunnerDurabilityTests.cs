@@ -129,7 +129,7 @@ public sealed partial class DelegationRunnerTests
 
     /// <summary>The part of the happy script a run needs once Discovery is stored: Diagnostic's plan and answer.</summary>
     private static ModelResponse[] DiagnosticOnly() =>
-        [PlanningTestSupport.PlanResponse(), Final(FindingsJson("discovery-0"))];
+        [PlanningTestSupport.PlanResponse(stepCount: 0), Final(FindingsJson("discovery-0"))];
 
     // ---- the store is kept up to date ----
 

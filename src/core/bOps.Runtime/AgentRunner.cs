@@ -85,12 +85,12 @@ public sealed class AgentRunner(
         fence — in exactly this shape:
 
         {"rationale": "one or two sentences on your overall approach", "steps": [
-          {"description": "what this step accomplishes", "expectedTool": "tool.name, or null if unsure"}
+          {"description": "what this step accomplishes", "expectedTool": "tool.name"}
         ]}
 
+        Every listed step must name exactly one non-empty "expectedTool" from the catalog below.
         List only the steps you can reasonably foresee; you will be asked to revise this plan if
-        reality diverges from it. An empty "steps" array is acceptable if the goal needs
-        investigation before any concrete step can be named.
+        reality diverges from it. Use an empty "steps" array when no further tool execution is planned.
         """;
 
     private const string ReplanningInstructions =
@@ -106,10 +106,12 @@ public sealed class AgentRunner(
         fence — in exactly the same shape as before:
 
         {"rationale": "why the plan is changing", "steps": [
-          {"description": "what this step accomplishes", "expectedTool": "tool.name, or null if unsure"}
+          {"description": "what this step accomplishes", "expectedTool": "tool.name"}
         ]}
 
-        Steps already completed do not need to be repeated. List only what remains.
+        Every listed step must name exactly one non-empty "expectedTool" from the catalog below.
+        Steps already completed do not need to be repeated. List only what remains; use an empty
+        "steps" array when no further tool execution is planned.
         """;
 
     private const string EmptyResponseRetryInstructions =
@@ -117,8 +119,9 @@ public sealed class AgentRunner(
         "answer to the operator's goal in plain text.";
 
     private const string PlanRetryInstructions =
-        "That reply was not a single valid JSON object in the required shape. Reply again with " +
-        "ONLY the JSON object — no prose, no markdown code fence.";
+        "That reply was not a single valid JSON object in the required shape. Every listed step " +
+        "must have a non-empty expectedTool from the catalog. Reply again with ONLY the JSON object — " +
+        "no prose, no markdown code fence.";
 
     private const string EvidenceReadInstructions =
         "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
@@ -705,7 +708,8 @@ public sealed class AgentRunner(
                     aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName);
                 logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
                 history = [.. built.Turns, .. logicalCall.ContinuationTurns];
-                return new ModelRequest(BuildStepSystemPrompt(plan, limitations, aggressive), history, ToolViewFor(delegation));
+                var stepTools = StepToolViewFor(plan, plannedStepCursor, delegation);
+                return new ModelRequest(BuildStepSystemPrompt(plan, limitations, stepTools, aggressive), history, stepTools);
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
@@ -814,7 +818,8 @@ public sealed class AgentRunner(
             // D-007: the contract allows several tool calls per model turn. V0.1 executes the
             // first and reports the rest back as not executed — sequential execution is the
             // safe default for an ops agent; parallel execution needs its own policy story.
-            var primaryCall = response.ToolCalls[0];
+            var stepTools = StepToolViewFor(plan, plannedStepCursor, delegation);
+            var primaryCall = ConstrainToStepTool(response.ToolCalls[0], stepTools);
             var planExhausted = plan.Steps.Count > 0 && plannedStepCursor >= plan.Steps.Count;
             PlanStep step;
             string observation;
@@ -2230,13 +2235,12 @@ public sealed class AgentRunner(
         }
 
         logger.LogWarning(
-            "Task {TaskId} step {StepIndex}: the model did not produce a parseable replan after one retry; proceeding without an explicit plan",
+            "Task {TaskId} step {StepIndex}: the model did not produce a usable replan after one retry; preserving the current plan",
             taskId, triggeringStepIndex);
-        return (new AgentPlan(previousPlan.Revision + 1,
-            "Replanning failed after a malformed response; proceeding step by step without an explicit plan.", [])
+        throw new ModelProtocolException("Provider/model returned a malformed response.")
         {
-            ModelCalls = calls,
-        }, tokens);
+            FailureKind = ModelFailureKind.MalformedResponse,
+        };
     }
 
     private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(
@@ -3835,6 +3839,37 @@ public sealed class AgentRunner(
         return [.. all.Where(m => m.Risk != RiskLevel.Critical && m.Risk <= ceiling && envelope.AllowedTools.Contains(m.Name, StringComparer.Ordinal))];
     }
 
+    /// <summary>
+    /// The current execution step's native-tool authority: the already-authorized view intersected with the exact
+    /// planned tool name. Missing, exhausted, unavailable or unauthorized routing information fails closed to no tools.
+    /// </summary>
+    private IReadOnlyList<ToolManifest> StepToolViewFor(
+        AgentPlan plan, int plannedStepCursor, DelegatedExecutionScope? delegation)
+    {
+        if (plannedStepCursor < 0 || plannedStepCursor >= plan.Steps.Count
+            || string.IsNullOrWhiteSpace(plan.Steps[plannedStepCursor].ExpectedTool))
+        {
+            return NoNativeTools;
+        }
+
+        var expectedTool = plan.Steps[plannedStepCursor].ExpectedTool;
+        return ToolViewFor(delegation)
+            .Where(manifest => string.Equals(manifest.Name, expectedTool, StringComparison.Ordinal))
+            .Take(1)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Defence in depth for an <see cref="IChatModel"/> implementation that returns a call outside the offered step view.
+    /// Provider adapters normally set the same closed-mapping error; Runtime still refuses the call before policy or execution.
+    /// </summary>
+    private static ModelToolCall ConstrainToStepTool(ModelToolCall call, IReadOnlyList<ToolManifest> stepTools) =>
+        call.ToolNameError is null
+        && stepTools.Count == 1
+        && string.Equals(stepTools[0].Name, call.ToolName, StringComparison.Ordinal)
+            ? call
+            : call with { ToolNameError = call.ToolNameError ?? "The tool call was not offered for the current planned step." };
+
     /// <summary>What a plan or replan call offers as native tools: nothing (ADR-0038, amending ADR-0014). The reply is a JSON plan, never a tool call.</summary>
     private static readonly IReadOnlyList<ToolManifest> NoNativeTools = [];
 
@@ -3853,7 +3888,7 @@ public sealed class AgentRunner(
     {
         if (tools.Count == 0)
         {
-            return "No tools are available for later steps, so leave \"expectedTool\" null.";
+            return "No tools are available for later steps, so return an empty \"steps\" array.";
         }
 
         var builder = new StringBuilder(
@@ -3904,14 +3939,18 @@ public sealed class AgentRunner(
     private static int UsageTokens(ModelResponse response) =>
         (response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0);
 
-    private static string BuildStepSystemPrompt(AgentPlan plan, EvidenceLimitations? limitations, bool aggressive = false)
+    private static string BuildStepSystemPrompt(
+        AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool aggressive = false)
     {
         var planText = DescribePlan(plan);
+        var routingInstruction = stepTools.Count == 1
+            ? "The single offered native tool is the current plan step's tool. Invoke it at most once, with the concrete arguments this step requires."
+            : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
         var prompt = plan.Steps.Count == 0
-            ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}"
+            ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
-              "Propose the concrete tool call for the next unfinished step above, or report " +
+              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above, or report " +
               "completion if the goal is already achieved.";
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
@@ -4030,6 +4069,12 @@ public sealed class AgentRunner(
                     }
 
                     var expectedTool = stepObject["expectedTool"]?.GetValue<string>();
+                    if (string.IsNullOrWhiteSpace(expectedTool))
+                    {
+                        problem = $"Plan step {index} did not name a non-empty expectedTool.";
+                        return null;
+                    }
+
                     steps.Add(new PlannedStep(index++, description, expectedTool));
                 }
             }

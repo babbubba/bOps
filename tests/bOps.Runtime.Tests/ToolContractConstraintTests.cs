@@ -153,7 +153,7 @@ public sealed partial class ToolContractConstraintTests
         string? feedbackSeenByModel = null;
         var model = new ScriptedChatModel((request, call) => call switch
         {
-            0 => PlanningTestSupport.PlanResponse(),
+            0 => PlanningTestSupport.PlanResponse(expectedTool: "system.crashes"),
             1 => ToolCall("call-1", "system.crashes", new JsonObject { ["sinceMinutes"] = 43200 }),
             2 => CorrectFromFeedback(request, seen => feedbackSeenByModel = seen),
             _ => new ModelResponse("Crash window reviewed.", [], true, null),
@@ -199,7 +199,7 @@ public sealed partial class ToolContractConstraintTests
         var tool = new ScriptedTool("system.crashes", [parameter]);
         var model = new ScriptedChatModel((request, call) => call switch
         {
-            0 => PlanningTestSupport.PlanResponse(),
+            0 => PlanningTestSupport.PlanResponse(expectedTool: "system.crashes"),
             1 => ToolCall("call-1", "system.crashes", new JsonObject { ["sinceMinutes"] = 43200 }),
             2 => CorrectFromFeedback(request),
             _ => new ModelResponse("Reviewed.", [], true, null),
@@ -364,7 +364,7 @@ public sealed partial class ToolContractConstraintTests
     {
         var model = new ScriptedChatModel((_, call) => call switch
         {
-            0 => PlanningTestSupport.PlanResponse(),
+            0 => PlanningTestSupport.PlanResponse(expectedTool: calledTool ?? tool.Manifest.Name),
             1 => ToolCall("call-1", calledTool ?? tool.Manifest.Name, arguments),
             _ => new ModelResponse("Done.", [], true, null),
         });
