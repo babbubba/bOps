@@ -10,6 +10,14 @@
   execution reached the tool but was cancelled by the generic caller after exactly 30 seconds:
   `ERROR (timeout): 'system.dump_analyze' did not complete within 00:00:30`. Its own package bounds
   are longer (DumpChk 60 s, KD 10 min), so the real parser/KD validation is still pending.
+- A second focused run (task `df8ef49b-a5f4-4ea8-85dc-a8021c494d0c`) with a temporary
+  global timeout override successfully executed real KD against
+  `C:\\WINDOWS\\Minidump\\100626-20984-01.dmp`: symbols loaded, bugcheck 0x1E parsed, stack and
+  blackbox data parsed, debugger attribution preserved as evidence rather than root cause, 0 replans. DumpChk was
+  invoked but timed out at its own 60 s bound (`dumpCheckPassed=null`, warning `dumpchk-timeout`).
+  The tool output itself was complete; runtime history compacted the ~6.5K observation to 4K, reinforcing PRE-3.
+  Real KD/parser validation is therefore PASS with caveats; PRE-1 remains required so the normal shipped 30 s caller
+  timeout no longer kills this tool.
 - Real Qwen task `8cc482b5-3ac3-4de5-af07-1d1f334bf80b` exposed additional pre-release gaps:
   repeated steps sharing `system.events` can advance by ExpectedTool equality while serving the wrong
   semantic intent; evidence discovered after planning does not reliably activate a useful follow-up;
