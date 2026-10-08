@@ -3,6 +3,7 @@
 
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using bOps.Packages.Sys.Core;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace bOps.Runtime.Tests;
@@ -164,10 +165,10 @@ public sealed class AgentRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_UsesTheDefaultTimeout_WhenTheToolDeclaresNoOverride()
+    public async Task RunAsync_UsesTheDefaultTimeout_ForAnotherSystemToolWithoutAnOverride()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var tool = new ControlledReadTool("test.default-timeout");
+        var tool = new ControlledReadTool(SystemToolManifests.Cpu(CurrentPlatform.Id));
         var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
@@ -181,7 +182,9 @@ public sealed class AgentRunnerTests
             MaxToolTimeout = TimeSpan.FromMinutes(15),
         };
 
-        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+        var registry = CreateRegistryWith(tool);
+        await registry.RefreshCapabilitiesAsync();
+        var run = CreateRunner(model, registry, audit, options, timeProvider: clock)
             .RunAsync("wait", Actor);
         await tool.Started;
         clock.Advance(TimeSpan.FromSeconds(30));
@@ -190,18 +193,18 @@ public sealed class AgentRunnerTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
         {
-            Tool: "test.default-timeout",
+            Tool: "system.cpu",
             Outcome: ToolOutcome.Timeout,
             EffectiveTimeout: var timeout,
         } && timeout == TimeSpan.FromSeconds(30));
     }
 
     [Fact]
-    public async Task RunAsync_HonoursALongerDeclaredTimeout_PastTheDefault()
+    public async Task RunAsync_HonoursDumpAnalyzeDeclaredTimeout_PastTheDefault()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var tool = new ControlledReadTool("test.long-timeout", TimeSpan.FromMinutes(2));
-        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var tool = new ControlledReadTool(SystemToolManifests.DumpAnalyze(CurrentPlatform.Id, "test.debugger"));
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, DumpAnalyzeArguments());
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
             new ModelResponse(null, [call], false, null),
@@ -213,7 +216,9 @@ public sealed class AgentRunnerTests
             MaxToolTimeout = TimeSpan.FromMinutes(15),
         };
 
-        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+        var registry = CreateRegistryWith(tool);
+        await registry.RefreshCapabilitiesAsync();
+        var run = CreateRunner(model, registry, audit, options, timeProvider: clock)
             .RunAsync("wait", Actor);
         await tool.Started;
         clock.Advance(TimeSpan.FromSeconds(31));
@@ -226,18 +231,18 @@ public sealed class AgentRunnerTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
         {
-            Tool: "test.long-timeout",
+            Tool: "system.dump_analyze",
             Outcome: ToolOutcome.Success,
             EffectiveTimeout: var timeout,
-        } && timeout == TimeSpan.FromMinutes(2));
+        } && timeout == TimeSpan.FromMinutes(12));
     }
 
     [Fact]
-    public async Task RunAsync_ClampsADeclaredTimeout_ToTheHostCeiling()
+    public async Task RunAsync_ClampsDumpAnalyzeDeclaredTimeout_ToTheHostCeiling()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var tool = new ControlledReadTool("test.clamped-timeout", TimeSpan.FromMinutes(2));
-        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var tool = new ControlledReadTool(SystemToolManifests.DumpAnalyze(CurrentPlatform.Id, "test.debugger"));
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, DumpAnalyzeArguments());
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
             new ModelResponse(null, [call], false, null),
@@ -250,7 +255,9 @@ public sealed class AgentRunnerTests
             MaxToolTimeout = TimeSpan.FromMinutes(1),
         };
 
-        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+        var registry = CreateRegistryWith(tool);
+        await registry.RefreshCapabilitiesAsync();
+        var run = CreateRunner(model, registry, audit, options, timeProvider: clock)
             .RunAsync("wait", Actor);
         await tool.Started;
         clock.Advance(TimeSpan.FromSeconds(59));
@@ -265,11 +272,16 @@ public sealed class AgentRunnerTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
         {
-            Tool: "test.clamped-timeout",
+            Tool: "system.dump_analyze",
             Outcome: ToolOutcome.Timeout,
             EffectiveTimeout: var timeout,
         } && timeout == TimeSpan.FromMinutes(1));
     }
+
+    private static ToolArguments DumpAnalyzeArguments() => ToolArguments.FromJson(new JsonObject
+    {
+        ["path"] = @"C:\Windows\Minidump\a.dmp",
+    });
 
     [Fact]
     public async Task RunAsync_ExternalCancellationWinsOverALongerDeclaredTimeout()

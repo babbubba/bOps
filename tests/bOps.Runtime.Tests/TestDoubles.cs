@@ -304,23 +304,28 @@ internal sealed class HangingTool(string name = "test.hangs") : ITool
     }
 }
 
-internal sealed class ControlledReadTool(string name, TimeSpan? requestedExecutionTimeout = null) : ITool
+internal sealed class ControlledReadTool : ITool
 {
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task Started => _started.Task;
 
-    public ToolManifest Manifest { get; } = new()
-    {
-        Name = name,
-        Description = "A controlled read-only tool for timeout tests.",
-        Risk = RiskLevel.Read,
-        Platforms = [CurrentPlatform.Id],
-        Requires = [],
-        Parameters = [],
-        RequestedExecutionTimeout = requestedExecutionTimeout,
-    };
+    public ControlledReadTool(string name, TimeSpan? requestedExecutionTimeout = null)
+        : this(new ToolManifest
+        {
+            Name = name,
+            Description = "A controlled read-only tool for timeout tests.",
+            Risk = RiskLevel.Read,
+            Platforms = [CurrentPlatform.Id],
+            Requires = [],
+            Parameters = [],
+            RequestedExecutionTimeout = requestedExecutionTimeout,
+        }) { }
+
+    public ControlledReadTool(ToolManifest manifest) => Manifest = manifest;
+
+    public ToolManifest Manifest { get; }
 
     public void Complete() => _completion.TrySetResult();
 

@@ -97,11 +97,11 @@ driver is healthy.
 
 ### Time
 
-All tools share the runner's `Agent:DefaultToolTimeout`, which defaults to 30 seconds. Analysis with cached symbols
-usually fits. The **first** analysis may need to download kernel symbols and take minutes. If dump analysis times out,
-raise the setting, for example `"Agent": { "DefaultToolTimeout": "00:05:00" }`, the same way as for Docker builds. A
-retry also benefits from any symbols already cached. The tool's own hard limit is 10 minutes, and the debugger's process
-tree is always killed on a timeout or cancellation.
+`system.dump_analyze` declares a bounded caller budget of 12 minutes, so normal dump analysis does not require changing
+the 30-second `Agent:DefaultToolTimeout` used by tools without an override. The host keeps `Agent:MaxToolTimeout` as an
+absolute ceiling (15 minutes by default), which also bounds this tool. KD itself is limited to 10 minutes and DumpChk to
+60 seconds; the caller budget leaves overhead for the optional preflight and process handling. The debugger's process tree
+is always killed on a timeout or cancellation.
 
 ## How it runs
 
@@ -156,13 +156,15 @@ Field notes:
 
 | `status` | When |
 |---|---|
-| `complete` | Every section was produced, kernel symbols are loaded, there is a bugcheck code and a resolved module, and there was no timeout, cut or preflight problem. |
+| `complete` | Every KD analysis section was produced, kernel symbols are loaded, there is a bugcheck code and a resolved module, and there was no KD timeout or output cut. |
 | `partial` | Evidence exists but something limits it; the warnings say what. |
 | `unavailable` | No evidence. `failure` is `not-found`, `access-denied`, `debugger-unavailable`, `timeout` or `debugger-failure`. |
 | `invalid` | DumpChk rejected the dump and KD produced no evidence. |
 
 A black box with `available: false` means that no black-box data was printed. Small minidumps often lack these
 structures, which adds `small-dump-limited-structures`. Absent data is never evidence that a component was healthy.
+`complete` describes the completeness of the KD analysis; an inconclusive DumpChk preflight remains expressed separately
+through `dumpCheckPassed` and `warnings`.
 
 ### Debugger attribution is not a root cause
 

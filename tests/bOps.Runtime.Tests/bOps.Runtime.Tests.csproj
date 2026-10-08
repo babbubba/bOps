@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
     <ProjectReference Include="..\..\samples\bops-sample-plugin\Acme.SamplePlugin.csproj" />
     <!-- Only the end-to-end wire tests (ADR-0038) use a real adapter against the strict fake provider; the runtime itself still names no provider. -->
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.OpenAiCompatible\bOps.Packages.Providers.OpenAiCompatible.csproj" />

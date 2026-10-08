@@ -152,6 +152,7 @@ public static class SystemToolManifests
             + "status is complete, partial (symbols unresolved, a section missing, a small dump lacking structures, or output cut), unavailable (failure says not-found, access-denied, debugger-unavailable, timeout or debugger-failure) or invalid (the integrity preflight rejected the dump). "
             + "access-denied means this identity could not read the dump, never that no dump exists. A black box with available false, or an unresolved module, is missing evidence, not evidence of health.",
         Risk = RiskLevel.Read,
+        RequestedExecutionTimeout = TimeSpan.FromMinutes(12),
         Platforms = [platform],
         Requires = [requiredCapability],
         OptionalRequires = optionalCapability is null ? [] : [optionalCapability],
