@@ -58,6 +58,13 @@ public sealed class ToolRegistry : IToolRegistry
                 $"the name is reserved: the runtime writes '{RuntimeStepTokens.Denied}' as the description of every call it refuses.");
         }
 
+        // PRE-3A: runtime control functions live in this namespace; they are not package tools.
+        if (manifest.Name.StartsWith(EvidenceRead.ControlNamespace, StringComparison.Ordinal))
+        {
+            throw new ToolRegistrationException(manifest.Name,
+                $"the '{EvidenceRead.ControlNamespace}' namespace is reserved for runtime control functions.");
+        }
+
         foreach (var parameter in manifest.Parameters)
         {
             ValidateConstraints(manifest.Name, parameter);

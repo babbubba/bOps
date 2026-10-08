@@ -156,3 +156,13 @@ After implementation, validate with a real local-model troubleshooting run befor
 Accepted by the operator on 2026-10-07 and implemented on
 `fix/step-scoped-tool-routing-replan-safety`. The later Model & Provider Performance
 Registry remains independent and is not a prerequisite.
+
+## Amendment — internal control-plane functions (PRE-3A, 2026-10-09)
+
+The single-`ExpectedTool` visibility rule governs **operational** authority. Internal control-plane functions may coexist with it, because they do not grant operational authority and cannot execute package operations.
+
+- The only control function is `runtime.evidence_read` (typed arguments `step`, `source`, `offset`, `length`; read-only; current task taken from the runtime context, never from the model). It is declared by the runtime, is never in the `ToolRegistry`, passes no policy, entitlement or approval, and the `runtime.` namespace is reserved so no package can register a tool in it. It is offered beside the step tool only when persisted evidence exceeds `MaxObservationCharacters`; the step tool view and `ConstrainToStepTool` are unchanged.
+- A control read never completes a planned step, never advances the cursor, and spends neither the PRE-2 semantic correction nor the ADR-0047 argument correction. It is audited as `EvidenceReadAuditEvent`, counts against the existing four-read limit, and writes no `PlanStep`.
+- Same-turn rule (ADR-0038 first-call-wins, conservative): when a response carries a control read, the read is served and no other call of that response executes; each other call id is answered `Not executed` and the model is asked again with the evidence. At most one operational execution per model turn is preserved, and a read never makes a wrong operational tool valid.
+- An unrecognised `runtime.*` name is a control protocol error (audited `Malformed`), never a package tool or final prose.
+- The legacy `EvidenceRead/v1` text directive remains a compatibility path and converges on the same `EvidenceRead.Read` handler. Terminal-response hardening of leaked tool markup is PRE-3B.

@@ -151,6 +151,11 @@ public sealed class AgentRunner(
         "pairwise-discriminating expectedArguments. Reply again with ONLY the JSON object — " +
         "no prose, no markdown code fence.";
 
+    private const string EvidenceControlInstruction =
+        "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
+        "persisted evidence of this task that the bounded history shows truncated. It does not complete the step, and an " +
+        "operational call in the same reply is not executed.";
+
     private const string EvidenceReadInstructions =
         "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
         "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
@@ -765,9 +770,13 @@ public sealed class AgentRunner(
                 var correctingArguments = plan.SemanticContractVersion == 1
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
+                // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
+                var offersEvidenceControl = steps.Any(step =>
+                    Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
                 return new ModelRequest(
                     BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                        correctingArguments, aggressive), history, stepTools);
+                        correctingArguments, aggressive, offersEvidenceControl),
+                    history, offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools);
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
@@ -2790,8 +2799,21 @@ public sealed class AgentRunner(
         CancellationToken ct)
     {
         var response = initialResponse;
-        while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
+        while (true)
         {
+            // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
+            var control = EvidenceRead.RecognizeControl(run.TaskId, response);
+            var recognition = control.Kind switch
+            {
+                ControlCallKind.None => EvidenceRead.Recognize(response),
+                ControlCallKind.Valid => new RuntimeDirectiveRecognition(RuntimeDirectiveRecognitionKind.Valid, control.Directive),
+                _ => RuntimeDirectiveRecognition.Malformed,
+            };
+            if (recognition.Kind == RuntimeDirectiveRecognitionKind.None)
+            {
+                break;
+            }
+
             logicalCall.EvidenceReadAttempts++;
             var directive = recognition.Directive;
             if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
@@ -2838,11 +2860,30 @@ public sealed class AgentRunner(
 
             await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                 result.Code, result.ReturnedLength, ct);
-            logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
-                recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                    ? EvidenceRead.Reply(directive!, result)
-                    : "EvidenceRead/v1 rejected: Malformed."));
+            var reply = recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
+                ? EvidenceRead.Reply(directive!, result)
+                : control.Kind == ControlCallKind.Unsupported
+                    ? "Runtime control call rejected: Unsupported. Only runtime.evidence_read exists."
+                    : "EvidenceRead/v1 rejected: Malformed.";
+            if (control.Kind == ControlCallKind.None)
+            {
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(reply));
+            }
+            else
+            {
+                // ADR-0038 first-call-wins, conservatively: the control read is served and nothing else of this response runs,
+                // so no operational call formed before the evidence arrived is executed. Every call id is still answered.
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantToolCalls(response.ToolCalls));
+                foreach (var call in response.ToolCalls)
+                {
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromToolResult(
+                        call.Id,
+                        ReferenceEquals(call, control.Call)
+                            ? reply
+                            : "Not executed: a runtime evidence request in the same reply was served first. Repeat this call only if it is still needed."));
+                }
+            }
 
             response = await CallModelWithOverflowRecoveryAsync(
                 run.TaskId, stepIndex, run.Actor, requestFactory, run.Delegation, calls, logicalCall, ct);
@@ -4199,7 +4240,7 @@ public sealed class AgentRunner(
 
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
-        bool correctingArguments, bool aggressive = false)
+        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
@@ -4207,6 +4248,11 @@ public sealed class AgentRunner(
               + (correctingSemantics ? $" {SemanticCorrectionInstructions}" : string.Empty)
               + (correctingArguments ? $" {ArgumentCorrectionInstructions}" : string.Empty)
             : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
+        if (offersEvidenceControl)
+        {
+            routingInstruction += " " + EvidenceControlInstruction;
+        }
+
         var prompt = plan.Steps.Count == 0
             ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
