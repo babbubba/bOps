@@ -8,6 +8,7 @@ import { computed, signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
 import { AuthService, AuthStatus } from './core/auth/auth.service';
+import { I18n } from './core/i18n/i18n';
 
 describe('App', () => {
   beforeEach(async () => {
@@ -43,6 +44,17 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Dashboard');
     expect(compiled.textContent).toContain('Approvals');
+  });
+
+  it('links System messages in the navigation, in English and Italian', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/system-messages"]');
+    expect(link?.textContent?.trim()).toBe('System messages');
+
+    TestBed.inject(I18n).setLanguage('it');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('a[href="/system-messages"]')?.textContent?.trim()).toBe('Messaggi di sistema');
   });
 });
 

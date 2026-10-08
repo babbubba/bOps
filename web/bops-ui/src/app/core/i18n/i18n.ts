@@ -24,7 +24,8 @@ export type EnumGroup =
   | 'stepOutcome'
   | 'reconciliation'
   | 'evidenceKind'
-  | 'blastRadius';
+  | 'blastRadius'
+  | 'severity';
 
 /**
  * The UI's own text, in the language the operator chose. A small in-house service rather than a library: two typed catalogues, a

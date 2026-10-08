@@ -344,6 +344,39 @@ export interface PluginCatalogPage {
   totalCount: number;
 }
 
+/** The severities of a system message (ADR-0049), in increasing order of concern. The API sends and accepts the names. */
+export const SystemMessageSeverities = ['Information', 'Warning', 'Error', 'Critical'] as const;
+export type SystemMessageSeverityName = (typeof SystemMessageSeverities)[number];
+
+/** One operational system message (`GET /api/system-messages`). `metadata` is data the runtime wrote: never markup, a URL or an instruction. */
+export interface SystemMessage {
+  id: string;
+  timestampUtc: string;
+  node: string;
+  source: string;
+  severity: string;
+  code: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  taskId: string | null;
+  componentType: string | null;
+  componentId: string | null;
+}
+
+/** One newest-first page; `nextCursor` is the opaque keyset cursor of the following page, or `null` on the last. */
+export interface SystemMessagePage {
+  items: SystemMessage[];
+  nextCursor: string | null;
+}
+
+/** The server-side filters. Every supplied one narrows the result (AND); `fromUtc`/`toUtc` are inclusive ISO 8601 UTC instants. */
+export interface SystemMessageFilter {
+  fromUtc?: string;
+  toUtc?: string;
+  severity?: SystemMessageSeverityName;
+  contains?: string;
+}
+
 /** The provider this host is actually configured to use — never carries the API key's value (ADR-0019), only whether one is present. */
 export interface ActiveProviderInfo {
   provider: string;

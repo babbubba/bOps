@@ -23,6 +23,8 @@ import {
   ProvidersResponse,
   SetProviderProfileRequest,
   SettingsView,
+  SystemMessageFilter,
+  SystemMessagePage,
   TaskAcceptedResponse,
   TaskResumeAcceptedResponse,
   TaskState,
@@ -104,6 +106,17 @@ export class BOpsApiClient {
 
   approvalDeletionDownloadUrl(approvalId: string): string {
     return `/api/approvals/${approvalId}/deletion-manifest/download`;
+  }
+
+  /** One keyset page of system messages. Every filter is sent to the server; nothing is filtered or paged on the client. */
+  listSystemMessages(filter: SystemMessageFilter, pageSize: number, cursor?: string): Promise<SystemMessagePage> {
+    const params = new URLSearchParams({ pageSize: String(pageSize) });
+    if (filter.fromUtc) params.set('fromUtc', filter.fromUtc);
+    if (filter.toUtc) params.set('toUtc', filter.toUtc);
+    if (filter.severity) params.set('severity', filter.severity);
+    if (filter.contains) params.set('contains', filter.contains);
+    if (cursor) params.set('cursor', cursor);
+    return firstValueFrom(this.http.get<SystemMessagePage>(`/api/system-messages?${params.toString()}`));
   }
 
   listTools(): Promise<ToolManifest[]> {
