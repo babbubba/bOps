@@ -12,6 +12,15 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
   Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
 
+### Added
+
+- Prerequisite readiness and system-message contracts (ADR-0049, D-046; first of three sessions — no host, API or UI wiring
+  yet). `bOps.Abstractions` `1.3.0-preview.3` adds, additively, `ToolManifest.OptionalRequires`,
+  `CapabilityManifest.Requires`/`OptionalRequires`, the prerequisite check/provider/result types, bounded secret-refusing
+  `OperationalMetadata`, and `SystemMessage` with its query and store contracts. The runtime gains a host-owned
+  `PrerequisiteRegistry` (also the boolean `ICapabilityProbe` view) and transition recording; `bOps.Memory` gains a SQLite
+  system-message and prerequisite-state store.
+
 ### Fixed
 
 - An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next

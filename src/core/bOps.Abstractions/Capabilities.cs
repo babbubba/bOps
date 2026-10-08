@@ -83,6 +83,18 @@ public sealed record CapabilityManifest
     /// <summary>Human-readable guidance on reversing this capability's effect, if it has one.</summary>
     public string? RollbackDescription { get; init; }
 
+    /// <summary>
+    /// Prerequisite ids this capability <b>requires</b>. While any is not satisfied the capability stays registered but is
+    /// unavailable: it is not listed as available and cannot be resolved for preparation (ADR-0049). Empty by default.
+    /// </summary>
+    public IReadOnlyList<string> Requires { get; init; } = [];
+
+    /// <summary>
+    /// Prerequisite ids this capability uses when present but runs without; unsatisfied, they mark it degraded (ADR-0049).
+    /// Empty by default; an id may not also appear in <see cref="Requires"/>.
+    /// </summary>
+    public IReadOnlyList<string> OptionalRequires { get; init; } = [];
+
     /// <summary>The package that contributed this capability — stamped by the host, never self-claimed (rule A11), exactly like <see cref="ToolManifest.Package"/>.</summary>
     [System.Text.Json.Serialization.JsonInclude]
     public PackageId Package { get; internal set; }

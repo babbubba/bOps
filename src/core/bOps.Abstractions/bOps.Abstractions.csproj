@@ -6,8 +6,9 @@
     <Description>The bOps plugin SDK: the single stable contract referenced by the runtime, first-party packages, and third-party packages alike. Zero dependencies.</Description>
     <PackageId>bOps.Abstractions</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- ADR-0022: SemVer is binding from 1.0. V1.3 adds the neutral entitlement contracts. -->
-    <Version>1.3.0-preview.2</Version>
+    <!-- ADR-0022: SemVer is binding from 1.0. V1.3 adds the neutral entitlement contracts; preview.3 adds the
+         ADR-0049 prerequisite and system-message contracts, additively. -->
+    <Version>1.3.0-preview.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
