@@ -114,4 +114,11 @@ public sealed class LinuxSystemToolsTests
             ],
             names);
     }
+
+    [Fact]
+    public void ToolProvider_DoesNotContributeKernelDumpAnalysis()
+    {
+        // ADR-0048: system.dump_analyze is Windows-only; Linux has no fake or empty implementation.
+        Assert.DoesNotContain(new LinuxSystemToolProvider().GetTools(), tool => tool.Manifest.Name == "system.dump_analyze");
+    }
 }

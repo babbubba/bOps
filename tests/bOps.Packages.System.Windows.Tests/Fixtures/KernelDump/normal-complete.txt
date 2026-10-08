@@ -1,0 +1,93 @@
+
+Microsoft (R) Windows Debugger Version 10.0.99999.1 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\WINDOWS\Minidump\SYNTHETIC-01.dmp]
+Mini Kernel Dump File: Only registers and stack trace are available
+
+Symbol search path is: srv*
+Executable search path is:
+Windows 10 Kernel Version 99999 MP (8 procs) Free x64
+Kernel base = 0xfffff807`4a000000 PsLoadedModuleList = 0xfffff807`4ac2a3c0
+kd> .echo <<<BOPS_{NONCE}_BUGCHECK_BEGIN>>>;.bugcheck;.echo <<<BOPS_{NONCE}_BUGCHECK_END>>>;q
+<<<BOPS_{NONCE}_BUGCHECK_BEGIN>>>
+Bugcheck code 0000009F
+Arguments 00000000`00000003 ffffa001`11111111 ffffb801`22222222 ffffa001`33333333
+<<<BOPS_{NONCE}_BUGCHECK_END>>>
+<<<BOPS_{NONCE}_ANALYZE_BEGIN>>>
+*******************************************************************************
+*                                                                             *
+*                        Bugcheck Analysis                                    *
+*                                                                             *
+*******************************************************************************
+
+DRIVER_POWER_STATE_FAILURE (9f)
+A driver has failed to complete a power IRP within a specific time.
+Arguments:
+Arg1: 0000000000000003, A device object has been blocking an Irp for too long a time
+Arg2: ffffa00111111111, Physical Device Object of the stack
+Arg3: ffffb80122222222, nt!TRIAGE_9F_POWER on Win7 and higher, otherwise the Functional Device Object of the stack
+Arg4: ffffa00133333333, The blocked IRP
+
+Debugging Details:
+------------------
+
+BUGCHECK_CODE:  9f
+
+BUGCHECK_P1: 3
+
+BUGCHECK_P2: ffffa00111111111
+
+BUGCHECK_P3: ffffb80122222222
+
+BUGCHECK_P4: ffffa00133333333
+
+PROCESS_NAME:  System
+
+STACK_TEXT:
+ffffb801`2a3f6e58 fffff807`4a3c8e2e     : 00000000`0000009f 00000000`00000003 ffffa001`11111111 ffffb801`22222222 : nt!KeBugCheckEx
+ffffb801`2a3f6e60 fffff807`4a3d1a12     : ffffa001`33333333 00000000`00000000 00000000`00000000 00000000`00000000 : nt!PopIrpWatchdogBugcheck+0x12e
+ffffb801`2a3f6ed0 fffff807`4a2b1c3d     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : USBXHCI!Controller_WaitForPowerIrp+0x4a
+ffffb801`2a3f6f10 fffff807`4a2b1000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : nt!KiRetireDpcList+0x1f4
+
+SYMBOL_NAME:  USBXHCI!Controller_WaitForPowerIrp+4a
+
+MODULE_NAME: USBXHCI
+
+IMAGE_NAME:  USBXHCI.SYS
+
+STACK_COMMAND:  .cxr; .ecxr ; kb
+
+FAILURE_BUCKET_ID:  0x9F_3_POWER_DOWN_USBXHCI!Controller_WaitForPowerIrp
+
+FAILURE_ID_HASH:  {11111111-2222-3333-4444-555555555555}
+
+Followup:     MachineOwner
+---------
+
+<<<BOPS_{NONCE}_ANALYZE_END>>>
+<<<BOPS_{NONCE}_MODULES_BEGIN>>>
+start             end                 module name
+fffff807`4a000000 fffff807`4b046000   nt         (pdb symbols)          C:\Synthetic\Symbols\ntkrnlmp.pdb\0\ntkrnlmp.pdb
+fffff807`4c200000 fffff807`4c22b000   hal        (deferred)
+fffff807`4f100000 fffff807`4f19f000   USBXHCI    (pdb symbols)          C:\Synthetic\Symbols\USBXHCI.pdb\0\USBXHCI.pdb
+
+Unloaded modules:
+fffff807`4d000000 fffff807`4d01a000   dump_storport.sys
+<<<BOPS_{NONCE}_MODULES_END>>>
+<<<BOPS_{NONCE}_PNP_BEGIN>>>
+PnpActivityId      : {00000000-0000-0000-0000-000000000000}
+PnpActivityTime    : 133000000000000000
+PnpEventInformation: 3
+PnpEventInProgress : 0
+PnpProblemCode     : 24
+PnpVetoType        : 0
+DeviceId           : PCI\VEN_0000&DEV_0000&SUBSYS_00000000&REV_00\SYNTHETIC0001
+<<<BOPS_{NONCE}_PNP_END>>>
+<<<BOPS_{NONCE}_BSD_BEGIN>>>
+   Version: 0x8c
+   Sleep Count: 2
+   Last Shutdown Reason: 0x0
+<<<BOPS_{NONCE}_BSD_END>>>
+quit:

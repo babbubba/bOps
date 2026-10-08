@@ -31,6 +31,7 @@ snapshots under `agentic/obsolete/`.
 | 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | **Complete and merged — PR #47; integration gate complete, Windows/Linux CI green** | medio |
 | 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | **Complete and merged — PR #50** | molto alto |
 | 23 | [`V1.3.y web-tool and evidence-read operability`](2026-10-07-v1.3y-web-evidence-operability.md) | **Implemented locally — validation complete; not committed or merged** | alto |
+| 23z | [`V1.3.z Windows kernel dump analysis`](2026-10-08-v1.3z-windows-kernel-dump-analysis.md) | **Implemented on branch `feature/windows-kernel-dump-analysis` — PR open, not merged; real-dump validation pending on the operator machine** | alto |
 | 24 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future | molto alto |
 | 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |

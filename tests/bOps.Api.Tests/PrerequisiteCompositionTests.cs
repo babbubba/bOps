@@ -37,7 +37,11 @@ public sealed class PrerequisiteCompositionTests
         _ = factory.CreateAnonymousClient();
         var registry = factory.Services.GetRequiredService<PrerequisiteRegistry>();
 
-        Assert.Equal(["docker", "docker.build-contexts", "web.searxng"], registry.GetRegistrations().Select(r => r.Descriptor.Id));
+        // The Windows debugger prerequisites are registered on a Windows host only.
+        string[] expected = OperatingSystem.IsWindows()
+            ? ["docker", "docker.build-contexts", "web.searxng", "windows.debugger.dumpchk", "windows.debugger.kd"]
+            : ["docker", "docker.build-contexts", "web.searxng"];
+        Assert.Equal(expected, registry.GetRegistrations().Select(r => r.Descriptor.Id));
         Assert.All(registry.GetRegistrations(), r => Assert.NotNull(registry.GetLastResult(r.Descriptor.Id)));
     }
 

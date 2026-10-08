@@ -1,0 +1,57 @@
+
+Microsoft (R) Windows Debugger Version 10.0.99999.1 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+Loading Dump File [C:\WINDOWS\Minidump\SYNTHETIC-03.dmp]
+Mini Kernel Dump File: Only registers and stack trace are available
+
+*********************************************************************
+* Symbols can not be loaded because symbol path is not initialized. *
+*********************************************************************
+<<<BOPS_{NONCE}_BUGCHECK_BEGIN>>>
+Bugcheck code 0000000A
+Arguments 00000000`00000010 00000000`00000002 00000000`00000000 fffff807`4a2b1c3d
+<<<BOPS_{NONCE}_BUGCHECK_END>>>
+<<<BOPS_{NONCE}_ANALYZE_BEGIN>>>
+*******************************************************************************
+*                                                                             *
+*                        Bugcheck Analysis                                    *
+*                                                                             *
+*******************************************************************************
+
+IRQL_NOT_LESS_OR_EQUAL (a)
+Arguments:
+Arg1: 0000000000000010, memory referenced
+Arg2: 0000000000000002, IRQL
+Arg3: 0000000000000000, bitfield
+Arg4: fffff8074a2b1c3d, address which referenced memory
+
+Debugging Details:
+------------------
+
+BUGCHECK_CODE:  a
+
+STACK_TEXT:
+ffffb801`2a3f6e58 fffff807`4a3c8e2e     : 00000000`0000000a 00000000`00000010 00000000`00000002 00000000`00000000 : nt+0x3f6e58
+ffffb801`2a3f6e60 fffff807`4a3d1a12     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : nt+0x3c8e2e
+
+SYMBOL_NAME:  nt+3c8e2e
+
+MODULE_NAME: nt
+
+IMAGE_NAME:  ntkrnlmp.exe
+
+FAILURE_BUCKET_ID:  WRONG_SYMBOLS_X64_99999.1_nt
+
+<<<BOPS_{NONCE}_ANALYZE_END>>>
+<<<BOPS_{NONCE}_MODULES_BEGIN>>>
+start             end                 module name
+fffff807`4a000000 fffff807`4b046000   nt         (export symbols)       ntkrnlmp.exe
+<<<BOPS_{NONCE}_MODULES_END>>>
+<<<BOPS_{NONCE}_PNP_BEGIN>>>
+No export blackboxpnp found
+<<<BOPS_{NONCE}_PNP_END>>>
+<<<BOPS_{NONCE}_BSD_BEGIN>>>
+No export blackboxbsd found
+<<<BOPS_{NONCE}_BSD_END>>>
+quit:

@@ -14,6 +14,18 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- `system.dump_analyze` (ADR-0048) analyzes one Windows kernel crash dump with Microsoft's `kd.exe` and returns bounded JSON:
+  bugcheck, debugger attribution (explicitly not a proven root cause), failure bucket, stack, modules, symbol state and the
+  PnP and boot/shutdown black boxes. The tool is read-only and Windows-only, and it appears only when Debugging Tools for
+  Windows is installed (capability `windows.debugger.kd`; nothing is auto-installed). It accepts only `.dmp`/`.mdmp` files
+  under `%SystemRoot%\Minidump` or `%SystemRoot%\LiveKernelReports`, or exactly `%SystemRoot%\MEMORY.DMP`, and rejects any
+  reparse point on the path.
+  - KD runs directly with one fixed, nonce-delimited command sequence, an optional DumpChk preflight, a scrubbed
+    environment and a killed process tree on timeout.
+  - The model can supply no debugger command, symbol server or script.
+  - Access denied is reported as such, never as "not found".
+  - Parsing is text-first and has so far been tested against synthetic fixtures only. See `docs/windows-dump-analysis.md`.
+
 - Prerequisite readiness and operational system messages (ADR-0049, D-046). A Tool or Skill Capability is *registered*
   independently of being *available*: `Requires` are required prerequisites and the new `OptionalRequires` leave a component
   available but degraded. Packages — first-party and enabled plugins alike — contribute read-only `IPrerequisiteCheck`s through

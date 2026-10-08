@@ -42,6 +42,7 @@ public sealed class CoreNamesNoPackageTests
         "system.events", "system.apps", "system.devices",
         "network.sockets", "network.routes", "network.neighbors", "network.interface_stats",
         "network.dns_query", "network.traceroute", "network.ntp_probe",
+        "system.dump_analyze", "windows.debugger.kd", "kd.exe", "dumpchk", "!analyze",
     ];
 
     public static TheoryData<string, Type> CoreAssemblyMarkers => new()

@@ -166,8 +166,11 @@ public sealed partial class ToolParameterConstraintParityTests
     [Fact]
     public void FirstPartyConstraints_MatchTheReviewedSnapshot()
     {
+        // The reviewed snapshot is the Windows composition; on another OS the Windows-only tools are not registered.
         var expected = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "Snapshots", "tool-parameter-constraints.txt"))
             .Where(line => line.Length > 0)
+            .Where(line => OperatingSystem.IsWindows()
+                || !V13DiagnosticSurfaceTests.WindowsOnly.Any(tool => line.StartsWith(tool + ".", StringComparison.Ordinal)))
             .ToArray();
 
         Assert.Equal(expected, Describe());

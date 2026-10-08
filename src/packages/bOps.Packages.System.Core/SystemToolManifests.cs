@@ -49,7 +49,7 @@ public static class SystemToolManifests
             + "One crash is one record: native records that share a report GUID are merged; nothing is merged by time, name or code, and uncorrelatedCount counts members with no report identity, which another source may also have recorded (a member with a GUID may still have been seen by a single source; evidenceSources says which). "
             + "mode aggregate (the default) returns groups per kind, code, application, module and timestampKind with count, firstSeenUtc and lastSeenUtc; mode raw returns one row per crash with report id, typed codes and dump references. sinceDays (up to 180 days) is valid only in aggregate mode. "
             + "timestampKind occurred is a proven occurrence time (the Application Error record time, and the Report.wer EventTime of an application crash, hang or kernel live dump); reported is when Windows processed or logged the report, possibly weeks later. The Report.wer EventTime of a BlueScreen (kernel-bugcheck) report is reported, not an occurrence time, because it is written after the restart; never read a reported time as the crash time. "
-            + "Dump references are path strings only (they may contain a user-profile path); dump files are never opened. Machine-level stability signals (unexpected shutdowns, hardware, display, storage) are system.stability; do not add counts across the two tools. "
+            + "Dump references are path strings only (they may contain a user-profile path); dump files are never opened here. On Windows, when system.dump_analyze is available, it is the separate next tool for analyzing the contents of one kernel dump path; it is never invoked automatically. Machine-level stability signals (unexpected shutdowns, hardware, display, storage) are system.stability; do not add counts across the two tools. "
             + "coverage says how far back each log reaches; complete is true only when every source was read, nothing was cut and every log reaches the start of the request.",
         Risk = RiskLevel.Read,
         Platforms = [platform],
@@ -120,7 +120,7 @@ public static class SystemToolManifests
         Name = "system.stability",
         Description = "Reports read-only machine stability evidence over up to 180 days as bounded JSON (schemaVersion 1): eight fixed categories, always all listed — "
             + "unexpectedShutdown, kernelCrash, kernelFault, hardwareError, displayFault (graphics-stack fault evidence such as a display timeout or a display-kernel live dump, not proof of a reset), storageError, memoryExhaustion and minidump — "
-            + "each applicable, notApplicable or notCollected on this platform. Returns category counts, signature groups with typed timestampKind (occurred, or reported: logged later, often at the next boot) and a timeline per category and kind in hour, day or week buckets derived from windowDays, plus a minidump inventory (names, sizes, file times; never contents), source status and per-log temporal coverage. "
+            + "each applicable, notApplicable or notCollected on this platform. Returns category counts, signature groups with typed timestampKind (occurred, or reported: logged later, often at the next boot) and a timeline per category and kind in hour, day or week buckets derived from windowDays, plus a minidump inventory (names, sizes, file times; never contents; on Windows, system.dump_analyze, when available, analyzes one listed minidump), source status and per-log temporal coverage. "
             + "A category count is exact only when its status is available, a lower bound when partial, and null (unknown) when unavailable, never 0 for unknown; a category count of 0 is trustworthy only when complete is true. "
             + "Groups and timeline rows of a partial category are observed lower-bound evidence, and a category with no groups or timeline rows is not evidence of zero events unless its count says 0. "
             + "hardwareError severityClass is corrected or uncorrected only when the platform states it, otherwise unknown. The minidump inventory describes the files present now and carries no retention guarantee: 0 files does not mean no past dumps. "
@@ -135,6 +135,34 @@ public static class SystemToolManifests
                 $"How many days back to look (1-{StabilityLimits.MaximumWindowDays}, default {StabilityLimits.DefaultWindowDays}).", Required: false) { Minimum = 1, Maximum = StabilityLimits.MaximumWindowDays },
             new ToolParameter("limit", ToolParameterType.Integer,
                 $"Maximum signature groups returned (1-{StabilityLimits.MaximumGroups}, default {StabilityLimits.DefaultGroups}). Category totals are never cut.", Required: false) { Minimum = 1, Maximum = StabilityLimits.MaximumGroups },
+        ],
+    };
+
+    /// <summary>
+    /// The manifest for <c>system.dump_analyze</c> on the given platform (ADR-0048). The OS package names the capability that
+    /// gates it, so this shared contract never names a debugger.
+    /// </summary>
+    public static ToolManifest DumpAnalyze(string platform, string requiredCapability, string? optionalCapability = null) => new()
+    {
+        Name = "system.dump_analyze",
+        Description = "Analyzes one Windows kernel crash dump with Microsoft Debugging Tools and returns bounded structured bugcheck, failure-bucket, stack, module, symbol and kernel black-box evidence (schemaVersion 1). "
+            + "Accepts only approved local Windows kernel-dump locations: a .dmp or .mdmp file under %SystemRoot%\\Minidump or %SystemRoot%\\LiveKernelReports, or exactly %SystemRoot%\\MEMORY.DMP (for example a dumpPath from system.crashes or a minidump listed by system.stability). "
+            + "It does not expose raw memory or execute model-supplied debugger commands; it runs one fixed analysis. "
+            + "analysis is the debugger's automated attribution (qualifier debugger-attribution): it says where the debugger found the failure, never that the named module caused it; correlate with WHEA, PnP, driver versions and timing before stating a cause. "
+            + "status is complete, partial (symbols unresolved, a section missing, a small dump lacking structures, or output cut), unavailable (failure says not-found, access-denied, debugger-unavailable, timeout or debugger-failure) or invalid (the integrity preflight rejected the dump). "
+            + "access-denied means this identity could not read the dump, never that no dump exists. A black box with available false, or an unresolved module, is missing evidence, not evidence of health.",
+        Risk = RiskLevel.Read,
+        Platforms = [platform],
+        Requires = [requiredCapability],
+        OptionalRequires = optionalCapability is null ? [] : [optionalCapability],
+        Parameters =
+        [
+            new ToolParameter(DumpAnalysisArguments.PathParameter, ToolParameterType.Path,
+                $"Absolute local path of one kernel dump (.dmp or .mdmp) in an approved location, up to {DumpAnalysisLimits.PathCharacters} characters.")
+            {
+                MinLength = DumpAnalysisLimits.MinimumPathCharacters,
+                MaxLength = DumpAnalysisLimits.PathCharacters,
+            },
         ],
     };
 

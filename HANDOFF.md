@@ -1,6 +1,18 @@
-# Handoff — V1.3.y web-search operability implemented locally
+# Handoff — V1.3.z Windows kernel dump analysis on a feature branch
 
-## Current handoff — 2026-10-07
+## Current handoff — 2026-10-08
+
+- V1.3.z adds `system.dump_analyze` (ADR-0048, D-045) on branch `feature/windows-kernel-dump-analysis`, as a PR
+  against `main` that has not been merged. It is a read-only, Windows-only, capability-gated (`windows.debugger.kd`) analysis of
+  one kernel dump under `%SystemRoot%\Minidump`, `%SystemRoot%\LiveKernelReports` or exactly `%SystemRoot%\MEMORY.DMP`.
+  It uses `kd.exe` (optionally `dumpchk.exe`) with one fixed, nonce-delimited command sequence. It is independent of
+  ADR-0046/0047 and does not reopen HARDEN.
+- The parser is text-first (operator decision) and tested only against synthetic fixtures. It has not been validated
+  against a real Debugging Tools release or a real dump. The first real validation is the operator running it on
+  `C:\WINDOWS\Minidump\100626-20984-01.dmp` after deployment. A cold symbol download may need a larger
+  `Agent:DefaultToolTimeout` (ADR-0048 §10).
+
+## Handoff — 2026-10-07 (historical)
 
 - V1.3.y is implemented locally and validated, but not committed, pushed or merged. The development
   AppHost now provisions pinned SearXNG `2026.10.4-d48c4b555`, mounts JSON-enabled settings
