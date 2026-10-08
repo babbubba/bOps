@@ -100,11 +100,13 @@ public sealed class WindowsDumpAnalysisBoundaryTests
         Assert.Equal(("windows.debugger.kd", PrerequisiteKind.Executable),
             (WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Id, WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Kind));
         Assert.Contains("Debugging Tools for Windows", WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.DisplayName, StringComparison.Ordinal);
-        Assert.Contains("kd.exe", WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Remediation, StringComparison.OrdinalIgnoreCase);
+        var kdRemediation = Assert.IsType<string>(WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Remediation);
+        Assert.Contains("kd.exe", kdRemediation, StringComparison.OrdinalIgnoreCase);
 
         Assert.Equal(("windows.debugger.dumpchk", PrerequisiteKind.Executable),
             (WindowsDebuggerCapabilities.DumpCheckDescriptor.Id, WindowsDebuggerCapabilities.DumpCheckDescriptor.Kind));
-        Assert.Contains("dumpchk.exe", WindowsDebuggerCapabilities.DumpCheckDescriptor.Remediation, StringComparison.OrdinalIgnoreCase);
+        var dumpChkRemediation = Assert.IsType<string>(WindowsDebuggerCapabilities.DumpCheckDescriptor.Remediation);
+        Assert.Contains("dumpchk.exe", dumpChkRemediation, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
