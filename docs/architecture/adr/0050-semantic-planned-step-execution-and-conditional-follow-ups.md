@@ -156,11 +156,21 @@ PRE-2B adds only the fields needed to make the plan and each execution event sel
 - the planned-step index on each new execution `PlanStep`, in addition to its existing plan revision;
 - a typed execution classification sufficient to distinguish `Matched`, `SemanticMismatch` and
   `ArgumentValidationFailure`;
-- an append-only typed transition for conditional `Activated` or `Skipped` decisions.
+- typed `EvidenceFact`s on `ToolCallResult.Facts`, from which conditional `Activated` or `Skipped`
+  outcomes are derived (see the amendment below).
 
 Exact member names are an implementation detail, but these facts must be serialized. Mutable cursor,
 retry counters and UI status must not be stored as independent authority. In-memory state is only a
-projection of the persisted plan revisions, execution steps and conditional transitions.
+projection of the persisted plan revisions, execution steps and their facts.
+
+**Amendment (conditional state is a derived fold).** `Activated` and `Skipped` are logical states
+deterministically derived from persisted execution history — `PlanStep`, `PlanRevision`,
+`ToolCallResult.Facts`, the execution classification and the cursor/history — not a second state
+machine. They need no dedicated transition record and no new audit event. No essential state may be
+volatile: restart and resume derive the same result. A `Skipped` step is never offered to the model or
+a tool. The PRE-4 UI must use this same projection/fold, not maintain its own state machine. A future
+implementation may add separate audit observability for these outcomes, but audit never becomes the
+authoritative source of state.
 
 The persisted contract allows PRE-4 to derive, without parsing prose or maintaining a frontend state
 machine:
@@ -172,7 +182,7 @@ machine:
 - **Completed** — a matching call consumed it without requiring replan;
 - **Superseded** — a later accepted revision replaced a step that was neither Completed nor Skipped.
 
-An `Activated` transition is also persisted for conditional steps. It changes such a step into the
+A derived `Activated` state also applies to conditional steps. It changes such a step into the
 ordinary Pending/Running path; it is condition history, not a seventh UI execution status. Revision
 boundaries remain the existing ordered `AgentPlan.Revision` history. An accepted replan preserves the
 completed/skipped prefix and supersedes only the unresolved suffix of the prior revision.
@@ -220,8 +230,8 @@ Cross-task, cross-revision, negative, compound and value-comparison conditions a
 Runtime evaluates a condition only when its step reaches the cursor, after the referenced earlier
 producer has been consumed and durably persisted:
 
-- if the referenced typed fact exists, append `Activated` and execute the step normally;
-- if it does not exist, append `Skipped` and advance to the following planned step without a model
+- if the referenced typed fact exists, the step derives as `Activated` and executes normally;
+- if it does not exist, the step derives as `Skipped` and the cursor advances to the following planned step without a model
   call, tool call or executable-step budget charge;
 - if persisted data is contradictory or the producer cannot be identified, fail closed to replan.
 
@@ -235,7 +245,7 @@ general reflect-after-read rule.
 Live execution and resume use the same oldest-first fold:
 
 ```text
-accepted persisted plans + persisted execution steps + conditional transitions
+accepted persisted plans + persisted execution steps + their typed facts
   -> latest accepted revision
   -> completed/skipped prefix and superseded prior suffixes
   -> current planned-step index
@@ -301,9 +311,9 @@ fact-existence reference plus an optional direct value binding is sufficient for
 - Same-tool plan steps can be consumed only by calls whose persisted typed discriminator matches.
 - A semantic mismatch and a manifest-validation error are separate persisted events with separate,
   one-use correction budgets.
-- Conditional follow-ups are visible before activation and have durable Activated/Skipped outcomes.
+- Conditional follow-ups are visible before activation and have Activated/Skipped outcomes derived from persisted history.
 - PRE-2B must add the plan/execution contract and fold; PRE-2C must add the bounded fact primitive and
-  conditional transitions. Neither may add package-specific branches to Runtime.
+  the derived conditional state. Neither may add package-specific branches to Runtime.
 - Persisted constraints and fact values are operational data, not chain-of-thought. PRE-4 may show
   objective, tool and state but must not expose arguments, fact values or secrets by default.
 
@@ -318,8 +328,8 @@ fact-existence reference plus an optional direct value binding is sufficient for
 | 5 | ADR-0047 retry success/failure | Success consumes the step; a second validation failure replans, with no third attempt. |
 | 6 | Resume during correction | Reconstruct the same step and independently spent semantic/validation correction flags. |
 | 7 | Resume after semantic mismatch and failed replan | Replan before offering any operational tool; never reset the semantic allowance. |
-| 8 | Conditional follow-up activated | Persist fact and `Activated`, resolve any direct binding, then execute the follow-up normally. |
-| 9 | Conditional follow-up skipped | Persist `Skipped`, charge no tool step and advance deterministically. |
+| 8 | Conditional follow-up activated | Persist fact; step derives `Activated`; resolve any direct binding, then execute the follow-up normally. |
+| 9 | Conditional follow-up skipped | Step derives `Skipped`, charge no tool step and advance deterministically. |
 | 10 | Legacy persisted plan | Deserialize and retain ADR-0046/0047 `ExpectedTool`-only behavior. |
 
 ## Acceptance gate
