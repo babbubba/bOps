@@ -371,7 +371,7 @@ public sealed class PlannedStepValidationRetryTests
             new ModelToolCall("call-0", ToolA, ToolArguments.Empty) { ToolNameError = "not offered" },
             ToolCallResult.Failure("Unknown tool.") with { FailureKind = ToolFailureKind.Validation }, "ERROR (validation): Unknown tool.", 0);
 
-        Assert.Equal(new PlannedStepPosition(1, false, false), PlannedStepPosition.Derive(plan, [rejection]));
+        Assert.Equal(new PlannedStepPosition(1, false, false, false), PlannedStepPosition.Derive(plan, [rejection]));
     }
 
     public static TheoryData<string> DeviationsAfterASpentCorrection => ["not-offered", "policy-denied", "timeout", "refuted"];
@@ -395,7 +395,7 @@ public sealed class PlannedStepValidationRetryTests
             _ => new PlanStep(1, ToolA, call, ToolCallResult.Success("ok"), "ok", 0) { VerificationStatus = VerificationStatus.Refuted },
         };
 
-        Assert.Equal(new PlannedStepPosition(0, true, true), PlannedStepPosition.Derive(plan, [invalid, next]));
+        Assert.Equal(new PlannedStepPosition(0, false, true, true), PlannedStepPosition.Derive(plan, [invalid, next]));
         // The same outcome without a spent correction consumes the step, as before ADR-0047 (the live loop still replans).
         Assert.Equal(1, PlannedStepPosition.Derive(plan, [next with { Index = 0 }]).Cursor);
     }
@@ -409,8 +409,8 @@ public sealed class PlannedStepValidationRetryTests
         var earlierRevision = malformed with { Index = 0, PlanRevision = 0 };
         var synthetic = new PlanStep(4, TaskResumePolicy.ModelFailureStepDescription, null, null, "The provider failed.");
 
-        Assert.Equal(new PlannedStepPosition(0, true, false), PlannedStepPosition.Derive(plan, [earlierRevision, malformed, synthetic]));
-        Assert.Equal(new PlannedStepPosition(0, true, true), PlannedStepPosition.Derive(plan, [malformed, malformed with { Index = 5 }]));
+        Assert.Equal(new PlannedStepPosition(0, false, true, false), PlannedStepPosition.Derive(plan, [earlierRevision, malformed, synthetic]));
+        Assert.Equal(new PlannedStepPosition(0, false, true, true), PlannedStepPosition.Derive(plan, [malformed, malformed with { Index = 5 }]));
     }
 
     /// <summary>Replays <c>responses</c>, then fails every later call terminally, as a provider outage would.</summary>

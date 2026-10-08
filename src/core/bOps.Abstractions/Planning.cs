@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -31,6 +33,14 @@ public sealed record PlannedStep
 
     /// <summary>The tool the model expects to use for this step, when it already knows; <c>null</c> if undecided.</summary>
     public string? ExpectedTool { get; init; }
+
+    /// <summary>
+    /// Equality-only, manifest-typed argument constraints that identify this step's intended call. Arguments not listed here
+    /// remain unconstrained; <see cref="AgentPlan.SemanticContractVersion"/> distinguishes a new unconstrained step from a
+    /// persisted legacy plan.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolArguments? ExpectedArguments { get; init; }
 }
 
 /// <summary>
@@ -66,4 +76,11 @@ public sealed record AgentPlan
 
     /// <summary>The calls made to the model to obtain this plan, oldest first: one, or two when the first reply was not a usable plan. <c>null</c> for a plan recorded before calls were kept.</summary>
     public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
+
+    /// <summary>
+    /// The semantic planned-step contract used by this revision. <c>null</c> identifies plans persisted before ADR-0050;
+    /// version 1 uses <see cref="PlannedStep.ExpectedArguments"/> typed subset equality.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SemanticContractVersion { get; init; }
 }
