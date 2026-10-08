@@ -1061,3 +1061,31 @@ offering the previous and next tool together; aliases or fuzzy tool-name matchin
 **Consequences.** D-043 is unchanged in every other respect: one-tool or zero-tool step views, never the full catalog,
 runtime-owned safety path, first-call-wins, transactional replanning and all budgets. No public contract or persistence
 schema changes.
+
+---
+
+### D-046 — ACCEPTED — Unified prerequisite readiness and operational system messages (ADR-0049)
+
+**Decision.** Accepted 2026-10-08. A Tool or Skill Capability is *registered* independently of being *available*. Its
+`Requires` are required prerequisites (existing `ToolManifest.Requires` semantics preserved) and its new
+`OptionalRequires` are optional; `CapabilityManifest` gains both as additive init properties with empty defaults and an
+unchanged constructor. An unsatisfied required prerequisite makes the component unavailable: it is never offered to a
+model and never resolves for execution. An unsatisfied optional prerequisite leaves it available and degraded.
+Packages contribute read-only, cancellable `IPrerequisiteCheck`s through an optional `IPrerequisiteProvider` on their
+existing entry point, first-party and plugin alike; the host stamps id and time onto every result, owns timeouts, state
+and visibility, and refuses a second registration of an id. `ICapabilityProbe` is kept as the boolean compatibility view
+(`Available`/`Degraded` → true). Operator-facing `SystemMessage`s (Information/Warning/Error/Critical) are a separate
+concept from logging, audit and model evidence; prerequisite messages are emitted only on a `state|code` fingerprint
+change, one per prerequisite with bounded affected-component metadata. Messages and prerequisite state persist in a
+node-local SQLite store in `bOps.Memory`, queried by inclusive from/to, exact severity and case-insensitive text (AND),
+ordered `TimestampUtc DESC, Id DESC`, keyset-paginated with an opaque cursor (default 50, max 200), retained 90 days.
+`bOps.Abstractions` moves to `1.3.0-preview.3`.
+
+**Rejected.** Retyping `ICapabilityProbe` or `Requires`; per-tool duplicate warnings; messages in `audit.jsonl`, task
+JSON or logs; `OFFSET` pagination; package-stamped result ids or timestamps; copying exception text into results;
+Debug/Trace severities; a package-to-package prerequisite service.
+
+**Consequences.** Runtime still names no package. A host that does not wire the new registry behaves exactly as before.
+Host wiring, Docker/SearXNG migration, background refresh, API and UI follow in later sessions of the same task; the
+Windows dump-analysis tool (PR #91, D-045) adopts the contracts afterwards without further SDK change. D-045 is reserved
+by that open PR, hence this entry's number.
