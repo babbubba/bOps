@@ -14,7 +14,9 @@ truncated source stays incomplete; it is never presented as a clean machine or c
   limited fallback; `/proc/modules` and bounded `/sys/module` metadata supply loaded modules.
 
 No update is installed, downloaded or removed. No driver or module is loaded, unloaded, installed or
-removed. Crash dump paths are metadata only: dump contents are never read or extracted. Linux commands
+removed. Crash dump paths are metadata only: these tools never read or extract dump contents. On Windows, analyzing the
+contents of one kernel dump is the separate, capability-gated `system.dump_analyze`
+([windows-dump-analysis.md](windows-dump-analysis.md)); no tool here invokes it. Linux commands
 are fixed and direct; caller-controlled executables, arguments, shells and raw expressions are not used.
 
 ## `system.crashes` (schema 2)
@@ -66,7 +68,10 @@ which.
 name, code and faulting module joined with `"; "`. `dumpPath` is the first `.dmp` reference among WER `AttachedFiles`,
 with the `\\?\` prefix removed; only a drive-absolute path without control characters and at most 1,024 characters is
 kept, anything else is dropped rather than repaired. It is a path string only — the file is never opened — it may
-contain a user-profile directory, it appears only in raw mode, and it is never audited.
+contain a user-profile directory, it appears only in raw mode, and it is never audited. When a `kernel-bugcheck` or
+`kernel-live-dump` row carries a `dumpPath` under `%SystemRoot%\Minidump`, `%SystemRoot%\LiveKernelReports` or at
+`%SystemRoot%\MEMORY.DMP`, and `system.dump_analyze` is available, that tool is the next step for causal kernel evidence;
+`system.crashes` never calls it.
 
 **Sources and bounds.** `windows-event-application-error`, `windows-event-wer` (512 records each), and the WER report
 directories of both roots with distinct names: `windows.wer.programdata.reportarchive`,

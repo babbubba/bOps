@@ -85,7 +85,8 @@ by last-write time and the totals in `observed` and `totalBytes`. `fileNameLocal
 in the machine's local calendar: descriptive only, never used as the crash time, for the window or for buckets. The
 inventory describes the files present now and carries **no retention guarantee**: 0 files does not mean no past dumps.
 A non-elevated Windows identity normally cannot read `C:\Windows\Minidump`; the category is then `unavailable` with
-`null` counters and the result `Partial` — bOps never elevates.
+`null` counters and the result `Partial` — bOps never elevates. To analyze the contents of one listed minidump, use the
+separate `system.dump_analyze` when it is available ([windows-dump-analysis.md](windows-dump-analysis.md)).
 
 ### Completeness and coverage
 

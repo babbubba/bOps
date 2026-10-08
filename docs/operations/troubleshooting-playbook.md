@@ -276,6 +276,36 @@ a complete empty source supports only its bounded negative observation, while an
 UNKNOWN. If causality is not explicitly established by a source, report a plausible investigation lead rather
 than a proven cause.
 
+## Unexpected reboot or bugcheck (Windows)
+
+This is diagnostic-only. It never enables or changes crash dumps, page files or crash-control settings; never generates a
+dump; and never updates, disables or removes a driver. The evidence order is:
+
+```text
+system.stability
+  unexpectedShutdown / kernelCrash / hardwareError counts and groups -> OBSERVED machine-level signals,
+    each with its timestampKind (reported times are not occurrence times).
+  minidump inventory -> OBSERVED file names/times now present; 0 files is not evidence of no past dumps.
+  unavailable (non-elevated) -> UNKNOWN: inventory not readable; never "no dumps".
+then system.crashes (mode raw, bounded window)
+  kernel-bugcheck / kernel-live-dump row with dumpPath -> OBSERVED bugcheck code and dump reference.
+then system.dump_analyze (only if available, one approved dumpPath or listed minidump)
+  status complete/partial -> OBSERVED debugger evidence: bugcheck, stack, symbol state, black boxes.
+    analysis.* (qualifier debugger-attribution) -> DEBUGGER ATTRIBUTION, not CAUSE.
+    symbols partial/unavailable or module-unresolved -> the attributed module may be wrong or unknown.
+    blackbox available=false -> UNKNOWN for that structure; never "PnP/boot was healthy".
+  access-denied -> UNKNOWN: evidence limited by privilege; the dump may exist.
+  unavailable/invalid/timeout -> UNKNOWN; keep earlier evidence.
+then correlate
+  WHEA hardwareError near the bugcheck -> hardware remains a CANDIDATE alongside the attributed module.
+  PnP black-box device ids, USB/xHCI, display or PCIe events -> CORRELATED leads.
+  system.drivers version of the attributed image -> current state only, not a change log.
+```
+
+**CAUSE** needs evidence that establishes causality on its own. A debugger's `MODULE_NAME`/`IMAGE_NAME`, a failure bucket,
+or timing alone are attribution and correlation. Report the attributed module as "the debugger attributed the failure
+to X", list hardware (WHEA) and other candidates, and keep UNKNOWN items explicit.
+
 ## Docker-hosted service failure
 
 This path is diagnostic-only. It never uses `docker exec`, creates a container, runs Compose,
