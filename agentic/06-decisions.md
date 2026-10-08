@@ -1064,6 +1064,30 @@ schema changes.
 
 ---
 
+### D-045 — ACCEPTED AND IMPLEMENTED — Bounded Windows kernel dump analysis through Microsoft Debugging Tools (ADR-0048)
+
+**Decision.** Accepted 2026-10-08. The Windows system package adds `system.dump_analyze`: `RiskLevel.Read`, Windows only,
+one `path` argument, gated on the package-owned capability `windows.debugger.kd`, which is registered only in the
+composition roots. The tool runs Microsoft's `kd.exe` directly (optionally preceded by `dumpchk.exe`) with one fixed,
+source-controlled command sequence: `.bugcheck`, `!analyze -v`, `lm`, `!blackboxpnp`, `!blackboxbsd`. Each command sits
+between per-run nonce markers. Arguments go through `ArgumentList` with no shell; the process tree is killed on timeout
+or cancellation, output is bounded, and the debugger environment is scrubbed. Accepted paths are only `.dmp`/`.mdmp` under
+`%SystemRoot%\Minidump` or `%SystemRoot%\LiveKernelReports`, or exactly `%SystemRoot%\MEMORY.DMP`, with no reparse point
+on the way. V1 parses delimited text from Microsoft-documented `!analyze -v` fields (operator decision: text first, XML
+later). The result is versioned, bounded JSON with complete/partial/unavailable/invalid status and a debugger attribution
+that is explicitly qualified as such.
+
+**Rejected.** DbgEng COM interop; WinDbg GUI or PowerShell automation; `cmd.exe`; any model-supplied debugger command,
+symbol server, script or extension; raw memory display; user-mode dumps and CDB; XML-first parsing of an undocumented
+shape; auto-installing Debugging Tools; raising the global tool timeout; letting `system.crashes` invoke dump analysis.
+
+**Consequences.** Hosts without `kd.exe` are unchanged. The synthetic parser fixtures are not a real-platform validation;
+the first real validation is an operator-run analysis after deployment. With `Agent:DefaultToolTimeout` at 30 s, a
+first analysis that downloads symbols may time out; operators raise that setting, as for Docker builds. A per-tool
+timeout is a separate decision.
+
+---
+
 ### D-046 — ACCEPTED — Unified prerequisite readiness and operational system messages (ADR-0049)
 
 **Decision.** Accepted 2026-10-08. A Tool or Skill Capability is *registered* independently of being *available*. Its
