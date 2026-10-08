@@ -1,0 +1,46 @@
+
+Microsoft (R) Windows Debugger Version 10.0.99999.1 AMD64
+Loading Dump File [C:\WINDOWS\Minidump\SYNTHETIC-04.dmp]
+<<<BOPS_{NONCE}_BUGCHECK_BEGIN>>>
+Bugcheck code 00000050
+Arguments ffffa001`99999999 00000000`00000000 fffff807`4f201000 00000000`00000002
+<<<BOPS_{NONCE}_BUGCHECK_END>>>
+<<<BOPS_{NONCE}_ANALYZE_BEGIN>>>
+PAGE_FAULT_IN_NONPAGED_AREA (50)
+Arguments:
+Arg1: ffffa00199999999, memory referenced.
+Arg2: 0000000000000000, value 0 = read operation, 1 = write operation.
+Arg3: fffff8074f201000, If non-zero, the instruction address which referenced the bad memory address.
+Arg4: 0000000000000002, (reserved)
+
+Debugging Details:
+------------------
+
+BUGCHECK_CODE:  50
+
+PROCESS_NAME:  System
+
+STACK_TEXT:
+ffffb801`2a3f6e58 fffff807`4a3c8e2e     : 00000000`00000050 ffffa001`99999999 00000000`00000000 fffff807`4f201000 : nt!KeBugCheckEx
+ffffb801`2a3f6e60 fffff807`4f201000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : 0xfffff807`4f201000
+
+SYMBOL_NAME:  ANALYSIS_INCONCLUSIVE
+
+MODULE_NAME: Unknown_Module
+
+IMAGE_NAME:  Unknown_Image
+
+FAILURE_BUCKET_ID:  AV_INVALID_BAD_IP_Unknown_Image
+
+<<<BOPS_{NONCE}_ANALYZE_END>>>
+<<<BOPS_{NONCE}_MODULES_BEGIN>>>
+start             end                 module name
+fffff807`4a000000 fffff807`4b046000   nt         (pdb symbols)          C:\Synthetic\Symbols\ntkrnlmp.pdb\0\ntkrnlmp.pdb
+<<<BOPS_{NONCE}_MODULES_END>>>
+<<<BOPS_{NONCE}_PNP_BEGIN>>>
+No export blackboxpnp found
+<<<BOPS_{NONCE}_PNP_END>>>
+<<<BOPS_{NONCE}_BSD_BEGIN>>>
+No export blackboxbsd found
+<<<BOPS_{NONCE}_BSD_END>>>
+quit:

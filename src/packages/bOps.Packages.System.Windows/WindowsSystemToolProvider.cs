@@ -18,6 +18,7 @@ public sealed class WindowsSystemToolProvider : IToolProvider
         new WindowsUpdateHistoryTool(),
         new WindowsCrashEvidenceTool(),
         new WindowsStabilityTool(),
+        new WindowsKernelDumpAnalyzeTool(),
         new WindowsDriverEvidenceTool(),
         new WindowsApplicationInventoryTool(),
         new WindowsDeviceInventoryTool(),

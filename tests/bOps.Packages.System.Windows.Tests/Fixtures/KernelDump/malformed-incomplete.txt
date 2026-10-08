@@ -1,0 +1,15 @@
+
+Microsoft (R) Windows Debugger Version 10.0.99999.1 AMD64
+Loading Dump File [C:\WINDOWS\Minidump\SYNTHETIC-05.dmp]
+<<<BOPS_{NONCE}_BUGCHECK_BEGIN>>>
+Bugcheck code 0000001E
+Arguments ffffffff`c0000005 fffff807`4f101042 00000000`00000000 ffffffff`ffffffff
+<<<BOPS_{NONCE}_BUGCHECK_END>>>
+<<<BOPS_{NONCE}_ANALYZE_BEGIN>>>
+KMODE_EXCEPTION_NOT_HANDLED (1e)
+Arguments:
+Arg1: ffffffffc0000005, The exception code that was not handled
+<<<BOPS_0000000000000000_ANALYZE_END>>>
+MODULE_NAME: synthdrv
+STACK_TEXT:
+ffffb801`2a3f6e58 fffff807`4a3c8e2e     : 00000000`0000001e ffffffff`c0000005 fffff807`4f101042 00000000`00000000 : nt!KeBugCheckEx

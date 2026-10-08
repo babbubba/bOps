@@ -29,16 +29,25 @@ public sealed class V13DiagnosticSurfaceTests
         "web.search", "web.fetch",
     ];
 
+    /// <summary>
+    /// Registrations that exist on one operating system only (ADR-0048: system.dump_analyze is Windows-only and has no Linux
+    /// counterpart, so the raw composition on Linux must not contain it).
+    /// </summary>
+    internal static readonly string[] WindowsOnly = ["system.dump_analyze"];
+
+    private static string[] ExpectedOnThisPlatform => OperatingSystem.IsWindows() ? [.. Expected, .. WindowsOnly] : Expected;
+
     [Fact]
     public void RawFirstPartyRegistrations_MatchTheExpectedV13DiagnosticSurfaceExactly()
     {
         var registrations = CreateRawRegistrations();
         var actual = registrations.Select(registration => registration.Tool.Manifest.Name).ToArray();
-        var comparison = Compare(Expected, actual);
+        var expected = ExpectedOnThisPlatform;
+        var comparison = Compare(expected, actual);
 
-        Assert.Equal(Expected.Length, Expected.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(expected.Length, expected.Distinct(StringComparer.Ordinal).Count());
         Assert.True(comparison.IsExact, comparison.ToDiagnosticMessage());
-        Assert.Equal(Expected.Order(StringComparer.Ordinal), actual.Order(StringComparer.Ordinal));
+        Assert.Equal(expected.Order(StringComparer.Ordinal), actual.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -89,7 +98,7 @@ public sealed class V13DiagnosticSurfaceTests
     public void DiagnosticSurface_HasNoForbiddenGenericCapability()
     {
         var forbidden = new[] { "shell", "exec", "command", "process.start", "sql", "firewall.raw", "process.environment", "private-key" };
-        var offending = Expected.Where(name => forbidden.Any(term => name.Contains(term, StringComparison.OrdinalIgnoreCase))).ToArray();
+        var offending = Expected.Concat(WindowsOnly).Where(name => forbidden.Any(term => name.Contains(term, StringComparison.OrdinalIgnoreCase))).ToArray();
 
         Assert.Empty(offending);
     }
