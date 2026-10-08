@@ -1,16 +1,30 @@
-# Handoff — V1.3.z Windows kernel dump analysis on a feature branch
+# Handoff — V1.3 pre-release stabilization
 
 ## Current handoff — 2026-10-08
 
-- V1.3.z adds `system.dump_analyze` (ADR-0048, D-045) on branch `feature/windows-kernel-dump-analysis`, as a PR
-  against `main` that has not been merged. It is a read-only, Windows-only, capability-gated (`windows.debugger.kd`) analysis of
-  one kernel dump under `%SystemRoot%\Minidump`, `%SystemRoot%\LiveKernelReports` or exactly `%SystemRoot%\MEMORY.DMP`.
-  It uses `kd.exe` (optionally `dumpchk.exe`) with one fixed, nonce-delimited command sequence. It is independent of
-  ADR-0046/0047 and does not reopen HARDEN.
-- The parser is text-first (operator decision) and tested only against synthetic fixtures. It has not been validated
-  against a real Debugging Tools release or a real dump. The first real validation is the operator running it on
-  `C:\WINDOWS\Minidump\100626-20984-01.dmp` after deployment. A cold symbol download may need a larger
-  `Agent:DefaultToolTimeout` (ADR-0048 §10).
+- PR #92 (ADR-0049 prerequisite readiness + System Messages) is merged. Real Windows validation passed:
+  bOps started without Microsoft Debugging Tools, reported the missing prerequisite, then while the
+  process remained running detected both `windows.debugger.kd` and `windows.debugger.dumpchk` as
+  Available after installation.
+- PR #91 (`system.dump_analyze`, ADR-0048) is merged with Windows/Linux CI green. The first real
+  execution reached the tool but was cancelled by the generic caller after exactly 30 seconds:
+  `ERROR (timeout): 'system.dump_analyze' did not complete within 00:00:30`. Its own package bounds
+  are longer (DumpChk 60 s, KD 10 min), so the real parser/KD validation is still pending.
+- Real Qwen task `8cc482b5-3ac3-4de5-af07-1d1f334bf80b` exposed additional pre-release gaps:
+  repeated steps sharing `system.events` can advance by ExpectedTool equality while serving the wrong
+  semantic intent; evidence discovered after planning does not reliably activate a useful follow-up;
+  and malformed Qwen `EvidenceRead/v1` control markup can become a candidate final answer if the
+  disclosure re-ask fails.
+- A prior real Qwen run also demonstrated a final-synthesis contradiction against exact persisted WHEA
+  Event 19 evidence.
+- The operator promoted these findings, read-only execution-plan visibility, F-25 (undelegated
+  non-Read intent journal) and F-26 (production SPA hosting) into the stable-V1.3 pre-release queue.
+- Authoritative next packet:
+  [`agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md`](agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md).
+  Canonical order is PRE-1 per-tool timeout, PRE-2 planned-step semantic integrity/evidence follow-up,
+  PRE-3 EvidenceRead/control-plane hardening, PRE-4 plan UI, PRE-5 evidence-grounded synthesis,
+  PRE-6 real-model/KD evidence, PRE-7 install/upgrade/soak, PRE-8 stable release gate.
+- Do not start V1.4 until PRE-8 is closed or the operator explicitly changes this decision.
 
 ## Handoff — 2026-10-07 (historical)
 
