@@ -20,6 +20,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
     internal const int DumpChkOutputCharacters = 64 * 1024;
     internal const string PublicSymbolServer = "https://msdl.microsoft.com/download/symbols";
 
+    internal const string ReasonWindowsHostRequired = "windows-host-required";
     internal const string WarningAccessDenied = "access-denied-elevation-may-be-required";
     internal const string WarningDumpChkUnavailable = "dumpchk-unavailable";
     internal const string WarningDumpChkTimeout = "dumpchk-timeout";
@@ -31,36 +32,42 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
     internal const string WarningKdOutputTruncated = "kd-output-truncated";
     internal const string WarningSmallDump = "small-dump-limited-structures";
 
-    private readonly WindowsDumpPathPolicy policy;
+    private readonly Func<string, DumpPathDecision> decidePath;
     private readonly Func<DebuggerInstallation?> locate;
     private readonly Func<ProcessStartInfo, TimeSpan, int, CancellationToken, Task<DebuggerProcessResult>> run;
     private readonly Func<string> nonce;
-    private readonly string dataRoot;
+    private readonly Func<string> dataRootFactory;
+    private string? dataRoot;
 
-    /// <summary>Creates the tool for this machine.</summary>
+    /// <summary>
+    /// Creates the tool for this machine. Constructing it, and reading its manifest, touches no environment state: the Windows
+    /// directory, the file system, the debugger installation and the data root are all resolved only when the tool executes.
+    /// </summary>
     public WindowsKernelDumpAnalyzeTool()
-        : this(WindowsDumpPathPolicy.ForThisMachine(), WindowsDebuggerLocator.Locate, DebuggerProcessRunner.RunAsync, KdCommandScript.NewNonce, DefaultDataRoot())
+        : this(DecideOnThisMachine, WindowsDebuggerLocator.Locate, DebuggerProcessRunner.RunAsync, KdCommandScript.NewNonce, DefaultDataRoot)
     {
     }
 
     /// <summary>Creates the tool with deterministic seams for tests.</summary>
     internal WindowsKernelDumpAnalyzeTool(
-        WindowsDumpPathPolicy policy,
+        Func<string, DumpPathDecision> decidePath,
         Func<DebuggerInstallation?> locate,
         Func<ProcessStartInfo, TimeSpan, int, CancellationToken, Task<DebuggerProcessResult>> run,
         Func<string> nonce,
-        string dataRoot)
+        Func<string> dataRoot)
         : base("windows", WindowsDebuggerCapabilities.KernelDumpAnalysis)
     {
-        this.policy = policy;
+        this.decidePath = decidePath;
         this.locate = locate;
         this.run = run;
         this.nonce = nonce;
-        this.dataRoot = dataRoot;
+        dataRootFactory = dataRoot;
     }
 
+    private string DataRoot => dataRoot ??= dataRootFactory();
+
     /// <summary>The bOps-owned symbol cache directory.</summary>
-    internal string SymbolCache => Path.Combine(dataRoot, "Symbols");
+    internal string SymbolCache => Path.Combine(DataRoot, "Symbols");
 
     /// <summary>The fixed symbol path: Microsoft's public symbol server through the bOps-owned cache. Never from arguments.</summary>
     internal string SymbolPath => $"srv*{SymbolCache}*{PublicSymbolServer}";
@@ -68,7 +75,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
     /// <inheritdoc />
     protected override async Task<DumpAnalysisReport> AnalyzeAsync(string path, CancellationToken ct)
     {
-        var decision = policy.Decide(path);
+        var decision = decidePath(path);
         if (Refusal(decision) is { } refused)
         {
             return refused;
@@ -87,7 +94,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
         }
 
         var markerNonce = nonce();
-        var workDirectory = Path.Combine(dataRoot, "DebuggerWork", markerNonce);
+        var workDirectory = Path.Combine(DataRoot, "DebuggerWork", markerNonce);
         var warnings = new List<string>();
         try
         {
@@ -101,7 +108,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
             }
             else
             {
-                if (Refusal(policy.Decide(path)) is { } changed) return changed;
+                if (Refusal(decidePath(path)) is { } changed) return changed;
                 var check = await run(
                     DebuggerProcessRunner.CreateStartInfo(installation.DumpChkPath, [decision.Path!], workDirectory),
                     DumpChkTimeout, DumpChkOutputCharacters, ct).ConfigureAwait(false);
@@ -112,7 +119,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
             }
 
             // Rule S11: the path is decided again immediately before the debugger opens it.
-            if (Refusal(policy.Decide(path)) is { } moved) return moved;
+            if (Refusal(decidePath(path)) is { } moved) return moved;
             var debugger = new DumpDebuggerDescription("kd", installation.Version, installation.DumpChkPath is not null, dumpCheckPassed);
             var result = await run(
                 DebuggerProcessRunner.CreateStartInfo(installation.KdPath, KdCommandScript.Arguments(decision.Path!, SymbolPath, markerNonce), workDirectory),
@@ -243,6 +250,15 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
 
         return new DumpFileDescription(decision.Path!, Path.GetFileName(decision.Path!), size, lastWrite, decision.Kind!);
     }
+
+    /// <summary>
+    /// The live decision: the real <c>%SystemRoot%</c> policy, created per call so nothing is read at construction. On any other
+    /// host the path is refused — a Linux or macOS path is never interpreted as a Windows dump path.
+    /// </summary>
+    internal static DumpPathDecision DecideOnThisMachine(string requested) =>
+        OperatingSystem.IsWindows()
+            ? WindowsDumpPathPolicy.ForThisMachine().Decide(requested)
+            : new DumpPathDecision(DumpPathVerdict.Rejected, null, null, ReasonWindowsHostRequired);
 
     private static string DefaultDataRoot()
     {

@@ -22,7 +22,11 @@ internal sealed class RequiresKernelDebuggerFactAttribute : FactAttribute
     }
 }
 
-/// <summary>ADR-0048 §4: deterministic, bounded kd.exe discovery; nothing is launched or installed.</summary>
+/// <summary>
+/// ADR-0048 §4: deterministic, bounded kd.exe discovery; nothing is launched or installed. The candidate-directory tests feed
+/// Windows <c>PATH</c> syntax and Program Files locations through <c>System.IO.Path</c>, which follows the host's rules, so they
+/// run only on Windows; the file-based acceptance tests stay portable where they need no Windows binary.
+/// </summary>
 public sealed class WindowsDebuggerLocatorTests : IDisposable
 {
     private readonly string directory = Path.Combine(AppContext.BaseDirectory, "locator", Guid.NewGuid().ToString("N"));
@@ -36,7 +40,7 @@ public sealed class WindowsDebuggerLocatorTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void Candidates_ArePathEntriesInOrder_ThenTheStandardKitsDirectoriesForThisArchitecture()
     {
         var candidates = WindowsDebuggerLocator.Candidates(
@@ -51,7 +55,7 @@ public sealed class WindowsDebuggerLocatorTests : IDisposable
             candidates);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void Candidates_UseTheArchitectureFolder_AndNeverSearchRecursively()
     {
         var arm = WindowsDebuggerLocator.Candidates(null, @"C:\PF86", @"C:\PF", Architecture.Arm64);
@@ -61,7 +65,7 @@ public sealed class WindowsDebuggerLocatorTests : IDisposable
         Assert.Empty(unknown);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void Candidates_AreBoundedInPathEntries()
     {
         var path = string.Join(';', Enumerable.Range(0, 500).Select(index => @"C:\p" + index));

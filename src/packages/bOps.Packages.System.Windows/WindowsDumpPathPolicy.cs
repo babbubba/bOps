@@ -49,6 +49,7 @@ internal sealed partial class WindowsDumpPathPolicy
     /// <summary>Creates the policy for the Windows directory <paramref name="systemRoot"/>.</summary>
     internal WindowsDumpPathPolicy(string systemRoot)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(systemRoot);
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(systemRoot));
         minidumpRoot = Path.Combine(root, "Minidump");
         liveKernelReportsRoot = Path.Combine(root, "LiveKernelReports");

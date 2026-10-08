@@ -23,3 +23,33 @@ internal sealed class WindowsOnlyFactAttribute : FactAttribute
         }
     }
 }
+
+/// <summary>
+/// The <see cref="TheoryAttribute"/> counterpart of <see cref="WindowsOnlyFactAttribute"/>: for data-driven tests whose
+/// correctness depends on real Windows path or file-system semantics (<c>System.IO.Path</c> follows the host's rules).
+/// </summary>
+internal sealed class WindowsOnlyTheoryAttribute : TheoryAttribute
+{
+    public WindowsOnlyTheoryAttribute()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Skip = "Requires a real Windows host (Windows path and file-system semantics — agentic/04-testing-rules.md: never mock the operating system).";
+        }
+    }
+}
+
+/// <summary>
+/// Skips visibly on Windows: for the one guarantee that only a non-Windows host can exercise — the production tool refuses to
+/// interpret a path when it is not running on Windows.
+/// </summary>
+internal sealed class NonWindowsHostFactAttribute : FactAttribute
+{
+    public NonWindowsHostFactAttribute()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Skip = "Exercises the non-Windows-host refusal; this host is Windows.";
+        }
+    }
+}

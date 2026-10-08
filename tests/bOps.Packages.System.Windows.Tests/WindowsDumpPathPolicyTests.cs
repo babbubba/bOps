@@ -5,9 +5,15 @@ using bOps.Packages.Sys.Windows;
 
 namespace bOps.Packages.System.Windows.Tests;
 
-/// <summary>A fake <c>%SystemRoot%</c> under the test output directory (whose path uses only the allowed characters).</summary>
+/// <summary>
+/// A fake <c>%SystemRoot%</c> under the test output directory (whose path uses only the allowed characters). The directory tree
+/// is portable; <see cref="Policy"/> is created on first use because the real policy only makes sense for Windows paths, so a
+/// test that reads it must be a Windows-only test.
+/// </summary>
 internal sealed class FakeSystemRoot : IDisposable
 {
+    private WindowsDumpPathPolicy? policy;
+
     internal FakeSystemRoot()
     {
         Root = Path.Combine(AppContext.BaseDirectory, "dump-roots", Guid.NewGuid().ToString("N"), "Windows");
@@ -15,14 +21,13 @@ internal sealed class FakeSystemRoot : IDisposable
         Directory.CreateDirectory(Path.Combine(Root, "LiveKernelReports", "WATCHDOG"));
         Outside = Path.Combine(Path.GetDirectoryName(Root)!, "Outside");
         Directory.CreateDirectory(Outside);
-        Policy = new WindowsDumpPathPolicy(Root);
     }
 
     internal string Root { get; }
 
     internal string Outside { get; }
 
-    internal WindowsDumpPathPolicy Policy { get; }
+    internal WindowsDumpPathPolicy Policy => policy ??= new WindowsDumpPathPolicy(Root);
 
     internal string Create(params string[] relative)
     {
@@ -64,14 +69,18 @@ internal sealed class SymbolicLinkFactAttribute : FactAttribute
     }
 }
 
-/// <summary>ADR-0048 §5: default-deny path authorization for kernel dumps.</summary>
+/// <summary>
+/// ADR-0048 §5: default-deny path authorization for kernel dumps. The policy decides Windows paths through <c>System.IO.Path</c>,
+/// which follows the host's rules, so every test that asks it for a decision runs only on Windows (the windows-latest job); the
+/// constructor-argument checks need no path semantics and run everywhere.
+/// </summary>
 public sealed class WindowsDumpPathPolicyTests : IDisposable
 {
     private readonly FakeSystemRoot roots = new();
 
     public void Dispose() => roots.Dispose();
 
-    [Fact]
+    [WindowsOnlyFact]
     public void ApprovedLocations_AreAuthorizedWithTheirKind()
     {
         var minidump = roots.Create("Minidump", "100626-20984-01.dmp");
@@ -86,7 +95,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         Assert.Equal((DumpPathVerdict.Authorized, WindowsDumpPathPolicy.KindSmall), Verdict(minidump.ToUpperInvariant()));
     }
 
-    [Theory]
+    [WindowsOnlyTheory]
     [InlineData(@"Minidump\a.dmp", "not-absolute")]
     [InlineData(@"\Windows\Minidump\a.dmp", "not-absolute")]
     [InlineData(@"C:Windows\Minidump\a.dmp", "not-absolute")]
@@ -117,7 +126,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         Assert.Null(decision.Path);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void NonDumpExtensions_AreRejected()
     {
         foreach (var name in new[] { "a.txt", "a.dmp.txt", "a.dll", "a.evtx", "a", "a.dmpx" })
@@ -126,7 +135,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         }
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void PathsOutsideTheApprovedRoots_AreRejected_IncludingSiblingPrefixesAndTheRootsThemselves()
     {
         var outside = Path.Combine(roots.Outside, "a.dmp");
@@ -148,7 +157,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         }
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void DotDotSegments_AreCanonicalizedBeforeTheRootCheck_AndCannotEscape()
     {
         var outside = Path.Combine(roots.Outside, "a.dmp");
@@ -163,7 +172,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         Assert.Equal(Path.Combine(roots.Root, "Minidump", "x.dmp"), decision.Path);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void MissingFile_IsNotFound_WithTheCanonicalPath()
     {
         var decision = roots.Policy.Decide(Path.Combine(roots.Root, "Minidump", "absent.dmp"));
@@ -172,7 +181,7 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         Assert.Equal(WindowsDumpPathPolicy.KindSmall, decision.Kind);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void ADirectoryNamedLikeADump_IsNotTheDump()
     {
         Directory.CreateDirectory(Path.Combine(roots.Root, "Minidump", "dir.dmp"));
@@ -241,6 +250,17 @@ public sealed class WindowsDumpPathPolicyTests : IDisposable
         var decision = WindowsDumpPathPolicy.ForThisMachine().Decide(Path.Combine(systemRoot, "System32", "kernel32.dll"));
 
         Assert.Equal(DumpPathVerdict.Rejected, decision.Verdict);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Construction_RejectsAMissingSystemRoot_WithAnIntentionalArgumentError(string? systemRoot)
+    {
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new WindowsDumpPathPolicy(systemRoot!));
+
+        Assert.Equal("systemRoot", exception.ParamName);
     }
 
     private (DumpPathVerdict, string?) Verdict(string path)

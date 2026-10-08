@@ -11,12 +11,18 @@ using bOps.Packages.Sys.Windows;
 
 namespace bOps.Packages.System.Windows.Tests;
 
-/// <summary>ADR-0048 §8: orchestration, outcome classification and bounds of the Windows <c>system.dump_analyze</c>.</summary>
+/// <summary>
+/// ADR-0048 §8: orchestration, outcome classification and bounds of the Windows <c>system.dump_analyze</c>. The path decision is
+/// an injected typed seam, so these tests run on every host without pretending it has Windows drive semantics; what the real
+/// <see cref="WindowsDumpPathPolicy"/> accepts and rejects is tested, on Windows only, in <c>WindowsDumpPathPolicyTests</c> and
+/// in the real-policy tests at the end of this class.
+/// </summary>
 public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
 {
     private const string Nonce = KernelDumpFixtures.Nonce;
     private readonly FakeSystemRoot roots = new();
     private readonly List<ProcessStartInfo> launches = [];
+    private readonly List<string> decided = [];
 
     public void Dispose() => roots.Dispose();
 
@@ -35,6 +41,41 @@ public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
         Assert.Equal(("path", ToolParameterType.Path, true), (parameter.Name, parameter.Type, parameter.Required));
         Assert.Equal((7, 260), (parameter.MinLength, parameter.MaxLength));
         Assert.Contains("never that the named module caused it", manifest.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Construction_ResolvesNoEnvironmentState_UntilTheToolExecutes()
+    {
+        var resolved = new List<string>();
+        var tool = new WindowsKernelDumpAnalyzeTool(
+            requested => { resolved.Add("path-policy"); return new DumpPathDecision(DumpPathVerdict.Rejected, null, null, "x"); },
+            () => { resolved.Add("debugger-locator"); return null; },
+            (_, _, _, _) => { resolved.Add("process-runner"); return Task.FromResult(DebuggerProcessResult.NotStarted); },
+            () => { resolved.Add("nonce"); return Nonce; },
+            () => { resolved.Add("data-root"); return DataRoot; });
+
+        _ = tool.Manifest;
+
+        Assert.Empty(resolved);
+        Assert.NotEmpty(tool.SymbolCache);
+        Assert.Equal(["data-root"], resolved);
+    }
+
+    [Fact]
+    public void PublicConstruction_AndManifestInspection_AreHostIndependent()
+    {
+        var tool = new WindowsKernelDumpAnalyzeTool();
+
+        Assert.Equal("system.dump_analyze", tool.Manifest.Name);
+        Assert.Equal(["windows"], tool.Manifest.Platforms);
+    }
+
+    [Fact]
+    public void TheWindowsProvider_ExposesTheDumpTool_OnAnyHost()
+    {
+        var tools = new WindowsSystemToolProvider().GetTools().ToList();
+
+        Assert.Contains(tools, tool => tool.Manifest.Name == "system.dump_analyze");
     }
 
     [Fact]
@@ -192,13 +233,43 @@ public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
     }
 
     [Fact]
-    public async Task MissingDump_IsNotFound_AndNothingIsLaunched()
+    public async Task ApprovedPathWhoseFileIsGone_IsNotFound_AndNothingIsLaunched()
     {
-        var result = await Tool(Installation(dumpChk: true), Kd("unused")).ExecuteAsync(Arguments(Path.Combine(roots.Root, "Minidump", "gone.dmp")));
+        var gone = Path.Combine(roots.Root, "Minidump", "gone.dmp");
+
+        var result = await Tool(Installation(dumpChk: true), Kd("unused")).ExecuteAsync(Arguments(gone));
 
         var json = Json(result);
         Assert.Equal(("unavailable", "not-found"), (json["status"]!.GetValue<string>(), json["failure"]!.GetValue<string>()));
         Assert.Equal(ToolResultCompleteness.Unavailable, result.Completeness);
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public async Task PolicyNotFoundVerdict_IsNotFound_AndNothingIsLaunched()
+    {
+        var gone = Path.Combine(roots.Root, "Minidump", "gone.dmp");
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"),
+            decidePath: requested => new DumpPathDecision(DumpPathVerdict.NotFound, requested, WindowsDumpPathPolicy.KindSmall, "file-not-found"));
+
+        var json = Json(await tool.ExecuteAsync(Arguments(gone)));
+
+        Assert.Equal(("unavailable", "not-found"), (json["status"]!.GetValue<string>(), json["failure"]!.GetValue<string>()));
+        Assert.Contains("file-not-found", Warnings(json));
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public async Task PolicyAccessDeniedVerdict_IsAccessDenied_NeverNotFound()
+    {
+        var dump = roots.Create("Minidump", "a.dmp");
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"),
+            decidePath: requested => new DumpPathDecision(DumpPathVerdict.AccessDenied, requested, WindowsDumpPathPolicy.KindSmall, "access-denied"));
+
+        var json = Json(await tool.ExecuteAsync(Arguments(dump)));
+
+        Assert.Equal(("unavailable", "access-denied"), (json["status"]!.GetValue<string>(), json["failure"]!.GetValue<string>()));
+        Assert.Contains(WindowsKernelDumpAnalyzeTool.WarningAccessDenied, Warnings(json));
         Assert.Empty(launches);
     }
 
@@ -228,19 +299,110 @@ public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
     }
 
     [Theory]
+    [InlineData("not-absolute")]
+    [InlineData("unc-or-device-path")]
+    [InlineData("characters")]
+    [InlineData("outside-approved-roots")]
+    [InlineData("reparse-point")]
+    public async Task RejectedPathDecision_IsAValidationFailure_AndNothingIsLaunched(string reason)
+    {
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"),
+            decidePath: _ => new DumpPathDecision(DumpPathVerdict.Rejected, null, null, reason));
+
+        var result = await tool.ExecuteAsync(Arguments(@"C:\Windows\Minidump\a.dmp"));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
+        Assert.Contains("approved local kernel-dump location", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains(reason, result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public async Task ThePathIsDecidedAgain_ImmediatelyBeforeDumpChkAndBeforeKd()
+    {
+        var dump = roots.Create("Minidump", "a.dmp");
+
+        await Tool(Installation(dumpChk: true), Kd(KernelDumpFixtures.Load("normal-complete"))).ExecuteAsync(Arguments(dump));
+
+        Assert.Equal([dump, dump, dump], decided);
+        Assert.Equal(2, launches.Count);
+    }
+
+    [Fact]
+    public async Task ADumpThatStopsBeingApprovedBeforeDumpChk_IsNeverHandedToAnyProcess()
+    {
+        var dump = roots.Create("Minidump", "a.dmp");
+        var calls = 0;
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"), decidePath: requested =>
+            ++calls == 1
+                ? new DumpPathDecision(DumpPathVerdict.Authorized, requested, WindowsDumpPathPolicy.KindSmall, null)
+                : new DumpPathDecision(DumpPathVerdict.Rejected, null, null, "reparse-point"));
+
+        var result = await tool.ExecuteAsync(Arguments(dump));
+
+        Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public async Task ADumpThatStopsBeingApprovedAfterDumpChk_IsNeverHandedToKd()
+    {
+        var dump = roots.Create("Minidump", "a.dmp");
+        var calls = 0;
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"), decidePath: requested =>
+            ++calls <= 2
+                ? new DumpPathDecision(DumpPathVerdict.Authorized, requested, WindowsDumpPathPolicy.KindSmall, null)
+                : new DumpPathDecision(DumpPathVerdict.Rejected, null, null, "reparse-point"));
+
+        var result = await tool.ExecuteAsync(Arguments(dump));
+
+        Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
+        var launch = Assert.Single(launches);
+        Assert.EndsWith("dumpchk.exe", launch.FileName, StringComparison.Ordinal);
+    }
+
+    [WindowsOnlyTheory]
     [InlineData(@"relative\a.dmp")]
     [InlineData(@"\\server\share\a.dmp")]
     [InlineData(@"C:\Windows\Minidump\a.dmp"" -c "".shell calc")]
     [InlineData(@"C:\Windows\Minidump\a.dmp;!analyze -v")]
     [InlineData(@"C:\Windows\System32\config\SAM.dmp")]
-    public async Task RejectedPaths_AreValidationFailures_AndNothingIsLaunched(string path)
+    public async Task RealPolicy_RejectsHostilePaths_AsValidationFailures_AndNothingIsLaunched(string path)
     {
-        var result = await Tool(Installation(dumpChk: true), Kd("unused")).ExecuteAsync(Arguments(path));
+        var tool = Tool(Installation(dumpChk: true), Kd("unused"), decidePath: roots.Policy.Decide);
+
+        var result = await tool.ExecuteAsync(Arguments(path));
 
         Assert.Equal(ToolOutcome.Failure, result.Outcome);
         Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
         Assert.Contains("approved local kernel-dump location", result.ErrorMessage, StringComparison.Ordinal);
         Assert.Empty(launches);
+    }
+
+    [WindowsOnlyFact]
+    public async Task RealPolicy_AuthorizesAnApprovedDump_ThroughTheWholePipeline()
+    {
+        var dump = roots.Create("Minidump", "100626-20984-01.dmp");
+        var tool = Tool(Installation(dumpChk: true), Kd(KernelDumpFixtures.Load("normal-complete")), decidePath: roots.Policy.Decide);
+
+        var json = Json(await tool.ExecuteAsync(Arguments(dump)));
+
+        Assert.Equal("complete", json["status"]!.GetValue<string>());
+        Assert.Equal("kernel-small", json["dump"]!["kind"]!.GetValue<string>());
+        Assert.Equal(2, launches.Count);
+    }
+
+    [NonWindowsHostFact]
+    public async Task ThisMachinesTool_OnANonWindowsHost_RefusesEveryPath_AndNothingIsInterpretedOrLaunched()
+    {
+        var tool = new WindowsKernelDumpAnalyzeTool();
+
+        var result = await tool.ExecuteAsync(Arguments(@"C:\Windows\Minidump\a.dmp"));
+
+        Assert.Equal(ToolOutcome.Failure, result.Outcome);
+        Assert.Equal(ToolFailureKind.Validation, result.FailureKind);
+        Assert.Contains(WindowsKernelDumpAnalyzeTool.ReasonWindowsHostRequired, result.ErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -293,19 +455,27 @@ public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
         }
     }
 
+    /// <summary>The synthetic decision: whatever was requested is an authorized small dump at exactly that (real, portable) path.</summary>
+    private Func<string, DumpPathDecision> Authorized() => requested =>
+    {
+        decided.Add(requested);
+        return new DumpPathDecision(DumpPathVerdict.Authorized, requested, WindowsDumpPathPolicy.KindSmall, null);
+    };
+
     private string DataRoot => Path.Combine(Path.GetDirectoryName(roots.Root)!, "data");
 
     private WindowsKernelDumpAnalyzeTool Tool(
         DebuggerInstallation? installation,
         Func<ProcessStartInfo, TimeSpan, int, CancellationToken, Task<DebuggerProcessResult>> kd,
-        int dumpChkExit = 0) =>
-        new(roots.Policy, () => installation, (startInfo, timeout, maximum, ct) =>
+        int dumpChkExit = 0,
+        Func<string, DumpPathDecision>? decidePath = null) =>
+        new(decidePath ?? Authorized(), () => installation, (startInfo, timeout, maximum, ct) =>
         {
             launches.Add(startInfo);
             return startInfo.FileName.EndsWith("dumpchk.exe", StringComparison.Ordinal)
                 ? Task.FromResult(new DebuggerProcessResult(true, false, dumpChkExit, "dumpchk output", false, string.Empty))
                 : kd(startInfo, timeout, maximum, ct);
-        }, () => Nonce, DataRoot);
+        }, () => Nonce, () => DataRoot);
 
     private static DebuggerInstallation Installation(bool dumpChk) =>
         new(@"C:\Debuggers\kd.exe", dumpChk ? @"C:\Debuggers\dumpchk.exe" : null, "10.0.99999.1");
