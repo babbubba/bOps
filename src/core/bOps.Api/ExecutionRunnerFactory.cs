@@ -51,7 +51,8 @@ internal sealed class ExecutionRunnerFactory(
     ILogger<AgentRunner> logger, IConfiguration configuration, ISkillRegistry skills,
     IRoleProfileSource roles, IPlanApprovalProvider planApprovals,
     ILogger<DelegationRunner> delegationLogger, IDelegationStore delegations,
-    IChatModel? testModel = null)
+    IChatModel? testModel = null,
+    ISystemMessageStore? systemMessages = null)
 {
     internal AgentRunner CreateAgent(PinnedProviderConfiguration pin, Guid? delegationId = null)
     {
@@ -59,7 +60,8 @@ internal sealed class ExecutionRunnerFactory(
         options.Validate(pin.RequestTimeout ?? ChatModelOptions.DefaultRequestTimeout);
         return new AgentRunner(testModel ?? models.Create(pin), tools, policy, approvals, audit, tasks, time,
             logger, options, skills, pinnedProviderConfiguration: pin,
-            persistPinnedProviderConfiguration: (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct));
+            persistPinnedProviderConfiguration: (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct),
+            systemMessages: systemMessages);
     }
 
     internal DelegationRunner CreateDelegation(PinnedProviderConfiguration pin, Guid delegationId) =>

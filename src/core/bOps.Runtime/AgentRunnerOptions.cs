@@ -59,6 +59,20 @@ public sealed record AgentRunnerOptions
     /// <summary>The task-lifetime replan budget across every execution attempt (ADR-0040 §5); it always wins over <see cref="MaxReplans"/>, and must not be below it.</summary>
     public int MaxLifetimeReplans { get; init; } = 12;
 
+    /// <summary>The replan-warning threshold used when <see cref="ReplanWarningThreshold"/> is not configured.</summary>
+    public const int DefaultReplanWarningThreshold = 3;
+
+    /// <summary>
+    /// The task-lifetime replan count at which the runtime writes one <c>agent.replan.threshold</c> Warning system message (ADR-0049) —
+    /// exactly once per task, when an accepted replan brings the count to this value. Unset means <see cref="DefaultReplanWarningThreshold"/>,
+    /// lowered to <see cref="MaxLifetimeReplans"/> when that limit is smaller so an existing configuration keeps validating. When set it must
+    /// be at least 1 and no greater than <see cref="MaxLifetimeReplans"/>: a threshold above the limit could never be reached.
+    /// </summary>
+    public int? ReplanWarningThreshold { get; init; }
+
+    /// <summary>The threshold in force: the configured one, or the default capped by <see cref="MaxLifetimeReplans"/>.</summary>
+    public int EffectiveReplanWarningThreshold => ReplanWarningThreshold ?? Math.Min(DefaultReplanWarningThreshold, MaxLifetimeReplans);
+
     /// <summary>
     /// How many times a model that ends a step with no text and no tool call (an empty final response) is asked
     /// again before the task fails instead of completing with nothing to show. <c>0</c> fails at the first empty
@@ -148,6 +162,12 @@ public sealed record AgentRunnerOptions
         {
             throw new InvalidOperationException(
                 $"'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}) must not be below 'Agent:MaxReplans' ({MaxReplans}).");
+        }
+
+        if (ReplanWarningThreshold is { } threshold && (threshold < 1 || threshold > MaxLifetimeReplans))
+        {
+            throw new InvalidOperationException(
+                $"'Agent:ReplanWarningThreshold' ({threshold}) must be at least 1 and not greater than 'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}).");
         }
 
         if (EvidenceDisclosureRetries is not (0 or 1))

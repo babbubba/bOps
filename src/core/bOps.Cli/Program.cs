@@ -275,7 +275,8 @@ var runner = new AgentRunner(
     host.Services.GetRequiredService<TimeProvider>(),
     host.Services.GetRequiredService<ILogger<AgentRunner>>(),
     runnerOptions,
-    skillRegistry);
+    skillRegistry,
+    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

@@ -175,7 +175,8 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<AgentRunner>>(),
         runnerOptions,
-        sp.GetRequiredService<ISkillRegistry>());
+        sp.GetRequiredService<ISkillRegistry>(),
+        systemMessages: sp.GetRequiredService<ISystemMessageStore>());
 });
 builder.Services.AddSingleton<AgentTaskLauncher>();
 

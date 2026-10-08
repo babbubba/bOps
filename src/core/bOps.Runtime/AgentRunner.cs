@@ -56,7 +56,8 @@ public sealed class AgentRunner(
     ISkillRegistry? skillRegistry = null,
     IEntitlementService? entitlementService = null,
     PinnedProviderConfiguration? pinnedProviderConfiguration = null,
-    Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null)
+    Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
+    ISystemMessageStore? systemMessages = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -1022,9 +1023,84 @@ public sealed class AgentRunner(
         run.AttemptReplans++;
         run.LifetimeReplans++;
         BOpsTelemetry.ReplansTotal.Add(1);
+        await PublishReplanThresholdAsync(run, replanCalls, ct);
 
         return (accepted, await BudgetStopAsync(run, ct));
     }
+
+    /// <summary>
+    /// ADR-0049: the first runtime-authored operator notice. When an accepted replan brings the task's <i>lifetime</i> count to the
+    /// configured threshold, one Warning system message says so — never for an attempt that is not committed as a replan, and (the
+    /// comparison is for equality) never again for the same task, including after a resume that is already past the threshold. The notice
+    /// is observability: its failure is logged and never fails the task, changes its state or triggers a retry. It carries identifiers
+    /// and counts only — no prompt, model reply, tool argument or tool output.
+    /// </summary>
+    private async Task PublishReplanThresholdAsync(ExecutionRun run, List<ModelCallRecord> replanCalls, CancellationToken ct)
+    {
+        var threshold = options.EffectiveReplanWarningThreshold;
+        if (systemMessages is null || threshold < 1 || run.LifetimeReplans != threshold)
+        {
+            return;
+        }
+
+        try
+        {
+            var served = replanCalls.Count > 0 ? replanCalls[^1] : null;
+            var provider = served?.Provider ?? model.Descriptor.ProviderId;
+            var modelId = served?.ActualModel ?? served?.RequestedModel ?? model.Descriptor.ModelId;
+            var entries = new JsonObject
+            {
+                ["taskId"] = run.TaskId.ToString(),
+                ["provider"] = BoundedId(provider),
+                ["model"] = BoundedId(modelId),
+                ["lifetimeReplans"] = run.LifetimeReplans,
+                ["replanWarningThreshold"] = threshold,
+                ["maxLifetimeReplans"] = options.MaxLifetimeReplans,
+                ["executionAttempt"] = run.ExecutionAttempt,
+            };
+
+            // A provider or model id that would trip the metadata's secret refusal is left out rather than failing the notice.
+            var metadata = OperationalMetadata.TryFrom(entries, out var accepted, out _)
+                ? accepted
+                : OperationalMetadata.From(new JsonObject
+                {
+                    ["taskId"] = run.TaskId.ToString(),
+                    ["lifetimeReplans"] = run.LifetimeReplans,
+                    ["replanWarningThreshold"] = threshold,
+                    ["maxLifetimeReplans"] = options.MaxLifetimeReplans,
+                    ["executionAttempt"] = run.ExecutionAttempt,
+                });
+
+            var message = new SystemMessage
+            {
+                Id = Guid.CreateVersion7(),
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                Source = "runtime/agent",
+                Severity = SystemMessageSeverity.Warning,
+                Code = "agent.replan.threshold",
+                Message = $"Task {run.TaskId} has replanned {run.LifetimeReplans} times (warning threshold {threshold}, limit {options.MaxLifetimeReplans}); "
+                    + "the model may be struggling with this goal.",
+                Metadata = metadata,
+                TaskId = run.TaskId,
+                ComponentType = SystemComponentType.Runtime,
+                ComponentId = "agent",
+            };
+
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            bounded.CancelAfter(TimeSpan.FromSeconds(5));
+            await systemMessages.AppendAsync(message, bounded.Token);
+        }
+#pragma warning disable CA1031 // Observability must never fail, retry or alter the task: any failure of the notice is logged and dropped.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            logger.LogWarning(ex, "Task {TaskId}: the replan-threshold system message could not be written.", run.TaskId);
+        }
+    }
+
+    private static string BoundedId(string value) =>
+        value.Length <= OperationalMetadata.MaxStringLength ? value : value[..OperationalMetadata.MaxStringLength];
 
     /// <summary>
     /// Executes an already-built, already-typed <see cref="ExecutionPlan"/> — the artifact a
