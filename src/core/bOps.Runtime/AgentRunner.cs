@@ -891,7 +891,7 @@ public sealed class AgentRunner(
 
                 if (IsFinalProtocolArtifact(response))
                 {
-                    // The definitive policy for a failed correction is PRE-3B2; until then the artifact is never a Completed answer.
+                    // ADR-0042 (PRE-3B2): an artifact is never a valid fallback; a failed correction fails the task.
                     logger.LogError("Task {TaskId} step {StepIndex}: the model returned a tool/control protocol artifact as its final response", taskId, stepIndex);
                     return await FailAsync(run, "The model returned a tool or control protocol artifact instead of a final answer.",
                         (TaskTerminalKind.RuntimeFailure, null), stepCalls, ct);
@@ -3250,7 +3250,11 @@ public sealed class AgentRunner(
             return (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
         }
 
-        return !string.IsNullOrWhiteSpace(reply.TextResponse) && EvidenceDisclosure.HasHeading(reply.TextResponse)
+        // PRE-3B2: the reply must itself be a valid user-facing terminal candidate; a protocol/control artifact is never
+        // adopted, even when it happens to carry the heading. The already-valid original stays the fallback.
+        return !string.IsNullOrWhiteSpace(reply.TextResponse)
+            && !TerminalProtocolArtifact.IsArtifact(reply.TextResponse)
+            && EvidenceDisclosure.HasHeading(reply.TextResponse)
             ? (reply.TextResponse, EvidenceDisclosureOutcome.Accepted)
             : (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
     }

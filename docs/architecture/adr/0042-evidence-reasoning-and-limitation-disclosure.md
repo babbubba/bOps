@@ -852,3 +852,11 @@ and the evidence rule still apply to that role.
 - **N4** — test gaps for the Windows native exclusion and for the delegated and lifetime-cap re-ask paths.
 
 Only R1 is architecture-blocking; these stay with the implementation follow-up.
+
+## Amendment — terminal fallback after a failed correction (PRE-3B2)
+
+A failed disclosure re-ask may fall back only to an already-valid user-facing original response. An invalid protocol/control artifact is never a valid fallback. If bounded terminal correction fails, the task fails.
+
+- **Valid original** — non-empty prose that is not a protocol/control artifact (`TerminalProtocolArtifact`). When it lacks the disclosure heading, the single bounded re-ask runs. A reply is adopted only if it is itself a valid terminal candidate (non-empty, not an artifact, not a tool call) and carries the heading. Any other outcome — timeout, provider failure, empty reply, heading-less reply, tool call, artifact — keeps the original byte-for-byte; the step is marked `Final response; evidence disclosure re-ask result not used` and the task is `Completed`.
+- **Invalid original** — a protocol/control artifact or an empty/whitespace response is not a candidate answer and is never persisted or used as a fallback. It gets the one bounded terminal correction (no new step, no extra retry budget). A valid correction proceeds normally (including the disclosure re-ask if it lacks the heading); a failed, empty or repeated-artifact correction ends the task `Failed` (`RuntimeFailure` for an artifact, `EmptyResponse` for an empty reply, the model failure kind for a provider error).
+- No retry, model-call timeout or provider policy changes: the re-ask budget stays `EvidenceDisclosureRetries = 1`.
