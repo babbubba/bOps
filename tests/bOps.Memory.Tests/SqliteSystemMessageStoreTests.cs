@@ -210,6 +210,23 @@ public sealed class SqliteSystemMessageStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Purge_OfAllLargeBacklog_DeletesEveryExpiredMessageInBoundedBatches()
+    {
+        var store = new SqliteSystemMessageStore(_filePath);
+        for (var i = 0; i < 2_350; i++)
+        {
+            await store.AppendAsync(Message(Start.AddDays(-120).AddSeconds(i)));
+        }
+
+        await store.AppendAsync(Message(Start, text: "fresh"));
+
+        var deleted = await store.PurgeOlderThanAsync(Start - SystemMessageRetention.Default);
+
+        Assert.Equal(2_350, deleted);
+        Assert.Equal("fresh", Assert.Single((await store.QueryAsync(new SystemMessageQuery())).Items).Message);
+    }
+
+    [Fact]
     public async Task SaveState_IsCompareAndSet_AndWritesStateAndMessageTogether()
     {
         var store = new SqliteSystemMessageStore(_filePath);

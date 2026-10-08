@@ -1,6 +1,6 @@
 # ADR-0049 — Unified prerequisite readiness and operational system messages
 
-Status: **Accepted — 2026-10-08; Session 1 (contracts, registry, persistence) implemented; host, API and UI pending**
+Status: **Accepted — 2026-10-08; Sessions 1 (contracts, registry, persistence) and 2 (host wiring, plugins, API) implemented; UI pending**
 Date: 2026-10-08
 Amends: rule B4 (`ICapabilityProbe` becomes a compatibility view), [ADR-0025](0025-skill-provider-and-restricted-invocation.md) (Capability
 manifests gain prerequisite declarations). Neither accepted ADR is edited; this ADR adds to them.
@@ -79,16 +79,22 @@ exception or an invalid outcome becomes `Error` with a fixed code (`check-timeou
 `check-invalid-result`) and a fixed message — exception text is never copied, because it can carry secrets. Caller
 cancellation propagates.
 
-The registry also implements `ICapabilityProbe`; `IsAvailableAsync` is the boolean compatibility view:
-`Available`/`Degraded` → `true`; `Unavailable`/`Error`/`Unknown` and unregistered ids → `false`. `ICapabilityProbe` and
-`CachingCapabilityProbe` are neither removed nor renamed. A host-side `BooleanPrerequisiteCheck` adapts an existing
-boolean check so Docker and SearXNG can migrate without behavioural change.
+The registry is the **mutable, host-owned** object and does **not** implement `ICapabilityProbe`. What a package receives under
+that interface (rule A10) is `PrerequisiteRegistry.AsCapabilityProbe()`: a distinct read-only object whose only member is the
+boolean compatibility view — `Available`/`Degraded` → `true`; `Unavailable`/`Error`/`Unknown` and unregistered ids → `false`. It
+cannot be cast to the registry or to `IPrerequisiteRegistrar`, the host-only interface (`bOps.Abstractions`) through which the
+plugin loader registers an `IPrerequisiteProvider` under a host-assigned `PackageId` and removes it again. The registrar is never
+resolvable through `RestrictedPackageServiceProvider`. `ICapabilityProbe` and `CachingCapabilityProbe` are neither removed nor
+renamed. A host-side `BooleanPrerequisiteCheck` adapts an existing boolean check so Docker and SearXNG migrate without behavioural
+change.
 
-`ToolRegistry` keeps hiding a tool whose required prerequisites are not available, now also snapshots optional ones, and
-exposes `GetReadiness()` for every registered tool. `SkillRegistry` gains an optional `ICapabilityProbe`,
-`RefreshPrerequisitesAsync`, `GetReadiness()`, and withholds from `GetAvailableSkills` and `Resolve` any Capability whose
-required prerequisites are not available. A Capability with no `Requires` behaves exactly as before; one with `Requires`
-and no probe fails closed.
+`ToolRegistry` and `SkillRegistry` snapshot the **full `PrerequisiteState`** of each prerequisite from the host-owned
+`IPrerequisiteStateSource` (the last recorded result — no I/O), or, for any arbitrary `ICapabilityProbe`, `true` → `Available` and
+`false` → `Unavailable`. Required: `Available` → available; `Degraded` → available **and degraded**; `Unavailable`, `Error`,
+`Unknown` → not available. Optional: `Available` → no degradation; every other state → available **and degraded**. A tool whose
+required prerequisites are not satisfied stays hidden; `GetReadiness()` reports every registered tool, and `SkillRegistry` withholds
+from `GetAvailableSkills` and `Resolve` any Capability in that position. A Capability with no `Requires` behaves exactly as before;
+one with `Requires` and no probe or source fails closed.
 
 ### 5. System messages
 
@@ -138,11 +144,34 @@ version is refused on open. Query (`SystemMessageQuery`): optional inclusive `Fr
 page size defaults to 50 and must be 1–200. Retention is time-based: `PurgeOlderThanAsync`, default 90 days
 (`SystemMessageRetention.Default`). Archival and export are out of scope.
 
+### 9. Host wiring (Session 2)
+
+- **Remediation.** The transition recorder is given the registered descriptor: a missing or degraded prerequisite's message reads
+  `<DisplayName> is unavailable. <Remediation>` (remediation truncated to 600 characters, message to 1,024) and its metadata carries
+  `displayName`, `kind`, `remediation` (≤ 512) and the descriptor's static metadata as `descriptor.*`. The check's own free-text
+  message is not copied into the inbox. A changed descriptor never changes the fingerprint.
+- **Bounded refresh.** `RefreshAsync` runs at most `Prerequisites:MaxConcurrency` checks at once (default 4, 1–32) on a fixed worker
+  set, each check once, results ordered by id; a failing or timed-out check is a result, caller cancellation propagates.
+- **One cycle.** `PrerequisiteReadinessService` serialises a cycle: registry refresh → atomic transition and message records →
+  Tool and Skill snapshots. The API boot refresh, the periodic coordinator and the CLI's one-shot refresh all call it.
+- **Boot order (API).** Compose first-party providers and checks → activate enabled plugins (registers their providers) → one full
+  refresh → only then accept work. A missing ordinary prerequisite never stops the host: the components stay registered, are not
+  available, and a `Warning` says why.
+- **Periodic refresh (API only).** One hosted coordinator, `Prerequisites:RefreshIntervalSeconds` (default 30, 5–3600). The CLI has
+  no timer.
+- **Plugins.** A tool or Skill plugin's entry point that also implements `IPrerequisiteProvider` is registered under the plugin's
+  host-assigned id *before* its tools and Skills (so a later failure rolls it back), and removed before its collectible load context
+  is released. A model-provider plugin's providers are not registered.
+- **API.** `GET /api/system-messages` (filters `fromUtc`, `toUtc`, `severity`, `contains`, `pageSize`, `cursor`; AND; keyset) and
+  `GET /api/prerequisites` (current-state projection of registry and readiness; not a second store), both Viewer role.
+- **Retention.** `SystemMessages:RetentionDays` (default 90): one bounded purge when the API starts, then every
+  `RetentionIntervalMinutes` (default 360); never on insertion. The store deletes in batches of 1,000.
+
 ## Consequences
 
 - Runtime still names no package: prerequisite ids are data supplied by packages and the host (rule A1).
-- Session 2 wires the registry into the hosts (replacing `CachingCapabilityProbe` in DI), migrates Docker and SearXNG to
-  descriptors, adds a background refresh and retention, `IPrerequisiteProvider` discovery for plugins, and the API.
+- Session 2 wired the registry into the hosts (replacing `CachingCapabilityProbe` in DI), migrated Docker and SearXNG to
+  descriptors, and added the background refresh, retention, plugin `IPrerequisiteProvider` discovery and the API.
   Session 3 adds the UI and the agent replan-threshold message. PR #91 later declares `kd.exe` required and
   `dumpchk.exe` optional using only these contracts.
 - A host that never wires the new registry keeps today's behaviour exactly.
