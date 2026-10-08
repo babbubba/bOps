@@ -3424,6 +3424,16 @@ public sealed class AgentRunner(
 
         stopwatch.Stop();
 
+        // Facts are package-produced metadata, but invalid metadata must never turn a successful
+        // invocation into a persisted success with silently discarded control data.
+        if (EvidenceFacts.Validate(result.Facts) is { } factsViolation)
+        {
+            result = ToolCallResult.Failure($"Tool returned invalid evidence facts: {factsViolation}") with
+            {
+                FailureKind = ToolFailureKind.Validation,
+            };
+        }
+
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
         BOpsTelemetry.ToolDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
             new KeyValuePair<string, object?>("bops.tool", manifest.Name),

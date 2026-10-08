@@ -36,6 +36,40 @@ public sealed class SqliteTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Reopen_PreservesEvidenceFactsAndTheirExecutionProvenance()
+    {
+        var task = SampleTask(AgentTaskStatus.Running);
+        var fact = new EvidenceFact("artifact.path", "primary", ToolParameterType.Path,
+            System.Text.Json.Nodes.JsonValue.Create("C:\\evidence\\report.txt")!);
+        task = task with
+        {
+            Steps = [task.Steps[0] with
+            {
+                Result = task.Steps[0].Result! with { Facts = [fact] },
+                PlanRevision = 7,
+                PlannedStepIndex = 3,
+            }],
+            Plans = [new AgentPlan(7, "Current revision.", [new PlannedStep(3, "Read evidence", "fs.read")])
+            {
+                SemanticContractVersion = 1,
+            }],
+        };
+
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+        var reloaded = await new SqliteTaskStore(_filePath).LoadAsync(task.Id);
+
+        var execution = Assert.Single(reloaded!.Steps);
+        var persisted = Assert.Single(execution.Result!.Facts);
+        Assert.Equal(fact.Type, persisted.Type);
+        Assert.Equal(fact.Key, persisted.Key);
+        Assert.Equal(fact.ValueType, persisted.ValueType);
+        Assert.Equal(fact.Value.ToJsonString(), persisted.Value.ToJsonString());
+        Assert.Equal(7, execution.PlanRevision);
+        Assert.Equal(3, execution.PlannedStepIndex);
+        Assert.Equal(7, Assert.Single(reloaded.Plans).Revision);
+    }
+
+    [Fact]
     public async Task SafeProviderPin_SurvivesStoreReopen_WithoutASecret()
     {
         var pin = new PinnedProviderConfiguration(1, 7, "Anthropic", "https://api.anthropic.test", "sonnet-x",

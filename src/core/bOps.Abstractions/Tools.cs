@@ -294,6 +294,18 @@ public enum ToolResultCompleteness
 }
 
 /// <summary>
+/// One opaque, package-defined fact emitted with a tool result. Its origin is the containing
+/// <see cref="ToolCallResult"/>, which is durably associated with a <see cref="PlanStep"/>.
+/// Runtime treats <see cref="Type"/> and <see cref="Key"/> as ordinal identifiers and never
+/// interprets their vocabulary (ADR-0050).
+/// </summary>
+/// <param name="Type">A stable, package-defined fact type identifier.</param>
+/// <param name="Key">A stable key within <paramref name="Type"/>.</param>
+/// <param name="ValueType">The declared type of <paramref name="Value"/>.</param>
+/// <param name="Value">One JSON-native scalar or path-list value.</param>
+public sealed record EvidenceFact(string Type, string Key, ToolParameterType ValueType, JsonNode Value);
+
+/// <summary>
 /// The result of a tool call. Duration is measured by the runtime, around the call — a tool
 /// never reports its own timing (agentic/07-plan-corrections.md).
 /// </summary>
@@ -324,6 +336,12 @@ public sealed record ToolCallResult
 
     /// <summary>Structured evidence completeness. Defaults preserve existing tool results.</summary>
     public ToolResultCompleteness Completeness { get; init; }
+
+    /// <summary>
+    /// Opaque typed facts produced by this invocation. An empty list preserves legacy behavior;
+    /// Runtime validates the bounded contract before the result is persisted.
+    /// </summary>
+    public IReadOnlyList<EvidenceFact> Facts { get; init; } = [];
 
     /// <summary>True only when <see cref="Outcome"/> is <see cref="ToolOutcome.Success"/>.</summary>
     public bool Succeeded => Outcome is ToolOutcome.Success;
