@@ -8,29 +8,51 @@ namespace bOps.Runtime;
 
 /// <summary>
 /// The node-local, host-owned prerequisite registry (ADR-0049 section 4). Packages contribute read-only checks; this registry
-/// owns their registration, execution under a bounded timeout, the last result of each, and the boolean
-/// <see cref="ICapabilityProbe"/> compatibility view (<c>Available</c>/<c>Degraded</c> → <c>true</c>; everything else,
-/// unregistered ids included, → <c>false</c>). It names no package: ids are data supplied by packages and the host.
+/// owns their registration, execution under a bounded timeout and bounded refresh concurrency, and the last result of each.
+/// It names no package: ids are data supplied by packages and the host.
 /// </summary>
-public sealed class PrerequisiteRegistry : ICapabilityProbe
+/// <remarks>
+/// This is the <b>mutable, host-owned</b> object. It deliberately does not implement <see cref="ICapabilityProbe"/>: what a
+/// package receives under that interface is the read-only view of <see cref="AsCapabilityProbe"/> (<c>Available</c>/<c>Degraded</c>
+/// → <c>true</c>; everything else, unregistered ids included, → <c>false</c>), which cannot be cast back to a registrar.
+/// </remarks>
+public sealed class PrerequisiteRegistry : IPrerequisiteRegistrar, IPrerequisiteStateSource
 {
+    /// <summary>The refresh concurrency used when the host sets none.</summary>
+    public const int DefaultMaxConcurrency = 4;
+
+    /// <summary>The largest refresh concurrency a host may configure.</summary>
+    public const int MaxConcurrencyLimit = 32;
+
     private readonly Lock _gate = new();
     private readonly Dictionary<string, RegisteredCheck> _checks = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, PrerequisiteCheckResult> _results = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _cacheDuration;
+    private readonly int _maxConcurrency;
 
     /// <summary>Creates an empty registry.</summary>
     /// <param name="timeProvider">Stamps results and drives check timeouts.</param>
     /// <param name="cacheDuration">How long <see cref="IsAvailableAsync"/> reuses a result before checking again.</param>
-    public PrerequisiteRegistry(TimeProvider timeProvider, TimeSpan cacheDuration)
+    /// <param name="maxConcurrency">The most checks <see cref="RefreshAsync"/> runs at once, 1 to <see cref="MaxConcurrencyLimit"/>.</param>
+    public PrerequisiteRegistry(TimeProvider timeProvider, TimeSpan cacheDuration, int maxConcurrency = DefaultMaxConcurrency)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentOutOfRangeException.ThrowIfLessThan(cacheDuration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxConcurrency, MaxConcurrencyLimit);
 
         _timeProvider = timeProvider;
         _cacheDuration = cacheDuration;
+        _maxConcurrency = maxConcurrency;
     }
+
+    /// <summary>
+    /// The read-only boolean view handed to package code (the A10 <see cref="ICapabilityProbe"/>). It observes this registry but
+    /// is a distinct object that implements nothing else, so a package cannot cast it to <see cref="IPrerequisiteRegistrar"/>
+    /// or to this class.
+    /// </summary>
+    public ICapabilityProbe AsCapabilityProbe() => new ReadOnlyCapabilityProbe(this);
 
     /// <summary>Registers one check under the host-assigned <paramref name="package"/>. An id can be registered by one check only.</summary>
     /// <exception cref="PrerequisiteRegistrationException">The descriptor is invalid or its id is already registered.</exception>
@@ -96,7 +118,10 @@ public sealed class PrerequisiteRegistry : ICapabilityProbe
     public PrerequisiteCheckResult? GetLastResult(string prerequisiteId) =>
         _results.TryGetValue(prerequisiteId, out var result) ? result : null;
 
-    /// <summary>The last recorded state of a prerequisite; <see cref="PrerequisiteState.Unknown"/> if unregistered or never checked.</summary>
+    /// <summary>
+    /// The last recorded state of a prerequisite, with no I/O: <see cref="PrerequisiteState.Unknown"/> if it is unregistered or was never
+    /// checked. Tool and Skill readiness snapshots read this, so the rich state (<c>Degraded</c> included) survives.
+    /// </summary>
     public PrerequisiteState GetState(string prerequisiteId) =>
         GetLastResult(prerequisiteId)?.State ?? PrerequisiteState.Unknown;
 
@@ -140,7 +165,11 @@ public sealed class PrerequisiteRegistry : ICapabilityProbe
         return result;
     }
 
-    /// <summary>Runs every registered check now, concurrently, and returns their results ordered by id.</summary>
+    /// <summary>
+    /// Runs every registered check once, at most <c>maxConcurrency</c> at a time on a fixed set of workers (never one task per
+    /// check), and returns their results ordered by id. A failing or timed-out check is a result, not an exception, so it never
+    /// stops the others; caller cancellation propagates. A check unregistered while the refresh ran is omitted.
+    /// </summary>
     public async Task<IReadOnlyList<PrerequisiteCheckResult>> RefreshAsync(CancellationToken ct = default)
     {
         string[] ids;
@@ -149,10 +178,22 @@ public sealed class PrerequisiteRegistry : ICapabilityProbe
             ids = _checks.Keys.Order(StringComparer.Ordinal).ToArray();
         }
 
-        return await Task.WhenAll(ids.Select(id => CheckAsync(id, ct)));
+        var results = new PrerequisiteCheckResult?[ids.Length];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, ids.Length),
+            new ParallelOptions { MaxDegreeOfParallelism = _maxConcurrency, CancellationToken = ct },
+            async (index, token) => results[index] = await CheckAsync(ids[index], token));
+
+        return results
+            .Where(result => result is not null && result.Code != PrerequisiteCodes.NotRegistered)
+            .Select(result => result!)
+            .ToArray();
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// The boolean compatibility view of one prerequisite: checks it if its last result is older than the cache duration.
+    /// <c>Available</c>/<c>Degraded</c> → <c>true</c>; everything else, an unregistered id included, → <c>false</c>.
+    /// </summary>
     public async Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(capability);
@@ -293,4 +334,11 @@ public sealed class PrerequisiteRegistry : ICapabilityProbe
         : timeout;
 
     private sealed record RegisteredCheck(IPrerequisiteCheck Check, PackageId Package);
+
+    /// <summary>The package-facing view: one method, no way back to the registry through the type system.</summary>
+    private sealed class ReadOnlyCapabilityProbe(PrerequisiteRegistry registry) : ICapabilityProbe
+    {
+        public Task<bool> IsAvailableAsync(string capability, CancellationToken ct = default) =>
+            registry.IsAvailableAsync(capability, ct);
+    }
 }

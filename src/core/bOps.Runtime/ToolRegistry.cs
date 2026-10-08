@@ -12,11 +12,27 @@ namespace bOps.Runtime;
 /// (agentic/01-architecture-rules.md, rule B3) — this is what makes "every side-effecting
 /// action is verified" a structural guarantee instead of a convention a package can skip.
 /// </summary>
-public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegistry
+public sealed class ToolRegistry : IToolRegistry
 {
     private readonly ConcurrentDictionary<string, RegisteredTool> _tools = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, bool> _packageEnabled = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, bool> _capabilitySnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, PrerequisiteState> _capabilitySnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ICapabilityProbe? _capabilityProbe;
+    private readonly IPrerequisiteStateSource? _stateSource;
+
+    /// <summary>Creates a registry that snapshots prerequisites through the boolean <see cref="ICapabilityProbe"/> (<c>true</c> is Available, <c>false</c> Unavailable).</summary>
+    public ToolRegistry(ICapabilityProbe capabilityProbe)
+    {
+        ArgumentNullException.ThrowIfNull(capabilityProbe);
+        _capabilityProbe = capabilityProbe;
+    }
+
+    /// <summary>Creates a registry that snapshots the full <see cref="PrerequisiteState"/> of each prerequisite from the host-owned source, so a <c>Degraded</c> prerequisite degrades the tool instead of passing silently.</summary>
+    public ToolRegistry(IPrerequisiteStateSource stateSource)
+    {
+        ArgumentNullException.ThrowIfNull(stateSource);
+        _stateSource = stateSource;
+    }
 
     /// <inheritdoc />
     public void Register(PackageId package, ITool tool) =>
@@ -112,7 +128,7 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     }
 
     /// <inheritdoc />
-    /// <remarks>Optional prerequisites are probed too, so <see cref="GetReadiness"/> can report degraded tools; they never hide one.</remarks>
+    /// <remarks>Optional prerequisites are snapshotted too, so <see cref="GetReadiness"/> can report degraded tools; they never hide one. With an <see cref="IPrerequisiteStateSource"/> this performs no I/O.</remarks>
     public async Task RefreshCapabilitiesAsync(CancellationToken ct = default)
     {
         var capabilities = _tools.Values
@@ -122,7 +138,9 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
 
         foreach (var capability in capabilities)
         {
-            _capabilitySnapshot[capability] = await capabilityProbe.IsAvailableAsync(capability, ct);
+            _capabilitySnapshot[capability] = _stateSource is not null
+                ? _stateSource.GetState(capability)
+                : await _capabilityProbe!.IsAvailableAsync(capability, ct) ? PrerequisiteState.Available : PrerequisiteState.Unavailable;
         }
     }
 
@@ -136,7 +154,7 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
             .Select(registered => registered.Tool.Manifest)
             .OrderBy(manifest => manifest.Name, StringComparer.Ordinal)
             .Select(manifest => ComponentReadiness.Evaluate(
-                ComponentReference.Tool(manifest.Name), manifest.Requires, manifest.OptionalRequires, IsSatisfied))
+                ComponentReference.Tool(manifest.Name), manifest.Requires, manifest.OptionalRequires, StateOf))
             .ToArray();
 
     /// <inheritdoc />
@@ -181,13 +199,13 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
     }
 
     private bool IsVisible(RegisteredTool registered) =>
-        IsRegisteredOnThisNode(registered) && registered.Tool.Manifest.Requires.All(IsSatisfied);
+        IsRegisteredOnThisNode(registered) && registered.Tool.Manifest.Requires.All(id => StateOf(id).IsSatisfied());
 
     private bool IsRegisteredOnThisNode(RegisteredTool registered) =>
         _packageEnabled.GetValueOrDefault(registered.Package.Value, true)
         && registered.Tool.Manifest.Platforms.Contains(CurrentPlatform.Id, StringComparer.OrdinalIgnoreCase);
 
-    private bool IsSatisfied(string capability) => _capabilitySnapshot.GetValueOrDefault(capability, false);
+    private PrerequisiteState StateOf(string capability) => _capabilitySnapshot.GetValueOrDefault(capability, PrerequisiteState.Unknown);
 
     private sealed record RegisteredTool(
         ITool Tool,

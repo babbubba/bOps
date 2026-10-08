@@ -17,8 +17,12 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
     /// <summary>The most affected components listed in one message's metadata; the full count is always included.</summary>
     public const int MaxAffectedComponents = 16;
 
+    /// <summary>The most remediation characters a message's text carries; the metadata copy is bounded by <see cref="OperationalMetadata.MaxStringLength"/>.</summary>
+    public const int MaxRemediationTextLength = 600;
+
     private const int MaxAttempts = 3;
     private const string DetailPrefix = "detail.";
+    private const string DescriptorPrefix = "descriptor.";
 
     /// <summary>
     /// Records <paramref name="result"/> and returns the transition message it produced, or <c>null</c> when nothing
@@ -26,8 +30,13 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
     /// </summary>
     /// <param name="result">A host-recorded check result.</param>
     /// <param name="usage">Which registered components depend on the prerequisite, deciding the message severity.</param>
+    /// <param name="descriptor">
+    /// The registered descriptor of the prerequisite, when known. Its display name, kind and remediation make the message actionable
+    /// for an operator; a changed descriptor never changes the transition fingerprint.
+    /// </param>
     /// <param name="ct">Cancels the store operations.</param>
-    public async Task<SystemMessage?> RecordAsync(PrerequisiteCheckResult result, PrerequisiteUsage usage, CancellationToken ct = default)
+    public async Task<SystemMessage?> RecordAsync(
+        PrerequisiteCheckResult result, PrerequisiteUsage usage, PrerequisiteDescriptor? descriptor = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(usage);
@@ -54,7 +63,7 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
                 ChangedAtUtc = changed ? result.CheckedAtUtc : previous!.ChangedAtUtc,
                 Metadata = result.Metadata,
             };
-            var message = changed ? CreateMessage(previous, result, usage) : null;
+            var message = changed ? CreateMessage(previous, result, usage, descriptor) : null;
 
             if (await store.SaveStateAsync(next, previous?.Fingerprint, message, ct))
             {
@@ -66,7 +75,8 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
             $"Prerequisite '{result.Id}' state kept changing concurrently; the observation was not recorded after {MaxAttempts} attempts.");
     }
 
-    private SystemMessage? CreateMessage(PrerequisiteStateRecord? previous, PrerequisiteCheckResult result, PrerequisiteUsage usage)
+    private SystemMessage? CreateMessage(
+        PrerequisiteStateRecord? previous, PrerequisiteCheckResult result, PrerequisiteUsage usage, PrerequisiteDescriptor? descriptor)
     {
         var required = usage.RequiredBy.Count > 0;
         var concern = required ? SystemMessageSeverity.Warning : SystemMessageSeverity.Information;
@@ -74,10 +84,10 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
         (SystemMessageSeverity Severity, string Code, string Text)? kind = result.State switch
         {
             PrerequisiteState.Available when previous is { State: not PrerequisiteState.Available } =>
-                (SystemMessageSeverity.Information, PrerequisiteCodes.MessageRecovered, $"Prerequisite '{result.Id}' is available again."),
+                (SystemMessageSeverity.Information, PrerequisiteCodes.MessageRecovered, $"{Name(result, descriptor)} is available again."),
             PrerequisiteState.Available => null,
-            PrerequisiteState.Unavailable => (concern, PrerequisiteCodes.MessageMissing, result.Message),
-            PrerequisiteState.Degraded => (concern, PrerequisiteCodes.MessageDegraded, result.Message),
+            PrerequisiteState.Unavailable => (concern, PrerequisiteCodes.MessageMissing, Actionable(result, descriptor, "is unavailable")),
+            PrerequisiteState.Degraded => (concern, PrerequisiteCodes.MessageDegraded, Actionable(result, descriptor, "is degraded")),
             _ => (SystemMessageSeverity.Error, PrerequisiteCodes.MessageCheckFailed, result.Message),
         };
 
@@ -95,13 +105,14 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
             Severity = selected.Severity,
             Code = selected.Code,
             Message = selected.Text,
-            Metadata = CreateMetadata(previous, result, usage),
+            Metadata = CreateMetadata(previous, result, usage, descriptor),
             ComponentType = SystemComponentType.Prerequisite,
             ComponentId = result.Id,
         };
     }
 
-    private static OperationalMetadata CreateMetadata(PrerequisiteStateRecord? previous, PrerequisiteCheckResult result, PrerequisiteUsage usage)
+    private static OperationalMetadata CreateMetadata(
+        PrerequisiteStateRecord? previous, PrerequisiteCheckResult result, PrerequisiteUsage usage, PrerequisiteDescriptor? descriptor)
     {
         var affected = usage.RequiredBy.Concat(usage.OptionalBy).Select(component => component.ToString()).Distinct(StringComparer.Ordinal).ToArray();
         var fixedEntries = new JsonObject
@@ -115,17 +126,65 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
             ["affectedComponents"] = new JsonArray(affected.Take(MaxAffectedComponents).Select(id => (JsonNode?)Truncate(id)).ToArray()),
         };
 
-        // The check's own detail is carried when it still fits every bound; the fixed entries above always do.
-        var withDetail = fixedEntries.DeepClone().AsObject();
-        foreach (var (key, value) in result.Metadata.ToJson())
+        if (descriptor is not null)
         {
-            if ((DetailPrefix + key).Length <= OperationalMetadata.MaxKeyLength)
+            fixedEntries["displayName"] = descriptor.DisplayName;
+            fixedEntries["kind"] = descriptor.Kind.ToString();
+            if (!string.IsNullOrWhiteSpace(descriptor.Remediation))
             {
-                withDetail[DetailPrefix + key] = value?.DeepClone();
+                fixedEntries["remediation"] = Truncate(descriptor.Remediation.Trim());
             }
         }
 
+        // The descriptor's static facts and the check's own detail are carried when they still fit every bound; the fixed entries
+        // above always do (the descriptor strings are bounded by their own contract, remediation is truncated to the metadata limit).
+        var withDetail = fixedEntries.DeepClone().AsObject();
+        AddPrefixed(withDetail, DescriptorPrefix, descriptor?.Metadata);
+        AddPrefixed(withDetail, DetailPrefix, result.Metadata);
+
         return OperationalMetadata.TryFrom(withDetail, out var metadata, out _) ? metadata : OperationalMetadata.From(fixedEntries);
+    }
+
+    private static void AddPrefixed(JsonObject target, string prefix, OperationalMetadata? source)
+    {
+        if (source is null)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in source.ToJson())
+        {
+            if ((prefix + key).Length <= OperationalMetadata.MaxKeyLength)
+            {
+                target[prefix + key] = value?.DeepClone();
+            }
+        }
+    }
+
+    private static string Name(PrerequisiteCheckResult result, PrerequisiteDescriptor? descriptor) =>
+        descriptor is null ? $"Prerequisite '{result.Id}'" : descriptor.DisplayName;
+
+    /// <summary>
+    /// The operator-facing text: the display name, what happened, and the descriptor's remediation, within
+    /// <see cref="SystemMessage"/>'s bound. Without a descriptor the check's own message is used as before. The check's free-text
+    /// message is not repeated here (it stays in the persisted state and the readiness view), so a path or detail a check mentions is
+    /// not duplicated into the inbox.
+    /// </summary>
+    private static string Actionable(PrerequisiteCheckResult result, PrerequisiteDescriptor? descriptor, string whatHappened)
+    {
+        if (descriptor is null)
+        {
+            return result.Message;
+        }
+
+        var text = $"{descriptor.DisplayName} {whatHappened}.";
+        if (!string.IsNullOrWhiteSpace(descriptor.Remediation))
+        {
+            var remediation = descriptor.Remediation.Trim();
+            text += " " + (remediation.Length <= MaxRemediationTextLength ? remediation : remediation[..(MaxRemediationTextLength - 1)] + "…");
+        }
+
+        return text.Length <= SystemMessage.MaxMessageLength ? text : text[..(SystemMessage.MaxMessageLength - 1)] + "…";
     }
 
     private static string Truncate(string value) =>

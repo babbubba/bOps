@@ -20,8 +20,9 @@ public sealed class SkillRegistry : ISkillRegistry
     private readonly Lock _gate = new();
     private readonly Dictionary<string, RegisteredSkill> _skills = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _capabilityOwners = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, bool> _prerequisiteSnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, PrerequisiteState> _prerequisiteSnapshot = new(StringComparer.OrdinalIgnoreCase);
     private readonly ICapabilityProbe? _capabilityProbe;
+    private readonly IPrerequisiteStateSource? _stateSource;
 
     /// <summary>Creates a registry with no prerequisite probe: Capabilities that declare required prerequisites stay unavailable.</summary>
     public SkillRegistry()
@@ -33,6 +34,13 @@ public sealed class SkillRegistry : ISkillRegistry
     {
         ArgumentNullException.ThrowIfNull(capabilityProbe);
         _capabilityProbe = capabilityProbe;
+    }
+
+    /// <summary>Creates a registry that snapshots the full <see cref="PrerequisiteState"/> of each Capability prerequisite from the host-owned source.</summary>
+    public SkillRegistry(IPrerequisiteStateSource stateSource)
+    {
+        ArgumentNullException.ThrowIfNull(stateSource);
+        _stateSource = stateSource;
     }
 
     /// <inheritdoc />
@@ -160,7 +168,7 @@ public sealed class SkillRegistry : ISkillRegistry
     /// </summary>
     public async Task RefreshPrerequisitesAsync(CancellationToken ct = default)
     {
-        if (_capabilityProbe is null)
+        if (_capabilityProbe is null && _stateSource is null)
         {
             return;
         }
@@ -177,7 +185,9 @@ public sealed class SkillRegistry : ISkillRegistry
 
         foreach (var id in ids)
         {
-            _prerequisiteSnapshot[id] = await _capabilityProbe.IsAvailableAsync(id, ct);
+            _prerequisiteSnapshot[id] = _stateSource is not null
+                ? _stateSource.GetState(id)
+                : await _capabilityProbe!.IsAvailableAsync(id, ct) ? PrerequisiteState.Available : PrerequisiteState.Unavailable;
         }
     }
 
@@ -198,7 +208,7 @@ public sealed class SkillRegistry : ISkillRegistry
                         ComponentReference.SkillCapability(skill.Provider.SkillId, manifest.Name),
                         manifest.Requires,
                         manifest.OptionalRequires,
-                        IsSatisfied)))
+                        StateOf)))
                 .ToArray();
         }
     }
@@ -282,9 +292,9 @@ public sealed class SkillRegistry : ISkillRegistry
         }
     }
 
-    private bool IsAvailable(CapabilityManifest manifest) => manifest.Requires.All(IsSatisfied);
+    private bool IsAvailable(CapabilityManifest manifest) => manifest.Requires.All(id => StateOf(id).IsSatisfied());
 
-    private bool IsSatisfied(string prerequisiteId) => _prerequisiteSnapshot.GetValueOrDefault(prerequisiteId, false);
+    private PrerequisiteState StateOf(string prerequisiteId) => _prerequisiteSnapshot.GetValueOrDefault(prerequisiteId, PrerequisiteState.Unknown);
 
     private sealed record RegisteredSkill(
         ISkillProvider Provider,

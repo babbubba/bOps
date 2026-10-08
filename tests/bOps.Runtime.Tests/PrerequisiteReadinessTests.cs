@@ -17,6 +17,7 @@ public sealed class PrerequisiteReadinessTests
         var tools = new ToolRegistry(prerequisites);
         tools.Register(Package, new ManifestTool(Manifest("sample.analyze", requires: ["sample.debugger"])));
 
+        await prerequisites.RefreshAsync();
         await tools.RefreshCapabilitiesAsync();
 
         var readiness = Assert.Single(tools.GetReadiness());
@@ -29,6 +30,7 @@ public sealed class PrerequisiteReadinessTests
         Assert.Null(tools.ResolveForExecution("sample.analyze"));
 
         check.State = PrerequisiteState.Available;
+        await prerequisites.RefreshAsync();
         await tools.RefreshCapabilitiesAsync();
         Assert.NotNull(tools.ResolveForExecution("sample.analyze"));
     }
@@ -41,6 +43,7 @@ public sealed class PrerequisiteReadinessTests
         var tools = new ToolRegistry(prerequisites);
         tools.Register(Package, new ManifestTool(Manifest("sample.analyze", requires: ["sample.debugger"], optional: ["sample.checker"])));
 
+        await prerequisites.RefreshAsync();
         await tools.RefreshCapabilitiesAsync();
 
         var readiness = Assert.Single(tools.GetReadiness());
@@ -52,15 +55,20 @@ public sealed class PrerequisiteReadinessTests
     }
 
     [Fact]
-    public async Task Tool_WithADegradedRequiredPrerequisite_StaysAvailable()
+    public async Task Tool_WithADegradedRequiredPrerequisite_StaysAvailableButIsDegraded()
     {
         var (prerequisites, _) = Prerequisites("sample.daemon", PrerequisiteState.Degraded);
         var tools = new ToolRegistry(prerequisites);
         tools.Register(Package, new ManifestTool(Manifest("sample.read", requires: ["sample.daemon"])));
 
+        await prerequisites.RefreshAsync();
         await tools.RefreshCapabilitiesAsync();
 
         Assert.NotNull(tools.Resolve("sample.read"));
+        var readiness = Assert.Single(tools.GetReadiness());
+        Assert.True(readiness.Available);
+        Assert.True(readiness.Degraded);
+        Assert.Equal(["sample.daemon"], readiness.DegradedRequired);
     }
 
     [Fact]
@@ -98,6 +106,7 @@ public sealed class PrerequisiteReadinessTests
             new PrerequisiteCapability("sample.diagnose", requires: ["sample.client"]),
             new PrerequisiteCapability("sample.inspect")));
 
+        await prerequisites.RefreshAsync();
         await skills.RefreshPrerequisitesAsync();
 
         Assert.Equal(["sample.inspect"], Assert.Single(skills.GetAvailableSkills()).Capabilities.Select(capability => capability.Name));
@@ -110,6 +119,7 @@ public sealed class PrerequisiteReadinessTests
         Assert.Equal(SystemComponentType.SkillCapability, readiness[0].Component.Type);
 
         check.State = PrerequisiteState.Available;
+        await prerequisites.RefreshAsync();
         await skills.RefreshPrerequisitesAsync();
         Assert.NotNull(skills.Resolve("sample.skill", "sample.diagnose"));
     }
@@ -122,6 +132,7 @@ public sealed class PrerequisiteReadinessTests
         skills.Register(Package, new SkillRegistryTests.FakeSkillProvider("sample.skill",
             new PrerequisiteCapability("sample.diagnose", optional: ["sample.extension"])));
 
+        await prerequisites.RefreshAsync();
         await skills.RefreshPrerequisitesAsync();
 
         var readiness = Assert.Single(skills.GetReadiness());
@@ -199,7 +210,7 @@ public sealed class PrerequisiteReadinessTests
             Task.FromResult(ToolCallResult.Success(null));
     }
 
-    private sealed class PrerequisiteCapability(string name, IReadOnlyList<string>? requires = null, IReadOnlyList<string>? optional = null) : ICapability
+    internal sealed class PrerequisiteCapability(string name, IReadOnlyList<string>? requires = null, IReadOnlyList<string>? optional = null) : ICapability
     {
         public CapabilityManifest Manifest { get; } = new(name, "1.0.0", "Test capability.", RiskLevel.Read, [], [], [], TimeSpan.FromSeconds(5), SupportsDryRun: true)
         {

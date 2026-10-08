@@ -186,8 +186,91 @@ public sealed class PrerequisiteTransitionRecorderTests
         Assert.Equal(2, _store.SaveAttempts);
     }
 
+    private static PrerequisiteDescriptor Debugger(string? remediation = "Install the \"Debugging Tools for Windows\" component so kd.exe is available.") => new(
+        "sample.debugger", "Microsoft Debugging Tools for Windows", "kd.exe, used to read kernel dumps.", PrerequisiteKind.Executable)
+    {
+        Remediation = remediation,
+        Metadata = OperationalMetadata.From(new JsonObject { ["requiredExecutable"] = "kd.exe" }),
+    };
+
+    [Fact]
+    public async Task AMissingRequiredPrerequisite_ExplainsWhatToDo_FromItsDescriptor()
+    {
+        var message = await Record(PrerequisiteState.Unavailable, "executable-not-found", RequiredByOneTool, descriptor: Debugger());
+
+        Assert.Equal(
+            "Microsoft Debugging Tools for Windows is unavailable. Install the \"Debugging Tools for Windows\" component so kd.exe is available.",
+            message!.Message);
+        Assert.Equal(SystemMessageSeverity.Warning, message.Severity);
+        Assert.True(message.Metadata.TryGetString("displayName", out var displayName));
+        Assert.Equal("Microsoft Debugging Tools for Windows", displayName);
+        Assert.True(message.Metadata.TryGetString("kind", out var kind));
+        Assert.Equal("Executable", kind);
+        Assert.True(message.Metadata.TryGetString("remediation", out var remediation));
+        Assert.Contains("Debugging Tools for Windows", remediation, StringComparison.Ordinal);
+        Assert.True(message.Metadata.TryGetString("descriptor.requiredExecutable", out var executable));
+        Assert.Equal("kd.exe", executable);
+        message.Validate();
+    }
+
+    [Fact]
+    public async Task ALongRemediation_StaysWithinTheMessageAndMetadataBounds()
+    {
+        var message = await Record(
+            PrerequisiteState.Unavailable, "executable-not-found", RequiredByOneTool,
+            descriptor: Debugger(new string('r', PrerequisiteDescriptor.MaxTextLength)));
+
+        Assert.True(message!.Message.Length <= SystemMessage.MaxMessageLength);
+        Assert.StartsWith("Microsoft Debugging Tools for Windows is unavailable. rrr", message.Message, StringComparison.Ordinal);
+        Assert.EndsWith("…", message.Message, StringComparison.Ordinal);
+        Assert.True(message.Metadata.TryGetString("remediation", out var remediation));
+        Assert.True(remediation.Length <= OperationalMetadata.MaxStringLength);
+        message.Validate();
+    }
+
+    [Fact]
+    public async Task ADegradedPrerequisite_AndARecovery_UseTheDisplayName()
+    {
+        var degraded = await Record(PrerequisiteState.Degraded, "old-version", OptionalOnly, descriptor: Debugger());
+        var recovered = await Record(PrerequisiteState.Available, "available", OptionalOnly, descriptor: Debugger());
+
+        Assert.StartsWith("Microsoft Debugging Tools for Windows is degraded.", degraded!.Message, StringComparison.Ordinal);
+        Assert.Equal(SystemMessageSeverity.Information, degraded.Severity);
+        Assert.Equal("Microsoft Debugging Tools for Windows is available again.", recovered!.Message);
+    }
+
+    [Fact]
+    public async Task ChangingTheRemediationText_NeverCreatesANewTransition()
+    {
+        Assert.NotNull(await Record(PrerequisiteState.Unavailable, "executable-not-found", RequiredByOneTool, descriptor: Debugger()));
+
+        var again = await Record(PrerequisiteState.Unavailable, "executable-not-found", RequiredByOneTool, descriptor: Debugger("Something else entirely."));
+
+        Assert.Null(again);
+        Assert.Single(_store.Messages);
+    }
+
+    [Fact]
+    public async Task WithoutADescriptor_TheCheckMessageIsUsedAsBefore_AndNoRemediationIsInvented()
+    {
+        var message = await Record(PrerequisiteState.Unavailable, "executable-not-found", RequiredByOneTool);
+
+        Assert.Equal("The prerequisite is Unavailable.", message!.Message);
+        Assert.False(message.Metadata.TryGetString("remediation", out _));
+    }
+
+    [Fact]
+    public async Task ACheckFailure_KeepsTheHostAuthoredText_WithoutRemediation()
+    {
+        var message = await Record(PrerequisiteState.Error, "check-failed", RequiredByOneTool, message: "The prerequisite check failed unexpectedly.", descriptor: Debugger());
+
+        Assert.Equal("The prerequisite check failed unexpectedly.", message!.Message);
+        Assert.Equal(SystemMessageSeverity.Error, message.Severity);
+    }
+
     private Task<SystemMessage?> Record(
-        PrerequisiteState state, string code, PrerequisiteUsage usage, string? message = null, string id = "sample.debugger", OperationalMetadata? metadata = null) =>
+        PrerequisiteState state, string code, PrerequisiteUsage usage, string? message = null, string id = "sample.debugger", OperationalMetadata? metadata = null,
+        PrerequisiteDescriptor? descriptor = null) =>
         _recorder.RecordAsync(
             new PrerequisiteCheckResult
             {
@@ -198,7 +281,8 @@ public sealed class PrerequisiteTransitionRecorderTests
                 CheckedAtUtc = Start.AddMinutes(++_minute),
                 Metadata = metadata ?? OperationalMetadata.Empty,
             },
-            usage);
+            usage,
+            descriptor);
 
     private sealed class InMemoryPrerequisiteStateStore : IPrerequisiteStateStore
     {

@@ -290,6 +290,27 @@ public interface IPrerequisiteProvider
     IReadOnlyList<IPrerequisiteCheck> GetPrerequisiteChecks();
 }
 
+/// <summary>
+/// The host-only route by which a package's <see cref="IPrerequisiteProvider"/> contributions are registered under the
+/// host-assigned <see cref="PackageId"/> and removed with the package (ADR-0049 section 4). It is a mutation surface:
+/// the host composition and the plugin loader hold it; it is <b>never</b> resolvable by package code, and the
+/// <see cref="ICapabilityProbe"/> a package receives does not implement it.
+/// </summary>
+public interface IPrerequisiteRegistrar
+{
+    /// <summary>
+    /// Registers every check <paramref name="provider"/> contributes under <paramref name="package"/>, atomically: all of them
+    /// or none.
+    /// </summary>
+    /// <param name="package">The host-assigned package identity. A package never names its own.</param>
+    /// <param name="provider">The package's provider.</param>
+    void Register(PackageId package, IPrerequisiteProvider provider);
+
+    /// <summary>Removes every check contributed by <paramref name="package"/>, and their last results.</summary>
+    /// <param name="package">The host-assigned package identity.</param>
+    void Unregister(PackageId package);
+}
+
 /// <summary>The persisted last observation of one prerequisite on one node, used to detect transitions (ADR-0049 section 7).</summary>
 public sealed record PrerequisiteStateRecord
 {
