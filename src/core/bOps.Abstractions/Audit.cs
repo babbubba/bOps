@@ -294,6 +294,13 @@ public sealed record ToolCallAuditEvent : AuditEvent
     public required TimeSpan Duration { get; init; }
 
     /// <summary>
+    /// The host-authorized execution timeout applied to an executed call, after any declared request was capped by the
+    /// host ceiling. <c>null</c> for calls rejected before execution and records written by older hosts.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? EffectiveTimeout { get; init; }
+
+    /// <summary>
     /// Optional bounded, non-sensitive aggregate metadata supplied by the tool. The runtime never
     /// copies a complete tool output here; large exact datasets remain behind scoped references.
     /// </summary>

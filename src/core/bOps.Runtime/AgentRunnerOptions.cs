@@ -22,8 +22,17 @@ public sealed record AgentRunnerOptions
     /// </summary>
     public int MaxLifetimeSteps { get; init; } = 60;
 
-    /// <summary>How long a single tool execution may run before it is cancelled and reported as <c>Timeout</c> (rule S7).</summary>
+    /// <summary>
+    /// How long a tool with no <see cref="bOps.Abstractions.ToolManifest.RequestedExecutionTimeout"/> may run before it is
+    /// cancelled and reported as <c>Timeout</c> (rule S7). Must be positive and no longer than <see cref="MaxToolTimeout"/>.
+    /// </summary>
     public TimeSpan DefaultToolTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The absolute host ceiling for one tool execution. A tool declaration above it is clamped to this value; no tool can
+    /// disable the timeout. Must be positive and no longer than 24 hours.
+    /// </summary>
+    public TimeSpan MaxToolTimeout { get; init; } = TimeSpan.FromMinutes(15);
 
     /// <summary>The maximum characters of tool output kept in history before deterministic head+tail truncation (rule C3).</summary>
     public int MaxObservationCharacters { get; init; } = 4000;
@@ -135,6 +144,22 @@ public sealed record AgentRunnerOptions
         {
             throw new InvalidOperationException(
                 $"'Agent:MaxLifetimeSteps' ({MaxLifetimeSteps}) must not be below 'Agent:MaxSteps' ({MaxSteps}).");
+        }
+
+        if (DefaultToolTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("'Agent:DefaultToolTimeout' must be positive.");
+        }
+
+        if (MaxToolTimeout <= TimeSpan.Zero || MaxToolTimeout > TimeSpan.FromHours(24))
+        {
+            throw new InvalidOperationException("'Agent:MaxToolTimeout' must be positive and no longer than 24 hours.");
+        }
+
+        if (DefaultToolTimeout > MaxToolTimeout)
+        {
+            throw new InvalidOperationException(
+                $"'Agent:DefaultToolTimeout' ({DefaultToolTimeout}) must not exceed 'Agent:MaxToolTimeout' ({MaxToolTimeout}).");
         }
 
         if (MaxReplans < 0)

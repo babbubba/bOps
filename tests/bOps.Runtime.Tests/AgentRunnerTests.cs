@@ -23,9 +23,10 @@ public sealed class AgentRunnerTests
 
     private static AgentRunner CreateRunner(
         IChatModel model, IToolRegistry registry, IAuditSink audit, AgentRunnerOptions? options = null,
-        IPolicyEngine? policyEngine = null, IApprovalProvider? approvalProvider = null, ITaskStore? taskStore = null) =>
+        IPolicyEngine? policyEngine = null, IApprovalProvider? approvalProvider = null, ITaskStore? taskStore = null,
+        TimeProvider? timeProvider = null) =>
         new(model, registry, policyEngine ?? new DefaultTestPolicyEngine(), approvalProvider ?? new NeverCalledApprovalProvider(),
-            audit, taskStore ?? new InMemoryTaskStore(), TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
+            audit, taskStore ?? new InMemoryTaskStore(), timeProvider ?? TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions());
 
     private static ToolRegistry CreateRegistryWith(params ITool[] tools)
     {
@@ -160,6 +161,138 @@ public sealed class AgentRunnerTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(2, result.Plans.Count);
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Outcome: ToolOutcome.Timeout, Tool: "test.hangs" });
+    }
+
+    [Fact]
+    public async Task RunAsync_UsesTheDefaultTimeout_WhenTheToolDeclaresNoOverride()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var tool = new ControlledReadTool("test.default-timeout");
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
+            new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Timed out.", [], true, null));
+        var audit = new RecordingAuditSink();
+        var options = new AgentRunnerOptions
+        {
+            DefaultToolTimeout = TimeSpan.FromSeconds(30),
+            MaxToolTimeout = TimeSpan.FromMinutes(15),
+        };
+
+        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+            .RunAsync("wait", Actor);
+        await tool.Started;
+        clock.Advance(TimeSpan.FromSeconds(30));
+        var result = await run;
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Tool: "test.default-timeout",
+            Outcome: ToolOutcome.Timeout,
+            EffectiveTimeout: var timeout,
+        } && timeout == TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task RunAsync_HonoursALongerDeclaredTimeout_PastTheDefault()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var tool = new ControlledReadTool("test.long-timeout", TimeSpan.FromMinutes(2));
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
+            new ModelResponse(null, [call], false, null),
+            new ModelResponse("Done.", [], true, null));
+        var audit = new RecordingAuditSink();
+        var options = new AgentRunnerOptions
+        {
+            DefaultToolTimeout = TimeSpan.FromSeconds(30),
+            MaxToolTimeout = TimeSpan.FromMinutes(15),
+        };
+
+        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+            .RunAsync("wait", Actor);
+        await tool.Started;
+        clock.Advance(TimeSpan.FromSeconds(31));
+        await Task.Yield();
+        Assert.False(run.IsCompleted);
+
+        tool.Complete();
+        var result = await run;
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Tool: "test.long-timeout",
+            Outcome: ToolOutcome.Success,
+            EffectiveTimeout: var timeout,
+        } && timeout == TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ClampsADeclaredTimeout_ToTheHostCeiling()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var tool = new ControlledReadTool("test.clamped-timeout", TimeSpan.FromMinutes(2));
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
+            new ModelResponse(null, [call], false, null),
+            PlanningTestSupport.PlanResponse(revision: 1),
+            new ModelResponse("Timed out.", [], true, null));
+        var audit = new RecordingAuditSink();
+        var options = new AgentRunnerOptions
+        {
+            DefaultToolTimeout = TimeSpan.FromSeconds(30),
+            MaxToolTimeout = TimeSpan.FromMinutes(1),
+        };
+
+        var run = CreateRunner(model, CreateRegistryWith(tool), audit, options, timeProvider: clock)
+            .RunAsync("wait", Actor);
+        await tool.Started;
+        clock.Advance(TimeSpan.FromSeconds(59));
+        await Task.Yield();
+        Assert.False(run.IsCompleted);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var completed = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(1)));
+        Assert.Same(run, completed);
+        var result = await run;
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Contains(audit.Events, e => e is ToolCallAuditEvent
+        {
+            Tool: "test.clamped-timeout",
+            Outcome: ToolOutcome.Timeout,
+            EffectiveTimeout: var timeout,
+        } && timeout == TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task RunAsync_ExternalCancellationWinsOverALongerDeclaredTimeout()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var tool = new ControlledReadTool("test.cancelled-timeout", TimeSpan.FromMinutes(10));
+        var call = new ModelToolCall("call-1", tool.Manifest.Name, ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
+            new ModelResponse(null, [call], false, null));
+        var options = new AgentRunnerOptions
+        {
+            DefaultToolTimeout = TimeSpan.FromSeconds(30),
+            MaxToolTimeout = TimeSpan.FromMinutes(15),
+        };
+        using var cancellation = new CancellationTokenSource();
+
+        var run = CreateRunner(model, CreateRegistryWith(tool), new RecordingAuditSink(), options, timeProvider: clock)
+            .RunAsync("wait", Actor, ct: cancellation.Token);
+        await tool.Started;
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
     }
 
     [Fact]

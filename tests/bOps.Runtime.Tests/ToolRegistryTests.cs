@@ -35,6 +35,34 @@ public sealed class ToolRegistryTests
         Assert.NotNull(registry.Resolve("test.read"));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Register_RejectsANonPositiveDeclaredExecutionTimeout(long ticks)
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with { RequestedExecutionTimeout = TimeSpan.FromTicks(ticks) };
+
+        var exception = Assert.Throws<ToolRegistrationException>(() =>
+            registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest)));
+
+        Assert.Equal("test.read", exception.ToolName);
+        Assert.Null(registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void Register_RejectsAnEffectivelyUnboundedDeclaredExecutionTimeout()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with { RequestedExecutionTimeout = TimeSpan.MaxValue };
+
+        var exception = Assert.Throws<ToolRegistrationException>(() =>
+            registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest)));
+
+        Assert.Equal("test.read", exception.ToolName);
+        Assert.Null(registry.Resolve("test.read"));
+    }
+
     [Fact]
     public void Register_RejectsConstraintsThatDoNotMatchTheDeclaredParameterType()
     {

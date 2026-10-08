@@ -52,6 +52,12 @@ profiles, so delegation is off. `bops delegate readiness`, `bops delegate profil
 `bops delegate profiles check` need no model provider and no `ModelProvider` section
 ([delegation setup](agents/delegation-policy.md)).
 
+**Tool execution timeouts.** `Agent:DefaultToolTimeout` remains `00:00:30` for tools that declare no
+specific execution timeout. `Agent:MaxToolTimeout` defaults to `00:15:00` and is the absolute host
+ceiling: a longer tool declaration is clamped to it. Both values must be positive, the default must
+not exceed the ceiling, and the ceiling may not exceed 24 hours; invalid configuration stops the host
+at startup. Caller cancellation and the active attempt-duration budget still take precedence.
+
 ## 2. API configuration
 
 Run the API from its project directory so its shipped configuration is loaded; its launch profile

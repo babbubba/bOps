@@ -304,6 +304,34 @@ internal sealed class HangingTool(string name = "test.hangs") : ITool
     }
 }
 
+internal sealed class ControlledReadTool(string name, TimeSpan? requestedExecutionTimeout = null) : ITool
+{
+    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Started => _started.Task;
+
+    public ToolManifest Manifest { get; } = new()
+    {
+        Name = name,
+        Description = "A controlled read-only tool for timeout tests.",
+        Risk = RiskLevel.Read,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters = [],
+        RequestedExecutionTimeout = requestedExecutionTimeout,
+    };
+
+    public void Complete() => _completion.TrySetResult();
+
+    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
+    {
+        _started.TrySetResult();
+        await _completion.Task.WaitAsync(ct);
+        return ToolCallResult.Success("done");
+    }
+}
+
 /// <summary>
 /// A non-<see cref="RiskLevel.Read"/> tool with a valid <see cref="VerificationSpec"/>, for
 /// exercising the policy-absence guard (rule S3) and, from V0.4, verification itself (rule S4).
