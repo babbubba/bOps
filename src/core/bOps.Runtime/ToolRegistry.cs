@@ -63,6 +63,13 @@ public sealed class ToolRegistry : IToolRegistry
             ValidateConstraints(manifest.Name, parameter);
         }
 
+        if (manifest.RequestedExecutionTimeout is { } requestedTimeout
+            && (requestedTimeout <= TimeSpan.Zero || requestedTimeout == TimeSpan.MaxValue))
+        {
+            throw new ToolRegistrationException(manifest.Name,
+                "the requested execution timeout must be positive and finite.");
+        }
+
         if (DescribeInvalidPrerequisites(manifest.Requires, manifest.OptionalRequires) is { } prerequisiteProblem)
         {
             throw new ToolRegistrationException(manifest.Name, prerequisiteProblem);

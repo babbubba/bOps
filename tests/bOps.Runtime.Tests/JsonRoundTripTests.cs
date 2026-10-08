@@ -67,6 +67,7 @@ public sealed class JsonRoundTripTests
             Parameters = [new ToolParameter("name", ToolParameterType.String, "Service name.")],
             Verification = new VerificationSpec("service.status", ["name"], "Confirms the service is running."),
             RequiresExplicitApproval = true,
+            RequestedExecutionTimeout = TimeSpan.FromMinutes(2),
         };
 
         var result = RoundTrip(value);
@@ -82,6 +83,25 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Verification.ArgumentsFrom, result.Verification.ArgumentsFrom);
         Assert.Equal(value.Verification.Description, result.Verification.Description);
         Assert.True(result.RequiresExplicitApproval);
+        Assert.Equal(TimeSpan.FromMinutes(2), result.RequestedExecutionTimeout);
+    }
+
+    [Fact]
+    public void ToolManifest_RoundTrips_WhenTheExecutionTimeoutIsAbsent()
+    {
+        var value = new ToolManifest
+        {
+            Name = "system.cpu",
+            Description = "Reads CPU usage.",
+            Risk = RiskLevel.Read,
+            Platforms = ["windows", "linux"],
+            Requires = [],
+            Parameters = [],
+        };
+
+        var result = RoundTrip(value);
+
+        Assert.Null(result!.RequestedExecutionTimeout);
     }
 
     [Fact]
@@ -174,6 +194,7 @@ public sealed class JsonRoundTripTests
             Authorization = AuthorizationKind.Automatic,
             Outcome = ToolOutcome.Success,
             Duration = TimeSpan.FromMilliseconds(120),
+            EffectiveTimeout = TimeSpan.FromSeconds(30),
             Summary = new JsonObject { ["observedCount"] = 5 },
             Verification = null,
         };
@@ -184,6 +205,7 @@ public sealed class JsonRoundTripTests
         var typed = Assert.IsType<ToolCallAuditEvent>(result);
         Assert.Equal(((ToolCallAuditEvent)value).Tool, typed.Tool);
         Assert.Equal(((ToolCallAuditEvent)value).Outcome, typed.Outcome);
+        Assert.Equal(TimeSpan.FromSeconds(30), typed.EffectiveTimeout);
         Assert.Equal(5, typed.Summary!["observedCount"]!.GetValue<int>());
         Assert.Equal(value.TaskId, typed.TaskId);
         Assert.Equal(value.Actor, typed.Actor);

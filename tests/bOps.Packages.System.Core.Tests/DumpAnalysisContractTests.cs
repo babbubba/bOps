@@ -21,12 +21,20 @@ public sealed class DumpAnalysisContractTests
         Assert.Equal(["windows"], manifest.Platforms);
         Assert.Equal(["some.capability"], manifest.Requires);
         Assert.Equal(["some.optional"], manifest.OptionalRequires);
+        Assert.Equal(TimeSpan.FromMinutes(12), manifest.RequestedExecutionTimeout);
         var parameter = Assert.Single(manifest.Parameters);
         Assert.Equal(("path", ToolParameterType.Path, true, 7, 260), (parameter.Name, parameter.Type, parameter.Required, parameter.MinLength, parameter.MaxLength));
         foreach (var forbidden in new[] { "command", "symbol", "script", "timeout", "format", "extension" })
         {
             Assert.DoesNotContain(manifest.Parameters, candidate => candidate.Name.Contains(forbidden, StringComparison.OrdinalIgnoreCase));
         }
+    }
+
+    [Fact]
+    public void OtherSystemManifests_KeepUsingTheHostDefaultTimeout()
+    {
+        Assert.Null(SystemToolManifests.Cpu("windows").RequestedExecutionTimeout);
+        Assert.Null(SystemToolManifests.Memory("windows").RequestedExecutionTimeout);
     }
 
     [Theory]

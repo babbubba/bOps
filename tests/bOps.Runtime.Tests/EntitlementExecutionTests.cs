@@ -191,7 +191,8 @@ public sealed class EntitlementExecutionTests
     [Fact]
     public async Task GovernedRetry_UsesAFreshBinding_AndDoesNotReuseTheFirstAllow()
     {
-        var tool = new CountingHangingTool();
+        var clock = new FakeTimeProvider(Now);
+        var tool = new CountingHangingTool(clock, TimeSpan.FromMilliseconds(25));
         var registry = Registry(tool, EntitlementApplicability.Governed);
         var requests = new List<EntitlementRequest>();
         var service = new RecordingEntitlementService(request =>
@@ -205,7 +206,7 @@ public sealed class EntitlementExecutionTests
             PlanningTestSupport.PlanResponse(revision: 1, expectedTool: tool.Manifest.Name), new ModelResponse(null, [call], false, null),
             PlanningTestSupport.PlanResponse(revision: 2, expectedTool: tool.Manifest.Name), new ModelResponse("done", [], true, null));
         var runner = new AgentRunner(model, registry, new StubPolicyEngine(PolicyMode.Automatic), new NeverCalledApprovalProvider(),
-            new RecordingAuditSink(), new InMemoryTaskStore(), new FakeTimeProvider(Now), NullLogger<AgentRunner>.Instance,
+            new RecordingAuditSink(), new InMemoryTaskStore(), clock, NullLogger<AgentRunner>.Instance,
             new AgentRunnerOptions { DefaultToolTimeout = TimeSpan.FromMilliseconds(25), MaxReplans = 3 }, entitlementService: service);
 
         await runner.RunAsync("retry governed work", Actor);
@@ -520,7 +521,7 @@ public sealed class EntitlementExecutionTests
         }
     }
 
-    private sealed class CountingHangingTool : ITool
+    private sealed class CountingHangingTool(FakeTimeProvider clock, TimeSpan timeout) : ITool
     {
         public int ExecutionCount { get; private set; }
         public ToolManifest Manifest { get; } = new()
@@ -532,6 +533,8 @@ public sealed class EntitlementExecutionTests
         public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
         {
             ExecutionCount++;
+            // The runner's tool timeout is driven by the fake clock, so the hang must move it forward.
+            clock.Advance(timeout);
             await Task.Delay(Timeout.Infinite, ct);
             throw new InvalidOperationException("Unreachable.");
         }

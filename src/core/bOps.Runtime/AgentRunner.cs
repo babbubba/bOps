@@ -3693,9 +3693,12 @@ public sealed class AgentRunner(
         CancellationToken ct,
         bool linkAttemptBudget = true)
     {
+        var effectiveTimeout = EffectiveToolTimeout(tool.Manifest);
+        using var timeoutSource = new CancellationTokenSource(effectiveTimeout, timeProvider);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
-            ct, linkAttemptBudget ? activeAttemptBudget.Value?.Token ?? CancellationToken.None : CancellationToken.None);
-        timeoutCts.CancelAfter(options.DefaultToolTimeout);
+            ct,
+            timeoutSource.Token,
+            linkAttemptBudget ? activeAttemptBudget.Value?.Token ?? CancellationToken.None : CancellationToken.None);
 
         try
         {
@@ -3712,13 +3715,13 @@ public sealed class AgentRunner(
         {
             throw new AttemptDurationBudgetExceededException();
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutSource.IsCancellationRequested)
         {
             // The tool's own timeout fired, not the task's cancellation — rule C2: a timeout is
             // a distinct outcome, not a failure and not a crash. The overall task's ct is
             // untouched, so the loop continues to the next step.
             return new ToolCallResult(ToolOutcome.Timeout, null,
-                $"'{call.ToolName}' did not complete within {options.DefaultToolTimeout}.") { FailureKind = ToolFailureKind.Timeout };
+                $"'{call.ToolName}' did not complete within {effectiveTimeout}.") { FailureKind = ToolFailureKind.Timeout };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -3735,25 +3738,32 @@ public sealed class AgentRunner(
         ApprovalDecision decision,
         CancellationToken ct)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(options.DefaultToolTimeout);
+        var effectiveTimeout = EffectiveToolTimeout(tool.Manifest);
+        using var timeoutSource = new CancellationTokenSource(effectiveTimeout, timeProvider);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token);
 
         try
         {
             return await tool.BindApprovalAsync(arguments, context, decision, timeoutCts.Token);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutSource.IsCancellationRequested)
         {
             return new ToolCallResult(
                 ToolOutcome.Timeout,
                 null,
-                $"Approval binding for '{tool.Manifest.Name}' did not complete within {options.DefaultToolTimeout}.") { FailureKind = ToolFailureKind.Timeout };
+                $"Approval binding for '{tool.Manifest.Name}' did not complete within {effectiveTimeout}.") { FailureKind = ToolFailureKind.Timeout };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Tool {Tool}: approval binding threw", tool.Manifest.Name);
             return ToolCallResult.Failure($"Approval binding for '{tool.Manifest.Name}' failed unexpectedly: {ex.Message}") with { FailureKind = ToolFailureKind.Internal };
         }
+    }
+
+    private TimeSpan EffectiveToolTimeout(ToolManifest manifest)
+    {
+        var requested = manifest.RequestedExecutionTimeout ?? options.DefaultToolTimeout;
+        return requested <= options.MaxToolTimeout ? requested : options.MaxToolTimeout;
     }
 
     private async Task<(PlanStep Step, string Observation)> RejectAsync(
@@ -3830,6 +3840,7 @@ public sealed class AgentRunner(
             Authorization = authorization,
             Outcome = result.Outcome,
             Duration = duration,
+            EffectiveTimeout = EffectiveToolTimeout(manifest),
             Summary = summary,
             Verification = verification,
             SkillRunId = skillScope?.RunId,

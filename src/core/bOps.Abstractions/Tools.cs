@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace bOps.Abstractions;
 
@@ -204,6 +205,13 @@ public sealed record ToolManifest
     /// automatic execution. This can tighten policy but never override a forbidden decision.
     /// </summary>
     public bool RequiresExplicitApproval { get; init; }
+
+    /// <summary>
+    /// The bounded execution timeout this tool requests from the host. <c>null</c> uses the host default; a declared value
+    /// must be positive and finite, and the host may lower it to its configured maximum.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? RequestedExecutionTimeout { get; init; }
 
     /// <summary>
     /// The package that contributed this tool. Stamped by the registry at registration time —

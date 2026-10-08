@@ -498,6 +498,21 @@ public sealed class ModelCallFailureContainmentTests
         new AgentRunnerOptions().Validate(ChatModelOptions.DefaultRequestTimeout);
     }
 
+    [Fact]
+    public void IncoherentToolTimeoutOptions_AreRejectedAtValidation()
+    {
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions { DefaultToolTimeout = TimeSpan.Zero }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions { DefaultToolTimeout = TimeSpan.FromTicks(-1) }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions { MaxToolTimeout = TimeSpan.Zero }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions { MaxToolTimeout = TimeSpan.FromTicks(-1) }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions { MaxToolTimeout = TimeSpan.MaxValue }.Validate());
+        Assert.Throws<InvalidOperationException>(() => new AgentRunnerOptions
+        {
+            DefaultToolTimeout = TimeSpan.FromMinutes(2),
+            MaxToolTimeout = TimeSpan.FromMinutes(1),
+        }.Validate());
+    }
+
     // An unknown tool is a deviation (rule C8): the very next thing the loop does is replan.
     private static ModelResponse UnknownToolCall() =>
         new(null, [new ModelToolCall("call-1", "no.such.tool", ToolArguments.Empty)], false, null);
