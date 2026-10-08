@@ -47,6 +47,11 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
             ValidateConstraints(manifest.Name, parameter);
         }
 
+        if (DescribeInvalidPrerequisites(manifest.Requires, manifest.OptionalRequires) is { } prerequisiteProblem)
+        {
+            throw new ToolRegistrationException(manifest.Name, prerequisiteProblem);
+        }
+
         if (manifest.Risk != RiskLevel.Read)
         {
             if (manifest.Verification is null)
@@ -84,18 +89,55 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
         }
     }
 
+    /// <summary>
+    /// Describes why a component's prerequisite declarations are invalid, or returns <c>null</c>: an optional list that is
+    /// missing or has a blank entry, or an id declared both required and optional (ADR-0049 section 3). Required entries
+    /// keep their pre-ADR-0049 acceptance, so no existing manifest is newly refused.
+    /// </summary>
+    internal static string? DescribeInvalidPrerequisites(IReadOnlyList<string>? requires, IReadOnlyList<string>? optionalRequires)
+    {
+        if (requires is null || optionalRequires is null)
+        {
+            return "its prerequisite lists must not be null.";
+        }
+
+        if (optionalRequires.Any(string.IsNullOrWhiteSpace))
+        {
+            return "it declares a blank optional prerequisite.";
+        }
+
+        return optionalRequires.FirstOrDefault(id => requires.Contains(id, StringComparer.OrdinalIgnoreCase)) is { } both
+            ? $"prerequisite '{both}' is declared both required and optional."
+            : null;
+    }
+
     /// <inheritdoc />
+    /// <remarks>Optional prerequisites are probed too, so <see cref="GetReadiness"/> can report degraded tools; they never hide one.</remarks>
     public async Task RefreshCapabilitiesAsync(CancellationToken ct = default)
     {
-        var requiredCapabilities = _tools.Values
-            .SelectMany(registered => registered.Tool.Manifest.Requires)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var capabilities = _tools.Values
+            .SelectMany(registered => registered.Tool.Manifest.Requires.Concat(registered.Tool.Manifest.OptionalRequires))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        foreach (var capability in requiredCapabilities)
+        foreach (var capability in capabilities)
         {
             _capabilitySnapshot[capability] = await capabilityProbe.IsAvailableAsync(capability, ct);
         }
     }
+
+    /// <summary>
+    /// Readiness of every registered tool on this node — package enabled and platform matched — whether or not it is
+    /// currently available, as of the last <see cref="RefreshCapabilitiesAsync"/>, ordered by name (ADR-0049 section 1).
+    /// </summary>
+    public IReadOnlyList<ComponentReadiness> GetReadiness() =>
+        _tools.Values
+            .Where(IsRegisteredOnThisNode)
+            .Select(registered => registered.Tool.Manifest)
+            .OrderBy(manifest => manifest.Name, StringComparer.Ordinal)
+            .Select(manifest => ComponentReadiness.Evaluate(
+                ComponentReference.Tool(manifest.Name), manifest.Requires, manifest.OptionalRequires, IsSatisfied))
+            .ToArray();
 
     /// <inheritdoc />
     public IReadOnlyList<ToolManifest> GetAvailableManifests() =>
@@ -138,23 +180,14 @@ public sealed class ToolRegistry(ICapabilityProbe capabilityProbe) : IToolRegist
         _packageEnabled.TryRemove(package.Value, out _);
     }
 
-    private bool IsVisible(RegisteredTool registered)
-    {
-        var manifest = registered.Tool.Manifest;
+    private bool IsVisible(RegisteredTool registered) =>
+        IsRegisteredOnThisNode(registered) && registered.Tool.Manifest.Requires.All(IsSatisfied);
 
-        if (!_packageEnabled.GetValueOrDefault(registered.Package.Value, true))
-        {
-            return false;
-        }
+    private bool IsRegisteredOnThisNode(RegisteredTool registered) =>
+        _packageEnabled.GetValueOrDefault(registered.Package.Value, true)
+        && registered.Tool.Manifest.Platforms.Contains(CurrentPlatform.Id, StringComparer.OrdinalIgnoreCase);
 
-        if (!manifest.Platforms.Contains(CurrentPlatform.Id, StringComparer.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return manifest.Requires.Count == 0
-            || manifest.Requires.All(capability => _capabilitySnapshot.GetValueOrDefault(capability, false));
-    }
+    private bool IsSatisfied(string capability) => _capabilitySnapshot.GetValueOrDefault(capability, false);
 
     private sealed record RegisteredTool(
         ITool Tool,

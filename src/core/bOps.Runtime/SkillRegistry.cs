@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.Concurrent;
 using bOps.Abstractions;
 
 namespace bOps.Runtime;
@@ -9,11 +10,30 @@ namespace bOps.Runtime;
 /// Node-local registry for activated Skill providers. Registration is atomic and stamps package
 /// identity before any Capability becomes visible (ADR-0025; rules A4 and A11).
 /// </summary>
+/// <remarks>
+/// A Capability whose required prerequisites (<see cref="CapabilityManifest.Requires"/>) are not satisfied stays registered
+/// but is withheld from <see cref="GetAvailableSkills"/> and <see cref="Resolve"/> (ADR-0049). Without a probe, such a
+/// Capability fails closed; one that declares no prerequisite behaves exactly as before.
+/// </remarks>
 public sealed class SkillRegistry : ISkillRegistry
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, RegisteredSkill> _skills = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _capabilityOwners = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, bool> _prerequisiteSnapshot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ICapabilityProbe? _capabilityProbe;
+
+    /// <summary>Creates a registry with no prerequisite probe: Capabilities that declare required prerequisites stay unavailable.</summary>
+    public SkillRegistry()
+    {
+    }
+
+    /// <summary>Creates a registry whose Capability prerequisites are checked through <paramref name="capabilityProbe"/>.</summary>
+    public SkillRegistry(ICapabilityProbe capabilityProbe)
+    {
+        ArgumentNullException.ThrowIfNull(capabilityProbe);
+        _capabilityProbe = capabilityProbe;
+    }
 
     /// <inheritdoc />
     public void Register(PackageId package, ISkillProvider provider) =>
@@ -110,8 +130,10 @@ public sealed class SkillRegistry : ISkillRegistry
                     skill.Package,
                     skill.Trust,
                     skill.Capabilities.Select(capability => capability.Manifest)
+                        .Where(IsAvailable)
                         .OrderBy(manifest => manifest.Name, StringComparer.Ordinal)
                         .ToArray()))
+                .Where(descriptor => descriptor.Capabilities.Count > 0)
                 .ToArray();
         }
     }
@@ -126,8 +148,58 @@ public sealed class SkillRegistry : ISkillRegistry
         {
             return _skills.TryGetValue(skillId, out var skill)
                 ? skill.Capabilities.FirstOrDefault(
-                    capability => string.Equals(capability.Manifest.Name, capabilityName, StringComparison.Ordinal))
+                    capability => string.Equals(capability.Manifest.Name, capabilityName, StringComparison.Ordinal)
+                        && IsAvailable(capability.Manifest))
                 : null;
+        }
+    }
+
+    /// <summary>
+    /// Re-probes every prerequisite a registered Capability declares, required or optional, and updates the snapshot that
+    /// <see cref="GetAvailableSkills"/>, <see cref="Resolve"/> and <see cref="GetReadiness"/> read. Without a probe it does nothing.
+    /// </summary>
+    public async Task RefreshPrerequisitesAsync(CancellationToken ct = default)
+    {
+        if (_capabilityProbe is null)
+        {
+            return;
+        }
+
+        string[] ids;
+        lock (_gate)
+        {
+            ids = _skills.Values
+                .SelectMany(skill => skill.Capabilities)
+                .SelectMany(capability => capability.Manifest.Requires.Concat(capability.Manifest.OptionalRequires))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        foreach (var id in ids)
+        {
+            _prerequisiteSnapshot[id] = await _capabilityProbe.IsAvailableAsync(id, ct);
+        }
+    }
+
+    /// <summary>
+    /// Readiness of every registered Capability, available or not, as of the last <see cref="RefreshPrerequisitesAsync"/>,
+    /// ordered by Skill id and Capability name (ADR-0049 section 1).
+    /// </summary>
+    public IReadOnlyList<ComponentReadiness> GetReadiness()
+    {
+        lock (_gate)
+        {
+            return _skills.Values
+                .OrderBy(skill => skill.Provider.SkillId, StringComparer.Ordinal)
+                .SelectMany(skill => skill.Capabilities
+                    .Select(capability => capability.Manifest)
+                    .OrderBy(manifest => manifest.Name, StringComparer.Ordinal)
+                    .Select(manifest => ComponentReadiness.Evaluate(
+                        ComponentReference.SkillCapability(skill.Provider.SkillId, manifest.Name),
+                        manifest.Requires,
+                        manifest.OptionalRequires,
+                        IsSatisfied)))
+                .ToArray();
         }
     }
 
@@ -190,6 +262,11 @@ public sealed class SkillRegistry : ISkillRegistry
             throw new SkillRegistrationException($"Capability '{manifest.Name}' must declare a positive timeout.");
         }
 
+        if (ToolRegistry.DescribeInvalidPrerequisites(manifest.Requires, manifest.OptionalRequires) is { } prerequisiteProblem)
+        {
+            throw new SkillRegistrationException($"Capability '{manifest.Name}' has invalid prerequisites: {prerequisiteProblem}");
+        }
+
         if (manifest.Risk != RiskLevel.Read && manifest.Verification is null)
         {
             throw new SkillRegistrationException(
@@ -204,6 +281,10 @@ public sealed class SkillRegistry : ISkillRegistry
             throw new SkillRegistrationException($"Capability '{manifest.Name}' has an invalid input schema: {problem}.");
         }
     }
+
+    private bool IsAvailable(CapabilityManifest manifest) => manifest.Requires.All(IsSatisfied);
+
+    private bool IsSatisfied(string prerequisiteId) => _prerequisiteSnapshot.GetValueOrDefault(prerequisiteId, false);
 
     private sealed record RegisteredSkill(
         ISkillProvider Provider,
