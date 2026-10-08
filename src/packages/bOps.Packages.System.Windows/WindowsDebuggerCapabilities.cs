@@ -25,7 +25,7 @@ public static class WindowsDebuggerCapabilities
         "kd.exe is required by system.dump_analyze to open and analyze Windows kernel crash dumps.",
         PrerequisiteKind.Executable)
     {
-        Remediation = "Install the Microsoft "Debugging Tools for Windows" component so kd.exe is available, then let bOps refresh prerequisites.",
+        Remediation = "Install the Microsoft \"Debugging Tools for Windows\" component so kd.exe is available, then let bOps refresh prerequisites.",
     };
 
     /// <summary>Operator-facing descriptor for the optional DumpChk integrity preflight.</summary>
@@ -35,7 +35,7 @@ public static class WindowsDebuggerCapabilities
         "dumpchk.exe provides an optional integrity preflight before KD analyzes a Windows kernel dump.",
         PrerequisiteKind.Executable)
     {
-        Remediation = "Install the Microsoft "Debugging Tools for Windows" component if you want the optional DumpChk preflight.",
+        Remediation = "Install the Microsoft \"Debugging Tools for Windows\" component (it provides dumpchk.exe) if you want the optional DumpChk preflight.",
     };
 
     /// <summary>True when an acceptable <c>kd.exe</c> is installed.</summary>
