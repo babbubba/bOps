@@ -14,12 +14,13 @@ public sealed class DumpAnalysisContractTests
     [Fact]
     public void Manifest_HasExactlyOneBoundedPathParameter_AndTheGivenCapability()
     {
-        var manifest = SystemToolManifests.DumpAnalyze("windows", "some.capability");
+        var manifest = SystemToolManifests.DumpAnalyze("windows", "some.capability", "some.optional");
 
         Assert.Equal("system.dump_analyze", manifest.Name);
         Assert.Equal(RiskLevel.Read, manifest.Risk);
         Assert.Equal(["windows"], manifest.Platforms);
         Assert.Equal(["some.capability"], manifest.Requires);
+        Assert.Equal(["some.optional"], manifest.OptionalRequires);
         var parameter = Assert.Single(manifest.Parameters);
         Assert.Equal(("path", ToolParameterType.Path, true, 7, 260), (parameter.Name, parameter.Type, parameter.Required, parameter.MinLength, parameter.MaxLength));
         foreach (var forbidden in new[] { "command", "symbol", "script", "timeout", "format", "extension" })

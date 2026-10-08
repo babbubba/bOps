@@ -69,23 +69,42 @@ public sealed class WindowsDumpAnalysisBoundaryTests
             .Where(registration => registration.Tool.Manifest.Requires.Contains(WindowsDebuggerCapabilities.KernelDumpAnalysis))
             .Select(registration => registration.Tool.Manifest.Name)
             .ToArray();
+        var optionallyUsingDumpChk = registrations
+            .Where(registration => registration.Tool.Manifest.OptionalRequires.Contains(WindowsDebuggerCapabilities.DumpCheck))
+            .Select(registration => registration.Tool.Manifest.Name)
+            .ToArray();
 
         Assert.Equal(OperatingSystem.IsWindows() ? ["system.dump_analyze"] : [], requiring);
+        Assert.Equal(OperatingSystem.IsWindows() ? ["system.dump_analyze"] : [], optionallyUsingDumpChk);
     }
 
     [Fact]
-    public void HostCompositionRoots_RegisterTheDebuggerCheckBeforeTheFirstCapabilityRefresh()
+    public void UnifiedPrerequisiteComposition_OwnsDebuggerChecks_NotApiOrCli()
     {
         var root = FindRoot();
+        var composition = File.ReadAllText(Path.Combine(root, "src", "core", "bOps.Hosting", "FirstPartyPrerequisiteComposition.cs"));
+        Assert.Contains("WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor", composition, StringComparison.Ordinal);
+        Assert.Contains("WindowsDebuggerCapabilities.DumpCheckDescriptor", composition, StringComparison.Ordinal);
+
         foreach (var host in new[] { Path.Combine("src", "core", "bOps.Api", "Program.cs"), Path.Combine("src", "core", "bOps.Cli", "Program.cs") })
         {
             var source = File.ReadAllText(Path.Combine(root, host));
-            var registration = source.IndexOf("WindowsDebuggerCapabilities.KernelDumpAnalysis", StringComparison.Ordinal);
-            var refresh = source.IndexOf("await toolRegistry.RefreshCapabilitiesAsync()", StringComparison.Ordinal);
-
-            Assert.True(registration > 0, $"{host} does not register the debugger capability check");
-            Assert.True(registration < refresh, $"{host} registers the debugger capability after the first refresh");
+            Assert.DoesNotContain("WindowsDebuggerCapabilities", source, StringComparison.Ordinal);
+            Assert.Contains("FirstPartyPrerequisiteComposition.Register", source, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void DebuggerPrerequisiteDescriptors_AreActionableAndTyped()
+    {
+        Assert.Equal(("windows.debugger.kd", PrerequisiteKind.Executable),
+            (WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Id, WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Kind));
+        Assert.Contains("Debugging Tools for Windows", WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.DisplayName, StringComparison.Ordinal);
+        Assert.Contains("kd.exe", WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor.Remediation, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(("windows.debugger.dumpchk", PrerequisiteKind.Executable),
+            (WindowsDebuggerCapabilities.DumpCheckDescriptor.Id, WindowsDebuggerCapabilities.DumpCheckDescriptor.Kind));
+        Assert.Contains("dumpchk.exe", WindowsDebuggerCapabilities.DumpCheckDescriptor.Remediation, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

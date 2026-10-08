@@ -50,7 +50,7 @@ acceptable `kd.exe` is found, in this order:
 2. `%ProgramFiles(x86)%\Windows Kits\10\Debuggers\<arch>\kd.exe`;
 3. `%ProgramFiles%\Windows Kits\10\Debuggers\<arch>\kd.exe`.
 
-`<arch>` is `x64`, `arm64` or `x86`. `dumpchk.exe` is used only if it is in the same directory.
+`<arch>` is `x64`, `arm64` or `x86`. `kd.exe` is a **required** prerequisite. `dumpchk.exe` is an **optional** prerequisite: when it is absent, the tool remains available but is reported as degraded and analysis proceeds without the integrity preflight.
 
 Check an installation with:
 
@@ -63,7 +63,11 @@ Test-Path "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\dumpchk.exe"
 The modern WinDbg app (Microsoft Store / `winget` package) is a GUI debugger. It does not necessarily put a usable
 `kd.exe` on `PATH` or in the Windows Kits directory. If neither check finds `kd.exe`, install the SDK feature.
 
-The capability is checked at host start and cached for 30 seconds. Restart bOps after installing.
+ADR-0049 prerequisite readiness checks both dependencies at host start and periodically (30 seconds by default). If KD is missing,
+`system.dump_analyze` stays registered but unavailable and **System messages** records an actionable Warning naming Microsoft
+Debugging Tools for Windows and `kd.exe`. If only DumpChk is missing, the tool stays available/degraded and an Information message
+explains that the optional preflight is unavailable. After installing the tools, the next prerequisite refresh records recovery and
+makes the tool available without requiring a bOps restart.
 
 ## Privileges
 

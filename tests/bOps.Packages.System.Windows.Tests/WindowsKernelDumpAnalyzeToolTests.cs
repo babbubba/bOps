@@ -35,7 +35,9 @@ public sealed class WindowsKernelDumpAnalyzeToolTests : IDisposable
         Assert.Equal(RiskLevel.Read, manifest.Risk);
         Assert.Equal(["windows"], manifest.Platforms);
         Assert.Equal([WindowsDebuggerCapabilities.KernelDumpAnalysis], manifest.Requires);
+        Assert.Equal([WindowsDebuggerCapabilities.DumpCheck], manifest.OptionalRequires);
         Assert.Equal("windows.debugger.kd", WindowsDebuggerCapabilities.KernelDumpAnalysis);
+        Assert.Equal("windows.debugger.dumpchk", WindowsDebuggerCapabilities.DumpCheck);
         Assert.Null(manifest.Verification);
         var parameter = Assert.Single(manifest.Parameters);
         Assert.Equal(("path", ToolParameterType.Path, true), (parameter.Name, parameter.Type, parameter.Required));
