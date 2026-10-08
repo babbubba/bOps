@@ -24,6 +24,12 @@ public static class PrerequisiteCodes
     /// <summary>Result code: no check is registered under the requested id.</summary>
     public const string NotRegistered = "not-registered";
 
+    /// <summary>
+    /// Result code: the host could not durably record an observation of this prerequisite, so it is treated as <c>Error</c> until a
+    /// later observation is recorded (fail-closed; ADR-0049 section 10). Host-authored; a package never produces it.
+    /// </summary>
+    public const string StateRecordFailed = "state-record-failed";
+
     /// <summary>Message code: a prerequisite became unavailable, or was first observed unavailable.</summary>
     public const string MessageMissing = "prerequisite.missing";
 
@@ -35,4 +41,7 @@ public static class PrerequisiteCodes
 
     /// <summary>Message code: a prerequisite check failed.</summary>
     public const string MessageCheckFailed = "prerequisite.check-failed";
+
+    /// <summary>Message code: a component declares a prerequisite that no package registered a check for.</summary>
+    public const string MessageNotRegistered = "prerequisite.not-registered";
 }

@@ -47,7 +47,8 @@ internal sealed record PrerequisiteReadinessView(
 /// <summary>
 /// Maps <c>GET /api/prerequisites</c> (ADR-0049): what is unavailable right now, which components it affects, whether it is required or
 /// optional, and how to fix it. Viewer role, read-only, no I/O of its own — it projects the last refresh and is not a second state store.
-/// A prerequisite a component declares but nobody registered a check for is listed as <c>Unknown</c>/<c>not-registered</c>.
+/// A prerequisite a component declares but nobody registered a check for is listed as <c>Error</c>/<c>not-registered</c> once a refresh
+/// has observed it (the same state the readiness cycle records and announces), and as <c>Unknown</c>/<c>not-registered</c> before that.
 /// </summary>
 internal static class PrerequisitesEndpoints
 {
@@ -92,9 +93,11 @@ internal static class PrerequisitesEndpoints
                      .Where(id => !registered.Contains(id)).Order(StringComparer.Ordinal))
         {
             var usage = PrerequisiteUsage.For(id, components);
+            var observed = registry.GetLastResult(id);
             statuses.Add(new PrerequisiteStatusView(
                 id, id, "No package registered a check for this prerequisite.", PrerequisiteKind.Other.ToString(), null, null,
-                PrerequisiteState.Unknown.ToString(), PrerequisiteCodes.NotRegistered, null, null, Refs(usage.RequiredBy), Refs(usage.OptionalBy)));
+                (observed?.State ?? PrerequisiteState.Unknown).ToString(), PrerequisiteCodes.NotRegistered, observed?.Message, observed?.CheckedAtUtc,
+                Refs(usage.RequiredBy), Refs(usage.OptionalBy)));
         }
 
         return new PrerequisiteReadinessView(

@@ -29,6 +29,8 @@ public sealed class PrerequisiteRegistry : IPrerequisiteRegistrar, IPrerequisite
     private readonly ConcurrentDictionary<string, PrerequisiteCheckResult> _results = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _cacheDuration;
+    private volatile Dictionary<string, PrerequisiteCheckResult> _hostObservations =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly int _maxConcurrency;
 
     /// <summary>Creates an empty registry.</summary>
@@ -46,6 +48,9 @@ public sealed class PrerequisiteRegistry : IPrerequisiteRegistrar, IPrerequisite
         _cacheDuration = cacheDuration;
         _maxConcurrency = maxConcurrency;
     }
+
+    /// <summary>The registry clock (the injected <see cref="TimeProvider"/>), so host-authored results are stamped like check results.</summary>
+    public DateTimeOffset Now => _timeProvider.GetUtcNow();
 
     /// <summary>
     /// The read-only boolean view handed to package code (the A10 <see cref="ICapabilityProbe"/>). It observes this registry but
@@ -114,9 +119,51 @@ public sealed class PrerequisiteRegistry : IPrerequisiteRegistrar, IPrerequisite
         }
     }
 
-    /// <summary>The last recorded result of a prerequisite, or <c>null</c> if it is unregistered or was never checked.</summary>
+    /// <summary>
+    /// The current result of a prerequisite, or <c>null</c> if it is unregistered or was never checked. A host observation
+    /// (<see cref="SetHostObservations"/>) takes precedence over the package check's own result: it is how the host overrides a result
+    /// it could not durably record, or reports a declared prerequisite nobody registered.
+    /// </summary>
     public PrerequisiteCheckResult? GetLastResult(string prerequisiteId) =>
-        _results.TryGetValue(prerequisiteId, out var result) ? result : null;
+        _hostObservations.TryGetValue(prerequisiteId, out var observed) ? observed
+        : _results.TryGetValue(prerequisiteId, out var result) ? result
+        : null;
+
+    /// <summary>
+    /// Replaces the set of host-authored results that override package results (ADR-0049 section 10): a prerequisite whose observation
+    /// could not be durably recorded (<c>Error</c>/<c>state-record-failed</c>) and a prerequisite a component declares but no package
+    /// registered (<c>Error</c>/<c>not-registered</c>). Only the readiness service calls this; packages cannot reach it. The previous set
+    /// is replaced atomically, so an override never outlives the cycle that no longer needs it.
+    /// </summary>
+    /// <param name="observations">The complete current set; each id appears once.</param>
+    public void SetHostObservations(IEnumerable<PrerequisiteCheckResult> observations)
+    {
+        ArgumentNullException.ThrowIfNull(observations);
+        var next = new Dictionary<string, PrerequisiteCheckResult>(StringComparer.OrdinalIgnoreCase);
+        foreach (var observation in observations)
+        {
+            next[observation.Id] = observation;
+        }
+
+        lock (_gate)
+        {
+            _hostObservations = next;
+        }
+    }
+
+    /// <summary>Adds one host observation to the current set without removing the others (used the moment a record fails).</summary>
+    public void AddHostObservation(PrerequisiteCheckResult observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        lock (_gate)
+        {
+            var next = new Dictionary<string, PrerequisiteCheckResult>(_hostObservations, StringComparer.OrdinalIgnoreCase)
+            {
+                [observation.Id] = observation,
+            };
+            _hostObservations = next;
+        }
+    }
 
     /// <summary>
     /// The last recorded state of a prerequisite, with no I/O: <see cref="PrerequisiteState.Unknown"/> if it is unregistered or was never

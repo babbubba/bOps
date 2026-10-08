@@ -229,20 +229,176 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ARecorderFailure_IsCountedAndLogged_ButTheAvailabilitySnapshotIsStillRefreshed()
+    public async Task APersistenceFailure_AfterARequiredPrerequisiteWasAvailable_MakesTheComponentNonExecutable_UntilItCanBeRecorded()
     {
-        var registry = new PrerequisiteRegistry(TimeProvider.System, TimeSpan.Zero);
-        var tools = new ToolRegistry(registry);
-        var skills = new SkillRegistry(registry);
-        registry.Register(new PackageId("package.p"), new ToggleCheck(DebuggerDescriptor(), PrerequisiteState.Available));
-        tools.Register(new PackageId("package.p"), new ProbeTool("sample.tool", requires: [Debugger]));
-        using var service = new PrerequisiteReadinessService(
-            registry, new PrerequisiteTransitionRecorder(new BrokenStore(), NodeId.Local), tools, skills, NullLogger<PrerequisiteReadinessService>.Instance);
+        var host = NewHost(failable: true);
+        Compose(host, PrerequisiteState.Available);
+        await host.Service.RefreshAsync();
+        Assert.NotNull(host.Tools.ResolveForExecution("system.dump_analyze"));
 
-        var report = await service.RefreshAsync();
+        // The next check succeeds, but that observation cannot be durably recorded.
+        host.Failing!.FailAll = true;
+        var report = await host.Service.RefreshAsync();
 
         Assert.Equal(1, report.RecordFailures);
-        Assert.NotNull(tools.Resolve("sample.tool"));
+        Assert.Null(host.Tools.ResolveForExecution("system.dump_analyze"));
+        Assert.Null(host.Tools.Resolve("system.dump_analyze"));
+        var readiness = Assert.Single(host.Tools.GetReadiness());
+        Assert.True(readiness.Registered);
+        Assert.False(readiness.Available);
+        var closed = host.Registry.GetLastResult(Debugger)!;
+        Assert.Equal(PrerequisiteState.Error, closed.State);
+        Assert.Equal(PrerequisiteCodes.StateRecordFailed, closed.Code);
+        Assert.DoesNotContain("disk", closed.Message, StringComparison.OrdinalIgnoreCase);
+        var projected = PrerequisitesEndpoints.Project(host.Registry, host.Tools, host.Skills, DateTimeOffset.UtcNow).Prerequisites.Single(p => p.Id == Debugger);
+        Assert.Equal("Error", projected.State);
+        Assert.Equal(PrerequisiteCodes.StateRecordFailed, projected.Code);
+
+        // Once the observation can be recorded again the component comes back, with no spurious message for the unchanged state.
+        host.Failing.FailAll = false;
+        Assert.Equal(0, (await host.Service.RefreshAsync()).RecordFailures);
+        Assert.NotNull(host.Tools.ResolveForExecution("system.dump_analyze"));
+        Assert.Empty((await host.Store.QueryAsync(new SystemMessageQuery())).Items);
+        host.Dispose();
+    }
+
+    [Fact]
+    public async Task APersistenceFailure_NeverTurnsAnUnavailableObservationIntoAnAvailableOne_AtBoot()
+    {
+        var host = NewHost(failable: true);
+        host.Failing!.FailAll = true;
+        Compose(host, PrerequisiteState.Available);
+
+        var report = await host.Service.RefreshAsync();
+
+        Assert.Equal(1, report.RecordFailures);
+        Assert.Null(host.Tools.ResolveForExecution("system.dump_analyze"));
+        host.Dispose();
+    }
+
+    [Fact]
+    public async Task APersistenceFailure_OfAnOptionalPrerequisite_DegradesTheComponent_ButDoesNotHideIt()
+    {
+        var host = NewHost(failable: true);
+        host.Registry.Register(new PackageId("package.debugger"), new ToggleCheck(DebuggerDescriptor(), PrerequisiteState.Available));
+        host.Tools.Register(new PackageId("package.debugger"), new ProbeTool("system.dump_analyze", optional: [Debugger]));
+        await host.Service.RefreshAsync();
+        Assert.False(Assert.Single(host.Tools.GetReadiness()).Degraded);
+
+        host.Failing!.FailAll = true;
+        await host.Service.RefreshAsync();
+
+        Assert.NotNull(host.Tools.ResolveForExecution("system.dump_analyze"));
+        var readiness = Assert.Single(host.Tools.GetReadiness());
+        Assert.True(readiness.Available);
+        Assert.True(readiness.Degraded);
+        host.Dispose();
+    }
+
+    [Fact]
+    public async Task APersistenceFailure_OfOnePrerequisite_DoesNotAbortTheRecordingOfAnUnrelatedOne()
+    {
+        var host = NewHost(failable: true);
+        host.Registry.Register(new PackageId("package.a"), new ToggleCheck(DebuggerDescriptor(), PrerequisiteState.Unavailable));
+        host.Registry.Register(new PackageId("package.b"), new ThrowingCheck());
+        host.Failing!.FailFor.Add(Debugger);
+
+        var report = await host.Service.RefreshAsync();
+
+        Assert.Equal(1, report.RecordFailures);
+        Assert.Null(await host.Store.LoadStateAsync(NodeId.Local, Debugger));
+        Assert.Equal(PrerequisiteState.Error, (await host.Store.LoadStateAsync(NodeId.Local, "sample.broken"))!.State);
+        Assert.Equal(PrerequisiteCodes.MessageCheckFailed, Assert.Single((await host.Store.QueryAsync(new SystemMessageQuery())).Items).Code);
+        host.Dispose();
+    }
+
+    [Fact]
+    public async Task ADeclaredPrerequisiteNobodyRegistered_IsOneErrorMessage_FailsClosed_AndDoesNotRepeatAcrossRefreshesOrRestart()
+    {
+        var first = NewHost();
+        first.Tools.Register(new PackageId("package.p"), new ProbeTool("sample.needs-x", requires: ["sample.x"]));
+
+        var report = await first.Service.RefreshAsync();
+        await first.Service.RefreshAsync();
+        await first.Service.RefreshAsync();
+
+        Assert.Equal(1, report.NotRegistered);
+        Assert.Equal(1, report.Messages);
+        Assert.Null(first.Tools.ResolveForExecution("sample.needs-x"));
+        var message = Assert.Single((await first.Store.QueryAsync(new SystemMessageQuery())).Items);
+        Assert.Equal(PrerequisiteCodes.MessageNotRegistered, message.Code);
+        Assert.Equal(SystemMessageSeverity.Error, message.Severity);
+        Assert.Equal("prerequisite/sample.x", message.Source);
+        Assert.Equal(
+            "No package registered a check for prerequisite 'sample.x'. Components depending on it cannot determine readiness.",
+            message.Message);
+        Assert.Contains("tool:sample.needs-x", message.Metadata.ToJson()["affectedComponents"]!.ToJsonString(), StringComparison.Ordinal);
+        Assert.False(message.Metadata.ToJson().ContainsKey("remediation"));
+        message.Validate();
+
+        // The current-state API agrees with what was stored and announced.
+        var status = PrerequisitesEndpoints.Project(first.Registry, first.Tools, first.Skills, DateTimeOffset.UtcNow).Prerequisites.Single(p => p.Id == "sample.x");
+        Assert.Equal("Error", status.State);
+        Assert.Equal(PrerequisiteCodes.NotRegistered, status.Code);
+        Assert.Equal((await first.Store.LoadStateAsync(NodeId.Local, "sample.x"))!.State.ToString(), status.State);
+        first.Dispose();
+
+        var second = NewHost();
+        second.Tools.Register(new PackageId("package.p"), new ProbeTool("sample.needs-x", requires: ["sample.x"]));
+        Assert.Equal(0, (await second.Service.RefreshAsync()).Messages);
+        Assert.Single((await second.Store.QueryAsync(new SystemMessageQuery())).Items);
+        second.Dispose();
+    }
+
+    [Fact]
+    public async Task ADeclaredButUnregisteredPrerequisite_IsWarningOnlyForOptionalDependents_WhoStayAvailableButDegraded_AndOneMessageCoversManyComponents()
+    {
+        var host = NewHost();
+        host.Tools.Register(new PackageId("package.p"), new ProbeTool("sample.a", optional: ["sample.x"]));
+        host.Tools.Register(new PackageId("package.p"), new ProbeTool("sample.b", optional: ["sample.x"]));
+        host.Skills.Register(new PackageId("package.p"), new ProbeSkill("sample.skill", new ProbeCapability("sample.cap", ["sample.x"])));
+
+        await host.Service.RefreshAsync();
+
+        Assert.NotNull(host.Tools.ResolveForExecution("sample.a"));
+        Assert.True(host.Tools.GetReadiness().All(r => r.Available && r.Degraded));
+        Assert.Null(host.Skills.Resolve("sample.skill", "sample.cap"));
+        var message = Assert.Single((await host.Store.QueryAsync(new SystemMessageQuery())).Items);
+        Assert.Equal(SystemMessageSeverity.Error, message.Severity); // a required dependent exists (the Skill Capability)
+        Assert.Equal(3, message.Metadata.ToJson()["affectedComponentCount"]!.GetValue<int>());
+        host.Dispose();
+
+        var optionalOnly = NewHost();
+        optionalOnly.Tools.Register(new PackageId("package.p"), new ProbeTool("sample.a", optional: ["sample.y"]));
+        await optionalOnly.Service.RefreshAsync();
+        Assert.Equal(SystemMessageSeverity.Warning, Assert.Single((await optionalOnly.Store.QueryAsync(new SystemMessageQuery { Text = "'sample.y'" })).Items).Severity);
+        Assert.NotNull(optionalOnly.Tools.ResolveForExecution("sample.a"));
+        optionalOnly.Dispose();
+    }
+
+    [Fact]
+    public async Task WhenACheckIsLaterRegistered_TheNextRealResultTransitionsNormally_AndRecoveryIsOneInformation()
+    {
+        var host = NewHost();
+        host.Tools.Register(new PackageId("package.p"), new ProbeTool("system.dump_analyze", requires: [Debugger]));
+        await host.Service.RefreshAsync();
+        Assert.Null(host.Tools.ResolveForExecution("system.dump_analyze"));
+
+        var check = new ToggleCheck(DebuggerDescriptor(), PrerequisiteState.Unavailable);
+        host.Registry.Register(new PackageId("package.debugger"), check);
+        await host.Service.RefreshAsync();
+        Assert.Equal(PrerequisiteCodes.MessageMissing, (await host.Store.QueryAsync(new SystemMessageQuery { Severity = SystemMessageSeverity.Warning })).Items.Single().Code);
+
+        check.State = PrerequisiteState.Available;
+        await host.Service.RefreshAsync();
+        await host.Service.RefreshAsync();
+
+        Assert.NotNull(host.Tools.ResolveForExecution("system.dump_analyze"));
+        var all = (await host.Store.QueryAsync(new SystemMessageQuery { PageSize = 200 })).Items;
+        Assert.Equal(
+            [PrerequisiteCodes.MessageNotRegistered, PrerequisiteCodes.MessageMissing, PrerequisiteCodes.MessageRecovered],
+            all.OrderBy(m => m.TimestampUtc).ThenBy(m => m.Id).Select(m => m.Code));
+        host.Dispose();
     }
 
     [Fact]
@@ -295,7 +451,7 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
         host.Dispose();
     }
 
-    private Host NewHost() => new(_directory);
+    private Host NewHost(bool failable = false) => new(_directory, failable);
 
     private static ToggleCheck Compose(Host host, PrerequisiteState state)
     {
@@ -317,15 +473,22 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
     /// <summary>One "process": its own registry, registries and store handle over the shared database file.</summary>
     private sealed class Host : IDisposable
     {
-        public Host(string directory)
+        public Host(string directory, bool failable = false)
         {
             Store = new SqliteSystemMessageStore(Path.Combine(directory, "system-messages.db"));
+            Failing = failable ? new FailableStore(Store) : null;
             Registry = new PrerequisiteRegistry(TimeProvider.System, TimeSpan.Zero);
             Tools = new ToolRegistry(Registry);
             Skills = new SkillRegistry(Registry);
             Service = new PrerequisiteReadinessService(
-                Registry, new PrerequisiteTransitionRecorder(Store, NodeId.Local), Tools, Skills, NullLogger<PrerequisiteReadinessService>.Instance);
+                Registry,
+                new PrerequisiteTransitionRecorder(Failing is null ? Store : Failing, NodeId.Local),
+                Tools,
+                Skills,
+                NullLogger<PrerequisiteReadinessService>.Instance);
         }
+
+        public FailableStore? Failing { get; }
 
         public SqliteSystemMessageStore Store { get; }
 
@@ -443,15 +606,22 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
         }
     }
 
-    private sealed class BrokenStore : IPrerequisiteStateStore
+    /// <summary>The real store, except that saving can be made to fail — for every prerequisite or for chosen ids.</summary>
+    private sealed class FailableStore(SqliteSystemMessageStore inner) : IPrerequisiteStateStore
     {
+        public bool FailAll { get; set; }
+
+        public HashSet<string> FailFor { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public Task<PrerequisiteStateRecord?> LoadStateAsync(NodeId node, string prerequisiteId, CancellationToken ct = default) =>
-            throw new IOException("disk full");
+            inner.LoadStateAsync(node, prerequisiteId, ct);
 
         public Task<IReadOnlyList<PrerequisiteStateRecord>> ListStatesAsync(NodeId node, CancellationToken ct = default) =>
-            throw new IOException("disk full");
+            inner.ListStatesAsync(node, ct);
 
         public Task<bool> SaveStateAsync(PrerequisiteStateRecord state, string? expectedFingerprint, SystemMessage? transitionMessage, CancellationToken ct = default) =>
-            throw new IOException("disk full");
+            FailAll || FailFor.Contains(state.PrerequisiteId)
+                ? throw new IOException("disk full: C:\\secret\\system-messages.db")
+                : inner.SaveStateAsync(state, expectedFingerprint, transitionMessage, ct);
     }
 }

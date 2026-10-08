@@ -88,6 +88,9 @@ public sealed class PrerequisiteTransitionRecorder(IPrerequisiteStateStore store
             PrerequisiteState.Available => null,
             PrerequisiteState.Unavailable => (concern, PrerequisiteCodes.MessageMissing, Actionable(result, descriptor, "is unavailable")),
             PrerequisiteState.Degraded => (concern, PrerequisiteCodes.MessageDegraded, Actionable(result, descriptor, "is degraded")),
+            // A structural fault of the declaration, not of the world: required dependents cannot run at all, optional ones run degraded.
+            PrerequisiteState.Error when result.Code == PrerequisiteCodes.NotRegistered =>
+                (required ? SystemMessageSeverity.Error : SystemMessageSeverity.Warning, PrerequisiteCodes.MessageNotRegistered, result.Message),
             _ => (SystemMessageSeverity.Error, PrerequisiteCodes.MessageCheckFailed, result.Message),
         };
 

@@ -54,8 +54,8 @@ internal sealed class PluginLifecycleApiHarness : IDisposable
     /// <summary>How many times any emitted plugin's constructor ran (i.e. plugin code executed) in this host.</summary>
     internal int Executions => File.Exists(MarkerPath) ? File.ReadAllText(MarkerPath).Length : 0;
 
-    internal byte[] Archive(string version = "1.0.0", bool throwOnActivate = false, bool sign = true, string? notes = null, string id = PluginArchiveFixture.PluginId) =>
-        _fixture.Build(version, MarkerPath, throwOnActivate, id, sign, notes);
+    internal byte[] Archive(string version = "1.0.0", bool throwOnActivate = false, bool sign = true, string? notes = null, string id = PluginArchiveFixture.PluginId, bool withCheck = false) =>
+        _fixture.Build(version, MarkerPath, throwOnActivate, id, sign, notes, withCheck);
 
     internal HttpClient Anonymous() => Track(Factory.CreateAnonymousClient());
 
@@ -134,9 +134,9 @@ internal sealed class PluginLifecycleApiHarness : IDisposable
         ActionAsync(client, id, "recover", ifMatch, new { confirmed }, key);
 
     /// <summary>Installs through the real endpoint as the administrator and asserts it succeeded; returns the new ETag.</summary>
-    internal async Task<string> InstallAsync(string version = "1.0.0", bool throwOnActivate = false)
+    internal async Task<string> InstallAsync(string version = "1.0.0", bool throwOnActivate = false, bool withCheck = false)
     {
-        using var response = await UploadNewAsync(Client, Archive(version, throwOnActivate));
+        using var response = await UploadNewAsync(Client, Archive(version, throwOnActivate, withCheck: withCheck));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return response.Headers.ETag!.Tag;
     }
