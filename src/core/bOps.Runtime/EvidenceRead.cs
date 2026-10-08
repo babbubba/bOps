@@ -36,6 +36,9 @@ internal enum ControlCallKind
 
     /// <summary>A <c>runtime.</c> name the runtime does not implement: a control protocol error, never a package tool.</summary>
     Unsupported,
+
+    /// <summary>A <c>runtime.</c> call to a function this model turn was not offered (PRE-3B1): a control protocol error, nothing is read.</summary>
+    NotOffered,
 }
 
 /// <summary>The first <c>runtime.</c> control call of a model response (PRE-3A); its directive is the one legacy text produces.</summary>
@@ -274,6 +277,55 @@ internal static class EvidenceRead
             }
 
             objectStart = text.IndexOf('{', objectStart + 1);
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
+/// PRE-3B1: whether a candidate final response is itself a tool/control invocation envelope rather than prose for the user.
+/// Deliberately closed and shallow: it matches the whole-response shape of the formats the runtime knows (Qwen-style
+/// tool_call / function= markup and a serialized {name, arguments} call object). It is not an XML parser, and prose that
+/// merely mentions a function name is never matched.
+/// </summary>
+internal static class TerminalProtocolArtifact
+{
+    private static readonly string[] EnvelopeStarts = ["<tool_call>", "<function="];
+
+    internal static bool IsArtifact(string? text)
+    {
+        var trimmed = text?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return false;
+        }
+
+        foreach (var start in EnvelopeStarts)
+        {
+            if (trimmed.StartsWith(start, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (trimmed[0] != '{')
+        {
+            return false;
+        }
+
+        try
+        {
+            if (JsonNode.Parse(trimmed) is JsonObject root)
+            {
+                var name = root["name"] ?? root["function"];
+                var hasName = name is JsonValue value && value.TryGetValue<string>(out _);
+                return hasName && (root.ContainsKey("arguments") || root.ContainsKey("parameters"));
+            }
+        }
+        catch (JsonException)
+        {
+            // Not a JSON object: ordinary text that happens to start with a brace.
         }
 
         return false;

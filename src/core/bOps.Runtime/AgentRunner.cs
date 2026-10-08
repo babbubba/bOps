@@ -129,6 +129,10 @@ public sealed class AgentRunner(
         "steps" array when no further tool execution is planned.
         """;
 
+    private const string ProtocolArtifactRetryInstructions =
+        "Your last reply was tool-call or control-protocol markup, not an answer. Either call one of the offered tools " +
+        "with a native tool call, or give your final answer to the operator's goal in plain text.";
+
     private const string EmptyResponseRetryInstructions =
         "Your last reply was empty: it had no text and no tool call. Either call a tool, or give your final " +
         "answer to the operator's goal in plain text.";
@@ -846,6 +850,52 @@ public sealed class AgentRunner(
                 // a genuine dead end for the call either way, not something to retry forever.
                 logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
                 return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
+            }
+
+            if (IsFinalProtocolArtifact(response))
+            {
+                // PRE-3B1: a tool/control envelope is not an answer. It is never persisted as one; the model gets one bounded
+                // terminal correction (no step is added, so neither the cursor nor a PRE-2 correction is touched).
+                try
+                {
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse!));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(ProtocolArtifactRetryInstructions));
+                    response = await CallModelWithOverflowRecoveryAsync(
+                        taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
+                    request = BuildStepRequest(logicalCall.Aggressive);
+                    run.TokensUsed += UsageTokens(response);
+                    if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+                    {
+                        return await StopForTokenCrossingAsync(run, stepCalls, ct);
+                    }
+
+                    var correctionResolution = await ResolveStepEvidenceReadsAsync(
+                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                    if (correctionResolution.Terminal is not null)
+                    {
+                        return correctionResolution.Terminal;
+                    }
+
+                    response = correctionResolution.Response;
+                    request = BuildStepRequest(logicalCall.Aggressive);
+                }
+                catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+                {
+                    return await StopForAttemptDurationAsync(run, stepCalls);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
+                    return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
+                }
+
+                if (IsFinalProtocolArtifact(response))
+                {
+                    // The definitive policy for a failed correction is PRE-3B2; until then the artifact is never a Completed answer.
+                    logger.LogError("Task {TaskId} step {StepIndex}: the model returned a tool/control protocol artifact as its final response", taskId, stepIndex);
+                    return await FailAsync(run, "The model returned a tool or control protocol artifact instead of a final answer.",
+                        (TaskTerminalKind.RuntimeFailure, null), stepCalls, ct);
+                }
             }
 
             if (IsEmptyFinal(response))
@@ -2802,7 +2852,14 @@ public sealed class AgentRunner(
         while (true)
         {
             // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
+            // PRE-3B1: it is served only when this very model-call view offered it (the request that carried AvailableTools).
             var control = EvidenceRead.RecognizeControl(run.TaskId, response);
+            if (control.Kind is ControlCallKind.Valid or ControlCallKind.Malformed
+                && !requestFactory(logicalCall.Aggressive).AvailableTools.Any(tool => tool.Name == EvidenceRead.ControlFunctionName))
+            {
+                control = new ControlCallRecognition(ControlCallKind.NotOffered, control.Call, null);
+            }
+
             var recognition = control.Kind switch
             {
                 ControlCallKind.None => EvidenceRead.Recognize(response),
@@ -2864,7 +2921,9 @@ public sealed class AgentRunner(
                 ? EvidenceRead.Reply(directive!, result)
                 : control.Kind == ControlCallKind.Unsupported
                     ? "Runtime control call rejected: Unsupported. Only runtime.evidence_read exists."
-                    : "EvidenceRead/v1 rejected: Malformed.";
+                    : control.Kind == ControlCallKind.NotOffered
+                        ? "Runtime control call rejected: NotOffered. runtime.evidence_read is not available in this turn."
+                        : "EvidenceRead/v1 rejected: Malformed.";
             if (control.Kind == ControlCallKind.None)
             {
                 logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
@@ -3195,6 +3254,9 @@ public sealed class AgentRunner(
             ? (reply.TextResponse, EvidenceDisclosureOutcome.Accepted)
             : (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
     }
+
+    private static bool IsFinalProtocolArtifact(ModelResponse response) =>
+        (response.IsFinal || response.ToolCalls.Count == 0) && TerminalProtocolArtifact.IsArtifact(response.TextResponse);
 
     private static bool IsEmptyFinal(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0) && string.IsNullOrWhiteSpace(response.TextResponse);
