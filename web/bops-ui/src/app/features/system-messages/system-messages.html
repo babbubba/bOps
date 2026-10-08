@@ -1,0 +1,186 @@
+<div class="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-8">
+  <header>
+    <h1 class="text-2xl font-semibold">{{ 'systemMessages.title' | t }}</h1>
+    <p class="text-sm text-muted">{{ 'systemMessages.subtitle' | t }}</p>
+  </header>
+
+  <form
+    class="grid min-w-0 gap-3 rounded-xl border border-default bg-surface p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4"
+    [attr.aria-label]="'systemMessages.filters.heading' | t"
+    (submit)="$event.preventDefault(); apply()"
+  >
+    <label class="flex min-w-0 flex-col gap-1 text-sm">
+      <span class="text-muted">{{ 'systemMessages.filters.from' | t }}</span>
+      <input
+        type="datetime-local"
+        step="1"
+        name="from"
+        class="min-w-0 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+        [ngModel]="from()"
+        (ngModelChange)="from.set($event)"
+      />
+    </label>
+    <label class="flex min-w-0 flex-col gap-1 text-sm">
+      <span class="text-muted">{{ 'systemMessages.filters.to' | t }}</span>
+      <input
+        type="datetime-local"
+        step="1"
+        name="to"
+        class="min-w-0 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+        [ngModel]="to()"
+        (ngModelChange)="to.set($event)"
+      />
+    </label>
+    <label class="flex min-w-0 flex-col gap-1 text-sm">
+      <span class="text-muted">{{ 'systemMessages.filters.severity' | t }}</span>
+      <select
+        name="severity"
+        class="min-w-0 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+        [ngModel]="severity()"
+        (ngModelChange)="severity.set($event)"
+      >
+        <option value="">{{ 'systemMessages.filters.severityAll' | t }}</option>
+        @for (name of severities; track name) {
+          <option [value]="name">{{ i18n.label('severity', name) }}</option>
+        }
+      </select>
+    </label>
+    <label class="flex min-w-0 flex-col gap-1 text-sm">
+      <span class="text-muted">{{ 'systemMessages.filters.contains' | t }}</span>
+      <input
+        type="text"
+        name="contains"
+        maxlength="256"
+        autocomplete="off"
+        class="min-w-0 rounded-lg border border-default bg-bg px-2 py-1.5 text-sm"
+        [ngModel]="contains()"
+        (ngModelChange)="contains.set($event)"
+      />
+    </label>
+
+    @if (rangeError()) {
+      <p role="alert" class="text-sm text-risk-critical sm:col-span-2 lg:col-span-4">{{ 'systemMessages.filters.rangeError' | t }}</p>
+    }
+
+    <div class="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4">
+      <button type="submit" class="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-accent">
+        {{ 'systemMessages.filters.apply' | t }}
+      </button>
+      <button
+        type="button"
+        class="rounded-lg border border-default px-4 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-accent"
+        (click)="reset()"
+      >
+        {{ 'systemMessages.filters.reset' | t }}
+      </button>
+    </div>
+  </form>
+
+  <section class="min-w-0 rounded-xl border border-default bg-surface p-4 shadow-sm" [attr.aria-busy]="messages.loading()">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">{{ 'systemMessages.results.heading' | t }}</h2>
+
+    @if (messages.error(); as reason) {
+      <div role="alert" class="flex flex-wrap items-center gap-3 text-sm text-risk-critical">
+        <p class="min-w-0 break-words">{{ 'systemMessages.error' | t: { reason: reason } }}</p>
+        <button type="button" class="rounded-lg border border-default px-3 py-1 text-xs font-medium text-text" (click)="messages.refresh()">
+          {{ 'systemMessages.retry' | t }}
+        </button>
+      </div>
+    } @else if (messages.loading() && !messages.loaded()) {
+      <p role="status" class="text-sm text-muted">{{ 'systemMessages.loading' | t }}</p>
+    } @else if (messages.items().length === 0 && !messages.loading()) {
+      <p role="status" class="text-sm text-muted">{{ 'systemMessages.empty' | t }}</p>
+    } @else {
+      @if (messages.loading()) {
+        <p role="status" class="mb-2 text-xs text-muted">{{ 'systemMessages.loading' | t }}</p>
+      }
+      <div class="hidden grid-cols-[11rem_9rem_12rem_1fr] gap-3 px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted md:grid" aria-hidden="true">
+        <span>{{ 'systemMessages.col.when' | t }}</span>
+        <span>{{ 'systemMessages.col.severity' | t }}</span>
+        <span>{{ 'systemMessages.col.source' | t }}</span>
+        <span>{{ 'systemMessages.col.message' | t }}</span>
+      </div>
+      <ul class="flex flex-col">
+        @for (message of messages.items(); track message.id) {
+          <li class="min-w-0 border-t border-default first:border-t-0" data-testid="system-message">
+            <button
+              type="button"
+              class="grid w-full min-w-0 gap-1 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent/5 focus-visible:outline-2 focus-visible:outline-accent md:grid-cols-[11rem_9rem_12rem_1fr] md:gap-3"
+              [attr.aria-expanded]="expanded().has(message.id)"
+              [attr.aria-controls]="'system-message-' + message.id"
+              [attr.title]="(expanded().has(message.id) ? 'systemMessages.details.hide' : 'systemMessages.details.show') | t"
+              (click)="toggle(message.id)"
+            >
+              <time class="text-xs text-muted md:text-sm" [attr.datetime]="message.timestampUtc">{{ i18n.dateTime(message.timestampUtc) }}</time>
+              <span>
+                <span
+                  data-testid="severity"
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                  [class]="severityClasses(message.severity)"
+                  [attr.aria-label]="'systemMessages.severity.aria' | t: { severity: i18n.label('severity', message.severity) }"
+                >
+                  <span aria-hidden="true">{{ severityIcon(message.severity) }}</span>
+                  <span>{{ i18n.label('severity', message.severity) }}</span>
+                </span>
+              </span>
+              <span class="min-w-0 break-all text-xs text-muted md:text-sm">{{ message.source }}</span>
+              <span class="min-w-0 break-words">{{ message.message }}</span>
+            </button>
+
+            @if (expanded().has(message.id)) {
+              <dl
+                [id]="'system-message-' + message.id"
+                class="mx-3 mb-3 grid min-w-0 gap-x-4 gap-y-1 rounded-lg bg-bg p-3 text-xs sm:grid-cols-[10rem_1fr]"
+              >
+                <dt class="text-muted">{{ 'systemMessages.details.code' | t }}</dt>
+                <dd class="min-w-0 break-all font-mono">{{ message.code }}</dd>
+                <dt class="text-muted">{{ 'systemMessages.details.source' | t }}</dt>
+                <dd class="min-w-0 break-all font-mono">{{ message.source }}</dd>
+                <dt class="text-muted">{{ 'systemMessages.details.timestamp' | t }}</dt>
+                <dd class="min-w-0 break-all font-mono">{{ message.timestampUtc }}</dd>
+                <dt class="text-muted">{{ 'systemMessages.details.severity' | t }}</dt>
+                <dd class="min-w-0">{{ i18n.label('severity', message.severity) }}</dd>
+                @if (message.taskId) {
+                  <dt class="text-muted">{{ 'systemMessages.details.taskId' | t }}</dt>
+                  <dd class="min-w-0 break-all font-mono">{{ message.taskId }}</dd>
+                }
+                @if (message.componentType) {
+                  <dt class="text-muted">{{ 'systemMessages.details.componentType' | t }}</dt>
+                  <dd class="min-w-0 break-all font-mono">{{ message.componentType }}</dd>
+                }
+                @if (message.componentId) {
+                  <dt class="text-muted">{{ 'systemMessages.details.componentId' | t }}</dt>
+                  <dd class="min-w-0 break-all font-mono">{{ message.componentId }}</dd>
+                }
+                @if (hasMetadata(message)) {
+                  <dt class="text-muted">{{ 'systemMessages.details.metadata' | t }}</dt>
+                  <dd class="min-w-0"><pre data-testid="metadata" class="max-w-full overflow-x-auto whitespace-pre-wrap break-all font-mono">{{ metadataText(message) }}</pre></dd>
+                }
+              </dl>
+            }
+          </li>
+        }
+      </ul>
+
+      <nav class="mt-3 flex items-center justify-between gap-2 text-sm" [attr.aria-label]="'systemMessages.page.nav' | t">
+        <button
+          type="button"
+          class="rounded-lg border border-default px-3 py-1 disabled:opacity-50"
+          [disabled]="messages.cursorIndex() === 0 || messages.loading()"
+          (click)="previous()"
+        >
+          {{ 'systemMessages.page.previous' | t }}
+        </button>
+        <span class="text-xs text-muted">{{ 'systemMessages.page.label' | t: { page: messages.cursorIndex() + 1 } }}</span>
+        <button
+          type="button"
+          class="rounded-lg border border-default px-3 py-1 disabled:opacity-50"
+          [disabled]="!messages.nextCursor() || messages.loading()"
+          (click)="next()"
+        >
+          {{ 'systemMessages.page.next' | t }}
+        </button>
+      </nav>
+    }
+  </section>
+</div>

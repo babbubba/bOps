@@ -22,6 +22,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/plugins/plugins').then((m) => m.Plugins),
   },
   {
+    path: 'system-messages',
+    loadComponent: () =>
+      import('./features/system-messages/system-messages').then((m) => m.SystemMessages),
+  },
+  {
     path: 'settings',
     loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
   },

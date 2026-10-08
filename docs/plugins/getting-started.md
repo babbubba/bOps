@@ -186,6 +186,57 @@ Per-step Tool policy and verification still apply. V1.1 Skill runs are terminal 
 after interruption, prepare a new run and obtain a new approval rather than replaying a partial
 plan.
 
+## Declaring prerequisites
+
+If your tool or Capability needs something outside bOps (a daemon, a client binary, a licence file), declare it instead of
+failing at execution. Name the prerequisite by a lowercase dotted id and implement a **read-only** check
+([ADR-0049](../architecture/adr/0049-unified-prerequisite-readiness-and-system-messages.md)):
+
+```csharp
+using bOps.Abstractions;
+
+public sealed class DatabaseCheck : IPrerequisiteCheck
+{
+    public PrerequisiteDescriptor Descriptor { get; } = new(
+        "acme.postgres", "Acme PostgreSQL service", "The database the Acme tools query.", PrerequisiteKind.Service)
+    {
+        Remediation = "Start the PostgreSQL service the Acme plugin is configured to use.",
+    };
+
+    public async Task<PrerequisiteCheckOutcome> CheckAsync(CancellationToken ct = default) =>
+        await CanConnectAsync(ct)
+            ? new PrerequisiteCheckOutcome(PrerequisiteState.Available, "available", "The service answers.")
+            : new PrerequisiteCheckOutcome(PrerequisiteState.Unavailable, "not-reachable", "The service does not answer.");
+}
+
+public sealed class AcmeProvider : IToolProvider, IPrerequisiteProvider
+{
+    public IEnumerable<ITool> GetTools() => [new AcmeQueryTool()];
+    public IReadOnlyList<IPrerequisiteCheck> GetPrerequisiteChecks() => [new DatabaseCheck()];
+}
+```
+
+The tool then declares `Requires = ["acme.postgres"]` (needed: no service, the tool is registered but not available) or
+`OptionalRequires = ["acme.postgres"]` (nice to have: the tool stays available and is shown as degraded);
+`CapabilityManifest` has the same two properties. Rules:
+
+- The same entry type that provides tools or Skills may also implement `IPrerequisiteProvider`; the host finds it, registers the
+  checks under *its* `PackageId` and removes them when the plugin is disabled or unloaded. A disabled plugin's check never runs.
+- A check only **observes**; it never installs, starts or changes anything. Honour the `CancellationToken`; the host also
+  cancels it after `Descriptor.CheckTimeout` (1–60 s, default 10 s).
+- You supply the state, a stable lowercase code (`^[a-z0-9]+([.-][a-z0-9]+)*$`), a short message and optional bounded
+  metadata. You never supply the id (it comes from the descriptor), the time or the package id. A thrown exception becomes
+  `Error`/`check-failed` without its text; a timeout becomes `check-timeout`.
+- Each id may be registered by exactly one package; a duplicate (including a first-party id) refuses the contribution and,
+  for a plugin, the activation. Use your own namespace (`acme.…`).
+- Messages, remediation and metadata are shown to administrators and stored: never put a secret, a credential or a connection
+  string in them (metadata rejects secret-looking keys and values).
+- Your plugin never receives the registry. `ICapabilityProbe` (rule A10) is a read-only boolean view of other prerequisites.
+- Declaring an id nobody registered is fail-closed and announced once as `prerequisite.not-registered`.
+
+The operator sees a transition (not each check) on the **System messages** page; see
+[operator configuration §12](../operator-configuration.md#12-prerequisite-readiness-and-system-messages).
+
 ## Signing, trusting and installing it locally
 
 Build your plugin (`dotnet build -c Release`), then point the CLI at the output directory

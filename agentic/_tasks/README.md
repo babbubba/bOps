@@ -35,6 +35,7 @@ snapshots under `agentic/obsolete/`.
 | 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
 | independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
+| independent | [`V1.3.z prerequisite readiness and system messages`](2026-10-08-v1.3z-prerequisite-readiness-system-messages.md) | **Session 1 of 3 complete on branch `feature/prerequisite-readiness-system-messages`; Session 2 next; not merged** | alto |
 | completed | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **Closed — HARDEN-1 through HARDEN-14 completed and merged; HARDEN-14 via PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`) | alto / molto alto per packet |
 
 Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root

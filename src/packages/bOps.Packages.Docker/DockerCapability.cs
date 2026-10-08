@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using bOps.Abstractions;
 using Docker.DotNet;
 
 namespace bOps.Packages.Docker;
@@ -22,6 +23,26 @@ public static class DockerCapability
     /// Until then the tool is hidden from the planner rather than offered and refused (ADR-0033).
     /// </summary>
     public const string BuildContexts = "docker.build-contexts";
+
+    /// <summary>What the host's prerequisite registry shows for <see cref="Name"/> (ADR-0049); the id is the existing capability id.</summary>
+    public static PrerequisiteDescriptor DaemonDescriptor { get; } = new(
+        Name,
+        "Docker daemon",
+        "A reachable Docker daemon, required by every docker.* tool.",
+        PrerequisiteKind.Service)
+    {
+        Remediation = "Start the Docker daemon, or set Docker:Endpoint to a reachable daemon, and make sure the bOps service account may use it.",
+    };
+
+    /// <summary>What the host's prerequisite registry shows for <see cref="BuildContexts"/> (ADR-0049); the id is the existing capability id.</summary>
+    public static PrerequisiteDescriptor BuildContextsDescriptor { get; } = new(
+        BuildContexts,
+        "Docker build contexts",
+        "At least one configured directory that docker.build may build from.",
+        PrerequisiteKind.Configuration)
+    {
+        Remediation = "Set Docker:Build:Contexts to at least one directory docker.build is allowed to build from.",
+    };
 
     /// <summary>Whether a build context directory is configured. The host registers this against <see cref="BuildContexts"/>.</summary>
     public static Task<bool> IsBuildConfiguredAsync(DockerBuildOptions options)

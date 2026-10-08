@@ -181,8 +181,17 @@ public sealed record ToolManifest
     /// <summary>Platform identifiers this tool runs on: <c>"windows"</c>, <c>"linux"</c>.</summary>
     public required IReadOnlyList<string> Platforms { get; init; }
 
-    /// <summary>Capability identifiers this tool needs to be available, checked via <see cref="ICapabilityProbe"/>.</summary>
+    /// <summary>
+    /// Prerequisite ids this tool <b>requires</b>, checked via <see cref="ICapabilityProbe"/>. While any is not satisfied the
+    /// tool stays registered but is unavailable: never offered to a model and never resolved for execution (ADR-0049).
+    /// </summary>
     public required IReadOnlyList<string> Requires { get; init; }
+
+    /// <summary>
+    /// Prerequisite ids this tool uses when present but runs without (ADR-0049). An unsatisfied optional prerequisite
+    /// leaves the tool available and marks it degraded. Empty by default; an id may not also appear in <see cref="Requires"/>.
+    /// </summary>
+    public IReadOnlyList<string> OptionalRequires { get; init; } = [];
 
     /// <summary>The parameters this tool accepts.</summary>
     public required IReadOnlyList<ToolParameter> Parameters { get; init; }

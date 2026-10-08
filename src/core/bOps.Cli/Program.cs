@@ -107,10 +107,25 @@ if (delegateInvocation is { NeedsNoModel: true })
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISecretProvider, EnvironmentSecretProvider>();
-builder.Services.AddSingleton<ICapabilityProbe>(services =>
-    new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
-builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
-builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
+
+// ADR-0049: the same host-owned prerequisite registry as bOps.Api. Packages and plugins only ever receive the read-only
+// ICapabilityProbe view; IPrerequisiteRegistrar is host-only. The CLI refreshes once per run (no timer): see the refresh below.
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(PrerequisiteOptions.SectionName).Get<PrerequisiteOptions>()?.Validate()
+    ?? new PrerequisiteOptions());
+builder.Services.AddSingleton(sp => new PrerequisiteRegistry(
+    sp.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30), sp.GetRequiredService<PrerequisiteOptions>().MaxConcurrency));
+builder.Services.AddSingleton<IPrerequisiteStateSource>(sp => sp.GetRequiredService<PrerequisiteRegistry>());
+builder.Services.AddSingleton<IPrerequisiteRegistrar>(sp => sp.GetRequiredService<PrerequisiteRegistry>());
+builder.Services.AddSingleton<ICapabilityProbe>(sp => sp.GetRequiredService<PrerequisiteRegistry>().AsCapabilityProbe());
+builder.Services.AddSingleton(sp => new ToolRegistry(sp.GetRequiredService<IPrerequisiteStateSource>()));
+builder.Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
+builder.Services.AddSingleton(sp => new SkillRegistry(sp.GetRequiredService<IPrerequisiteStateSource>()));
+builder.Services.AddSingleton<ISkillRegistry>(sp => sp.GetRequiredService<SkillRegistry>());
+builder.Services.AddSingleton(sp => new SqliteSystemMessageStore(
+    sp.GetRequiredService<IConfiguration>()["SystemMessages:FilePath"] ?? "system-messages.db"));
+builder.Services.AddSingleton<IPrerequisiteStateStore>(sp => sp.GetRequiredService<SqliteSystemMessageStore>());
+builder.Services.AddSingleton(sp => new PrerequisiteTransitionRecorder(sp.GetRequiredService<IPrerequisiteStateStore>(), NodeId.Local));
+builder.Services.AddSingleton<PrerequisiteReadinessService>();
 builder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
 builder.Services.AddSingleton<IAuditSink>(
     _ => new JsonLinesAuditSink(builder.Configuration["Audit:FilePath"] ?? "audit.jsonl"));
@@ -160,19 +175,14 @@ var dockerClientFactory = new DockerClientFactory(builder.Configuration["Docker:
 // which volume drivers docker.volume.create accepts. Both are the Docker package's own settings.
 var dockerBuildOptions = builder.Configuration.GetSection("Docker:Build").Get<DockerBuildOptions>() ?? new DockerBuildOptions();
 var dockerVolumeOptions = builder.Configuration.GetSection("Docker:Volumes").Get<DockerVolumeOptions>() ?? new DockerVolumeOptions();
-if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe cachingCapabilityProbe)
-{
-    cachingCapabilityProbe.RegisterCheck(DockerCapability.Name, ct => DockerCapability.IsAvailableAsync(dockerClientFactory, ct));
-    cachingCapabilityProbe.RegisterCheck(DockerCapability.BuildContexts, _ => DockerCapability.IsBuildConfiguredAsync(dockerBuildOptions));
-}
 
 // web.search declares Requires: ["web.searxng"] (rule A8) — an unconfigured instance removes it
 // from what the planner sees, the same pattern docker.* uses for an absent daemon.
 var webSearchOptions = host.Services.GetRequiredService<WebSearchOptions>();
-if (host.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe webCapabilityProbe)
-{
-    webCapabilityProbe.RegisterCheck(WebCapabilities.Searxng, ct => WebCapabilities.IsSearxngConfiguredAsync(webSearchOptions, ct));
-}
+
+// ADR-0049: first-party checks register on the host-owned registry; enabled plugins' providers follow at activation, below.
+FirstPartyPrerequisiteComposition.Register(
+    host.Services.GetRequiredService<PrerequisiteRegistry>(), dockerClientFactory, dockerBuildOptions, webSearchOptions);
 
 var firstPartyRegistrations = FirstPartyToolComposition.Create(new FirstPartyToolCompositionOptions(
     new FilesystemToolProvider(pathPolicy, filesystemInventoryOptions, filesystemOperationsOptions),
@@ -202,7 +212,9 @@ if (pluginStartupErrors.Count > 0)
     }
 }
 
-await toolRegistry.RefreshCapabilitiesAsync();
+// ADR-0049: the CLI's one-shot readiness refresh, with the same ordering as the API's boot refresh (checks, atomically recorded
+// transitions and messages, then Tool and Skill availability). No periodic timer: a CLI run is short-lived.
+await host.Services.GetRequiredService<PrerequisiteReadinessService>().RefreshAsync();
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), host.Services.GetRequiredService<OpenRouterProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.ollama"), host.Services.GetRequiredService<OllamaProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.llamacpp"), host.Services.GetRequiredService<LlamaCppProviderPackage>());
@@ -263,7 +275,8 @@ var runner = new AgentRunner(
     host.Services.GetRequiredService<TimeProvider>(),
     host.Services.GetRequiredService<ILogger<AgentRunner>>(),
     runnerOptions,
-    skillRegistry);
+    skillRegistry,
+    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 
@@ -390,7 +403,8 @@ static PluginManager CreatePluginManager(
         services.GetRequiredService<ILoggerFactory>(),
         services.GetRequiredService<IHttpClientFactory>(),
         services.GetRequiredService<TimeProvider>(),
-        services.GetRequiredService<ICapabilityProbe>());
+        services.GetRequiredService<ICapabilityProbe>(),
+        services.GetService<IPrerequisiteRegistrar>());
 
 static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
 {
@@ -404,8 +418,9 @@ static async Task<int> RunPluginCommandAsync(string[] pluginArgs)
     pluginBuilder.Logging.AddSimpleConsole(options => options.SingleLine = true);
     pluginBuilder.Services.AddHttpClient();
     pluginBuilder.Services.AddSingleton(TimeProvider.System);
+    // The plugin-management commands activate nothing for execution, so they register no prerequisite providers (no registrar).
     pluginBuilder.Services.AddSingleton<ICapabilityProbe>(services =>
-        new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
+        new PrerequisiteRegistry(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)).AsCapabilityProbe());
     pluginBuilder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
     pluginBuilder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
     pluginBuilder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();

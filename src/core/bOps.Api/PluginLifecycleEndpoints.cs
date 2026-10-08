@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using bOps.Abstractions;
 using bOps.PluginHost;
+using bOps.Runtime;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Net.Http.Headers;
 
@@ -158,7 +159,8 @@ internal static class PluginLifecycleEndpoints
     }
 
     private static async Task<IResult> EnableAsync(
-        string id, EnablePluginRequest? request, HttpContext http, ClaimsPrincipal principal, PluginLifecycleService lifecycle, ILoggerFactory loggers)
+        string id, EnablePluginRequest? request, HttpContext http, ClaimsPrincipal principal, PluginLifecycleService lifecycle,
+        PrerequisiteReadinessService readiness, ILoggerFactory loggers)
     {
         var prepared = Prepare(id, http, principal);
         if (prepared.Error is not null)
@@ -168,11 +170,16 @@ internal static class PluginLifecycleEndpoints
 
         // A missing or wrong confirmation is passed through as-is; only the backend decides, and it loads nothing without it.
         return await RunAsync(http, loggers, async () =>
-            (await lifecycle.EnableAsync(prepared.Context!, id, prepared.Expected, request?.ConfirmedVersion, http.RequestAborted), StatusCodes.Status200OK));
+        {
+            var result = await lifecycle.EnableAsync(prepared.Context!, id, prepared.Expected, request?.ConfirmedVersion, http.RequestAborted);
+            await RefreshReadinessAsync(result, readiness, loggers, http.RequestAborted);
+            return (result, StatusCodes.Status200OK);
+        });
     }
 
     private static async Task<IResult> DisableAsync(
-        string id, HttpContext http, ClaimsPrincipal principal, PluginLifecycleService lifecycle, ILoggerFactory loggers)
+        string id, HttpContext http, ClaimsPrincipal principal, PluginLifecycleService lifecycle,
+        PrerequisiteReadinessService readiness, ILoggerFactory loggers)
     {
         var prepared = Prepare(id, http, principal);
         if (prepared.Error is not null)
@@ -181,7 +188,39 @@ internal static class PluginLifecycleEndpoints
         }
 
         return await RunAsync(http, loggers, async () =>
-            (await lifecycle.DisableAsync(prepared.Context!, id, prepared.Expected, http.RequestAborted), StatusCodes.Status200OK));
+        {
+            var result = await lifecycle.DisableAsync(prepared.Context!, id, prepared.Expected, http.RequestAborted);
+            await RefreshReadinessAsync(result, readiness, loggers, http.RequestAborted);
+            return (result, StatusCodes.Status200OK);
+        });
+    }
+
+    /// <summary>
+    /// ADR-0049: a committed enable or disable changed the registered Tools, Skills and prerequisite checks, so run one readiness cycle
+    /// before answering instead of leaving the snapshot stale until the periodic refresh. The lifecycle transaction is already
+    /// authoritative: nothing here can fail, roll back or alter its result — a refresh that throws (or is cancelled by a caller who left) is
+    /// logged and the periodic refresh remains the retry path. A rejected, stale, failed or replayed operation changed nothing and
+    /// triggers nothing. The refresh lives here, at the host boundary, so the plugin host stays independent of the runtime.
+    /// </summary>
+    private static async Task RefreshReadinessAsync(
+        PluginLifecycleResult result, PrerequisiteReadinessService readiness, ILoggerFactory loggers, CancellationToken ct)
+    {
+        if (!result.Succeeded || result.Replayed)
+        {
+            return;
+        }
+
+        try
+        {
+            await readiness.RefreshAsync(ct);
+        }
+#pragma warning disable CA1031 // The committed lifecycle result must be returned whatever the follow-up refresh does.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            loggers.CreateLogger("bOps.Api.PluginLifecycle").LogWarning(
+                ex, "Plugin '{PluginId}' lifecycle change committed, but the follow-up readiness refresh failed; the periodic refresh will retry.", result.PluginId);
+        }
     }
 
     private static async Task<IResult> RecoverAsync(

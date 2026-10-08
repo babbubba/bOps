@@ -12,6 +12,22 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
   Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
 
+### Added
+
+- Prerequisite readiness and operational system messages (ADR-0049, D-046). A Tool or Skill Capability is *registered*
+  independently of being *available*: `Requires` are required prerequisites and the new `OptionalRequires` leave a component
+  available but degraded. Packages — first-party and enabled plugins alike — contribute read-only `IPrerequisiteCheck`s through
+  an optional `IPrerequisiteProvider`; the host owns ids, timestamps, timeouts and state. Readiness is checked at start, every
+  `Prerequisites:RefreshIntervalSeconds` and immediately after a successful plugin enable or disable. Transitions, never
+  repeated observations, write operator-facing system messages (Information/Warning/Error/Critical) with remediation to a
+  node-local SQLite store (`SystemMessages:FilePath`, default `system-messages.db`; 90-day retention), readable through
+  `GET /api/system-messages` (inclusive from/to, severity, contained text, AND, newest first, opaque keyset cursor, 50 per page)
+  and `GET /api/prerequisites`, and on the new **System messages** page (`/system-messages`, English and Italian). A prerequisite
+  whose observation could not be durably recorded, and one a component declares but no package registered, fail closed
+  (`state-record-failed`, `not-registered`); the latter is announced once. `agent.replan.threshold` is the first runtime-authored
+  message: one Warning per task when its lifetime replans reach `Agent:ReplanWarningThreshold` (default 3). Docker, Docker build
+  contexts and SearXNG moved onto the new registry with unchanged ids. `bOps.Abstractions` is `1.3.0-preview.3` (additive).
+
 ### Fixed
 
 - An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next

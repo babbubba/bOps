@@ -383,6 +383,97 @@ enable/disable and runs only when `BOPS_RUN_REAL_SYSTEMD_TESTS=1` under root, so
 CI runner skips it. Windows CI runs elevated. See
 `tests/bOps.Packages.Service.Linux.Tests/LinuxServiceActionToolsTests.cs`.
 
+## 12. Prerequisite readiness and system messages
+
+Some tools and Skill Capabilities need something outside bOps: the Docker daemon, a SearXNG endpoint, a debugger executable,
+a plugin's own service. bOps tells you — in the **System messages** page, `GET /api/system-messages` and nowhere else you
+have to dig — when one of those is missing, why, and how to fix it ([ADR-0049](architecture/adr/0049-unified-prerequisite-readiness-and-system-messages.md)).
+
+**Registered versus available.** A tool or Capability bOps loaded and validated is *registered*. It is *available* only
+while its **required** prerequisites are satisfied. A registered component that is not available is never offered to a
+model and never executes; it is simply not in the catalog until the prerequisite recovers (no restart needed).
+
+| Declared as | Prerequisite is… | The component is… |
+|---|---|---|
+| Required (`Requires`) | `Available` | available |
+| Required | `Degraded` | available, **degraded** |
+| Required | `Unavailable`, `Error` or `Unknown` | **not available** |
+| Optional (`OptionalRequires`) | `Available` | available |
+| Optional | anything else | available, **degraded** (never hidden) |
+
+The four reported states are *Available*, *Degraded*, *Unavailable* (the check ran and the thing is absent) and *Error*
+(the check itself failed, timed out, returned something invalid, or could not be recorded — see below).
+
+**When readiness is checked.**
+
+- **At start.** Every registered check runs once before the API accepts work, and the result decides the first catalog.
+  A missing prerequisite never stops the host; it produces a message.
+- **Periodically.** The API re-checks every `Prerequisites:RefreshIntervalSeconds` (default 30, 5–3600), at most
+  `Prerequisites:MaxConcurrency` (default 4, 1–32) checks at a time. Each check runs under its own timeout (1–60 s,
+  default 10 s). The CLI checks once at start and has no timer.
+- **After a plugin lifecycle change.** A successful `POST /api/plugins/{id}/enable` or `/disable` runs one readiness cycle
+  *before* it answers, so the catalog and the System Messages page already reflect the change. The lifecycle result is
+  authoritative: if that follow-up refresh fails it is logged, the enable/disable still stands, and the periodic refresh
+  retries. A rejected, stale, unconfirmed, replayed or failed operation changes nothing and refreshes nothing.
+
+**Declared but not registered.** A component that names a prerequisite no installed package registered a check for
+cannot determine its readiness. It is fail-closed (required → not available, optional → degraded) and is announced once as
+`prerequisite.not-registered` — *"No package registered a check for prerequisite 'x'. Components depending on it cannot
+determine readiness."* — with no invented remediation. When a package later registers the check, its next result
+transitions normally and a recovery message follows. `GET /api/prerequisites` reports the same `Error`/`not-registered`
+state.
+
+**Fail-closed persistence.** An observation is recorded durably (state and message in one transaction) *before* any
+component may rely on it. If recording fails, that prerequisite is treated as `Error` with the stable reason
+`state-record-failed` — required dependents are not available, optional ones degraded — until a later observation can be
+recorded. Raw database errors are only in the server log, never in a message or API field. Other prerequisites are still
+recorded. If the system-message store itself is unavailable no message can be written, and nothing gains authority.
+
+**What a message contains.** One message per prerequisite *transition* (fingerprint `state|code`), never per refresh and
+never per affected tool: repeated identical observations, and a process restart that observes the same state, write
+nothing. A first `Available` is quiet; `Unavailable`/`Degraded` are a `Warning` when a component requires the
+prerequisite (otherwise `Information`); a failing check is an `Error`; recovery is `Information`. The text is
+*"<display name> is unavailable. <remediation>"* with the package-supplied remediation, and metadata lists at most 16 affected components plus
+their full count. Metadata is bounded (32 entries, 4,096 bytes) and refuses secret-looking keys and values.
+
+**System messages are not logs, audit or model input.** Logs are for developers and are not copied into messages. The
+audit chain (`audit.jsonl`) records actions and proves them; system messages prove nothing, are not hash-chained and can be
+purged. Neither messages nor prerequisite state ever enter a model context.
+
+**Configuration.**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `SystemMessages:FilePath` | `system-messages.db` | SQLite database for messages and prerequisite state. A relative path is resolved from the **process working directory**, like the other relative store paths (`Memory:FilePath`, `Delegation:FilePath`). The API and the CLI each read this key independently; point both at the same absolute path to share one inbox. |
+| `SystemMessages:RetentionDays` | 90 | Messages older than this are deleted (1–3650). |
+| `SystemMessages:RetentionIntervalMinutes` | 360 | One bounded purge when the API starts, then every interval (5–10080); never on insert. |
+| `Prerequisites:RefreshIntervalSeconds` | 30 | API refresh period. |
+| `Prerequisites:MaxConcurrency` | 4 | Parallel checks per refresh. |
+| `Agent:ReplanWarningThreshold` | 3, capped by `MaxLifetimeReplans` | See below. |
+
+Out-of-range values stop the host at start. There is no migration of `system-messages.db` to a per-user location.
+
+**The `agent.replan.threshold` message.** When an accepted replan brings a task's *lifetime* replan count (across every
+execution attempt) to `Agent:ReplanWarningThreshold`, bOps writes one `Warning` from source `runtime/agent` with the task id,
+the provider and model ids, the lifetime count, the threshold, the limit and the execution attempt. It is written once per task
+(a resume already past the threshold, or later replans, write nothing), never for a replan attempt that was not accepted, and
+never contains the goal, prompt, model reply or tool output. Unset, the threshold is 3, lowered to `MaxLifetimeReplans` when that is
+smaller so existing configurations keep working; when set it must be at least 1 and at most `Agent:MaxLifetimeReplans`. Failing to
+write the message is logged and never fails or changes the task.
+
+**Reading messages.**
+
+- **API** (Viewer role): `GET /api/system-messages?fromUtc=&toUtc=&severity=&contains=&pageSize=&cursor=`. `fromUtc` and `toUtc` are
+  inclusive ISO 8601 instants; `severity` is exactly `Information`, `Warning`, `Error` or `Critical`; `contains` is a
+  case-insensitive substring of the message. Every supplied filter must match (AND). Newest first; `pageSize` defaults to 50
+  (max 200); `nextCursor` is an opaque keyset cursor — pass it back as `cursor` for the next, older page (there is no
+  offset). Invalid input is a 400 naming the parameter. `GET /api/prerequisites` (Viewer) shows the *current* state of every
+  prerequisite, which components need it, and the remediation.
+- **UI**: **System messages** (`/system-messages`; *Messaggi di sistema* in Italian). Filters From, To, Severity and *Text contained
+  in message* are sent to the server when you press **Apply** (not while typing); **Reset** clears them. Rows show date/time,
+  severity (word, glyph and accessible label — never colour alone), source and message, 50 per page with Previous/Next; expand a
+  row for code, source, timestamp, severity, task, component and the metadata as escaped JSON text.
+
 ## Related documents
 
 [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·

@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using bOps.Abstractions;
+
 namespace bOps.Packages.Web;
 
 /// <summary>
@@ -14,6 +16,16 @@ public static class WebCapabilities
 {
     /// <summary>The capability identifier: <c>"web.searxng"</c>.</summary>
     public const string Searxng = "web.searxng";
+
+    /// <summary>What the host's prerequisite registry shows for <see cref="Searxng"/> (ADR-0049); the id is the existing capability id.</summary>
+    public static PrerequisiteDescriptor SearxngDescriptor { get; } = new(
+        Searxng,
+        "SearXNG search endpoint",
+        "A configured SearXNG instance, required by web.search.",
+        PrerequisiteKind.Endpoint)
+    {
+        Remediation = "Set Web:Search:BaseUrl to the http(s) address of a SearXNG instance, for example the bundled local one.",
+    };
 
     /// <summary>A well-formed absolute http/https <see cref="WebSearchOptions.BaseUrl"/> is a local, synchronous check — never a live network probe.</summary>
     public static Task<bool> IsSearxngConfiguredAsync(WebSearchOptions options, CancellationToken ct)
