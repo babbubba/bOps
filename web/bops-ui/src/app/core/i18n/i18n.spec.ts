@@ -55,6 +55,7 @@ describe('the catalogues', () => {
       'dashboard.step.ok',
       'plugins.version',
       'dashboard.detail.taskId',
+      'systemMessages.details.taskId',
       'delegations.start.skill',
       'delegations.start.capability',
       'delegations.plan.budget',
