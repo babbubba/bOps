@@ -55,7 +55,7 @@ public sealed class WindowsKernelDumpAnalyzeTool : SystemDumpAnalyzeToolBase
         Func<ProcessStartInfo, TimeSpan, int, CancellationToken, Task<DebuggerProcessResult>> run,
         Func<string> nonce,
         Func<string> dataRoot)
-        : base("windows", WindowsDebuggerCapabilities.KernelDumpAnalysis)
+        : base("windows", WindowsDebuggerCapabilities.KernelDumpAnalysis, WindowsDebuggerCapabilities.DumpCheck)
     {
         this.decidePath = decidePath;
         this.locate = locate;

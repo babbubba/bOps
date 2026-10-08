@@ -13,9 +13,9 @@ namespace bOps.Packages.Sys.Core;
 /// </summary>
 public abstract class SystemDumpAnalyzeToolBase : IToolAuditSummaryProvider
 {
-    /// <summary>Creates the shell for <paramref name="platform"/>, gated on <paramref name="requiredCapability"/>.</summary>
-    protected SystemDumpAnalyzeToolBase(string platform, string requiredCapability) =>
-        Manifest = SystemToolManifests.DumpAnalyze(platform, requiredCapability);
+    /// <summary>Creates the shell for <paramref name="platform"/>, with one required and an optional supporting prerequisite.</summary>
+    protected SystemDumpAnalyzeToolBase(string platform, string requiredCapability, string? optionalCapability = null) =>
+        Manifest = SystemToolManifests.DumpAnalyze(platform, requiredCapability, optionalCapability);
 
     /// <inheritdoc />
     public ToolManifest Manifest { get; }

@@ -4,6 +4,7 @@
 using bOps.Abstractions;
 using bOps.Packages.Docker;
 using bOps.Packages.Web;
+using bOps.Packages.Sys.Windows;
 using bOps.Runtime;
 
 namespace bOps.Hosting;
@@ -15,7 +16,7 @@ namespace bOps.Hosting;
 /// </summary>
 public static class FirstPartyPrerequisiteComposition
 {
-    /// <summary>Registers the Docker and SearXNG prerequisites under their packages' host-assigned ids.</summary>
+    /// <summary>Registers first-party external prerequisites under their packages' host-assigned ids.</summary>
     public static void Register(
         PrerequisiteRegistry registry,
         IDockerClientFactory dockerClientFactory,
@@ -36,5 +37,20 @@ public static class FirstPartyPrerequisiteComposition
         registry.Register(
             new PackageId("bops.packages.web"),
             new BooleanPrerequisiteCheck(WebCapabilities.SearxngDescriptor, ct => WebCapabilities.IsSearxngConfiguredAsync(webSearchOptions, ct)));
+
+        if (OperatingSystem.IsWindows())
+        {
+            var package = new PackageId("bops.packages.system.windows");
+            registry.Register(
+                package,
+                new BooleanPrerequisiteCheck(
+                    WindowsDebuggerCapabilities.KernelDumpAnalysisDescriptor,
+                    WindowsDebuggerCapabilities.IsKernelDumpAnalysisAvailableAsync));
+            registry.Register(
+                package,
+                new BooleanPrerequisiteCheck(
+                    WindowsDebuggerCapabilities.DumpCheckDescriptor,
+                    WindowsDebuggerCapabilities.IsDumpCheckAvailableAsync));
+        }
     }
 }

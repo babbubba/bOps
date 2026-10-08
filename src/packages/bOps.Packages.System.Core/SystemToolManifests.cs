@@ -142,7 +142,7 @@ public static class SystemToolManifests
     /// The manifest for <c>system.dump_analyze</c> on the given platform (ADR-0048). The OS package names the capability that
     /// gates it, so this shared contract never names a debugger.
     /// </summary>
-    public static ToolManifest DumpAnalyze(string platform, string requiredCapability) => new()
+    public static ToolManifest DumpAnalyze(string platform, string requiredCapability, string? optionalCapability = null) => new()
     {
         Name = "system.dump_analyze",
         Description = "Analyzes one Windows kernel crash dump with Microsoft Debugging Tools and returns bounded structured bugcheck, failure-bucket, stack, module, symbol and kernel black-box evidence (schemaVersion 1). "
@@ -154,6 +154,7 @@ public static class SystemToolManifests
         Risk = RiskLevel.Read,
         Platforms = [platform],
         Requires = [requiredCapability],
+        OptionalRequires = optionalCapability is null ? [] : [optionalCapability],
         Parameters =
         [
             new ToolParameter(DumpAnalysisArguments.PathParameter, ToolParameterType.Path,
