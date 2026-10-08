@@ -410,8 +410,15 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
 
         var results = await registry.RefreshAsync();
 
-        Assert.Equal(["docker", "docker.build-contexts", "web.searxng"], results.Select(result => result.Id));
-        Assert.All(results, result => Assert.Equal(PrerequisiteState.Unavailable, result.State));
+        // The Windows debugger prerequisites exist only on a Windows host, and whether kd.exe is installed there is the host's
+        // business, so they are checked for presence below and excluded from the Docker/SearXNG assertions.
+        string[] debuggerIds = ["windows.debugger.dumpchk", "windows.debugger.kd"];
+        var firstParty = results.Where(result => !debuggerIds.Contains(result.Id)).ToArray();
+        Assert.Equal(["docker", "docker.build-contexts", "web.searxng"], firstParty.Select(result => result.Id));
+        Assert.All(firstParty, result => Assert.Equal(PrerequisiteState.Unavailable, result.State));
+        Assert.Equal(
+            OperatingSystem.IsWindows() ? debuggerIds : [],
+            results.Select(result => result.Id).Where(debuggerIds.Contains).Order(StringComparer.Ordinal));
         Assert.All(registry.GetRegistrations(), registration =>
         {
             Assert.False(string.IsNullOrWhiteSpace(registration.Descriptor.DisplayName));
@@ -419,7 +426,9 @@ public sealed class PrerequisiteReadinessIntegrationTests : IDisposable
         });
         Assert.Equal(
             ["bops.packages.docker", "bops.packages.docker", "bops.packages.web"],
-            registry.GetRegistrations().Select(registration => registration.Package.Value));
+            registry.GetRegistrations()
+                .Where(registration => !debuggerIds.Contains(registration.Descriptor.Id))
+                .Select(registration => registration.Package.Value));
 
         var configured = new PrerequisiteRegistry(TimeProvider.System, TimeSpan.Zero);
         FirstPartyPrerequisiteComposition.Register(
