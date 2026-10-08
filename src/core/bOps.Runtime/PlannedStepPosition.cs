@@ -17,9 +17,52 @@ internal readonly record struct PlannedStepPosition(
 {
     internal static PlannedStepPosition Start => default;
 
-    internal static PlannedStepPosition Derive(AgentPlan plan, IEnumerable<PlanStep> steps) =>
-        steps.Where(step => step.PlanRevision == plan.Revision)
-            .Aggregate(Start, (position, step) => position.After(plan, step));
+    internal static PlannedStepPosition Derive(
+        AgentPlan plan, IEnumerable<PlanStep> steps, Func<string, ToolManifest?>? manifestOf = null)
+    {
+        var all = steps as IReadOnlyList<PlanStep> ?? steps.ToList();
+        return all.Where(step => step.PlanRevision == plan.Revision)
+            .Aggregate(Start, (position, step) => position.After(plan, step).Settle(plan, all, manifestOf));
+    }
+
+    /// <summary>
+    /// ADR-0050: moves the cursor over conditional steps whose referenced fact does not exist (a skipped step is terminal and
+    /// costs no model or tool call) and stops on the first unconditional or activated step. A condition that cannot be
+    /// evaluated — a source that is not an earlier step, or a binding that cannot be resolved — fails closed to replan.
+    /// Legacy plans have no conditions and are returned unchanged.
+    /// </summary>
+    internal PlannedStepPosition Settle(
+        AgentPlan plan, IReadOnlyList<PlanStep> steps, Func<string, ToolManifest?>? manifestOf)
+    {
+        var position = this;
+        while (plan.SemanticContractVersion == 1 && !position.ReplanRequired
+               && position.Cursor >= 0 && position.Cursor < plan.Steps.Count
+               && plan.Steps[position.Cursor].Activation is { } condition)
+        {
+            if (condition.SourceStepIndex < 0 || condition.SourceStepIndex >= position.Cursor)
+            {
+                return position with { ReplanRequired = true };
+            }
+
+            if (ConditionalSteps.FindFact(plan, steps, condition) is null)
+            {
+                position = new PlannedStepPosition(position.Cursor + 1, false, false, false);
+                continue;
+            }
+
+            if (condition.BindToArgument is not null
+                && (plan.Steps[position.Cursor].ExpectedTool is not { } tool
+                    || manifestOf?.Invoke(tool) is not { } manifest
+                    || ConditionalSteps.ResolveExpected(plan, steps, position.Cursor, manifest).Problem is not null))
+            {
+                return position with { ReplanRequired = true };
+            }
+
+            return position;
+        }
+
+        return position;
+    }
 
     internal PlannedStepPosition After(AgentPlan plan, PlanStep step) =>
         plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);

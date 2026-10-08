@@ -41,7 +41,25 @@ public sealed record PlannedStep
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ToolArguments? ExpectedArguments { get; init; }
+
+    /// <summary>
+    /// ADR-0050 conditional follow-up: when present, the step runs only if an earlier step of the same plan revision
+    /// produced the referenced <see cref="EvidenceFact"/>; otherwise Runtime skips it deterministically.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EvidenceFactExists? Activation { get; init; }
 }
+
+/// <summary>
+/// The single ADR-0050 activation condition: the fact (<paramref name="FactType"/>, <paramref name="FactKey"/>) was produced
+/// by planned step <paramref name="SourceStepIndex"/> of the same plan revision. Optionally the fact's typed value is the
+/// expected value of exactly one argument, <paramref name="BindToArgument"/> — a direct binding, never a transformation.
+/// </summary>
+/// <param name="SourceStepIndex">Zero-based index of the earlier planned step whose result carries the fact.</param>
+/// <param name="FactType">The opaque <see cref="EvidenceFact.Type"/>.</param>
+/// <param name="FactKey">The opaque <see cref="EvidenceFact.Key"/>.</param>
+/// <param name="BindToArgument">The expected-tool parameter whose expected value is the fact's value; <c>null</c> for no binding.</param>
+public sealed record EvidenceFactExists(int SourceStepIndex, string FactType, string FactKey, string? BindToArgument = null);
 
 /// <summary>
 /// One revision of the model's plan for a task. <see cref="Revision"/> starts at 0 for the plan

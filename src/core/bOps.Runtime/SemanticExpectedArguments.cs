@@ -99,7 +99,7 @@ internal static class SemanticExpectedArguments
         return false;
     }
 
-    private static bool TypedEquals(ToolParameterType type, JsonNode left, JsonNode right) => type switch
+    internal static bool TypedEquals(ToolParameterType type, JsonNode left, JsonNode right) => type switch
     {
         ToolParameterType.String or ToolParameterType.Path or ToolParameterType.Duration or ToolParameterType.Enum =>
             TryString(left, out var leftText) && TryString(right, out var rightText)

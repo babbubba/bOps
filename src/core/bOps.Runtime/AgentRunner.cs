@@ -93,6 +93,9 @@ public sealed class AgentRunner(
         "expectedArguments" is an optional equality-only subset of that tool's parameters. Use it for values that identify
         which planned step a call belongs to. If a tool occurs more than once, every occurrence must have a non-empty
         expectedArguments object, and every pair must share a parameter with different values.
+        A step may add "activation": {"sourceStep": 0, "factType": "...", "factKey": "...", "bindArgument": "param"}
+        (bindArgument optional): it runs only if the earlier step at zero-based position sourceStep produced that
+        evidence fact, and is skipped otherwise.
         List only the steps you can reasonably foresee; you will be asked to revise this plan if
         reality diverges from it. Use an empty "steps" array when no further tool execution is planned.
         """;
@@ -119,6 +122,9 @@ public sealed class AgentRunner(
         "expectedArguments" is an optional equality-only subset of that tool's parameters. If a tool occurs more than
         once, every occurrence must have a non-empty expectedArguments object, and every pair must share a parameter with
         different values.
+        A step may add "activation": {"sourceStep": 0, "factType": "...", "factKey": "...", "bindArgument": "param"}
+        (bindArgument optional): it runs only if the earlier step at zero-based position sourceStep produced that
+        evidence fact, and is skipped otherwise.
         Steps already completed do not need to be repeated. List only what remains; use an empty
         "steps" array when no further tool execution is planned.
         """;
@@ -498,7 +504,7 @@ public sealed class AgentRunner(
             var plan = run.Plans[^1];
             taskActivity?.SetTag("bops.plan_revision", plan.Revision);
             // ADR-0047: the cursor and the spent validation correction come from the persisted steps, exactly as live.
-            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps), ct);
+            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
         }, ct);
     }
 
@@ -752,6 +758,7 @@ public sealed class AgentRunner(
                 logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
                 history = [.. built.Turns, .. logicalCall.ContinuationTurns];
                 var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
+                var promptPlan = ConditionalSteps.WithResolvedCurrentStep(plan, steps, position.Cursor, ManifestOf);
                 var latestPlanStep = steps.LastOrDefault(step => step.PlanRevision == plan.Revision);
                 var correctingSemantics = plan.SemanticContractVersion == 1
                     && latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.SemanticMismatch;
@@ -759,7 +766,7 @@ public sealed class AgentRunner(
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
                 return new ModelRequest(
-                    BuildStepSystemPrompt(plan, limitations, stepTools, correctingSemantics,
+                    BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
                         correctingArguments, aggressive), history, stepTools);
             }
 
@@ -887,8 +894,17 @@ public sealed class AgentRunner(
                     ? registry.ResolveForExecution(primaryCall.ToolName)
                     : null;
 
+                ToolArguments? expectedArguments = null;
+                string? bindingProblem = null;
+                if (resolved is not null)
+                {
+                    (expectedArguments, bindingProblem) = ConditionalSteps.ResolveExpected(
+                        plan, steps, position.Cursor, resolved.Tool.Manifest);
+                }
+
                 if (resolved is not null
-                    && !SemanticExpectedArguments.Matches(resolved.Tool.Manifest, currentPlannedStep!.ExpectedArguments, primaryCall))
+                    && (bindingProblem is not null
+                        || !SemanticExpectedArguments.Matches(resolved.Tool.Manifest, expectedArguments, primaryCall)))
                 {
                     var mismatch = ToolCallResult.Failure(
                         "The offered tool's arguments did not match the current planned step; the call was not executed.")
@@ -1002,7 +1018,15 @@ public sealed class AgentRunner(
             // same reason: it is real information handed to the model, not proof the plan's
             // assumption was wrong (rule S4: Inconclusive is never success, but it is also not
             // evidence of failure).
-            position = position.After(plan, step);
+            var afterStep = position.After(plan, step);
+            position = afterStep.Settle(plan, steps, ManifestOf);
+            if (position.Cursor > afterStep.Cursor && logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "Task {TaskId}: conditional planned steps [{From}, {Before}) skipped, their evidence fact was not produced",
+                    taskId, afterStep.Cursor, position.Cursor);
+            }
+
             var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
                 || step.Result?.Outcome == ToolOutcome.Timeout
                 || verification == VerificationStatus.Refuted
@@ -4058,6 +4082,8 @@ public sealed class AgentRunner(
     /// The current execution step's native-tool authority: the already-authorized view intersected with the exact
     /// planned tool name. Missing, exhausted, unavailable or unauthorized routing information fails closed to no tools.
     /// </summary>
+    private ToolManifest? ManifestOf(string toolName) => registry.ResolveForExecution(toolName)?.Tool.Manifest;
+
     private IReadOnlyList<ToolManifest> StepToolViewFor(
         AgentPlan plan, int plannedStepCursor, DelegatedExecutionScope? delegation)
     {
@@ -4203,7 +4229,10 @@ public sealed class AgentRunner(
 
         var lines = plan.Steps.Select(s =>
             $"{s.Index + 1}. {s.Description}" + (string.IsNullOrEmpty(s.ExpectedTool) ? string.Empty : $" [{s.ExpectedTool}]")
-            + (s.ExpectedArguments is null ? string.Empty : $" expectedArguments={s.ExpectedArguments.ToJson().ToJsonString()}"));
+            + (s.ExpectedArguments is null ? string.Empty : $" expectedArguments={s.ExpectedArguments.ToJson().ToJsonString()}")
+            + (s.Activation is null ? string.Empty
+                : $" runsOnlyIfStep{s.Activation.SourceStepIndex + 1}Produced={s.Activation.FactType}/{s.Activation.FactKey}"
+                  + (s.Activation.BindToArgument is null ? string.Empty : $" bindsArgument={s.Activation.BindToArgument}")));
         return $"Plan (revision {plan.Revision}): {plan.Rationale}\n{string.Join('\n', lines)}";
     }
 
@@ -4261,6 +4290,70 @@ public sealed class AgentRunner(
     // (ADR-0038 review M-2): the default options accept {"steps":[…],"steps":[…]} and throw ArgumentException only on a later
     // access, which would escape as if the model call itself had failed.
     private static readonly JsonDocumentOptions StrictPlanJson = new() { AllowDuplicateProperties = false };
+
+    /// <summary>
+    /// Plan-time validation of an ADR-0050 activation: a bounded fact reference to an earlier step of this same revision and,
+    /// optionally, a binding target that is a declared non-sensitive parameter. Whether the fact exists is runtime state.
+    /// </summary>
+    private static EvidenceFactExists? ParseActivation(
+        JsonNode node, int stepIndex, string expectedTool, Dictionary<string, ToolManifest> manifests, out string? problem)
+    {
+        problem = null;
+        if (node is not JsonObject condition)
+        {
+            problem = "activation must be a JSON object.";
+            return null;
+        }
+
+        foreach (var name in condition.Select(property => property.Key))
+        {
+            if (name is not ("sourceStep" or "factType" or "factKey" or "bindArgument"))
+            {
+                problem = $"unknown activation property '{name}'.";
+                return null;
+            }
+        }
+
+        if (condition["sourceStep"] is not JsonValue sourceNode || !sourceNode.TryGetValue<int>(out var source))
+        {
+            problem = "sourceStep must be an integer.";
+            return null;
+        }
+
+        if (source < 0 || source >= stepIndex)
+        {
+            problem = "sourceStep must be an earlier step of this plan.";
+            return null;
+        }
+
+        static string? Identifier(JsonNode? value) =>
+            value is JsonValue json && json.TryGetValue<string>(out var text)
+            && !string.IsNullOrWhiteSpace(text) && text.Length <= EvidenceFacts.MaximumIdentifierLength
+                ? text
+                : null;
+
+        if (Identifier(condition["factType"]) is not { } factType || Identifier(condition["factKey"]) is not { } factKey)
+        {
+            problem = $"factType and factKey must be non-empty strings of at most {EvidenceFacts.MaximumIdentifierLength} characters.";
+            return null;
+        }
+
+        string? bindArgument = null;
+        if (condition.TryGetPropertyValue("bindArgument", out var bindNode) && bindNode is not null)
+        {
+            bindArgument = Identifier(bindNode);
+            var parameter = bindArgument is not null && manifests.TryGetValue(expectedTool, out var manifest)
+                ? manifest.Parameters.FirstOrDefault(p => string.Equals(p.Name, bindArgument, StringComparison.Ordinal))
+                : null;
+            if (parameter is null || parameter.Sensitive)
+            {
+                problem = "bindArgument must name a declared non-sensitive parameter of the expected tool.";
+                return null;
+            }
+        }
+
+        return new EvidenceFactExists(source, factType, factKey, bindArgument);
+    }
 
     private static AgentPlan? TryParsePlan(
         string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem)
@@ -4338,9 +4431,21 @@ public sealed class AgentRunner(
                         }
                     }
 
+                    EvidenceFactExists? activation = null;
+                    if (stepObject.TryGetPropertyValue("activation", out var activationNode) && activationNode is not null)
+                    {
+                        activation = ParseActivation(activationNode, index, expectedTool, manifests, out var activationProblem);
+                        if (activation is null)
+                        {
+                            problem = $"Plan step {index} has an invalid activation: {activationProblem}";
+                            return null;
+                        }
+                    }
+
                     steps.Add(new PlannedStep(index++, description, expectedTool)
                     {
                         ExpectedArguments = expectedArguments,
+                        Activation = activation,
                     });
                 }
             }
