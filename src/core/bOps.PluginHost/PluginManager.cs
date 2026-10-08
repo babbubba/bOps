@@ -16,6 +16,15 @@ namespace bOps.PluginHost;
 /// for its first-party packages — there is no parallel registry and no special case anywhere
 /// else for a dynamically loaded one.
 /// </summary>
+/// <param name="capabilityProbe">
+/// The read-only <see cref="ICapabilityProbe"/> handed to plugin constructors (rule A10). It must not be, or expose, the
+/// host's mutable prerequisite registry.
+/// </param>
+/// <param name="prerequisiteRegistrar">
+/// The host-only route that registers a tool/Skill plugin's <see cref="IPrerequisiteProvider"/> checks under the plugin's
+/// host-assigned id and removes them on deactivation (ADR-0049). It is never given to plugin code. When <c>null</c>, plugin
+/// prerequisite contributions are ignored.
+/// </param>
 public sealed class PluginManager(
     PluginStore store,
     IToolRegistry toolRegistry,
@@ -26,7 +35,8 @@ public sealed class PluginManager(
     ILoggerFactory loggerFactory,
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
-    ICapabilityProbe capabilityProbe)
+    ICapabilityProbe capabilityProbe,
+    IPrerequisiteRegistrar? prerequisiteRegistrar = null)
 {
     private readonly Dictionary<string, PluginLoadContext> _loadContexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PluginKind> _activatedKinds = new(StringComparer.Ordinal);
@@ -245,6 +255,9 @@ public sealed class PluginManager(
                     "it instead.");
             }
 
+            // Prerequisite checks go first: a disabled plugin's check must never run again, and the registry must not keep
+            // the plugin's check object (and so its collectible load context) alive.
+            prerequisiteRegistrar?.Unregister(new PackageId(id));
             toolRegistry.Unregister(new PackageId(id));
             skillRegistry.Unregister(new PackageId(id));
             _activatedKinds.Remove(id);
@@ -331,6 +344,9 @@ public sealed class PluginManager(
                 $"Entry type '{manifest.EntryType}' combines a model provider with tool/Skill roles; a plugin must not mix those trust surfaces.");
         }
 
+        // Taken from the original instance: the Skill path below snapshots the provider, which would lose this role.
+        var prerequisiteProvider = instance as IPrerequisiteProvider;
+
         if (isSkillProvider)
         {
             var provider = (ISkillProvider)instance;
@@ -349,6 +365,7 @@ public sealed class PluginManager(
 
             try
             {
+                RegisterPrerequisites(record.Id, packageId, prerequisiteProvider);
                 foreach (var tool in tools)
                 {
                     toolRegistry.Register(packageId, current.Trust, tool);
@@ -358,6 +375,7 @@ public sealed class PluginManager(
             }
             catch
             {
+                prerequisiteRegistrar?.Unregister(packageId);
                 toolRegistry.Unregister(packageId);
                 skillRegistry.Unregister(packageId);
                 loadContext.Unload();
@@ -373,6 +391,7 @@ public sealed class PluginManager(
         {
             try
             {
+                RegisterPrerequisites(record.Id, packageId, prerequisiteProvider);
                 foreach (var tool in ((IToolProvider)instance).GetTools())
                 {
                     toolRegistry.Register(packageId, current.Trust, tool);
@@ -380,6 +399,7 @@ public sealed class PluginManager(
             }
             catch
             {
+                prerequisiteRegistrar?.Unregister(packageId);
                 toolRegistry.Unregister(packageId);
                 loadContext.Unload();
                 throw;
@@ -408,6 +428,29 @@ public sealed class PluginManager(
         lock (_runtimeGate)
         {
             _loadContexts[record.Id] = loadContext;
+        }
+    }
+
+    /// <summary>
+    /// Registers a tool/Skill plugin's prerequisite checks under its host-assigned id, before its tools and Skills, so a later Tool or
+    /// Skill registration failure is rolled back together with them. A refused contribution (invalid, duplicate of another package's
+    /// prerequisite, or a throwing provider) fails the whole activation, which the caller rolls back.
+    /// </summary>
+    private void RegisterPrerequisites(string pluginId, PackageId packageId, IPrerequisiteProvider? provider)
+    {
+        if (provider is null || prerequisiteRegistrar is null)
+        {
+            return;
+        }
+
+        try
+        {
+            prerequisiteRegistrar.Register(packageId, provider);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new PluginOperationException(
+                $"Plugin '{pluginId}' contributes prerequisite checks that the host refused: {ex.Message}", ex);
         }
     }
 

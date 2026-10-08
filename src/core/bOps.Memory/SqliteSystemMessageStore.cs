@@ -26,6 +26,7 @@ public sealed class SqliteSystemMessageStore : ISystemMessageStore, IPrerequisit
 
     private const string CursorVersion = "v1";
     private const int MaxCursorLength = 128;
+    private const int PurgeBatchSize = 1000;
     private const string MessageColumns =
         "id, timestamp_utc_ticks, node, source, severity, code, message, metadata_json, task_id, component_type, component_id";
 
@@ -111,11 +112,23 @@ public sealed class SqliteSystemMessageStore : ISystemMessageStore, IPrerequisit
     /// <inheritdoc />
     public async Task<int> PurgeOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken ct = default)
     {
+        // Deleted in bounded batches, each its own short transaction, so a large backlog never holds the writer lock for long.
         using var connection = await OpenAsync(ct);
-        using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM system_messages WHERE timestamp_utc_ticks < $cutoff;";
-        command.Parameters.AddWithValue("$cutoff", cutoffUtc.UtcTicks);
-        return await command.ExecuteNonQueryAsync(ct);
+        var total = 0;
+        int deleted;
+        do
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "DELETE FROM system_messages WHERE id IN (SELECT id FROM system_messages WHERE timestamp_utc_ticks < $cutoff LIMIT $batch);";
+            command.Parameters.AddWithValue("$cutoff", cutoffUtc.UtcTicks);
+            command.Parameters.AddWithValue("$batch", PurgeBatchSize);
+            deleted = await command.ExecuteNonQueryAsync(ct);
+            total += deleted;
+        }
+        while (deleted == PurgeBatchSize);
+
+        return total;
     }
 
     /// <inheritdoc />

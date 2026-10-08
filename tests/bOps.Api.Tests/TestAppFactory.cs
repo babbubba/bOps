@@ -68,6 +68,7 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
                 ["Audit:FilePath"] = Path.Combine(TempDirectory, "audit.jsonl"),
                 ["Memory:FilePath"] = Path.Combine(TempDirectory, "tasks.db"),
                 ["Delegation:FilePath"] = Path.Combine(TempDirectory, "delegations.db"),
+                ["SystemMessages:FilePath"] = Path.Combine(TempDirectory, "system-messages.db"),
                 ["Filesystem:ReadPatterns:0"] = Path.Combine(TempDirectory, "**"),
                 ["Filesystem:WritePatterns:0"] = Path.Combine(TempDirectory, "**"),
                 ["Filesystem:Inventory:ManifestStorePath"] = Path.Combine(TempDirectory, "filesystem-manifests.db"),

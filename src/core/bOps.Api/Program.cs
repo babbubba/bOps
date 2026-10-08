@@ -96,10 +96,32 @@ builder.Services.AddRateLimiter(options =>
     // ADR-0043 §11: sign-in attempts are bounded per address on top of the global limiter.
     options.AddPolicy<string, BrowserSessionLoginRateLimitPolicy>(BrowserSessionEndpoints.LoginRateLimitPolicy);
 });
-builder.Services.AddSingleton<ICapabilityProbe>(services =>
-    new CachingCapabilityProbe(services.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30)));
-builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
-builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
+
+// ADR-0049: one host-owned prerequisite registry. Packages and plugins never receive it: the A10 ICapabilityProbe is a distinct
+// read-only view of it, and IPrerequisiteRegistrar (the mutation route) is host-only. Tool and Skill registries read its rich states.
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(PrerequisiteOptions.SectionName).Get<PrerequisiteOptions>()?.Validate()
+    ?? new PrerequisiteOptions());
+builder.Services.AddSingleton(sp => new PrerequisiteRegistry(
+    sp.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(30), sp.GetRequiredService<PrerequisiteOptions>().MaxConcurrency));
+builder.Services.AddSingleton<IPrerequisiteStateSource>(sp => sp.GetRequiredService<PrerequisiteRegistry>());
+builder.Services.AddSingleton<IPrerequisiteRegistrar>(sp => sp.GetRequiredService<PrerequisiteRegistry>());
+builder.Services.AddSingleton<ICapabilityProbe>(sp => sp.GetRequiredService<PrerequisiteRegistry>().AsCapabilityProbe());
+builder.Services.AddSingleton(sp => new ToolRegistry(sp.GetRequiredService<IPrerequisiteStateSource>()));
+builder.Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
+builder.Services.AddSingleton(sp => new SkillRegistry(sp.GetRequiredService<IPrerequisiteStateSource>()));
+builder.Services.AddSingleton<ISkillRegistry>(sp => sp.GetRequiredService<SkillRegistry>());
+
+// ADR-0049: operational system messages and the durable last observation of each prerequisite share one node-local SQLite file; the
+// schema version is checked eagerly below, so an unsupported file fails start-up.
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(SystemMessageOptions.SectionName).Get<SystemMessageOptions>()?.Validate()
+    ?? new SystemMessageOptions());
+builder.Services.AddSingleton(sp => new SqliteSystemMessageStore(sp.GetRequiredService<SystemMessageOptions>().FilePath));
+builder.Services.AddSingleton<ISystemMessageStore>(sp => sp.GetRequiredService<SqliteSystemMessageStore>());
+builder.Services.AddSingleton<IPrerequisiteStateStore>(sp => sp.GetRequiredService<SqliteSystemMessageStore>());
+builder.Services.AddSingleton(sp => new PrerequisiteTransitionRecorder(sp.GetRequiredService<IPrerequisiteStateStore>(), NodeId.Local));
+builder.Services.AddSingleton<PrerequisiteReadinessService>();
+builder.Services.AddHostedService<PrerequisiteRefreshCoordinator>();
+builder.Services.AddHostedService<SystemMessageRetentionWorker>();
 builder.Services.AddSingleton<IChatModelRegistry, ChatModelRegistry>();
 builder.Services.AddSingleton<IAuditSink>(
     _ => new JsonLinesAuditSink(builder.Configuration["Audit:FilePath"] ?? "audit.jsonl"));
@@ -211,7 +233,8 @@ builder.Services.AddSingleton(sp => new PluginManager(
     sp.GetRequiredService<ILoggerFactory>(),
     sp.GetRequiredService<IHttpClientFactory>(),
     sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ICapabilityProbe>()));
+    sp.GetRequiredService<ICapabilityProbe>(),
+    sp.GetRequiredService<IPrerequisiteRegistrar>()));
 // ADR-0037: M6 consumes this same backend; it does not compose a second plugin authority.
 // V1.3-M6: the archive limits are configuration (ADR-0037: defaults, with hard ceilings enforced by the backend). The HTTP upload
 // bound is derived from the same compressed-archive limit, so the two can never be configured apart.
@@ -279,6 +302,7 @@ var app = builder.Build();
 
 // ADR-0043 §5, §12: fail startup on an invalid BrowserSession section or an unsupported sessions.db, then the bounded startup sweep.
 app.Services.GetRequiredService<IBrowserSessionStore>();
+app.Services.GetRequiredService<SqliteSystemMessageStore>();
 await app.Services.GetRequiredService<BrowserSessionService>().StartupCleanupAsync(CancellationToken.None);
 
 // ADR-0044 section 4: the policy is read once, at start, which logs its absolute path and load state (never its contents).
@@ -308,19 +332,14 @@ var dockerClientFactory = new DockerClientFactory(builder.Configuration["Docker:
 // which volume drivers docker.volume.create accepts. Both are the Docker package's own settings.
 var dockerBuildOptions = builder.Configuration.GetSection("Docker:Build").Get<DockerBuildOptions>() ?? new DockerBuildOptions();
 var dockerVolumeOptions = builder.Configuration.GetSection("Docker:Volumes").Get<DockerVolumeOptions>() ?? new DockerVolumeOptions();
-if (app.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe cachingCapabilityProbe)
-{
-    cachingCapabilityProbe.RegisterCheck(DockerCapability.Name, ct => DockerCapability.IsAvailableAsync(dockerClientFactory, ct));
-    cachingCapabilityProbe.RegisterCheck(DockerCapability.BuildContexts, _ => DockerCapability.IsBuildConfiguredAsync(dockerBuildOptions));
-}
 
 // web.search declares Requires: ["web.searxng"] (rule A8) — an unconfigured instance removes it
 // from what the planner sees, the same pattern docker.* uses for an absent daemon.
 var webSearchOptions = app.Services.GetRequiredService<WebSearchOptions>();
-if (app.Services.GetRequiredService<ICapabilityProbe>() is CachingCapabilityProbe webCapabilityProbe)
-{
-    webCapabilityProbe.RegisterCheck(WebCapabilities.Searxng, ct => WebCapabilities.IsSearxngConfiguredAsync(webSearchOptions, ct));
-}
+
+// ADR-0049: the first-party checks register on the host-owned registry; plugin providers follow at activation, below.
+FirstPartyPrerequisiteComposition.Register(
+    app.Services.GetRequiredService<PrerequisiteRegistry>(), dockerClientFactory, dockerBuildOptions, webSearchOptions);
 
 var firstPartyRegistrations = FirstPartyToolComposition.Create(new FirstPartyToolCompositionOptions(
     app.Services.GetRequiredService<FilesystemToolProvider>(),
@@ -336,7 +355,7 @@ var chatModelRegistry = app.Services.GetRequiredService<IChatModelRegistry>();
 // only management path today — V1.1-F's catalog is read-only) activates here too, exactly like
 // bOps.Cli already does — this host runs its own AgentRunner (AgentsEndpoints/AgentTaskLauncher)
 // and needs the same plugin-contributed tools/Skills visible to it. Before
-// RefreshCapabilitiesAsync, so a plugin tool's own Requires is captured by the same refresh.
+// the boot refresh, so a plugin tool's own Requires and its prerequisite providers are captured by it.
 // ADR-0037: reconcile first, then activate enabled plugins; a failed startup activation is persisted as ActivationFailed.
 var pluginStartupErrors = await app.Services.GetRequiredService<PluginLifecycleService>().ActivateEnabledAsync();
 if (pluginStartupErrors.Count > 0)
@@ -348,7 +367,11 @@ if (pluginStartupErrors.Count > 0)
     }
 }
 
-await toolRegistry.RefreshCapabilitiesAsync();
+// ADR-0049 boot ordering: first-party and plugin providers are all registered above; one full prerequisite refresh now records the
+// state transitions (and their system messages) atomically and only then snapshots Tool and Skill availability, so the first task is
+// never offered a component on a state that was not recorded. A missing ordinary prerequisite does not stop bOps: the affected
+// components stay registered, are not available, and a system message says why.
+await app.Services.GetRequiredService<PrerequisiteReadinessService>().RefreshAsync(app.Lifetime.ApplicationStopping);
 
 chatModelRegistry.Register(new PackageId("bops.packages.providers.openrouter"), app.Services.GetRequiredService<OpenRouterProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.ollama"), app.Services.GetRequiredService<OllamaProviderPackage>());
@@ -361,6 +384,8 @@ app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
 app.MapDelegationsEndpoints();
 app.MapToolsEndpoints();
+app.MapPrerequisitesEndpoints();
+app.MapSystemMessagesEndpoints();
 app.MapSkillsEndpoints();
 app.MapProvidersEndpoints();
 app.MapIdentityEndpoints();
