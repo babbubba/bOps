@@ -35,6 +35,7 @@ jobs:
           - os: windows-latest
             platform: windows
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +52,7 @@ jobs:
         run: dotnet build bOps.slnx --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test bOps.slnx --no-build --configuration Release --filter "Category!=LiveModel"
+        run: dotnet test bOps.slnx --no-build --configuration Release --filter "Category!=LiveModel" --blame-hang --blame-hang-timeout 5m
 
       - name: HARDEN-14 scenario gate (.NET, Windows)
         if: runner.os == 'Windows'

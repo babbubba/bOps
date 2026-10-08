@@ -65,7 +65,7 @@ public sealed class HardenEightBlockerFixTests
     public async Task B1_VerificationOfAnInterruptedTool_IsStillBoundedByItsOwnTimeout()
     {
         var clock = new FakeTimeProvider(Now);
-        var verifier = new TokenProbeTool("test.verify-probe", hang: true);
+        var verifier = new TokenProbeTool("test.verify-probe", hang: true, clock: clock, hangTimeout: TimeSpan.FromMilliseconds(150));
         var mutation = new MutatingTool("test.mutate", "test.verify-probe", clock, VerificationStatus.Confirmed);
         var model = new SequenceModel(PlanningTestSupport.PlanResponse(expectedTool: "test.mutate"), Call("test.mutate"));
         var options = DurationOptions() with { DefaultToolTimeout = TimeSpan.FromMilliseconds(150) };
@@ -692,7 +692,7 @@ public sealed class HardenEightBlockerFixTests
     }
 
     /// <summary>A Read tool that reports the token it was given, to prove verification runs under a usable, bounded one.</summary>
-    private sealed class TokenProbeTool(string name, bool hang = false) : ITool
+    private sealed class TokenProbeTool(string name, bool hang = false, FakeTimeProvider? clock = null, TimeSpan hangTimeout = default) : ITool
     {
         internal int Executions { get; private set; }
         internal bool StartedCancelled { get; private set; }
@@ -718,6 +718,8 @@ public sealed class HardenEightBlockerFixTests
             {
                 try
                 {
+                    // The runner's tool timeout is driven by the fake clock, so the hang must move it forward.
+                    clock?.Advance(hangTimeout);
                     await Task.Delay(Timeout.InfiniteTimeSpan, ct);
                 }
                 catch (OperationCanceledException)
