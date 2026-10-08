@@ -1,6 +1,6 @@
 # ADR-0049 — Unified prerequisite readiness and operational system messages
 
-Status: **Accepted — 2026-10-08; Session 1 (contracts, registry, persistence) implemented, host/API/UI pending**
+Status: **Accepted — 2026-10-08; Session 1 (contracts, registry, persistence) implemented; host, API and UI pending**
 Date: 2026-10-08
 Amends: rule B4 (`ICapabilityProbe` becomes a compatibility view), [ADR-0025](0025-skill-provider-and-restricted-invocation.md) (Capability
 manifests gain prerequisite declarations). Neither accepted ADR is edited; this ADR adds to them.
