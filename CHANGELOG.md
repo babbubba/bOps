@@ -14,12 +14,19 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
-- Prerequisite readiness and system-message contracts (ADR-0049, D-046; first of three sessions — no host, API or UI wiring
-  yet). `bOps.Abstractions` `1.3.0-preview.3` adds, additively, `ToolManifest.OptionalRequires`,
-  `CapabilityManifest.Requires`/`OptionalRequires`, the prerequisite check/provider/result types, bounded secret-refusing
-  `OperationalMetadata`, and `SystemMessage` with its query and store contracts. The runtime gains a host-owned
-  `PrerequisiteRegistry` (also the boolean `ICapabilityProbe` view) and transition recording; `bOps.Memory` gains a SQLite
-  system-message and prerequisite-state store.
+- Prerequisite readiness and operational system messages (ADR-0049, D-046). A Tool or Skill Capability is *registered*
+  independently of being *available*: `Requires` are required prerequisites and the new `OptionalRequires` leave a component
+  available but degraded. Packages — first-party and enabled plugins alike — contribute read-only `IPrerequisiteCheck`s through
+  an optional `IPrerequisiteProvider`; the host owns ids, timestamps, timeouts and state. Readiness is checked at start, every
+  `Prerequisites:RefreshIntervalSeconds` and immediately after a successful plugin enable or disable. Transitions, never
+  repeated observations, write operator-facing system messages (Information/Warning/Error/Critical) with remediation to a
+  node-local SQLite store (`SystemMessages:FilePath`, default `system-messages.db`; 90-day retention), readable through
+  `GET /api/system-messages` (inclusive from/to, severity, contained text, AND, newest first, opaque keyset cursor, 50 per page)
+  and `GET /api/prerequisites`, and on the new **System messages** page (`/system-messages`, English and Italian). A prerequisite
+  whose observation could not be durably recorded, and one a component declares but no package registered, fail closed
+  (`state-record-failed`, `not-registered`); the latter is announced once. `agent.replan.threshold` is the first runtime-authored
+  message: one Warning per task when its lifetime replans reach `Agent:ReplanWarningThreshold` (default 3). Docker, Docker build
+  contexts and SearXNG moved onto the new registry with unchanged ids. `bOps.Abstractions` is `1.3.0-preview.3` (additive).
 
 ### Fixed
 

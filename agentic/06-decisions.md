@@ -1089,3 +1089,10 @@ Debug/Trace severities; a package-to-package prerequisite service.
 Host wiring, Docker/SearXNG migration, background refresh, API and UI follow in later sessions of the same task; the
 Windows dump-analysis tool (PR #91, D-045) adopts the contracts afterwards without further SDK change. D-045 is reserved
 by that open PR, hence this entry's number.
+
+**Implementation details settled in the final session (ADR-0049 §10–12).** An observation that cannot be durably recorded is
+`Error`/`state-record-failed` (fail-closed, no exception text); a prerequisite a component declares but no package registered is
+`Error`/`not-registered`, recorded and announced once through the same transition infrastructure; a successful plugin enable/disable
+refreshes readiness at the API boundary before the response (failure logged, lifecycle result untouched); the runner writes one
+`agent.replan.threshold` Warning per task at `Agent:ReplanWarningThreshold` (default 3, capped by `MaxLifetimeReplans` when unset);
+`/system-messages` is the operator page. `SystemMessages:FilePath` stays a working-directory-relative path.

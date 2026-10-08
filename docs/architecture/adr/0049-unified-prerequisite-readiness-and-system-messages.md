@@ -1,6 +1,6 @@
 # ADR-0049 — Unified prerequisite readiness and operational system messages
 
-Status: **Accepted — 2026-10-08; Sessions 1 (contracts, registry, persistence) and 2 (host wiring, plugins, API) implemented; UI pending**
+Status: **Accepted — 2026-10-08; implemented in three sessions (contracts and persistence; host wiring, plugins, API; fail-closed correctness, replan message, UI)**
 Date: 2026-10-08
 Amends: rule B4 (`ICapabilityProbe` becomes a compatibility view), [ADR-0025](0025-skill-provider-and-restricted-invocation.md) (Capability
 manifests gain prerequisite declarations). Neither accepted ADR is edited; this ADR adds to them.
@@ -167,12 +167,58 @@ page size defaults to 50 and must be 1–200. Retention is time-based: `PurgeOld
 - **Retention.** `SystemMessages:RetentionDays` (default 90): one bounded purge when the API starts, then every
   `RetentionIntervalMinutes` (default 360); never on insertion. The store deletes in batches of 1,000.
 
+### 10. Fail-closed correctness (Session 3)
+
+- **Unrecorded is unavailable.** The cycle's order — check, record durably, then snapshot — is also an invariant: a prerequisite
+  observation that could not be durably recorded never makes anything more permissive. When `PrerequisiteTransitionRecorder.RecordAsync`
+  throws, the host replaces that prerequisite's result in the registry (`PrerequisiteRegistry.AddHostObservation`) with `Error` and the
+  host-authored code `state-record-failed` before any Tool or Skill snapshot is taken, so required dependents are not available and
+  optional ones are degraded; the successful check result is not reused. The text is fixed — no exception text reaches state, messages or
+  the API; the exception is logged server-side. Other prerequisites are still recorded. The host overrides are replaced as a set at the end
+  of each cycle (`SetHostObservations`), so a later successful record restores normal behaviour, and an unchanged persisted fingerprint
+  writes no new message. If the message store itself is down nothing is written and nothing gains authority.
+- **Declared but unregistered is observable.** After the checks run, the cycle computes *declared* prerequisite ids (the `Requires` and
+  `OptionalRequires` of every registered Tool and Skill Capability, lower-cased) minus *registered* ids. Each is a host-observed
+  `Error`/`not-registered` result recorded through the same recorder and store: persisted, deduplicated by fingerprint across refreshes
+  and restarts, one message `prerequisite.not-registered` per prerequisite (not per component; severity `Error` if some component requires it,
+  else `Warning`; text *"No package registered a check for prerequisite 'x'. Components depending on it cannot determine readiness."*;
+  no remediation is invented without a descriptor). A check registered later transitions normally and its `Available` result writes the
+  ordinary recovery message. `GET /api/prerequisites` reports the same state. An id the state store could never hold (a legacy
+  `Requires` entry that is not a valid prerequisite id) stays unavailable, is logged, and is not recorded.
+- **Plugin lifecycle refreshes immediately.** At the API boundary — not in `bOps.PluginHost`, which stays independent of `bOps.Runtime`,
+  and never inside package code — a successful (not replayed) enable or disable runs one `PrerequisiteReadinessService.RefreshAsync`
+  before the HTTP response. The lifecycle transaction is already committed and authoritative: a failing refresh is logged, changes
+  nothing about the result, and the periodic refresh is the retry. Rejected, stale, unconfirmed, failed and replayed operations, and
+  recovery (which only restores an installed-disabled generation), refresh nothing.
+
+### 11. Agent replan threshold message (Session 3)
+
+`AgentRunner` (additive optional `ISystemMessageStore` constructor argument; no widening of the A10 package surface) writes one
+`Warning` — source `runtime/agent`, code `agent.replan.threshold`, component `Runtime`/`agent` — when an *accepted* replan brings the
+task's lifetime count to `Agent:ReplanWarningThreshold` (equality, hence at most once per task and never again after a resume that is
+already past it; an uncommitted or failed replan never counts). Default 3 and, only when unset, capped by `Agent:MaxLifetimeReplans`
+so existing configurations keep validating; an explicit value must be 1..`MaxLifetimeReplans`. The message carries the task id,
+provider and model ids, lifetime count, threshold, limit and execution attempt — no goal, prompt, model reply, tool argument or output.
+Writing it is bounded (5 s), best effort and logged on failure: it never fails the task, changes its state or triggers a retry.
+General runtime eventing is not redesigned.
+
+### 12. Operator UI (Session 3)
+
+`/system-messages` (*System messages* / *Messaggi di sistema*) in the Angular UI reads `GET /api/system-messages`: From/To (explicit local →
+UTC instant conversion, inclusive as the API defines), Severity, *Text contained* — all sent to the server on **Apply** and AND-combined;
+**Reset**; newest first, 50 per page, forward and back through the opaque keyset cursor (Previous re-requests the cursor that produced the
+earlier page; no offset, no client filtering or paging); loading, empty and API-error states; severity as word + glyph + accessible label;
+expandable details with metadata rendered as escaped JSON text. `GET /api/prerequisites` has no page of its own: the boot and transition
+messages already make actionable failures visible there. `SystemMessages:FilePath` (default `system-messages.db`, relative to the process
+working directory like the other store paths, in the API and the CLI independently) is unchanged and not migrated.
+
 ## Consequences
 
 - Runtime still names no package: prerequisite ids are data supplied by packages and the host (rule A1).
 - Session 2 wired the registry into the hosts (replacing `CachingCapabilityProbe` in DI), migrated Docker and SearXNG to
   descriptors, and added the background refresh, retention, plugin `IPrerequisiteProvider` discovery and the API.
-  Session 3 adds the UI and the agent replan-threshold message. PR #91 later declares `kd.exe` required and
+  Session 3 made unrecorded and unregistered prerequisites fail closed and observable, refreshed readiness on plugin enable/disable,
+  added the replan-threshold message and the UI. PR #91 later declares `kd.exe` required and
   `dumpchk.exe` optional using only these contracts.
 - A host that never wires the new registry keeps today's behaviour exactly.
 
