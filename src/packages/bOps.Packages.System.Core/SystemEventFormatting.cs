@@ -34,8 +34,7 @@ public static class SystemEventFormatting
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(query);
 
-        var observed = snapshot.Events
-            .Where(record => IsValid(record) && SystemEventFilter.Matches(record, query))
+        var observed = Matched(snapshot, query)
             .OrderByDescending(record => record.TimestampUtc)
             .ThenBy(record => record.Source, StringComparer.OrdinalIgnoreCase)
             .ThenBy(record => record.Source, StringComparer.Ordinal)
@@ -195,6 +194,10 @@ public static class SystemEventFormatting
             ["processName"] = SystemInventoryFormatting.Bounded(record.ProcessName, 256),
         };
     }
+
+    /// <summary>The records of <paramref name="snapshot"/> the output and the evidence facts both describe: valid and matching <paramref name="query"/>.</summary>
+    internal static IEnumerable<SystemEventRecord> Matched(SystemEventSnapshot snapshot, SystemEventQuery query) =>
+        snapshot.Events.Where(record => IsValid(record) && SystemEventFilter.Matches(record, query));
 
     private static bool IsValid(SystemEventRecord record) =>
         !string.IsNullOrWhiteSpace(record.Source) && record.Message is not null;

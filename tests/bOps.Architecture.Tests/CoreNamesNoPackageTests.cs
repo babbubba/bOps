@@ -43,6 +43,8 @@ public sealed class CoreNamesNoPackageTests
         "network.sockets", "network.routes", "network.neighbors", "network.interface_stats",
         "network.dns_query", "network.traceroute", "network.ntp_probe",
         "system.dump_analyze", "windows.debugger.kd", "kd.exe", "dumpchk", "!analyze",
+        // PRE-5: the grounding guard knows no event vocabulary; facts stay opaque (ADR-0042 PRE-5 amendment §1, §10).
+        "whea", "event 19", "eventid=", "matched-count",
     ];
 
     public static TheoryData<string, Type> CoreAssemblyMarkers => new()

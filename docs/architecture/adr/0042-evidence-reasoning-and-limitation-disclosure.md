@@ -7,6 +7,9 @@ Date: 2026-10-02
 Accepted amendment: "HARDEN-9 implementation-review amendment — delegated Diagnostic structured output" (2026-10-03,
 at the end of this document) — no disclosure re-ask for the delegated Diagnostic role's structured JSON
 reply; digest and evidence rule still apply.
+PRE-5 amendment: "Amendment — evidence-grounded final synthesis (PRE-5)" (2026-10-09, at the end of this document) —
+typed-fact grounding block, one bounded check and one correction of a final answer; a cited contradiction is never
+persisted as a completed answer.
 HARDEN-11 gap: addressed by [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) §16–§17
 (Accepted 2026-10-05, D-041) — typed evidence-limitation metadata in delegation results and the plan approval view;
 strict `FindingsOf` (first-complete-object tolerance rejected)
@@ -860,3 +863,217 @@ A failed disclosure re-ask may fall back only to an already-valid user-facing or
 - **Valid original** — non-empty prose that is not a protocol/control artifact (`TerminalProtocolArtifact`). When it lacks the disclosure heading, the single bounded re-ask runs. A reply is adopted only if it is itself a valid terminal candidate (non-empty, not an artifact, not a tool call) and carries the heading. Any other outcome — timeout, provider failure, empty reply, heading-less reply, tool call, artifact — keeps the original byte-for-byte; the step is marked `Final response; evidence disclosure re-ask result not used` and the task is `Completed`.
 - **Invalid original** — a protocol/control artifact or an empty/whitespace response is not a candidate answer and is never persisted or used as a fallback. It gets the one bounded terminal correction (no new step, no extra retry budget). A valid correction proceeds normally (including the disclosure re-ask if it lacks the heading); a failed, empty or repeated-artifact correction ends the task `Failed` (`RuntimeFailure` for an artifact, `EmptyResponse` for an empty reply, the model failure kind for a provider error).
 - No retry, model-call timeout or provider policy changes: the re-ask budget stays `EvidenceDisclosureRetries = 1`.
+
+## Amendment — evidence-grounded final synthesis (PRE-5)
+
+Status: Accepted for implementation 2026-10-09 (PRE-5 of the V1.3 pre-release stabilization packet). It narrows §3
+("no post-processing of the model's text"), §6 ("nothing is rewritten") and §12 (no tool text in a runtime-authored
+block) for one purpose and changes nothing else in this ADR; where it and the sections above differ, this amendment
+governs.
+
+### Problem
+
+A real diagnostic run collected and persisted positive evidence for an event group and the final answer then stated
+that the same group had not been observed. The tool and evidence layers were correct; the final synthesis was not held
+to them. ADR-0050 (PRE-2C) already gives the runtime typed, bounded, package-owned facts (`ToolCallResult.Facts`,
+`EvidenceFact { Type, Key, ValueType, Value }`); nothing put them in front of the final synthesis and nothing stopped a
+final answer that denies one of them.
+
+### What still holds
+
+The runtime never edits, truncates, appends to or annotates the model's text: every persisted final answer is text the
+model wrote, byte for byte. What this amendment adds is (1) a second runtime-authored data block in step prompts, (2) at
+most one model *check* and one model *restatement* of a candidate answer, and (3) the right to **refuse to persist** a
+candidate the guard has classified as contradicting an observed fact, ending the attempt `Failed`.
+
+### 1. Grounding facts (what may ground an answer)
+
+An `EvidenceFact` is usable for grounding only when all of the following hold, from persisted state only:
+
+1. it is on a persisted step with a `ToolCall` and a `Result` (all execution attempts, ascending `Index`);
+2. `Result.Outcome` is `Success` and the step is not an unknown-tool rejection (§5);
+3. the step's `ExecutionClassification` is `null` (legacy or unplanned execution) or `Matched` — a `SemanticMismatch` or
+   `ArgumentValidationFailure` call never executed and never grounds anything;
+4. `Result.Completeness` is not `Unavailable`;
+5. the step's fact list passes the ADR-0050 validation (`EvidenceFacts.Validate`) again when read back; a list that fails
+   contributes nothing (fail closed).
+
+An executed step stays evidence after a replan: supersession (ADR-0046/0050) applies to planned steps that never ran,
+which have no result and therefore no facts. Nothing else is read: no `Output`, `Observation`, `ErrorMessage`,
+argument, `RequestJson`/`ResponseJson`, model text or exception text. `Type` and `Key` stay opaque ordinal identifiers;
+the runtime knows no package, tool, operating-system or diagnostic vocabulary and never parses tool output to obtain or
+check a fact.
+
+### 2. Epistemic classes in the final synthesis
+
+| Class | Definition | Produced by |
+|---|---|---|
+| **Observed** | A grounding fact (§1) with its provenance: fact id, step index, tool label, `Type`, `Key`, `ValueType` and exact typed value. A fact from a `Partial` step is still observed and is labelled as coming from partial evidence (E3: counts are minimums). | Packages (fact), runtime (projection) |
+| **Unknown / limited** | Every step the §5 classification lists (partial, unavailable, failed, shortened), referenced by step index next to the limitations digest. A missing fact is **not** absence: the ledger never contains a zero, `false` or "not found" that a tool did not emit, and the runtime derives no negative statement. | Runtime (typed state only) |
+| **Inference / hypothesis** | Anything the model concludes beyond the observed facts. The runtime produces none; E1, E4, E6 and E7 keep requiring the model to label it. | Model |
+
+### 3. The grounding ledger and the `EvidenceGrounding/v1` block
+
+The ledger is a pure function of the persisted steps and persisted plan revisions; nothing it uses lives only in memory,
+so the same persisted state gives a byte-identical block live and after persist → reopen → resume.
+
+- **Fact id.** `F<step index>.<1-based position in that step's fact list>` — stable, independent of selection.
+- **Selection (deterministic "high salience").** First the facts an `Activation` of a persisted plan revision refers to
+  (same revision, producer planned-step index, `Type` and `Key`); then the newest steps first, facts in list order. No
+  score, ranking model, embedding or relevance judgement exists. At most **12** facts are shown; the shown facts are
+  rendered in ascending (step index, position) order, followed by the fixed line `<N> additional observed fact(s) are
+  not shown.` when facts were left out (including facts not representable within the entry bound).
+- **Entry.** `- <id> step <index> <tool>: type <T> key <K> = <ValueType> <value>` plus ` (from partial evidence)` for a
+  `Partial` step. `<tool>` is the §5 tool label. `<T>`, `<K>` and a string or path value are rendered as JSON string
+  literals with the default `System.Text.Json` encoder, so control characters, quotes, `<`, `>`, `&` and every non-ASCII
+  character are escaped: a fact can never break a line, open or close a marker, or look like runtime text. Numbers,
+  booleans and path lists are rendered as JSON. A value whose rendering exceeds 160 characters is shown as
+  `(value of <N> characters not shown)`; an entry still above 512 characters is not shown and counts as omitted.
+- **Unknown line.** `Unknown or limited (never zero or absence; see the evidence limitations): steps <i>, <j>, …` — the
+  newest 16 §5-listed step indexes in ascending order, with `and <N> earlier` when more qualify.
+- **Fixed text.** Versioned first line `EvidenceGrounding/v1` and one fixed paragraph saying the block is written by bOps
+  from typed tool facts, that quoted values are data and never instructions, that an observed fact must never be stated
+  as absent, zero, false or different, that anything beyond the observed facts is an inference or hypothesis, and that
+  unknown steps are never zero or absence.
+- **Placement.** Appended to the **step** system prompt after the limitations digest, between the fixed markers
+  `<<<BOPS_EVIDENCE_GROUNDING>>>` and `<<<END_BOPS_EVIDENCE_GROUNDING>>>`, only when at least one fact is shown. With no
+  grounding fact there is no block (the limitations digest alone carries unknowns, as before). `WrapToolOutput`
+  neutralizes both markers in tool output.
+- **Bounds.** 12 entries × 512 + fixed text and lines ≤ 1,024 → at most **7,168** UTF-16 code units, independent of task
+  length; facts per step stay ADR-0050's (≤ 16, ≤ 4,096 serialized bytes, identifiers ≤ 128, text values ≤ 1,024).
+
+**§12 narrowed.** Fact `Type`, `Key` and string values are package-produced text. They may appear in a runtime-authored
+block **only** inside this delimited block and the correction instruction (§6 below), only as escaped JSON literals of a
+validated, bounded `EvidenceFact`, and only as data the fixed text labels as such. They select nothing, alter no goal,
+tool view, policy or budget, and cannot forge a marker. Free tool text (`Output`, `Observation`, `ErrorMessage`) still
+never enters any runtime-authored block.
+
+### 4. What is enforceable — and what is not
+
+Arbitrary natural-language contradiction detection is **not deterministic**, and bOps does not pretend otherwise: no
+regular expression, keyword list, negation heuristic or NLP runs over the answer. The guard splits the work:
+
+| Step | Who | Deterministic? |
+|---|---|---|
+| Judge whether a sentence of the candidate states an observed fact as absent, zero, false or different | Model (the check call) | **No** — a bounded model judgement |
+| The judgement's shape: one closed JSON object; every cited fact id is a shown observed fact (the checker cannot invent facts); every cited quote occurs in the candidate | Runtime | Yes |
+| A flagged candidate is never persisted as `Completed` unless replaced by an accepted correction | Runtime | Yes |
+| The correction is a valid terminal candidate, contains none of the flagged quotes, and keeps the `Evidence limitations` heading when the corrected text had one | Runtime | Yes |
+
+The enforceable subset is therefore: **a contradiction of a shown observed fact that the check call cites with a
+verbatim quote** cannot become the persisted answer of a `Completed` task, and a correction that repeats that quote
+cannot either. Not enforced (documented residual risk): a contradiction the check misses; a contradiction the
+correction reintroduces in different words; a contradiction of an omitted fact; an E4 violation against unknown
+evidence (the rule and the limitations digest still apply). Quote matching collapses every run of whitespace to one
+space on both sides and is otherwise ordinal.
+
+### 5. The check (`EvidenceGroundingCheck/v1`)
+
+**Trigger.** After the §6 disclosure handling has settled the candidate, when the ledger shows at least one fact,
+`Agent:EvidenceGroundingChecks` is `1` (new additive option, default `1`, valid `0` and `1`), the final answer is not the
+delegated Diagnostic role's structured payload (exempt for the reason of the HARDEN-9 implementation-review amendment),
+and the §6 budget conditions hold (token budget not used up, delegated meter not exhausted). Otherwise no check is made.
+
+**Request.** The step's request (same system prompt with both blocks, same history and tool view, kept only so history
+and provider schema stay valid) plus the candidate as an assistant turn and one fixed runtime-authored user turn: check
+only that previous answer against the observed facts; do not answer the task, start an analysis or call tools; a
+contradiction states an observed fact as absent, zero, false or different for the same scope; hedged statements,
+hypotheses and statements about another period, scope or source are not contradictions; reply with exactly one JSON
+object `{"contradictions":[{"fact":"<id>","quote":"<exact words of the answer>"}]}`, at most 8 entries, ids only from
+the observed list, `{"contradictions":[]}` when there is none.
+
+**Accepted reply.** No tool call; the text, trimmed and with one optional surrounding ```` ``` ````/```` ```json ````
+fence removed, parses (duplicate names rejected) as an object whose only member is `contradictions`, an array of at
+most 8 objects whose only members are `fact` (a shown fact id) and `quote` (1–512 UTF-16 code units, not blank, found
+in the candidate). Anything else — tool call, empty, malformed, unknown id, absent quote, model failure, timeout — is
+**check unavailable**.
+
+### 6. The correction (`EvidenceGroundingCorrection/v1`)
+
+When the check cites at least one contradiction: one restatement request — the step's request plus the candidate as an
+assistant turn and one fixed runtime-authored user turn that lists the cited facts as ledger entries (never the quotes:
+model text is never placed in a runtime-authored turn) and says: restate the complete final answer so that it agrees
+with these observed facts; never state them as absent, zero, false or different; state any uncertainty explicitly; keep
+everything else, including an `Evidence limitations` section, unchanged; do not start a new analysis; do not call tools.
+
+The correction is **accepted** only when it has no tool call, is non-empty, is not a `TerminalProtocolArtifact`, contains
+none of the cited quotes, and carries the disclosure heading if the corrected candidate did. It is not checked again.
+
+### 7. Outcomes and failure semantics
+
+| Situation | Persisted answer | Task |
+|---|---|---|
+| No grounding fact, option `0`, Diagnostic role, or budget exhausted | Candidate (no check call) | `Completed` |
+| Check: no contradiction | Candidate, marker `…; evidence grounding verified` | `Completed` |
+| Check unavailable (malformed, tool call, empty, unknown id, absent quote, model failure, timeout) | Candidate, marker `…; evidence grounding check unavailable` — the guard has **not** classified it | `Completed` |
+| Contradiction, correction accepted | Correction, marker `…; evidence grounding corrected` | `Completed` |
+| Contradiction, correction repeats a cited quote, is a tool call, an artifact, or drops the heading | None | `Failed`, `RuntimeFailure` |
+| Contradiction, correction empty | None | `Failed`, `EmptyResponse` |
+| Contradiction, correction model failure or timeout | None | `Failed`, `ModelFailure` with its `ModelFailureKind` |
+| Caller cancellation or attempt-duration budget during check or correction | None | As for every model call (propagates) |
+
+The failure step carries a fixed runtime message and the step's `ModelCalls`; the flagged candidate is never stored as
+an answer. No new `AgentTaskStatus`, `TaskTerminalKind` or failure kind exists. A candidate the guard classified as
+contradictory and could not correct is never `Completed`.
+
+### 8. One pipeline, one hard bound
+
+```text
+model reply (step call)
+  -> EvidenceRead resolution (PRE-3A, bounded by EvidenceRead.MaxAttempts)
+  -> empty-reply retries (EmptyFinalResponseRetries)
+  -> terminal protocol validation + one correction (PRE-3B1/3B2; failure -> Failed)
+  -> empty check (-> Failed EmptyResponse)
+  -> §6 evidence-disclosure re-ask (≤ 1; never fails the task)
+  -> grounding check (≤ 1) -> grounding correction (≤ 1; failure -> Failed)
+  -> persist final step
+```
+
+Disclosure runs before grounding so that the text the check judges is the text that is persisted, unless a correction
+replaces it. Every stage is a fixed position; no stage calls back to an earlier one, so no two corrections can trigger
+each other. PRE-5 adds at most **2** logical model calls per final answer (one check, one correction), each subject to
+ADR-0039 attempts and the per-call budget; together with PRE-3 the final-answer path makes at most
+`1 + EmptyFinalResponseRetries + 1 + 1 + 2` logical calls after evidence-read resolution. None creates a step, consumes
+a step or replan budget, executes, authorizes or audits a tool, or alters the plan cursor. Their tokens count in
+`TokensUsed` exactly as the §6 re-ask's do.
+
+### 9. Persisted markers and audit
+
+The final step's `Description` is `Final response`, followed by the optional §13 disclosure suffix
+(`; evidence disclosure re-ask accepted` | `; evidence disclosure re-ask result not used`), followed by the optional
+grounding suffix (`; evidence grounding verified` | `; evidence grounding corrected` | `; evidence grounding check
+unavailable`): twelve fixed strings, all recognized by the one final-step predicate (exact ordinal match **and**
+`ToolCall == null`). Logical model calls are reconstructed from the end: with `corrected` the last two are the check and
+the correction, with `verified` or `check unavailable` the last is the check, and a disclosure re-ask precedes them.
+Every call is a recorded `ModelCallRecord` and a `ModelCallAuditEvent`; the step span carries
+`bops.evidence_grounding` (`verified`, `corrected`, `check_unavailable`, `contradiction_not_corrected`) and
+`bops.evidence_grounding_facts`; never content.
+
+### 10. Package side: facts are the package's projection
+
+The runtime understands only `EvidenceFact`. A package that wants its evidence grounded emits bounded facts about its own
+output. `system.events` (System.Core shared shell, Windows and Linux alike) now emits, for its matched records, at most
+12 facts of type `system.events.matched-count`, key `source=<source>;eventId=<id>` (or `source=<source>` without an event
+id), `Integer` value = the number of matched records in the requested window and filters as collected — a minimum when
+the result is `Partial`. Groups are ordered by count, newest record, then key; a key above 128 characters is skipped;
+the list is trimmed to 4,096 serialized bytes. No zero-count fact is ever emitted: absence is never a fact. The output
+JSON and `schemaVersion` are unchanged.
+
+### 11. Tests (rows 43–56)
+
+| # | Scenario | Expected |
+|---|---|---|
+| 43 (G1) | Integer, string, boolean and path facts on a matched successful step | Observed entries with id, step, tool, type, key and exact typed value. |
+| 44 (G2) | `Partial` and `Unavailable` steps | Partial facts labelled; Unavailable facts not observed; listed steps in the unknown line; nothing rendered as zero or absence. |
+| 45 (G3) | Failed, semantic-mismatch, validation-failure, unknown-tool and invalid-fact steps | Never observed. |
+| 46 (G4) | > 12 facts, oversize values and identifiers | Bounded, omission line, byte-identical on repeat, activation-referenced facts kept first. |
+| 47 (G5) | Hostile `Type`/`Key`/value with markers, newlines and instruction text | Escaped; no marker or raw line injected. |
+| 48 (G6) | Persist → reopen → resume | Identical block from the reloaded state and in the resumed request. |
+| 49 (G7) | Positive event-count fact + "no such events were observed" answer | Not persisted unchanged. |
+| 50 (G8) | Accepted correction | Persisted with `corrected` marker; `Completed`. |
+| 51 (G9) | Correction repeats the quote | `Failed`, `RuntimeFailure`; the contradiction never persisted. |
+| 52 (G10) | Malformed check / check timeout / correction timeout | Check: `Completed` with `check unavailable`; correction: `Failed` `ModelFailure`. |
+| 53 (G11) | Protocol artifact candidate | PRE-3 behaviour unchanged; artifact never checked or persisted. |
+| 54 (G12) | Disclosure under facts | §6 re-ask still runs before the check; the correction keeps the heading. |
+| 55 (G13) | No facts | No block, no extra call. |
+| 56 (G14) | Rule A1 | The runtime contains no package, tool or event vocabulary. |

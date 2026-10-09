@@ -97,6 +97,13 @@ public sealed record AgentRunnerOptions
     public int EvidenceDisclosureRetries { get; init; } = 1;
 
     /// <summary>
+    /// Whether a final answer given while persisted typed evidence facts exist is checked once against them, and restated once
+    /// when the check cites a contradiction (ADR-0042 PRE-5 amendment). <c>1</c> (the default) enables the one check and the one
+    /// correction; <c>0</c> disables both (the grounding block still reaches the model). No other value is valid: never a loop.
+    /// </summary>
+    public int EvidenceGroundingChecks { get; init; } = 1;
+
+    /// <summary>
     /// The most characters of each request body and each reply body kept with a recorded model call; a longer body is
     /// cut and the record marked. <c>0</c> keeps no bodies (the model, timing and tokens are still recorded). The
     /// request repeats the whole conversation on every call, so this bounds how fast a task's stored state grows.
@@ -199,6 +206,12 @@ public sealed record AgentRunnerOptions
         {
             throw new InvalidOperationException(
                 $"'Agent:EvidenceDisclosureRetries' ({EvidenceDisclosureRetries}) must be 0 (disabled) or 1.");
+        }
+
+        if (EvidenceGroundingChecks is not (0 or 1))
+        {
+            throw new InvalidOperationException(
+                $"'Agent:EvidenceGroundingChecks' ({EvidenceGroundingChecks}) must be 0 (disabled) or 1.");
         }
 
         if (ModelCallMaxAttempts < 1)

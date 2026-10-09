@@ -762,6 +762,13 @@ public sealed class AgentRunner(
                 stepActivity?.SetTag("bops.evidence_limitations", limitations.EntryCount);
             }
 
+            // ADR-0042 PRE-5 amendment §3: the typed-fact ledger, rebuilt like the digest from persisted steps and plans only.
+            var grounding = EvidenceGroundingLedger.Build(steps, run.Plans);
+            if (grounding is not null)
+            {
+                stepActivity?.SetTag("bops.evidence_grounding_facts", grounding.Facts.Count);
+            }
+
             var logicalCall = new LogicalCallState();
             ModelRequest BuildStepRequest(bool aggressive)
             {
@@ -785,7 +792,7 @@ public sealed class AgentRunner(
                     Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
                 return new ModelRequest(
                     BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                        correctingArguments, aggressive, offersEvidenceControl),
+                        correctingArguments, aggressive, offersEvidenceControl, grounding),
                     history, offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools);
             }
 
@@ -928,7 +935,34 @@ public sealed class AgentRunner(
                         disclosure == EvidenceDisclosureOutcome.Accepted ? "accepted" : "result_not_used");
                 }
 
-                steps.Add(new PlanStep(stepIndex, FinalResponse.DescriptionFor(disclosure), null, null, finalText, plan.Revision)
+                // ADR-0042 PRE-5 amendment §5–§8: after disclosure, so the checked text is the persisted one unless corrected.
+                // At most one check and one correction; a contradiction the correction does not resolve fails the attempt.
+                var groundingOutcome = EvidenceGroundingOutcome.NotChecked;
+                if (!diagnostic
+                    && grounding is not null
+                    && options.EvidenceGroundingChecks == 1
+                    && DisclosureBudgetRemains(run, delegation))
+                {
+                    var guarded = await GuardGroundingAsync(run, request, history, finalText!, grounding, stepIndex, stepCalls, ct);
+                    if (guarded.Failure is { } failure)
+                    {
+                        stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
+                        logger.LogError(
+                            "Task {TaskId} step {StepIndex}: the final answer contradicted persisted typed evidence and was not corrected",
+                            taskId, stepIndex);
+                        return await FailAsync(run, failure.Message, failure.Reason, stepCalls, ct);
+                    }
+
+                    (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
+                    stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
+                    {
+                        EvidenceGroundingOutcome.Verified => "verified",
+                        EvidenceGroundingOutcome.Corrected => "corrected",
+                        _ => "check_unavailable",
+                    });
+                }
+
+                steps.Add(new PlanStep(stepIndex, FinalResponse.DescriptionFor(disclosure, groundingOutcome), null, null, finalText, plan.Revision)
                 {
                     ModelCalls = stepCalls,
                     ExecutionAttempt = run.ExecutionAttempt,
@@ -3265,6 +3299,86 @@ public sealed class AgentRunner(
             : (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
     }
 
+    /// <summary>What the grounding guard settled: the answer to persist and its outcome, or a failure that ends the attempt.</summary>
+    private sealed record GroundingGuardResult(
+        string? Text, EvidenceGroundingOutcome Outcome, (string Message, (TaskTerminalKind Kind, ModelFailureKind? FailureKind) Reason)? Failure);
+
+    private const string UncorrectedContradictionMessage =
+        "The final answer contradicted persisted typed evidence and its one bounded correction did not resolve it; no answer was kept.";
+
+    /// <summary>
+    /// The evidence-grounding guard (ADR-0042 PRE-5 amendment §5–§7): one check of <paramref name="candidate"/> against the shown
+    /// observed facts and, only when the check cites a contradiction, one restatement. Both are the step's request plus the
+    /// candidate as an assistant turn and one fixed runtime-authored turn, like the disclosure re-ask; neither creates a step,
+    /// counts against a step or replan budget, executes a tool or touches the plan cursor. A check that yields no usable
+    /// verdict leaves the candidate unclassified and persisted; a cited contradiction is never persisted — the correction
+    /// replaces it or the attempt fails. A genuine cancellation propagates as for every model call.
+    /// </summary>
+    private async Task<GroundingGuardResult> GuardGroundingAsync(
+        ExecutionRun run, ModelRequest request, List<ChatTurn> history, string candidate, EvidenceGrounding grounding,
+        int stepIndex, List<ModelCallRecord> stepCalls, CancellationToken ct)
+    {
+        GroundingVerdict verdict;
+        try
+        {
+            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
+            {
+                History = [.. history, ChatTurn.FromAssistantText(candidate), ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)],
+            }, run.Delegation, stepCalls, ct);
+            run.TokensUsed += UsageTokens(check);
+            verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The attempts are recorded and audited; the guard has classified nothing, so the candidate stands.
+            logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding check failed; the answer is kept unclassified", run.TaskId, stepIndex);
+            verdict = GroundingVerdict.Unavailable;
+        }
+
+        if (verdict.Kind != GroundingVerdictKind.Contradicted)
+        {
+            return new GroundingGuardResult(candidate,
+                verdict.Kind == GroundingVerdictKind.Consistent ? EvidenceGroundingOutcome.Verified : EvidenceGroundingOutcome.CheckUnavailable,
+                null);
+        }
+
+        ModelResponse correction;
+        try
+        {
+            correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
+            {
+                History =
+                [
+                    .. history, ChatTurn.FromAssistantText(candidate),
+                    ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions)),
+                ],
+            }, run.Delegation, stepCalls, ct);
+            run.TokensUsed += UsageTokens(correction);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding correction failed", run.TaskId, stepIndex);
+            return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
+                ($"{UncorrectedContradictionMessage} {FailureReason(ex)}", FailureKindOf(ex)));
+        }
+
+        var text = correction.TextResponse;
+        if (correction.ToolCalls.Count == 0 && string.IsNullOrWhiteSpace(text))
+        {
+            return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
+                ($"{UncorrectedContradictionMessage} The correction was empty.", (TaskTerminalKind.EmptyResponse, null)));
+        }
+
+        var accepted = correction.ToolCalls.Count == 0
+            && !TerminalProtocolArtifact.IsArtifact(text)
+            && !EvidenceGroundingLedger.RepeatsContradiction(text!, verdict.Contradictions)
+            && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text));
+        return accepted
+            ? new GroundingGuardResult(text, EvidenceGroundingOutcome.Corrected, null)
+            : new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
+                (UncorrectedContradictionMessage, (TaskTerminalKind.RuntimeFailure, null)));
+    }
+
     private static bool IsFinalProtocolArtifact(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0) && TerminalProtocolArtifact.IsArtifact(response.TextResponse);
 
@@ -4294,7 +4408,9 @@ public sealed class AgentRunner(
             .Replace(ToolOutputOpenDelimiter, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(ToolOutputCloseDelimiter, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceLimitationsDigest.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
-            .Replace(EvidenceLimitationsDigest.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
+            .Replace(EvidenceLimitationsDigest.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceGroundingLedger.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
 
         return $"{ToolOutputOpenDelimiter}\n{sanitized}\n{ToolOutputCloseDelimiter}";
     }
@@ -4312,7 +4428,7 @@ public sealed class AgentRunner(
 
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
-        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false)
+        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
@@ -4333,9 +4449,13 @@ public sealed class AgentRunner(
               "completion if the goal is already achieved.";
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
-        return limitations is null
-            ? prompt
-            : $"{prompt}\n\n{EvidenceLimitationsDigest.Delimit(limitations.Text)}";
+        if (limitations is not null)
+        {
+            prompt = $"{prompt}\n\n{EvidenceLimitationsDigest.Delimit(limitations.Text)}";
+        }
+
+        // ADR-0042 PRE-5 amendment §3: the grounding block follows the digest, delimited the same way.
+        return grounding is null ? prompt : $"{prompt}\n\n{EvidenceGroundingLedger.Delimit(grounding)}";
     }
 
     internal static string DescribePlan(AgentPlan plan)
