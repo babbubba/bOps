@@ -291,6 +291,8 @@ internal static class EvidenceRead
 /// </summary>
 internal static class TerminalProtocolArtifact
 {
+    private static readonly JsonDocumentOptions NoDuplicateNames = new() { AllowDuplicateProperties = false };
+
     private static readonly string[] EnvelopeStarts = ["<tool_call>", "<function="];
 
     internal static bool IsArtifact(string? text)
@@ -316,7 +318,7 @@ internal static class TerminalProtocolArtifact
 
         try
         {
-            if (JsonNode.Parse(trimmed) is JsonObject root)
+            if (JsonNode.Parse(trimmed, nodeOptions: null, documentOptions: NoDuplicateNames) is JsonObject root)
             {
                 var name = root["name"] ?? root["function"];
                 var hasName = name is JsonValue value && value.TryGetValue<string>(out _);
@@ -325,7 +327,7 @@ internal static class TerminalProtocolArtifact
         }
         catch (JsonException)
         {
-            // Not a JSON object: ordinary text that happens to start with a brace.
+            // Not a JSON object, or one that repeats a name: ordinary text that happens to start with a brace.
         }
 
         return false;

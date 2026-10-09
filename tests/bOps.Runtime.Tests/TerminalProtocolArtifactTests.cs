@@ -180,6 +180,8 @@ public sealed class TerminalProtocolArtifactTests
     [InlineData("Use <tool_call> markup to call tools.", false)]
     [InlineData("{\"status\":\"ok\"}", false)]
     [InlineData("{not json", false)]
+    [InlineData("{\"findings\":[],\"findings\":[{\"summary\":\"x\"}]}", false)]
+    [InlineData("{\"name\":\"a\",\"name\":\"b\",\"arguments\":{}}", false)]
     [InlineData("", false)]
     public void Classifier_MatchesEnvelopesOnly(string text, bool expected) =>
         Assert.Equal(expected, TerminalProtocolArtifact.IsArtifact(text));

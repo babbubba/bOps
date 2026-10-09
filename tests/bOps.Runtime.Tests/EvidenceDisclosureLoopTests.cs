@@ -72,7 +72,7 @@ public sealed class EvidenceDisclosureLoopTests
             PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: PartialTool),
             Call(PartialTool, "c1"),
             Call(PartialTool, "c2"),
-            PlanningTestSupport.PlanResponse(stepCount: 2, expectedTool: PartialTool),
+            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 2, expectedTool: PartialTool),
             Final(DisclosedAnswer));
 
         await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("diagnose", Actor);
@@ -149,7 +149,11 @@ public sealed class EvidenceDisclosureLoopTests
     public async Task AFailedRead_FollowedByASuccessOfTheSameTool_StaysListed()
     {
         var failing = new SequencedTool("test.read", Failed(ToolFailureKind.Environment), Complete());
-        var model = new FakeChatModel(Plan("test.read", "test.read"), Call("test.read", "c1"), Call("test.read", "c2"), Final(DisclosedAnswer));
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponseIndexed("test.read", 2),
+            PlanningTestSupport.IndexedCall("test.read", 0, "c1"),
+            PlanningTestSupport.IndexedCall("test.read", 1, "c2"),
+            Final(DisclosedAnswer));
 
         await Runner(model, Registry(failing), new RecordingAuditSink()).RunAsync("diagnose", Actor);
 
@@ -175,7 +179,8 @@ public sealed class EvidenceDisclosureLoopTests
         var tool = new ResultTool("test.needs", Complete(), [new ToolParameter("must", ToolParameterType.String, "Required.")]);
         var corrected = new ModelResponse(
             null, [new ModelToolCall("c2", "test.needs", new ToolArguments(new JsonObject { ["must"] = "value" }))], false, null);
-        var model = new FakeChatModel(Plan("test.needs", "test.needs"), Call("test.needs", "c1"), corrected, Final(OriginalAnswer));
+        // A rejected call is retried against the same planned step, so one step covers both attempts.
+        var model = new FakeChatModel(Plan("test.needs"), Call("test.needs", "c1"), corrected, Final(OriginalAnswer));
 
         var state = await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("diagnose", Actor);
 
@@ -701,7 +706,7 @@ public sealed class EvidenceDisclosureLoopTests
             Risk = RiskLevel.Read,
             Platforms = [CurrentPlatform.Id],
             Requires = [],
-            Parameters = [],
+            Parameters = [PlanningTestSupport.CallIndexParameter],
         };
 
         public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>

@@ -128,6 +128,8 @@ public sealed class HardenEightE2ETests
 
     private sealed class E2E13Model(Guid taskId, string sentinel) : IChatModel
     {
+        // Each plan step is discriminated by the tool call index (ADR-0050); the call that proposes the replan is never executed,
+        // so every replan's indices skip it.
         // The initial plan and each replan are sized so that the call proposed once the current plan is spent is the 9th, 19th and
         // 39th executed tool step: AgentRunner then replans on its own (ADR-0014 rule C8: a call proposed after every planned step was attempted).
         private static readonly int[] PlanSizes = [8, 9, 19, 10];
@@ -156,8 +158,8 @@ public sealed class HardenEightE2ETests
                     RecordReplan(request);
                 }
 
-                return Task.FromResult(PlanningTestSupport.PlanResponse(
-                    stepCount: PlanSizes[plansIssued++], expectedTool: "test.partial"));
+                return Task.FromResult(PlanningTestSupport.PlanResponseIndexed("test.partial",
+                    PlanSizes[plansIssued], startIndex: PlanSizes.Take(plansIssued).Sum() + plansIssued++));
             }
 
             StepSystemPrompts.Add(request.SystemPrompt);
@@ -233,7 +235,7 @@ public sealed class HardenEightE2ETests
         }
 
         private static ModelResponse Call(int index) =>
-            new(null, [new ModelToolCall($"e2e-{index}", "test.partial", ToolArguments.Empty)], false, null);
+            new(null, [new ModelToolCall($"e2e-{index}", "test.partial", new ToolArguments(PlanningTestSupport.IndexArguments(index)))], false, null);
 
         private static int HistoricalCharacters(IReadOnlyList<ChatTurn> turns) => turns.Skip(1).Sum(turn =>
             (turn.Content?.Length ?? 0)
@@ -267,7 +269,7 @@ public sealed class HardenEightE2ETests
             Risk = RiskLevel.Read,
             Platforms = [CurrentPlatform.Id],
             Requires = [],
-            Parameters = [],
+            Parameters = [PlanningTestSupport.CallIndexParameter],
         };
 
         public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
