@@ -300,6 +300,7 @@ public sealed class PlannedStepValidationRetryTests
         {
             Origin = TaskOrigin.Ordinary,
             Accounting = new TaskAccounting(100, 2, 0),
+            MutationJournalMode = TaskMutationJournalMode.Journaled,
         };
         var store = new InMemoryTaskStore();
         store.Seed(stored);

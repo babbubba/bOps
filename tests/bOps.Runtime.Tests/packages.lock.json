@@ -115,7 +115,7 @@
       "acme.sampleplugin": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.3.0-preview.2, )"
+          "bOps.Abstractions": "[1.3.0-preview.4, )"
         }
       },
       "bops.abstractions": {
@@ -124,20 +124,26 @@
       "bops.audit": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.3.0-preview.2, )"
+          "bOps.Abstractions": "[1.3.0-preview.4, )"
         }
       },
       "bops.packages.providers.openaicompatible": {
         "type": "Project",
         "dependencies": {
-          "bOps.Abstractions": "[1.3.0-preview.2, )"
+          "bOps.Abstractions": "[1.3.0-preview.4, )"
+        }
+      },
+      "bops.packages.system.core": {
+        "type": "Project",
+        "dependencies": {
+          "bOps.Abstractions": "[1.3.0-preview.4, )"
         }
       },
       "bops.runtime": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
-          "bOps.Abstractions": "[1.3.0-preview.2, )"
+          "bOps.Abstractions": "[1.3.0-preview.4, )"
         }
       }
     }

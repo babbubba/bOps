@@ -72,9 +72,23 @@ internal static class BoundedHistory
             history.Add(ChatTurn.FromUser(boundedBlock));
         }
 
+        // ADR-0051 §9.5: a mutation reconciled as already applied is persisted runtime-authored history, not a tool call. Its notice
+        // is in every rebuild — live and resumed alike — before the first newer verbatim tool call, so the model knows the change may
+        // already have happened.
+        var notices = new Queue<PlanStep>(steps.Where(TaskResumePolicy.IsMutationReconciledStep).OrderBy(step => step.Index));
         foreach (var step in recent)
         {
+            while (notices.Count > 0 && notices.Peek().Index < step.Index)
+            {
+                history.Add(ChatTurn.FromUser(notices.Dequeue().Observation ?? string.Empty));
+            }
+
             AddVerbatim(history, step);
+        }
+
+        while (notices.Count > 0)
+        {
+            history.Add(ChatTurn.FromUser(notices.Dequeue().Observation ?? string.Empty));
         }
 
         var compactableVerbatimSteps = recent.Count(step => required is null || step.Index != required.Index);

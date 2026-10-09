@@ -42,6 +42,21 @@ public sealed record TaskResumeRefusal(string Code, string Message)
 
     /// <summary>The task store cannot perform the atomic transition a resume requires, so resume fails closed.</summary>
     public const string TransitionUnsupported = "transition_unsupported";
+
+    /// <summary>The task was stored before ADR-0051 and keeps no mutation journal: it cannot prove no mutation was in flight.</summary>
+    public const string MutationJournalAbsent = "mutation_journal_absent";
+
+    /// <summary>The task journals its mutations but the store lacks the journal capability (ADR-0051 §11).</summary>
+    public const string MutationJournalUnsupported = "mutation_journal_unsupported";
+
+    /// <summary>The task's mutation journal could not be read.</summary>
+    public const string MutationJournalUnavailable = "mutation_journal_unavailable";
+
+    /// <summary>An administrator abandoned the task's unsettled mutations; the task is never resumable again.</summary>
+    public const string TaskAbandoned = "task_abandoned";
+
+    /// <summary>A mutation of the task may or may not have been applied; an administrator must reconcile it first.</summary>
+    public const string MutationOutcomeUnknown = "mutation_outcome_unknown";
 }
 
 /// <summary>Whether a stored task may be resumed now and, if not, why.</summary>
@@ -134,7 +149,17 @@ public static class TaskResumePolicy
     /// <summary>The synthetic failure step written when a fifth EvidenceRead is attempted.</summary>
     internal const string EvidenceReadLimitStepDescription = "Evidence read limit exceeded";
 
-    /// <summary>Decides whether an ordinary resume of <paramref name="task"/> would be accepted now, under <paramref name="options"/>.</summary>
+    /// <summary>The synthetic step an administrator's recovery of an orphaned Running attempt appends (ADR-0051 §8.3).</summary>
+    internal const string ExecutionInterruptedStepDescription = "Execution interrupted";
+
+    /// <summary>The runtime-authored history step a resume appends for a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
+    internal const string MutationReconciledStepDescription = "Mutation reconciled";
+
+    /// <summary>
+    /// Decides whether an ordinary resume of <paramref name="task"/> would be accepted now, under <paramref name="options"/>, by the
+    /// ADR-0040 rules alone. It does not see the task's mutation journal; the runtime, the API and the CLI decide with
+    /// <see cref="Evaluate(TaskState, AgentRunnerOptions, bool, IReadOnlyList{TaskMutationJournalEntry})"/>.
+    /// </summary>
     /// <param name="task">The task as persisted.</param>
     /// <param name="options">The budgets configured now.</param>
     public static TaskResumeDecision Evaluate(TaskState task, AgentRunnerOptions options)
@@ -142,6 +167,76 @@ public static class TaskResumePolicy
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(options);
 
+        return EvaluateStatus(task) ?? EvaluateBudgets(task, options);
+    }
+
+    /// <summary>
+    /// The one journal-aware resumability rule (ADR-0040 §3 as amended by ADR-0051 §9.4): ADR-0040 rows 1–6, then the journal rows
+    /// 6a–6e, then ADR-0040 rows 7–9. A task created on a store without the journal capability (<see cref="TaskMutationJournalMode.MutationsDisabled"/>)
+    /// could never begin a mutation and passes 6a–6e on any store.
+    /// </summary>
+    /// <param name="task">The task as persisted.</param>
+    /// <param name="options">The budgets configured now.</param>
+    /// <param name="storeHasJournal">Whether the store implements <see cref="ITaskMutationJournalStore"/>.</param>
+    /// <param name="journal">The task's journal entries, or <c>null</c> when they could not be read.</param>
+    public static TaskResumeDecision Evaluate(
+        TaskState task, AgentRunnerOptions options, bool storeHasJournal, IReadOnlyList<TaskMutationJournalEntry>? journal)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return EvaluateStatus(task) ?? EvaluateJournal(task, storeHasJournal, journal) ?? EvaluateBudgets(task, options);
+    }
+
+    /// <summary>ADR-0051 §9.4 rows 6a–6e, or <c>null</c> when they allow the resume.</summary>
+    private static TaskResumeDecision? EvaluateJournal(TaskState task, bool storeHasJournal, IReadOnlyList<TaskMutationJournalEntry>? journal)
+    {
+        switch (task.MutationJournalMode)
+        {
+            case TaskMutationJournalMode.MutationsDisabled:
+                return null;
+            case TaskMutationJournalMode.Journaled:
+                break;
+            default:
+                return TaskResumeDecision.Refused(TaskResumeRefusal.MutationJournalAbsent,
+                    "This task was stored before bOps kept a durable mutation journal, so nothing proves that its last attempt did not stop " +
+                    "inside a change to the system. It is not resumable; start a new task.");
+        }
+
+        if (!storeHasJournal)
+        {
+            return TaskResumeDecision.Refused(TaskResumeRefusal.MutationJournalUnsupported,
+                "This task journals its changes, but the configured task store has no mutation journal. It cannot be resumed on this store.");
+        }
+
+        if (journal is null)
+        {
+            return TaskResumeDecision.Refused(TaskResumeRefusal.MutationJournalUnavailable,
+                "The task's mutation journal could not be read; it is not resumed while that is unknown. Retry later.");
+        }
+
+        if (journal.Any(entry => entry.State == TaskMutationState.Abandoned))
+        {
+            return TaskResumeDecision.Refused(TaskResumeRefusal.TaskAbandoned,
+                "An administrator abandoned this task's unresolved changes; it is never resumable again. Start a new task.");
+        }
+
+        var unsettled = journal.Where(entry => MutationJournalPolicy.IsUnsettled(entry.State)).ToList();
+        if (unsettled.Count > 0)
+        {
+            var named = string.Join(", ", unsettled.Select(entry =>
+                $"'{entry.Intent.ToolName}' (attempt {entry.Intent.Key.ExecutionAttempt}, step {entry.Intent.Key.StepIndex})"));
+            return TaskResumeDecision.Refused(TaskResumeRefusal.MutationOutcomeUnknown,
+                $"{unsettled.Count} change(s) may or may not have been applied: {named}. bOps will not repeat them automatically; " +
+                "an administrator must reconcile them before the task can be resumed.");
+        }
+
+        return null;
+    }
+
+    /// <summary>ADR-0040 §3 rows 1–6 (origin, status), or <c>null</c> when they allow the resume.</summary>
+    private static TaskResumeDecision? EvaluateStatus(TaskState task)
+    {
         // Origin first: no status or budget makes a role task, or a task whose origin cannot be proven, ordinarily resumable.
         switch (task.Origin)
         {
@@ -175,6 +270,12 @@ public static class TaskResumePolicy
                 return TaskResumeDecision.Refused(TaskResumeRefusal.StatusNotResumable, $"A task in status {task.Status} cannot be resumed.");
         }
 
+        return null;
+    }
+
+    /// <summary>ADR-0040 §3 rows 7–9 (lifetime budgets).</summary>
+    private static TaskResumeDecision EvaluateBudgets(TaskState task, AgentRunnerOptions options)
+    {
         var accounting = EffectiveAccounting(task);
         if (options.MaxTotalTokens is { } tokenCap && accounting.TokensUsed >= tokenCap)
         {
@@ -215,11 +316,16 @@ public static class TaskResumePolicy
         task.Steps.Count(step => !IsSyntheticFailureStep(step)),
         Math.Max(0, task.Plans.Count - 1));
 
-    /// <summary>Whether <paramref name="step"/> is a runtime-authored failure record rather than an executed or proposed step (ADR-0040 §5.2).</summary>
+    /// <summary>Whether <paramref name="step"/> is a runtime-authored record rather than an executed or proposed step (ADR-0040 §5.2, ADR-0051 §13): never counted against a step budget.</summary>
     internal static bool IsSyntheticFailureStep(PlanStep step) =>
         step.ToolCall is null
         && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
-            or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription;
+            or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription
+            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription;
+
+    /// <summary>Whether <paramref name="step"/> is the runtime-authored history of a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
+    internal static bool IsMutationReconciledStep(PlanStep step) =>
+        step.ToolCall is null && step.Description == MutationReconciledStepDescription;
 
     /// <summary>Prompt plus completion tokens of every recorded model call that reported usage.</summary>
     internal static long RecordedTokens(IReadOnlyList<ModelCallRecord>? calls) =>

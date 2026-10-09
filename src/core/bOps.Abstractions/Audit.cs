@@ -50,6 +50,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(TaskExecutionFaultAuditEvent), "taskExecutionFault")]
 [JsonDerivedType(typeof(TaskLifecycleAuditEvent), "taskLifecycle")]
 [JsonDerivedType(typeof(EvidenceReadAuditEvent), "evidenceRead")]
+[JsonDerivedType(typeof(TaskMutationAuditEvent), "taskMutation")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -477,6 +478,12 @@ public enum TaskLifecycleStage
 
     /// <summary>An executor was fenced: the task had been taken over, so its write was refused and it stopped.</summary>
     ExecutionSuperseded = 4,
+
+    /// <summary>An administrator recovered an orphaned <see cref="AgentTaskStatus.Running"/> execution attempt (ADR-0051 §8.3).</summary>
+    RecoveryAccepted = 5,
+
+    /// <summary>A recovery was refused, lost the transition to another writer, or the store cannot perform it.</summary>
+    RecoveryRejected = 6,
 }
 
 /// <summary>
@@ -511,7 +518,7 @@ public sealed record TaskLifecycleAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TaskTerminalKind? TerminalKind { get; init; }
 
-    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/>, the stable refusal code (for example <c>task_running</c>).</summary>
+    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/> and <see cref="TaskLifecycleStage.RecoveryRejected"/>, the stable refusal code (for example <c>task_running</c>).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RefusalCode { get; init; }
 

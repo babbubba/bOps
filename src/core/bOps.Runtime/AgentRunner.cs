@@ -43,7 +43,7 @@ namespace bOps.Runtime;
 /// A task still stored <see cref="AgentTaskStatus.Running"/> is never resumed: nothing here can prove no
 /// other process is executing it.
 /// </summary>
-public sealed class AgentRunner(
+public sealed partial class AgentRunner(
     IChatModel model,
     IToolRegistry registry,
     IPolicyEngine policyEngine,
@@ -261,10 +261,20 @@ public sealed class AgentRunner(
             Actor = actor,
             Delegation = delegation,
             PinnedProviderConfiguration = CurrentPinnedProviderConfiguration(),
+            // ADR-0051 §11: decided once, when the task is created, and never changed — a task created on a store that cannot
+            // journal never runs a side-effecting tool, whatever the store later becomes. A delegated task has its own journal.
+            MutationJournalMode = delegation is not null
+                ? TaskMutationJournalMode.Absent
+                : taskStore is ITaskMutationJournalStore ? TaskMutationJournalMode.Journaled : TaskMutationJournalMode.MutationsDisabled,
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [],
             Plans = [],
         };
+        if (delegation is null)
+        {
+            run.Mutations = new OrdinaryMutationScope(run.TaskId, run.ExecutionAttempt, run.MutationJournalMode,
+                taskStore as ITaskMutationJournalStore, []);
+        }
 
         using var taskActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.task");
         taskActivity?.SetTag("bops.task_id", run.TaskId);
@@ -390,7 +400,11 @@ public sealed class AgentRunner(
     private async Task<TaskResumeAcquisition> AcquireResumeAsync(TaskState task, ActorIdentity actor, CancellationToken ct,
         PinnedProviderConfiguration? legacyPin = null)
     {
-        var decision = EvaluateResume(task);
+        // ADR-0051 §9.4: the journal-aware rule. The acquisition below re-checks the journal inside the transition, so a change
+        // between this evaluation and the write cannot slip past it.
+        var journalStore = taskStore as ITaskMutationJournalStore;
+        var journal = await ReadJournalAsync(task, journalStore, ct);
+        var decision = TaskResumePolicy.Evaluate(task, options, journalStore is not null, journal);
         if (!decision.Resumable)
         {
             return await RejectResumeAsync(task, actor, decision.Refusal!, ct);
@@ -415,8 +429,30 @@ public sealed class AgentRunner(
             PinnedProviderConfiguration = task.PinnedProviderConfiguration ?? legacyPin,
         };
 
+        // ADR-0051 §9.5: every mutation reconciled as already applied and not yet in the history gets its runtime-authored step, in
+        // the same transaction that marks it recorded — so two concurrent resumes can never both append it.
+        var recorded = (journal ?? [])
+            .Where(entry => entry.State == TaskMutationState.ReconciledDone && entry.HistoryRecordedInAttempt is null)
+            .OrderBy(entry => entry.Sequence)
+            .ToList();
+        if (recorded.Count > 0)
+        {
+            acquired = acquired with
+            {
+                Steps =
+                [
+                    .. acquired.Steps,
+                    .. recorded.Select((entry, i) => MutationReconciledStep(entry, acquired.Steps.Count + i, acquired.ExecutionAttempt)),
+                ],
+            };
+        }
+
         // From here nothing is abandoned half-way: the transition either happened or did not, and is audited either way.
-        if (!await transitions.TryTransitionAsync(acquired, task.Status, task.ExecutionAttempt, CancellationToken.None))
+        var transitioned = journalStore is not null
+            ? await journalStore.TryAcquireAsync(acquired, task.Status, task.ExecutionAttempt,
+                [.. recorded.Select(entry => entry.Intent.Key)], CancellationToken.None)
+            : await transitions.TryTransitionAsync(acquired, task.Status, task.ExecutionAttempt, CancellationToken.None);
+        if (!transitioned)
         {
             return await RejectResumeAsync(task, actor, new TaskResumeRefusal(TaskResumeRefusal.ResumeConflict,
                 "The task changed while it was being resumed (another resume or writer got there first)."), CancellationToken.None);
@@ -486,6 +522,7 @@ public sealed class AgentRunner(
             Actor = actor,
             Delegation = null,
             PinnedProviderConfiguration = acquired.PinnedProviderConfiguration,
+            MutationJournalMode = acquired.MutationJournalMode,
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [.. acquired.Steps],
             Plans = [.. acquired.Plans],
@@ -506,6 +543,19 @@ public sealed class AgentRunner(
             logger.LogInformation(
                 "Task {TaskId}: execution attempt {ExecutionAttempt} resuming from step {StepIndex}", run.TaskId, run.ExecutionAttempt, run.Steps.Count);
         }
+
+        // ADR-0051 §9.6: the duplicate guard reads the reconciled mutations once, when the attempt starts; none can be reconciled
+        // while the task is Running. A journal that cannot be read fails the attempt before anything runs.
+        var journalStore = taskStore as ITaskMutationJournalStore;
+        IReadOnlyList<TaskMutationJournalEntry> reconciledDone = [];
+        if (run.MutationJournalMode == TaskMutationJournalMode.Journaled && journalStore is not null)
+        {
+            var snapshot = await journalStore.LoadWithJournalAsync(run.TaskId, ct)
+                ?? throw new InvalidOperationException($"Task {run.TaskId} is not stored.");
+            reconciledDone = [.. snapshot.Entries.Where(entry => entry.State == TaskMutationState.ReconciledDone)];
+        }
+
+        run.Mutations = new OrdinaryMutationScope(run.TaskId, run.ExecutionAttempt, run.MutationJournalMode, journalStore, reconciledDone);
 
         await WriteAuditAsync(LifecycleEvent(acquired, TaskLifecycleStage.ExecutionStarted, actor), null, ct);
         return await ExecuteGuardedAsync(run, () =>
@@ -983,6 +1033,7 @@ public sealed class AgentRunner(
             string observation;
             AuthorizationKind authorization;
             VerificationStatus? verification;
+            run.Mutations?.BeginCall(position.Cursor >= 0 && position.Cursor < plan.Steps.Count ? position.Cursor : null);
             try
             {
                 var semanticContract = plan.SemanticContractVersion == 1
@@ -1024,7 +1075,7 @@ public sealed class AgentRunner(
                 else
                 {
                     (step, observation, authorization, verification) = await ExecuteStepAsync(
-                        taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+                        taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation, mutations: run.Mutations);
                     if (semanticContract)
                     {
                         var classification = resolved is null
@@ -1054,6 +1105,9 @@ public sealed class AgentRunner(
                 };
                 steps.Add(step);
                 run.CountStep();
+                // ADR-0051 §7.3: an interrupted mutation (or one the expiry stopped before invocation) commits its outcome with
+                // this step; the attempt ends as before whatever the outcome is.
+                await CommitMutationOutcomeAsync(run);
                 return await FinishAsync(run, AgentTaskStatus.BudgetExceeded,
                     TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
             }
@@ -1062,6 +1116,22 @@ public sealed class AgentRunner(
                 // The budget ran out before the proposed action started (it was never run): the paid call that proposed it is
                 // still persisted, once, and nothing is executed.
                 return await StopForAttemptDurationAsync(run, stepCalls);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested && run.Mutations?.CancelledStep is { } cancelledStep)
+            {
+                // ADR-0051 §7.3: a mutation the task's cancellation stopped after its intent is recorded — not invoked, or invoked
+                // with an unknown outcome — in the run's history and, atomically, in the journal before the cancellation goes on.
+                steps.Add(cancelledStep with
+                {
+                    ModelCalls = stepCalls,
+                    UnexecutedToolCalls = response.ToolCalls.Count > 1 ? response.ToolCalls.Skip(1).ToList() : null,
+                    ExecutionAttempt = run.ExecutionAttempt,
+                    PlannedStepIndex = plan.SemanticContractVersion == 1 ? position.Cursor : null,
+                    ExecutionClassification = plan.SemanticContractVersion == 1 ? PlannedStepExecutionClassification.Matched : null,
+                });
+                run.CountStep();
+                await CommitMutationOutcomeAsync(run);
+                throw;
             }
             // ADR-0038: what the model emitted after the executed call is kept on the step, so its turn can be
             // rebuilt exactly (live and on resume) without reading any provider-specific payload.
@@ -1073,6 +1143,16 @@ public sealed class AgentRunner(
             };
             steps.Add(step);
             run.CountStep();
+
+            // ADR-0051 §7.3: a journaled mutation's outcome is committed atomically with the step that records it. An outcome
+            // that stays unknown after verification ends the attempt: it is never replanned or retried.
+            if (await CommitMutationOutcomeAsync(run) == TaskMutationState.Ambiguous)
+            {
+                logger.LogWarning(
+                    "Task {TaskId} step {StepIndex}: the outcome of '{Tool}' is unknown after verification; the execution attempt ends",
+                    taskId, stepIndex, primaryCall.ToolName);
+                return await FinishAsync(run, AgentTaskStatus.Failed, TaskTerminalKind.MutationOutcomeUnknown, CancellationToken.None);
+            }
 
             // Rule C4: without this, a model that keeps proposing the same forbidden tool would
             // retry it until MaxSteps — a Forbidden decision must be a dead end, not a suggestion
@@ -2393,6 +2473,13 @@ public sealed class AgentRunner(
         var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
         foreach (var step in steps)
         {
+            if (TaskResumePolicy.IsMutationReconciledStep(step))
+            {
+                // ADR-0051 §9.5: persisted runtime-authored history, as in the bounded history.
+                history.Add(ChatTurn.FromUser(step.Observation ?? string.Empty));
+                continue;
+            }
+
             if (step.ToolCall is null)
             {
                 continue;
@@ -3412,7 +3499,8 @@ public sealed class AgentRunner(
         int planRevision,
         CancellationToken ct,
         SkillExecutionScope? skillScope = null,
-        DelegatedExecutionScope? delegation = null)
+        DelegatedExecutionScope? delegation = null,
+        OrdinaryMutationScope? mutations = null)
     {
         // ADR-0038: a name the provider adapter could not map to a tool offered in the request is never looked up,
         // even when it happens to equal a registered tool's name.
@@ -3477,6 +3565,35 @@ public sealed class AgentRunner(
             return (recorded.Step, recorded.Observation, AuthorizationKind.Automatic, null);
         }
 
+        // ADR-0051 §3.2, §11: in an ordinary task every side-effecting call is journaled. A task that cannot journal (created on a
+        // store without the capability, or a journaled task on a store that lost it) refuses the call here, before policy, so no
+        // human is ever asked to approve something that cannot run. Read calls are never journaled and never refused here.
+        var journaled = mutations is not null && manifest.Risk != RiskLevel.Read;
+        var argumentsHash = journaled ? MutationArgumentsHash(manifest, call.Arguments) : null;
+        if (journaled && !mutations!.CanJournal)
+        {
+            const string disabledReason =
+                "This task keeps no durable mutation journal, so it cannot run side-effecting tools (ADR-0051); read-only tools remain available.";
+            await WriteAuditAsync(new PolicyDecisionAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = taskId,
+                StepIndex = stepIndex,
+                Actor = actor,
+                Package = manifest.Package,
+                Tool = manifest.Name,
+                Mode = PolicyMode.Forbidden,
+                Reason = disabledReason,
+            }, delegation, ct);
+            await WriteMutationAuditAsync(mutations, actor, TaskMutationAuditStage.IntentNotCommitted, stepIndex, manifest.Name, argumentsHash,
+                reasonCode: "mutations_disabled", ct: ct);
+
+            var refused = await RejectAsync(taskId, stepIndex, actor, call, manifest.Package, manifest.Risk,
+                AuthorizationKind.PolicyDenied, disabledReason, planRevision, ct, skillScope, delegation);
+            return (refused.Step, refused.Observation, AuthorizationKind.PolicyDenied, null);
+        }
+
         // Rule S3 — policy fails closed. Trust level is hardcoded to Official for V0.3: every
         // package loaded today is first-party, shipped in this repository, and there is no real
         // per-package trust assignment mechanism until dynamic loading arrives at V0.10 (D-003).
@@ -3506,6 +3623,20 @@ public sealed class AgentRunner(
                 PolicyMode.Approval,
                 $"The tool manifest requires explicit approval. Policy would otherwise allow automatic execution: {configuredPolicyDecision.Reason}")
             : configuredPolicyDecision;
+
+        // ADR-0051 §9.6, the duplicate guard: a call identical (same tool, same redacted-arguments hash) to a mutation of this task
+        // already reconciled as applied is never automatic, and an approver is told what it duplicates. It only escalates.
+        if (journaled && policyDecision.Mode != PolicyMode.Forbidden && mutations!.DuplicateOf(manifest.Name, argumentsHash!) is { } duplicate)
+        {
+            var how = duplicate.Reconciliation?.Action == ReconciliationAction.VerifiedDone
+                ? "its declared verification confirmed it was applied"
+                : "an administrator accepted it as already applied";
+            policyDecision = new PolicyDecision(
+                PolicyMode.Approval,
+                $"{MutationJournalPolicy.DuplicateOfReconciledMarker} This call is identical to '{duplicate.Intent.ToolName}' of execution attempt " +
+                $"{duplicate.Intent.Key.ExecutionAttempt}, step {duplicate.Intent.Key.StepIndex}, which was reconciled as already applied ({how}); " +
+                $"approving runs it again. Policy: {policyDecision.Reason}");
+        }
 
         if (policyDecision.Mode != PolicyMode.Automatic)
         {
@@ -3638,11 +3769,43 @@ public sealed class AgentRunner(
             await journal.BeginAsync(stepIndex, call.ToolName, call.Arguments);
         }
 
+        // ADR-0051 §3.2: the ordinary journal's single boundary — every gate allowed the call, nothing has invoked it. A tool is
+        // invoked only after its fenced intent committed (P1). Delegated runs keep their own journal above, never both.
+        TaskMutationIntent? intent = null;
+        if (journaled && journal is null)
+        {
+            intent = await CommitIntentAsync(mutations!, actor, manifest, argumentsHash!, stepIndex, planRevision);
+
+            // The only post-intent proof of "not executed": the runtime itself stops before invoking the tool.
+            var expired = activeAttemptBudget.Value?.IsExpired == true;
+            if (ct.IsCancellationRequested || expired)
+            {
+                var notInvoked = ToolCallResult.Failure(ct.IsCancellationRequested
+                    ? $"'{call.ToolName}' was not run: the task was cancelled before it started."
+                    : $"'{call.ToolName}' was not run: the attempt duration budget ran out before it started.");
+                var recordedNotInvoked = await RecordAsync(taskId, stepIndex, actor, call, tool, notInvoked, authorization, TimeSpan.Zero,
+                    verification: null, verificationDetail: null, planRevision, CancellationToken.None, skillScope, delegation);
+                mutations!.Pending = new PendingMutationOutcome(intent,
+                    new TaskMutationOutcome(MutationOutcomeKind.NotInvoked, null, null, null, timeProvider.GetUtcNow()), TaskMutationState.Settled);
+                if (ct.IsCancellationRequested)
+                {
+                    mutations.CancelledStep = recordedNotInvoked.Step;
+                    ct.ThrowIfCancellationRequested();
+                }
+
+                throw new AttemptDurationStepInterruptedException(recordedNotInvoked.Step, recordedNotInvoked.Observation);
+            }
+        }
+
         ToolCallResult result;
         var attemptBudgetInterrupted = false;
         try
         {
             result = await ExecuteWithTimeoutAsync(tool, call, executionContext, ct);
+            if (intent is not null && OnInvocationReturned is { } invocationReturned)
+            {
+                await invocationReturned(intent.Key);
+            }
         }
         catch (AttemptDurationBudgetExceededException)
         {
@@ -3672,6 +3835,21 @@ public sealed class AgentRunner(
             // ADR-0030 section 6: a side-effecting step that is cancelled while it runs may or may not have taken effect. It is
             // recorded as unknown, never as failed, so nothing treats the change as absent.
             await RecordUnknownDelegatedOutcomeAsync(taskId, stepIndex, actor, call, journal, delegation, verification: null);
+            throw;
+        }
+        catch (OperationCanceledException) when (intent is not null && ct.IsCancellationRequested)
+        {
+            // ADR-0051 §7.3: cancelled while the tool was invoked — it may or may not have taken effect. Never "failed", never
+            // "not executed": the outcome is unknown, verification is not run (the task's token is cancelled), and the step and
+            // outcome are recorded by the loop before the cancellation propagates.
+            var cancelled = new ToolCallResult(ToolOutcome.Failure, null,
+                $"'{call.ToolName}' was cancelled while it was running; its outcome is unknown and it may have been applied.");
+            var recordedCancelled = await RecordAsync(taskId, stepIndex, actor, call, tool, cancelled, authorization, stopwatch.Elapsed,
+                verification: null, verificationDetail: null, planRevision, CancellationToken.None, skillScope, delegation);
+            mutations!.Pending = new PendingMutationOutcome(intent,
+                new TaskMutationOutcome(MutationOutcomeKind.Cancelled, null, null, null, timeProvider.GetUtcNow()),
+                MutationJournalPolicy.OutcomeState(MutationOutcomeKind.Cancelled, null));
+            mutations.CancelledStep = recordedCancelled.Step;
             throw;
         }
 
@@ -3715,6 +3893,17 @@ public sealed class AgentRunner(
                 await RecordUnknownDelegatedOutcomeAsync(taskId, stepIndex, actor, call, journal, delegation, verification: null);
                 throw;
             }
+            catch (OperationCanceledException) when (intent is not null && ct.IsCancellationRequested)
+            {
+                // ADR-0051 §7.3: the task was cancelled while the call was being verified. What the invocation reported is known and
+                // recorded; an unknown end without a confirmation stays unknown.
+                var kind = attemptBudgetInterrupted ? MutationOutcomeKind.Interrupted : MutationJournalPolicy.ReturnedKind(result);
+                var recordedUnverified = await RecordAsync(taskId, stepIndex, actor, call, tool, result, authorization, stopwatch.Elapsed,
+                    verification: null, verificationDetail: null, planRevision, CancellationToken.None, skillScope, delegation);
+                mutations!.Pending = new PendingMutationOutcome(intent, MutationOutcome(kind, result, null), MutationJournalPolicy.OutcomeState(kind, null));
+                mutations.CancelledStep = recordedUnverified.Step;
+                throw;
+            }
         }
 
         if (verificationOutcome is not null)
@@ -3724,7 +3913,15 @@ public sealed class AgentRunner(
 
         var executed = await RecordAsync(taskId, stepIndex, actor, call, tool, result,
             authorization, stopwatch.Elapsed, verificationOutcome?.Status, verificationOutcome?.Detail, planRevision,
-            attemptBudgetInterrupted ? CancellationToken.None : ct, skillScope, delegation);
+            attemptBudgetInterrupted || intent is not null ? CancellationToken.None : ct, skillScope, delegation);
+
+        if (intent is not null)
+        {
+            // ADR-0051 §4: classified here, committed by the loop atomically with the step that records the call.
+            var kind = attemptBudgetInterrupted ? MutationOutcomeKind.Interrupted : MutationJournalPolicy.ReturnedKind(result);
+            mutations!.Pending = new PendingMutationOutcome(intent, MutationOutcome(kind, result, verificationOutcome?.Status),
+                MutationJournalPolicy.OutcomeState(kind, verificationOutcome?.Status));
+        }
 
         if (attemptBudgetInterrupted)
         {
@@ -3751,6 +3948,157 @@ public sealed class AgentRunner(
 
         return (executed.Step, executed.Observation, authorization, verificationOutcome?.Status);
     }
+
+    /// <summary>Test seam (ADR-0051 F-25B crash harness): runs right after an ordinary intent committed and was audited, before invocation. Never set in production.</summary>
+    internal Func<TaskMutationKey, Task>? OnIntentCommitted { get; set; }
+
+    /// <summary>Test seam (ADR-0051 F-25B crash harness): runs right after an ordinary journaled invocation returned, before verification. Never set in production.</summary>
+    internal Func<TaskMutationKey, Task>? OnInvocationReturned { get; set; }
+
+    /// <summary>
+    /// The intent's arguments fingerprint (ADR-0051 §5.2): the lowercase hex SHA-256 of the canonical arguments with every
+    /// <see cref="ToolParameter.Sensitive"/> value replaced by the redaction marker, so a low-entropy secret cannot be recovered
+    /// from it by guessing. The arguments themselves are never journaled.
+    /// </summary>
+    internal static string MutationArgumentsHash(ToolManifest manifest, ToolArguments arguments) =>
+        DelegationHasher.ComputeArgumentsHash(ToolArguments.FromJson(arguments.Redact(
+            manifest.Parameters.Where(parameter => parameter.Sensitive).Select(parameter => parameter.Name))));
+
+    private TaskMutationOutcome MutationOutcome(MutationOutcomeKind kind, ToolCallResult result, VerificationStatus? verification) =>
+        new(kind, result.Outcome, result.Succeeded ? null : result.FailureKind, verification, timeProvider.GetUtcNow());
+
+    /// <summary>
+    /// Commits the fenced intent of a call every gate allowed (ADR-0051 §3.2, §6.3). Refused (the task is no longer this attempt's
+    /// <c>Running</c> row): audited and the executor stops superseded, the tool is not invoked. A store failure: audited, and the
+    /// failure propagates to the containment; the tool is not invoked. Only a committed intent is audited as committed.
+    /// </summary>
+    private async Task<TaskMutationIntent> CommitIntentAsync(
+        OrdinaryMutationScope mutations, ActorIdentity actor, ToolManifest manifest, string argumentsHash, int stepIndex, int planRevision)
+    {
+        var intent = new TaskMutationIntent
+        {
+            Key = new TaskMutationKey(mutations.TaskId, mutations.ExecutionAttempt, stepIndex),
+            ToolName = manifest.Name,
+            ArgumentsHash = argumentsHash,
+            Risk = manifest.Risk,
+            VerificationToolName = manifest.Verification?.VerifyToolName,
+            PlanRevision = planRevision,
+            PlannedStepIndex = mutations.PlannedStepIndex,
+            IntentAtUtc = timeProvider.GetUtcNow(),
+        };
+
+        bool committed;
+        try
+        {
+            committed = await mutations.Store!.TryRecordIntentAsync(intent, CancellationToken.None);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OperationCanceledException)
+        {
+            logger.LogError(storeFailure, "Task {TaskId} step {StepIndex}: the mutation intent could not be committed; '{Tool}' is not run",
+                mutations.TaskId, stepIndex, manifest.Name);
+            await WriteMutationAuditAsync(mutations, actor, TaskMutationAuditStage.IntentNotCommitted, stepIndex, manifest.Name, argumentsHash,
+                reasonCode: "store_failure", ct: CancellationToken.None);
+            throw;
+        }
+
+        if (!committed)
+        {
+            await WriteMutationAuditAsync(mutations, actor, TaskMutationAuditStage.IntentNotCommitted, stepIndex, manifest.Name, argumentsHash,
+                reasonCode: "superseded", ct: CancellationToken.None);
+            throw new TaskExecutionSupersededException(mutations.TaskId, mutations.ExecutionAttempt);
+        }
+
+        await WriteMutationAuditAsync(mutations, actor, TaskMutationAuditStage.IntentCommitted, stepIndex, manifest.Name, argumentsHash,
+            state: TaskMutationState.Pending, ct: CancellationToken.None);
+        if (OnIntentCommitted is { } intentCommitted)
+        {
+            await intentCommitted(intent.Key);
+        }
+
+        return intent;
+    }
+
+    /// <summary>
+    /// Commits the outcome the step executor classified, atomically with the attempt's state including the step that records the
+    /// call (ADR-0051 §6.3, P12), and returns its state; <c>null</c> when the step journaled nothing. Refused: audited with what
+    /// this executor saw, and it stops superseded. A store failure: audited, and it propagates; the entry stays pending.
+    /// </summary>
+    private async Task<TaskMutationState?> CommitMutationOutcomeAsync(ExecutionRun run)
+    {
+        if (run.Mutations is not { Pending: { } pending } mutations)
+        {
+            return null;
+        }
+
+        mutations.Pending = null;
+        mutations.CancelledStep = null;
+        var key = pending.Intent.Key;
+        bool committed;
+        try
+        {
+            committed = await mutations.Store!.TryRecordOutcomeAsync(key, pending.Outcome, pending.State, run.Build(AgentTaskStatus.Running),
+                CancellationToken.None);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OperationCanceledException)
+        {
+            logger.LogError(storeFailure, "Task {TaskId} step {StepIndex}: the mutation outcome could not be committed; it stays unknown",
+                run.TaskId, key.StepIndex);
+            await WriteMutationOutcomeAuditAsync(run, pending, TaskMutationAuditStage.OutcomeNotCommitted, "store_failure");
+            throw;
+        }
+
+        if (!committed)
+        {
+            await WriteMutationOutcomeAuditAsync(run, pending, TaskMutationAuditStage.OutcomeNotCommitted, "superseded");
+            throw new TaskExecutionSupersededException(run.TaskId, run.ExecutionAttempt);
+        }
+
+        run.Persisted = true;
+        await WriteMutationOutcomeAuditAsync(run, pending, TaskMutationAuditStage.OutcomeCommitted, null);
+        if (pending.State == TaskMutationState.Ambiguous)
+        {
+            await WriteMutationOutcomeAuditAsync(run, pending, TaskMutationAuditStage.AmbiguityDiscovered, null);
+        }
+
+        return pending.State;
+    }
+
+    private Task WriteMutationOutcomeAuditAsync(ExecutionRun run, PendingMutationOutcome pending, TaskMutationAuditStage stage, string? reasonCode) =>
+        audit.WriteAsync(new TaskMutationAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = run.TaskId,
+            StepIndex = pending.Intent.Key.StepIndex,
+            Actor = run.Actor,
+            Stage = stage,
+            ExecutionAttempt = pending.Intent.Key.ExecutionAttempt,
+            Tool = pending.Intent.ToolName,
+            ArgumentsHash = pending.Intent.ArgumentsHash,
+            OutcomeKind = pending.Outcome.Kind,
+            ToolOutcome = pending.Outcome.ToolOutcome,
+            Verification = pending.Outcome.Verification,
+            State = stage == TaskMutationAuditStage.OutcomeNotCommitted ? null : pending.State,
+            ReasonCode = reasonCode,
+        }, CancellationToken.None);
+
+    private Task WriteMutationAuditAsync(
+        OrdinaryMutationScope mutations, ActorIdentity actor, TaskMutationAuditStage stage, int stepIndex, string tool, string? argumentsHash,
+        TaskMutationState? state = null, string? reasonCode = null, CancellationToken ct = default) =>
+        audit.WriteAsync(new TaskMutationAuditEvent
+        {
+            TimestampUtc = timeProvider.GetUtcNow(),
+            Node = NodeId.Local,
+            TaskId = mutations.TaskId,
+            StepIndex = stepIndex,
+            Actor = actor,
+            Stage = stage,
+            ExecutionAttempt = mutations.ExecutionAttempt,
+            Tool = tool,
+            ArgumentsHash = argumentsHash,
+            State = state,
+            ReasonCode = reasonCode,
+        }, ct);
 
     /// <summary>
     /// ADR-0030 sections 6 and 7: a side-effecting delegated step that was stopped while it ran may or may not have taken effect.
@@ -4761,6 +5109,12 @@ public sealed class AgentRunner(
 
         public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
 
+        /// <summary>Whether the task journals its side-effecting calls (ADR-0051 §8.1); fixed when the task was created.</summary>
+        public TaskMutationJournalMode MutationJournalMode { get; init; }
+
+        /// <summary>The ordinary mutation journal of this attempt; <c>null</c> for a delegated run, which has its own (ADR-0030).</summary>
+        public OrdinaryMutationScope? Mutations { get; set; }
+
         public required ActiveAttemptBudget AttemptBudget { get; init; }
 
         public required List<PlanStep> Steps { get; init; }
@@ -4800,6 +5154,7 @@ public sealed class AgentRunner(
                 ResumedAtUtc = ResumedAtUtc,
                 ResumedBy = ResumedBy,
                 PinnedProviderConfiguration = PinnedProviderConfiguration,
+                MutationJournalMode = MutationJournalMode,
             };
     }
 

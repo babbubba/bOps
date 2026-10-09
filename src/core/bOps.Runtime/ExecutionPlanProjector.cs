@@ -30,6 +30,9 @@ public enum ProjectedStepStatus
 
     /// <summary>Unresolved when an accepted replan replaced its revision.</summary>
     Superseded,
+
+    /// <summary>A side-effecting call for this step may or may not have been applied: its journal entry is unsettled (ADR-0051 §14.2).</summary>
+    OutcomeUnknown,
 }
 
 /// <summary>Which bounded same-step correction is in progress (ADR-0047, ADR-0050).</summary>
@@ -91,7 +94,19 @@ public static class ExecutionPlanProjector
     /// task (ADR-0040 §9): nothing is executing it, so no step is <see cref="ProjectedStepStatus.Running"/> or current.
     /// </param>
     /// <param name="manifestOf">Resolves a tool's manifest for conditional fact binding; <c>null</c> when unavailable.</param>
-    public static ProjectedPlan? Project(TaskState task, bool executing, Func<string, ToolManifest?>? manifestOf = null)
+    public static ProjectedPlan? Project(TaskState task, bool executing, Func<string, ToolManifest?>? manifestOf = null) =>
+        Project(task, executing, manifestOf, null);
+
+    /// <summary>
+    /// Projects <paramref name="task"/> with its mutation journal as an additive input (ADR-0051 §14.2): a planned step whose journal
+    /// entry is unsettled is <see cref="ProjectedStepStatus.OutcomeUnknown"/>; every other step is exactly the journal-free projection.
+    /// </summary>
+    /// <param name="task">The persisted task.</param>
+    /// <param name="executing">Whether this host holds an execution attempt of the task.</param>
+    /// <param name="manifestOf">Resolves a tool's manifest for conditional fact binding; <c>null</c> when unavailable.</param>
+    /// <param name="journal">The task's journal entries, or <c>null</c> when none are known.</param>
+    public static ProjectedPlan? Project(
+        TaskState task, bool executing, Func<string, ToolManifest?>? manifestOf, IReadOnlyList<TaskMutationJournalEntry>? journal)
     {
         ArgumentNullException.ThrowIfNull(task);
         if (task.Plans.Count == 0)
@@ -101,12 +116,24 @@ public static class ExecutionPlanProjector
 
         // The runner's own invariant: accepted revisions are appended in order and the last one is the plan in force.
         var last = task.Plans.Count - 1;
+        var unknown = (journal ?? [])
+            .Where(entry => MutationJournalPolicy.IsUnsettled(entry.State) && entry.Intent.PlanRevision is not null && entry.Intent.PlannedStepIndex is not null)
+            .Select(entry => (Revision: entry.Intent.PlanRevision!.Value, Index: entry.Intent.PlannedStepIndex!.Value))
+            .ToHashSet();
         var revisions = task.Plans
             .Select((plan, i) => new ProjectedPlanRevision(
-                plan.Revision, i == last, ProjectRevision(task, plan, i == last, executing, manifestOf)))
+                plan.Revision, i == last, WithUnknownOutcomes(ProjectRevision(task, plan, i == last, executing, manifestOf), unknown)))
             .ToList();
         return new ProjectedPlan(task.Plans[last].Revision, revisions);
     }
+
+    /// <summary>The journal's only effect on the projection: an unsettled planned step is shown as an unknown outcome, not current.</summary>
+    private static List<ProjectedPlanStep> WithUnknownOutcomes(List<ProjectedPlanStep> steps, HashSet<(int Revision, int Index)> unknown) =>
+        unknown.Count == 0
+            ? steps
+            : [.. steps.Select(step => unknown.Contains((step.Revision, step.Index))
+                ? step with { Status = ProjectedStepStatus.OutcomeUnknown, Current = false, CorrectionKind = null }
+                : step)];
 
     private static List<ProjectedPlanStep> ProjectRevision(
         TaskState task, AgentPlan plan, bool isActive, bool executing, Func<string, ToolManifest?>? manifestOf)
