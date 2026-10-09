@@ -356,6 +356,12 @@ public sealed class AgentRunner(
     /// <param name="task">The task as persisted.</param>
     public TaskResumeDecision EvaluateResume(TaskState task) => TaskResumePolicy.Evaluate(task, options);
 
+    /// <summary>PRE-4: the operator-facing, read-only execution-plan projection of a persisted task (see <see cref="ExecutionPlanProjector"/>).</summary>
+    /// <param name="task">The task as persisted.</param>
+    /// <param name="executing">Whether this host holds an execution attempt of the task.</param>
+    public ProjectedPlan? ProjectExecutionPlan(TaskState task, bool executing) =>
+        ExecutionPlanProjector.Project(task, executing, ManifestOf);
+
     /// <summary>
     /// The first half of a resume (ADR-0040 §4.3): reads the stored task, applies the resumability rule, and atomically moves
     /// it to <see cref="AgentTaskStatus.Running"/> under the next execution attempt. Every outcome for a stored task is

@@ -21,6 +21,27 @@ const WIDTHS = [375, 768, 1024, 1440] as const;
 const LOCALES = ['en', 'it', 'pseudo'] as const;
 type Locale = (typeof LOCALES)[number];
 
+function planStep(
+  revision: number,
+  index: number,
+  status: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    revision,
+    index,
+    objective:
+      'Inspect the unexpected shutdown and hardware events recorded around the synchronization failure window',
+    expectedTool: 'system.events.with_a_deliberately_long_unbroken_tool_identifier_for_wrapping',
+    status,
+    current: false,
+    conditional: false,
+    conditionOutcome: null,
+    correctionKind: null,
+    ...extra,
+  };
+}
+
 const task = {
   id: TASK_ID,
   node: 'e2e-layout-node-with-a-long-name',
@@ -42,6 +63,29 @@ const task = {
   resumeBlockedReason: {
     code: 'replan_limit_reached',
     message: 'The replanning lifetime limit was reached.',
+  },
+  // PRE-4: long objective and tool names, a replan boundary, a correction and a conditional step must not widen any viewport.
+  executionPlan: {
+    activeRevision: 1,
+    revisions: [
+      {
+        revision: 0,
+        active: false,
+        steps: [
+          planStep(0, 0, 'Completed'),
+          planStep(0, 1, 'Superseded', { conditional: true }),
+        ],
+      },
+      {
+        revision: 1,
+        active: true,
+        steps: [
+          planStep(1, 0, 'Correcting', { current: true, correctionKind: 'ArgumentValidation' }),
+          planStep(1, 1, 'Skipped', { conditional: true, conditionOutcome: 'Skipped' }),
+          planStep(1, 2, 'Pending', { conditional: true }),
+        ],
+      },
+    ],
   },
 };
 

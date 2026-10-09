@@ -13,6 +13,7 @@ import {
   TaskTerminalModelFailure,
   TaskTerminalReason,
 } from '../../core/api/models';
+import { ExecutionPlanPanel } from './execution-plan-panel';
 import { I18n } from '../../core/i18n/i18n';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
 import { modelServed } from '../../shared/model-call-format';
@@ -23,7 +24,7 @@ import { TASK_QUERY_PARAM, TasksStore, isCanonicalTaskId } from '../../state/tas
 
 @Component({
   selector: 'bops-dashboard',
-  imports: [FormsModule, StatusBadge, TranslatePipe],
+  imports: [FormsModule, StatusBadge, TranslatePipe, ExecutionPlanPanel],
   templateUrl: './dashboard.html',
 })
 export class Dashboard implements OnInit {

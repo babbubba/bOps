@@ -33,17 +33,18 @@ internal static class TaskStateView
 
     /// <summary>
     /// The task as a client sees it (ADR-0040 §9): every stored property without model bodies, the effective lifetime
-    /// accounting (derived for a task stored before it was kept), whether this host is executing it, and whether an ordinary
+    /// accounting (derived for a task stored before it was kept), the read-only execution-plan projection (PRE-4), whether this host is executing it, and whether an ordinary
     /// resume would be accepted now, with the refusal when not. <c>Running</c> and not <c>executing</c> is what a client may
     /// label "Interrupted"; it is not resumable.
     /// </summary>
-    internal static JsonObject ToView(TaskState task, bool executing, TaskResumeDecision resume)
+    internal static JsonObject ToView(TaskState task, bool executing, TaskResumeDecision resume, ProjectedPlan? executionPlan)
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(resume);
 
         var view = JsonSerializer.SerializeToNode(WithoutModelPayloads(task), ViewJsonOptions)!.AsObject();
         view["accounting"] = JsonSerializer.SerializeToNode(TaskResumePolicy.EffectiveAccounting(task), ViewJsonOptions);
+        view["executionPlan"] = JsonSerializer.SerializeToNode(executionPlan, ViewJsonOptions);
         view["executing"] = executing;
         view["resumable"] = resume.Resumable;
         view["resumeBlockedReason"] = resume.Refusal is { } refusal
