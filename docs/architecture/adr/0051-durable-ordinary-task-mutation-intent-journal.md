@@ -1,6 +1,9 @@
 # ADR-0051 — Durable mutation intent journal for ordinary tasks, fenced orphan recovery and reconciliation
 
-Status: **Proposed** (2026-10-09). Not accepted: the operator must accept it before F-25B starts.
+Status: **Accepted**
+Accepted: 2026-10-09 by the operator (D-047), as designed in PR #99, including the documented trade-off for
+crash windows C2–C6 (§5.2, §16 R-2): when the original arguments are not available, post-crash verification is not
+reconstructed and reconciliation requires an administrator.
 
 Governs finding **F-25** of the V1.3 pre-release stabilization packet
 (`agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md`, "F-25 / F-26 status";
@@ -12,7 +15,7 @@ F-25B (`agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md`
 | ADR-0017 (persistent, resumable tasks) | **Preserved** (`ITaskStore` unchanged, resume re-enters the same loop, `TaskState` stays the whole-aggregate JSON row). **Extended**: `tasks.db` gains a second table, the mutation journal, written in the same SQLite file. |
 | ADR-0030 (delegation) | **Preserved** unchanged: the delegation `IStepJournal`, `DelegationRunner` reconciliation and `RequiresReconciliation` are not touched. **Extended**: its crash semantics (intent before, outcome after; intent without outcome = *may have happened*; settle by declared verification; `Refuted`/`Inconclusive` → administrator; no automatic retry) are adopted for ordinary tasks, and its `ReconciliationAction` / `StepReconciliation` types are reused. Not amended. |
 | ADR-0036 (entitlements) | **Preserved**: entitlement is evaluated before the intent and never persisted; reconciliation verification obtains its own fresh decision. **Extended**: its "record and reconcile such an outcome through the existing timeout/verification and delegation journal semantics" now has an ordinary-task journal to do so. Not amended. |
-| ADR-0040 (resume state machine) | **Preserved**: `Running` is never ordinarily resumable; no new `AgentTaskStatus`; resume is an audited atomic transition; execution-attempt fencing. **Amended** explicitly, in §13 below: §3 (new ordered refusal rows), §4.3/§4.4 (journal-aware acquisition; the orphan-recovery design §4.4 deferred to "its own ADR"), §5.2 (two new non-counted synthetic steps), §6 (two new terminal kinds), §9 (view fields, two endpoints), §10 (two lifecycle stages). ADR-0040's text is not edited; it receives an `Amended by: ADR-0051` pointer only when this ADR is accepted. |
+| ADR-0040 (resume state machine) | **Preserved**: `Running` is never ordinarily resumable; no new `AgentTaskStatus`; resume is an audited atomic transition; execution-attempt fencing. **Amended** explicitly, in §13 below: §3 (new ordered refusal rows), §4.3/§4.4 (journal-aware acquisition; the orphan-recovery design §4.4 deferred to "its own ADR"), §5.2 (two new non-counted synthetic steps), §6 (two new terminal kinds), §9 (view fields, two endpoints), §10 (two lifecycle stages). ADR-0040's text is not edited; it carries an `Amended by: ADR-0051` pointer. |
 
 Also relied on, unchanged: ADR-0022 §6 (approvals are never persisted), ADR-0016 / rule S4 (every executed non-`Read`
 call is verified; never default to `Confirmed`), ADR-0038 (history rebuilt from persisted data only), ADR-0039 (terminal
@@ -774,7 +777,7 @@ prints the new refusal codes. Same runtime functions, same codes, non-zero exit 
   endpoints and view fields. `tasks.db` gains one table on first open by the new binary.
 - Crash testing grows by one injection point per journal write (F-25B test matrix).
 
-## 20. Decisions proposed for operator acceptance
+## 20. Decisions (accepted 2026-10-09, D-047)
 
 | # | Decision |
 |---|---|

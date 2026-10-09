@@ -5,6 +5,8 @@ Date: 2026-09-15
 Amended by: ADR-0040 (2026-09-30) — execution attempts, ordered resumability table (never `Running`, never delegated or
 unknown-origin tasks), atomic transition before the resume, execution-attempt fencing, per-attempt versus lifetime
 step/replan budgets, cumulative never-reset tokens, zero-plan re-planning, task lifecycle audit
+Extended by: [ADR-0051](0051-durable-ordinary-task-mutation-intent-journal.md) (Accepted 2026-10-09, D-047) — `tasks.db`
+gains a second table, the ordinary-task mutation journal; `ITaskStore` and the `TaskState` row are unchanged
 
 ## Context
 
