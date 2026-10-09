@@ -796,3 +796,11 @@ prints the new refusal codes. Same runtime functions, same codes, non-zero exit 
 | D-13 | `TaskMutationAuditEvent` + two lifecycle stages; no payloads. |
 | D-14 | API `recover` / `reconcile` (administrator), view fields; CLI equivalents; UI states. |
 | D-15 | Nothing at startup. |
+
+## 21. Implementation evidence (F-25B, 2026-10-10)
+
+F-25B implements the accepted decisions without changing them: the journal is SQLite-fenced with atomic outcome plus
+history persistence; recovery/reconciliation and journal-aware resume are available through API, CLI and the EN/IT
+dashboard. Local deterministic crash/behavior/property coverage is green (150 tests, including the 96-case
+no-double-execution property). Windows Release build is 0 warnings/0 errors and Angular production/headless/i18n
+gates are green. WSL Ubuntu is present but lacks `dotnet`; Linux execution is retained as CI evidence.
