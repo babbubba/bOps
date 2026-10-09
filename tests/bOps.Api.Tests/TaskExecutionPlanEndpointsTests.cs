@@ -56,18 +56,22 @@ public sealed class TaskExecutionPlanEndpointsTests
             .Select(s => s!["status"]!.GetValue<string>())];
 
     [Fact]
-    public async Task Get_ExposesTheActiveRevisionAndProjectedStates()
+    public async Task Get_ExposesTheActiveRevision_AndAnInterruptedTaskHasNoRunningOrCurrentStep()
     {
         using var factory = new TestAppFactory();
         using var client = factory.CreateClient();
+        // Stored as Running, but no executor of this host holds it: an interrupted task (ADR-0040 §9).
         var task = await SeedAsync(factory, Stored(AgentTaskStatus.Running, [Plan(0)],
             Executed(0, 0, PlannedStepExecutionClassification.Matched, 0)));
 
         var view = await GetAsync(client, task.Id);
 
+        Assert.False(view["executing"]!.GetValue<bool>());
         Assert.Equal(0, view["executionPlan"]!["activeRevision"]!.GetValue<int>());
-        // Step 1 is current; conditional step 2 is not reached yet.
-        Assert.Equal(["Completed", "Running", "Pending"], StatusesOf(view, 0));
+        // Conditional step 2 is not reached yet; step 1 is not executing, so it is neither Running nor current.
+        Assert.Equal(["Completed", "Pending", "Pending"], StatusesOf(view, 0));
+        Assert.DoesNotContain(view["executionPlan"]!["revisions"]!.AsArray().SelectMany(r => r!["steps"]!.AsArray()),
+            s => s!["current"]!.GetValue<bool>());
     }
 
     [Fact]
@@ -131,11 +135,18 @@ public sealed class TaskExecutionPlanEndpointsTests
     {
         using var factory = new TestAppFactory();
         using var client = factory.CreateClient();
+        var fact = new EvidenceFact($"{Secret}-type", $"{Secret}-key", ToolParameterType.String, JsonValue.Create(Secret)!);
+        var matched = Executed(0, 0, PlannedStepExecutionClassification.Matched, 0);
         var task = await SeedAsync(factory, Stored(AgentTaskStatus.Running, [Plan(0), Plan(1)],
-            Executed(0, 0, PlannedStepExecutionClassification.Matched, 0)));
+            matched with { Result = matched.Result! with { Facts = [fact] } },
+            Executed(0, 1, PlannedStepExecutionClassification.Matched, 1),
+            Executed(1, 0, PlannedStepExecutionClassification.ArgumentValidationFailure, 2)));
 
         var view = await GetAsync(client, task.Id);
         var plan = view["executionPlan"]!.ToJsonString();
+
+        // The fact-backed conditional step was activated: the qualifier is exposed, the fact's type, key and value are not.
+        Assert.Equal("Activated", view["executionPlan"]!["revisions"]![0]!["steps"]![2]!["conditionOutcome"]!.GetValue<string>());
 
         Assert.DoesNotContain(Secret, plan, StringComparison.Ordinal);
         foreach (var forbidden in new[] { "expectedArguments", "arguments", "activation", "factType", "factKey", "rationale", "output", "observation", "requestJson", "responseJson", "facts" })
@@ -182,10 +193,10 @@ public sealed class TaskExecutionPlanEndpointsTests
                 Executed(0, 1, PlannedStepExecutionClassification.ArgumentValidationFailure, 2),
                 Executed(1, 0, PlannedStepExecutionClassification.SemanticMismatch, 3));
 
-            var before = ExecutionPlanProjector.Project(task);
+            var before = ExecutionPlanProjector.Project(task, executing: true);
             await new SqliteTaskStore(path).SaveAsync(task);
             var reopened = await new SqliteTaskStore(path).LoadAsync(task.Id);
-            var after = ExecutionPlanProjector.Project(reopened!);
+            var after = ExecutionPlanProjector.Project(reopened!, executing: true);
 
             Assert.Equal(System.Text.Json.JsonSerializer.Serialize(before), System.Text.Json.JsonSerializer.Serialize(after));
             Assert.Equal(["Completed", "Superseded", "Superseded"], before!.Revisions[0].Steps.Select(s => s.Status.ToString()));

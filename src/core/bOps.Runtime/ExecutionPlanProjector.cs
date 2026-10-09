@@ -13,7 +13,7 @@ public enum ProjectedStepStatus
     /// <summary>Not reached yet.</summary>
     Pending,
 
-    /// <summary>The current step of a running task.</summary>
+    /// <summary>The current step of a running task this host is executing.</summary>
     Running,
 
     /// <summary>The current step after a spent bounded correction (see <see cref="ProjectedCorrectionKind"/>); still the same planned step.</summary>
@@ -86,8 +86,12 @@ public static class ExecutionPlanProjector
 
     /// <summary>Projects <paramref name="task"/>; <c>null</c> when no plan revision was ever persisted.</summary>
     /// <param name="task">The persisted task.</param>
+    /// <param name="executing">
+    /// Whether this host holds an execution attempt of the task. <see cref="AgentTaskStatus.Running"/> without it is an interrupted
+    /// task (ADR-0040 §9): nothing is executing it, so no step is <see cref="ProjectedStepStatus.Running"/> or current.
+    /// </param>
     /// <param name="manifestOf">Resolves a tool's manifest for conditional fact binding; <c>null</c> when unavailable.</param>
-    public static ProjectedPlan? Project(TaskState task, Func<string, ToolManifest?>? manifestOf = null)
+    public static ProjectedPlan? Project(TaskState task, bool executing, Func<string, ToolManifest?>? manifestOf = null)
     {
         ArgumentNullException.ThrowIfNull(task);
         if (task.Plans.Count == 0)
@@ -95,17 +99,17 @@ public static class ExecutionPlanProjector
             return null;
         }
 
-        var plans = task.Plans.OrderBy(plan => plan.Revision).ToList();
-        var active = plans[^1].Revision;
-        var revisions = plans
-            .Select(plan => new ProjectedPlanRevision(
-                plan.Revision, plan.Revision == active, ProjectRevision(task, plan, plan.Revision == active, manifestOf)))
+        // The runner's own invariant: accepted revisions are appended in order and the last one is the plan in force.
+        var last = task.Plans.Count - 1;
+        var revisions = task.Plans
+            .Select((plan, i) => new ProjectedPlanRevision(
+                plan.Revision, i == last, ProjectRevision(task, plan, i == last, executing, manifestOf)))
             .ToList();
-        return new ProjectedPlan(active, revisions);
+        return new ProjectedPlan(task.Plans[last].Revision, revisions);
     }
 
     private static List<ProjectedPlanStep> ProjectRevision(
-        TaskState task, AgentPlan plan, bool isActive, Func<string, ToolManifest?>? manifestOf)
+        TaskState task, AgentPlan plan, bool isActive, bool executing, Func<string, ToolManifest?>? manifestOf)
     {
         var all = task.Steps;
         var status = new ProjectedStepStatus?[plan.Steps.Count];
@@ -116,9 +120,10 @@ public static class ExecutionPlanProjector
             var after = before.After(plan, step);
             position = after.Settle(plan, all, manifestOf);
 
-            if (after.Cursor > before.Cursor && InRange(before.Cursor, status.Length))
+            // Only a tool execution resolves a planned step; the legacy fold also advances over a final answer, which executed nothing.
+            if (after.Cursor > before.Cursor && InRange(before.Cursor, status.Length) && step.ToolCall is not null)
             {
-                status[before.Cursor] = step.Result is null or { Outcome: ToolOutcome.Success }
+                status[before.Cursor] = step.Result is { Outcome: ToolOutcome.Success }
                     ? ProjectedStepStatus.Completed
                     : ProjectedStepStatus.Failed;
             }
@@ -130,7 +135,7 @@ public static class ExecutionPlanProjector
         }
 
         var cursor = position.Cursor;
-        var running = isActive && task.Status == AgentTaskStatus.Running;
+        var running = isActive && task.Status == AgentTaskStatus.Running && executing;
         var attempted = position.SemanticCorrectionSpent || position.ArgumentCorrectionSpent;
         ProjectedCorrectionKind? correction = null;
         if (plan.SemanticContractVersion == 1)
@@ -160,8 +165,9 @@ public static class ExecutionPlanProjector
                 currentIndex = cursor;
                 status[cursor] = attempted && correction is not null ? ProjectedStepStatus.Correcting : ProjectedStepStatus.Running;
             }
-            else if (attempted)
+            else if (attempted && task.Status != AgentTaskStatus.Running)
             {
+                // The task ended with the step's correction spent and the step never consumed; an interrupted task has not ended.
                 status[cursor] = ProjectedStepStatus.Failed;
             }
         }

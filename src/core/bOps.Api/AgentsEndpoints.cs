@@ -148,7 +148,10 @@ internal static class AgentsEndpoints
     }
 
     private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, AgentTaskLauncher launcher) =>
-        TaskStateView.ToView(task, launcher.IsExecuting(task.Id), runner.EvaluateResume(task), runner.ProjectExecutionPlan(task));
+        View(task, runner, launcher.IsExecuting(task.Id));
+
+    private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, bool executing) =>
+        TaskStateView.ToView(task, executing, runner.EvaluateResume(task), runner.ProjectExecutionPlan(task, executing));
 
     /// <summary>A temporary executor condition (ADR-0040 §9): 503 with a body and <c>Retry-After</c>. Never used for a task-state conflict.</summary>
     private static IResult ExecutorUnavailable(HttpContext http, string message)
@@ -158,8 +161,8 @@ internal static class AgentsEndpoints
     }
 
     /// <summary>
-    /// Server-Sent Events: a task view snapshot every time its step count, its status, its execution attempt or its number of accepted plan revisions
-    /// changes (an accepted replan is persisted before any step of the new revision exists),
+    /// Server-Sent Events: a task view snapshot every time its step count, its status, its execution attempt, its number of accepted plan
+    /// revisions (an accepted replan is persisted before any step of the new revision exists) or whether this host executes it changes,
     /// until the task reaches a terminal status — implemented as a plain <c>text/event-stream</c> write loop rather than a
     /// typed SSE result helper, so it does not depend on the exact shape of whatever SSE support a given ASP.NET Core
     /// version ships (ADR-0018). Because a resume is persisted before its 202 (ADR-0040 §4.3), a stream opened after a
@@ -172,7 +175,7 @@ internal static class AgentsEndpoints
         response.Headers.CacheControl = "no-cache";
 
         var ct = http.RequestAborted;
-        (int Steps, AgentTaskStatus Status, int ExecutionAttempt, int Plans)? last = null;
+        (int Steps, AgentTaskStatus Status, int ExecutionAttempt, int Plans, bool Executing)? last = null;
         var firstSeenAtUtc = DateTimeOffset.UtcNow;
 
         while (!ct.IsCancellationRequested)
@@ -190,11 +193,12 @@ internal static class AgentsEndpoints
                 return;
             }
 
-            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt, task.Plans.Count);
+            var executing = launcher.IsExecuting(task.Id);
+            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt, task.Plans.Count, executing);
             if (last != current)
             {
                 last = current;
-                await WriteEventAsync(response, "snapshot", View(task, runner, launcher).ToJsonString(SseJsonOptions), ct);
+                await WriteEventAsync(response, "snapshot", View(task, runner, executing).ToJsonString(SseJsonOptions), ct);
             }
 
             if (task.Status != AgentTaskStatus.Running)

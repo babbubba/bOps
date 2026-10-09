@@ -42,10 +42,10 @@ const STATUS_CLASS: Record<ExecutionPlanStepStatus, string> = {
         <p class="mt-2 text-sm text-muted">{{ 'dashboard.plan.none' | t }}</p>
       } @else {
         <p class="text-xs text-muted">{{ 'dashboard.plan.revision' | t: { revision: current.activeRevision } }}</p>
-        @for (revision of current.revisions; track revision.revision; let first = $first) {
+        @for (revision of current.revisions; track revision.revision; let first = $first, i = $index) {
           @if (!first) {
             <div role="separator" class="my-3 break-words border-t border-dashed border-default pt-1 text-xs font-medium text-muted">
-              {{ 'dashboard.plan.replan' | t: { from: revision.revision - 1, to: revision.revision } }}
+              {{ 'dashboard.plan.replan' | t: { from: current.revisions[i - 1].revision, to: revision.revision } }}
             </div>
           }
           @if (revision.steps.length === 0) {

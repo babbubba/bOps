@@ -41,17 +41,20 @@ public sealed class ExecutionPlanProjectorTests
     private static TaskState Task(AgentTaskStatus status, IReadOnlyList<AgentPlan> plans, params PlanStep[] steps) =>
         new(Guid.NewGuid(), NodeId.Local, "goal", status, steps, plans, DateTimeOffset.UnixEpoch);
 
+    // A Running task in these tests is one this host executes, unless a test says otherwise.
+    private static ProjectedPlan? Project(TaskState task, bool executing = true) => ExecutionPlanProjector.Project(task, executing);
+
     private static IReadOnlyList<ProjectedPlanStep> Steps(ProjectedPlan? plan, int revision) =>
         plan!.Revisions.Single(r => r.Revision == revision).Steps;
 
     [Fact]
     public void NoPlan_ProjectsNothing() =>
-        Assert.Null(ExecutionPlanProjector.Project(Task(AgentTaskStatus.Running, [])));
+        Assert.Null(Project(Task(AgentTaskStatus.Running, [])));
 
     [Fact]
     public void EmptyPlan_ProjectsNoSteps()
     {
-        var projected = ExecutionPlanProjector.Project(Task(AgentTaskStatus.Completed, [Plan(0)]));
+        var projected = Project(Task(AgentTaskStatus.Completed, [Plan(0)]));
         Assert.Equal(0, projected!.ActiveRevision);
         Assert.Empty(Steps(projected, 0));
     }
@@ -61,7 +64,7 @@ public sealed class ExecutionPlanProjectorTests
     {
         var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1), Planned(2))], Matched(0, 0));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Running, ProjectedStepStatus.Pending], steps.Select(s => s.Status));
         Assert.Equal([1], steps.Where(s => s.Current).Select(s => s.Index));
@@ -75,7 +78,7 @@ public sealed class ExecutionPlanProjectorTests
         var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1))],
             Exec(0, 0, PlannedStepExecutionClassification.Matched, ToolCallResult.Failure(Secret)));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Failed, ProjectedStepStatus.Running], steps.Select(s => s.Status));
     }
@@ -89,7 +92,7 @@ public sealed class ExecutionPlanProjectorTests
         var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1))],
             Exec(0, 0, classification, ToolCallResult.Failure(Secret)));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Correcting, ProjectedStepStatus.Pending], steps.Select(s => s.Status));
         Assert.True(steps[0].Current);
@@ -104,7 +107,7 @@ public sealed class ExecutionPlanProjectorTests
         var failed = new PlanStep(0, "s", new ModelToolCall("c", "system.events", ToolArguments.Empty),
             new ToolCallResult(ToolOutcome.Failure, null, "bad") { FailureKind = ToolFailureKind.Validation }, "obs", 0);
 
-        var steps = Steps(ExecutionPlanProjector.Project(Task(AgentTaskStatus.Running, [legacy], failed)), 0);
+        var steps = Steps(Project(Task(AgentTaskStatus.Running, [legacy], failed)), 0);
 
         Assert.Equal(ProjectedStepStatus.Correcting, steps[0].Status);
         Assert.Equal(ProjectedCorrectionKind.ArgumentValidation, steps[0].CorrectionKind);
@@ -115,7 +118,7 @@ public sealed class ExecutionPlanProjectorTests
     public void LegacyPlan_WithoutSteps_ProjectsFirstStepRunning()
     {
         var legacy = new AgentPlan(0, "r", [new PlannedStep(0, "only", null)]);
-        var steps = Steps(ExecutionPlanProjector.Project(Task(AgentTaskStatus.Running, [legacy])), 0);
+        var steps = Steps(Project(Task(AgentTaskStatus.Running, [legacy])), 0);
         Assert.Equal(ProjectedStepStatus.Running, steps[0].Status);
         Assert.Null(steps[0].ExpectedTool);
     }
@@ -127,7 +130,7 @@ public sealed class ExecutionPlanProjectorTests
         var fact = new EvidenceFact(FactType, FactKey, ToolParameterType.String, JsonValue.Create(Secret)!);
         var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1, activation: condition))], Matched(0, 0, 0, fact));
 
-        var step = Steps(ExecutionPlanProjector.Project(task), 0)[1];
+        var step = Steps(Project(task), 0)[1];
 
         Assert.Equal(ProjectedStepStatus.Running, step.Status);
         Assert.True(step.Conditional);
@@ -141,7 +144,7 @@ public sealed class ExecutionPlanProjectorTests
         var task = Task(AgentTaskStatus.Running,
             [Plan(0, Planned(0), Planned(1, activation: condition), Planned(2))], Matched(0, 0));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Skipped, ProjectedStepStatus.Running], steps.Select(s => s.Status));
         Assert.Equal(ProjectedConditionOutcome.Skipped, steps[1].ConditionOutcome);
@@ -155,7 +158,7 @@ public sealed class ExecutionPlanProjectorTests
         var condition = new EvidenceFactExists(0, FactType, FactKey);
         var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1, activation: condition))]);
 
-        var step = Steps(ExecutionPlanProjector.Project(task), 0)[1];
+        var step = Steps(Project(task), 0)[1];
 
         Assert.Equal((ProjectedStepStatus.Pending, true, null), (step.Status, step.Conditional, step.ConditionOutcome));
     }
@@ -169,7 +172,7 @@ public sealed class ExecutionPlanProjectorTests
             Exec(0, 1, PlannedStepExecutionClassification.ArgumentValidationFailure, ToolCallResult.Failure(Secret), 1),
             Exec(0, 1, PlannedStepExecutionClassification.ArgumentValidationFailure, ToolCallResult.Failure(Secret), 2));
 
-        var projected = ExecutionPlanProjector.Project(task);
+        var projected = Project(task);
 
         Assert.Equal(1, projected!.ActiveRevision);
         Assert.Equal([false, true], projected.Revisions.Select(r => r.Active));
@@ -187,7 +190,7 @@ public sealed class ExecutionPlanProjectorTests
             Exec(0, 0, PlannedStepExecutionClassification.ArgumentValidationFailure, ToolCallResult.Failure(Secret), 0),
             Exec(0, 0, PlannedStepExecutionClassification.ArgumentValidationFailure, ToolCallResult.Failure(Secret), 1));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Failed, ProjectedStepStatus.Pending], steps.Select(s => s.Status));
         Assert.DoesNotContain(steps, s => s.Current);
@@ -198,7 +201,7 @@ public sealed class ExecutionPlanProjectorTests
     {
         var task = Task(AgentTaskStatus.Cancelled, [Plan(0, Planned(0), Planned(1))], Matched(0, 0));
 
-        var steps = Steps(ExecutionPlanProjector.Project(task), 0);
+        var steps = Steps(Project(task), 0);
 
         Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Pending], steps.Select(s => s.Status));
         Assert.DoesNotContain(steps, s => s.Current);
@@ -213,8 +216,8 @@ public sealed class ExecutionPlanProjectorTests
             [Plan(0, Planned(0), Planned(1, activation: condition)), Plan(1, Planned(0))],
             Matched(0, 0, 0, fact));
 
-        var first = JsonSerializer.Serialize(ExecutionPlanProjector.Project(task));
-        var second = JsonSerializer.Serialize(ExecutionPlanProjector.Project(task with { }));
+        var first = JsonSerializer.Serialize(Project(task));
+        var second = JsonSerializer.Serialize(Project(task with { }));
 
         Assert.Equal(first, second);
         Assert.DoesNotContain(Secret, first, StringComparison.Ordinal);
@@ -223,11 +226,103 @@ public sealed class ExecutionPlanProjectorTests
         Assert.DoesNotContain("arguments", first, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(PlannedStepExecutionClassification.ArgumentValidationFailure)]
+    [InlineData(PlannedStepExecutionClassification.SemanticMismatch)]
+    [InlineData(null)]
+    public void InterruptedTask_RunningWithoutAnExecutor_HasNoRunningCorrectingOrCurrentStep(
+        PlannedStepExecutionClassification? classification)
+    {
+        var steps = new List<PlanStep> { Matched(0, 0) };
+        if (classification is { } kind)
+        {
+            steps.Add(Exec(0, 1, kind, ToolCallResult.Failure(Secret), 1));
+        }
+
+        var task = Task(AgentTaskStatus.Running, [Plan(0, Planned(0), Planned(1), Planned(2))], [.. steps]);
+
+        var projected = Steps(Project(task, executing: false), 0);
+
+        // Nothing executes an interrupted task, and it has not ended: its unconsumed step is neither Running nor Failed.
+        Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Pending, ProjectedStepStatus.Pending], projected.Select(s => s.Status));
+        Assert.DoesNotContain(projected, s => s.Current);
+        Assert.All(projected, s => Assert.Null(s.CorrectionKind));
+    }
+
+    [Fact]
+    public void ReplanTriggeringDeviation_IsSupersededOnceTheReplanIsAccepted_ButFailedWhileItsRevisionIsInForce()
+    {
+        var timedOut = Exec(0, 1, PlannedStepExecutionClassification.Matched,
+            new ToolCallResult(ToolOutcome.Timeout, null, Secret), 1);
+        var before = Task(AgentTaskStatus.ReplanLimitReached, [Plan(0, Planned(0), Planned(1), Planned(2))], Matched(0, 0), timedOut);
+        var after = before with { Status = AgentTaskStatus.Running, Plans = [.. before.Plans, Plan(1, Planned(0))] };
+
+        Assert.Equal(
+            [ProjectedStepStatus.Completed, ProjectedStepStatus.Failed, ProjectedStepStatus.Pending],
+            Steps(Project(before), 0).Select(s => s.Status));
+        // The execution history keeps the timeout; the planned step's historical status is Superseded, never Failed.
+        Assert.Equal(
+            [ProjectedStepStatus.Completed, ProjectedStepStatus.Superseded, ProjectedStepStatus.Superseded],
+            Steps(Project(after), 0).Select(s => s.Status));
+    }
+
+    [Theory]
+    [InlineData(AgentTaskStatus.Completed)]
+    [InlineData(AgentTaskStatus.Failed)]
+    [InlineData(AgentTaskStatus.Cancelled)]
+    [InlineData(AgentTaskStatus.MaxStepsReached)]
+    [InlineData(AgentTaskStatus.BudgetExceeded)]
+    [InlineData(AgentTaskStatus.ReplanLimitReached)]
+    [InlineData(AgentTaskStatus.PolicyBlocked)]
+    public void TerminalTask_KeepsItsHistory_NeverRunsOrPointsAtAStep(AgentTaskStatus terminal)
+    {
+        var condition = new EvidenceFactExists(0, FactType, FactKey);
+        var task = Task(terminal,
+            [Plan(0, Planned(0), Planned(1)), Plan(1, Planned(0), Planned(1, activation: condition), Planned(2), Planned(3))],
+            Matched(0, 0),
+            Matched(1, 0, 1),
+            Exec(1, 2, PlannedStepExecutionClassification.ArgumentValidationFailure, ToolCallResult.Failure(Secret), 2));
+
+        foreach (var executing in new[] { true, false })
+        {
+            var projected = Project(task, executing);
+
+            Assert.DoesNotContain(projected!.Revisions.SelectMany(r => r.Steps), s => s.Current || s.Status is ProjectedStepStatus.Running or ProjectedStepStatus.Correcting);
+            Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Superseded], Steps(projected, 0).Select(s => s.Status));
+            // A correction spent on a step the task never consumed before ending is that step's failure.
+            Assert.Equal(
+                [ProjectedStepStatus.Completed, ProjectedStepStatus.Skipped, ProjectedStepStatus.Failed, ProjectedStepStatus.Pending],
+                Steps(projected, 1).Select(s => s.Status));
+        }
+    }
+
+    [Fact]
+    public void LegacyFinalAnswer_DoesNotCompleteAPlannedStep()
+    {
+        var legacy = new AgentPlan(0, "r", [new PlannedStep(0, "inspect", "system.events"), new PlannedStep(1, "restart", "system.restart")]);
+        var task = Task(AgentTaskStatus.Completed, [legacy],
+            new PlanStep(0, "s", new ModelToolCall("c", "system.events", ToolArguments.Empty), ToolCallResult.Success("ok"), "ok", 0),
+            new PlanStep(1, "final", null, null, "done", 0));
+
+        Assert.Equal([ProjectedStepStatus.Completed, ProjectedStepStatus.Pending], Steps(Project(task), 0).Select(s => s.Status));
+    }
+
+    [Fact]
+    public void ActiveRevision_IsTheLastAcceptedRevision_AsTheRunnerReadsIt()
+    {
+        var task = Task(AgentTaskStatus.Running, [Plan(1, Planned(0)), Plan(2, Planned(0))]);
+
+        var projected = Project(task);
+
+        Assert.Equal(2, projected!.ActiveRevision);
+        Assert.Equal([(1, false), (2, true)], projected.Revisions.Select(r => (r.Revision, r.Active)));
+    }
+
     [Fact]
     public void Objective_IsCollapsedAndBounded()
     {
         var plan = new AgentPlan(0, "r", [new PlannedStep(0, "a\n  b " + new string('x', 500), null)]);
-        var objective = Steps(ExecutionPlanProjector.Project(Task(AgentTaskStatus.Running, [plan])), 0)[0].Objective;
+        var objective = Steps(Project(Task(AgentTaskStatus.Running, [plan])), 0)[0].Objective;
         Assert.StartsWith("a b x", objective, StringComparison.Ordinal);
         Assert.Equal(ExecutionPlanProjector.MaxObjectiveCharacters, objective.Length);
     }
