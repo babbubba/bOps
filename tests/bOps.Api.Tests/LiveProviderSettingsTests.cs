@@ -56,8 +56,8 @@ public sealed class LiveProviderSettingsTests
         var secondCall = Assert.Single(second.Plans.SelectMany(plan => plan.ModelCalls ?? []));
         Assert.Equal(secondPin.Generation, secondCall.ConfigurationGeneration);
         Assert.Equal(secondPin.SnapshotHash, secondCall.ConfigurationSnapshotHash);
-        var audit = await File.ReadAllTextAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
-        Assert.Contains(secondPin.SnapshotHash, audit, StringComparison.Ordinal);
+        await WaitForAuditContainsAsync(
+            Path.Combine(factory.TempDirectory, "audit.jsonl"), secondPin.SnapshotHash, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -81,8 +81,74 @@ public sealed class LiveProviderSettingsTests
         Assert.True(body!.LegacyConfigurationMigrated);
         var completed = await WaitTerminal(store, legacy.Id);
         Assert.NotNull(completed.PinnedProviderConfiguration);
-        var audit = await File.ReadAllTextAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
-        Assert.Contains("legacyConfigurationMigrated", audit, StringComparison.OrdinalIgnoreCase);
+        await WaitForAuditContainsAsync(
+            Path.Combine(factory.TempDirectory, "audit.jsonl"), "legacyConfigurationMigrated", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WaitForAuditContains_ReadsWhileWriterIsAppendingAndWaitsForLateEvent()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bops-audit-{Guid.NewGuid():N}.jsonl");
+        try
+        {
+            await using var writer = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            await writer.WriteAsync("{\"early\":1}\n"u8.ToArray());
+            await writer.FlushAsync();
+
+            var wait = WaitForAuditContainsAsync(path, "late-event", StringComparison.Ordinal);
+            await Task.Delay(100);
+            Assert.False(wait.IsCompleted);
+            await writer.WriteAsync("{\"late-event\":1}\n"u8.ToArray());
+            await writer.FlushAsync();
+            await wait;
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task WaitForAuditContains_TimesOutWithUsefulMessage()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bops-audit-{Guid.NewGuid():N}.jsonl");
+        try
+        {
+            await File.WriteAllTextAsync(path, "{\"early\":1}\n");
+            var ex = await Assert.ThrowsAsync<Xunit.Sdk.XunitException>(() =>
+                WaitForAuditContainsAsync(path, "never-written", StringComparison.Ordinal, TimeSpan.FromMilliseconds(200)));
+            Assert.Contains("never-written", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // The task reaches a terminal state before the runtime finishes appending its last audit event, so the
+    // file may still be open for writing: read it with shared access and wait (bounded) for the expected text.
+    private static async Task WaitForAuditContainsAsync(
+        string path, string expected, StringComparison comparison, TimeSpan? timeout = null)
+    {
+        using var cts = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            if (File.Exists(path))
+            {
+                string text;
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(stream))
+                {
+                    text = await reader.ReadToEndAsync(CancellationToken.None);
+                }
+                if (text.Contains(expected, comparison)) return;
+            }
+            try { await Task.Delay(20, cts.Token); }
+            catch (OperationCanceledException)
+            {
+                throw new Xunit.Sdk.XunitException($"Audit file '{path}' did not contain '{expected}' within the timeout.");
+            }
+        }
     }
 
     private static async Task<TaskState> StartAndWait(HttpClient client, ITaskStore store)
