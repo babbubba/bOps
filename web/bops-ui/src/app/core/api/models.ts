@@ -167,6 +167,47 @@ export interface AgentPlan {
   modelCalls?: ModelCallRecord[] | null;
 }
 
+/** bOps.Runtime.ProjectedStepStatus, as the server projects it (PRE-4). Derived server-side; the UI never recomputes it. */
+export type ExecutionPlanStepStatus =
+  | 'Pending'
+  | 'Running'
+  | 'Correcting'
+  | 'Completed'
+  | 'Failed'
+  | 'Skipped'
+  | 'Superseded';
+
+/** Which bounded same-step correction is in progress. */
+export type ExecutionPlanCorrectionKind = 'Semantic' | 'ArgumentValidation';
+
+/** A conditional step's determined activation: a qualifier next to the status, never a status of its own. */
+export type ExecutionPlanConditionOutcome = 'Activated' | 'Skipped';
+
+/** One planned step, operator-safe: no arguments, activation fact, result or rationale ever reach this type. */
+export interface ExecutionPlanStep {
+  revision: number;
+  index: number;
+  objective: string;
+  expectedTool: string | null;
+  status: ExecutionPlanStepStatus;
+  current: boolean;
+  conditional: boolean;
+  conditionOutcome: ExecutionPlanConditionOutcome | null;
+  correctionKind: ExecutionPlanCorrectionKind | null;
+}
+
+export interface ExecutionPlanRevision {
+  revision: number;
+  active: boolean;
+  steps: ExecutionPlanStep[];
+}
+
+/** bOps.Runtime.ProjectedPlan: every accepted plan revision, oldest first. `null` on the task until a plan is persisted. */
+export interface ExecutionPlan {
+  activeRevision: number;
+  revisions: ExecutionPlanRevision[];
+}
+
 /** bOps.Api.TaskErrorResponse: the stable `code` and the operator `message` of a refused task request (409, 501, 503) or of `resumeBlockedReason`. */
 export interface TaskErrorResponse {
   code: string;
@@ -209,6 +250,8 @@ export interface TaskState {
   terminalReason?: TaskTerminalReason | null;
   resumedAtUtc?: string | null;
   resumedBy?: { kind: string; id: string; displayName: string | null } | null;
+  /** The read-only execution-plan projection (PRE-4); `null` before any plan is persisted, absent from an older server. */
+  executionPlan?: ExecutionPlan | null;
   /** True when the launcher of this host holds an execution attempt of the task. `Running` and not `executing` is an interrupted task. */
   executing: boolean;
   resumable: boolean;

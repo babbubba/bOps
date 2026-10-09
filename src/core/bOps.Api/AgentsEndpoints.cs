@@ -148,7 +148,7 @@ internal static class AgentsEndpoints
     }
 
     private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, AgentTaskLauncher launcher) =>
-        TaskStateView.ToView(task, launcher.IsExecuting(task.Id), runner.EvaluateResume(task));
+        TaskStateView.ToView(task, launcher.IsExecuting(task.Id), runner.EvaluateResume(task), runner.ProjectExecutionPlan(task));
 
     /// <summary>A temporary executor condition (ADR-0040 §9): 503 with a body and <c>Retry-After</c>. Never used for a task-state conflict.</summary>
     private static IResult ExecutorUnavailable(HttpContext http, string message)
@@ -158,7 +158,8 @@ internal static class AgentsEndpoints
     }
 
     /// <summary>
-    /// Server-Sent Events: a task view snapshot every time its step count, its status or its execution attempt changes,
+    /// Server-Sent Events: a task view snapshot every time its step count, its status, its execution attempt or its number of accepted plan revisions
+    /// changes (an accepted replan is persisted before any step of the new revision exists),
     /// until the task reaches a terminal status — implemented as a plain <c>text/event-stream</c> write loop rather than a
     /// typed SSE result helper, so it does not depend on the exact shape of whatever SSE support a given ASP.NET Core
     /// version ships (ADR-0018). Because a resume is persisted before its 202 (ADR-0040 §4.3), a stream opened after a
@@ -171,7 +172,7 @@ internal static class AgentsEndpoints
         response.Headers.CacheControl = "no-cache";
 
         var ct = http.RequestAborted;
-        (int Steps, AgentTaskStatus Status, int ExecutionAttempt)? last = null;
+        (int Steps, AgentTaskStatus Status, int ExecutionAttempt, int Plans)? last = null;
         var firstSeenAtUtc = DateTimeOffset.UtcNow;
 
         while (!ct.IsCancellationRequested)
@@ -189,7 +190,7 @@ internal static class AgentsEndpoints
                 return;
             }
 
-            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt);
+            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt, task.Plans.Count);
             if (last != current)
             {
                 last = current;
