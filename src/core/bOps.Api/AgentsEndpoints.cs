@@ -96,11 +96,7 @@ internal static class AgentsEndpoints
                     return Results.NotFound(new { message = $"No stored task with id '{id}'." });
                 case TaskResumeOutcome.Refused:
                     var refusal = acquisition.Refusal!;
-                    return Results.Json(
-                        new TaskErrorResponse(refusal.Code, refusal.Message),
-                        statusCode: refusal.Code == TaskResumeRefusal.TransitionUnsupported
-                            ? StatusCodes.Status501NotImplemented
-                            : StatusCodes.Status409Conflict);
+                    return Results.Json(new TaskErrorResponse(refusal.Code, refusal.Message), statusCode: StatusFor(refusal.Code));
             }
 
             var acquired = acquisition.Task!;
@@ -125,33 +121,149 @@ internal static class AgentsEndpoints
                 : Results.NotFound(new { message = $"Task '{id}' is not running in this host." }))
             .RequireAuthorization(ApiAuthorization.OperatorPolicy);
 
-        group.MapGet("/{id:guid}", async (Guid id, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher) =>
+        group.MapGet("/{id:guid}", async (Guid id, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher, HttpContext http) =>
         {
-            var task = await store.LoadAsync(id);
+            var task = await store.LoadAsync(id, http.RequestAborted);
             return task is null
                 ? Results.NotFound(new { message = $"No stored task with id '{id}'." })
-                : Results.Ok(View(task, runner, launcher));
+                : Results.Ok((await ViewAsync(task, store, runner, launcher.IsExecuting(task.Id), http.RequestAborted)).View);
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
-        group.MapGet("/", async (string? status, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher) =>
+        group.MapGet("/", async (string? status, ITaskStore store, AgentRunner runner, AgentTaskLauncher launcher, HttpContext http) =>
         {
             if (!Enum.TryParse<AgentTaskStatus>(status ?? nameof(AgentTaskStatus.Running), ignoreCase: true, out var parsed))
             {
                 return Results.BadRequest(new { message = $"Unknown status '{status}'." });
             }
 
-            return Results.Ok((await store.ListByStatusAsync(parsed)).Select(task => View(task, runner, launcher)));
+            var views = new List<System.Text.Json.Nodes.JsonObject>();
+            foreach (var task in await store.ListByStatusAsync(parsed, http.RequestAborted))
+            {
+                views.Add((await ViewAsync(task, store, runner, launcher.IsExecuting(task.Id), http.RequestAborted)).View);
+            }
+
+            return Results.Ok(views);
         }).RequireAuthorization(ApiAuthorization.ViewerPolicy);
 
         group.MapGet("/{id:guid}/events", StreamTaskEventsAsync)
             .RequireAuthorization(ApiAuthorization.ViewerPolicy);
+
+        // ADR-0051 §8.3: an administrator's fenced recovery of an orphaned Running attempt. It runs nothing and is not a resume.
+        group.MapPost("/{id:guid}/recover", async (Guid id, RecoverTaskRequest? request, AgentRunner runner, AgentTaskLauncher launcher,
+            ITaskStore store, ClaimsPrincipal principal, HttpContext http) =>
+        {
+            if (request?.ExecutionAttempt is not > 0)
+            {
+                return Results.BadRequest(new { message = "'executionAttempt' is required: the execution attempt you were shown, a positive number." });
+            }
+
+            var result = await runner.TryRecoverAsync(id, request.ExecutionAttempt.Value, ApiActor(principal), launcher.IsExecuting(id), http.RequestAborted);
+            return result.Outcome switch
+            {
+                TaskRecoveryOutcome.NotFound => Results.NotFound(new { message = $"No stored task with id '{id}'." }),
+                TaskRecoveryOutcome.Refused => Results.Json(new TaskErrorResponse(result.Refusal!.Code, result.Refusal.Message),
+                    statusCode: StatusFor(result.Refusal.Code)),
+                _ => Results.Ok((await ViewAsync(result.Task!, store, runner, launcher.IsExecuting(id), CancellationToken.None)).View),
+            };
+        }).RequireAuthorization(ApiAuthorization.AdministratorPolicy);
+
+        // ADR-0051 §9.1: an administrator's reconciliation of a task's unsettled mutations. There is no retry action.
+        group.MapPost("/{id:guid}/reconcile", async (Guid id, ReconcileTaskRequest? request, AgentRunner runner, ITaskStore store,
+            ClaimsPrincipal principal, HttpContext http) =>
+        {
+            TaskReconcileAction action;
+            switch (request?.Action)
+            {
+                case "verify":
+                    action = TaskReconcileAction.Verify;
+                    break;
+                case "acceptDone":
+                    action = TaskReconcileAction.AcceptDone;
+                    break;
+                case "abandon":
+                    action = TaskReconcileAction.Abandon;
+                    break;
+                default:
+                    return Results.BadRequest(new { message = "'action' is 'verify', 'acceptDone' or 'abandon'." });
+            }
+
+            if (request.Note?.Length > AgentRunner.MaxReconcileNoteLength)
+            {
+                return Results.BadRequest(new { message = $"'note' is at most {AgentRunner.MaxReconcileNoteLength} characters." });
+            }
+
+            var result = await runner.ReconcileMutationsAsync(id, action, ApiActor(principal), request.Note, http.RequestAborted);
+            if (result.Outcome == TaskReconcileOutcome.NotFound)
+            {
+                return Results.NotFound(new { message = $"No stored task with id '{id}'." });
+            }
+
+            if (result.Outcome == TaskReconcileOutcome.Refused)
+            {
+                return Results.Json(new TaskErrorResponse(result.Refusal!.Code, result.Refusal.Message), statusCode: StatusFor(result.Refusal.Code));
+            }
+
+            var task = await store.LoadAsync(id, CancellationToken.None);
+            var (_, journal) = await ReadJournalAsync(task!, store, CancellationToken.None);
+            var resume = runner.EvaluateResume(task!, journal);
+            return Results.Ok(new ReconcileTaskResponse(
+                id,
+                [.. result.Results.Select(item => new ReconciledMutationResponse(
+                    item.Key.ExecutionAttempt, item.Key.StepIndex, item.State.ToString(),
+                    new ReconciliationResponse(item.Reconciliation.Action.ToString(), item.Reconciliation.Verification?.ToString(),
+                        item.Reconciliation.ResolvedBy.DisplayName ?? item.Reconciliation.ResolvedBy.Id, item.Reconciliation.AtUtc),
+                    item.ReasonCode))],
+                result.UnsettledCount,
+                resume.Resumable,
+                resume.Refusal is { } blocked ? new TaskErrorResponse(blocked.Code, blocked.Message) : null));
+        }).RequireAuthorization(ApiAuthorization.AdministratorPolicy);
     }
 
-    private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, AgentTaskLauncher launcher) =>
-        View(task, runner, launcher.IsExecuting(task.Id));
+    /// <summary>
+    /// The HTTP status of a refused task operation (ADR-0040 §9, ADR-0051 §8.3, §9.1, §9.4): a store that cannot do it is 501, a
+    /// journal that cannot be read now is 503, a malformed request 400, and every refusal about the task's state 409.
+    /// </summary>
+    internal static int StatusFor(string code) => code switch
+    {
+        TaskResumeRefusal.TransitionUnsupported or TaskResumeRefusal.MutationJournalUnsupported => StatusCodes.Status501NotImplemented,
+        TaskResumeRefusal.MutationJournalUnavailable => StatusCodes.Status503ServiceUnavailable,
+        TaskRecoveryRefusal.InvalidRequest => StatusCodes.Status400BadRequest,
+        _ => StatusCodes.Status409Conflict,
+    };
 
-    private static System.Text.Json.Nodes.JsonObject View(TaskState task, AgentRunner runner, bool executing) =>
-        TaskStateView.ToView(task, executing, runner.EvaluateResume(task), runner.ProjectExecutionPlan(task, executing));
+    /// <summary>The task and its mutation journal, read in one snapshot when the store keeps one; the entries are <c>null</c> when they cannot be read.</summary>
+    private static async Task<(TaskState Task, IReadOnlyList<TaskMutationJournalEntry>? Journal)> ReadJournalAsync(
+        TaskState task, ITaskStore store, CancellationToken ct)
+    {
+        if (task.MutationJournalMode != TaskMutationJournalMode.Journaled)
+        {
+            return (task, []);
+        }
+
+        if (store is not ITaskMutationJournalStore journalStore)
+        {
+            return (task, null);
+        }
+
+        try
+        {
+            return await journalStore.LoadWithJournalAsync(task.Id, ct) is { } snapshot ? (snapshot.Task, snapshot.Entries) : (task, []);
+        }
+        catch (Exception readFailure) when (readFailure is not OperationCanceledException)
+        {
+            return (task, null);
+        }
+    }
+
+    /// <summary>The client view of <paramref name="task"/> with its journal (ADR-0051 §14.2), and the journal summary <c>/events</c> watches.</summary>
+    private static async Task<(System.Text.Json.Nodes.JsonObject View, string JournalSummary)> ViewAsync(
+        TaskState task, ITaskStore store, AgentRunner runner, bool executing, CancellationToken ct)
+    {
+        var (current, journal) = await ReadJournalAsync(task, store, ct);
+        var view = TaskStateView.ToView(current, executing, runner.EvaluateResume(current, journal),
+            runner.ProjectExecutionPlan(current, executing, journal), runner.EvaluateRecovery(current, executing), journal);
+        return (view, TaskStateView.JournalSummary(journal));
+    }
 
     /// <summary>A temporary executor condition (ADR-0040 §9): 503 with a body and <c>Retry-After</c>. Never used for a task-state conflict.</summary>
     private static IResult ExecutorUnavailable(HttpContext http, string message)
@@ -162,7 +274,8 @@ internal static class AgentsEndpoints
 
     /// <summary>
     /// Server-Sent Events: a task view snapshot every time its step count, its status, its execution attempt, its number of accepted plan
-    /// revisions (an accepted replan is persisted before any step of the new revision exists) or whether this host executes it changes,
+    /// revisions (an accepted replan is persisted before any step of the new revision exists), its mutation journal's count per state
+    /// (ADR-0051 §14.2) or whether this host executes it changes,
     /// until the task reaches a terminal status — implemented as a plain <c>text/event-stream</c> write loop rather than a
     /// typed SSE result helper, so it does not depend on the exact shape of whatever SSE support a given ASP.NET Core
     /// version ships (ADR-0018). Because a resume is persisted before its 202 (ADR-0040 §4.3), a stream opened after a
@@ -175,7 +288,7 @@ internal static class AgentsEndpoints
         response.Headers.CacheControl = "no-cache";
 
         var ct = http.RequestAborted;
-        (int Steps, AgentTaskStatus Status, int ExecutionAttempt, int Plans, bool Executing)? last = null;
+        (int Steps, AgentTaskStatus Status, int ExecutionAttempt, int Plans, bool Executing, string Journal)? last = null;
         var firstSeenAtUtc = DateTimeOffset.UtcNow;
 
         while (!ct.IsCancellationRequested)
@@ -194,11 +307,12 @@ internal static class AgentsEndpoints
             }
 
             var executing = launcher.IsExecuting(task.Id);
-            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt, task.Plans.Count, executing);
+            var (view, journalSummary) = await ViewAsync(task, store, runner, executing, ct);
+            var current = (task.Steps.Count, task.Status, task.ExecutionAttempt, task.Plans.Count, executing, journalSummary);
             if (last != current)
             {
                 last = current;
-                await WriteEventAsync(response, "snapshot", View(task, runner, executing).ToJsonString(SseJsonOptions), ct);
+                await WriteEventAsync(response, "snapshot", view.ToJsonString(SseJsonOptions), ct);
             }
 
             if (task.Status != AgentTaskStatus.Running)

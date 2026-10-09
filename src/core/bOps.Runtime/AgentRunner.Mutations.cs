@@ -24,8 +24,16 @@ public sealed partial class AgentRunner
     public async Task<TaskResumeDecision> EvaluateResumeWithJournalAsync(TaskState task, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(task);
-        var journalStore = taskStore as ITaskMutationJournalStore;
-        return TaskResumePolicy.Evaluate(task, options, journalStore is not null, await ReadJournalAsync(task, journalStore, ct));
+        return EvaluateResume(task, await ReadJournalAsync(task, taskStore as ITaskMutationJournalStore, ct));
+    }
+
+    /// <summary>Decides whether <paramref name="task"/> may be resumed now, given its journal as already read (ADR-0051 §9.4).</summary>
+    /// <param name="task">The task as persisted.</param>
+    /// <param name="journal">Its journal entries, or <c>null</c> when they could not be read.</param>
+    public TaskResumeDecision EvaluateResume(TaskState task, IReadOnlyList<TaskMutationJournalEntry>? journal)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return TaskResumePolicy.Evaluate(task, options, taskStore is ITaskMutationJournalStore, journal);
     }
 
     /// <summary>PRE-4's projection with the task's mutation journal as an additive input: an unsettled planned step is <see cref="ProjectedStepStatus.OutcomeUnknown"/>.</summary>

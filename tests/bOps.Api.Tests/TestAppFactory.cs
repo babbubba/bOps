@@ -58,6 +58,10 @@ internal sealed class TestAppFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        // The repository keeps the entry project below src/core rather than directly below the
+        // solution root. Make the test host independent of vstest's current working directory.
+        builder.UseContentRoot(Path.GetFullPath("../../../../../src/core/bOps.Api", AppContext.BaseDirectory));
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             Environment.SetEnvironmentVariable(_secretVariableName, ApiKey);

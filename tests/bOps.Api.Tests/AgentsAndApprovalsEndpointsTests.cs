@@ -287,7 +287,11 @@ public sealed class AgentsAndApprovalsEndpointsTests
             [new PlanStep(0, "system.cpu", new ModelToolCall("call-0", "system.cpu", ToolArguments.Empty),
                 ToolCallResult.Success("42%"), "42%", 0)],
             [new AgentPlan(0, "test plan", [])],
-            DateTimeOffset.UtcNow) { Origin = TaskOrigin.Ordinary };
+            DateTimeOffset.UtcNow)
+        {
+            Origin = TaskOrigin.Ordinary,
+            MutationJournalMode = TaskMutationJournalMode.Journaled,
+        };
         await taskStore.SaveAsync(partial);
 
         var resumed = await client.PostAsync(new Uri($"/api/agents/tasks/{partial.Id}/resume", UriKind.Relative), content: null);

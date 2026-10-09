@@ -72,7 +72,7 @@ public sealed class LiveProviderSettingsTests
         var store = factory.Services.GetRequiredService<ITaskStore>();
         var legacy = new TaskState(Guid.NewGuid(), NodeId.Local, "resume legacy", AgentTaskStatus.Cancelled,
             [], [new AgentPlan(0, "test", [])], DateTimeOffset.UtcNow)
-        { Origin = TaskOrigin.Ordinary };
+        { Origin = TaskOrigin.Ordinary, MutationJournalMode = TaskMutationJournalMode.Journaled };
         await store.SaveAsync(legacy);
 
         var response = await client.PostAsync(new Uri($"/api/agents/tasks/{legacy.Id}/resume", UriKind.Relative), null);

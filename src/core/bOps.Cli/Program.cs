@@ -28,7 +28,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
+    Usage: bops "<goal>" | bops resume <task-id> | bops recover <task-id> --attempt <N> | bops reconcile <task-id> verify|accept|abandon [--note <text>] | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;
 
 if (args.Length == 0)
@@ -63,6 +63,8 @@ if (string.Equals(args[0], "audit", StringComparison.OrdinalIgnoreCase))
 // as the goal, exactly as before, so `bops "<goal>"` keeps working unchanged.
 string? goal = null;
 Guid? resumeTaskId = null;
+(Guid TaskId, int Attempt)? recoverInvocation = null;
+(Guid TaskId, TaskReconcileAction Action, string? Note)? reconcileInvocation = null;
 DelegateInvocation? delegateInvocation = null;
 
 // V1.2 (ADR-0030 section 9): "delegate" runs an objective through the fixed Discovery, Diagnostic, Remediation and Verification
@@ -89,6 +91,43 @@ else if (string.Equals(args[0], "resume", StringComparison.OrdinalIgnoreCase))
     }
 
     resumeTaskId = parsedTaskId;
+}
+else if (string.Equals(args[0], "recover", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length != 4 || !Guid.TryParse(args[1], out var parsedTaskId)
+        || !string.Equals(args[2], "--attempt", StringComparison.OrdinalIgnoreCase)
+        || !int.TryParse(args[3], out var attempt) || attempt <= 0)
+    {
+        await Console.Error.WriteLineAsync("Usage: bops recover <task-id> --attempt <N>");
+        return 1;
+    }
+
+    recoverInvocation = (parsedTaskId, attempt);
+}
+else if (string.Equals(args[0], "reconcile", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length is not (3 or 5) || !Guid.TryParse(args[1], out var parsedTaskId)
+        || (args.Length == 5 && !string.Equals(args[3], "--note", StringComparison.OrdinalIgnoreCase)))
+    {
+        await Console.Error.WriteLineAsync("Usage: bops reconcile <task-id> verify|accept|abandon [--note <text>]");
+        return 1;
+    }
+
+    var action = args[2].ToLowerInvariant() switch
+    {
+        "verify" => TaskReconcileAction.Verify,
+        "accept" => TaskReconcileAction.AcceptDone,
+        "abandon" => TaskReconcileAction.Abandon,
+        _ => (TaskReconcileAction)(-1),
+    };
+    var note = args.Length == 5 ? args[4] : null;
+    if (!Enum.IsDefined(action) || note?.Length > AgentRunner.MaxReconcileNoteLength)
+    {
+        await Console.Error.WriteLineAsync($"Usage: bops reconcile <task-id> verify|accept|abandon [--note <text>] (note at most {AgentRunner.MaxReconcileNoteLength} characters)");
+        return 1;
+    }
+
+    reconcileInvocation = (parsedTaskId, action, note);
 }
 else
 {
@@ -279,6 +318,49 @@ var runner = new AgentRunner(
     systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
+
+if (recoverInvocation is { } recover)
+{
+    var recovered = await runner.TryRecoverAsync(recover.TaskId, recover.Attempt, actor, executingHere: false);
+    if (recovered.Outcome == TaskRecoveryOutcome.NotFound)
+    {
+        await Console.Error.WriteLineAsync($"No stored task with id '{recover.TaskId}'.");
+        return 1;
+    }
+
+    if (recovered.Outcome == TaskRecoveryOutcome.Refused)
+    {
+        await Console.Error.WriteLineAsync($"Task {recover.TaskId} cannot be recovered ({recovered.Refusal!.Code}): {recovered.Refusal.Message}");
+        return 1;
+    }
+
+    Console.WriteLine($"Task {recover.TaskId} execution attempt {recover.Attempt} recovered. No tool was executed.");
+    return 0;
+}
+
+if (reconcileInvocation is { } reconcile)
+{
+    var reconciled = await runner.ReconcileMutationsAsync(reconcile.TaskId, reconcile.Action, actor, reconcile.Note);
+    if (reconciled.Outcome == TaskReconcileOutcome.NotFound)
+    {
+        await Console.Error.WriteLineAsync($"No stored task with id '{reconcile.TaskId}'.");
+        return 1;
+    }
+
+    if (reconciled.Outcome == TaskReconcileOutcome.Refused)
+    {
+        await Console.Error.WriteLineAsync($"Task {reconcile.TaskId} cannot be reconciled ({reconciled.Refusal!.Code}): {reconciled.Refusal.Message}");
+        return 1;
+    }
+
+    foreach (var item in reconciled.Results)
+    {
+        Console.WriteLine($"[{item.Key.ExecutionAttempt}:{item.Key.StepIndex}] {item.State} — {item.Reconciliation.Action}");
+    }
+
+    Console.WriteLine($"Unsettled mutations: {reconciled.UnsettledCount}");
+    return 0;
+}
 
 if (delegateInvocation is not null)
 {

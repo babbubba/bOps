@@ -58,6 +58,10 @@ internal sealed class AgentTaskLauncher(
             Origin = TaskOrigin.Ordinary,
             Accounting = TaskAccounting.None,
             PinnedProviderConfiguration = pin,
+            // ADR-0051 §11: decided once, from the store the task is created on, exactly as the runner decides it.
+            MutationJournalMode = taskStore is ITaskMutationJournalStore
+                ? TaskMutationJournalMode.Journaled
+                : TaskMutationJournalMode.MutationsDisabled,
         };
         try
         {
