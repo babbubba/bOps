@@ -803,4 +803,5 @@ F-25B implements the accepted decisions without changing them: the journal is SQ
 history persistence; recovery/reconciliation and journal-aware resume are available through API, CLI and the EN/IT
 dashboard. Local deterministic crash/behavior/property coverage is green (150 tests, including the 96-case
 no-double-execution property). Windows Release build is 0 warnings/0 errors and Angular production/headless/i18n
-gates are green. WSL Ubuntu is present but lacks `dotnet`; Linux execution is retained as CI evidence.
+gates are green. M1–M24 mutation capture and CI remain required before completion. WSL Ubuntu is present but lacks
+`dotnet`; Linux execution is retained as CI evidence.

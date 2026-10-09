@@ -6,7 +6,7 @@
   `design/v13-f25-ordinary-mutation-journal`. It adds fenced SQLite intent/outcome persistence, atomic outcome plus
   history-step writes, recovery/reconciliation, journal-aware resume, API/CLI/dashboard surfaces and EN/IT UI.
   Windows Release build is 0 warnings/0 errors; F-25 runtime evidence is 150/150, Angular is 485/485 and production
-  build/i18n are green. The aggregate Windows gate had one unrelated flaky `VaultStoreTests.ConcurrentSets...` result;
+  build/i18n are green. The required M1–M24 manual-mutation session remains to be recorded before completion. The aggregate Windows gate had one unrelated flaky `VaultStoreTests.ConcurrentSets...` result;
   its isolated retry passed. WSL Ubuntu 24.04 is installed but has no `dotnet`; Linux validation remains CI evidence.
 - F-26 has not been started. Do not merge until PR #99 CI is green and the operator approves.
 
