@@ -27,6 +27,7 @@ import {
   SystemMessagePage,
   TaskAcceptedResponse,
   TaskResumeAcceptedResponse,
+  ReconcileTaskResponse,
   TaskState,
   ToolManifest,
 } from './models';
@@ -47,6 +48,14 @@ export class BOpsApiClient {
 
   resumeTask(taskId: string): Promise<TaskResumeAcceptedResponse> {
     return firstValueFrom(this.http.post<TaskResumeAcceptedResponse>(`/api/agents/tasks/${taskId}/resume`, {}));
+  }
+
+  recoverTask(taskId: string, executionAttempt: number): Promise<TaskState> {
+    return firstValueFrom(this.http.post<TaskState>(`/api/agents/tasks/${taskId}/recover`, { executionAttempt }));
+  }
+
+  reconcileTask(taskId: string, action: 'verify' | 'acceptDone' | 'abandon', note?: string): Promise<ReconcileTaskResponse> {
+    return firstValueFrom(this.http.post<ReconcileTaskResponse>(`/api/agents/tasks/${taskId}/reconcile`, { action, note }));
   }
 
   /** Asks the host executing the task to stop it. Asynchronous: a 202 means the request was made, not that the task has stopped. */

@@ -59,6 +59,7 @@ describe('ExecutionPlanPanel', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [ExecutionPlanPanel] }).compileComponents();
     fixture = TestBed.createComponent(ExecutionPlanPanel);
+    TestBed.inject(I18n).setLanguage('en');
   });
 
   it('shows completed, current and pending steps with the active revision (UI-1)', () => {
@@ -133,6 +134,13 @@ describe('ExecutionPlanPanel', () => {
     expect(items()[2].textContent).toContain('Skipped');
     expect(items()[3].textContent).toContain('Conditional');
     expect(items()[3].textContent).not.toContain('Activated');
+  });
+
+  it('shows an outcome-unknown mutation step distinctly', () => {
+    render(plan([step(0, 'OutcomeUnknown', { current: true })]));
+
+    expect(items()[0].textContent).toContain('Outcome unknown');
+    expect(items()[0].getAttribute('aria-current')).toBe('step');
   });
 
   it('translates to Italian (UI-8)', () => {
@@ -212,6 +220,7 @@ describe('Dashboard execution plan panel', () => {
       providers: [{ provide: TasksStore, useValue: store }],
     }).compileComponents();
     fixture = TestBed.createComponent(Dashboard);
+    TestBed.inject(I18n).setLanguage('en');
     fixture.detectChanges();
   });
 

@@ -14,6 +14,7 @@ const STATUS_TEXT: Record<ExecutionPlanStepStatus, MessageKey> = {
   Failed: 'dashboard.plan.status.Failed',
   Skipped: 'dashboard.plan.status.Skipped',
   Superseded: 'dashboard.plan.status.Superseded',
+  OutcomeUnknown: 'dashboard.plan.status.OutcomeUnknown',
 };
 
 const STATUS_CLASS: Record<ExecutionPlanStepStatus, string> = {
@@ -24,6 +25,7 @@ const STATUS_CLASS: Record<ExecutionPlanStepStatus, string> = {
   Failed: 'text-status-failed',
   Skipped: 'text-status-neutral',
   Superseded: 'text-status-neutral',
+  OutcomeUnknown: 'text-risk-critical',
 };
 
 /**

@@ -30,6 +30,8 @@ interface TasksState {
   starting: boolean;
   /** A resume request is in flight: the Resume action is disabled until the server has answered. */
   resuming: boolean;
+  /** An administrator recovery or reconciliation request is in flight. */
+  mutatingJournal: boolean;
   /** A cancel was requested and the task has not stopped yet; it ends when the watched task is no longer executing. */
   cancelling: boolean;
   /** How the live view of the selected task relates to the API. */
@@ -47,6 +49,7 @@ const initialState: TasksState = {
   loading: false,
   starting: false,
   resuming: false,
+  mutatingJournal: false,
   cancelling: false,
   connection: 'connected',
   pendingWatch: null,
@@ -169,6 +172,10 @@ export const TasksStore = signalStore(
     return {
       refresh,
 
+      isAdministrator(): boolean {
+        return auth.identity()?.roles.includes('administrator') ?? false;
+      },
+
       async setStatusFilter(status: AgentTaskStatus): Promise<void> {
         if (status === store.statusFilter()) {
           return;
@@ -228,6 +235,32 @@ export const TasksStore = signalStore(
           if (isRefusal(err)) {
             await reloadSelected(taskId);
           }
+        }
+      },
+
+      async recover(taskId: string, executionAttempt: number): Promise<void> {
+        if (store.mutatingJournal()) return;
+        patchState(store, { mutatingJournal: true, error: null });
+        try {
+          const task = await api.recoverTask(taskId, executionAttempt);
+          if (store.selectedTaskId() === taskId) patchState(store, { selectedTask: task });
+          patchState(store, { mutatingJournal: false });
+        } catch (err) {
+          patchState(store, { mutatingJournal: false, error: describeError(err, i18n) });
+          if (isRefusal(err)) await reloadSelected(taskId);
+        }
+      },
+
+      async reconcile(taskId: string, action: 'verify' | 'acceptDone' | 'abandon'): Promise<void> {
+        if (store.mutatingJournal()) return;
+        patchState(store, { mutatingJournal: true, error: null });
+        try {
+          await api.reconcileTask(taskId, action);
+          await reloadSelected(taskId);
+          patchState(store, { mutatingJournal: false });
+        } catch (err) {
+          patchState(store, { mutatingJournal: false, error: describeError(err, i18n) });
+          if (isRefusal(err)) await reloadSelected(taskId);
         }
       },
 
