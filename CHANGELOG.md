@@ -14,6 +14,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- F-25B implements ADR-0051's durable, fenced ordinary-task mutation journal. Every permitted non-`Read` call now
+  commits its intent before invocation and records its outcome atomically with its task-history step. Unknown outcomes
+  fail closed: resume is blocked until an administrator recovers an orphan and reconciles it (`verify`, accept already
+  applied, or abandon); retry is never offered. New API, CLI and dashboard surfaces expose the journal and the
+  administrator actions. Pre-F-25 ordinary tasks (`Absent`) are not resumable/recoverable, stores without the journal
+  capability create `MutationsDisabled` tasks, and downgrade to a pre-F-25 binary is unsupported.
+
 - `system.dump_analyze` (ADR-0048) analyzes one Windows kernel crash dump with Microsoft's `kd.exe` and returns bounded JSON:
   bugcheck, debugger attribution (explicitly not a proven root cause), failure bucket, stack, modules, symbol state and the
   PnP and boot/shutdown black boxes. The tool is read-only and Windows-only, and it appears only when Debugging Tools for
