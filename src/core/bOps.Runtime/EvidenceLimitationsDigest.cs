@@ -243,7 +243,7 @@ internal static class EvidenceLimitationsDigest
     /// The tool label: a fixed token for an unknown-tool rejection, otherwise the resolved canonical name when it has at
     /// most 128 characters, all of them ASCII letters, digits, <c>.</c>, <c>_</c> or <c>-</c>; otherwise a fixed token.
     /// </summary>
-    private static string ToolLabel(PlanStep step, bool unknownTool)
+    internal static string ToolLabel(PlanStep step, bool unknownTool)
     {
         if (unknownTool)
         {
