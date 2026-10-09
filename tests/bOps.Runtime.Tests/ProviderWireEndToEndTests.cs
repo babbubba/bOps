@@ -65,7 +65,7 @@ public sealed class ProviderWireEndToEndTests
             }),
         }.ToJsonString();
 
-    private static string Plan(string expectedTool, int steps = 2) =>
+    private static string Plan(string expectedTool, int steps = 1) =>
         Text(new JsonObject
         {
             ["rationale"] = "r",
@@ -259,7 +259,7 @@ public sealed class ProviderWireEndToEndTests
         // Persist and resume: the rejected call is still in history, and still must not block the next request.
         var stored = result with { Status = AgentTaskStatus.Cancelled, Steps = [.. result.Steps.Select(s => s with { ModelCalls = null })] };
         var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
-        var resumed = new StrictOpenAiProvider(Text("Finished again."));
+        var resumed = new StrictOpenAiProvider(Plan("fs.size"), Text("Finished again."));
 
         var store = new InMemoryTaskStore();
         store.Seed(reloaded);

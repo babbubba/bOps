@@ -459,7 +459,7 @@ public sealed class ModelCallFailureContainmentTests
         var task = await h.Runner.RunAsync("check", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, task.Status);
-        Assert.Equal(5, task.Plans[0].Steps.Count);
+        Assert.Single(task.Plans[0].Steps);
         Assert.Equal(
             [ModelCallOutcome.Failure, ModelCallOutcome.Success],
             task.Plans[0].ModelCalls!.Select(c => c.Outcome));

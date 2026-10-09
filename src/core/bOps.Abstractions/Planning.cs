@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>
@@ -31,7 +33,33 @@ public sealed record PlannedStep
 
     /// <summary>The tool the model expects to use for this step, when it already knows; <c>null</c> if undecided.</summary>
     public string? ExpectedTool { get; init; }
+
+    /// <summary>
+    /// Equality-only, manifest-typed argument constraints that identify this step's intended call. Arguments not listed here
+    /// remain unconstrained; <see cref="AgentPlan.SemanticContractVersion"/> distinguishes a new unconstrained step from a
+    /// persisted legacy plan.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ToolArguments? ExpectedArguments { get; init; }
+
+    /// <summary>
+    /// ADR-0050 conditional follow-up: when present, the step runs only if an earlier step of the same plan revision
+    /// produced the referenced <see cref="EvidenceFact"/>; otherwise Runtime skips it deterministically.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EvidenceFactExists? Activation { get; init; }
 }
+
+/// <summary>
+/// The single ADR-0050 activation condition: the fact (<paramref name="FactType"/>, <paramref name="FactKey"/>) was produced
+/// by planned step <paramref name="SourceStepIndex"/> of the same plan revision. Optionally the fact's typed value is the
+/// expected value of exactly one argument, <paramref name="BindToArgument"/> — a direct binding, never a transformation.
+/// </summary>
+/// <param name="SourceStepIndex">Zero-based index of the earlier planned step whose result carries the fact.</param>
+/// <param name="FactType">The opaque <see cref="EvidenceFact.Type"/>.</param>
+/// <param name="FactKey">The opaque <see cref="EvidenceFact.Key"/>.</param>
+/// <param name="BindToArgument">The expected-tool parameter whose expected value is the fact's value; <c>null</c> for no binding.</param>
+public sealed record EvidenceFactExists(int SourceStepIndex, string FactType, string FactKey, string? BindToArgument = null);
 
 /// <summary>
 /// One revision of the model's plan for a task. <see cref="Revision"/> starts at 0 for the plan
@@ -66,4 +94,11 @@ public sealed record AgentPlan
 
     /// <summary>The calls made to the model to obtain this plan, oldest first: one, or two when the first reply was not a usable plan. <c>null</c> for a plan recorded before calls were kept.</summary>
     public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
+
+    /// <summary>
+    /// The semantic planned-step contract used by this revision. <c>null</c> identifies plans persisted before ADR-0050;
+    /// version 1 uses <see cref="PlannedStep.ExpectedArguments"/> typed subset equality.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SemanticContractVersion { get; init; }
 }

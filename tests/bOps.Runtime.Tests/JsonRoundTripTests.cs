@@ -122,7 +122,26 @@ public sealed class JsonRoundTripTests
 
         var result = RoundTrip(value);
 
-        Assert.Equal(value, result);
+        Assert.Equal(value.Outcome, result!.Outcome);
+        Assert.Equal(value.Output, result.Output);
+        Assert.Equal(value.ErrorMessage, result.ErrorMessage);
+        Assert.Equal(value.Completeness, result.Completeness);
+        Assert.Empty(result.Facts);
+    }
+
+    [Fact]
+    public void ToolCallResult_WithTypedEvidenceFacts_RoundTrips()
+    {
+        var fact = new EvidenceFact("artifact.path", "primary", ToolParameterType.Path, JsonValue.Create("C:\\evidence\\report.txt")!);
+        var value = ToolCallResult.Success("found") with { Facts = [fact] };
+
+        var result = RoundTrip(value);
+
+        var reloaded = Assert.Single(result!.Facts);
+        Assert.Equal(fact.Type, reloaded.Type);
+        Assert.Equal(fact.Key, reloaded.Key);
+        Assert.Equal(fact.ValueType, reloaded.ValueType);
+        Assert.Equal(fact.Value.ToJsonString(), reloaded.Value.ToJsonString());
     }
 
     [Fact]
@@ -136,8 +155,11 @@ public sealed class JsonRoundTripTests
 
         var result = RoundTrip(value);
 
-        Assert.Equal(value, result);
-        Assert.Equal(ToolFailureKind.Environment, result!.FailureKind);
+        Assert.Equal(value.Outcome, result!.Outcome);
+        Assert.Equal(value.ErrorMessage, result.ErrorMessage);
+        Assert.Equal(ToolFailureKind.Environment, result.FailureKind);
+        Assert.Equal(ToolResultCompleteness.Unavailable, result.Completeness);
+        Assert.Empty(result.Facts);
     }
 
     [Fact]
@@ -149,6 +171,7 @@ public sealed class JsonRoundTripTests
         Assert.Equal("old", result.ErrorMessage);
         Assert.Equal(ToolFailureKind.Unspecified, result.FailureKind);
         Assert.Equal(ToolResultCompleteness.Unspecified, result.Completeness);
+        Assert.Empty(result.Facts);
     }
 
     [Fact]
@@ -458,7 +481,9 @@ public sealed class JsonRoundTripTests
         Assert.Equal(value.Index, result!.Index);
         Assert.Equal(value.Description, result.Description);
         Assert.Equal(value.ToolCall!.ToolName, result.ToolCall!.ToolName);
-        Assert.Equal(value.Result, result.Result);
+        Assert.Equal(value.Result!.Outcome, result.Result!.Outcome);
+        Assert.Equal(value.Result.Output, result.Result.Output);
+        Assert.Empty(result.Result.Facts);
         Assert.Equal(value.Observation, result.Observation);
         Assert.Equal(value.PlanRevision, result.PlanRevision);
         Assert.Equal(VerificationStatus.Confirmed, result.VerificationStatus);

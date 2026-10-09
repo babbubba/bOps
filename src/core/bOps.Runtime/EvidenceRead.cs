@@ -23,6 +23,30 @@ internal sealed record RuntimeDirectiveRecognition(RuntimeDirectiveRecognitionKi
     internal static RuntimeDirectiveRecognition Malformed { get; } = new(RuntimeDirectiveRecognitionKind.Malformed, null);
 }
 
+internal enum ControlCallKind
+{
+    /// <summary>The response carries no <c>runtime.</c> control call.</summary>
+    None,
+
+    /// <summary>A supported control call with valid typed arguments.</summary>
+    Valid,
+
+    /// <summary>The supported control function, with arguments that are not exactly the closed typed request.</summary>
+    Malformed,
+
+    /// <summary>A <c>runtime.</c> name the runtime does not implement: a control protocol error, never a package tool.</summary>
+    Unsupported,
+
+    /// <summary>A <c>runtime.</c> call to a function this model turn was not offered (PRE-3B1): a control protocol error, nothing is read.</summary>
+    NotOffered,
+}
+
+/// <summary>The first <c>runtime.</c> control call of a model response (PRE-3A); its directive is the one legacy text produces.</summary>
+internal sealed record ControlCallRecognition(ControlCallKind Kind, ModelToolCall? Call, EvidenceReadDirective? Directive)
+{
+    internal static ControlCallRecognition None { get; } = new(ControlCallKind.None, null, null);
+}
+
 internal sealed record EvidenceReadResult(EvidenceReadResultCode Code, string? Fragment, int ReturnedLength);
 
 /// <summary>Exact recognition, current-task resolution and UTF-16 range semantics for <c>EvidenceRead/v1</c>.</summary>
@@ -31,6 +55,64 @@ internal static class EvidenceRead
     internal const string Discriminator = "EvidenceRead/v1";
     internal const int ChunkCharacters = 4000;
     internal const int MaxAttempts = 4;
+
+    /// <summary>
+    /// The runtime-internal control function (PRE-3A, ADR-0046 amendment). It is not a package tool: never in the
+    /// <see cref="ToolRegistry"/>, never authorized, approved or entitled; the registry reserves the whole
+    /// <see cref="ControlNamespace"/> so no package can claim it.
+    /// </summary>
+    internal const string ControlFunctionName = "runtime.evidence_read";
+    internal const string ControlNamespace = "runtime.";
+
+    /// <summary>The offered function declaration. The task is never an argument: it always comes from the runtime context.</summary>
+    internal static ToolManifest ControlManifest { get; } = new()
+    {
+        Name = ControlFunctionName,
+        Description = "Runtime control function, not an operational tool: reads up to 4000 UTF-16 code units of already persisted "
+            + "evidence of the current task, by step index. It runs nothing and does not complete the planned step; "
+            + "a tool call in the same reply is not executed.",
+        Risk = RiskLevel.Read,
+        Platforms = [CurrentPlatform.Id],
+        Requires = [],
+        Parameters =
+        [
+            new ToolParameter("step", ToolParameterType.Integer, "Index of the earlier step whose evidence to read.") { Minimum = 0 },
+            new ToolParameter("source", ToolParameterType.Enum, "Which persisted text to read.",
+                AllowedValues: ["result", "observation"]),
+            new ToolParameter("offset", ToolParameterType.Integer, "UTF-16 start offset.") { Minimum = 0 },
+            new ToolParameter("length", ToolParameterType.Integer, "UTF-16 code units to return.") { Minimum = 1, Maximum = ChunkCharacters },
+        ],
+    };
+
+    /// <summary>Recognizes the first <c>runtime.</c> native call, if any, as a typed request for the current task.</summary>
+    internal static ControlCallRecognition RecognizeControl(Guid currentTaskId, ModelResponse response)
+    {
+        var call = response.ToolCalls.FirstOrDefault(candidate =>
+            candidate.ToolName.StartsWith(ControlNamespace, StringComparison.Ordinal));
+        if (call is null)
+        {
+            return ControlCallRecognition.None;
+        }
+
+        if (!string.Equals(call.ToolName, ControlFunctionName, StringComparison.Ordinal) || call.ToolNameError is not null)
+        {
+            return new ControlCallRecognition(ControlCallKind.Unsupported, call, null);
+        }
+
+        var json = call.Arguments.ToJson();
+        if (call.ArgumentsError is not null || json.Count != 4
+            || json.Any(property => property.Key is not ("step" or "source" or "offset" or "length"))
+            || !TryInt(json["step"], out var step) || step < 0
+            || !TryString(json["source"], out var source)
+            || !TryInt(json["offset"], out var offset)
+            || !TryInt(json["length"], out var length))
+        {
+            return new ControlCallRecognition(ControlCallKind.Malformed, call, null);
+        }
+
+        return new ControlCallRecognition(ControlCallKind.Valid, call,
+            new EvidenceReadDirective(BoundedHistory.EvidenceId(currentTaskId, step), source, offset, length));
+    }
     private static readonly JsonDocumentOptions StrictJson = new() { AllowDuplicateProperties = false };
 
     internal static RuntimeDirectiveRecognition Recognize(ModelResponse response)
@@ -195,6 +277,57 @@ internal static class EvidenceRead
             }
 
             objectStart = text.IndexOf('{', objectStart + 1);
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
+/// PRE-3B1: whether a candidate final response is itself a tool/control invocation envelope rather than prose for the user.
+/// Deliberately closed and shallow: it matches the whole-response shape of the formats the runtime knows (Qwen-style
+/// tool_call / function= markup and a serialized {name, arguments} call object). It is not an XML parser, and prose that
+/// merely mentions a function name is never matched.
+/// </summary>
+internal static class TerminalProtocolArtifact
+{
+    private static readonly JsonDocumentOptions NoDuplicateNames = new() { AllowDuplicateProperties = false };
+
+    private static readonly string[] EnvelopeStarts = ["<tool_call>", "<function="];
+
+    internal static bool IsArtifact(string? text)
+    {
+        var trimmed = text?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return false;
+        }
+
+        foreach (var start in EnvelopeStarts)
+        {
+            if (trimmed.StartsWith(start, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (trimmed[0] != '{')
+        {
+            return false;
+        }
+
+        try
+        {
+            if (JsonNode.Parse(trimmed, nodeOptions: null, documentOptions: NoDuplicateNames) is JsonObject root)
+            {
+                var name = root["name"] ?? root["function"];
+                var hasName = name is JsonValue value && value.TryGetValue<string>(out _);
+                return hasName && (root.ContainsKey("arguments") || root.ContainsKey("parameters"));
+            }
+        }
+        catch (JsonException)
+        {
+            // Not a JSON object, or one that repeats a name: ordinary text that happens to start with a brace.
         }
 
         return false;

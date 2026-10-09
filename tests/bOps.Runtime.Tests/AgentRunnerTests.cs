@@ -377,12 +377,12 @@ public sealed class AgentRunnerTests
     [Fact]
     public async Task RunAsync_EndsAsMaxStepsReached_WhenTheModelNeverReportsCompletion()
     {
-        var toolCall = new ModelToolCall("call-1", "test.read", ToolArguments.Empty);
         var model = new FakeChatModel([
-            PlanningTestSupport.PlanResponse(stepCount: 50), // never exhausted within MaxSteps
-            .. Enumerable.Range(0, 10).Select(_ => new ModelResponse(null, [toolCall], false, null)),
+            PlanningTestSupport.PlanResponseIndexed("test.read", 10), // never exhausted within MaxSteps
+            .. Enumerable.Range(0, 10).Select(i => new ModelResponse(
+                null, [new ModelToolCall("call-1", "test.read", new ToolArguments(PlanningTestSupport.IndexArguments(i)))], false, null)),
         ]);
-        var registry = CreateRegistryWith(new FakeReadTool());
+        var registry = CreateRegistryWith(new FakeReadTool(parameters: [PlanningTestSupport.CallIndexParameter]));
         var audit = new RecordingAuditSink();
         var options = new AgentRunnerOptions { MaxSteps = 3 };
 
@@ -845,7 +845,7 @@ public sealed class AgentRunnerTests
     public async Task RunAsync_RecordsTheInitialPlan_BeforeTheFirstStep()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(stepCount: 2, rationale: "Check CPU, then report."),
+            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 2, rationale: "Check CPU, then report."),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
@@ -940,31 +940,128 @@ public sealed class AgentRunnerTests
     }
 }
 
-/// <summary>Builds canned planning-call responses shared across <see cref="AgentRunnerTests"/>.</summary>
+/// <summary>One planned step for <see cref="PlanningTestSupport"/>: a tool plus the optional discriminating arguments.</summary>
+internal sealed record PlanTestStep(string Tool, System.Text.Json.Nodes.JsonObject? ExpectedArguments = null);
+
+/// <summary>
+/// Builds canned planning-call responses shared across <see cref="AgentRunnerTests"/>. Responses honour the
+/// ADR-0050 semantic contract: a tool planned more than once must carry non-empty expectedArguments on every
+/// occurrence, so the helpers refuse to build a plan that production would (rightly) reject.
+/// </summary>
 internal static class PlanningTestSupport
 {
+    /// <summary>One step per tool; a repeated tool is rejected here because it would need a discriminator.</summary>
     public static ModelResponse PlanResponseFor(params string[] expectedTools)
     {
-        var steps = new System.Text.Json.Nodes.JsonArray();
-        for (var i = 0; i < expectedTools.Length; i++)
+        var duplicate = expectedTools.GroupBy(t => t, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
+        if (duplicate is not null)
         {
-            steps.Add(new System.Text.Json.Nodes.JsonObject
+            throw new InvalidOperationException(
+                $"Tool '{duplicate.Key}' is planned more than once; use PlanResponseFor(PlanTestStep[]) with discriminating expectedArguments (ADR-0050).");
+        }
+
+        return PlanResponseFor([.. expectedTools.Select(t => new PlanTestStep(t))]);
+    }
+
+    /// <summary>Explicit steps; a repeated tool needs non-empty <see cref="PlanTestStep.ExpectedArguments"/> on every occurrence.</summary>
+    public static ModelResponse PlanResponseFor(params PlanTestStep[] plannedSteps) =>
+        PlanResponseFor("A generic test plan.", plannedSteps);
+
+    private static ModelResponse PlanResponseFor(string rationale, PlanTestStep[] plannedSteps)
+    {
+        var ambiguous = plannedSteps.GroupBy(s => s.Tool, StringComparer.Ordinal)
+            .FirstOrDefault(g => g.Count() > 1 && g.Any(s => s.ExpectedArguments is null or { Count: 0 }));
+        if (ambiguous is not null)
+        {
+            throw new InvalidOperationException(
+                $"Repeated tool '{ambiguous.Key}' needs non-empty ExpectedArguments on every occurrence (ADR-0050).");
+        }
+
+        var steps = new System.Text.Json.Nodes.JsonArray();
+        for (var i = 0; i < plannedSteps.Length; i++)
+        {
+            var step = new System.Text.Json.Nodes.JsonObject
             {
                 ["description"] = $"step {i}",
-                ["expectedTool"] = expectedTools[i],
-            });
+                ["expectedTool"] = plannedSteps[i].Tool,
+            };
+            if (plannedSteps[i].ExpectedArguments is { } args)
+            {
+                step["expectedArguments"] = args.DeepClone();
+            }
+
+            steps.Add(step);
         }
 
         var json = new System.Text.Json.Nodes.JsonObject
         {
-            ["rationale"] = "A generic test plan.",
+            ["rationale"] = rationale,
             ["steps"] = steps,
         }.ToJsonString();
         return new ModelResponse(json, [], false, null);
     }
 
+    /// <summary>A valid, minimal plan: zero or one step. More than one step of the same tool is ambiguous — see <see cref="PlanResponseWithDistinctSteps"/>.</summary>
     public static ModelResponse PlanResponse(
-        int stepCount = 5,
+        int stepCount = 1,
+        string rationale = "A generic test plan.",
+        int revision = 0,
+        string expectedTool = "test.read")
+    {
+        if (stepCount > 1)
+        {
+            throw new InvalidOperationException(
+                "A plan of several steps cannot repeat one tool without discriminators (ADR-0050); use PlanResponseWithDistinctSteps or PlanResponseFor.");
+        }
+
+        // `revision` is not encoded in the JSON itself — the runtime assigns the revision number
+        // based on why the call was made (initial plan vs. replan), never from the model's text.
+        // It is accepted here only so a test reads clearly about which replan a response answers.
+        _ = revision;
+
+        var steps = new System.Text.Json.Nodes.JsonArray();
+        for (var i = 0; i < stepCount; i++)
+        {
+            steps.Add(new System.Text.Json.Nodes.JsonObject { ["description"] = $"step {i}", ["expectedTool"] = expectedTool });
+        }
+
+        var json = new System.Text.Json.Nodes.JsonObject { ["rationale"] = rationale, ["steps"] = steps }.ToJsonString();
+        return new ModelResponse(json, [], false, null);
+    }
+
+
+    /// <summary>The single integer parameter that makes repeated calls of one tool discriminable (ADR-0050).</summary>
+    public static readonly ToolParameter CallIndexParameter = new("n", ToolParameterType.Integer, "Which call of the sequence this is.");
+
+    /// <summary>A tool call carrying the call index, matching a <see cref="PlanResponseIndexed"/> step.</summary>
+    internal static ModelResponse IndexedCall(string tool, int n, string id = "call", System.Text.Json.Nodes.JsonObject? extraArguments = null)
+    {
+        var arguments = IndexArguments(n);
+        foreach (var (key, value) in extraArguments ?? [])
+        {
+            arguments[key] = value?.DeepClone();
+        }
+
+        return new ModelResponse(null, [new ModelToolCall(id, tool, new ToolArguments(arguments))], false, null);
+    }
+
+    /// <summary>A call index as the expected arguments of a planned step, or the arguments of the matching call.</summary>
+    public static System.Text.Json.Nodes.JsonObject IndexArguments(int n) => new() { ["n"] = n };
+
+    /// <summary>
+    /// A plan of <paramref name="stepCount"/> occurrences of one tool, made valid by the integer <see cref="CallIndexParameter"/>
+    /// (the tool must declare it); the matching calls pass <see cref="IndexArguments"/>.
+    /// </summary>
+    public static ModelResponse PlanResponseIndexed(string tool, int stepCount, string rationale = "A generic test plan.", int startIndex = 0)
+        => PlanResponseFor(
+            rationale, [.. Enumerable.Range(startIndex, stepCount).Select(i => new PlanTestStep(tool, IndexArguments(i)))]);
+
+    /// <summary>
+    /// For tests that only need the plan to have N steps: the first is <paramref name="expectedTool"/>, the
+    /// others use distinct synthetic tool names, so no tool repeats and the plan stays valid.
+    /// </summary>
+    public static ModelResponse PlanResponseWithDistinctSteps(
+        int stepCount,
         string rationale = "A generic test plan.",
         int revision = 0,
         string expectedTool = "test.read")
@@ -972,13 +1069,12 @@ internal static class PlanningTestSupport
         var steps = new System.Text.Json.Nodes.JsonArray();
         for (var i = 0; i < stepCount; i++)
         {
-            steps.Add(new System.Text.Json.Nodes.JsonObject { ["description"] = $"step {i}", ["expectedTool"] = expectedTool });
+            steps.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["description"] = $"step {i}",
+                ["expectedTool"] = i == 0 ? expectedTool : $"{expectedTool}.step{i}",
+            });
         }
-
-        // `revision` is not encoded in the JSON itself — the runtime assigns the revision number
-        // based on why the call was made (initial plan vs. replan), never from the model's text.
-        // It is accepted here only so a test reads clearly about which replan a response answers.
-        _ = revision;
 
         var json = new System.Text.Json.Nodes.JsonObject { ["rationale"] = rationale, ["steps"] = steps }.ToJsonString();
         return new ModelResponse(json, [], false, null);

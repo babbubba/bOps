@@ -6,31 +6,101 @@ using bOps.Abstractions;
 namespace bOps.Runtime;
 
 /// <summary>
-/// Where execution stands in the current <see cref="AgentPlan"/> (ADR-0047): the planned-step cursor, whether that step has
-/// already spent its one argument-validation correction, and whether the plan must be replaced before any operational tool
-/// is offered again. It is a pure fold over persisted <see cref="PlanStep"/> data, so a live attempt and a resumed one reach
-/// the same position from the same steps, and nothing about it lives only in memory.
+/// Pure persisted fold of planned-step progress. ADR-0050 keeps semantic and complete argument-validation corrections as
+/// independent one-use budgets; legacy plans retain ADR-0047's expected-tool-only fold.
 /// </summary>
-/// <param name="Cursor">The index of the current <see cref="PlannedStep"/>; at or past the plan's end when it is exhausted.</param>
-/// <param name="CorrectionSpent">Whether a step of this plan revision already failed argument validation on the current planned tool.</param>
-/// <param name="ReplanRequired">Whether this plan revision may not offer another operational tool: its current step spent its correction and then failed validation again or deviated, or the persisted steps contradict the one-correction rule.</param>
-internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionSpent, bool ReplanRequired)
+internal readonly record struct PlannedStepPosition(
+    int Cursor,
+    bool SemanticCorrectionSpent,
+    bool ArgumentCorrectionSpent,
+    bool ReplanRequired)
 {
-    /// <summary>The position at the start of a newly accepted plan.</summary>
     internal static PlannedStepPosition Start => default;
 
-    /// <summary>Folds every persisted step taken under <paramref name="plan"/>'s revision, oldest first.</summary>
-    internal static PlannedStepPosition Derive(AgentPlan plan, IEnumerable<PlanStep> steps) =>
-        steps.Where(step => step.PlanRevision == plan.Revision)
-            .Aggregate(Start, (position, step) => position.After(plan, step));
+    internal static PlannedStepPosition Derive(
+        AgentPlan plan, IEnumerable<PlanStep> steps, Func<string, ToolManifest?>? manifestOf = null)
+    {
+        var all = steps as IReadOnlyList<PlanStep> ?? steps.ToList();
+        return all.Where(step => step.PlanRevision == plan.Revision)
+            .Aggregate(Start, (position, step) => position.After(plan, step).Settle(plan, all, manifestOf));
+    }
 
     /// <summary>
-    /// The position after <paramref name="step"/>. A first argument-validation failure on the current planned tool keeps the
-    /// cursor and spends the correction. Once it is spent, a second validation failure, or any step the live loop treats as a
-    /// deviation, requires a replan: that replan may not have committed (ADR-0046 §4), so a resumed attempt must still see
-    /// it. Every other step consumes the planned step, as before ADR-0047.
+    /// ADR-0050: moves the cursor over conditional steps whose referenced fact does not exist (a skipped step is terminal and
+    /// costs no model or tool call) and stops on the first unconditional or activated step. A condition that cannot be
+    /// evaluated — a source that is not an earlier step, or a binding that cannot be resolved — fails closed to replan.
+    /// Legacy plans have no conditions and are returned unchanged.
     /// </summary>
-    internal PlannedStepPosition After(AgentPlan plan, PlanStep step)
+    internal PlannedStepPosition Settle(
+        AgentPlan plan, IReadOnlyList<PlanStep> steps, Func<string, ToolManifest?>? manifestOf)
+    {
+        var position = this;
+        while (plan.SemanticContractVersion == 1 && !position.ReplanRequired
+               && position.Cursor >= 0 && position.Cursor < plan.Steps.Count
+               && plan.Steps[position.Cursor].Activation is { } condition)
+        {
+            if (condition.SourceStepIndex < 0 || condition.SourceStepIndex >= position.Cursor)
+            {
+                return position with { ReplanRequired = true };
+            }
+
+            if (ConditionalSteps.FindFact(plan, steps, condition) is null)
+            {
+                position = new PlannedStepPosition(position.Cursor + 1, false, false, false);
+                continue;
+            }
+
+            if (condition.BindToArgument is not null
+                && (plan.Steps[position.Cursor].ExpectedTool is not { } tool
+                    || manifestOf?.Invoke(tool) is not { } manifest
+                    || ConditionalSteps.ResolveExpected(plan, steps, position.Cursor, manifest).Problem is not null))
+            {
+                return position with { ReplanRequired = true };
+            }
+
+            return position;
+        }
+
+        return position;
+    }
+
+    internal PlannedStepPosition After(AgentPlan plan, PlanStep step) =>
+        plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);
+
+    private PlannedStepPosition AfterSemantic(PlanStep step)
+    {
+        if (ReplanRequired)
+        {
+            return this;
+        }
+
+        if (step.PlannedStepIndex != Cursor)
+        {
+            return this with { ReplanRequired = true };
+        }
+
+        switch (step.ExecutionClassification)
+        {
+            case PlannedStepExecutionClassification.SemanticMismatch:
+                return SemanticCorrectionSpent
+                    ? this with { ReplanRequired = true }
+                    : this with { SemanticCorrectionSpent = true };
+            case PlannedStepExecutionClassification.ArgumentValidationFailure:
+                return ArgumentCorrectionSpent
+                    ? this with { ReplanRequired = true }
+                    : this with { ArgumentCorrectionSpent = true };
+            case PlannedStepExecutionClassification.Matched:
+                return IsDeviation(step)
+                    ? this with { ReplanRequired = true }
+                    : new PlannedStepPosition(Cursor + 1, false, false, false);
+            default:
+                // A semantic-contract execution without a semantic classification is a wrong/not-offered tool or
+                // contradictory persisted history. Both require ADR-0046 replanning before another operational call.
+                return step.ToolCall is null ? this : this with { ReplanRequired = true };
+        }
+    }
+
+    private PlannedStepPosition AfterLegacy(AgentPlan plan, PlanStep step)
     {
         if (ReplanRequired)
         {
@@ -38,28 +108,22 @@ internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionS
         }
 
         var expectedTool = Cursor >= 0 && Cursor < plan.Steps.Count ? plan.Steps[Cursor].ExpectedTool : null;
-        if (IsArgumentValidationFailure(step, expectedTool))
+        if (IsLegacyArgumentValidationFailure(step, expectedTool))
         {
-            return CorrectionSpent ? this with { ReplanRequired = true } : this with { CorrectionSpent = true };
+            return ArgumentCorrectionSpent
+                ? this with { ReplanRequired = true }
+                : this with { ArgumentCorrectionSpent = true };
         }
 
-        // Only a non-deviating call of the same offered tool can follow a spent correction. A call of any other tool (a
-        // rejected unknown or not-offered name, or an executed one in a record written before ADR-0047) or a deviation of
-        // that tool fails closed: replan rather than guess which planned step it served.
-        if (CorrectionSpent && (IsCallOfAnotherTool(step, expectedTool) || IsDeviation(step)))
+        if (ArgumentCorrectionSpent && (IsCallOfAnotherTool(step, expectedTool) || IsDeviation(step)))
         {
             return this with { ReplanRequired = true };
         }
 
-        return new PlannedStepPosition(Cursor + 1, CorrectionSpent: false, ReplanRequired: false);
+        return new PlannedStepPosition(Cursor + 1, false, false, false);
     }
 
-    /// <summary>
-    /// The exact planned tool was offered, resolved and reached argument validation, which failed: typed data and an ordinal
-    /// name match only, never text. A not-offered or unknown name is refused with <see cref="ModelToolCall.ToolNameError"/>
-    /// set, so it never qualifies.
-    /// </summary>
-    private static bool IsArgumentValidationFailure(PlanStep step, string? expectedTool) =>
+    private static bool IsLegacyArgumentValidationFailure(PlanStep step, string? expectedTool) =>
         !string.IsNullOrWhiteSpace(expectedTool)
         && step.ToolCall is { ToolNameError: null } call
         && string.Equals(call.ToolName, expectedTool, StringComparison.Ordinal)
@@ -69,10 +133,6 @@ internal readonly record struct PlannedStepPosition(int Cursor, bool CorrectionS
         step.ToolCall is { } call
         && (call.ToolNameError is not null || !string.Equals(call.ToolName, expectedTool, StringComparison.Ordinal));
 
-    /// <summary>
-    /// The live loop's deviations (rule C8) from typed persisted data: a policy, operator, envelope or entitlement refusal
-    /// (<see cref="ToolFailureKind.Authorization"/> is assigned by the runtime only), a timeout, or a refuted verification.
-    /// </summary>
     private static bool IsDeviation(PlanStep step) =>
         step.ToolCall is not null
         && (step.Result is { FailureKind: ToolFailureKind.Authorization } or { Outcome: ToolOutcome.Timeout }

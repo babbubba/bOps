@@ -181,7 +181,7 @@ internal static class TestCatalog
 /// <summary>
 /// A deterministic model. A delegation role task (recognized by the role instructions in its goal) is answered at once by
 /// <see cref="DelegationScript"/>. Every other task asks four times, in order: plan (answered at once), a <c>system.cpu</c> step, a
-/// second <c>system.cpu</c> step, and the final answer — each of the last three only after a <c>release</c>. Tasks in E2E-8 never
+/// <c>system.memory</c> step, and the final answer — each of the last three only after a <c>release</c>. Tasks in E2E-8 never
 /// overlap, so the cycle position is the count of those calls modulo four. <see cref="Calls"/> counts every call.
 /// </summary>
 internal sealed class GatedChatModel : IChatModel, IDisposable
@@ -217,7 +217,7 @@ internal sealed class GatedChatModel : IChatModel, IDisposable
                 ["steps"] = new JsonArray
                 {
                     new JsonObject { ["description"] = "Read CPU utilization before reload.", ["expectedTool"] = "system.cpu" },
-                    new JsonObject { ["description"] = "Read CPU utilization after reload.", ["expectedTool"] = "system.cpu" },
+                    new JsonObject { ["description"] = "Read memory utilization after reload.", ["expectedTool"] = "system.memory" },
                 },
             }.ToJsonString(), [], false, null);
         }
@@ -233,7 +233,7 @@ internal sealed class GatedChatModel : IChatModel, IDisposable
         }
 
         return phase < 3
-            ? new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), "system.cpu", ToolArguments.Empty)], false, null)
+            ? new ModelResponse(null, [new ModelToolCall(Guid.NewGuid().ToString("N"), phase == 1 ? "system.cpu" : "system.memory", ToolArguments.Empty)], false, null)
             : new ModelResponse("E2E-8 task finished.", [], true, null);
     }
 

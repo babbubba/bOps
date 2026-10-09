@@ -477,14 +477,14 @@ public sealed class HardenEightBlockerFixTests
     {
         var goal = HeadTail(6000);
         var model = new SequenceModel(
-            PlanningTestSupport.PlanResponse(stepCount: 5, rationale: HeadTail(3000)),
-            Call("test.read", "c0"),
+            PlanningTestSupport.PlanResponseIndexed("test.read", 5, HeadTail(3000)),
+            PlanningTestSupport.IndexedCall("test.read", 0, "c0"),
             ContextOverflow(),
-            Call("test.read", "c1"),
-            Call("test.read", "c2"),
+            PlanningTestSupport.IndexedCall("test.read", 1, "c1"),
+            PlanningTestSupport.IndexedCall("test.read", 2, "c2"),
             Final());
 
-        var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool()]).RunAsync(goal, Actor, TaskId);
+        var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool(parameters: [PlanningTestSupport.CallIndexParameter])]).RunAsync(goal, Actor, TaskId);
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         var plan = state.Plans[0];
@@ -520,7 +520,7 @@ public sealed class HardenEightBlockerFixTests
             Call("test.read", "c0"),
             Call("test.read", "c1"),
             ContextOverflow(),
-            PlanningTestSupport.PlanResponse(stepCount: 5, revision: 1),
+            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 5, revision: 1),
             new ModelResponse("done\n\nEvidence limitations\n- the exhausted-plan proposal was not executed.", [], true, null));
 
         var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool()]).RunAsync(goal, Actor, TaskId);
@@ -553,7 +553,7 @@ public sealed class HardenEightBlockerFixTests
     public async Task B4_ASecondOverflow_StillTerminates_WithoutAnotherRecovery()
     {
         var model = new SequenceModel(
-            PlanningTestSupport.PlanResponse(stepCount: 5),
+            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 5),
             Call("test.read"),
             ContextOverflow(),
             ContextOverflow());

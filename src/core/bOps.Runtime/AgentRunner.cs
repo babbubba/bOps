@@ -86,10 +86,16 @@ public sealed class AgentRunner(
         fence — in exactly this shape:
 
         {"rationale": "one or two sentences on your overall approach", "steps": [
-          {"description": "what this step accomplishes", "expectedTool": "tool.name"}
+          {"description": "what this step accomplishes", "expectedTool": "tool.name", "expectedArguments": {"discriminator": "typed value"}}
         ]}
 
         Every listed step must name exactly one non-empty "expectedTool" from the catalog below.
+        "expectedArguments" is an optional equality-only subset of that tool's parameters. Use it for values that identify
+        which planned step a call belongs to. If a tool occurs more than once, every occurrence must have a non-empty
+        expectedArguments object, and every pair must share a parameter with different values.
+        A step may add "activation": {"sourceStep": 0, "factType": "...", "factKey": "...", "bindArgument": "param"}
+        (bindArgument optional): it runs only if the earlier step at zero-based position sourceStep produced that
+        evidence fact, and is skipped otherwise.
         List only the steps you can reasonably foresee; you will be asked to revise this plan if
         reality diverges from it. Use an empty "steps" array when no further tool execution is planned.
         """;
@@ -109,13 +115,23 @@ public sealed class AgentRunner(
         fence — in exactly the same shape as before:
 
         {"rationale": "why the plan is changing", "steps": [
-          {"description": "what this step accomplishes", "expectedTool": "tool.name"}
+          {"description": "what this step accomplishes", "expectedTool": "tool.name", "expectedArguments": {"discriminator": "typed value"}}
         ]}
 
         Every listed step must name exactly one non-empty "expectedTool" from the catalog below.
+        "expectedArguments" is an optional equality-only subset of that tool's parameters. If a tool occurs more than
+        once, every occurrence must have a non-empty expectedArguments object, and every pair must share a parameter with
+        different values.
+        A step may add "activation": {"sourceStep": 0, "factType": "...", "factKey": "...", "bindArgument": "param"}
+        (bindArgument optional): it runs only if the earlier step at zero-based position sourceStep produced that
+        evidence fact, and is skipped otherwise.
         Steps already completed do not need to be repeated. List only what remains; use an empty
         "steps" array when no further tool execution is planned.
         """;
+
+    private const string ProtocolArtifactRetryInstructions =
+        "Your last reply was tool-call or control-protocol markup, not an answer. Either call one of the offered tools " +
+        "with a native tool call, or give your final answer to the operator's goal in plain text.";
 
     private const string EmptyResponseRetryInstructions =
         "Your last reply was empty: it had no text and no tool call. Either call a tool, or give your final " +
@@ -127,10 +143,22 @@ public sealed class AgentRunner(
         "tool once more with arguments corrected according to that error. This is the only correction allowed for " +
         "this plan step.";
 
+    /// <summary>The one correction turn after a same-tool call failed ADR-0050 semantic membership.</summary>
+    private const string SemanticCorrectionInstructions =
+        "The previous call used the offered tool, but its arguments did not match the current planned step and it did not " +
+        "run. Correct the call for this same step; do not produce or attempt another plan step. This is the only semantic " +
+        "correction allowed for this plan step.";
+
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Every listed step " +
-        "must have a non-empty expectedTool from the catalog. Reply again with ONLY the JSON object — " +
+        "must have a non-empty expectedTool from the catalog and valid expectedArguments. Repeated uses of one tool need " +
+        "pairwise-discriminating expectedArguments. Reply again with ONLY the JSON object — " +
         "no prose, no markdown code fence.";
+
+    private const string EvidenceControlInstruction =
+        "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
+        "persisted evidence of this task that the bounded history shows truncated. It does not complete the step, and an " +
+        "operational call in the same reply is not executed.";
 
     private const string EvidenceReadInstructions =
         "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
@@ -485,7 +513,7 @@ public sealed class AgentRunner(
             var plan = run.Plans[^1];
             taskActivity?.SetTag("bops.plan_revision", plan.Revision);
             // ADR-0047: the cursor and the spent validation correction come from the persisted steps, exactly as live.
-            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps), ct);
+            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
         }, ct);
     }
 
@@ -739,8 +767,20 @@ public sealed class AgentRunner(
                 logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
                 history = [.. built.Turns, .. logicalCall.ContinuationTurns];
                 var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
+                var promptPlan = ConditionalSteps.WithResolvedCurrentStep(plan, steps, position.Cursor, ManifestOf);
+                var latestPlanStep = steps.LastOrDefault(step => step.PlanRevision == plan.Revision);
+                var correctingSemantics = plan.SemanticContractVersion == 1
+                    && latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.SemanticMismatch;
+                var correctingArguments = plan.SemanticContractVersion == 1
+                    ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
+                    : position.ArgumentCorrectionSpent;
+                // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
+                var offersEvidenceControl = steps.Any(step =>
+                    Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
                 return new ModelRequest(
-                    BuildStepSystemPrompt(plan, limitations, stepTools, position.CorrectionSpent, aggressive), history, stepTools);
+                    BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
+                        correctingArguments, aggressive, offersEvidenceControl),
+                    history, offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools);
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
@@ -812,6 +852,52 @@ public sealed class AgentRunner(
                 return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
             }
 
+            if (IsFinalProtocolArtifact(response))
+            {
+                // PRE-3B1: a tool/control envelope is not an answer. It is never persisted as one; the model gets one bounded
+                // terminal correction (no step is added, so neither the cursor nor a PRE-2 correction is touched).
+                try
+                {
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse!));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(ProtocolArtifactRetryInstructions));
+                    response = await CallModelWithOverflowRecoveryAsync(
+                        taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
+                    request = BuildStepRequest(logicalCall.Aggressive);
+                    run.TokensUsed += UsageTokens(response);
+                    if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+                    {
+                        return await StopForTokenCrossingAsync(run, stepCalls, ct);
+                    }
+
+                    var correctionResolution = await ResolveStepEvidenceReadsAsync(
+                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                    if (correctionResolution.Terminal is not null)
+                    {
+                        return correctionResolution.Terminal;
+                    }
+
+                    response = correctionResolution.Response;
+                    request = BuildStepRequest(logicalCall.Aggressive);
+                }
+                catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
+                {
+                    return await StopForAttemptDurationAsync(run, stepCalls);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Task {TaskId} step {StepIndex}: model call failed", taskId, stepIndex);
+                    return await FailAsync(run, FailureReason(ex), FailureKindOf(ex), stepCalls, ct);
+                }
+
+                if (IsFinalProtocolArtifact(response))
+                {
+                    // ADR-0042 (PRE-3B2): an artifact is never a valid fallback; a failed correction fails the task.
+                    logger.LogError("Task {TaskId} step {StepIndex}: the model returned a tool/control protocol artifact as its final response", taskId, stepIndex);
+                    return await FailAsync(run, "The model returned a tool or control protocol artifact instead of a final answer.",
+                        (TaskTerminalKind.RuntimeFailure, null), stepCalls, ct);
+                }
+            }
+
             if (IsEmptyFinal(response))
             {
                 logger.LogError("Task {TaskId} step {StepIndex}: the model returned an empty final response", taskId, stepIndex);
@@ -858,8 +944,60 @@ public sealed class AgentRunner(
             VerificationStatus? verification;
             try
             {
-                (step, observation, authorization, verification) = await ExecuteStepAsync(
-                    taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+                var semanticContract = plan.SemanticContractVersion == 1
+                    && position.Cursor >= 0 && position.Cursor < plan.Steps.Count;
+                var currentPlannedStep = semanticContract ? plan.Steps[position.Cursor] : null;
+                var resolved = primaryCall.ToolNameError is null
+                    && stepTools.Count == 1
+                    && string.Equals(primaryCall.ToolName, currentPlannedStep?.ExpectedTool, StringComparison.Ordinal)
+                    ? registry.ResolveForExecution(primaryCall.ToolName)
+                    : null;
+
+                ToolArguments? expectedArguments = null;
+                string? bindingProblem = null;
+                if (resolved is not null)
+                {
+                    (expectedArguments, bindingProblem) = ConditionalSteps.ResolveExpected(
+                        plan, steps, position.Cursor, resolved.Tool.Manifest);
+                }
+
+                if (resolved is not null
+                    && (bindingProblem is not null
+                        || !SemanticExpectedArguments.Matches(resolved.Tool.Manifest, expectedArguments, primaryCall)))
+                {
+                    var mismatch = ToolCallResult.Failure(
+                        "The offered tool's arguments did not match the current planned step; the call was not executed.")
+                        with { FailureKind = ToolFailureKind.Validation };
+                    (step, observation) = await RecordAsync(
+                        taskId, stepIndex, actor, primaryCall, resolved.Tool, mismatch, AuthorizationKind.Automatic,
+                        TimeSpan.Zero, verification: null, verificationDetail: null, plan.Revision, ct,
+                        delegation: delegation);
+                    authorization = AuthorizationKind.Automatic;
+                    verification = null;
+                    step = step with
+                    {
+                        PlannedStepIndex = position.Cursor,
+                        ExecutionClassification = PlannedStepExecutionClassification.SemanticMismatch,
+                    };
+                }
+                else
+                {
+                    (step, observation, authorization, verification) = await ExecuteStepAsync(
+                        taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation);
+                    if (semanticContract)
+                    {
+                        var classification = resolved is null
+                            ? (PlannedStepExecutionClassification?)null
+                            : step.Result is { Outcome: ToolOutcome.Failure, FailureKind: ToolFailureKind.Validation }
+                                ? PlannedStepExecutionClassification.ArgumentValidationFailure
+                                : PlannedStepExecutionClassification.Matched;
+                        step = step with
+                        {
+                            PlannedStepIndex = position.Cursor,
+                            ExecutionClassification = classification,
+                        };
+                    }
+                }
             }
             catch (AttemptDurationStepInterruptedException interrupted)
             {
@@ -868,6 +1006,10 @@ public sealed class AgentRunner(
                     ModelCalls = stepCalls,
                     UnexecutedToolCalls = response.ToolCalls.Count > 1 ? response.ToolCalls.Skip(1).ToList() : null,
                     ExecutionAttempt = run.ExecutionAttempt,
+                    PlannedStepIndex = plan.SemanticContractVersion == 1 ? position.Cursor : null,
+                    ExecutionClassification = plan.SemanticContractVersion == 1
+                        ? PlannedStepExecutionClassification.Matched
+                        : null,
                 };
                 steps.Add(step);
                 run.CountStep();
@@ -935,7 +1077,15 @@ public sealed class AgentRunner(
             // same reason: it is real information handed to the model, not proof the plan's
             // assumption was wrong (rule S4: Inconclusive is never success, but it is also not
             // evidence of failure).
-            position = position.After(plan, step);
+            var afterStep = position.After(plan, step);
+            position = afterStep.Settle(plan, steps, ManifestOf);
+            if (position.Cursor > afterStep.Cursor && logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "Task {TaskId}: conditional planned steps [{From}, {Before}) skipped, their evidence fact was not produced",
+                    taskId, afterStep.Cursor, position.Cursor);
+            }
+
             var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
                 || step.Result?.Outcome == ToolOutcome.Timeout
                 || verification == VerificationStatus.Refuted
@@ -2246,14 +2396,16 @@ public sealed class AgentRunner(
         long tokensBefore, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
-        var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, delegation);
+        var planningTools = ToolViewFor(delegation);
+        var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
         var tokens = 0;
         var logicalCall = new LogicalCallState();
         ModelRequest BuildPlanningRequest(bool _) =>
             new(systemPrompt, [.. planningHistory, .. logicalCall.ContinuationTurns], NoNativeTools);
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
-            BuildPlanningRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(revision: 0));
+            BuildPlanningRequest, delegation, calls, logicalCall, ct,
+            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
         tokens += UsageTokens(response);
         if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
         {
@@ -2264,7 +2416,7 @@ public sealed class AgentRunner(
         await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
 
         if (initialDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(response.TextResponse, revision: 0) is { } plan)
+            && TryParsePlan(response.TextResponse, revision: 0, planningTools) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -2276,7 +2428,8 @@ public sealed class AgentRunner(
         logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
-            BuildPlanningRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(revision: 0));
+            BuildPlanningRequest, delegation, calls, logicalCall, ct,
+            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
         tokens += UsageTokens(retryResponse);
         if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
         {
@@ -2287,7 +2440,7 @@ public sealed class AgentRunner(
         await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, retryResponse, ct);
 
         if (retryDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(retryResponse.TextResponse, revision: 0) is { } retryPlan)
+            && TryParsePlan(retryResponse.TextResponse, revision: 0, planningTools) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -2306,7 +2459,8 @@ public sealed class AgentRunner(
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
         long tokensBefore, CancellationToken ct)
     {
-        var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, delegation);
+        var planningTools = ToolViewFor(delegation);
+        var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, planningTools);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
         ModelRequest BuildReplanRequest(bool aggressive)
@@ -2328,13 +2482,14 @@ public sealed class AgentRunner(
         }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
-            BuildReplanRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1));
+            BuildReplanRequest, delegation, calls, logicalCall, ct,
+            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
         tokens += UsageTokens(response);
         (response, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, ct);
+            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
 
-        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1) is { } plan)
+        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1, planningTools) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -2343,13 +2498,14 @@ public sealed class AgentRunner(
         logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
-            BuildReplanRequest, delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1));
+            BuildReplanRequest, delegation, calls, logicalCall, ct,
+            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
         tokens += UsageTokens(retryResponse);
         (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, ct);
+            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, ct);
 
-        if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1) is { } retryPlan)
+        if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1, planningTools) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -2376,6 +2532,7 @@ public sealed class AgentRunner(
         ModelResponse initialResponse,
         long tokensBefore,
         int initialTokens,
+        IReadOnlyList<ToolManifest> planningTools,
         CancellationToken ct)
     {
         var response = initialResponse;
@@ -2422,7 +2579,7 @@ public sealed class AgentRunner(
                     : "EvidenceRead/v1 rejected: Malformed."));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
-                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision));
+                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools));
             tokens += UsageTokens(response);
             if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
             {
@@ -2692,8 +2849,28 @@ public sealed class AgentRunner(
         CancellationToken ct)
     {
         var response = initialResponse;
-        while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
+        while (true)
         {
+            // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
+            // PRE-3B1: it is served only when this very model-call view offered it (the request that carried AvailableTools).
+            var control = EvidenceRead.RecognizeControl(run.TaskId, response);
+            if (control.Kind is ControlCallKind.Valid or ControlCallKind.Malformed
+                && !requestFactory(logicalCall.Aggressive).AvailableTools.Any(tool => tool.Name == EvidenceRead.ControlFunctionName))
+            {
+                control = new ControlCallRecognition(ControlCallKind.NotOffered, control.Call, null);
+            }
+
+            var recognition = control.Kind switch
+            {
+                ControlCallKind.None => EvidenceRead.Recognize(response),
+                ControlCallKind.Valid => new RuntimeDirectiveRecognition(RuntimeDirectiveRecognitionKind.Valid, control.Directive),
+                _ => RuntimeDirectiveRecognition.Malformed,
+            };
+            if (recognition.Kind == RuntimeDirectiveRecognitionKind.None)
+            {
+                break;
+            }
+
             logicalCall.EvidenceReadAttempts++;
             var directive = recognition.Directive;
             if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
@@ -2740,11 +2917,32 @@ public sealed class AgentRunner(
 
             await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                 result.Code, result.ReturnedLength, ct);
-            logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
-                recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                    ? EvidenceRead.Reply(directive!, result)
-                    : "EvidenceRead/v1 rejected: Malformed."));
+            var reply = recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
+                ? EvidenceRead.Reply(directive!, result)
+                : control.Kind == ControlCallKind.Unsupported
+                    ? "Runtime control call rejected: Unsupported. Only runtime.evidence_read exists."
+                    : control.Kind == ControlCallKind.NotOffered
+                        ? "Runtime control call rejected: NotOffered. runtime.evidence_read is not available in this turn."
+                        : "EvidenceRead/v1 rejected: Malformed.";
+            if (control.Kind == ControlCallKind.None)
+            {
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(reply));
+            }
+            else
+            {
+                // ADR-0038 first-call-wins, conservatively: the control read is served and nothing else of this response runs,
+                // so no operational call formed before the evidence arrived is executed. Every call id is still answered.
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantToolCalls(response.ToolCalls));
+                foreach (var call in response.ToolCalls)
+                {
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromToolResult(
+                        call.Id,
+                        ReferenceEquals(call, control.Call)
+                            ? reply
+                            : "Not executed: a runtime evidence request in the same reply was served first. Repeat this call only if it is still needed."));
+                }
+            }
 
             response = await CallModelWithOverflowRecoveryAsync(
                 run.TaskId, stepIndex, run.Actor, requestFactory, run.Delegation, calls, logicalCall, ct);
@@ -3052,10 +3250,17 @@ public sealed class AgentRunner(
             return (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
         }
 
-        return !string.IsNullOrWhiteSpace(reply.TextResponse) && EvidenceDisclosure.HasHeading(reply.TextResponse)
+        // PRE-3B2: the reply must itself be a valid user-facing terminal candidate; a protocol/control artifact is never
+        // adopted, even when it happens to carry the heading. The already-valid original stays the fallback.
+        return !string.IsNullOrWhiteSpace(reply.TextResponse)
+            && !TerminalProtocolArtifact.IsArtifact(reply.TextResponse)
+            && EvidenceDisclosure.HasHeading(reply.TextResponse)
             ? (reply.TextResponse, EvidenceDisclosureOutcome.Accepted)
             : (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
     }
+
+    private static bool IsFinalProtocolArtifact(ModelResponse response) =>
+        (response.IsFinal || response.ToolCalls.Count == 0) && TerminalProtocolArtifact.IsArtifact(response.TextResponse);
 
     private static bool IsEmptyFinal(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0) && string.IsNullOrWhiteSpace(response.TextResponse);
@@ -3349,6 +3554,16 @@ public sealed class AgentRunner(
         }
 
         stopwatch.Stop();
+
+        // Facts are package-produced metadata, but invalid metadata must never turn a successful
+        // invocation into a persisted success with silently discarded control data.
+        if (EvidenceFacts.Validate(result.Facts) is { } factsViolation)
+        {
+            result = ToolCallResult.Failure($"Tool returned invalid evidence facts: {factsViolation}") with
+            {
+                FailureKind = ToolFailureKind.Validation,
+            };
+        }
 
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
         BOpsTelemetry.ToolDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
@@ -3974,6 +4189,8 @@ public sealed class AgentRunner(
     /// The current execution step's native-tool authority: the already-authorized view intersected with the exact
     /// planned tool name. Missing, exhausted, unavailable or unauthorized routing information fails closed to no tools.
     /// </summary>
+    private ToolManifest? ManifestOf(string toolName) => registry.ResolveForExecution(toolName)?.Tool.Manifest;
+
     private IReadOnlyList<ToolManifest> StepToolViewFor(
         AgentPlan plan, int plannedStepCursor, DelegatedExecutionScope? delegation)
     {
@@ -4007,13 +4224,12 @@ public sealed class AgentRunner(
     private const int MaxCatalogSummaryCharacters = 120;
 
     /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
-    private string BuildPlanningSystemPrompt(string instructions, DelegatedExecutionScope? delegation) =>
-        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(ToolViewFor(delegation))}";
+    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools) =>
+        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}";
 
     /// <summary>
-    /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level and the first
-    /// sentence of the description. Parameter schemas are left out; the step call that follows carries them. This is
-    /// not an executable surface, so a planning reply cannot call a tool.
+    /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level, the first sentence
+    /// and bounded non-sensitive parameter identity metadata. This is not an executable surface.
     /// </summary>
     internal static string DescribeToolCatalog(IReadOnlyList<ToolManifest> tools)
     {
@@ -4027,7 +4243,25 @@ public sealed class AgentRunner(
         foreach (var manifest in tools.OrderBy(manifest => manifest.Name, StringComparer.Ordinal))
         {
             builder.Append("- ").Append(manifest.Name).Append(" [").Append(manifest.Risk).Append("]: ")
-                .Append(SummarizeDescription(manifest.Description)).Append('\n');
+                .Append(SummarizeDescription(manifest.Description));
+            var parameters = manifest.Parameters.Where(parameter => !parameter.Sensitive).ToList();
+            if (parameters.Count > 0)
+            {
+                builder.Append(" Parameters: ");
+                for (var i = 0; i < parameters.Count; i++)
+                {
+                    if (i > 0) builder.Append(", ");
+                    var parameter = parameters[i];
+                    builder.Append(parameter.Name).Append(':').Append(parameter.Type)
+                        .Append(parameter.Required ? " required" : " optional");
+                    if (parameter.AllowedValues is { Count: > 0 } allowed)
+                    {
+                        builder.Append(" allowed[").AppendJoin('|', allowed).Append(']');
+                    }
+                }
+            }
+
+            builder.Append('\n');
         }
 
         return builder.ToString().TrimEnd();
@@ -4071,14 +4305,20 @@ public sealed class AgentRunner(
         (response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0);
 
     private static string BuildStepSystemPrompt(
-        AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingArguments,
-        bool aggressive = false)
+        AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
+        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
             ? "The single offered native tool is the current plan step's tool. Invoke it at most once, with the concrete arguments this step requires."
+              + (correctingSemantics ? $" {SemanticCorrectionInstructions}" : string.Empty)
               + (correctingArguments ? $" {ArgumentCorrectionInstructions}" : string.Empty)
             : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
+        if (offersEvidenceControl)
+        {
+            routingInstruction += " " + EvidenceControlInstruction;
+        }
+
         var prompt = plan.Steps.Count == 0
             ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
@@ -4100,7 +4340,11 @@ public sealed class AgentRunner(
         }
 
         var lines = plan.Steps.Select(s =>
-            $"{s.Index + 1}. {s.Description}" + (string.IsNullOrEmpty(s.ExpectedTool) ? string.Empty : $" [{s.ExpectedTool}]"));
+            $"{s.Index + 1}. {s.Description}" + (string.IsNullOrEmpty(s.ExpectedTool) ? string.Empty : $" [{s.ExpectedTool}]")
+            + (s.ExpectedArguments is null ? string.Empty : $" expectedArguments={s.ExpectedArguments.ToJson().ToJsonString()}")
+            + (s.Activation is null ? string.Empty
+                : $" runsOnlyIfStep{s.Activation.SourceStepIndex + 1}Produced={s.Activation.FactType}/{s.Activation.FactKey}"
+                  + (s.Activation.BindToArgument is null ? string.Empty : $" bindsArgument={s.Activation.BindToArgument}")));
         return $"Plan (revision {plan.Revision}): {plan.Rationale}\n{string.Join('\n', lines)}";
     }
 
@@ -4122,19 +4366,21 @@ public sealed class AgentRunner(
     /// throws: a plan the runtime cannot parse is a formatting failure to retry or degrade from
     /// (rule C1), never a reason to crash the task.
     /// </summary>
-    private static AgentPlan? TryParsePlan(string? text, int revision) => TryParsePlan(text, revision, out _);
+    private static AgentPlan? TryParsePlan(
+        string? text, int revision, IReadOnlyList<ToolManifest> tools) => TryParsePlan(text, revision, tools, out _);
 
     /// <summary>
     /// The plan and replan calls' output check (ADR-0039 §8): why a reply is not a usable plan, or <c>null</c>. The caller's
     /// model call records and audits an unusable reply as <see cref="ModelFailureKind.MalformedResponse"/>.
     /// </summary>
-    private static Func<ModelResponse, string?> MalformedPlan(int revision) =>
-        response => TryParsePlan(response.TextResponse, revision, out var problem) is null ? problem : null;
+    private static Func<ModelResponse, string?> MalformedPlan(int revision, IReadOnlyList<ToolManifest> tools) =>
+        response => TryParsePlan(response.TextResponse, revision, tools, out var problem) is null ? problem : null;
 
-    private static Func<ModelResponse, string?> MalformedPlanUnlessRuntimeDirective(int revision) =>
+    private static Func<ModelResponse, string?> MalformedPlanUnlessRuntimeDirective(
+        int revision, IReadOnlyList<ToolManifest> tools) =>
         response => EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None
             ? null
-            : MalformedPlan(revision)(response);
+            : MalformedPlan(revision, tools)(response);
 
     internal static string ProjectForPrompt(string value, int maximum)
     {
@@ -4157,7 +4403,72 @@ public sealed class AgentRunner(
     // access, which would escape as if the model call itself had failed.
     private static readonly JsonDocumentOptions StrictPlanJson = new() { AllowDuplicateProperties = false };
 
-    private static AgentPlan? TryParsePlan(string? text, int revision, out string? problem)
+    /// <summary>
+    /// Plan-time validation of an ADR-0050 activation: a bounded fact reference to an earlier step of this same revision and,
+    /// optionally, a binding target that is a declared non-sensitive parameter. Whether the fact exists is runtime state.
+    /// </summary>
+    private static EvidenceFactExists? ParseActivation(
+        JsonNode node, int stepIndex, string expectedTool, Dictionary<string, ToolManifest> manifests, out string? problem)
+    {
+        problem = null;
+        if (node is not JsonObject condition)
+        {
+            problem = "activation must be a JSON object.";
+            return null;
+        }
+
+        foreach (var name in condition.Select(property => property.Key))
+        {
+            if (name is not ("sourceStep" or "factType" or "factKey" or "bindArgument"))
+            {
+                problem = $"unknown activation property '{name}'.";
+                return null;
+            }
+        }
+
+        if (condition["sourceStep"] is not JsonValue sourceNode || !sourceNode.TryGetValue<int>(out var source))
+        {
+            problem = "sourceStep must be an integer.";
+            return null;
+        }
+
+        if (source < 0 || source >= stepIndex)
+        {
+            problem = "sourceStep must be an earlier step of this plan.";
+            return null;
+        }
+
+        static string? Identifier(JsonNode? value) =>
+            value is JsonValue json && json.TryGetValue<string>(out var text)
+            && !string.IsNullOrWhiteSpace(text) && text.Length <= EvidenceFacts.MaximumIdentifierLength
+                ? text
+                : null;
+
+        if (Identifier(condition["factType"]) is not { } factType || Identifier(condition["factKey"]) is not { } factKey)
+        {
+            problem = $"factType and factKey must be non-empty strings of at most {EvidenceFacts.MaximumIdentifierLength} characters.";
+            return null;
+        }
+
+        string? bindArgument = null;
+        if (condition.TryGetPropertyValue("bindArgument", out var bindNode) && bindNode is not null)
+        {
+            bindArgument = Identifier(bindNode);
+            var parameter = bindArgument is not null && manifests.TryGetValue(expectedTool, out var manifest)
+                ? manifest.Parameters.FirstOrDefault(p => string.Equals(p.Name, bindArgument, StringComparison.Ordinal))
+                : null;
+            if (parameter is null || parameter.Sensitive)
+            {
+                problem = "bindArgument must name a declared non-sensitive parameter of the expected tool.";
+                return null;
+            }
+        }
+
+        return new EvidenceFactExists(source, factType, factKey, bindArgument);
+    }
+
+    private static AgentPlan? TryParsePlan(
+        string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem)
     {
         problem = null;
         if (string.IsNullOrWhiteSpace(text))
@@ -4184,6 +4495,7 @@ public sealed class AgentRunner(
 
             var rationale = root["rationale"]?.GetValue<string>() ?? string.Empty;
             var steps = new List<PlannedStep>();
+            var manifests = tools.ToDictionary(manifest => manifest.Name, StringComparer.Ordinal);
 
             if (root["steps"] is JsonArray stepsNode)
             {
@@ -4208,11 +4520,79 @@ public sealed class AgentRunner(
                         return null;
                     }
 
-                    steps.Add(new PlannedStep(index++, description, expectedTool));
+                    ToolArguments? expectedArguments = null;
+                    if (stepObject.TryGetPropertyValue("expectedArguments", out var constraintsNode))
+                    {
+                        if (constraintsNode is not JsonObject constraints)
+                        {
+                            problem = $"Plan step {index} expectedArguments was not a JSON object.";
+                            return null;
+                        }
+
+                        if (!manifests.TryGetValue(expectedTool, out var manifest))
+                        {
+                            problem = $"Plan step {index} cannot constrain unavailable tool '{expectedTool}'.";
+                            return null;
+                        }
+
+                        expectedArguments = ToolArguments.FromJson((JsonObject)constraints.DeepClone());
+                        if (SemanticExpectedArguments.Validate(manifest, expectedArguments) is { } constraintProblem)
+                        {
+                            problem = $"Plan step {index} has invalid expectedArguments: {constraintProblem}";
+                            return null;
+                        }
+                    }
+
+                    EvidenceFactExists? activation = null;
+                    if (stepObject.TryGetPropertyValue("activation", out var activationNode) && activationNode is not null)
+                    {
+                        activation = ParseActivation(activationNode, index, expectedTool, manifests, out var activationProblem);
+                        if (activation is null)
+                        {
+                            problem = $"Plan step {index} has an invalid activation: {activationProblem}";
+                            return null;
+                        }
+                    }
+
+                    steps.Add(new PlannedStep(index++, description, expectedTool)
+                    {
+                        ExpectedArguments = expectedArguments,
+                        Activation = activation,
+                    });
                 }
             }
 
-            return new AgentPlan(revision, rationale, steps);
+            foreach (var group in steps.GroupBy(step => step.ExpectedTool, StringComparer.Ordinal).Where(group => group.Count() > 1))
+            {
+                var occurrences = group.ToList();
+                if (!manifests.TryGetValue(group.Key!, out var manifest))
+                {
+                    problem = $"Repeated planned tool '{group.Key}' is unavailable and cannot be discriminated.";
+                    return null;
+                }
+
+                if (occurrences.Any(step => step.ExpectedArguments is null || step.ExpectedArguments.ToJson().Count == 0))
+                {
+                    problem = $"Every occurrence of repeated planned tool '{group.Key}' needs non-empty expectedArguments.";
+                    return null;
+                }
+
+                for (var left = 0; left < occurrences.Count; left++)
+                {
+                    for (var right = left + 1; right < occurrences.Count; right++)
+                    {
+                        if (!SemanticExpectedArguments.HasDiscriminator(
+                                manifest, occurrences[left].ExpectedArguments!, occurrences[right].ExpectedArguments!))
+                        {
+                            problem = $"Occurrences {occurrences[left].Index} and {occurrences[right].Index} of repeated " +
+                                $"planned tool '{group.Key}' have no unequal shared expected argument.";
+                            return null;
+                        }
+                    }
+                }
+            }
+
+            return new AgentPlan(revision, rationale, steps) { SemanticContractVersion = 1 };
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or ArgumentException)
         {

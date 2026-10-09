@@ -271,13 +271,13 @@ public sealed class HardenEightTests
     public async Task ContextOverflow_RetriesOnceAtK0_AndNextLogicalCallRestoresConfiguredK()
     {
         var model = new ObjectSequenceModel(
-            PlanningTestSupport.PlanResponse(stepCount: 4),
-            Call("test.read", "c0"),
+            PlanningTestSupport.PlanResponseIndexed("test.read", 2),
+            PlanningTestSupport.IndexedCall("test.read", 0, "c0"),
             ContextOverflow(),
-            Call("test.read", "c1"),
+            PlanningTestSupport.IndexedCall("test.read", 1, "c1"),
             Final());
 
-        var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool(output: "history-sentinel")])
+        var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool(output: "history-sentinel", parameters: [PlanningTestSupport.CallIndexParameter])])
             .RunAsync("goal", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
@@ -293,7 +293,7 @@ public sealed class HardenEightTests
     public async Task ContextOverflow_SecondOverflowStopsWithoutAThirdAttempt()
     {
         var model = new ObjectSequenceModel(
-            PlanningTestSupport.PlanResponse(stepCount: 4),
+            PlanningTestSupport.PlanResponse(stepCount: 1),
             Call("test.read", "c0"),
             ContextOverflow(),
             ContextOverflow());

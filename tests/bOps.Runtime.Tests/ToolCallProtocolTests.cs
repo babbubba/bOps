@@ -84,7 +84,7 @@ public sealed class ToolCallProtocolTests
     [Fact]
     public async Task H1_09_ASingleToolCall_KeepsAValidHistory_AndRecordsNoUnexecutedCalls()
     {
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "test.a"), Calls(Call("call-a", "test.a")), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "test.a"), Calls(Call("call-a", "test.a")), Final());
 
         var result = await CreateRunner(model, Registry(new FakeReadTool("test.a", "result-a"))).RunAsync("goal", Actor);
 
@@ -101,7 +101,7 @@ public sealed class ToolCallProtocolTests
         var c = new RecordingReadTool("test.c", []);
         var audit = new RecordingAuditSink();
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(expectedTool: "test.a"),
+            PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "test.a"),
             Calls(Call("call-a", "test.a"), Call("call-b", "test.b"), Call("call-c", "test.c")),
             Final());
 
@@ -134,7 +134,7 @@ public sealed class ToolCallProtocolTests
     public async Task H1_HIST2_H1_HIST5_ResumeRebuildsTheSameTurns_FromTheStoredStateAlone()
     {
         var liveModel = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(expectedTool: "test.a"),
+            PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "test.a"),
             Calls(Call("call-a", "test.a"), Call("call-b", "test.b"), Call("call-c", "test.c")),
             Final());
         var tools = new ITool[] { new FakeReadTool("test.a", "result-a"), new FakeReadTool("test.b"), new FakeReadTool("test.c") };
@@ -171,7 +171,7 @@ public sealed class ToolCallProtocolTests
             ToolNameError = "'test.read' is not a tool that was offered in this request.",
         };
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Calls(invented), PlanningTestSupport.PlanResponse(revision: 1), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 1), Calls(invented), PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1), Final());
 
         var result = await CreateRunner(model, Registry(tool), audit, policy).RunAsync("goal", Actor);
 
@@ -189,7 +189,7 @@ public sealed class ToolCallProtocolTests
         var audit = new RecordingAuditSink();
         var policy = new RecordingPolicyEngine();
         var malformed = new ModelToolCall("call-1", "test.read", ToolArguments.Empty) { ArgumentsError = "the arguments payload was empty" };
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Calls(malformed), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 1), Calls(malformed), Final());
 
         var result = await CreateRunner(model, Registry(tool), audit, policy).RunAsync("goal", Actor);
 
@@ -212,7 +212,7 @@ public sealed class ToolCallProtocolTests
     {
         var audit = new RecordingAuditSink();
         var policy = new RecordingPolicyEngine();
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(expectedTool: "fs.size"), Calls(Call("call-1", "fs.size")), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "fs.size"), Calls(Call("call-1", "fs.size")), Final());
 
         await CreateRunner(model, Registry(new FakeReadTool("fs.size")), audit, policy).RunAsync("goal", Actor);
 
@@ -226,10 +226,10 @@ public sealed class ToolCallProtocolTests
         var invented = Call("call-1", "does.not.exist");
         var model = new FakeChatModel(
             new ModelResponse("not a plan", [], false, null), // the plan retry is tool-free too
-            PlanningTestSupport.PlanResponse(expectedTool: "fs.size"),
+            PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "fs.size"),
             Calls(invented),
             new ModelResponse("still not a plan", [], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "system.cpu"),
+            PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1, expectedTool: "system.cpu"),
             Final());
         var registry = Registry(new FakeReadTool("fs.size", parameters: [new ToolParameter("path", ToolParameterType.Path, "The secret parameter text", Required: true)]), new FakeReadTool("system.cpu"));
 

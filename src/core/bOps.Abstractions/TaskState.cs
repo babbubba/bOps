@@ -162,6 +162,19 @@ public sealed record ModelCallRecord
     public string? PrimaryModel { get; init; }
 }
 
+/// <summary>How an execution call related to its persisted planned step under ADR-0050.</summary>
+public enum PlannedStepExecutionClassification
+{
+    /// <summary>The call passed the planned tool and semantic-argument checks.</summary>
+    Matched,
+
+    /// <summary>The call named the planned tool but did not satisfy its expected argument constraints.</summary>
+    SemanticMismatch,
+
+    /// <summary>The call matched semantically but failed complete manifest argument validation.</summary>
+    ArgumentValidationFailure,
+}
+
 /// <summary>One iteration of the agent loop: the tool call requested (if any), its result, and the observation fed back to the model.</summary>
 public sealed record PlanStep
 {
@@ -216,6 +229,14 @@ public sealed record PlanStep
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VerificationStatus? VerificationStatus { get; init; }
+
+    /// <summary>The zero-based planned-step index this execution attempted; absent on records written before ADR-0050.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PlannedStepIndex { get; init; }
+
+    /// <summary>The persisted semantic classification of this call; absent on legacy and non-semantic execution records.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PlannedStepExecutionClassification? ExecutionClassification { get; init; }
 }
 
 /// <summary>
