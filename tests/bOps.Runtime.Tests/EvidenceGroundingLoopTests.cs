@@ -63,8 +63,8 @@ public sealed class EvidenceGroundingLoopTests
     private static ToolCallResult Evidence(ToolResultCompleteness completeness = ToolResultCompleteness.Complete) =>
         ToolCallResult.Success("{\"groups\":[]}") with { Completeness = completeness, Facts = [WheaFact] };
 
-    private static AgentRunnerOptions Options(int groundingChecks = 1) =>
-        new() { ModelCallMaxAttempts = 1, EvidenceGroundingChecks = groundingChecks };
+    private static AgentRunnerOptions Options() =>
+        new() { ModelCallMaxAttempts = 1 };
 
     private static async Task<(TaskState State, ScriptedModel Model, ResultTool Tool)> RunAsync(
         ToolCallResult result, AgentRunnerOptions options, params object[] afterTool)
@@ -144,13 +144,13 @@ public sealed class EvidenceGroundingLoopTests
     }
 
     [Fact]
-    public async Task G8_ConsistentAnswer_IsVerified_WithOneExtraCall()
+    public async Task G8_NoContradictionCited_KeepsTheAnswer_WithOneExtraCall()
     {
         var (state, model, _) = await RunAsync(Final(CorrectedAnswer), Verdict());
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(CorrectedAnswer, state.Steps[^1].Observation);
-        Assert.Equal("Final response; evidence grounding verified", state.Steps[^1].Description);
+        Assert.Equal("Final response; evidence grounding check cited no contradiction", state.Steps[^1].Description);
         Assert.Equal(4, model.Requests.Count);
     }
 
@@ -307,14 +307,29 @@ public sealed class EvidenceGroundingLoopTests
     }
 
     [Fact]
-    public async Task G13_ChecksDisabled_TheBlockStillReachesTheModel_ButNoCheckIsMade()
+    public async Task G10_AValidCitation_BesideAnEntryTheCheckerGotWrong_StillForcesTheCorrection()
     {
-        var (state, model, _) = await RunAsync(Evidence(), Options(groundingChecks: 0), Final(CorrectedAnswer));
+        // A cited contradiction never degrades to "check unavailable" because a sibling entry paraphrased its quote.
+        var check = Verdict(("F0.1", "WHEA events were absent"), ("F0.1", Contradiction));
 
-        Assert.Equal(AgentTaskStatus.Completed, state.Status);
-        Assert.Equal(3, model.Requests.Count);
-        Assert.Equal(FinalResponse.Marker, state.Steps[^1].Description);
-        Assert.Contains(EvidenceGroundingLedger.OpenMarker, model.Requests[2].SystemPrompt, StringComparison.Ordinal);
+        var (state, model, _) = await RunAsync(Final(ContradictoryAnswer), check, Final(ContradictoryAnswer));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.RuntimeFailure, state.TerminalReason?.Kind);
+        Assert.Equal(5, model.Requests.Count);
+        AssertNeverPersistedAsAnswer(state, Contradiction);
+    }
+
+    [Theory]
+    [InlineData("{\"contradictions\":[]}")]
+    [InlineData("```json\n{\"contradictions\":[]}\n```")]
+    public async Task G9_ACorrectionShapedLikeACheckReply_IsNeverPersistedAsTheAnswer(string correction)
+    {
+        var (state, _, _) = await RunAsync(Final(ContradictoryAnswer), Flagged, Final(correction));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.RuntimeFailure, state.TerminalReason?.Kind);
+        Assert.DoesNotContain(state.Steps, step => FinalResponse.IsFinalStep(step));
     }
 
     [Fact]
@@ -339,7 +354,7 @@ public sealed class EvidenceGroundingLoopTests
 
         Assert.Equal(AgentTaskStatus.Completed, resumed.Status);
         Assert.Equal(liveBlock, BlockOf(resumedModel.Requests[0].SystemPrompt));
-        Assert.Equal("Final response; evidence grounding verified", resumed.Steps[^1].Description);
+        Assert.Equal("Final response; evidence grounding check cited no contradiction", resumed.Steps[^1].Description);
     }
 
     private static string BlockOf(string systemPrompt)

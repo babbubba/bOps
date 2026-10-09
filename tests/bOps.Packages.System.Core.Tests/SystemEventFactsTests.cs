@@ -66,6 +66,47 @@ public sealed class SystemEventFactsTests
         Assert.True(JsonSerializer.SerializeToUtf8Bytes(facts).Length <= SystemEventFacts.MaximumSerializedBytes);
     }
 
+    private static SystemEventRecord Event(int minutesAgo, SystemEventSeverity severity, string source, string eventId) =>
+        new(Now.AddMinutes(-minutesAgo), severity, source, eventId, "System", "m", null, null);
+
+    /// <summary>Twenty more frequent groups of the given severity: more than the bound holds.</summary>
+    private static List<SystemEventRecord> FrequentNoise(SystemEventSeverity severity) =>
+        [.. Enumerable.Range(0, 20).SelectMany(group => Enumerable.Range(0, 5).Select(_ => Event(group + 1, severity, $"noise-{group:D2}", "7036")))];
+
+    [Fact]
+    public void ARareSevereGroup_IsListedAheadOfMoreFrequentLessSevereGroups_AndTheRestIsCounted()
+    {
+        // I4: > 12 groups, the target matched once, every other group more frequent. The rule is generic: the record's own
+        // normalized severity ranks first; no source or event id is known by name.
+        var events = FrequentNoise(SystemEventSeverity.Information);
+        events.Add(Event(30, SystemEventSeverity.Warning, "hw-logger", "19"));
+
+        var facts = SystemEventFacts.From(Snapshot([.. events]), Query());
+
+        Assert.Equal(SystemEventFacts.MaximumFacts, facts.Count);
+        Assert.Equal(("source=hw-logger;eventId=19", 1), (facts[0].Key, facts[0].Value.GetValue<int>()));
+        var unlisted = facts[^1];
+        Assert.Equal((SystemEventFacts.UnlistedGroupsType, SystemEventFacts.UnlistedGroupsKey, 21 - 11),
+            (unlisted.Type, unlisted.Key, unlisted.Value.GetValue<int>()));
+    }
+
+    [Fact]
+    public void ARareGroupOutrankedByMoreThanTheBound_IsNotListed_ButCounted_AndATargetedQueryAlwaysListsIt()
+    {
+        // The documented residual: a broad call cannot list every group. The omission is explicit, never an absence, and
+        // narrowing the query by source or event id (exact filters) makes the group representable.
+        var events = FrequentNoise(SystemEventSeverity.Error);
+        events.Add(Event(30, SystemEventSeverity.Warning, "hw-logger", "19"));
+        var snapshot = Snapshot([.. events]);
+
+        var broad = SystemEventFacts.From(snapshot, Query());
+        Assert.DoesNotContain(broad, fact => fact.Key == "source=hw-logger;eventId=19");
+        Assert.Equal(21 - 11, broad[^1].Value.GetValue<int>());
+
+        var targeted = SystemEventFacts.From(snapshot, Query("hw-logger"));
+        Assert.Equal([("source=hw-logger;eventId=19", 1)], targeted.Select(fact => (fact.Key, fact.Value.GetValue<int>())));
+    }
+
     [Fact]
     public void NonAsciiKeys_AreTrimmedToTheSerializedByteBound()
     {

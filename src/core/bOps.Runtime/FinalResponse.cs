@@ -59,8 +59,8 @@ internal static class FinalResponse
     /// <summary>A disclosure re-ask was made and failed; the persisted answer is the original.</summary>
     internal const string ReAskNotUsedMarker = "Final response; evidence disclosure re-ask result not used";
 
-    /// <summary>The grounding suffix: the check found no contradiction.</summary>
-    internal const string GroundingVerifiedSuffix = "; evidence grounding verified";
+    /// <summary>The grounding suffix: the check reply was valid and cited no contradiction (a model judgement, not a proof).</summary>
+    internal const string GroundingNoContradictionCitedSuffix = "; evidence grounding check cited no contradiction";
 
     /// <summary>The grounding suffix: the check cited a contradiction and the correction is the persisted answer.</summary>
     internal const string GroundingCorrectedSuffix = "; evidence grounding corrected";
@@ -86,7 +86,7 @@ internal static class FinalResponse
 
         return head + grounding switch
         {
-            EvidenceGroundingOutcome.Verified => GroundingVerifiedSuffix,
+            EvidenceGroundingOutcome.NoContradictionCited => GroundingNoContradictionCitedSuffix,
             EvidenceGroundingOutcome.Corrected => GroundingCorrectedSuffix,
             EvidenceGroundingOutcome.CheckUnavailable => GroundingCheckUnavailableSuffix,
             _ => string.Empty,

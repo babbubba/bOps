@@ -158,26 +158,32 @@ public sealed class SystemEventsAgentCasesTests
     /// <summary>
     /// PRE-5 real-path regression (ADR-0042 PRE-5 amendment §10, test 49): the real tool shell turns matched hardware-error records
     /// into a typed count fact; a first final answer that denies those records is checked, cannot be persisted, and is replaced by
-    /// the one correction. The runtime only ever sees the opaque fact; this package owns its meaning.
+    /// the one correction. The runtime only ever sees the opaque fact; this package owns its meaning. The target group is matched
+    /// once in a broad call where more than the bound of other groups are more frequent: it is listed by the generic severity
+    /// rule, not because the scenario keeps it in a top-by-count selection.
     /// </summary>
     [Fact]
     public async Task PersistedHardwareErrorEvidence_CannotBeDeniedByTheFinalAnswer()
     {
         const string source = "Microsoft-Windows-WHEA-Logger";
         const string denial = "No WHEA 18/19/29 events were observed";
-        const string corrected = "WHEA Event 19 (a corrected hardware error) was recorded 2 times; its relation to the freezes is a hypothesis.";
+        const string limitations = "\n\nEvidence limitations\n- system.events listed only some of the matched records.";
+        const string disclosed = $"The freezes look software-related. {denial} in the System log.{limitations}";
+        const string corrected = $"WHEA Event 19 (a corrected hardware error) was recorded at least once; its relation to the freezes is a hypothesis.{limitations}";
         SystemEventRecord[] records =
         [
+            .. Enumerable.Range(0, 20).SelectMany(group => Enumerable.Range(0, 4).Select(_ =>
+                Event(group + 1, SystemEventSeverity.Information, $"service-{group:D2}", "state changed", channel: "System", eventId: "7036"))),
             Event(30, SystemEventSeverity.Warning, source, "A corrected hardware error has occurred.", channel: "System", eventId: "19"),
-            Event(10, SystemEventSeverity.Warning, source, "A corrected hardware error has occurred.", channel: "System", eventId: "19"),
-            Event(12, SystemEventSeverity.Error, "disk", "The device has a bad block.", channel: "System", eventId: "7"),
         ];
         var registry = new ToolRegistry(new Probe());
         registry.Register(new PackageId("test.package"), new LogTool(records));
         var model = new ScriptedModel(
             Plan(),
-            Asks(j => { j["windowMinutes"] = 60; }),
+            Asks(j => { j["windowMinutes"] = 60; j["limit"] = 3; }),
             Answers($"The freezes look software-related. {denial} in the System log."),
+            // The broad call lists fewer records than it matched (Partial), so the ADR-0042 §6 re-ask runs first, as in production.
+            Answers(disclosed),
             Answers(new JsonObject
             {
                 ["contradictions"] = new JsonArray(new JsonObject { ["fact"] = "F0.1", ["quote"] = denial }),
@@ -189,15 +195,16 @@ public sealed class SystemEventsAgentCasesTests
 
         var task = await runner.RunAsync("Why does this PC freeze?", Actor);
 
-        var fact = ToolStep(task).Result!.Facts[0];
-        Assert.Equal((SystemEventFacts.MatchedCountType, $"source={source};eventId=19", ToolParameterType.Integer, 2),
-            (fact.Type, fact.Key, fact.ValueType, fact.Value.GetValue<int>()));
+        var facts = ToolStep(task).Result!.Facts;
+        Assert.Equal((SystemEventFacts.MatchedCountType, $"source={source};eventId=19", ToolParameterType.Integer, 1),
+            (facts[0].Type, facts[0].Key, facts[0].ValueType, facts[0].Value.GetValue<int>()));
+        Assert.Equal((SystemEventFacts.UnlistedGroupsType, 21 - 11), (facts[^1].Type, facts[^1].Value.GetValue<int>()));
         Assert.Contains(
-            "- F0.1 step 0 system.events: type \"system.events.matched-count\" key \"source=Microsoft-Windows-WHEA-Logger;eventId=19\" = Integer 2",
+            "- F0.1 step 0 system.events: type \"system.events.matched-count\" key \"source=Microsoft-Windows-WHEA-Logger;eventId=19\" = Integer 1 (from partial evidence)",
             model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.Equal(AgentTaskStatus.Completed, task.Status);
         Assert.Equal(corrected, task.Steps[^1].Observation);
-        Assert.Equal("Final response; evidence grounding corrected", task.Steps[^1].Description);
+        Assert.Equal("Final response; evidence disclosure re-ask accepted; evidence grounding corrected", task.Steps[^1].Description);
         Assert.DoesNotContain(task.Steps, step => step.Observation?.Contains(denial, StringComparison.Ordinal) == true);
     }
 

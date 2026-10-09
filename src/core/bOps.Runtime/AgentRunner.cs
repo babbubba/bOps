@@ -762,7 +762,9 @@ public sealed class AgentRunner(
                 stepActivity?.SetTag("bops.evidence_limitations", limitations.EntryCount);
             }
 
-            // ADR-0042 PRE-5 amendment §3: the typed-fact ledger, rebuilt like the digest from persisted steps and plans only.
+            // ADR-0042 PRE-5 amendment §3: the typed-fact ledger, rebuilt like the digest from persisted steps and plans only. Any
+            // step call is the final synthesis when its reply calls no tool, and the check and correction reuse this request, so the
+            // block is in every step prompt while a grounding fact exists.
             var grounding = EvidenceGroundingLedger.Build(steps, run.Plans);
             if (grounding is not null)
             {
@@ -940,7 +942,6 @@ public sealed class AgentRunner(
                 var groundingOutcome = EvidenceGroundingOutcome.NotChecked;
                 if (!diagnostic
                     && grounding is not null
-                    && options.EvidenceGroundingChecks == 1
                     && DisclosureBudgetRemains(run, delegation))
                 {
                     var guarded = await GuardGroundingAsync(run, request, history, finalText!, grounding, stepIndex, stepCalls, ct);
@@ -956,7 +957,7 @@ public sealed class AgentRunner(
                     (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
                     stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
                     {
-                        EvidenceGroundingOutcome.Verified => "verified",
+                        EvidenceGroundingOutcome.NoContradictionCited => "no_contradiction_cited",
                         EvidenceGroundingOutcome.Corrected => "corrected",
                         _ => "check_unavailable",
                     });
@@ -3338,7 +3339,7 @@ public sealed class AgentRunner(
         if (verdict.Kind != GroundingVerdictKind.Contradicted)
         {
             return new GroundingGuardResult(candidate,
-                verdict.Kind == GroundingVerdictKind.Consistent ? EvidenceGroundingOutcome.Verified : EvidenceGroundingOutcome.CheckUnavailable,
+                verdict.Kind == GroundingVerdictKind.NoContradictionCited ? EvidenceGroundingOutcome.NoContradictionCited : EvidenceGroundingOutcome.CheckUnavailable,
                 null);
         }
 
@@ -3371,6 +3372,7 @@ public sealed class AgentRunner(
 
         var accepted = correction.ToolCalls.Count == 0
             && !TerminalProtocolArtifact.IsArtifact(text)
+            && !EvidenceGroundingLedger.IsCheckReplyShape(text)
             && !EvidenceGroundingLedger.RepeatsContradiction(text!, verdict.Contradictions)
             && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text));
         return accepted
