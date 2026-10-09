@@ -165,6 +165,20 @@ public sealed class OrdinaryMutationJournalDurabilityTests
         Assert.Equal(1, f.Audit.Count(TaskLifecycleStage.ExecutionTerminal));
     }
 
+    [Fact]
+    public async Task T2a_AnIntentWriteRejectedByTheFence_NeverRunsTheTool()
+    {
+        var f = new Fixture();
+        f.Store.Reject = write => write == "intent";
+
+        var task = await f.NewRunner().RunAsync(Goal, Operator, f.TaskId);
+
+        Assert.Empty(f.Journal);
+        Assert.Equal(AgentTaskStatus.Running, task.Status);
+        Assert.Equal((0, 0), (f.Mutate.Executions, f.Observe.Verifications));
+        Assert.Single(f.Audit.Mutations(), e => e is { Stage: TaskMutationAuditStage.IntentNotCommitted, ReasonCode: "superseded" });
+    }
+
     // T2b (C1 → C2): the intent committed but the process died before the write returned: the runtime cannot know, so it is Pending.
     [Fact]
     public async Task T2b_AnIntentCommittedJustBeforeTheProcessDied_IsPending_AndBlocksResume()

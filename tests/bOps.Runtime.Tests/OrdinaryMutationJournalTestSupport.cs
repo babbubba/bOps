@@ -49,6 +49,9 @@ internal sealed class CrashableJournalTaskStore(InMemoryTaskStore? inner = null)
     /// <summary>Fails the named write as a full disk would, without dying; nothing is written.</summary>
     public Func<string, bool>? Fail { get; set; }
 
+    /// <summary>Refuses the named fenced write without throwing or persisting it.</summary>
+    public Func<string, bool>? Reject { get; set; }
+
     /// <summary>Runs before the named write, outside any lock — a test's hook to interleave another writer.</summary>
     public Func<string, Task>? BeforeWrite { get; set; }
 
@@ -74,6 +77,7 @@ internal sealed class CrashableJournalTaskStore(InMemoryTaskStore? inner = null)
         CrashBefore = null;
         CrashAfter = null;
         Fail = null;
+        Reject = null;
         BeforeWrite = null;
     }
 
@@ -133,6 +137,11 @@ internal sealed class CrashableJournalTaskStore(InMemoryTaskStore? inner = null)
         if (Fail?.Invoke(name) == true)
         {
             throw new IOException("the disk is full");
+        }
+
+        if (Reject?.Invoke(name) == true)
+        {
+            return false;
         }
 
         if (CrashBefore?.Invoke(name) == true)
