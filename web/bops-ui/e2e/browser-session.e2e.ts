@@ -52,11 +52,11 @@ async function releaseStep(): Promise<void> {
 }
 
 /** A step of the selected task, as the detail panel titles it ("Step 1 · system.cpu"). */
-function stepTitle(page: Page, number: number) {
+function stepTitle(page: Page, number: number, tool: string) {
   return page
     .locator('ol > li')
     .filter({ hasText: `Step ${number}` })
-    .filter({ hasText: 'system.cpu' })
+    .filter({ hasText: tool })
     .first();
 }
 
@@ -167,7 +167,7 @@ test('E2E-8: browser session across reload, watch restoration, CSRF, logout and 
 
   // 5. Release one model step; the UI shows step 1.
   await releaseStep();
-  await expect(stepTitle(page, 1)).toBeVisible();
+  await expect(stepTitle(page, 1, 'system.cpu')).toBeVisible();
 
   // 6–8. F5: no sign-in screen, GET /api/session/me answers 200, the same task is selected and its watch polls again.
   meStatuses.length = 0;
@@ -183,11 +183,11 @@ test('E2E-8: browser session across reload, watch restoration, CSRF, logout and 
   await expect(page).toHaveURL(new RegExp(`task=${taskId}`));
   await polled;
   await expect(page.getByText(`E2E-8 ${browserName} watch me`).first()).toBeVisible();
-  await expect(stepTitle(page, 1)).toBeVisible();
+  await expect(stepTitle(page, 1, 'system.cpu')).toBeVisible();
 
   // 9. The restored watch follows the task without interaction, to its end, then stops.
   await releaseStep();
-  await expect(stepTitle(page, 2)).toBeVisible();
+  await expect(stepTitle(page, 2, 'system.memory')).toBeVisible();
   await releaseStep();
   await expect(detailStatus(page)).toContainText('Completed');
   let pollsAfterEnd = 0;
@@ -306,7 +306,7 @@ test('E2E-8: browser session across reload, watch restoration, CSRF, logout and 
   await expect(page).toHaveURL(TASK_ID);
   const secondId = TASK_ID.exec(page.url())![1];
   await releaseStep();
-  await expect(stepTitle(page, 1)).toBeVisible();
+  await expect(stepTitle(page, 1, 'system.cpu')).toBeVisible();
 
   expect(await control('revoke')).toMatch(/^ok [1-9]/);
   await expect(
@@ -318,7 +318,7 @@ test('E2E-8: browser session across reload, watch restoration, CSRF, logout and 
   await signIn(page);
   await expect(page.getByText(`E2E-8 ${browserName} second task`).first()).toBeVisible();
   await releaseStep();
-  await expect(stepTitle(page, 2)).toBeVisible();
+  await expect(stepTitle(page, 2, 'system.memory')).toBeVisible();
   await releaseStep();
   await expect(detailStatus(page)).toContainText('Completed');
 
