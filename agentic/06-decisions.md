@@ -1138,3 +1138,35 @@ is not reconstructed and reconciliation requires an administrator.
 
 **Consequences.** F-25A is closed as design; F-25B implementation is pending
 (`agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md`). F-25 stays open for PRE-8.
+
+
+---
+
+### D-048 — ACCEPTED — Microsoft Agent Framework as the bOps agent infrastructure boundary (ADR-0052)
+
+**Decision.** Accepted 2026-10-10 by the operator. Microsoft Agent Framework (MAF) is the reference framework for
+generic agent infrastructure in bOps. The project-owned public contracts remain framework-neutral and
+`bOps.Abstractions` stays dependency-free, but runtime implementation may use MAF behind an isolated integration
+assembly. MAF owns generic context/message infrastructure, compaction, governed summarization and related agent
+plumbing; bOps retains operational authority: planning/execution state, exact tool visibility, validation, policy,
+entitlement, human approval, mutation journaling, execution, verification, evidence semantics, task persistence,
+resume/fencing, reconciliation, audit semantics, provider fallback and task/model budgets.
+
+Every inference caused by a task, including MAF summarization, must pass through a bOps-owned governed model invocation
+broker so retry/fallback/timeout/audit/token accounting remain authoritative. Summarization defaults to the task
+provider/model; the operator may explicitly configure a different provider/model used only for summarization. Such a
+configuration is an explicit data-egress choice and is never selected automatically by cost or speed.
+
+HARDEN-8's custom model-facing history implementation becomes migration/reference code, not a permanent parallel agent
+framework. Raw persisted evidence remains authoritative. MAF summaries are derived context only and cannot create
+`EvidenceFact` values, change completeness/verification, satisfy policy/approval, settle mutations or widen the tool
+surface. `runtime.evidence_read` remains an exact raw-evidence drill-down mechanism, but exhausting its local read
+budget no longer terminates the whole task as `RuntimeFailure`.
+
+**Rejected.** Keeping a fully custom agent framework; maintaining MAF and HARDEN-8 as permanent interchangeable context
+engines; replacing the public SDK with MAF types; adopting full Harness authority immediately; solving context pressure
+only by increasing EvidenceRead limits.
+
+**Implementation.** Five ordered packets AF-01 through AF-05 are indexed under `agentic/_tasks/`: MAF foundation and
+governed inference; context/compaction; governed summarization; evidence cleanup; real regression/tuning/legacy cleanup.
+Benchmarks tune MAF and do not decide whether MAF is adopted.
