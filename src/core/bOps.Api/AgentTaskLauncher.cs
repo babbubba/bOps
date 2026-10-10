@@ -215,7 +215,7 @@ internal sealed class AgentTaskLauncher(
     {
         foreach (var cancellation in _running.Values)
         {
-            cancellation.Cancel();
+            TryCancel(cancellation);
         }
 
         _capacity.Dispose();
