@@ -40,8 +40,11 @@ executes, policies authorize, verification confirms, the audit log records.**
    between a first-party package and a third-party one is *where it is loaded from*, never
    *how it is built*.
 
-The core is exactly: Runtime (loop, registries, plugin loader), Policy, Memory, Audit,
-Abstractions (the contract), and the hosts (CLI, API, Worker). Nothing else.
+The **product authority core** is Runtime (state machine and governed execution), Policy, Memory,
+Audit and Abstractions (the public contract), composed by the hosts (CLI, API, Worker). Generic
+agent infrastructure may live in isolated implementation assemblies — notably the Microsoft Agent
+Framework integration defined by ADR-0052 — but such assemblies do not become part of the public
+package contract and cannot take ownership of the authority responsibilities listed above.
 
 ## Confirmed decisions
 
