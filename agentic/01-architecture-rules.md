@@ -596,10 +596,14 @@ inspected. Required behaviour:
 2. **Every `ExecuteAsync` runs under its own timeout** from a linked `CancellationTokenSource`.
    The default is per-tool and configurable; a timeout is `ToolOutcome.Timeout`, distinct from
    failure, and it is audited.
-3. **The history has a budget.** Tool output is truncated to a configured limit before
-   entering the context, with the truncation marked explicitly. `docker.logs` on a chatty
-   container must not be able to blow the context window. Truncation is deterministic
-   (head + tail, never "summarize with another model call" in Phase 1).
+3. **The model context has a budget.** Raw evidence remains persisted by bOps; model-facing
+   history is bounded through the Microsoft Agent Framework context layer (ADR-0052). Generic
+   history compaction may use tool-result compaction, governed LLM summarization, sliding-window
+   compaction and truncation in that order. Current execution authority (system/security rules,
+   current plan/step, exact tool view, correction state, grounding/limitations and reconciliation
+   notices) is protected from generic history compaction. Any summarizer inference is a task model
+   call and must pass through the bOps-governed model invocation path; framework summaries are
+   derived context, never evidence or authority.
 4. **Repeated denials terminate the task.** A `Forbidden` decision produces an audited event
    and an observation; N consecutive denials of the same tool (default 2) end the task as
    `PolicyBlocked`. Without this the model retries a forbidden tool until `MaxSteps`.
