@@ -33,6 +33,11 @@ snapshots under `agentic/obsolete/`.
 | 23 | [`V1.3.y web-tool and evidence-read operability`](2026-10-07-v1.3y-web-evidence-operability.md) | **Implemented locally — validation complete; not committed or merged** | alto |
 | 23z | [`V1.3.z Windows kernel dump analysis`](2026-10-08-v1.3z-windows-kernel-dump-analysis.md) | **Merged via PR #91; prerequisite recovery verified live; first real dump execution exposed the global 30 s caller timeout** | alto |
 | 23zz | [`V1.3 pre-release stabilization`](2026-10-08-v1.3-pre-release-stabilization.md) | **Planned — next executable pre-release packet before stable V1.3** | molto alto |
+| AF-01 | [`MAF foundation + governed inference`](2026-10-10-af-01-maf-foundation-governed-inference.md) | **Planned — first ADR-0052 implementation packet** | medio |
+| AF-02 | [`MAF context + compaction`](2026-10-10-af-02-maf-context-compaction.md) | Planned — after AF-01 | medio |
+| AF-03 | [`Governed MAF summarization`](2026-10-10-af-03-governed-summarization.md) | Planned — after AF-01/AF-02 | medio |
+| AF-04 | [`Evidence cleanup + high-density facts`](2026-10-10-af-04-evidence-cleanup.md) | Planned — after AF-02; may parallel AF-03 after shared APIs stabilize | medio |
+| AF-05 | [`MAF regression, tuning + legacy cleanup`](2026-10-10-af-05-maf-regression-tuning-cleanup.md) | Planned — after AF-01…AF-04 | medio |
 | 24 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future — blocked until stable V1.3 gate | molto alto |
 | 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
@@ -51,6 +56,15 @@ tracks cross-repository sequencing after it exists; it must not duplicate these 
 - External mutations — repository creation, push, tag, publication or release — require explicit
   operator authorization at execution time.
 - Keep README, CHANGELOG, HANDOFF and the selected task aligned with validated results.
+
+## ADR-0052 Microsoft Agent Framework migration train
+
+AF-01 through AF-05 are an ordered architecture migration governed by
+[ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md). MAF adoption
+is already decided (D-048): AF-05 benchmarks tune the implementation and authorize legacy cleanup,
+not a return to a custom agent framework. Execute AF-01 first; AF-04 may overlap AF-03 only after
+AF-02's shared context interfaces are stable. Each packet contains its own stop conditions and
+validation gate.
 
 ## V1.3 coding-agent packet map
 
