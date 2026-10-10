@@ -128,5 +128,8 @@ around it and mention it afterwards.
 - Change a file in `agentic/` as part of a feature task.
 - Read or revive files under `agentic/obsolete/` as active scope. Historical research must be
   explicitly requested by an active task.
-- Introduce a framework that hides the agent loop. Owning that loop explicitly is a project
-  decision, not an oversight.
+- Introduce a framework that hides or takes over the **bOps operational authority state machine**.
+  Microsoft Agent Framework is the reference framework for generic agent infrastructure (ADR-0052);
+  using its context/history/compaction/model plumbing is expected. Planning/execution state, exact
+  tool authority, policy, entitlement, mutation safety, verification, evidence semantics and recovery
+  remain explicit bOps responsibilities unless a later accepted ADR moves a named boundary.
