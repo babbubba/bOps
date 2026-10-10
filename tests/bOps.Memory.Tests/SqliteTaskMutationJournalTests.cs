@@ -261,6 +261,22 @@ public sealed class SqliteTaskMutationJournalTests : IDisposable
     }
 
     [Fact]
+    public async Task Outcome_RollsBackTheEntry_WhenTheTaskRowUpdateIsIgnored()
+    {
+        var (store, task) = await RunningWithIntentAsync();
+        SetIgnoredTaskWrites(enabled: true);
+
+        Assert.False(await store.TryRecordOutcomeAsync(
+            new TaskMutationKey(task.Id, 1, 0), Returned(), TaskMutationState.Settled, WithStep(task, 0)));
+
+        SetIgnoredTaskWrites(enabled: false);
+        var snapshot = (await store.LoadWithJournalAsync(task.Id))!;
+        Assert.Equal(TaskMutationState.Pending, Assert.Single(snapshot.Entries).State);
+        Assert.Null(snapshot.Entries[0].Outcome);
+        Assert.Empty(snapshot.Task.Steps);
+    }
+
+    [Fact]
     public async Task Outcome_RequiresTheOwningTaskToBeTheRunningStateOfTheSameAttempt()
     {
         var (store, task) = await RunningWithIntentAsync();
@@ -599,6 +615,22 @@ public sealed class SqliteTaskMutationJournalTests : IDisposable
             command.CommandText = "DROP TRIGGER fail_task_write;";
         }
 
+        command.ExecuteNonQuery();
+    }
+
+    private void SetIgnoredTaskWrites(bool enabled)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = _filePath }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        if (enabled)
+        {
+            command.CommandText = "CREATE TRIGGER ignore_task_write BEFORE UPDATE ON tasks BEGIN SELECT RAISE(IGNORE); END;";
+        }
+        else
+        {
+            command.CommandText = "DROP TRIGGER ignore_task_write;";
+        }
         command.ExecuteNonQuery();
     }
 
