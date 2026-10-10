@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/src/core/">
     <Project Path="src/core/bOps.Abstractions/bOps.Abstractions.csproj" />
+    <Project Path="src/core/bOps.AgentFramework/bOps.AgentFramework.csproj" />
     <Project Path="src/core/bOps.Api/bOps.Api.csproj" />
     <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
     <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
@@ -60,6 +61,7 @@
     <Project Path="src/packages/bOps.Packages.Web/bOps.Packages.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/bOps.AgentFramework.Tests/bOps.AgentFramework.Tests.csproj" />
     <Project Path="tests/bOps.AppHost.Tests/bOps.AppHost.Tests.csproj" />
     <Project Path="tests/bOps.Api.Tests/bOps.Api.Tests.csproj" />
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />

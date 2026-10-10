@@ -303,19 +303,24 @@ var approvalProvider = new ConsoleApprovalProvider();
 // runs, so `bops resume <task-id>` can continue a task that failed, was cancelled or ran out of a
 // per-attempt budget, under the ADR-0040 resumability rule (never a task still stored Running).
 var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? "tasks.db");
+var audit = host.Services.GetRequiredService<IAuditSink>();
+var time = host.Services.GetRequiredService<TimeProvider>();
+var logger = host.Services.GetRequiredService<ILogger<AgentRunner>>();
+var broker = new ModelInvocationBroker(model, audit, time, logger, runnerOptions);
 
 var runner = new AgentRunner(
     model,
     toolRegistry,
     policyEngine,
     approvalProvider,
-    host.Services.GetRequiredService<IAuditSink>(),
+    audit,
     taskStore,
-    host.Services.GetRequiredService<TimeProvider>(),
-    host.Services.GetRequiredService<ILogger<AgentRunner>>(),
+    time,
+    logger,
     runnerOptions,
     skillRegistry,
-    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
+    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+    invocationBroker: broker);
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

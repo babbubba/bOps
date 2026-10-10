@@ -57,7 +57,8 @@ public sealed partial class AgentRunner(
     IEntitlementService? entitlementService = null,
     PinnedProviderConfiguration? pinnedProviderConfiguration = null,
     Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
-    ISystemMessageStore? systemMessages = null)
+    ISystemMessageStore? systemMessages = null,
+    IModelInvocationBroker? invocationBroker = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -172,11 +173,16 @@ public sealed partial class AgentRunner(
     internal const int AggressivePlanMaxCharacters = 1024;
     internal const int ReplanPlanMaxCharacters = 2048;
 
-    /// <summary>The least call budget a retry must leave for its next attempt; a wait leaving less ends the call instead (ADR-0039 §4).</summary>
-    private static readonly TimeSpan MinimumModelAttemptWindow = TimeSpan.FromSeconds(1);
-
     // The options are validated once, when the runner is built, so an incoherent model-call budget fails at start-up.
     private readonly AgentRunnerOptions options = ValidatedOptions(options);
+    private readonly IModelInvocationBroker modelInvocationBroker = invocationBroker ?? new ModelInvocationBroker(
+        model,
+        audit,
+        timeProvider,
+        logger,
+        options,
+        pinnedProviderConfiguration,
+        persistPinnedProviderConfiguration);
     private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
 
     /// <summary>
@@ -199,10 +205,30 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>Test seam: replaces the wait between model-call attempts (by default <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>).</summary>
-    internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay { get; set; }
+    internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay
+    {
+        get => (modelInvocationBroker as ModelInvocationBroker)?.RetryDelay;
+        set
+        {
+            if (modelInvocationBroker is ModelInvocationBroker broker)
+            {
+                broker.RetryDelay = value;
+            }
+        }
+    }
 
     /// <summary>Test seam: replaces the backoff jitter source, a value in [0, 1) (by default <see cref="Random.Shared"/>).</summary>
-    internal Func<double>? ModelRetryJitter { get; set; }
+    internal Func<double>? ModelRetryJitter
+    {
+        get => (modelInvocationBroker as ModelInvocationBroker)?.RetryJitter;
+        set
+        {
+            if (modelInvocationBroker is ModelInvocationBroker broker)
+            {
+                broker.RetryJitter = value;
+            }
+        }
+    }
 
     private static AgentRunnerOptions ValidatedOptions(AgentRunnerOptions options)
     {
@@ -2766,173 +2792,15 @@ public sealed partial class AgentRunner(
         Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls, CancellationToken ct, Func<ModelResponse, string?>? malformedOutput = null)
     {
-        var callStartedAt = timeProvider.GetTimestamp();
-        var modelAttempt = 0;
-        var providerAttempt = 0;
-        while (true)
+        var context = new ModelInvocationContext(taskId, stepIndex, actor, calls)
         {
-            modelAttempt++;
-            providerAttempt++;
-            if (activeAttemptBudget.Value?.IsExpired == true)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-
-            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-            var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
-            var startedAtUtc = timeProvider.GetUtcNow();
-            var startedAt = timeProvider.GetTimestamp();
-            var descriptor = model.Descriptor;
-            var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
-                ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
-            AttemptFailure? failure = null;
-            // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
-            // a successful call is not a model failure and is never classified, recorded or retried as one.
-            ModelResponse? response = null;
-            var attemptBudgetInterrupted = false;
-            try
-            {
-                response = await AttemptModelCallAsync(request, attemptTimeout, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
-                throw;
-            }
-            catch (OperationCanceledException) when (activeAttemptBudget.Value?.IsExpired == true)
-            {
-                attemptBudgetInterrupted = true;
-                failure = new AttemptFailure(ModelFailureKind.Timeout,
-                    "The execution attempt exhausted its active-duration budget during the model call.", null, null, null);
-            }
-            catch (OperationCanceledException)
-            {
-                // Rule C2 for model calls: the attempt's own timeout fired (or a transport timeout the adapter did not wrap),
-                // not the task's cancellation, so this is a classified, audited failure rather than an escape.
-                failure = new AttemptFailure(ModelFailureKind.Timeout,
-                    $"The model call attempt did not complete within {attemptTimeout.TotalSeconds:0.###} s.", null, null, null);
-            }
-            catch (ModelProtocolException ex)
-            {
-                failure = new AttemptFailure(ex.FailureKind, ModelFailureText.Sanitize(ex.Message), ex.ProviderStatusCode, ex.RetryAfter, ex.Details);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Rule C1 (ADR-0013): an adapter that throws something unexpected is contained like any other failure, but it is
-                // not classified, so it is never retried.
-                logger.LogWarning(ex, "Task {TaskId}: the model adapter threw an unclassified {ExceptionType}", taskId, ex.GetType().Name);
-                failure = new AttemptFailure(ModelFailureKind.Unknown, ModelFailureText.Sanitize($"{ex.GetType().Name}: {ex.Message}"), null, null, null);
-            }
-
-            if (response is not null)
-            {
-                var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-                delegation?.Meter?.AddTokens(UsageTokens(response));
-
-                if (malformedOutput?.Invoke(response) is { } problem)
-                {
-                    var reason = ModelFailureText.Sanitize(problem);
-                    calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Failure, response.Usage, response.Details, reason) with
-                    {
-                        ModelAttempt = modelAttempt,
-                        ProviderAttempt = providerAttempt,
-                        FallbackOrdinal = fallbackOrdinal,
-                        FailureKind = ModelFailureKind.MalformedResponse,
-                        RetryDecision = ModelRetryDecision.NotRetryable,
-                    });
-                    await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, reason, response.Usage,
-                        descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                        ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable,
-                        null, null, ct);
-                    return response;
-                }
-
-                calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null) with
-                {
-                    ModelAttempt = modelAttempt,
-                    ProviderAttempt = providerAttempt,
-                    FallbackOrdinal = fallbackOrdinal,
-                });
-                await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Success, null, response.Usage,
-                    descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                    null, null, null, null, ct);
-                return response;
-            }
-
-            if (failure is null)
-            {
-                throw new InvalidOperationException("A model attempt ended with neither a response nor a classified failure.");
-            }
-
-            var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-            var (decision, delay) = attemptBudgetInterrupted
-                ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
-                : DecideModelRetry(failure, providerAttempt, callStartedAt);
-            if ((decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit) &&
-                ModelFailureText.IsRetryable(failure.Kind) && model is IFallbackChatModelControl fallback && fallback.HasNextCandidate)
-            {
-                var remainingForFallback = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-                if (remainingForFallback < MinimumModelAttemptWindow || activeAttemptBudget.Value?.IsExpired == true)
-                {
-                    decision = ModelRetryDecision.BudgetExhausted;
-                }
-                else if (fallback.TryAdvance())
-                {
-                    decision = ModelRetryDecision.Fallback;
-                }
-            }
-            long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
-            calls.Add(BuildCallRecord(descriptor, startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
-            {
-                ModelAttempt = modelAttempt,
-                ProviderAttempt = providerAttempt,
-                FallbackOrdinal = fallbackOrdinal,
-                FailureKind = failure.Kind,
-                RetryDecision = decision,
-                RetryDelayMs = delayMs,
-                ProviderStatusCode = failure.StatusCode,
-            });
-            // Rule S9 / principle 4: every attempt is audited whatever the outcome — exactly like a denied or timed-out tool
-            // call (ADR-0013, ADR-0039 §5). StepIndex is -1 for the initial plan call, and the triggering step's index for a
-            // replan — see ADR-0014.
-            await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, failure.Message, null,
-                descriptor, failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                failure.Kind, decision, delayMs, failure.StatusCode, ct);
-
-            if (attemptBudgetInterrupted)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-
-            if (decision == ModelRetryDecision.Fallback)
-            {
-                if (pinnedProviderConfiguration is not null && persistPinnedProviderConfiguration is not null)
-                    await persistPinnedProviderConfiguration(taskId, pinnedProviderConfiguration, CancellationToken.None);
-                providerAttempt = 0;
-                continue;
-            }
-
-            if (decision != ModelRetryDecision.Retry)
-            {
-                throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, providerAttempt)) { FailureKind = failure.Kind };
-            }
-
-            if (logger.IsEnabled(LogLevel.Warning))
-            {
-                logger.LogWarning(
-                    "Task {TaskId}: model call attempt {Attempt} failed ({Kind}); retrying in {DelayMs} ms",
-                    taskId, providerAttempt, failure.Kind, delayMs);
-            }
-
-            try
-            {
-                await DelayForRetryAsync(delay!.Value, ct);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-        }
+            Delegation = delegation?.Correlation,
+            AccountTokens = delegation?.Meter is { } meter ? meter.AddTokens : null,
+            MalformedResponse = malformedOutput,
+            ExecutionBudgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None,
+            ExecutionBudgetExpired = () => activeAttemptBudget.Value?.IsExpired == true,
+        };
+        return await modelInvocationBroker.InvokeAsync(request, context, ct);
     }
 
     /// <summary>
@@ -3140,195 +3008,11 @@ public sealed partial class AgentRunner(
         }, delegation, ct);
     }
 
-    /// <summary>One attempt, under its own timeout linked to — but distinguishable from — the task's cancellation.</summary>
-    private async Task<ModelResponse> AttemptModelCallAsync(ModelRequest request, TimeSpan timeout, CancellationToken ct)
-    {
-        using var timeoutSource = new CancellationTokenSource(ClampTimerDue(timeout), timeProvider);
-        var budgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None;
-        using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token, budgetToken);
-        using var waitSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutSource.Token, budgetToken);
-        var call = model.CompleteAsync(request, attemptSource.Token);
-        try
-        {
-            // WaitAsync on the timeout alone: an adapter that ignores its token still cannot hold the loop past the attempt
-            // timeout, while the task's own cancellation keeps its existing meaning — it reaches the adapter through
-            // attemptSource, and a reply the adapter already produced is not thrown away.
-            return await call.WaitAsync(waitSource.Token);
-        }
-        catch (OperationCanceledException) when (!call.IsCompleted)
-        {
-            // The abandoned attempt may still fault later; observe that so it is never an unobserved task exception.
-            _ = call.ContinueWith(
-                static abandoned => _ = abandoned.Exception, CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            throw;
-        }
-    }
-
-    // A CancellationTokenSource timer accepts at most int.MaxValue - 1 milliseconds, and never a negative delay.
-    private static TimeSpan ClampTimerDue(TimeSpan due)
-    {
-        var max = TimeSpan.FromMilliseconds(int.MaxValue - 1);
-        return due <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : due > max ? max : due;
-    }
-
-    private Task DelayAsync(TimeSpan delay, CancellationToken ct) => Task.Delay(delay, timeProvider, ct);
-
-    private async Task DelayForRetryAsync(TimeSpan delay, CancellationToken ct)
-    {
-        if (ModelRetryDelay is not null)
-        {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
-            await ModelRetryDelay(delay, linked.Token);
-            return;
-        }
-
-        using var source = CancellationTokenSource.CreateLinkedTokenSource(
-            ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
-        await DelayAsync(delay, source.Token);
-    }
-
-    /// <summary>
-    /// The runtime's retry decision after one failed attempt (ADR-0039 §4): only transient kinds, only while attempts remain,
-    /// never earlier than a provider's <c>Retry-After</c>, never for a <c>Retry-After</c> above the configured maximum, and
-    /// never with a wait that would not leave <see cref="MinimumModelAttemptWindow"/> of the call budget for the next attempt.
-    /// </summary>
-    private (ModelRetryDecision Decision, TimeSpan? Delay) DecideModelRetry(AttemptFailure failure, int attempt, long callStartedAt)
-    {
-        if (!ModelFailureText.IsRetryable(failure.Kind))
-        {
-            return (ModelRetryDecision.NotRetryable, null);
-        }
-
-        if (attempt >= options.ModelCallMaxAttempts)
-        {
-            return (ModelRetryDecision.AttemptsExhausted, null);
-        }
-
-        TimeSpan? retryAfter = failure.RetryAfter is { } asked ? (asked < TimeSpan.Zero ? TimeSpan.Zero : asked) : null;
-        if (retryAfter > options.ModelRetryMaxDelay)
-        {
-            return (ModelRetryDecision.RetryAfterExceedsLimit, null);
-        }
-
-        var backoff = ModelRetryBackoff(attempt);
-        var delay = retryAfter is { } honoured && honoured > backoff ? honoured : backoff;
-        var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-        return delay + MinimumModelAttemptWindow > remaining
-            ? (ModelRetryDecision.BudgetExhausted, null)
-            : (ModelRetryDecision.Retry, delay);
-    }
-
-    /// <summary>Exponential backoff with equal jitter: <c>min(max, base × 2^(attempt−1)) × (0.5 + 0.5 × jitter)</c>.</summary>
-    private TimeSpan ModelRetryBackoff(int attempt)
-    {
-        var exponential = options.ModelRetryBaseDelay.Ticks * Math.Pow(2, Math.Min(attempt - 1, 30));
-        var capped = Math.Min(exponential, options.ModelRetryMaxDelay.Ticks);
-        var jitter = Math.Clamp((ModelRetryJitter ?? Random.Shared.NextDouble)(), 0.0, 1.0);
-        return TimeSpan.FromTicks((long)(capped * (0.5 + (0.5 * jitter))));
-    }
-
-    /// <summary>The operator-facing reason of a terminal model-call failure: what kind, what was tried, then the safe detail.</summary>
-    private string DescribeTerminalFailure(AttemptFailure failure, ModelRetryDecision decision, int attempts)
-    {
-        var tried = decision switch
-        {
-            ModelRetryDecision.AttemptsExhausted => $" Gave up after {attempts} attempts.",
-            ModelRetryDecision.BudgetExhausted =>
-                $" Gave up after {attempts} attempt(s): another wait would exceed the {options.ModelCallBudget.TotalSeconds:0.###} s model-call budget.",
-            ModelRetryDecision.RetryAfterExceedsLimit =>
-                $" The provider asked to retry after {failure.RetryAfter!.Value.TotalSeconds:0.###} s, longer than the " +
-                $"{options.ModelRetryMaxDelay.TotalSeconds:0.###} s limit.",
-            _ when attempts > 1 => $" Not retried after attempt {attempts}.",
-            _ => string.Empty,
-        };
-        var detail = string.IsNullOrEmpty(failure.Message) ? string.Empty : $" Details: {failure.Message}";
-        return $"{ModelFailureText.OperatorReason(failure.Kind)}{tried}{detail}";
-    }
-
-    private Task WriteModelCallAuditAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, DelegatedExecutionScope? delegation, ModelCallOutcome outcome, string? error,
-        ModelUsage? usage, ChatModelDescriptor descriptor, string? actualModel, long durationMs, int modelAttempt,
-        int providerAttempt, int fallbackOrdinal, ModelFailureKind? kind, ModelRetryDecision? decision,
-        long? retryDelayMs, int? statusCode, CancellationToken ct) =>
-        WriteAuditAsync(new ModelCallAuditEvent
-        {
-            TimestampUtc = timeProvider.GetUtcNow(),
-            Node = NodeId.Local,
-            TaskId = taskId,
-            StepIndex = stepIndex,
-            Actor = actor,
-            Provider = descriptor.ProviderId,
-            Model = descriptor.ModelId,
-            Outcome = outcome,
-            ErrorMessage = error,
-            Usage = usage,
-            ActualModel = actualModel,
-            DurationMs = durationMs,
-            ModelAttempt = modelAttempt,
-            ProviderAttempt = providerAttempt,
-            FallbackOrdinal = fallbackOrdinal,
-            FailureKind = kind,
-            RetryDecision = decision,
-            RetryDelayMs = retryDelayMs,
-            ProviderStatusCode = statusCode,
-            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
-            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
-            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
-            PrimaryModel = pinnedProviderConfiguration?.Model,
-        }, delegation, ct);
-
-    /// <summary>What one failed attempt amounted to, in provider-neutral terms, with its message already sanitized.</summary>
-    private sealed record AttemptFailure(
-        ModelFailureKind Kind, string Message, int? StatusCode, TimeSpan? RetryAfter, ModelCallDetails? Details);
-
-    private ModelCallRecord BuildCallRecord(
-        ChatModelDescriptor descriptor, DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome,
-        ModelUsage? usage, ModelCallDetails? details, string? error)
-    {
-        var request = CapPayload(details?.RequestJson, out var requestCut);
-        var reply = CapPayload(details?.ResponseJson, out var replyCut);
-        return new ModelCallRecord(
-            descriptor.ProviderId, descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
-            details?.FinishReason, error, request, reply, requestCut || replyCut)
-        {
-            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
-            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
-            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
-            PrimaryModel = pinnedProviderConfiguration?.Model,
-        };
-    }
-
     private PinnedProviderConfiguration? CurrentPinnedProviderConfiguration()
     {
         if (pinnedProviderConfiguration is not null && model is IFallbackChatModelControl fallback)
             pinnedProviderConfiguration.FallbackOrdinal = fallback.FallbackOrdinal;
         return pinnedProviderConfiguration;
-    }
-
-    /// <summary>Bounds a recorded body to <see cref="AgentRunnerOptions.MaxModelPayloadCharacters"/> (0 keeps none), saying so when it cuts.</summary>
-    private string? CapPayload(string? body, out bool truncated)
-    {
-        truncated = false;
-        if (body is null || options.MaxModelPayloadCharacters <= 0)
-        {
-            return null;
-        }
-
-        if (body.Length <= options.MaxModelPayloadCharacters)
-        {
-            return body;
-        }
-
-        truncated = true;
-        var keep = options.MaxModelPayloadCharacters;
-        if (char.IsHighSurrogate(body[keep - 1]))
-        {
-            keep--;
-        }
-
-        return $"{body[..keep]}…[truncated {body.Length - keep} characters]";
     }
 
     /// <summary>

@@ -58,10 +58,15 @@ internal sealed class ExecutionRunnerFactory(
     {
         var options = Options();
         options.Validate(pin.RequestTimeout ?? ChatModelOptions.DefaultRequestTimeout);
-        return new AgentRunner(testModel ?? models.Create(pin), tools, policy, approvals, audit, tasks, time,
+        var executionModel = testModel ?? models.Create(pin);
+        Func<Guid, PinnedProviderConfiguration, CancellationToken, Task> persistPin =
+            (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct);
+        var broker = new ModelInvocationBroker(executionModel, audit, time, logger, options, pin, persistPin);
+        return new AgentRunner(executionModel, tools, policy, approvals, audit, tasks, time,
             logger, options, skills, pinnedProviderConfiguration: pin,
-            persistPinnedProviderConfiguration: (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct),
-            systemMessages: systemMessages);
+            persistPinnedProviderConfiguration: persistPin,
+            systemMessages: systemMessages,
+            invocationBroker: broker);
     }
 
     internal DelegationRunner CreateDelegation(PinnedProviderConfiguration pin, Guid delegationId) =>
