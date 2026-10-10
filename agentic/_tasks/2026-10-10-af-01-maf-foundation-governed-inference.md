@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), Accepted 2026-10-10, D-048 |
-| Status | **Planned** |
+| Status | **Completed** |
 | Depends on | ADR-0052/docs branch merged |
 | Blocks | AF-02, AF-03 |
 | Effort | **medium** |
@@ -199,3 +199,39 @@ Stop and report rather than inventing a design if:
 - the extraction would require changing persisted `TaskState` or audit contract shapes;
 - an MAF package upgrade materially changes the APIs researched by ADR-0052;
 - a test reveals existing retry/fallback behavior is ambiguous rather than simply refactorable.
+
+## Implementation evidence (2026-10-10)
+
+### Delivered structure
+
+- Added `src/core/bOps.AgentFramework`, the single isolated MAF integration assembly, and added it to `bOps.slnx`.
+- Pinned `Microsoft.Agents.AI` to the exact NuGet range `[1.24.0]`; the resolved version is `1.24.0`.
+- Added `IModelInvocationBroker`, `ModelInvocationBroker`, and `ModelInvocationContext` in `bOps.Runtime`. The broker owns the extracted attempt loop, timeout and logical-call budget, retry classification and delay, fallback handshake and pin persistence, attempt audit/records, bounded payloads, actual provider/model metadata, cancellation distinction, delegation correlation, token-accounting callback, and malformed-response callback.
+- Reduced `AgentRunner.CallModelAsync` to context construction plus one broker invocation. All existing planning, replanning, step, correction, grounding, evidence-disclosure, and final calls continue to use that wrapper.
+- Added `GovernedChatClient`, an implementation of the MAF/Microsoft.Extensions.AI `IChatClient` surface that maps only representable messages, function-call/result content, usage and cancellation. It invokes only `IModelInvocationBroker`, rejects MAF tool registration and unsupported stateful/generation options, and contains no credentials, retry, fallback, compaction, summarization, or tool executor.
+- API and CLI reference the isolated integration project at composition time and now construct `ModelInvocationBroker` explicitly. `ExecutionRunnerFactory` still creates an execution-scoped model; its per-attempt adapter still resolves the current credential, preserving `task execution pin -> current credential resolution -> current/fallback candidate`.
+- The bridge is deliberately not activated by an agent component in AF-01. AF-02 must create it with the task-scoped `ModelInvocationContext` when it introduces the first MAF component; constructing a context-free or singleton bridge here would be incorrect.
+
+### Tests and guards
+
+- Added direct broker tests for first-attempt success, token accounting, records/audit, and transient retry followed by success.
+- Added bridge tests proving request/response/function mapping, cancellation propagation, broker-only invocation, and rejection of MAF-owned tools.
+- Added architecture guards for framework-neutral `bOps.Abstractions`, solution/host references to the MAF project, and the narrow production allowlist for direct `IChatModel.CompleteAsync` calls.
+- Existing Runtime coverage continues to verify rate-limit/`Retry-After`, remaining-budget refusal, non-retryable authentication/quota/invalid request, attempt timeout versus caller cancellation, logical-call budget, fallback advance/stickiness/pin persistence, context overflow, malformed-response correction, per-attempt audit/records, cumulative task/delegation tokens, and delegation correlation.
+
+### Verification
+
+- `dotnet test tests/bOps.Runtime.Tests/bOps.Runtime.Tests.csproj -c Release --no-restore`: **2050 passed, 0 failed**.
+- `dotnet test tests/bOps.Api.Tests/bOps.Api.Tests.csproj -c Release --no-restore`: **501 passed, 0 failed**.
+- `dotnet test tests/bOps.Cli.Tests/bOps.Cli.Tests.csproj -c Release --no-restore`: **124 passed, 0 failed**.
+- Focused MAF integration tests: **2 passed, 0 failed**. Focused architecture guards: **3 passed, 0 failed**. Focused pre-extraction behavior suites: **72 passed, 0 failed**.
+- `dotnet restore bOps.slnx --locked-mode`: **passed**.
+- `dotnet build bOps.slnx --configuration Release --no-restore`: **passed with 0 warnings and 0 errors**.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`: **all projects passed, 0 failures**; only the existing environment/platform-dependent tests were skipped.
+- Lock-file review: MAF dependencies occur only in the new integration project/test and in API/CLI composition consumers plus their test projects. `bOps.Abstractions`, Runtime, provider, and operational-package lock surfaces did not acquire MAF dependencies.
+
+### Deviations and follow-up
+
+- No material MAF API deviation from ADR-0052 was found. The implementation was compiled against the actual `1.24.0` package surface; no experimental-warning suppression was required.
+- No persisted `TaskState`, public audit contract, provider wire format, policy, approval, entitlement, execution, mutation-journal, `BoundedHistory`, or EvidenceRead behavior changed.
+- AF-02 must preserve the broker/context lifetime when it begins constructing MAF agents. It must not cache provider credentials, enable MAF tools, or add compaction/summarization as part of that composition work.
