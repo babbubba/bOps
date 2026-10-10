@@ -15,8 +15,11 @@ executes, policies authorize, verification confirms, the audit log records.**
   tool, and there never will be — see [`03-security-rules.md`](03-security-rules.md).
 - Not a configuration-management system. bOps diagnoses and acts on a live machine; it does
   not converge a machine towards a declared desired state.
-- Not a framework consumer. The agent loop is written and owned here, explicitly, so that
-  every state transition can be logged, tested and inspected.
+- Not a thin wrapper around an agent framework. bOps uses **Microsoft Agent Framework (MAF)**
+  for generic agent infrastructure, while bOps explicitly owns the operational authority boundary:
+  planning/execution state, exact tool authorization, policy, entitlement, mutation safety,
+  execution verification, evidence semantics and recovery remain observable and testable bOps code
+  and must not be hidden behind framework behavior (ADR-0052, D-048).
 
 ## Non-negotiable principles
 
@@ -54,6 +57,7 @@ Recorded in full, with rationale, in [`06-decisions.md`](06-decisions.md). Summa
 | Dev orchestration | .NET Aspire from V0.5, for dependencies and test targets only — never to host bOps in production (D-002) |
 | Verification | Declared in the manifest, evaluated by the package (D-006) |
 | Model contract | `tool_call_id` and multiple tool calls per turn from V0.1; streaming later as a separate optional interface (D-007) |
+| Agent infrastructure | Microsoft Agent Framework is the reference framework; bOps keeps operational authority and the public SDK framework-neutral (ADR-0052, D-048) |
 | Audit | Actor identity, secret redaction, `NodeId` and model-call events from V0.1 (D-008) |
 | Observability | OpenTelemetry from V0.1, OTLP exporter (D-009) |
 | Testing | TDD on the core, real integration targets for packages (D-010) |
