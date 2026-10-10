@@ -137,7 +137,22 @@ Semantic versioning is rigorous from `1.0.0`. Until then the contract is explici
 and the README of the NuGet package says so. Do not publish `1.0.0` before the V1.0
 milestone, and do not promise stability the project cannot yet keep.
 
+### A13 — Microsoft Agent Framework is infrastructure, never operational authority
+
+ADR-0052 makes Microsoft Agent Framework (MAF) the reference implementation for generic agent
+infrastructure. MAF dependencies live behind an isolated implementation boundary; no MAF or
+`Microsoft.Extensions.AI` type may enter `bOps.Abstractions` merely because Runtime uses MAF.
+
+MAF may own model-facing message/context construction, compaction, governed summarization and
+related generic agent plumbing. It may **not** independently choose or execute operational tools,
+authorize an operation, satisfy entitlement/approval, mutate `TaskState`, settle a mutation,
+replace verification/evidence semantics, or bypass bOps model-call audit/budgets. Every model
+inference caused by a task, including a summarizer call, traverses the bOps-governed model
+invocation path.
+
 ---
+
+
 
 ## B. The contract (`bOps.Abstractions`)
 
