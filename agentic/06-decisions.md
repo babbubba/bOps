@@ -1120,3 +1120,21 @@ by that open PR, hence this entry's number.
 refreshes readiness at the API boundary before the response (failure logged, lifecycle result untouched); the runner writes one
 `agent.replan.threshold` Warning per task at `Agent:ReplanWarningThreshold` (default 3, capped by `MaxLifetimeReplans` when unset);
 `/system-messages` is the operator page. `SystemMessages:FilePath` stays a working-directory-relative path.
+
+### D-047 — ACCEPTED — Durable mutation intent journal for ordinary tasks (ADR-0051, F-25A)
+
+**Decision.** Accepted 2026-10-09 by the operator, as designed in PR #99. Every ordinary-task invocation with
+`Risk > Read` gets a durable intent before `ExecuteWithTimeoutAsync` and an outcome committed atomically with its step,
+in a `task_mutation_journal` table in `tasks.db` behind the additive `ITaskMutationJournalStore : ITaskTransitionStore`,
+every write fenced on `(Running, ExecutionAttempt)`. An intent without a settled outcome is unknown, never "not
+executed"; an unconfirmed in-process timeout, cancellation or interruption ends the attempt; resume is refused while any
+entry is unsettled or abandoned. Orphaned `Running` stays non-resumable; an administrator-only fenced recovery
+`(Running,N) → (Failed,N)` executes nothing. Reconciliation is administrator-only: `verify`, `acceptDone`, `abandon`;
+no retry. Pre-F-25 rows are not resumable; stores without the capability create `MutationsDisabled` tasks. ADR-0040 is
+amended explicitly (ADR-0051 §13); ADR-0017, ADR-0030 and ADR-0036 are extended.
+
+**Trade-off accepted.** For crash windows C2–C6 the original arguments are not persisted (P8), so post-crash verification
+is not reconstructed and reconciliation requires an administrator.
+
+**Consequences.** F-25A is closed as design; F-25B implementation is pending
+(`agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md`). F-25 stays open for PRE-8.

@@ -230,6 +230,7 @@ public sealed class ReplanThresholdMessageTests
         ExecutionAttempt = 1,
         Origin = TaskOrigin.Ordinary,
         Accounting = new TaskAccounting(100, 0, accountedReplans),
+        MutationJournalMode = TaskMutationJournalMode.Journaled,
     };
 
     private sealed class RecordingSystemMessages : ISystemMessageStore

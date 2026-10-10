@@ -161,6 +161,45 @@ public sealed class CliProcessTests : IDisposable
         Assert.Contains("No stored task with id", error, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Recover_ThenAccept_ReusesTheRuntimeContracts_AndSucceeds()
+    {
+        var task = await SeedPendingMutationAsync();
+
+        var recovered = await RunAsync("recover", task.Id.ToString(), "--attempt", "1");
+        var accepted = await RunAsync("reconcile", task.Id.ToString(), "accept", "--note", "checked externally");
+
+        Assert.True(recovered.ExitCode == 0, recovered.Output + recovered.Error);
+        Assert.Contains("No tool was executed", recovered.Output, StringComparison.Ordinal);
+        Assert.True(accepted.ExitCode == 0, accepted.Output + accepted.Error);
+        Assert.Contains("ReconciledDone", accepted.Output, StringComparison.Ordinal);
+        Assert.Contains("Unsettled mutations: 0", accepted.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Recover_WithAStaleAttempt_IsAConflictWithTheStableCode()
+    {
+        var task = await SeedPendingMutationAsync();
+
+        var result = await RunAsync("recover", task.Id.ToString(), "--attempt", "2");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("(recovery_conflict)", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("recover")]
+    [InlineData("reconcile")]
+    public async Task MutationCommands_RejectInvalidArgumentsBeforeExecution(string command)
+    {
+        var result = command == "recover"
+            ? await RunAsync("recover", "not-a-task", "--attempt", "0")
+            : await RunAsync("reconcile", Guid.NewGuid().ToString(), "retry");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains($"Usage: bops {command}", result.Error, StringComparison.Ordinal);
+    }
+
 
     // HARDEN-3 / ADR-0040: `bops resume` applies the same resumability rule as the API; a refusal names its code, changes
     // nothing and exits 1 — including for a task still stored Running, which no host may resume.
@@ -284,5 +323,28 @@ public sealed class CliProcessTests : IDisposable
 
         Assert.Equal(1, code);
         Assert.Contains("task_delegated", error, StringComparison.Ordinal);
+    }
+
+    private async Task<bOps.Abstractions.TaskState> SeedPendingMutationAsync()
+    {
+        var store = new bOps.Memory.SqliteTaskStore(Path.Combine(_dir, "tasks.db"));
+        var task = new bOps.Abstractions.TaskState(
+            Guid.NewGuid(), bOps.Abstractions.NodeId.Local, "change", bOps.Abstractions.AgentTaskStatus.Running, [], [], DateTimeOffset.UtcNow)
+        {
+            Origin = bOps.Abstractions.TaskOrigin.Ordinary,
+            MutationJournalMode = bOps.Abstractions.TaskMutationJournalMode.Journaled,
+        };
+        await store.SaveAsync(task);
+        Assert.True(await store.TryRecordIntentAsync(new bOps.Abstractions.TaskMutationIntent
+        {
+            Key = new bOps.Abstractions.TaskMutationKey(task.Id, 1, 0),
+            ToolName = "test.mutate",
+            ArgumentsHash = new string('a', 64),
+            Risk = bOps.Abstractions.RiskLevel.Medium,
+            VerificationToolName = "test.observe",
+            IntentAtUtc = DateTimeOffset.UtcNow,
+        }));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        return task;
     }
 }

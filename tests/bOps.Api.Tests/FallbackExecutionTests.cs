@@ -435,7 +435,11 @@ public sealed class FallbackExecutionTests
         var pin = host.Coordinator.Current.Pin with { FallbackOrdinal = 1 };
         var seeded = new TaskState(Guid.NewGuid(), NodeId.Local, "resume", AgentTaskStatus.Cancelled,
             [], [new AgentPlan(0, "test", [])], DateTimeOffset.UtcNow)
-        { Origin = TaskOrigin.Ordinary, PinnedProviderConfiguration = pin };
+        {
+            Origin = TaskOrigin.Ordinary,
+            PinnedProviderConfiguration = pin,
+            MutationJournalMode = TaskMutationJournalMode.Journaled,
+        };
         await host.Tasks.SaveAsync(seeded);
 
         var response = await host.Client.PostAsync(new Uri($"/api/agents/tasks/{seeded.Id}/resume", UriKind.Relative), null);

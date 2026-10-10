@@ -319,6 +319,13 @@ public sealed record TaskState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ActorIdentity? ResumedBy { get; init; }
 
+    /// <summary>
+    /// Whether the task journals its side-effecting calls (ADR-0051 §8.1). Set by the runtime when it creates an ordinary task and
+    /// never changed; <see cref="TaskMutationJournalMode.Absent"/> for every task persisted before ADR-0051 and every delegated task.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public TaskMutationJournalMode MutationJournalMode { get; init; }
+
     /// <summary>The safe provider configuration selected at admission; null on records predating ADR-0045.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }

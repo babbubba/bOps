@@ -39,7 +39,7 @@ export const TaskStatusCompleted: AgentTaskStatus = 1;
 export type TaskOrigin = 0 | 1 | 2;
 
 /** bOps.Abstractions.TaskTerminalKind, in declaration order (ADR-0040 §6). Append-only on the server. */
-export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
+export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
 export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   0: 'Completed',
   1: 'StepLimit',
@@ -55,6 +55,8 @@ export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   11: 'Cancelled',
   12: 'NotAdmitted',
   13: 'AttemptDurationBudget',
+  14: 'MutationOutcomeUnknown',
+  15: 'ExecutionInterrupted',
 };
 export const TaskTerminalModelFailure: TaskTerminalKind = 8;
 
@@ -175,7 +177,8 @@ export type ExecutionPlanStepStatus =
   | 'Completed'
   | 'Failed'
   | 'Skipped'
-  | 'Superseded';
+  | 'Superseded'
+  | 'OutcomeUnknown';
 
 /** Which bounded same-step correction is in progress. */
 export type ExecutionPlanCorrectionKind = 'Semantic' | 'ArgumentValidation';
@@ -212,6 +215,32 @@ export interface ExecutionPlan {
 export interface TaskErrorResponse {
   code: string;
   message: string;
+}
+
+export type MutationKnowledge = 'KnownNotExecuted' | 'KnownExecuted' | 'Unknown';
+export type TaskMutationState = 'Pending' | 'Settled' | 'Ambiguous' | 'Escalated' | 'ReconciledDone' | 'Abandoned';
+
+export interface TaskMutationJournalEntry {
+  executionAttempt: number;
+  stepIndex: number;
+  sequence: number;
+  tool: string;
+  risk: string;
+  argumentsFingerprint: string;
+  intentAtUtc: string;
+  plannedStepIndex: number | null;
+  planRevision: number | null;
+  outcome: { kind: string; toolOutcome: string | null; failureKind: string | null; verification: string | null; atUtc: string } | null;
+  state: TaskMutationState;
+  knowledge: MutationKnowledge;
+  reconciliation: { action: string; verification: string | null; resolvedBy: string; atUtc: string } | null;
+}
+
+export interface TaskMutationJournal {
+  mode: string;
+  available: boolean;
+  unsettledCount: number;
+  entries: TaskMutationJournalEntry[];
 }
 
 /** What a task has consumed over its whole lifetime, across every execution attempt (ADR-0040 §5). A resume never resets it. */
@@ -257,6 +286,9 @@ export interface TaskState {
   resumable: boolean;
   /** Why an ordinary resume would be refused now; `null` when it would be accepted. */
   resumeBlockedReason: TaskErrorResponse | null;
+  mutationJournal?: TaskMutationJournal;
+  recoverable?: boolean;
+  recoveryBlockedReason?: TaskErrorResponse | null;
 }
 
 export interface TaskAcceptedResponse {
@@ -269,6 +301,14 @@ export interface TaskResumeAcceptedResponse {
   status: AgentTaskStatus;
   executionAttempt: number;
   executing: boolean;
+  resumable: boolean;
+  resumeBlockedReason: TaskErrorResponse | null;
+}
+
+export interface ReconcileTaskResponse {
+  taskId: string;
+  results: Array<{ executionAttempt: number; stepIndex: number; state: string; reconciliation: { action: string } }>;
+  unsettledCount: number;
   resumable: boolean;
   resumeBlockedReason: TaskErrorResponse | null;
 }

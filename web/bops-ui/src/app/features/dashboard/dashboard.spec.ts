@@ -39,12 +39,16 @@ describe('Dashboard', () => {
     starting: ReturnType<typeof signal<boolean>>;
     resuming: ReturnType<typeof signal<boolean>>;
     cancelling: ReturnType<typeof signal<boolean>>;
+    mutatingJournal: ReturnType<typeof signal<boolean>>;
     connection: ReturnType<typeof signal<WatchConnection>>;
     error: ReturnType<typeof signal<string | null>>;
     start: jasmine.Spy;
     selectTask: jasmine.Spy;
     resume: jasmine.Spy;
     cancel: jasmine.Spy;
+    recover: jasmine.Spy;
+    reconcile: jasmine.Spy;
+    isAdministrator: jasmine.Spy;
     refresh: jasmine.Spy;
     setStatusFilter: jasmine.Spy;
   };
@@ -59,12 +63,16 @@ describe('Dashboard', () => {
       starting: signal(false),
       resuming: signal(false),
       cancelling: signal(false),
+      mutatingJournal: signal(false),
       connection: signal<WatchConnection>('connected'),
       error: signal<string | null>(null),
       start: jasmine.createSpy('start').and.resolveTo(),
       selectTask: jasmine.createSpy('selectTask'),
       resume: jasmine.createSpy('resume').and.resolveTo(),
       cancel: jasmine.createSpy('cancel').and.resolveTo(),
+      recover: jasmine.createSpy('recover').and.resolveTo(),
+      reconcile: jasmine.createSpy('reconcile').and.resolveTo(),
+      isAdministrator: jasmine.createSpy('isAdministrator').and.returnValue(true),
       refresh: jasmine.createSpy('refresh').and.resolveTo(),
       setStatusFilter: jasmine.createSpy('setStatusFilter').and.resolveTo(),
     };
@@ -75,6 +83,7 @@ describe('Dashboard', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(Dashboard);
+    TestBed.inject(I18n).setLanguage('en');
     fixture.detectChanges();
   });
 
@@ -312,6 +321,79 @@ describe('Dashboard', () => {
         for (const badge of badges) {
           expect(badge.textContent).toContain('Interrotto');
           expect(badge.textContent).not.toContain('In esecuzione');
+        }
+      });
+    });
+
+    describe('durable mutation journal', () => {
+      const journalEntry = {
+        executionAttempt: 2,
+        stepIndex: 4,
+        sequence: 1,
+        tool: 'system.setting.apply',
+        risk: 'High',
+        argumentsFingerprint: '0123456789ab',
+        intentAtUtc: '2026-10-10T10:00:00Z',
+        plannedStepIndex: 4,
+        planRevision: 0,
+        outcome: null,
+        state: 'Pending' as const,
+        knowledge: 'Unknown' as const,
+        reconciliation: null,
+      };
+
+      it('shows recovery-required state and invokes the administrator recovery action', () => {
+        spyOn(window, 'confirm').and.returnValue(true);
+        select(task(0, {
+          executionAttempt: 2,
+          executing: false,
+          recoverable: true,
+          mutationJournal: { mode: 'Journaled', available: true, unsettledCount: 1, entries: [journalEntry] },
+        }));
+
+        expect(text()).toContain('Outcome unknown');
+        expect(text()).toContain('Recovery required');
+        expect(text()).toContain('Unknown');
+        expect(text()).not.toContain('Retry mutation');
+        buttonWith('Recover')!.click();
+
+        expect(store.recover).toHaveBeenCalledOnceWith('task-1', 2);
+      });
+
+      it('shows reconciliation-required state and invokes all three distinct administrator actions', () => {
+        spyOn(window, 'confirm').and.returnValue(true);
+        select(task(6, {
+          executing: false,
+          mutationJournal: { mode: 'Journaled', available: true, unsettledCount: 1, entries: [journalEntry] },
+        }));
+
+        expect(text()).toContain('Reconciliation required');
+        buttonWith('Verify again')!.click();
+        buttonWith('Accept as already applied')!.click();
+        buttonWith('Abandon task')!.click();
+
+        expect(store.reconcile.calls.allArgs()).toEqual([
+          ['task-1', 'verify'],
+          ['task-1', 'acceptDone'],
+          ['task-1', 'abandon'],
+        ]);
+      });
+
+      it('labels verified, accepted and abandoned outcomes distinctly', () => {
+        const cases = [
+          [{ ...journalEntry, state: 'Settled' as const, knowledge: 'KnownExecuted' as const,
+            reconciliation: { action: 'VerifiedDone', verification: 'done', resolvedBy: 'admin', atUtc: '2026-10-10T10:01:00Z' } }, 'Verified done'],
+          [{ ...journalEntry, state: 'ReconciledDone' as const, knowledge: 'KnownExecuted' as const,
+            reconciliation: { action: 'OperatorAcceptedDone', verification: null, resolvedBy: 'admin', atUtc: '2026-10-10T10:01:00Z' } }, 'Administrator accepted as already applied'],
+          [{ ...journalEntry, state: 'Abandoned' as const }, 'Abandoned'],
+        ] as const;
+
+        for (const [entry, label] of cases) {
+          select(task(6, {
+            executing: false,
+            mutationJournal: { mode: 'Journaled', available: true, unsettledCount: 0, entries: [entry] },
+          }));
+          expect(text()).withContext(label).toContain(label);
         }
       });
     });

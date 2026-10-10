@@ -26,6 +26,27 @@ internal sealed record TaskResumeAcceptedResponse(
 /// <summary>The body of a refused task request (409, 501, 503): a stable <see cref="Code"/> and an operator <see cref="Message"/>.</summary>
 internal sealed record TaskErrorResponse(string Code, string Message);
 
+/// <summary>Body of <c>POST /api/agents/tasks/{id}/recover</c> (ADR-0051 §8.3): the execution attempt the administrator was shown.</summary>
+internal sealed record RecoverTaskRequest(int? ExecutionAttempt);
+
+/// <summary>Body of <c>POST /api/agents/tasks/{id}/reconcile</c> (ADR-0051 §9.1): <c>verify</c>, <c>acceptDone</c> or <c>abandon</c>, and an audit-only note.</summary>
+internal sealed record ReconcileTaskRequest(string? Action, string? Note);
+
+/// <summary>One mutation reconciled by <c>POST /api/agents/tasks/{id}/reconcile</c>.</summary>
+internal sealed record ReconciledMutationResponse(
+    int ExecutionAttempt, int StepIndex, string State, ReconciliationResponse Reconciliation, string? ReasonCode);
+
+/// <summary>A reconciliation record as a client sees it.</summary>
+internal sealed record ReconciliationResponse(string Action, string? Verification, string ResolvedBy, DateTimeOffset AtUtc);
+
+/// <summary>Response of an accepted <c>POST /api/agents/tasks/{id}/reconcile</c> (ADR-0051 §14.2).</summary>
+internal sealed record ReconcileTaskResponse(
+    Guid TaskId,
+    IReadOnlyList<ReconciledMutationResponse> Results,
+    int UnsettledCount,
+    bool Resumable,
+    TaskErrorResponse? ResumeBlockedReason);
+
 /// <summary>Body of <c>POST /api/delegations</c> (ADR-0030 section 9). Without <see cref="Remediation"/> the run only diagnoses.</summary>
 internal sealed record StartDelegationRequest(string Objective, int? MaxSteps, int? MaxTokens, DelegationRemediationBody? Remediation);
 

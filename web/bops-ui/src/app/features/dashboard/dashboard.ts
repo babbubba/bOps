@@ -21,6 +21,7 @@ import { StatusBadge } from '../../shared/status-badge';
 import { isInterrupted, lastFailedModelReason } from '../../shared/task-lifecycle';
 import { describeModelFailure, describeRefusal, describeTerminalKind } from '../../state/describe-error';
 import { TASK_QUERY_PARAM, TasksStore, isCanonicalTaskId } from '../../state/tasks.store';
+import { MessageKey } from '../../core/i18n/messages';
 
 @Component({
   selector: 'bops-dashboard',
@@ -122,6 +123,26 @@ export class Dashboard implements OnInit {
   protected async cancel(taskId: string, event: Event): Promise<void> {
     event.stopPropagation();
     await this.tasks.cancel(taskId);
+  }
+
+  protected recover(task: TaskState): void {
+    if (!window.confirm(this.i18n.t('dashboard.mutation.recoverConfirm'))) return;
+    void this.tasks.recover(task.id, task.executionAttempt);
+  }
+
+  protected reconcile(taskId: string, action: 'verify' | 'acceptDone' | 'abandon'): void {
+    const key = action === 'abandon' ? 'dashboard.mutation.abandonConfirm' : 'dashboard.mutation.acceptConfirm';
+    if (action !== 'verify' && !window.confirm(this.i18n.t(key))) return;
+    void this.tasks.reconcile(taskId, action);
+  }
+
+  protected mutationState(entry: NonNullable<TaskState['mutationJournal']>['entries'][number]): MessageKey {
+    if (entry.state === 'Abandoned') return 'dashboard.mutation.state.abandoned';
+    if (entry.reconciliation?.action === 'VerifiedDone') return 'dashboard.mutation.state.verified';
+    if (entry.reconciliation?.action === 'OperatorAcceptedDone') return 'dashboard.mutation.state.accepted';
+    if (entry.knowledge === 'KnownNotExecuted') return 'dashboard.mutation.state.notExecuted';
+    if (entry.knowledge === 'KnownExecuted') return 'dashboard.mutation.state.executed';
+    return 'dashboard.mutation.state.unknown';
   }
 
   /**

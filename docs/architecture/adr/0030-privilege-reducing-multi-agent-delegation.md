@@ -6,6 +6,9 @@ Amended by: ADR-0031 (2026-09-19) — §3, per-role envelope requirements; §1, 
 Amended by: [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) (Accepted 2026-10-05, D-041)
 — §1 and §3: the roles a delegation requires depend on the request (diagnosis-only: Discovery and Diagnostic;
 remediation: all four, unchanged), and the root envelope is derived from the required roles only
+Extended by: [ADR-0051](0051-durable-ordinary-task-mutation-intent-journal.md) (Accepted 2026-10-09, D-047) — the §7
+journal semantics and the `ReconciliationAction` / `StepReconciliation` types are reused for ordinary tasks; the
+delegation journal and its reconciliation are unchanged
 
 Governs V1.2 (`agentic/_tasks/2026-09-16-v1.2-multi-agent.md`). Continues ADR-0017 (task
 persistence), ADR-0023/0024/0025 (Skills, execution plans, restricted invocation) and ADR-0022

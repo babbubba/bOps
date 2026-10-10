@@ -4,6 +4,9 @@ Status: Accepted
 Date: 2026-09-24
 Accepted: 2026-09-24 by the operator
 Amends: ADR-0016 only for pre-invocation runtime authorization denial of required verification
+Extended by: [ADR-0051](0051-durable-ordinary-task-mutation-intent-journal.md) (Accepted 2026-10-09, D-047) — ordinary
+tasks gain the journal through which an in-flight effect is recorded and reconciled; entitlement stays evaluated before
+the intent and is never persisted
 
 ## Context
 

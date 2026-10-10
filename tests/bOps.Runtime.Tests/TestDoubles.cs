@@ -65,12 +65,167 @@ internal sealed class RecordingAuditSink : IAuditSink
 /// its own in <c>bOps.Memory.Tests</c>. Also records every write, in order, so a test can assert
 /// exactly when the runtime persists (rule V0.7: after every step, and again at the end). It has the
 /// ADR-0040 transitions with the same atomic semantics as the real store, under one lock: the compare
-/// and the write are never separated, and the execution-attempt fence on <see cref="SaveAsync"/> applies.
+/// and the write are never separated, and the execution-attempt fence on <see cref="SaveAsync"/> applies. It also has the
+/// ADR-0051 mutation journal with the real store's preconditions, under the same lock, so every non-Read call of a test task
+/// is journaled exactly as in production.
 /// </summary>
-internal sealed class InMemoryTaskStore : ITaskStore, ITaskTransitionStore
+internal sealed class InMemoryTaskStore : ITaskStore, ITaskMutationJournalStore
 {
+    private static readonly TaskMutationState[] Blocking =
+        [TaskMutationState.Pending, TaskMutationState.Ambiguous, TaskMutationState.Escalated, TaskMutationState.Abandoned];
+
     private readonly Dictionary<Guid, TaskState> _tasks = [];
     private readonly List<TaskState> _saves = [];
+    private readonly Dictionary<Guid, List<TaskMutationJournalEntry>> _journal = [];
+
+    /// <summary>Every journal entry of <paramref name="taskId"/>, in sequence order.</summary>
+    public IReadOnlyList<TaskMutationJournalEntry> JournalOf(Guid taskId)
+    {
+        lock (_tasks)
+        {
+            return _journal.TryGetValue(taskId, out var entries) ? [.. entries.OrderBy(entry => entry.Sequence)] : [];
+        }
+    }
+
+    /// <summary>Stores <paramref name="entry"/> as it is, bypassing every check — a test's setup of a persisted entry.</summary>
+    public void SeedEntry(TaskMutationJournalEntry entry)
+    {
+        lock (_tasks)
+        {
+            Entries(entry.Intent.Key.TaskId).Add(entry);
+        }
+    }
+
+    public Task<bool> TryRecordIntentAsync(TaskMutationIntent intent, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            var key = intent.Key;
+            if (!IsRow(key.TaskId, AgentTaskStatus.Running, key.ExecutionAttempt) || Find(key) is not null)
+            {
+                return Task.FromResult(false);
+            }
+
+            var entries = Entries(key.TaskId);
+            entries.Add(new TaskMutationJournalEntry
+            {
+                Intent = intent,
+                Sequence = entries.Count == 0 ? 1 : entries.Max(entry => entry.Sequence) + 1,
+                State = TaskMutationState.Pending,
+            });
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> TryRecordOutcomeAsync(
+        TaskMutationKey key, TaskMutationOutcome outcome, TaskMutationState state, TaskState owningTask, CancellationToken ct = default)
+    {
+        if (owningTask.Id != key.TaskId || owningTask.ExecutionAttempt != key.ExecutionAttempt || owningTask.Status != AgentTaskStatus.Running)
+        {
+            throw new ArgumentException("The owning task must be the Running state of the outcome's own attempt.", nameof(owningTask));
+        }
+
+        lock (_tasks)
+        {
+            if (!IsRow(key.TaskId, AgentTaskStatus.Running, key.ExecutionAttempt)
+                || Find(key) is not { Outcome: null, Reconciliation: null } entry)
+            {
+                return Task.FromResult(false);
+            }
+
+            Replace(entry, entry with { Outcome = outcome, State = state });
+            Write(owningTask);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<TaskJournalSnapshot?> LoadWithJournalAsync(Guid taskId, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            return Task.FromResult(_tasks.TryGetValue(taskId, out var task)
+                ? new TaskJournalSnapshot(task, [.. Entries(taskId).OrderBy(entry => entry.Sequence)])
+                : null);
+        }
+    }
+
+    public Task<bool> TryReconcileAsync(Guid taskId, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
+        IReadOnlyList<TaskMutationResolution> resolutions, CancellationToken ct = default)
+    {
+        lock (_tasks)
+        {
+            if (expectedStatus == AgentTaskStatus.Running || !IsRow(taskId, expectedStatus, expectedExecutionAttempt)
+                || resolutions.Count == 0
+                || resolutions.Any(resolution => resolution.Key.TaskId != taskId || Find(resolution.Key)?.State != resolution.ExpectedState))
+            {
+                return Task.FromResult(false);
+            }
+
+            foreach (var resolution in resolutions)
+            {
+                var entry = Find(resolution.Key)!;
+                Replace(entry, entry with { State = resolution.NewState, Reconciliation = resolution.Reconciliation });
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
+    public async Task<bool> TryAcquireAsync(TaskState acquired, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
+        IReadOnlyList<TaskMutationKey> recordedInHistory, CancellationToken ct = default)
+    {
+        if (acquired.ExecutionAttempt != expectedExecutionAttempt + 1 || acquired.Status != AgentTaskStatus.Running)
+        {
+            throw new ArgumentException("An acquisition writes the Running state of the next execution attempt.", nameof(acquired));
+        }
+
+        if (BeforeTransition is { } hook)
+        {
+            await hook(acquired);
+        }
+
+        lock (_tasks)
+        {
+            if (!IsRow(acquired.Id, expectedStatus, expectedExecutionAttempt)
+                || Entries(acquired.Id).Any(entry => Blocking.Contains(entry.State))
+                || recordedInHistory.Any(key => Find(key) is not { State: TaskMutationState.ReconciledDone, HistoryRecordedInAttempt: null }))
+            {
+                return false;
+            }
+
+            foreach (var key in recordedInHistory)
+            {
+                var entry = Find(key)!;
+                Replace(entry, entry with { HistoryRecordedInAttempt = acquired.ExecutionAttempt });
+            }
+
+            Write(acquired);
+            return true;
+        }
+    }
+
+    private bool IsRow(Guid taskId, AgentTaskStatus status, int executionAttempt) =>
+        _tasks.TryGetValue(taskId, out var stored) && stored.Status == status && stored.ExecutionAttempt == executionAttempt;
+
+    private List<TaskMutationJournalEntry> Entries(Guid taskId)
+    {
+        if (!_journal.TryGetValue(taskId, out var entries))
+        {
+            entries = [];
+            _journal[taskId] = entries;
+        }
+
+        return entries;
+    }
+
+    private TaskMutationJournalEntry? Find(TaskMutationKey key) =>
+        _journal.TryGetValue(key.TaskId, out var entries) ? entries.FirstOrDefault(entry => entry.Intent.Key == key) : null;
+
+    private void Replace(TaskMutationJournalEntry entry, TaskMutationJournalEntry replacement)
+    {
+        var entries = _journal[entry.Intent.Key.TaskId];
+        entries[entries.IndexOf(entry)] = replacement;
+    }
 
     /// <summary>Every accepted write (save, create or transition), in order.</summary>
     public List<TaskState> Saves
@@ -130,7 +285,8 @@ internal sealed class InMemoryTaskStore : ITaskStore, ITaskTransitionStore
 
         lock (_tasks)
         {
-            if (!_tasks.TryGetValue(task.Id, out var stored) || stored.Status != expectedStatus || stored.ExecutionAttempt != expectedExecutionAttempt)
+            if (!_tasks.TryGetValue(task.Id, out var stored) || stored.Status != expectedStatus || stored.ExecutionAttempt != expectedExecutionAttempt
+                || (task.ExecutionAttempt == expectedExecutionAttempt + 1 && Entries(task.Id).Any(entry => Blocking.Contains(entry.State))))
             {
                 return false;
             }

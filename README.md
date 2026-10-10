@@ -379,7 +379,7 @@ Start from [`samples/bops-sample-plugin/`](samples/bops-sample-plugin/) and
 
 The latest tagged build is the `v1.2.0-preview.8` pre-release (runtime archives, SBOMs and
 checksums, not a NuGet publication). bOps is a **preview**, not a production-endorsed release.
-The public SDK, `bOps.Abstractions`, is versioned `1.3.0-preview.3`.
+The public SDK, `bOps.Abstractions`, is versioned `1.3.0-preview.4`.
 
 Plan and progress: [consolidated roadmap](agentic/_plans/2026-09-16-consolidated-roadmap.md) ·
 [hardening plan](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) ·

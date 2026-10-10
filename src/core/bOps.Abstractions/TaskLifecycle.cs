@@ -65,6 +65,12 @@ public enum TaskTerminalKind
 
     /// <summary>The execution attempt exhausted its active-work duration budget.</summary>
     AttemptDurationBudget = 13,
+
+    /// <summary>A side-effecting call's outcome stayed unknown after its verification (ADR-0051 §7.3): the attempt ended instead of retrying or replanning.</summary>
+    MutationOutcomeUnknown = 14,
+
+    /// <summary>An administrator recovered an orphaned <see cref="AgentTaskStatus.Running"/> execution attempt (ADR-0051 §8.3); nothing was executed.</summary>
+    ExecutionInterrupted = 15,
 }
 
 /// <summary>Why the latest execution attempt ended. Carries no free text: the operator-facing failure text stays on the synthetic failure step (ADR-0039).</summary>

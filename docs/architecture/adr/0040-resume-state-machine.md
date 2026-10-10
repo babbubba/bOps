@@ -1,6 +1,9 @@
 # ADR-0040 — Resume as a persisted state-machine transition: execution attempts, budgets, atomic transitions, lifecycle audit
 
 Status: Accepted (2026-09-30, operator decision, with the amendments recorded below)
+Amended by: [ADR-0051](0051-durable-ordinary-task-mutation-intent-journal.md) (Accepted 2026-10-09, D-047) — §3 refusal
+rows 6a–6e, §4.3/§4.4 journal-aware acquisition and fenced administrator orphan recovery (no orphan resume), §5.2, §6,
+§9 and §10 additive changes; see ADR-0051 §13
 
 Amends ADR-0017 (persistent, resumable tasks) and ADR-0018 (`bOps.Api` minimal surface). Their text is not edited;
 each carries an `Amended by: ADR-0040` pointer. Carries the ADR-0022-style note for additive `bOps.Abstractions`

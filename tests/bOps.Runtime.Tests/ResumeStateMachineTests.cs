@@ -59,6 +59,9 @@ public sealed class ResumeStateMachineTests
             ExecutionAttempt = executionAttempt,
             Origin = origin,
             Accounting = accounting ?? new TaskAccounting(100, executableSteps, Math.Max(0, plans - 1)),
+            // ADR-0051 §11: an ordinary task the runtime creates now records its journal mode; the legacy (Absent) rows have their
+            // own tests (OrdinaryMutationJournalDurabilityTests).
+            MutationJournalMode = origin == TaskOrigin.Ordinary ? TaskMutationJournalMode.Journaled : TaskMutationJournalMode.Absent,
         };
     }
 
@@ -197,7 +200,8 @@ public sealed class ResumeStateMachineTests
     public async Task AStoreWithoutAtomicTransitions_FailsClosed()
     {
         var store = new PlainTaskStore();
-        var stored = Stored(AgentTaskStatus.Failed);
+        // ADR-0051 §11: a task created on a store without the journal capability is MutationsDisabled, which passes the journal rows.
+        var stored = Stored(AgentTaskStatus.Failed) with { MutationJournalMode = TaskMutationJournalMode.MutationsDisabled };
         await store.SaveAsync(stored);
 
         var refused = await Assert.ThrowsAsync<TaskResumeRefusedException>(() => Runner(new FakeChatModel(), store).ResumeAsync(stored, Resumer));
@@ -442,6 +446,8 @@ public sealed class ResumeStateMachineTests
             DateTimeOffset.UtcNow)
         {
             Origin = TaskOrigin.Ordinary,
+            // ADR-0051 §12.1: a row with no journal mode is refused before any budget is read; the derivation is the subject here.
+            MutationJournalMode = TaskMutationJournalMode.Journaled,
         };
         var expected = new TaskAccounting(90, 2, 1);
 

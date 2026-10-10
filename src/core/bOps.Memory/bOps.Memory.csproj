@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="bOps.Memory.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
   </ItemGroup>
 

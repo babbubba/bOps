@@ -31,6 +31,9 @@ public sealed class TaskResumeEndpointTests
         {
             Origin = origin,
             Accounting = new TaskAccounting(100, lifetimeSteps, 0),
+            MutationJournalMode = origin == TaskOrigin.Ordinary
+                ? TaskMutationJournalMode.Journaled
+                : TaskMutationJournalMode.Absent,
         };
 
     private static async Task<TaskState> SeedAsync(TestAppFactory factory, TaskState task)

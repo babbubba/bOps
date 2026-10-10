@@ -59,21 +59,113 @@ public sealed class DockerRunnerFlowTests
         }
     }
 
-    private sealed class MemoryStore : ITaskStore
+    /// <summary>
+    /// An in-memory store with the ADR-0051 mutation journal: a task that runs side-effecting tools must be created on a store that
+    /// journals them (otherwise the runtime refuses every mutation of the task). Every operation is atomic under one lock.
+    /// </summary>
+    private sealed class MemoryStore : ITaskStore, ITaskMutationJournalStore
     {
         private readonly Dictionary<Guid, TaskState> _tasks = [];
+        private readonly List<TaskMutationJournalEntry> _journal = [];
 
         public Task SaveAsync(TaskState task, CancellationToken ct = default)
         {
-            _tasks[task.Id] = task;
+            lock (_tasks)
+            {
+                _tasks[task.Id] = task;
+            }
+
             return Task.CompletedTask;
         }
 
-        public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default) =>
-            Task.FromResult(_tasks.TryGetValue(taskId, out var task) ? task : null);
+        public Task<TaskState?> LoadAsync(Guid taskId, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                return Task.FromResult(_tasks.TryGetValue(taskId, out var task) ? task : null);
+            }
+        }
 
-        public Task<IReadOnlyList<TaskState>> ListByStatusAsync(AgentTaskStatus status, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<TaskState>>(_tasks.Values.Where(task => task.Status == status).ToList());
+        public Task<IReadOnlyList<TaskState>> ListByStatusAsync(AgentTaskStatus status, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                return Task.FromResult<IReadOnlyList<TaskState>>(_tasks.Values.Where(task => task.Status == status).ToList());
+            }
+        }
+
+        public Task<bool> TryCreateAsync(TaskState task, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                return Task.FromResult(_tasks.TryAdd(task.Id, task));
+            }
+        }
+
+        public Task<bool> TryTransitionAsync(TaskState task, AgentTaskStatus expectedStatus, int expectedExecutionAttempt, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                if (!Is(task.Id, expectedStatus, expectedExecutionAttempt))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _tasks[task.Id] = task;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TryRecordIntentAsync(TaskMutationIntent intent, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                if (!Is(intent.Key.TaskId, AgentTaskStatus.Running, intent.Key.ExecutionAttempt) || _journal.Any(entry => entry.Intent.Key == intent.Key))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _journal.Add(new TaskMutationJournalEntry { Intent = intent, Sequence = _journal.Count + 1, State = TaskMutationState.Pending });
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TryRecordOutcomeAsync(
+            TaskMutationKey key, TaskMutationOutcome outcome, TaskMutationState state, TaskState owningTask, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                var index = _journal.FindIndex(entry => entry.Intent.Key == key && entry.Outcome is null && entry.Reconciliation is null);
+                if (index < 0 || !Is(key.TaskId, AgentTaskStatus.Running, key.ExecutionAttempt))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _journal[index] = _journal[index] with { Outcome = outcome, State = state };
+                _tasks[owningTask.Id] = owningTask;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<TaskJournalSnapshot?> LoadWithJournalAsync(Guid taskId, CancellationToken ct = default)
+        {
+            lock (_tasks)
+            {
+                return Task.FromResult(_tasks.TryGetValue(taskId, out var task)
+                    ? new TaskJournalSnapshot(task, [.. _journal.Where(entry => entry.Intent.Key.TaskId == taskId)])
+                    : null);
+            }
+        }
+
+        // This flow never reconciles or resumes; refusing is the fail-closed answer for an operation it does not exercise.
+        public Task<bool> TryReconcileAsync(Guid taskId, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
+            IReadOnlyList<TaskMutationResolution> resolutions, CancellationToken ct = default) => Task.FromResult(false);
+
+        public Task<bool> TryAcquireAsync(TaskState acquired, AgentTaskStatus expectedStatus, int expectedExecutionAttempt,
+            IReadOnlyList<TaskMutationKey> recordedInHistory, CancellationToken ct = default) => Task.FromResult(false);
+
+        private bool Is(Guid taskId, AgentTaskStatus status, int executionAttempt) =>
+            _tasks.TryGetValue(taskId, out var stored) && stored.Status == status && stored.ExecutionAttempt == executionAttempt;
     }
 
     private sealed class Probe : ICapabilityProbe

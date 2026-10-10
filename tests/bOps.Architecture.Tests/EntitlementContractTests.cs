@@ -193,7 +193,7 @@ public sealed class EntitlementContractTests
         var projectFile = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/core/bOps.Abstractions/bOps.Abstractions.csproj"));
         var project = System.Xml.Linq.XDocument.Load(projectFile);
 
-        Assert.Equal("1.3.0-preview.3", project.Descendants("Version").Single().Value);
+        Assert.Equal("1.3.0-preview.4", project.Descendants("Version").Single().Value);
     }
 
     private static T RoundTrip<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, JsonOptions), JsonOptions)!;

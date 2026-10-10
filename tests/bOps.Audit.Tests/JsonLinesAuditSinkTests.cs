@@ -186,6 +186,43 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem()
+    {
+        // ADR-0051 §14.1: the additive journal event and the two recovery lifecycle stages serialize through the real sink into
+        // the same chain; the mutation event has no field for arguments, output, error text or credentials.
+        var mutation = new TaskMutationAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.NewGuid(), StepIndex = 3, Actor = Actor,
+            Stage = TaskMutationAuditStage.Reconciled, ExecutionAttempt = 2, Sequence = 1, Tool = "test.mutate",
+            ArgumentsHash = new string('b', 64), OutcomeKind = MutationOutcomeKind.TimedOut, ToolOutcome = ToolOutcome.Timeout,
+            Verification = VerificationStatus.Inconclusive, State = TaskMutationState.ReconciledDone,
+            ReconciliationAction = ReconciliationAction.OperatorAcceptedDone, ResolvedBy = Actor, ReasonCode = "operator", Note = "checked",
+        };
+        var recovery = new TaskLifecycleAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = mutation.TaskId, StepIndex = 4, Actor = Actor,
+            Stage = TaskLifecycleStage.RecoveryRejected, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Running,
+            RefusalCode = "recovery_conflict", TokensUsed = 0, LifetimeSteps = 0, LifetimeReplans = 0, MaxSteps = 10,
+            MaxLifetimeSteps = 100, MaxReplans = 3, MaxLifetimeReplans = 10,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(SampleEvent(0));
+            await sink.WriteAsync(mutation);
+            await sink.WriteAsync(recovery);
+        }
+
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var mutationJson = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.Equal("taskMutation", JsonNode.Parse(mutationJson)!["eventType"]!.GetValue<string>());
+        Assert.Equal(mutation, Assert.IsType<TaskMutationAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(mutationJson)));
+        var recoveryJson = JsonNode.Parse(lines[2])!["EventJson"]!.GetValue<string>();
+        Assert.Equal(recovery, Assert.IsType<TaskLifecycleAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(recoveryJson)));
+    }
+
+    [Fact]
     public void VerifyFile_ReturnsValid_ForAFileThatDoesNotExist()
     {
         var result = AuditChainVerifier.VerifyFile(_filePath);
