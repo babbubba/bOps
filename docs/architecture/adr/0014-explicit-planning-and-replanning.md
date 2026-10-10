@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+Amended by: [ADR-0052](0052-microsoft-agent-framework-bops-boundary.md) (Accepted 2026-10-10, D-048) —
+PLAN/REPLAN and bOps execution-state semantics remain authoritative; HARDEN-8's custom model-facing
+history/compaction mechanism becomes migration/reference code progressively superseded by the MAF
+context layer. Persisted raw evidence, evidence addressability and task-budget semantics remain.
+
 ## Context
 
 `agentic/00-project-spec.md`'s roadmap names V0.2 "Explicit agent loop with replanning." V0.1's
