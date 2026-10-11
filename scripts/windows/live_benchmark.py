@@ -200,6 +200,7 @@ def extract_records(db_path: pathlib.Path, ids: list[str], out: pathlib.Path, au
 
 
 def package(out: pathlib.Path, zip_path: pathlib.Path):
+    temporary_zip = zip_path.with_suffix(zip_path.suffix + ".partial")
     manifest = out / "manifest.json"
     manifest_hash = out / "manifest.sha256"
     files = []
@@ -208,9 +209,10 @@ def package(out: pathlib.Path, zip_path: pathlib.Path):
         files.append({"path": path.relative_to(out).as_posix(), "sizeBytes": len(data), "sha256": sha(data)})
     write_json(manifest, {"files": files})
     manifest_hash.write_text(sha(manifest.read_bytes()) + "  manifest.json\n", encoding="ascii")
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+    with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         for path in sorted(p for p in out.rglob("*") if p.is_file() and p != zip_path):
             archive.write(path, path.relative_to(out).as_posix())
+    os.replace(temporary_zip, zip_path)
 
 
 def run(args):

@@ -23,6 +23,19 @@ class CaptureTests(unittest.TestCase):
     def test_benchmark_policy_only_allows_read_risk_automatically(self):
         self.assertEqual("defaults:\n  read: automatic\n", bench.READ_ONLY_POLICY)
 
+    def test_failed_repackage_keeps_last_complete_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            capture = root / "capture"
+            capture.mkdir()
+            (capture / "evidence.txt").write_text("partial capture")
+            archive = root / "capture.zip"
+            archive.write_bytes(b"previous complete archive")
+            with patch.object(bench.zipfile, "ZipFile", side_effect=OSError("fixture failure")):
+                with self.assertRaises(OSError):
+                    bench.package(capture, archive)
+            self.assertEqual(b"previous complete archive", archive.read_bytes())
+
     def test_retry_keeps_idempotency_key_and_payload(self):
         calls = []
         responses = [(503, b"busy", None), (202, b'{"taskId":"abc"}', {"taskId": "abc"})]
