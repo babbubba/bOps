@@ -58,6 +58,20 @@ public sealed class ModelInvocationBrokerTests
     }
 
     [Fact]
+    public async Task InvokeAsync_WithoutAProjector_SendsTheContextRequestUnprojected()
+    {
+        var model = new FakeChatModel(new ModelResponse("done", [], true, null));
+        var broker = new ModelInvocationBroker(
+            model, new RecordingAuditSink(), TimeProvider.System, NullLogger.Instance, new AgentRunnerOptions());
+        var request = new ModelContextRequest(
+            "system", [ChatTurn.FromUser("goal")], [ChatTurn.FromAssistantText("old")], [ChatTurn.FromUser("notice")], []);
+
+        await broker.InvokeAsync(request, new ModelInvocationContext(Guid.NewGuid(), 0, Actor, []));
+
+        Assert.Equal(["goal", "old", "notice"], model.Requests[0].History.Select(turn => turn.Content));
+    }
+
+    [Fact]
     public async Task InvokeAsync_CallerCancellationPropagatesAsCancellation_AndIsNotRecordedAsATimeout()
     {
         // AF-05 O8: caller cancellation != model timeout != execution budget. A conforming adapter observes the token it is handed.

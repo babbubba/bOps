@@ -177,7 +177,7 @@ public sealed partial class AgentRunner(
         "This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch, " +
         "web.search, or any other tool for it; return that exact object as assistant text.";
 
-    /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4).</summary>
+    /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4); prompt bounds, not context management.</summary>
     internal const int AggressiveGoalMaxCharacters = 2048;
     internal const int AggressivePlanMaxCharacters = 1024;
     internal const int ReplanPlanMaxCharacters = 2048;
@@ -318,7 +318,7 @@ public sealed partial class AgentRunner(
         // The safe pin is durable before any model attempt, including a delegated role task.
         await taskStore.SaveAsync(run.Build(AgentTaskStatus.Running), CancellationToken.None);
         await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
-        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, [ChatTurn.FromUser(goal)], taskActivity, ct), ct);
+        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, taskActivity, ct), ct);
     }
 
     /// <summary>
@@ -326,7 +326,7 @@ public sealed partial class AgentRunner(
     /// its initial plan call had failed (ADR-0040 §7). A planning failure ends the attempt <see cref="AgentTaskStatus.Failed"/>
     /// through the normal path; it never escapes.
     /// </summary>
-    private async Task<TaskState> PlanAndContinueAsync(ExecutionRun run, List<ChatTurn> history, Activity? taskActivity, CancellationToken ct)
+    private async Task<TaskState> PlanAndContinueAsync(ExecutionRun run, Activity? taskActivity, CancellationToken ct)
     {
         AgentPlan plan;
         var planCalls = new List<ModelCallRecord>();
@@ -371,7 +371,7 @@ public sealed partial class AgentRunner(
 
         await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
 
-        return await ContinueAsync(run, history, plan, PlannedStepPosition.Start, ct);
+        return await ContinueAsync(run, plan, PlannedStepPosition.Start, ct);
     }
 
     /// <summary>
@@ -595,16 +595,15 @@ public sealed partial class AgentRunner(
         await WriteAuditAsync(LifecycleEvent(acquired, TaskLifecycleStage.ExecutionStarted, actor), null, ct);
         return await ExecuteGuardedAsync(run, () =>
         {
-            var history = RebuildHistory(run.Goal, run.Steps);
             if (run.Plans.Count == 0)
             {
-                return PlanAndContinueAsync(run, history, taskActivity, ct);
+                return PlanAndContinueAsync(run, taskActivity, ct);
             }
 
             var plan = run.Plans[^1];
             taskActivity?.SetTag("bops.plan_revision", plan.Revision);
             // ADR-0047: the cursor and the spent validation correction come from the persisted steps, exactly as live.
-            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
+            return ContinueAsync(run, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
         }, ct);
     }
 
@@ -786,7 +785,7 @@ public sealed partial class AgentRunner(
     /// attempt's own executable-step count, never by <c>Steps.Count</c> (ADR-0040 §5.1).
     /// </summary>
     private async Task<TaskState> ContinueAsync(
-        ExecutionRun run, List<ChatTurn> history, AgentPlan plan, PlannedStepPosition position, CancellationToken ct)
+        ExecutionRun run, AgentPlan plan, PlannedStepPosition position, CancellationToken ct)
     {
         var taskId = run.TaskId;
         var actor = run.Actor;
@@ -859,13 +858,8 @@ public sealed partial class AgentRunner(
             var logicalCall = new LogicalCallState();
             ModelContextRequest BuildStepRequest(bool aggressive)
             {
-                // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4); the
-                // persisted values stay complete and a normal request is unchanged.
-                var built = BoundedHistory.Build(taskId,
-                    aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, steps,
-                    aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName);
-                logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
-                history = [.. built.Turns, .. logicalCall.ContinuationTurns];
+                // ADR-0052: the runtime only classifies what is protected authority and what is historical context; the MAF context
+                // layer projects the latter for the candidate actually called. The persisted steps stay complete.
                 var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
                 var promptPlan = ConditionalSteps.WithResolvedCurrentStep(plan, steps, position.Cursor, ManifestOf);
                 var latestPlanStep = steps.LastOrDefault(step => step.PlanRevision == plan.Revision);
@@ -888,15 +882,17 @@ public sealed partial class AgentRunner(
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
                 return new ModelContextRequest(
                     systemPrompt,
-                    [ChatTurn.FromUser(run.Goal)],
+                    [ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal)],
                     RebuildHistoricalTurns(steps),
                     protectedAfter,
-                    availableTools,
-                    new ModelRequest(systemPrompt, history, availableTools));
+                    availableTools)
+                {
+                    Aggressive = aggressive,
+                };
             }
 
-            // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
-            // same three-tier history; the logical call can switch once to aggressive K=0 after ContextOverflow.
+            // Rebuilt from persisted steps for every provider call, so live execution and resume see the same context; the logical
+            // call can switch once to the aggressive projection after a provider-reported ContextOverflow.
             var stepCalls = new List<ModelCallRecord>();
 
             ModelContextRequest request;
@@ -2516,36 +2512,6 @@ public sealed partial class AgentRunner(
         return true;
     }
 
-    /// <summary>
-    /// Reconstructs the model-facing conversation for a resumed task from its persisted
-    /// <see cref="PlanStep"/>s — the same shape <see cref="ContinueAsync"/> would have built the
-    /// first time: the goal, then each step's tool call and its wrapped observation. A step with
-    /// no <see cref="PlanStep.ToolCall"/> (a final response, or a model-protocol failure) never
-    /// belongs mid-history for a task still worth resuming, so it contributes nothing here.
-    /// </summary>
-    private static List<ChatTurn> RebuildHistory(string goal, IReadOnlyList<PlanStep> steps)
-    {
-        var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
-        foreach (var step in steps)
-        {
-            if (TaskResumePolicy.IsMutationReconciledStep(step))
-            {
-                // ADR-0051 §9.5: persisted runtime-authored history, as in the bounded history.
-                history.Add(ChatTurn.FromUser(step.Observation ?? string.Empty));
-                continue;
-            }
-
-            if (step.ToolCall is null)
-            {
-                continue;
-            }
-
-            AddToolCallTurns(history, step.ToolCall, step.UnexecutedToolCalls, WrapToolOutput(step.Observation ?? string.Empty));
-        }
-
-        return history;
-    }
-
     /// <summary>Rebuilds only persisted tool protocol groups eligible for deterministic compaction.</summary>
     private static List<ChatTurn> RebuildHistoricalTurns(
         IReadOnlyList<PlanStep> steps,
@@ -2610,12 +2576,11 @@ public sealed partial class AgentRunner(
         var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
         var tokens = 0;
         var logicalCall = new LogicalCallState();
-        ModelContextRequest BuildPlanningRequest(bool _)
+        ModelContextRequest BuildPlanningRequest(bool aggressive)
         {
             var turns = new List<ChatTurn>(planningHistory);
             turns.AddRange(logicalCall.ContinuationTurns);
-            var legacy = new ModelRequest(systemPrompt, turns, NoNativeTools);
-            return new ModelContextRequest(systemPrompt, turns, [], [], NoNativeTools, legacy);
+            return new ModelContextRequest(systemPrompt, turns, [], [], NoNativeTools) { Aggressive = aggressive };
         }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
@@ -2679,24 +2644,10 @@ public sealed partial class AgentRunner(
         var tokens = 0;
         ModelContextRequest BuildReplanRequest(bool aggressive)
         {
-            // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
-            var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
             // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
             var systemPrompt = BuildPlanningSystemPrompt(
                 ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
                 logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar, options.MaxObservationCharacters));
-            var bounded = BoundedHistory.Build(taskId, requestGoal, stepsSoFar,
-                aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName, triggeringStepIndex);
-            logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
-            var turns = new List<ChatTurn>
-            {
-                ChatTurn.FromUser(requestGoal),
-                ChatTurn.FromAssistantText(ProjectForPrompt(
-                    DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)),
-            };
-            turns.AddRange(bounded.Turns.Skip(1));
-            turns.AddRange(logicalCall.ContinuationTurns);
-            var legacy = new ModelRequest(systemPrompt, turns, NoNativeTools);
             var protectedAfter = ReconciliationTurns(stepsSoFar);
             var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
             if (trigger?.ToolCall is not null)
@@ -2707,11 +2658,14 @@ public sealed partial class AgentRunner(
             protectedAfter.AddRange(logicalCall.ContinuationTurns);
             return new ModelContextRequest(
                 systemPrompt,
-                [ChatTurn.FromUser(goal)],
+                [ChatTurn.FromUser(aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal)],
                 RebuildHistoricalTurns(stepsSoFar, triggeringStepIndex),
-                [ChatTurn.FromAssistantText(DescribePlan(previousPlan)), .. protectedAfter],
-                NoNativeTools,
-                legacy);
+                [ChatTurn.FromAssistantText(ProjectForPrompt(
+                    DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)), .. protectedAfter],
+                NoNativeTools)
+            {
+                Aggressive = aggressive,
+            };
         }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
@@ -2847,8 +2801,8 @@ public sealed partial class AgentRunner(
             StepIndex = stepIndex,
             Actor = actor,
             PlanRevision = planRevision,
-            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
-            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            EvidenceId = directive is null ? null : EvidenceRead.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : EvidenceRead.TakeUtf16(directive.Source, 32),
             Offset = directive?.Offset,
             RequestedLength = directive?.Length,
             ReturnedLength = returnedLength,
@@ -2884,8 +2838,9 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>
-    /// HARDEN-8 ContextOverflow recovery at the runtime caller boundary. A logical call with verbatim history retries once
-    /// after rebuilding at K=0; calls without compactable history and a second overflow retain ADR-0039 terminal semantics.
+    /// ContextOverflow recovery at the runtime caller boundary (ADR-0052 AF-05; the successor of the HARDEN-8 K=0 rebuild). A logical
+    /// call that has historical context retries ONCE with an aggressive projection request, which the context layer compacts harder;
+    /// a call without historical context and a second overflow retain ADR-0039 terminal semantics. Never a loop.
     /// </summary>
     private async Task<ModelResponse> CallModelWithOverflowRecoveryAsync(
         Guid taskId,
@@ -2906,7 +2861,7 @@ public sealed partial class AgentRunner(
         catch (ModelProtocolException ex) when (
             ex.FailureKind == ModelFailureKind.ContextOverflow
             && !logicalCall.OverflowRetried
-            && logicalCall.HasCompactableHistory)
+            && requestFactory(true).HistoricalTurns.Count > 0)
         {
             logicalCall.OverflowRetried = true;
             logicalCall.Aggressive = true;
@@ -3046,8 +3001,8 @@ public sealed partial class AgentRunner(
             StepIndex = stepIndex,
             Actor = run.Actor,
             PlanRevision = planRevision,
-            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
-            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            EvidenceId = directive is null ? null : EvidenceRead.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : EvidenceRead.TakeUtf16(directive.Source, 32),
             Offset = directive?.Offset,
             RequestedLength = directive?.Length,
             ReturnedLength = returnedLength,
@@ -3075,8 +3030,8 @@ public sealed partial class AgentRunner(
             StepIndex = null,
             Actor = actor,
             PlanRevision = null,
-            EvidenceId = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.EvidenceId, 128),
-            Source = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.Source, 32),
+            EvidenceId = recognition.Directive is null ? null : EvidenceRead.TakeUtf16(recognition.Directive.EvidenceId, 128),
+            Source = recognition.Directive is null ? null : EvidenceRead.TakeUtf16(recognition.Directive.Source, 32),
             Offset = recognition.Directive?.Offset,
             RequestedLength = recognition.Directive?.Length,
             ReturnedLength = 0,
@@ -4936,7 +4891,6 @@ public sealed partial class AgentRunner(
 
         internal bool OverflowRetried { get; set; }
 
-        internal bool HasCompactableHistory { get; set; }
 
         internal EvidenceReadBudget Evidence { get; } = new();
 

@@ -29,6 +29,13 @@ internal static class EvidenceIndex
         + "Address one by its step index (runtime.evidence_read) or by its id (EvidenceRead/v1 directive).";
 
     /// <summary>
+    /// The fixed rule that makes ANY persisted step addressable, listed or not, as the HARDEN-8 archive summary stated it: the id is
+    /// this task's id and the step index. Without it a step older than the listed window could be read only by the typed function.
+    /// </summary>
+    private static string Addressability(Guid taskId) =>
+        string.Create(CultureInfo.InvariantCulture, $"Any persisted tool step n of this task is addressable as {EvidenceRead.EvidenceId(taskId, 0)[..^1]}n.");
+
+    /// <summary>
     /// The block for <paramref name="steps"/>, or <c>null</c> when no persisted step is a drill-down candidate: an executed tool
     /// step whose persisted result or observation is longer than <paramref name="maxObservationCharacters"/>, which is exactly
     /// when the runtime offers the control function.
@@ -47,7 +54,7 @@ internal static class EvidenceIndex
         }
 
         var listed = candidates.Count > MaxEntries ? candidates.GetRange(candidates.Count - MaxEntries, MaxEntries) : candidates;
-        var text = new StringBuilder(OpenMarker).Append('\n').Append(Introduction);
+        var text = new StringBuilder(OpenMarker).Append('\n').Append(Introduction).Append(' ').Append(Addressability(taskId));
         foreach (var step in listed)
         {
             var label = EvidenceLimitationsDigest.ToolLabel(step, EvidenceLimitationsDigest.IsUnknownToolRejection(step));

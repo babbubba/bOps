@@ -55,9 +55,6 @@ public sealed record AgentRunnerOptions
     /// </summary>
     public int? MaxTotalTokens { get; init; } = 350_000;
 
-    /// <summary>The latest completed tool-call steps retained verbatim in model-facing history (HARDEN-8), from 0 through 15.</summary>
-    public int VerbatimHistorySteps { get; init; } = 3;
-
     /// <summary>
     /// Active work allowed for one execution attempt. Human approval waiting is excluded. <c>null</c> is an explicit
     /// operator opt-out; a non-null value is positive and no longer than 24 hours.
@@ -175,11 +172,6 @@ public sealed record AgentRunnerOptions
         if (MaxReplans < 0)
         {
             throw new InvalidOperationException("'Agent:MaxReplans' must not be negative.");
-        }
-
-        if (VerbatimHistorySteps is < 0 or > 15)
-        {
-            throw new InvalidOperationException("'Agent:VerbatimHistorySteps' must be between 0 and 15.");
         }
 
         if (MaxTotalTokens is <= 0)

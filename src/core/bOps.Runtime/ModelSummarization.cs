@@ -26,12 +26,12 @@ public sealed record SummarizationOptions
 
     /// <summary>
     /// Summarization is considered only while the estimated history exceeds this fraction of the
-    /// candidate history budget after tool-result compaction. Initial tuning default, verified in AF-05.
+    /// candidate history budget after tool-result compaction.
     /// </summary>
     public double TriggerRatio { get; init; } = 0.75;
 
     /// <summary>
-    /// Most-recent historical groups kept verbatim by the summarizer. Initial tuning default, verified in AF-05.
+    /// Most-recent historical groups kept verbatim by the summarizer.
     /// </summary>
     public int RecentGroupsToPreserve { get; init; } = 4;
 

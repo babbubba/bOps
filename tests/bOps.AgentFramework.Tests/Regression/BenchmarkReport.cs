@@ -39,7 +39,7 @@ internal sealed record BenchmarkRow(
             ? null
             : stats.MaxBy(p => p.Stats.HistoricalGroupsBefore - p.Stats.HistoricalGroupsAfter + p.Stats.CompactedToolGroups);
         var profile = run.Projector is null
-            ? "none (BoundedHistory legacy request)"
+            ? "none (unprojected)"
             : worst is null
                 ? "n/a"
                 : worst.Value.Stats.MaxContextTokens is { } max

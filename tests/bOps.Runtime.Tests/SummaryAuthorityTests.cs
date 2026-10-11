@@ -140,7 +140,7 @@ public sealed class SummaryAuthorityTests
             ModelContextRequest request, ChatModelDescriptor descriptor, ModelSummarizationAccess? summarization = null,
             CancellationToken ct = default)
         {
-            var legacy = request.LegacySafeRequest;
+            var legacy = request.ToUnprojectedRequest();
             var history = legacy.History.ToList();
             if (summarization is not null)
             {

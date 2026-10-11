@@ -19,7 +19,10 @@ namespace bOps.AgentFramework;
 public sealed class MafContextProjector : IModelContextProjector
 {
     private const string ConfiguredProfileSource = "Agent.Context.Profiles";
-    private const string UnknownProfileSource = "unknown-legacy-safe";
+    private const string UnknownProfileSource = "unknown-structural";
+
+    /// <summary>The recovery projection after a provider overflow compacts toward 1/n of the history allowance.</summary>
+    internal const int AggressiveBudgetDivisor = 2;
 
     private readonly ModelContextOptions options;
     private readonly ILogger logger;
@@ -44,26 +47,9 @@ public sealed class MafContextProjector : IModelContextProjector
         ArgumentNullException.ThrowIfNull(descriptor);
         ct.ThrowIfCancellationRequested();
 
+        // Exact provider+model only. No entry means the capacity is UNKNOWN, never a guess from a family or a name.
         var profile = options.Resolve(descriptor);
-        if (profile is null || profile.MaxContextTokens is null)
-        {
-            var legacyTokens = EstimateRequestTokens(request.LegacySafeRequest);
-            return new ModelContextProjectionResult(
-                request.LegacySafeRequest,
-                new ModelContextProjectionStats(
-                    profile is null ? UnknownProfileSource : ConfiguredProfileSource + ":unknown-legacy-safe",
-                    null, null, null, 0, legacyTokens, legacyTokens, 0, 0, 0)
-                {
-                    HistoricalMessagesBefore = request.LegacySafeRequest.History.Count,
-                    HistoricalMessagesAfter = request.LegacySafeRequest.History.Count,
-                    HistoricalGroupsBefore = CountAtomicGroups(request.LegacySafeRequest.History),
-                    HistoricalGroupsAfter = CountAtomicGroups(request.LegacySafeRequest.History),
-                    HistoricalCharactersBefore = request.LegacySafeRequest.History.Sum(turn => turn.Content?.Length ?? 0),
-                    HistoricalCharactersAfter = request.LegacySafeRequest.History.Sum(turn => turn.Content?.Length ?? 0),
-                    Strategies = "LegacySafeProjection",
-                });
-        }
-
+        var aggressive = request.Aggressive;
         var protectedBefore = MafChatTurnMapper.ToMaf(request.ProtectedBeforeHistory);
         var protectedAfter = MafChatTurnMapper.ToMaf(request.ProtectedAfterHistory);
         var historical = MafChatTurnMapper.ToMaf(request.HistoricalTurns).ToList();
@@ -76,18 +62,26 @@ public sealed class MafContextProjector : IModelContextProjector
 
         var protectedTokens = EstimateMessages(fixedMessages);
         var toolTokens = EstimateToolTokens(request.AvailableTools);
-        var fixedTokens = protectedTokens + toolTokens + options.SafetyReserveTokens;
-        var maxContextTokens = profile.MaxContextTokens.Value;
-        var reservedOutputTokens = profile.ReservedOutputTokens!.Value;
-        var inputCapacity = maxContextTokens - reservedOutputTokens;
-        var historyBudget = inputCapacity - fixedTokens;
-        if (historyBudget < 0)
+        var fixedTokens = protectedTokens + toolTokens;
+        int? maxContextTokens = null;
+        int? reservedOutputTokens = null;
+        int? inputCapacity = null;
+        int? historyBudget = null;
+        if (profile is { MaxContextTokens: { } max, ReservedOutputTokens: { } reserved })
         {
-            throw new ModelProtocolException(
-                "The protected model context and configured reserves exceed the selected model profile's input capacity.")
+            maxContextTokens = max;
+            reservedOutputTokens = reserved;
+            inputCapacity = max - reserved;
+            fixedTokens += options.SafetyReserveTokens;
+            historyBudget = inputCapacity - fixedTokens;
+            if (historyBudget < 0)
             {
-                FailureKind = ModelFailureKind.ContextOverflow,
-            };
+                throw new ModelProtocolException(
+                    "The protected model context and configured reserves exceed the selected model profile's input capacity.")
+                {
+                    FailureKind = ModelFailureKind.ContextOverflow,
+                };
+            }
         }
 
         var beforeTokens = EstimateMessages(historical);
@@ -103,29 +97,38 @@ public sealed class MafContextProjector : IModelContextProjector
         // runtime-authored, never sent to the provider, and the real goal remains protected above.
         var historicalAnchor = new ChatMessage(
             Microsoft.Extensions.AI.ChatRole.User,
-            "[bOps historical tool context]");
+            MafSummarization.AnchorText);
         historical.Insert(0, historicalAnchor);
+
+        // The recovery projection after a provider-reported overflow: the estimator under-counted, so the history is compacted
+        // with nothing preserved against a reduced allowance. Applied once per logical call by the runner.
+        var preservedToolGroups = aggressive ? 0 : options.MinimumPreservedToolGroups;
+        var preservedTurns = aggressive ? 0 : options.MinimumPreservedTurns;
+        int? compactionBudget = historyBudget is { } budget ? (aggressive ? budget / AggressiveBudgetDivisor : budget) : null;
 
         // MAF's tokenizer-free estimate is based on textual message bytes. bOps tool results are
         // structured FunctionResultContent, so include those bytes explicitly in both predicates.
-        CompactionTrigger exceedsBudget = index => EstimateMessages(index.GetIncludedMessages()) > historyBudget;
-        CompactionTrigger fitsBudget = index => EstimateMessages(index.GetIncludedMessages()) <= historyBudget;
-        var toolResults = new ToolResultCompactionStrategy(
-            exceedsBudget,
-            options.MinimumPreservedToolGroups,
-            fitsBudget)
+        // With an unknown capacity there is no budget to exceed: tool results older than the preserved recent groups are always
+        // compacted (a structural bound), and nothing else is removed because nothing says how much would fit.
+        CompactionTrigger exceedsBudget = compactionBudget is { } limit
+            ? index => EstimateMessages(index.GetIncludedMessages()) > limit
+            : _ => true;
+        CompactionTrigger fitsBudget = compactionBudget is { } fitLimit
+            ? index => EstimateMessages(index.GetIncludedMessages()) <= fitLimit
+            : _ => false;
+        var toolResults = new ToolResultCompactionStrategy(exceedsBudget, preservedToolGroups, fitsBudget)
         {
             // Never promote raw tool output (including prompt injection) into assistant text.
             ToolCallFormatter = FormatToolGroupWithoutResultData,
         };
         var strategies = new List<CompactionStrategy> { toolResults };
         SummarizationAttemptState? summaryState = null;
-        using var summarizer = summarization is null
+        using var summarizer = summarization is null || profile is null || aggressive
             ? null
             : CreateSummarizer(summarization, summaryState = new SummarizationAttemptState());
-        if (summarizer is not null && summarization is not null)
+        if (summarizer is not null && summarization is not null && historyBudget is { } summaryBudget)
         {
-            var threshold = (int)(historyBudget * summarization.Options.TriggerRatio);
+            var threshold = (int)(summaryBudget * summarization.Options.TriggerRatio);
             strategies.Add(new SummarizationCompactionStrategy(
                 summarizer,
                 index => EstimateMessages(index.GetIncludedMessages()) > threshold,
@@ -134,8 +137,12 @@ public sealed class MafContextProjector : IModelContextProjector
                 index => EstimateMessages(index.GetIncludedMessages()) <= threshold));
         }
 
-        strategies.Add(new SlidingWindowCompactionStrategy(exceedsBudget, options.MinimumPreservedTurns, fitsBudget));
-        strategies.Add(new TruncationCompactionStrategy(exceedsBudget, minimumPreservedGroups: 0, fitsBudget));
+        if (compactionBudget is not null)
+        {
+            strategies.Add(new SlidingWindowCompactionStrategy(exceedsBudget, preservedTurns, fitsBudget));
+            strategies.Add(new TruncationCompactionStrategy(exceedsBudget, minimumPreservedGroups: 0, fitsBudget));
+        }
+
         var pipeline = new PipelineCompactionStrategy(strategies);
 
         var compactedMessages = (await CompactionProvider.CompactAsync(pipeline, historical, logger, ct)).ToList();
@@ -145,11 +152,11 @@ public sealed class MafContextProjector : IModelContextProjector
         compactedMessages.RemoveAll(message => ReferenceEquals(message, historicalAnchor));
         var afterTokens = EstimateMessages(compactedMessages);
         var afterCharacters = EstimateCharacters(compactedMessages);
-        if (afterTokens > historyBudget)
+        if (historyBudget is { } fitBudget && afterTokens > fitBudget)
         {
             throw new ModelProtocolException(
                 $"Deterministic history compaction could not fit the selected model profile without changing protected context " +
-                $"(estimated history {afterTokens} tokens; budget {historyBudget} tokens).")
+                $"(estimated history {afterTokens} tokens; budget {fitBudget} tokens).")
             {
                 FailureKind = ModelFailureKind.ContextOverflow,
             };
@@ -173,7 +180,7 @@ public sealed class MafContextProjector : IModelContextProjector
         return new ModelContextProjectionResult(
             projected,
             new ModelContextProjectionStats(
-                ConfiguredProfileSource,
+                profile is null ? UnknownProfileSource : ConfiguredProfileSource,
                 maxContextTokens,
                 reservedOutputTokens,
                 inputCapacity,
@@ -192,9 +199,17 @@ public sealed class MafContextProjector : IModelContextProjector
                 HistoricalGroupsAfter = CountAtomicGroups(compactedHistory),
                 HistoricalCharactersBefore = beforeCharacters,
                 HistoricalCharactersAfter = afterCharacters,
-                Strategies = summarizer is null ? "ToolResult,SlidingWindow,Truncation" : "ToolResult,Summarization,SlidingWindow,Truncation",
+                Strategies = StrategyLabel(profile is not null, summarizer is not null, aggressive),
                 Summary = summarizer is null ? null : SummaryStats(summaryState!, compactedMessages),
             });
+    }
+
+    private static string StrategyLabel(bool known, bool summarized, bool aggressive)
+    {
+        var label = !known
+            ? "ToolResult(structural)"
+            : summarized ? "ToolResult,Summarization,SlidingWindow,Truncation" : "ToolResult,SlidingWindow,Truncation";
+        return aggressive ? label + ",Aggressive" : label;
     }
 
     private GovernedSummarizationChatClient CreateSummarizer(
@@ -229,13 +244,6 @@ public sealed class MafContextProjector : IModelContextProjector
             state.InputEstimatedTokens,
             state.OutputEstimatedTokens);
     }
-
-    private static int EstimateRequestTokens(ModelRequest request) =>
-        EstimateMessages(
-        [
-            new ChatMessage(Microsoft.Extensions.AI.ChatRole.System, request.SystemPrompt),
-            .. MafChatTurnMapper.ToMaf(request.History),
-        ]) + EstimateToolTokens(request.AvailableTools);
 
     private static int EstimateMessages(IEnumerable<ChatMessage> messages)
     {
@@ -303,7 +311,7 @@ public sealed class MafContextProjector : IModelContextProjector
         return groups;
     }
 
-    private static string FormatToolGroupWithoutResultData(CompactionMessageGroup group)
+    internal static string FormatToolGroupWithoutResultData(CompactionMessageGroup group)
     {
         var calls = group.Messages
             .SelectMany(message => message.Contents.OfType<FunctionCallContent>())

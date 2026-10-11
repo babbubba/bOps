@@ -150,13 +150,13 @@ public sealed class EvidenceControlPlaneTests
         var foreignTyped = NativeCall(EvidenceRead.ControlFunctionName, new JsonObject
         {
             ["step"] = 0,
-            ["evidenceId"] = BoundedHistory.EvidenceId(Guid.NewGuid(), 0),
+            ["evidenceId"] = EvidenceRead.EvidenceId(Guid.NewGuid(), 0),
             ["source"] = "result",
             ["offset"] = 4_000,
             ["length"] = 200,
         });
         var foreignLegacy = new ModelResponse(
-            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + BoundedHistory.EvidenceId(Guid.NewGuid(), 0)
+            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + EvidenceRead.EvidenceId(Guid.NewGuid(), 0)
             + "\",\"source\":\"result\",\"offset\":4000,\"length\":200}", [], false, null);
         var model = new FakeChatModel(TwoStepPlan(), Tool(Big), Calls(foreignTyped), foreignLegacy, Tool(Next), Final());
         var (runner, audit, _, _) = Build(model);
@@ -191,7 +191,7 @@ public sealed class EvidenceControlPlaneTests
     {
         var taskId = Guid.NewGuid();
         var legacy = new ModelResponse(
-            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + BoundedHistory.EvidenceId(taskId, 0)
+            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + EvidenceRead.EvidenceId(taskId, 0)
             + "\",\"source\":\"result\",\"offset\":4000,\"length\":200}", [], false, null);
         var model = new FakeChatModel(TwoStepPlan(), Tool(Big), legacy, Tool(Next), Final());
         var (runner, audit, _, _) = Build(model);
@@ -350,7 +350,7 @@ public sealed class EvidenceControlPlaneTests
     public async Task AF04_InvalidEvidenceRequests_AreNotSuccessfulReads()
     {
         var foreign = new ModelResponse(
-            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + BoundedHistory.EvidenceId(Guid.NewGuid(), 0)
+            "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"" + EvidenceRead.EvidenceId(Guid.NewGuid(), 0)
             + "\",\"source\":\"result\",\"offset\":4000,\"length\":200}", [], false, null);
         var model = new FakeChatModel(
             TwoStepPlan(), Tool(Big),

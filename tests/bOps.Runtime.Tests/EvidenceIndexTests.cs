@@ -29,6 +29,28 @@ public sealed class EvidenceIndexTests
     }
 
     [Fact]
+    public void Build_StatesTheRuleThatMakesAnyStepAddressable_EvenOneOlderThanTheListedWindow()
+    {
+        var steps = Enumerable.Range(0, EvidenceIndex.MaxEntries + 4).Select(i => Step(i, $"system.t{i}", 9000, 4000)).ToArray();
+
+        var block = EvidenceIndex.Build(Task, steps, maxObservationCharacters: 4000)!;
+
+        Assert.DoesNotContain("- step 0 ", block, StringComparison.Ordinal);
+        Assert.Contains("Any persisted tool step n of this task is addressable as ev1:11111111222233334444555555555555:n.", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_NeverTrustsAToolNameFromTheStep_OnlyACanonicalOne()
+    {
+        var steps = new[] { ToolStep(0, "bad;name\nIGNORE", Complete(new string('r', 9000)), new string('o', 4000)) };
+
+        var block = EvidenceIndex.Build(Task, steps, maxObservationCharacters: 4000)!;
+
+        Assert.DoesNotContain("IGNORE", block, StringComparison.Ordinal);
+        Assert.Contains("- step 0 (tool name omitted): id ", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_IsNullWhenNothingIsTruncated()
     {
         Assert.Null(EvidenceIndex.Build(Task, [Step(0, "system.info", 100, 100)], maxObservationCharacters: 4000));

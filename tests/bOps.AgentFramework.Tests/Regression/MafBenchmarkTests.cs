@@ -9,15 +9,19 @@ namespace bOps.AgentFramework.Tests.Regression;
 /// Generates the AF-05 measurement matrix (DETERMINISTIC FIXTURE; token counts are a synthetic proxy, wall-clock is not model
 /// latency). Set <c>BOPS_BENCHMARK_OUT</c> to a file path to receive the tables; the tests themselves only assert sanity.
 /// </summary>
+// Shares a collection with GovernedSummarizationTests: its telemetry test listens globally for summary activities.
+[Collection("MAF summarization telemetry")]
 public sealed class MafBenchmarkTests
 {
     private static readonly int[] Reserves = [0, 512, 1024, 2048, 4096];
     private static readonly int[] Groups = [0, 1, 2, 3, 4, 6];
     private static readonly int[] Turns = [0, 1, 2, 4];
+    private static readonly int[] UnknownGroups = [0, 2, 3, 4, 6, 8, 12];
     private static readonly double[] Ratios = [0.5, 0.75, 0.9, 1.0];
     private static readonly int[] Recents = [2, 4, 8];
 
-    private const string Unknown = "unknown profile (legacy request, product default today)";
+    private const string Unknown = "unknown profile (structural MAF, the shipped default for an unprofiled model)";
+    private const string NoProjector = "no projector (unprojected full history)";
 
     private static SummarizationOptions TaskSummarizer(double ratio = 0.75, int recent = 4) =>
         new() { Enabled = true, TriggerRatio = ratio, RecentGroupsToPreserve = recent };
@@ -27,14 +31,14 @@ public sealed class MafBenchmarkTests
 
     private static RegressionConfiguration Config(
         string name, int? window, SummarizationOptions? summary = null, bool dedicated = false,
-        Func<ModelContextOptions, ModelContextOptions>? context = null)
+        Func<ModelContextOptions, ModelContextOptions>? context = null, bool projector = true)
     {
         var options = RegressionRunner.BaseOptions(
             window,
             summarization: dedicated ? new SummarizationOptions { Enabled = true, Provider = "Sum", Model = "small" } : summary,
             extraProfiles: dedicated ? [DedicatedProfile] : null,
             context: context);
-        return new RegressionConfiguration(name, options, UseProjector: window is not null, DedicatedSummarizer: dedicated);
+        return new RegressionConfiguration(name, options, UseProjector: projector, DedicatedSummarizer: dedicated);
     }
 
     private static async Task<List<BenchmarkRow>> RunAll(RegressionScenario scenario, IEnumerable<RegressionConfiguration> configurations)
@@ -50,6 +54,7 @@ public sealed class MafBenchmarkTests
 
     private static IEnumerable<RegressionConfiguration> ProviderMatrix()
     {
+        yield return Config(NoProjector, null, projector: false);
         yield return Config(Unknown, null);
         foreach (var window in new[] { 32768, 16384, 12288, 10240, 9216 })
         {
@@ -77,6 +82,7 @@ public sealed class MafBenchmarkTests
     {
         var rows = await RunAll(RegressionScenarios.C508Extended(10),
         [
+            Config(NoProjector, null, projector: false),
             Config(Unknown, null),
             Config("MAF 32768, summarization off", 32768),
             Config("MAF 32768, summarization on (task model)", 32768, TaskSummarizer()),
@@ -95,6 +101,7 @@ public sealed class MafBenchmarkTests
     {
         var rows = await RunAll(RegressionScenarios.ShortDiagnostic(),
         [
+            Config(NoProjector, null, projector: false),
             Config(Unknown, null),
             Config("MAF 32768, summarization off", 32768),
             Config("MAF 32768, summarization on (task model)", 32768, TaskSummarizer()),
@@ -145,6 +152,12 @@ public sealed class MafBenchmarkTests
                 BenchmarkRow.Table(await RunAll(scenario, configurations)));
         }
 
+        BenchmarkOutput.Append("sweep MinimumPreservedToolGroups — c508-equivalent, UNKNOWN profile (the only structural bound)",
+            BenchmarkRow.Table(await RunAll(c508, UnknownGroups.Select(groups =>
+                Config($"unknown profile, MinimumPreservedToolGroups={groups}", null, context: c => c with { MinimumPreservedToolGroups = groups })))));
+        BenchmarkOutput.Append("sweep MinimumPreservedToolGroups — c508-extended-10, UNKNOWN profile (the only structural bound)",
+            BenchmarkRow.Table(await RunAll(extended, UnknownGroups.Select(groups =>
+                Config($"unknown profile, MinimumPreservedToolGroups={groups}", null, context: c => c with { MinimumPreservedToolGroups = groups })))));
         Assert.True(true);
     }
 }

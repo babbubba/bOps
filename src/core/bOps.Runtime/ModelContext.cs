@@ -5,7 +5,10 @@ using bOps.Abstractions;
 
 namespace bOps.Runtime;
 
-/// <summary>A configured context window for one exact provider/model pair.</summary>
+/// <summary>
+/// A configured context window for one exact provider/model pair. The operator states it; bOps never infers a capacity from a
+/// provider family or a model name, and an unlisted pair (a router such as <c>openrouter/free</c>, an unprofiled model) has an unknown one.
+/// </summary>
 public sealed record ModelContextProfile
 {
     /// <summary>The provider identifier reported by <see cref="ChatModelDescriptor"/>.</summary>
@@ -14,17 +17,11 @@ public sealed record ModelContextProfile
     /// <summary>The exact model identifier reported by <see cref="ChatModelDescriptor"/>.</summary>
     public string Model { get; init; } = string.Empty;
 
-    /// <summary>The model's total context window.</summary>
+    /// <summary>The model's total context window, in tokens. Required and positive.</summary>
     public int? MaxContextTokens { get; init; }
 
-    /// <summary>Tokens reserved for the model response.</summary>
+    /// <summary>Tokens reserved for the model response. Required, positive and below <see cref="MaxContextTokens"/>.</summary>
     public int? ReservedOutputTokens { get; init; }
-
-    /// <summary>
-    /// Explicitly selects the conservative legacy bounded projection when this configured profile
-    /// intentionally leaves capacity unknown.
-    /// </summary>
-    public bool UseLegacySafeProjectionWhenUnknown { get; init; }
 }
 
 /// <summary>Runtime-owned context budgeting and compaction configuration.</summary>
@@ -36,7 +33,7 @@ public sealed record ModelContextOptions
     /// <summary>Extra input headroom retained after fixed prompt costs.</summary>
     public int SafetyReserveTokens { get; init; } = 1024;
 
-    /// <summary>Recent logical tool groups protected from tool-result replacement.</summary>
+    /// <summary>Recent logical tool groups kept verbatim: with a known profile a floor under budget pressure, with an unknown capacity the only structural bound.</summary>
     public int MinimumPreservedToolGroups { get; init; } = 2;
 
     /// <summary>Recent conversation turns protected from sliding-window removal.</summary>
@@ -69,17 +66,10 @@ public sealed record ModelContextOptions
                 throw new InvalidOperationException($"'{key}:Provider' and '{key}:Model' must be non-empty.");
             }
 
-            if (profile.MaxContextTokens is null)
+            if (profile.MaxContextTokens is null or <= 0)
             {
-                if (profile.ReservedOutputTokens is not null || !profile.UseLegacySafeProjectionWhenUnknown)
-                {
-                    throw new InvalidOperationException(
-                        $"'{key}' with unknown MaxContextTokens must omit ReservedOutputTokens and explicitly enable UseLegacySafeProjectionWhenUnknown.");
-                }
-            }
-            else if (profile.MaxContextTokens <= 0)
-            {
-                throw new InvalidOperationException($"'{key}:MaxContextTokens' must be positive.");
+                // An entry exists only to state a capacity. Leaving a model out of the list is how its capacity stays unknown.
+                throw new InvalidOperationException($"'{key}:MaxContextTokens' must be set and positive.");
             }
             else if (profile.ReservedOutputTokens is null
                 || profile.ReservedOutputTokens <= 0
@@ -104,23 +94,36 @@ public sealed record ModelContextOptions
 }
 
 /// <summary>
-/// A model request split into runtime-protected context and historical context eligible for
-/// deterministic projection. <see cref="LegacySafeRequest"/> is used only when no exact profile exists.
+/// A model request split into runtime-protected context (never compacted) and historical context the context layer may
+/// project for the candidate actually about to be called. The split is made by the runtime, not inferred by the context layer.
 /// </summary>
 public sealed record ModelContextRequest(
     string SystemPrompt,
     IReadOnlyList<ChatTurn> ProtectedBeforeHistory,
     IReadOnlyList<ChatTurn> HistoricalTurns,
     IReadOnlyList<ChatTurn> ProtectedAfterHistory,
-    IReadOnlyList<ToolManifest> AvailableTools,
-    ModelRequest LegacySafeRequest)
+    IReadOnlyList<ToolManifest> AvailableTools)
 {
+    /// <summary>
+    /// Whether this is the one bounded recovery request after a provider-reported <see cref="ModelFailureKind.ContextOverflow"/>:
+    /// the context layer then projects the historical context more aggressively than for a normal request. It never changes the
+    /// protected context or the offered tools.
+    /// </summary>
+    public bool Aggressive { get; init; }
+
     /// <summary>Adds runtime-authored continuation turns after historical context.</summary>
     public ModelContextRequest AppendProtected(params ChatTurn[] turns) => this with
     {
         ProtectedAfterHistory = [.. ProtectedAfterHistory, .. turns],
-        LegacySafeRequest = LegacySafeRequest with { History = [.. LegacySafeRequest.History, .. turns] },
     };
+
+    /// <summary>
+    /// The request with no projection: protected context, then every historical turn verbatim. It is what a host that composes no
+    /// context projector sends; every host in this repository composes one. Each observation is already bounded by
+    /// <c>MaxObservationCharacters</c>, and a provider-reported overflow is still classified and recovered once.
+    /// </summary>
+    public ModelRequest ToUnprojectedRequest() =>
+        new(SystemPrompt, [.. ProtectedBeforeHistory, .. HistoricalTurns, .. ProtectedAfterHistory], AvailableTools);
 }
 
 /// <summary>Non-content metadata produced for one candidate-specific projection.</summary>

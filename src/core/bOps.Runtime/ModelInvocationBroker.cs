@@ -94,8 +94,8 @@ public interface IModelInvocationBroker
         CancellationToken ct = default);
 
     /// <summary>
-    /// Executes a candidate-specific context request. Implementations without a projector retain
-    /// the explicitly supplied conservative legacy request.
+    /// Executes a candidate-specific context request. Implementations without a projector send it unprojected
+    /// (<see cref="ModelContextRequest.ToUnprojectedRequest"/>).
     /// </summary>
     Task<ModelResponse> InvokeAsync(
         ModelContextRequest request,
@@ -104,7 +104,7 @@ public interface IModelInvocationBroker
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
-        return InvokeAsync(request.LegacySafeRequest, context, ct);
+        return InvokeAsync(request.ToUnprojectedRequest(), context, ct);
     }
 }
 
@@ -184,11 +184,11 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         ArgumentNullException.ThrowIfNull(context);
         if (contextProjector is null)
         {
-            return await InvokeCoreAsync(request.LegacySafeRequest, context, projection: null, ct);
+            return await InvokeCoreAsync(request.ToUnprojectedRequest(), context, projection: null, ct);
         }
 
         return await InvokeCoreAsync(
-            request.LegacySafeRequest,
+            request.ToUnprojectedRequest(),
             context,
             (descriptor, summarization, token) => contextProjector.ProjectAsync(request, descriptor, summarization, token),
             ct);

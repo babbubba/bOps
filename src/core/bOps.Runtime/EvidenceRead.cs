@@ -119,6 +119,23 @@ internal static class EvidenceRead
             new EvidenceReadDirective(EvidenceId(currentTaskId, step), source, offset, length));
     }
 
+    /// <summary>The first <paramref name="maximum"/> UTF-16 code units of <paramref name="value"/>, never cutting a surrogate pair.</summary>
+    internal static string TakeUtf16(string value, int maximum)
+    {
+        if (value.Length <= maximum)
+        {
+            return value;
+        }
+
+        var length = maximum;
+        if (length > 0 && char.IsHighSurrogate(value[length - 1]))
+        {
+            length--;
+        }
+
+        return value[..length];
+    }
+
     /// <summary>The stable id of a persisted step of <paramref name="taskId"/>: <c>ev1:&lt;task&gt;:&lt;step&gt;</c>.</summary>
     internal static string EvidenceId(Guid taskId, int stepIndex) =>
         string.Create(CultureInfo.InvariantCulture, $"ev1:{taskId:N}:{stepIndex}");

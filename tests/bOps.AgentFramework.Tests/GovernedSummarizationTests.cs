@@ -7,6 +7,7 @@ using bOps.Runtime.Tests;
 
 namespace bOps.AgentFramework.Tests;
 
+[Collection("MAF summarization telemetry")]
 public sealed class GovernedSummarizationTests
 {
     private const string Injection =
@@ -55,7 +56,7 @@ public sealed class GovernedSummarizationTests
 
         var unknownCapacity = Options(
             new SummarizationOptions { Enabled = true, Provider = "Sum", Model = "small" },
-            new ModelContextProfile { Provider = "Sum", Model = "small", UseLegacySafeProjectionWhenUnknown = true });
+            new ModelContextProfile { Provider = "Sum", Model = "small" });
         Assert.Throws<InvalidOperationException>(() => unknownCapacity.Validate());
     }
 
@@ -402,7 +403,7 @@ public sealed class GovernedSummarizationTests
         };
         historical.AddRange(Filler());
         var after = new[] { ChatTurn.FromUser("EvidenceFact hardwareErrorCount=365 (complete=false, truncated=true); limitation: events truncated") };
-        var request = Request(historical) with { ProtectedAfterHistory = after, LegacySafeRequest = Request(historical).LegacySafeRequest };
+        var request = Request(historical) with { ProtectedAfterHistory = after };
         var before = JsonSerializer.Serialize(request.HistoricalTurns);
 
         await broker.InvokeAsync(request, Context([], []));
@@ -988,9 +989,7 @@ public sealed class GovernedSummarizationTests
     {
         var before = new[] { ChatTurn.FromUser("goal") };
         var available = tools ?? [];
-        return new ModelContextRequest(
-            "system", before, historical, [], available,
-            new ModelRequest("system", [.. before, .. historical], available));
+        return new ModelContextRequest("system", before, historical, [], available);
     }
 
     private sealed class ScriptedModel(string provider, string model, Func<ModelRequest, ModelResponse> handler) : IChatModel

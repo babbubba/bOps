@@ -5,8 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <!-- AF-05: TestDoubles.cs is linked from bOps.Runtime.Tests; most of its doubles are unused in this assembly. -->
-    <NoWarn>$(NoWarn);CA1812</NoWarn>
+    <!-- AF-05: TestDoubles.cs is linked from bOps.Runtime.Tests (most of its doubles are unused here); MAAI001 is the experimental MAF
+         compaction diagnostic, suppressed in the product integration project for the same reason. -->
+    <NoWarn>$(NoWarn);CA1812;MAAI001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

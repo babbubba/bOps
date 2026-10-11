@@ -18,57 +18,14 @@ public sealed class HardenEightTests
     public void Options_ShipAcceptedDefaults_AndRejectInvalidValues()
     {
         var options = new AgentRunnerOptions();
-        Assert.Equal(3, options.VerbatimHistorySteps);
         Assert.Equal(350_000, options.MaxTotalTokens);
         Assert.Equal(TimeSpan.FromHours(1), options.MaxAttemptDuration);
 
-        Assert.Throws<InvalidOperationException>(() => (options with { VerbatimHistorySteps = -1 }).Validate());
-        Assert.Throws<InvalidOperationException>(() => (options with { VerbatimHistorySteps = 16 }).Validate());
         Assert.Throws<InvalidOperationException>(() => (options with { MaxTotalTokens = 0 }).Validate());
         Assert.Throws<InvalidOperationException>(() => (options with { MaxAttemptDuration = TimeSpan.Zero }).Validate());
         Assert.Throws<InvalidOperationException>(() => (options with { MaxAttemptDuration = TimeSpan.FromHours(24) + TimeSpan.FromTicks(1) }).Validate());
         (options with { MaxTotalTokens = null, MaxAttemptDuration = null }).Validate();
     }
-
-    [Fact]
-    public void BoundedHistory_EnforcesK_M_ArchiveAndPlateau_WithoutCopyingOldOutput()
-    {
-        var taskId = Guid.Parse("11111111-2222-3333-4444-555555555555");
-        var steps20 = Enumerable.Range(0, 20).Select(index => Step(index, $"secret-{index}-" + new string('x', 4300),
-            index == 0 ? VerificationStatus.Refuted : null)).ToList();
-        var steps40 = Enumerable.Range(0, 40).Select(index => Step(index, $"secret-{index}-" + new string('x', 4300),
-            index == 0 ? VerificationStatus.Refuted : null)).ToList();
-
-        var at20 = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 3, RegisteredName);
-        var at40 = BoundedHistory.Build(taskId, "goal", steps40, verbatimSteps: 3, RegisteredName);
-
-        Assert.Equal((5, 12, 3), (at20.ArchiveSteps, at20.CompactSteps, at20.VerbatimSteps));
-        Assert.Equal((25, 12, 3), (at40.ArchiveSteps, at40.CompactSteps, at40.VerbatimSteps));
-        Assert.DoesNotContain("secret-0", at20.BoundedBlock, StringComparison.Ordinal);
-        Assert.Contains("Refuted=1", BoundedHistory.ArchiveSummary(steps20.Take(5).ToList()), StringComparison.Ordinal);
-        Assert.Contains("v=Refuted;", BoundedHistory.CompactRecord(taskId, steps20[0], "test.read"), StringComparison.Ordinal);
-        Assert.Contains("v=Confirmed;", BoundedHistory.CompactRecord(taskId,
-            steps20[1] with { VerificationStatus = VerificationStatus.Confirmed }, "test.read"), StringComparison.Ordinal);
-        Assert.Contains("v=-;", BoundedHistory.CompactRecord(taskId,
-            steps20[2] with { VerificationStatus = null }, "test.read"), StringComparison.Ordinal);
-        Assert.All(steps20.Skip(5).Take(12), step =>
-            Assert.InRange(BoundedHistory.CompactRecord(taskId, step, "test.read").Length, 1, BoundedHistory.CompactRecordMaxCharacters));
-        Assert.InRange(BoundedHistory.ArchiveSummary(steps40.Take(25).ToList()).Length, 1, BoundedHistory.ArchiveSummaryMaxCharacters);
-        Assert.True(at20.HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
-        Assert.True(at40.HistoricalCharacters <= BoundedHistory.FixtureHistoricalMaxCharacters);
-        Assert.Equal(
-            JsonSerializer.Serialize(at40.Turns),
-            JsonSerializer.Serialize(BoundedHistory.Build(taskId, "goal", steps40, 3, RegisteredName).Turns));
-
-        var zero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0, RegisteredName);
-        Assert.Equal((8, 12, 0), (zero.ArchiveSteps, zero.CompactSteps, zero.VerbatimSteps));
-
-        var replanZero = BoundedHistory.Build(taskId, "goal", steps20, verbatimSteps: 0, RegisteredName, requiredVerbatimStep: 19);
-        Assert.Equal(1, replanZero.VerbatimSteps);
-        Assert.Contains("secret-19", string.Join('\n', replanZero.Turns.Select(turn => turn.Content)), StringComparison.Ordinal);
-    }
-
-    private static string? RegisteredName(PlanStep step) => step.ToolCall?.ToolName;
 
     [Fact]
     public void EvidenceIdsAndRanges_AreCurrentTaskOnly_ExactAndUtf16Bounded()
@@ -82,7 +39,7 @@ public sealed class HardenEightTests
             Step(8, "duplicate-two"),
             new(9, "synthetic", null, null, "not evidence"),
         };
-        var id = BoundedHistory.EvidenceId(taskId, 7);
+        var id = EvidenceRead.EvidenceId(taskId, 7);
 
         var result = EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(id, "result", 4000, 100));
         Assert.Equal(EvidenceReadResultCode.Success, result.Code);
@@ -98,18 +55,18 @@ public sealed class HardenEightTests
         Assert.Equal(EvidenceReadResultCode.OutOfRange,
             EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(id, "result", 0, 4001)).Code);
         Assert.Equal(EvidenceReadResultCode.CrossTaskRejected,
-            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(BoundedHistory.EvidenceId(Guid.NewGuid(), 7), "result", 0, 1)).Code);
+            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(EvidenceRead.EvidenceId(Guid.NewGuid(), 7), "result", 0, 1)).Code);
         Assert.Equal(EvidenceReadResultCode.MissingStep,
-            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(BoundedHistory.EvidenceId(taskId, 9), "observation", 0, 1)).Code);
+            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(EvidenceRead.EvidenceId(taskId, 9), "observation", 0, 1)).Code);
         Assert.Equal(EvidenceReadResultCode.InvalidId,
-            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(BoundedHistory.EvidenceId(taskId, 8), "result", 0, 1)).Code);
+            EvidenceRead.Read(taskId, steps, new EvidenceReadDirective(EvidenceRead.EvidenceId(taskId, 8), "result", 0, 1)).Code);
         Assert.Equal(EvidenceReadResultCode.InvalidId,
             EvidenceRead.Read(taskId, steps, new EvidenceReadDirective($"ev1:{taskId:N}:07", "result", 0, 1)).Code);
         Assert.Contains("Verification: Refuted", EvidenceRead.Read(taskId, steps,
             new EvidenceReadDirective(id, "observation", output.Length, 100)).Fragment, StringComparison.Ordinal);
 
         var surrogateStep = Step(10, "a😀b");
-        var surrogateId = BoundedHistory.EvidenceId(taskId, 10);
+        var surrogateId = EvidenceRead.EvidenceId(taskId, 10);
         Assert.Equal(EvidenceReadResultCode.OutOfRange,
             EvidenceRead.Read(taskId, [surrogateStep], new EvidenceReadDirective(surrogateId, "result", 2, 1)).Code);
         Assert.Equal(EvidenceReadResultCode.OutOfRange,
@@ -117,10 +74,10 @@ public sealed class HardenEightTests
 
         var empty = Step(11, string.Empty);
         Assert.Equal(EvidenceReadResultCode.EndOfEvidence, EvidenceRead.Read(taskId, [empty],
-            new EvidenceReadDirective(BoundedHistory.EvidenceId(taskId, 11), "result", 0, 1)).Code);
+            new EvidenceReadDirective(EvidenceRead.EvidenceId(taskId, 11), "result", 0, 1)).Code);
         var unavailable = Step(12, "x") with { Result = ToolCallResult.Success(null) };
         Assert.Equal(EvidenceReadResultCode.UnavailableSource, EvidenceRead.Read(taskId, [unavailable],
-            new EvidenceReadDirective(BoundedHistory.EvidenceId(taskId, 12), "result", 0, 1)).Code);
+            new EvidenceReadDirective(EvidenceRead.EvidenceId(taskId, 12), "result", 0, 1)).Code);
     }
 
     [Theory]
@@ -183,7 +140,7 @@ public sealed class HardenEightTests
     public async Task EvidenceRead_CrossTask_IsRejectedAndAuditedWithoutLeakingEvidence()
     {
         var taskId = Guid.Parse("12345678-1234-1234-1234-123456789abc");
-        var foreignId = BoundedHistory.EvidenceId(Guid.Parse("aaaaaaaa-1234-1234-1234-123456789abc"), 0);
+        var foreignId = EvidenceRead.EvidenceId(Guid.Parse("aaaaaaaa-1234-1234-1234-123456789abc"), 0);
         var directive =
             $"{{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"{foreignId}\",\"source\":\"result\",\"offset\":0,\"length\":100}}";
         var model = new FakeChatModel(
@@ -357,25 +314,33 @@ public sealed class HardenEightTests
     }
 
     [Fact]
-    public async Task ContextOverflow_RetriesOnceAtK0_AndNextLogicalCallRestoresConfiguredK()
+    public async Task ContextOverflow_RetriesOnceWithAnAggressiveRequest_AndTheNextLogicalCallIsNormalAgain()
     {
+        // ADR-0052 AF-05: the successor of the HARDEN-8 K=0 rebuild. The runner asks the context layer for ONE more aggressive
+        // projection after a provider-reported overflow; how hard it compacts is the context layer's business (MafContextTests).
         var model = new ObjectSequenceModel(
             PlanningTestSupport.PlanResponseIndexed("test.read", 2),
             PlanningTestSupport.IndexedCall("test.read", 0, "c0"),
             ContextOverflow(),
             PlanningTestSupport.IndexedCall("test.read", 1, "c1"),
             Final());
+        var projector = new RecordingContextProjector();
+        var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+        registry.Register(new PackageId("test.package"), new FakeReadTool(output: "history-sentinel", parameters: [PlanningTestSupport.CallIndexParameter]));
+        var options = new AgentRunnerOptions();
+        var broker = new ModelInvocationBroker(model, new RecordingAuditSink(), TimeProvider.System, NullLogger.Instance, options, contextProjector: projector);
+        var runner = new AgentRunner(model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(),
+            new RecordingAuditSink(), new InMemoryTaskStore(), TimeProvider.System, NullLogger<AgentRunner>.Instance, options, invocationBroker: broker);
 
-        var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool(output: "history-sentinel", parameters: [PlanningTestSupport.CallIndexParameter])])
-            .RunAsync("goal", Actor);
+        var state = await runner.RunAsync("goal", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(5, model.Requests.Count);
-        var aggressive = string.Join('\n', model.Requests[3].History.Select(turn => turn.Content));
-        Assert.Contains("BOPS_HISTORY/v1", aggressive, StringComparison.Ordinal);
-        Assert.DoesNotContain("history-sentinel", aggressive, StringComparison.Ordinal);
-        var nextLogical = string.Join('\n', model.Requests[4].History.Select(turn => turn.Content));
-        Assert.Contains("history-sentinel", nextLogical, StringComparison.Ordinal);
+        Assert.Equal([false, false, false, true, false], projector.Requests.Select(request => request.Aggressive));
+        // The aggressive request has the same protected authority and offers the same tools; only the projection differs.
+        Assert.Equal(projector.Requests[2].AvailableTools.Select(tool => tool.Name), projector.Requests[3].AvailableTools.Select(tool => tool.Name));
+        Assert.Equal(projector.Requests[2].ProtectedBeforeHistory[0].Content, projector.Requests[3].ProtectedBeforeHistory[0].Content);
+        Assert.NotEmpty(projector.Requests[3].HistoricalTurns);
     }
 
     [Fact]
@@ -648,7 +613,7 @@ public sealed class HardenEightTests
     private static ModelResponse Final() => new("done", [], true, null);
 
     private static string ReadDirective(Guid taskId, int index, string source, int offset, int length) =>
-        $"{{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"{BoundedHistory.EvidenceId(taskId, index)}\",\"source\":\"{source}\",\"offset\":{offset},\"length\":{length}}}";
+        $"{{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"{EvidenceRead.EvidenceId(taskId, index)}\",\"source\":\"{source}\",\"offset\":{offset},\"length\":{length}}}";
 
     private static ModelProtocolException ContextOverflow() =>
         new("context overflow") { FailureKind = ModelFailureKind.ContextOverflow };

@@ -76,18 +76,81 @@ public sealed class MafContextTests
     }
 
     [Fact]
-    public async Task Projector_UnknownProfileUsesLegacySafeRequestWithoutGuessing()
+    public async Task Projector_UnknownProfileCompactsStructurallyWithoutGuessingACapacity()
     {
+        // AF-05: an unlisted pair (a router such as openrouter/free) has an UNKNOWN capacity. No window is invented: only the
+        // structural bound applies (tool results older than the preserved recent groups are compacted), nothing else is removed.
         var projector = Projector(maxContextTokens: 300);
-        var legacy = new ModelRequest("legacy", [ChatTurn.FromUser("bounded")], []);
-        var request = new ModelContextRequest(
-            "full", [ChatTurn.FromUser("goal")], [ChatTurn.FromAssistantText(new string('x', 5000))], [], [], legacy);
+        var groups = Enumerable.Range(0, 5).SelectMany(i => new[]
+        {
+            ChatTurn.FromAssistantToolCalls([new ModelToolCall($"c{i}", "safe.read", ToolArguments.Empty)]),
+            ChatTurn.FromToolResult($"c{i}", new string('x', 5000)),
+        }).ToList();
+        var request = new ModelContextRequest("full", [ChatTurn.FromUser("goal")], groups, [], []);
 
         var result = await projector.ProjectAsync(request, new ChatModelDescriptor("OpenRouter", "openrouter/free"));
 
-        Assert.Same(legacy, result.Request);
-        Assert.Equal("unknown-legacy-safe", result.Stats.ProfileSource);
+        Assert.Equal("unknown-structural", result.Stats.ProfileSource);
         Assert.Null(result.Stats.MaxContextTokens);
+        Assert.Null(result.Stats.InputBudgetTokens);
+        Assert.Equal("ToolResult(structural)", result.Stats.Strategies);
+        Assert.Equal(5, result.Stats.HistoricalGroupsBefore);
+        Assert.Equal(5, result.Stats.HistoricalGroupsAfter);
+        Assert.Equal(5, result.Stats.CompactedToolGroups);
+        Assert.Equal(1 + 5, result.Request.History.Count(turn => turn.Role != ChatRole.Tool) );
+        Assert.DoesNotContain(result.Request.History, turn => turn.Role == ChatRole.Tool);
+    }
+
+    [Fact]
+    public async Task Projector_AggressiveRequestCompactsHarderThanNormalAndKeepsProtectedContextAndTools()
+    {
+        // AF-05 O3: the one bounded recovery after a provider-reported overflow. Same protected authority, same tools, harder history.
+        var projector = Projector(maxContextTokens: 2000, reservedOutputTokens: 200);
+        var groups = Enumerable.Range(0, 6).SelectMany(i => new[]
+        {
+            ChatTurn.FromAssistantToolCalls([new ModelToolCall($"c{i}", "safe.read", ToolArguments.Empty)]),
+            ChatTurn.FromToolResult($"c{i}", new string('x', 800)),
+        }).ToArray();
+        var normal = ContextRequest(groups, [ChatTurn.FromUser("reconciled")], "authority-prompt");
+        var aggressive = normal with { Aggressive = true };
+        var descriptor = new ChatModelDescriptor("provider", "model");
+
+        var first = await projector.ProjectAsync(normal, descriptor);
+        var second = await projector.ProjectAsync(aggressive, descriptor);
+
+        Assert.Equal(0, first.Stats.CompactedToolGroups);
+        Assert.True(second.Stats.CompactedToolGroups > 0);
+        Assert.True(second.Stats.EstimatedHistoryTokensAfter < first.Stats.EstimatedHistoryTokensAfter);
+        Assert.EndsWith(",Aggressive", second.Stats.Strategies, StringComparison.Ordinal);
+        Assert.Equal("authority-prompt", second.Request.SystemPrompt);
+        Assert.Equal("goal", second.Request.History[0].Content);
+        Assert.Equal("reconciled", second.Request.History[^1].Content);
+        Assert.Equal(first.Request.AvailableTools, second.Request.AvailableTools);
+    }
+
+    [Fact]
+    public async Task Projector_AggressiveRequestNeverSummarizes_AndUnknownCapacityPreservesNothing()
+    {
+        var projector = new MafContextProjector(new AgentRunnerOptions
+        {
+            Summarization = new SummarizationOptions { Enabled = true },
+            Context = new ModelContextOptions { MinimumPreservedToolGroups = 3 },
+        }, NullLogger.Instance);
+        var groups = Enumerable.Range(0, 5).SelectMany(i => new[]
+        {
+            ChatTurn.FromAssistantToolCalls([new ModelToolCall($"c{i}", "safe.read", ToolArguments.Empty)]),
+            ChatTurn.FromToolResult($"c{i}", new string('x', 400)),
+        }).ToArray();
+        var descriptor = new ChatModelDescriptor("OpenRouter", "openrouter/free");
+        var normal = ContextRequest(groups);
+
+        var first = await projector.ProjectAsync(normal, descriptor);
+        var second = await projector.ProjectAsync(normal with { Aggressive = true }, descriptor);
+
+        Assert.Equal(2, first.Stats.CompactedToolGroups);
+        Assert.Equal(5, second.Stats.CompactedToolGroups);
+        Assert.Null(first.Stats.Summary);
+        Assert.Null(second.Stats.Summary);
     }
 
     [Fact]
@@ -190,12 +253,7 @@ public sealed class MafContextTests
             ChatTurn.FromToolResult("c1", new string('e', 3000)),
         };
         var rawBefore = JsonSerializer.Serialize(historical);
-        var baseRequest = ContextRequest(historical, [ChatTurn.FromUser("mutation reconciled")], authority);
-        var request = baseRequest with
-        {
-            AvailableTools = [tool],
-            LegacySafeRequest = baseRequest.LegacySafeRequest with { AvailableTools = [tool] },
-        };
+        var request = ContextRequest(historical, [ChatTurn.FromUser("mutation reconciled")], authority) with { AvailableTools = [tool] };
 
         var result = await Projector(300).ProjectAsync(request, new ChatModelDescriptor("provider", "model"));
 
@@ -254,22 +312,15 @@ public sealed class MafContextTests
         };
         Assert.Throws<InvalidOperationException>(() => impossible.Validate());
 
-        var explicitUnknown = new AgentRunnerOptions
+        // An entry exists only to state a capacity; leaving a router out of the list is how its capacity stays unknown.
+        var capacityless = new AgentRunnerOptions
         {
             Context = new ModelContextOptions
             {
-                Profiles =
-                [
-                    new ModelContextProfile
-                    {
-                        Provider = "router",
-                        Model = "dynamic",
-                        UseLegacySafeProjectionWhenUnknown = true,
-                    },
-                ],
+                Profiles = [new ModelContextProfile { Provider = "router", Model = "dynamic" }],
             },
         };
-        explicitUnknown.Validate();
+        Assert.Throws<InvalidOperationException>(() => capacityless.Validate());
     }
 
     private static MafContextProjector Projector(int maxContextTokens, int reservedOutputTokens = 20) =>
@@ -300,9 +351,7 @@ public sealed class MafContextTests
     {
         var before = new[] { ChatTurn.FromUser("goal") };
         var after = protectedAfter ?? [];
-        return new ModelContextRequest(
-            systemPrompt, before, historical, after, [],
-            new ModelRequest(systemPrompt, [.. before, .. historical, .. after], []));
+        return new ModelContextRequest(systemPrompt, before, historical, after, []);
     }
 
     private static bool JsonNodeEquals(JsonObject left, JsonObject right) => JsonNode.DeepEquals(left, right);

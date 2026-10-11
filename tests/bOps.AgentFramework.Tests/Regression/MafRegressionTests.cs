@@ -10,6 +10,8 @@ namespace bOps.AgentFramework.Tests.Regression;
 /// AF-05 regression gate (ADR-0052). DETERMINISTIC FIXTURE evidence only: the real runner, broker and MAF projector run against a
 /// scripted model and fixed tool results with the real package fact builders. These tests make no claim about any live provider.
 /// </summary>
+// Shares a collection with GovernedSummarizationTests: its telemetry test listens globally for summary activities.
+[Collection("MAF summarization telemetry")]
 public sealed class MafRegressionTests
 {
     private static SummarizationOptions SummaryOn { get; } = new() { Enabled = true };
@@ -25,7 +27,7 @@ public sealed class MafRegressionTests
     public async Task C508_EvidenceReadExhaustionIsSoft_AndTheLaterDiagnosticsRun(int? window)
     {
         var configuration = window is null
-            ? new RegressionConfiguration("unknown-profile", RegressionRunner.BaseOptions(null), UseProjector: false)
+            ? new RegressionConfiguration("unknown-profile", RegressionRunner.BaseOptions(null))
             : Maf($"maf-{window}", window.Value);
 
         var run = await RegressionRunner.RunAsync(RegressionScenarios.C508Equivalent(), configuration);
