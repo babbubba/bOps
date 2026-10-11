@@ -164,4 +164,55 @@ public sealed class MafRegressionTests
         Assert.Contains("<<<BOPS_EVIDENCE_INDEX>>>", stepPrompt, StringComparison.Ordinal);
         Assert.Contains("step 0 system.big: id ev1:" + run.State.Id.ToString("N") + ":0", stepPrompt, StringComparison.Ordinal);
     }
+
+    // ---- AF-05G G1: exact raw addressability after MAF compaction of a result that was never over MaxObservationCharacters ----
+
+    private static string HistoryText(ModelRequest request) =>
+        string.Join('\n', request.History.Select(turn => turn.Content));
+
+    [Fact]
+    public async Task G1_CompactedResultUnder4000_RemainsExactlyAddressable_OnTheUnknownProfile()
+    {
+        var scenario = RegressionScenarios.CompactedSmallResults();
+        Assert.All(scenario.Tools, tool => Assert.True(tool.Result.Output!.Length < new AgentRunnerOptions().MaxObservationCharacters));
+        var run = await RegressionRunner.RunAsync(
+            scenario, new RegressionConfiguration("unknown-profile", RegressionRunner.BaseOptions(null)));
+
+        Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
+
+        // 1. MAF really removed the oldest group from the projected history (unknown profile: the structural bound alone).
+        Assert.Contains(run.Projector!.Projections, p => p.Stats.CompactedToolGroups > 0);
+        var lastStep = run.Model.Requests.First(request => request.AvailableTools.Any(tool => tool.Name == "diag.t4"));
+        Assert.DoesNotContain(RegressionScenarios.SmallResultSentinel, HistoryText(lastStep), StringComparison.Ordinal);
+
+        // 2-4. The persisted step is still offered and named by the runtime-authored index.
+        Assert.Contains(lastStep.AvailableTools, tool => tool.Name == "runtime.evidence_read");
+        Assert.Contains("step 0 diag.t0: id ev1:" + run.State.Id.ToString("N") + ":0", lastStep.SystemPrompt, StringComparison.Ordinal);
+
+        // 5. An exact read of step 0 returns the raw fragment, and only the control reply carries it.
+        Assert.Equal(0, run.Model.UnaddressableReads);
+        Assert.Equal(1, run.EvidenceReadServed);
+        var afterRead = run.Model.Requests.First(request =>
+            request.AvailableTools.Any(tool => tool.Name == "diag.t4") && HistoryText(request).Contains(RegressionScenarios.SmallResultSentinel, StringComparison.Ordinal));
+        Assert.Contains("EvidenceRead/v1 Success", HistoryText(afterRead), StringComparison.Ordinal);
+        Assert.Equal(scenario.Tools[0].Result.Output, run.State.Steps.Single(step => step.ToolCall?.ToolName == "diag.t0").Result!.Output);
+        Assert.Equal(5, run.OperationalSteps);
+    }
+
+    [Fact]
+    public async Task G1_ShortDiagnostic_OffersTheReadButSpendsNoCall_AndNeverReadsUnasked()
+    {
+        var run = await RegressionRunner.RunAsync(
+            RegressionScenarios.ShortDiagnostic(), new RegressionConfiguration("unknown", RegressionRunner.BaseOptions(null)));
+
+        Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
+        Assert.Equal(0, run.EvidenceReadServed);
+        Assert.Equal(0, run.EvidenceReadRejected);
+        Assert.Equal(1 + 3 + 1, run.Model.Requests.Count); // plan, three tools, final answer
+        Assert.All(run.Projector!.Projections, p => Assert.Equal(0, p.Stats.CompactedToolGroups));
+        foreach (var request in run.Model.Requests.Where(r => r.AvailableTools.Count > 0))
+        {
+            Assert.InRange(request.AvailableTools.Count, 1, 2);
+        }
+    }
 }

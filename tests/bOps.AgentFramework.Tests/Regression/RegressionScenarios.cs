@@ -111,6 +111,38 @@ internal static class RegressionScenarios
         }).ToArray()),
     }.ToJsonString();
 
+    /// <summary>The sentinel the oldest result of <see cref="CompactedSmallResults"/> carries at <see cref="SmallResultSentinelOffset"/>.</summary>
+    internal const string SmallResultSentinel = "T0-RAW-EVIDENCE-SENTINEL";
+
+    /// <summary>Where <see cref="SmallResultSentinel"/> sits in the oldest result, so an exact drill-down can hit it.</summary>
+    internal const int SmallResultSentinelOffset = 1400;
+
+    /// <summary>
+    /// AF-05G: <paramref name="tools"/> fact-less diagnostics of about 2000 characters each, every one far below
+    /// <c>MaxObservationCharacters</c> (4000). With <c>MinimumPreservedToolGroups = 3</c> the MAF layer compacts the oldest groups
+    /// although no runtime observation was ever shortened, and the last tool first asks to re-read the oldest result.
+    /// </summary>
+    internal static RegressionScenario CompactedSmallResults(int tools = 5)
+    {
+        var list = Enumerable.Range(0, tools).Select(i =>
+        {
+            var text = new string((char)('a' + i), 2000);
+            if (i == 0)
+            {
+                text = text[..SmallResultSentinelOffset] + SmallResultSentinel + text[(SmallResultSentinelOffset + SmallResultSentinel.Length)..];
+            }
+
+            return new ScenarioTool($"diag.t{i}", Complete(text));
+        }).ToList();
+        return new RegressionScenario(
+            "compacted-small-results",
+            "Collect five small diagnostics and report them.",
+            list,
+            new Dictionary<string, IReadOnlyList<string>> { [list[^1].Name] = [list[0].Name] },
+            [],
+            []);
+    }
+
     /// <summary>The short, healthy diagnostic: system.info, system.cpu, system.memory, then a final answer.</summary>
     internal static RegressionScenario ShortDiagnostic() => new(
         "short-diagnostic",

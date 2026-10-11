@@ -872,9 +872,10 @@ public sealed partial class AgentRunner(
                 // ADR-0052 AF-04: once the logical call's read budget is spent the function is no longer offered (the surface never
                 // grows back to the full catalog), and the prompt says so instead of leaving the model to infer it.
                 var evidenceReadExhausted = logicalCall.Evidence.Exhausted;
-                var offersEvidenceControl = !evidenceReadExhausted && steps.Any(step =>
-                    Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
-                var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps, options.MaxObservationCharacters) : null;
+                // AF-05G: any persisted tool evidence is addressable, whatever its size and whether the context layer compacts it;
+                // MaxObservationCharacters shortens the runtime observation and decides nothing here.
+                var offersEvidenceControl = !evidenceReadExhausted && EvidenceIndex.HasAddressableEvidence(steps);
+                var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps) : null;
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
                     correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
@@ -2647,7 +2648,7 @@ public sealed partial class AgentRunner(
             // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
             var systemPrompt = BuildPlanningSystemPrompt(
                 ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
-                logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar, options.MaxObservationCharacters));
+                logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar));
             var protectedAfter = ReconciliationTurns(stepsSoFar);
             var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
             if (trigger?.ToolCall is not null)

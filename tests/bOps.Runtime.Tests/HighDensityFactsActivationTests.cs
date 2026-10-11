@@ -35,7 +35,7 @@ public sealed class HighDensityFactsActivationTests
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(2, result.Plans[0].Steps.Count);
         Assert.Equal(1, dump.Executions);
-        Assert.Equal(["system.dump_analyze"], model.Requests[2].AvailableTools.Select(tool => tool.Name));
+        Assert.Equal(["system.dump_analyze"], model.Requests[2].AvailableTools.Select(tool => tool.Name).Where(name => name != EvidenceRead.ControlFunctionName));
 
         // The facts are persisted with the step and survive a JSON round trip unchanged.
         var persisted = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(await store.LoadAsync(taskId)))!;

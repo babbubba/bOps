@@ -68,7 +68,9 @@ public sealed class SemanticPlannedStepTests
 
     private static JsonObject Topic(string value) => new() { ["topic"] = value };
 
-    private static IEnumerable<string> Offered(ModelRequest request) => request.AvailableTools.Select(tool => tool.Name);
+    /// <summary>The operational (package) tools a request offers; the runtime control function is not one (AF-05G offers it beside the step tool).</summary>
+    private static IEnumerable<string> Offered(ModelRequest request) =>
+        request.AvailableTools.Select(tool => tool.Name).Where(name => name != EvidenceRead.ControlFunctionName);
 
     private static async Task<(InMemoryTaskStore Store, TaskState Task)> PersistedAsync(InMemoryTaskStore store, Guid taskId)
     {
@@ -90,7 +92,7 @@ public sealed class SemanticPlannedStepTests
         Assert.Equal(1, tool.ExecutionCount);
         Assert.Equal(PlannedStepExecutionClassification.Matched, result.Steps[0].ExecutionClassification);
         Assert.Equal(0, result.Steps[0].PlannedStepIndex);
-        Assert.Empty(model.Requests[2].AvailableTools);
+        Assert.Empty(Offered(model.Requests[2]));
     }
 
     [Fact]
@@ -121,7 +123,7 @@ public sealed class SemanticPlannedStepTests
 
         Assert.Equal(0, tool.ExecutionCount);
         Assert.Equal(2, result.Steps.Count(step => step.ExecutionClassification == PlannedStepExecutionClassification.SemanticMismatch));
-        Assert.Empty(model.Requests[3].AvailableTools);
+        Assert.Empty(Offered(model.Requests[3]));
         Assert.Equal(2, result.Plans.Count);
         Assert.Equal(1, result.Accounting!.LifetimeReplans);
     }
@@ -136,7 +138,7 @@ public sealed class SemanticPlannedStepTests
 
         Assert.Equal(0, tool.ExecutionCount);
         Assert.Null(result.Steps[0].ExecutionClassification);
-        Assert.Empty(model.Requests[2].AvailableTools);
+        Assert.Empty(Offered(model.Requests[2]));
         Assert.DoesNotContain(SemanticCorrection, model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.Equal(1, result.Accounting!.LifetimeReplans);
     }
@@ -210,7 +212,7 @@ public sealed class SemanticPlannedStepTests
         var result = await Runner(model, resumeStore, tool).ResumeAsync(persisted, Resumer);
 
         Assert.Contains(SemanticCorrection, model.Requests[0].SystemPrompt, StringComparison.Ordinal);
-        Assert.Empty(model.Requests[1].AvailableTools);
+        Assert.Empty(Offered(model.Requests[1]));
         Assert.Equal(0, tool.ExecutionCount);
         Assert.Equal(2, result.Plans.Count);
         Assert.Equal(1, result.Accounting!.LifetimeReplans);

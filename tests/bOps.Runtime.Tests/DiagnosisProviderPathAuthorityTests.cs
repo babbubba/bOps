@@ -154,8 +154,11 @@ public sealed class DiagnosisProviderPathAuthorityTests
             .Where(body => !IsPlanningRequest(body) && body.Contains("\"tools\"", StringComparison.Ordinal))
             .Select(body => JsonNode.Parse(body)!["tools"]!.AsArray().Select(tool => tool!["function"]!["name"]!.GetValue<string>()).ToList())
             .ToList();
-        Assert.Equal(3, offered.Count); // two Discovery calls and the Diagnostic final-answer call
-        Assert.All(offered, names => Assert.Equal(["host_info"], names));
+        // The runtime control function may ride beside the single Read tool, or alone on a call with no operational step (AF-05G);
+        // it is not a package tool and grants nothing. What matters is that no name but host_info and the control function appears.
+        var operational = offered.Select(names => names.Where(name => name != "runtime_evidence_read").ToList()).ToList();
+        Assert.All(operational, names => Assert.True(names.Count == 0 || names.SequenceEqual(["host_info"]), string.Join(",", names)));
+        Assert.Equal(3, operational.Count(names => names.Count == 1)); // two Discovery calls and the Diagnostic final-answer call
 
         var limitation = Assert.Single(Assert.Single(run.Roles, r => r.Agent.Role == AgentRoleKind.Discovery).EvidenceLimitations!);
         Assert.True(limitation.UnknownTool);

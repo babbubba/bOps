@@ -8,10 +8,13 @@ using bOps.Abstractions;
 namespace bOps.Runtime;
 
 /// <summary>
-/// The runtime-authored drill-down index (ADR-0052 AF-05): which persisted steps hold more evidence than the model-facing
-/// history shows, and the stable id that addresses each. It is protected context built from persisted steps alone, so a
-/// resumed attempt sees what the interrupted one saw, and it names no evidence text — only step, tool label, id and lengths.
-/// It replaces the addressing role the HARDEN-8 compact records had once old tool results are compacted by the context layer.
+/// The runtime-authored drill-down index (ADR-0052 AF-05, AF-05G): which persisted tool steps hold raw evidence the
+/// model-facing history may no longer show, and the stable id that addresses each. Addressability is a property of the
+/// persisted step alone — never of <c>MaxObservationCharacters</c>, which only shortens the runtime observation, and never of
+/// whether the context layer happened to compact the step — so a result of any size stays exactly readable. It is protected
+/// context built from persisted steps alone, so a resumed attempt sees what the interrupted one saw, and it names no evidence
+/// text — only step, tool label, id and lengths. It replaces the addressing role the HARDEN-8 compact records had once old
+/// tool results are compacted by the context layer.
 /// </summary>
 internal static class EvidenceIndex
 {
@@ -25,7 +28,7 @@ internal static class EvidenceIndex
     internal const int MaxEntries = 16;
 
     private const string Introduction =
-        "Written by bOps, not by a tool. These persisted steps hold more evidence than the conversation shows. "
+        "Written by bOps, not by a tool. These persisted steps hold raw evidence the conversation may no longer show in full. "
         + "Address one by its step index (runtime.evidence_read) or by its id (EvidenceRead/v1 directive).";
 
     /// <summary>
@@ -36,16 +39,32 @@ internal static class EvidenceIndex
         string.Create(CultureInfo.InvariantCulture, $"Any persisted tool step n of this task is addressable as {EvidenceRead.EvidenceId(taskId, 0)[..^1]}n.");
 
     /// <summary>
-    /// The block for <paramref name="steps"/>, or <c>null</c> when no persisted step is a drill-down candidate: an executed tool
-    /// step whose persisted result or observation is longer than <paramref name="maxObservationCharacters"/>, which is exactly
-    /// when the runtime offers the control function.
+    /// Whether <paramref name="step"/> holds persisted raw evidence <see cref="EvidenceRead.Read"/> can serve: an executed tool
+    /// step with a persisted result whose output or observation is not empty. Size and compaction play no part.
     /// </summary>
-    internal static string? Build(Guid taskId, IReadOnlyList<PlanStep> steps, int maxObservationCharacters)
+    internal static bool IsAddressable(PlanStep step)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        return step.ToolCall is not null && step.Result is not null
+            && ((step.Result.Output?.Length ?? 0) > 0 || (step.Observation?.Length ?? 0) > 0);
+    }
+
+    /// <summary>Whether any of <paramref name="steps"/> is <see cref="IsAddressable"/>, which is exactly when the runtime offers the control function.</summary>
+    internal static bool HasAddressableEvidence(IReadOnlyList<PlanStep> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        return steps.Any(IsAddressable);
+    }
+
+    /// <summary>
+    /// The block for <paramref name="steps"/>, or <c>null</c> when no persisted step is addressable: the newest
+    /// <see cref="MaxEntries"/> addressable steps are listed, and the fixed rule makes every older one addressable too.
+    /// </summary>
+    internal static string? Build(Guid taskId, IReadOnlyList<PlanStep> steps)
     {
         ArgumentNullException.ThrowIfNull(steps);
         var candidates = steps
-            .Where(step => step.ToolCall is not null && step.Result is not null
-                && Math.Max(step.Result.Output?.Length ?? 0, step.Observation?.Length ?? 0) > maxObservationCharacters)
+            .Where(IsAddressable)
             .OrderBy(step => step.Index)
             .ToList();
         if (candidates.Count == 0)

@@ -471,12 +471,12 @@ public sealed partial class DelegationRunnerTests
         // native tool on a step call nor in the text catalog a plan call carries instead (ADR-0038).
         Assert.All(h.Model.Requests, r =>
         {
-            Assert.All(r.AvailableTools, t => Assert.Equal("host.info", t.Name));
+            Assert.All(r.AvailableTools, t => Assert.True(t.Name is "host.info" or EvidenceRead.ControlFunctionName, t.Name));
             Assert.DoesNotContain("service.restart", r.SystemPrompt, StringComparison.Ordinal);
             Assert.DoesNotContain("service.stop", r.SystemPrompt, StringComparison.Ordinal);
             Assert.DoesNotContain("test.read", r.SystemPrompt, StringComparison.Ordinal);
         });
-        Assert.Contains(h.Model.Requests, r => r.AvailableTools.Count == 1);
+        Assert.Contains(h.Model.Requests, r => r.AvailableTools.Count(t => t.Name == "host.info") == 1);
         Assert.All(
             h.Model.Requests.Where(r => r.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal)
                 || r.SystemPrompt.Contains("Revise it", StringComparison.Ordinal)),

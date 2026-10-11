@@ -60,7 +60,9 @@ public sealed class EvidenceDisclosureLoopTests
         var next = SystemPromptOf(model, 2);
         Assert.Contains("<<<BOPS_EVIDENCE_LIMITATIONS>>>\nEvidenceLimitations/v2\n", next, StringComparison.Ordinal);
         Assert.Contains("\n- step 0: test.partial — completeness Partial\n<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", next, StringComparison.Ordinal);
-        Assert.EndsWith("<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", next, StringComparison.Ordinal);
+        // AF-05G: the drill-down index follows the digest (and the grounding block, when there is one) as the last protected block.
+        Assert.True(next.IndexOf("<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", StringComparison.Ordinal) < next.IndexOf(EvidenceIndex.OpenMarker, StringComparison.Ordinal));
+        Assert.EndsWith(EvidenceIndex.CloseMarker, next, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -232,7 +234,9 @@ public sealed class EvidenceDisclosureLoopTests
 
         var prompt = SystemPromptOf(model, 3);
         Assert.Contains("- step 0: test.big — observation shortened from 6000 characters", prompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("test.small", prompt[prompt.IndexOf("<<<BOPS_EVIDENCE_LIMITATIONS>>>", StringComparison.Ordinal)..], StringComparison.Ordinal);
+        var digestStart = prompt.IndexOf("<<<BOPS_EVIDENCE_LIMITATIONS>>>", StringComparison.Ordinal);
+        var digest = prompt[digestStart..prompt.IndexOf("<<<END_BOPS_EVIDENCE_LIMITATIONS>>>", digestStart, StringComparison.Ordinal)];
+        Assert.DoesNotContain("test.small", digest, StringComparison.Ordinal);
     }
 
     [Fact]
