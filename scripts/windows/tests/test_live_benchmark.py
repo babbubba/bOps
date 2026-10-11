@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 import pathlib
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -35,7 +37,83 @@ class CaptureTests(unittest.TestCase):
         launcher = (MODULE.parent / "run-live-benchmark.ps1").read_text(encoding="utf-8")
         self.assertIn("[ValidateRange(1, 3)] [int] $RunsPerScenario = 3", launcher)
         self.assertIn("-RunsPerScenario $RunsPerScenario -Elevated", launcher)
-        self.assertIn("--runs-per-scenario $RunsPerScenario", launcher)
+        self.assertIn("'--runs-per-scenario', [string]$RunsPerScenario", launcher)
+        self.assertIn("$startInfo.ArgumentList.Add([string]$argument)", launcher)
+        self.assertIn("$startInfo.Arguments = $argumentLine", launcher)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell integration test")
+    def test_launcher_invokes_python_with_absolute_script_and_distinct_target(self):
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            self.skipTest("PowerShell is unavailable")
+        with tempfile.TemporaryDirectory(prefix="BENCH launcher ") as temp:
+            root = pathlib.Path(temp)
+            script_dir = root / "BENCH script path" / "scripts" / "windows"
+            script_dir.mkdir(parents=True)
+            launcher = script_dir / "run-live-benchmark.ps1"
+            source = MODULE.parent / "run-live-benchmark.ps1"
+            launcher_text = source.read_text(encoding="utf-8")
+            # Exercise the already-elevated branch without needing an actual UAC token.
+            launcher_text = launcher_text.replace(
+                "if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {",
+                "if ($false) {",
+            )
+            launcher.write_text(launcher_text, encoding="utf-8")
+            (script_dir / "live_benchmark.py").write_text(
+                "import json, os, sys\n"
+                "with open(os.environ['BENCH_ARGV_CAPTURE'], 'w', encoding='utf-8') as f: "
+                "json.dump(sys.argv, f)\n",
+                encoding="utf-8",
+            )
+            target = root / "target worktree"
+            target.mkdir()
+            capture = root / "argv.json"
+            env = os.environ.copy()
+            env["PATH"] = str(root) + os.pathsep + env.get("PATH", "")
+            env["BENCH_ARGV_CAPTURE"] = str(capture)
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-File", str(launcher), "-TargetRepoRoot", str(target),
+                 "-RunsPerScenario", "1", "-Elevated"],
+                cwd=root, env=env, text=True, capture_output=True, timeout=30,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            argv = json.loads(capture.read_text(encoding="utf-8"))
+            self.assertEqual((script_dir / "live_benchmark.py").resolve(), pathlib.Path(argv[0]).resolve())
+            self.assertEqual("--target-repo-root", argv[1])
+            self.assertEqual(target.resolve(), pathlib.Path(argv[2]).resolve())
+            self.assertEqual(["--runs-per-scenario", "1"], argv[3:])
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell integration test")
+    def test_uac_handoff_preserves_target_and_run_count(self):
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            self.skipTest("PowerShell is unavailable")
+        with tempfile.TemporaryDirectory(prefix="BENCH UAC ") as temp:
+            root = pathlib.Path(temp)
+            launcher = root / "run-live-benchmark.ps1"
+            text = (MODULE.parent / "run-live-benchmark.ps1").read_text(encoding="utf-8")
+            # Force the non-elevated branch; Start-Process is stubbed to inspect its encoded payload.
+            text = text.replace(
+                "if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {",
+                "if ($true) {",
+            )
+            launcher.write_text(text, encoding="utf-8")
+            target = root / "target worktree"
+            target.mkdir()
+            payload_file = root / "uac-payload.txt"
+            command = (
+                "function Start-Process { param($FilePath,$Verb,$ArgumentList,[switch]$Wait,[switch]$PassThru); "
+                "$payload=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($ArgumentList[-1])); "
+                f"[IO.File]::WriteAllText('{payload_file}', $payload); "
+                "[pscustomobject]@{ExitCode=0} }; "
+                f"& '{launcher}' -TargetRepoRoot '{target}' -RunsPerScenario 1"
+            )
+            result = subprocess.run([powershell, "-NoProfile", "-Command", command], cwd=root,
+                                    text=True, capture_output=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            payload = payload_file.read_text(encoding="utf-8")
+            self.assertIn("-TargetRepoRoot $targetPath -RunsPerScenario 1 -Elevated", payload)
+            self.assertIn("$targetPath = [Text.Encoding]::UTF8.GetString", payload)
 
     def test_benchmark_policy_only_allows_read_risk_automatically(self):
         self.assertEqual("defaults:\n  read: automatic\n", bench.READ_ONLY_POLICY)

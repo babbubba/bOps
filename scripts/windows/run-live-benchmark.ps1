@@ -11,7 +11,29 @@ $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }
 if (-not $python) { throw 'Python 3 is required. Install Python and retry; no packages are required.' }
 $pythonExe = $python.Source
-$pythonArgs = if ($python.Name -eq 'py.exe') { @('-3', (Join-Path $PSScriptRoot 'live_benchmark.py')) } else { @((Join-Path $PSScriptRoot 'live_benchmark.py')) }
+$benchmarkScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'live_benchmark.py'))
+$pythonArgs = @()
+if ($python.Name -eq 'py.exe') { $pythonArgs += '-3' }
+$pythonArgs += $benchmarkScript
+
+function ConvertTo-WindowsArgument([string] $Value) {
+    $builder = [Text.StringBuilder]::new('"')
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') { $slashes++; continue }
+        if ($character -eq '"') {
+            [void]$builder.Append(('\' * (2 * $slashes + 1)))
+            [void]$builder.Append('"')
+        } else {
+            [void]$builder.Append(('\' * $slashes))
+            [void]$builder.Append($character)
+        }
+        $slashes = 0
+    }
+    [void]$builder.Append(('\' * (2 * $slashes)))
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -33,5 +55,16 @@ exit `$LASTEXITCODE
     exit $elevatedProcess.ExitCode
 }
 
-& $pythonExe @pythonArgs --target-repo-root $resolvedTarget --runs-per-scenario $RunsPerScenario
-exit $LASTEXITCODE
+$pythonArgs += @('--target-repo-root', $resolvedTarget, '--runs-per-scenario', [string]$RunsPerScenario)
+$argumentLine = ($pythonArgs | ForEach-Object { ConvertTo-WindowsArgument ([string]$_) }) -join ' '
+$startInfo = [Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = $pythonExe
+if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
+    foreach ($argument in $pythonArgs) { [void]$startInfo.ArgumentList.Add([string]$argument) }
+} else {
+    $startInfo.Arguments = $argumentLine
+}
+$startInfo.UseShellExecute = $false
+$pythonProcess = [Diagnostics.Process]::Start($startInfo)
+$pythonProcess.WaitForExit()
+exit $pythonProcess.ExitCode
