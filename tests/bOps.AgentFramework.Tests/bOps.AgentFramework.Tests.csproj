@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- AF-05: TestDoubles.cs is linked from bOps.Runtime.Tests; most of its doubles are unused in this assembly. -->
+    <NoWarn>$(NoWarn);CA1812</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,11 +22,14 @@
 
   <ItemGroup>
     <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+    <Compile Include="..\bOps.Runtime.Tests\TestDoubles.cs" Link="Linked\TestDoubles.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
   </ItemGroup>
 
 </Project>
