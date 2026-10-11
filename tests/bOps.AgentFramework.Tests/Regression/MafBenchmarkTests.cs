@@ -23,8 +23,17 @@ public sealed class MafBenchmarkTests
     private const string Unknown = "unknown profile (structural MAF, the shipped default for an unprofiled model)";
     private const string NoProjector = "no projector (unprojected full history)";
 
-    private static SummarizationOptions TaskSummarizer(double ratio = 0.75, int recent = 4) =>
-        new() { Enabled = true, TriggerRatio = ratio, RecentGroupsToPreserve = recent };
+    /// <summary>Task-model summarization; unspecified values are the product defaults being measured.</summary>
+    private static SummarizationOptions TaskSummarizer(double? ratio = null, int? recent = null)
+    {
+        var defaults = new SummarizationOptions();
+        return new SummarizationOptions
+        {
+            Enabled = true,
+            TriggerRatio = ratio ?? defaults.TriggerRatio,
+            RecentGroupsToPreserve = recent ?? defaults.RecentGroupsToPreserve,
+        };
+    }
 
     private static readonly ModelContextProfile DedicatedProfile =
         new() { Provider = "Sum", Model = "small", MaxContextTokens = 8192, ReservedOutputTokens = 1024 };
