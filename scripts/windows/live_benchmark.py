@@ -34,6 +34,42 @@ RUNTIME_PATHS = ["src/core/bOps.Api", "src/core/bOps.AgentFramework", "src/core/
 README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results, audit records and the API startup diagnostic log from this PC. The diagnostic log preserves the API process stdout/stderr and may disclose paths, configuration details, usernames, host names, IP addresses, system events, and logs. Known credential values from process environment and configuration files are redacted from that diagnostic log; vault.dat and the master key are not included. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize task evidence and does not upload it.\n"""
 READ_ONLY_POLICY = "defaults:\n  read: automatic\n"
 TERMINAL = {"Completed", "MaxStepsReached", "BudgetExceeded", "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"}
+TASK_STATUS_BY_VALUE = {
+    0: "Running",
+    1: "Completed",
+    2: "MaxStepsReached",
+    3: "BudgetExceeded",
+    4: "PolicyBlocked",
+    5: "ReplanLimitReached",
+    6: "Failed",
+    7: "Cancelled",
+}
+
+
+def task_status_name(value):
+    """Decode the ASP.NET Core enum JSON value without changing the source payload."""
+    if isinstance(value, bool):
+        raise ValueError(f"Unsupported task status: {value!r}")
+    if isinstance(value, int):
+        try:
+            return TASK_STATUS_BY_VALUE[value]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported task status: {value!r}") from exc
+    if isinstance(value, str):
+        name = value.strip()
+        if name in TASK_STATUS_BY_VALUE.values():
+            return name
+        # Numeric strings are accepted for compatibility with serializers/proxies
+        # that stringify enum values; the original response bytes remain untouched.
+        if name.isdecimal():
+            return task_status_name(int(name))
+    raise ValueError(f"Unsupported task status: {value!r}")
+
+
+def scenario_runs(runs_per_scenario):
+    for round_number in range(1, runs_per_scenario + 1):
+        for scenario in SCENARIOS:
+            yield round_number, scenario
 
 
 def utc_now():
@@ -382,10 +418,10 @@ def poll_task(api: str, key: str, task_id: str, timeout_seconds: int, on_respons
             raise RuntimeError(f"Task poll {task_id} failed HTTP {code}.")
         if on_response is not None:
             on_response(raw)
-        state = str((payload or {}).get("status", (payload or {}).get("Status", "")))
+        state = task_status_name((payload or {}).get("status", (payload or {}).get("Status", "")))
         if state.lower() in terminal:
             return raw, payload
-        if state.lower() == "running" and payload.get("executing") is False:
+        if state == "Running" and payload.get("executing") is False:
             raise RunningTaskNotExecuting(f"Task {task_id} is persisted Running but the API reports no executor.")
         time.sleep(2)
     raise TimeoutError(f"Task {task_id} did not reach a terminal state before timeout.")
@@ -638,40 +674,44 @@ def run(args):
             print(f"Config snapshot: {config_snapshot_path}", flush=True)
             return
         ordinal = 0
-        for round_number in range(1, args.runs_per_scenario + 1):
-            for scenario in SCENARIOS:
-                ordinal += 1
-                intention = f"{scenario['id']}-R{round_number}"
-                idem = str(uuid.uuid4())
-                raw, started = submit_task(api, os.environ["BOPS_API_KEY"], scenario["goal"], idem)
-                task_id = str(started.get("taskId", started.get("TaskId", "")))
-                if not task_id:
-                    raise RuntimeError(f"Task submission {intention} returned no task id.")
-                entry = {"ordinal": ordinal, "intention": intention, "scenarioId": scenario["id"], "round": round_number,
-                         "idempotencyKey": idem, "taskId": task_id, "acceptedAtUtc": utc_now()}
-                roster.append(entry); write_roster()
-                task_folder = run_root / "tasks" / task_id
-                task_folder.mkdir(parents=True, exist_ok=True)
-                (task_folder / "api-accepted-original.json").write_bytes(raw)
-                try:
-                    raw_status, _ = poll_task(api, os.environ["BOPS_API_KEY"], task_id, args.task_timeout,
-                                              lambda raw: (task_folder / "api-latest-original.json").write_bytes(raw))
-                except RunningTaskNotExecuting:
-                    write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "running-not-executing", "automaticRecovery": False})
-                    raise
-                except TimeoutError:
-                    write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "task-timeout"})
-                    raise
-                terminal[task_id] = raw_status
-                (task_folder / "api-terminal-original.json").write_bytes(raw_status)
-                # Capture the persisted source after every completed task; an interruption preserves all earlier rows.
-                captured_ids = extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
-                roster_ids = {item["taskId"] for item in roster}
-                status_doc = {"runId": run_id, "state": "running", "tasks": [{"taskId": x["taskId"], "terminalApiCaptured": x["taskId"] in terminal} for x in roster],
-                              "unrosteredPersistedTaskIds": sorted(set(captured_ids) - roster_ids)}
-                write_json(run_root / "capture-status.json", status_doc)
-                package(run_root, archive_path, args.runs_per_scenario)
-                print(f"Captured {ordinal}/{len(SCENARIOS) * args.runs_per_scenario}: {intention} ({task_id})", flush=True)
+        for round_number, scenario in scenario_runs(args.runs_per_scenario):
+            ordinal += 1
+            intention = f"{scenario['id']}-R{round_number}"
+            idem = str(uuid.uuid4())
+            raw, started = submit_task(api, os.environ["BOPS_API_KEY"], scenario["goal"], idem)
+            task_id = str(started.get("taskId", started.get("TaskId", "")))
+            if not task_id:
+                raise RuntimeError(f"Task submission {intention} returned no task id.")
+            entry = {"ordinal": ordinal, "intention": intention, "scenarioId": scenario["id"], "round": round_number,
+                     "idempotencyKey": idem, "taskId": task_id, "acceptedAtUtc": utc_now()}
+            roster.append(entry); write_roster()
+            task_folder = run_root / "tasks" / task_id
+            task_folder.mkdir(parents=True, exist_ok=True)
+            (task_folder / "api-accepted-original.json").write_bytes(raw)
+            try:
+                raw_status, _ = poll_task(api, os.environ["BOPS_API_KEY"], task_id, args.task_timeout,
+                                          lambda raw: (task_folder / "api-latest-original.json").write_bytes(raw))
+            except RunningTaskNotExecuting:
+                write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "running-not-executing", "automaticRecovery": False})
+                raise
+            except TimeoutError:
+                write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "task-timeout"})
+                raise
+            terminal[task_id] = raw_status
+            (task_folder / "api-terminal-original.json").write_bytes(raw_status)
+            # Keep the roster useful in a partial capture before moving to the next scenario.
+            terminal_payload = json.loads(raw_status)
+            entry["terminalStatus"] = task_status_name((terminal_payload or {}).get("status", (terminal_payload or {}).get("Status", "")))
+            entry["terminalCapturedAtUtc"] = utc_now()
+            write_roster()
+            # Capture the persisted source after every completed task; an interruption preserves all earlier rows.
+            captured_ids = extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
+            roster_ids = {item["taskId"] for item in roster}
+            status_doc = {"runId": run_id, "state": "running", "tasks": [{"taskId": x["taskId"], "terminalApiCaptured": x["taskId"] in terminal} for x in roster],
+                          "unrosteredPersistedTaskIds": sorted(set(captured_ids) - roster_ids)}
+            write_json(run_root / "capture-status.json", status_doc)
+            package(run_root, archive_path, args.runs_per_scenario)
+            print(f"Captured {ordinal}/{len(SCENARIOS) * args.runs_per_scenario}: {intention} ({task_id})", flush=True)
         status_doc["state"] = "complete"
     except KeyboardInterrupt:
         status_doc["state"] = "interrupted"

@@ -36,6 +36,84 @@ class CaptureTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(SystemExit):
                 parser.parse_args(base + ["--runs-per-scenario", value])
 
+    def test_numeric_task_statuses_cover_the_complete_api_enum(self):
+        expected = ["Running", "Completed", "MaxStepsReached", "BudgetExceeded",
+                    "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"]
+        for value, name in enumerate(expected):
+            with self.subTest(value=value):
+                self.assertEqual(name, bench.task_status_name(value))
+                self.assertEqual(name, bench.task_status_name(str(value)))
+        for value in (-1, 8, True, "unknown"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                bench.task_status_name(value)
+
+    def test_scenario_runs_use_b01_b02_b03_order(self):
+        self.assertEqual([(1, "B01"), (1, "B02"), (1, "B03")],
+                         [(round_no, scenario["id"]) for round_no, scenario in bench.scenario_runs(1)])
+
+    def test_every_terminal_numeric_status_ends_poll_but_running_continues(self):
+        for value in range(1, 8):
+            raw = json.dumps({"status": value, "executing": False}).encode()
+            payload = json.loads(raw)
+            with self.subTest(status=value), patch.object(bench, "http_json", return_value=(200, raw, payload)) as request:
+                seen = []
+                response, parsed = bench.poll_task("http://local", "key", "task", 30, seen.append)
+                self.assertEqual(raw, response)
+                self.assertEqual(raw, seen[0])
+                self.assertEqual(1, request.call_count)
+                self.assertEqual(value, parsed["status"])
+        running = b'{"status":0,"executing":true}'
+        responses = [(200, running, json.loads(running)),
+                     (200, b'{"status":1,"executing":false}', {"status": 1, "executing": False})]
+        with patch.object(bench, "http_json", side_effect=responses) as request, patch.object(bench.time, "sleep"):
+            raw, _ = bench.poll_task("http://local", "key", "task", 30)
+        self.assertEqual(2, request.call_count)
+        self.assertEqual(b'{"status":1,"executing":false}', raw)
+
+    def test_textual_enum_names_remain_supported(self):
+        for name in bench.TASK_STATUS_BY_VALUE.values():
+            with self.subTest(name=name):
+                self.assertEqual(name, bench.task_status_name(name))
+
+    def test_numeric_task_statuses_cover_the_complete_api_enum(self):
+        expected = ["Running", "Completed", "MaxStepsReached", "BudgetExceeded",
+                    "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"]
+        for value, name in enumerate(expected):
+            with self.subTest(value=value):
+                self.assertEqual(name, bench.task_status_name(value))
+                self.assertEqual(name, bench.task_status_name(str(value)))
+        for value in (-1, 8, True, "unknown"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                bench.task_status_name(value)
+
+    def test_scenario_runs_use_b01_b02_b03_order_after_each_terminal_poll(self):
+        self.assertEqual([(1, "B01"), (1, "B02"), (1, "B03")],
+                         [(round_no, scenario["id"]) for round_no, scenario in bench.scenario_runs(1)])
+
+    def test_every_terminal_numeric_status_ends_poll_but_running_continues(self):
+        for value in range(1, 8):
+            raw = json.dumps({"status": value, "executing": False}).encode()
+            payload = json.loads(raw)
+            with self.subTest(status=value), patch.object(bench, "http_json", return_value=(200, raw, payload)) as request:
+                seen = []
+                response, parsed = bench.poll_task("http://local", "key", "task", 30, seen.append)
+                self.assertEqual(raw, response)
+                self.assertEqual(raw, seen[0])
+                self.assertEqual(1, request.call_count)
+                self.assertEqual(value, parsed["status"])
+        running = b'{"status":0,"executing":true}'
+        responses = [(200, running, json.loads(running)),
+                     (200, b'{"status":1,"executing":false}', {"status": 1, "executing": False})]
+        with patch.object(bench, "http_json", side_effect=responses) as request, patch.object(bench.time, "sleep"):
+            raw, _ = bench.poll_task("http://local", "key", "task", 30)
+        self.assertEqual(2, request.call_count)
+        self.assertEqual(b'{"status":1,"executing":false}', raw)
+
+    def test_textual_enum_names_remain_supported(self):
+        for name in bench.TASK_STATUS_BY_VALUE.values():
+            with self.subTest(name=name):
+                self.assertEqual(name, bench.task_status_name(name))
+
     def test_powershell_launcher_passes_run_count_to_python_and_uac(self):
         launcher = (MODULE.parent / "run-live-benchmark.ps1").read_text(encoding="utf-8")
         self.assertIn("[ValidateRange(1, 3)] [int] $RunsPerScenario = 3", launcher)
