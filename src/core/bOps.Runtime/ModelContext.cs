@@ -33,8 +33,13 @@ public sealed record ModelContextOptions
     /// <summary>Extra input headroom retained after fixed prompt costs.</summary>
     public int SafetyReserveTokens { get; init; } = 1024;
 
-    /// <summary>Recent logical tool groups kept verbatim: with a known profile a floor under budget pressure, with an unknown capacity the only structural bound.</summary>
-    public int MinimumPreservedToolGroups { get; init; } = 2;
+    /// <summary>
+    /// Recent logical tool groups kept verbatim. With a known profile this is a floor under budget pressure (tool-result replacement
+    /// never touches them while older groups can still be replaced); with an unknown capacity it is the ONLY bound: older tool
+    /// results are always replaced, so no capacity is invented. The default 3 is the HARDEN-8 verbatim window, kept because the
+    /// AF-05 fixtures show 2 drops the oldest of a three-step diagnostic that nothing required dropping.
+    /// </summary>
+    public int MinimumPreservedToolGroups { get; init; } = 3;
 
     /// <summary>Recent conversation turns protected from sliding-window removal.</summary>
     public int MinimumPreservedTurns { get; init; } = 1;

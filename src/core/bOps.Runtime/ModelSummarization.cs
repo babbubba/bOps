@@ -26,12 +26,15 @@ public sealed record SummarizationOptions
 
     /// <summary>
     /// Summarization is considered only while the estimated history exceeds this fraction of the
-    /// candidate history budget after tool-result compaction.
+    /// candidate history budget after tool-result compaction. The default 0.9 (AF-05; it was 0.75) summarizes only when the history
+    /// is within a tenth of not fitting: on the AF-05 fixtures 0.75 summarized history that still fit, paid more all-in tokens and
+    /// lost more raw evidence than 0.9 for no benefit.
     /// </summary>
-    public double TriggerRatio { get; init; } = 0.75;
+    public double TriggerRatio { get; init; } = 0.9;
 
     /// <summary>
-    /// Most-recent historical groups kept verbatim by the summarizer.
+    /// Most-recent historical groups kept verbatim by the summarizer. The default 4 was kept by AF-05: neighbouring values changed
+    /// the all-in tokens by less than the noise of the fixtures.
     /// </summary>
     public int RecentGroupsToPreserve { get; init; } = 4;
 

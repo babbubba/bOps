@@ -100,6 +100,20 @@ public sealed class MafRegressionTests
         }
     }
 
+    [Fact]
+    public async Task ShortDiagnostic_UnknownProfile_KeepsEveryFact_AndNeedsNoInventedCapacity()
+    {
+        // The shipped default for an unprofiled model (for example openrouter/free): the structural bound alone, no window invented.
+        var run = await RegressionRunner.RunAsync(
+            RegressionScenarios.ShortDiagnostic(), new RegressionConfiguration("unknown", RegressionRunner.BaseOptions(null, summarization: SummaryOn)));
+
+        Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
+        Assert.Empty(run.SummaryCalls);
+        Assert.All(run.Projector!.Projections, p => Assert.Null(p.Stats.MaxContextTokens));
+        Assert.All(run.Projector.Projections, p => Assert.Equal("unknown-structural", p.Stats.ProfileSource));
+        Assert.All(run.Model.FinalFactVisibility, kv => Assert.True(kv.Value, kv.Key));
+    }
+
     [Theory]
     [InlineData(16384)]
     [InlineData(32768)]
