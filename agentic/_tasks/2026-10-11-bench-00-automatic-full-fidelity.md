@@ -1,10 +1,30 @@
 # BENCH-00 — Raccolta automatica completa delle nove esecuzioni
 
-**Status:** PLAN / NON IMPLEMENTATO. **Priorità:** primo task assoluto, prima di qualunque fix AF-05H e prima del merge PR #100. **Repo:** bOps OSS. **No subagent.**
+**Status:** IMPLEMENTATO su `feat/bench-00-capture`, basato sul branch `fix/af-05h-live-regression-hardening` (AF-05H H2+H4). **Repo:** bOps OSS. **No subagent.**
+
+## Sequenza aggiornata
+
+AF-05H H2+H4 è già presente nel commit `07e422a4c9c65bd617cafaf209d2352657f1c130`. BENCH-00 viene sviluppato su un branch dedicato partendo da quel commit; non si sviluppa sul branch AF-05G e non precede più il fix AF-05H.
+
+Lo stesso harness seleziona il runtime da acquisire con `-TargetRepoRoot`, indipendentemente dal percorso dello script. I due riferimenti runtime sono:
+
+- baseline AF-05G `97507aa7a914cdabdfafbd42e382c0f1dfd399da`;
+- AF-05H H2+H4 `07e422a4c9c65bd617cafaf209d2352657f1c130`.
+
+Il validatore accetta il riferimento diretto o un commit discendente senza differenze nella sorgente runtime rispetto al riferimento più recente. Questo consente di usare anche il branch BENCH-00 dopo i commit dello strumento, che non modificano il runtime.
+
+Eseguire prima la baseline e poi AF-05H usando due worktree già disponibili:
+
+```powershell
+.\scripts\windows\run-live-benchmark.ps1 -TargetRepoRoot "C:\source\repos\babbubba\bOps-AF05G"
+.\scripts\windows\run-live-benchmark.ps1 -TargetRepoRoot "C:\source\repos\babbubba\bOps"
+```
+
+Il primo percorso deve puntare al worktree AF-05G con l’HEAD indicato; il secondo al worktree AF-05H o al branch BENCH-00 discendente senza cambi runtime. Il default senza parametri seleziona la root del branch BENCH-00 corrente. Modifiche locali ai file appsettings restano effettive e vengono indicate nella provenance; lo script non le copia, altera o committa. Le modifiche locali a codice runtime fanno fallire la selezione.
 
 ## Finalità
 
-Implementare un benchmark **esclusivamente di acquisizione**, senza valutazioni, classificazioni di qualità, statistiche, diagnosi, riassunti, redazioni o troncamenti delle evidenze. Un comando PowerShell eseguito sul PC Windows deve richiedere automaticamente UAC, preparare un host bOps con le stesse impostazioni effettive del debug Aspire, avviare nove task, acquisire integralmente i record persistiti dei task e i relativi audit, e produrre **un unico ZIP privato e autosufficiente** da caricare successivamente nel progetto ChatGPT per l'analisi. Non includere i record di altri task né l'intero DB storico.
+Implementare un benchmark **esclusivamente di acquisizione**, senza valutazioni, classificazioni di qualità, statistiche, diagnosi, riassunti, redazioni o troncamenti delle evidenze. Il comando PowerShell richiede UAC, prepara un host bOps con le impostazioni effettive della configurazione Development, avvia nove task, acquisisce integralmente i record persistiti dei task e i relativi audit, e produce **un unico ZIP privato e autosufficiente** da caricare successivamente nel progetto ChatGPT per l'analisi. Non includere i record di altri task né l'intero DB storico.
 
 ## Scenari identici ai tre test originali
 
@@ -24,7 +44,7 @@ Eseguire tre round seriali `B01-R1, B02-R1, B03-R1, B01-R2, ... B03-R3`, con nov
 
 ## UX/launcher
 
-Unico comando dalla root repo:
+Comando predefinito dalla root del branch BENCH-00; per selezionare il runtime baseline passare `-TargetRepoRoot`:
 
 ```powershell
 .\scripts\windows\run-live-benchmark.ps1
@@ -32,9 +52,9 @@ Unico comando dalla root repo:
 
 - Rilevare elevazione e riavviare una sola volta tramite UAC (`Start-Process -Verb RunAs`), preservando cwd e parametri con quoting sicuro. Non richiedere all'operatore di digitare il comando di elevazione.
 - Python già installato è una scelta consentita, preferibile se rende più semplici HTTP, SQLite WAL, esportazione dati originali e ZIP. Usare prevalentemente standard library; lo script PowerShell può essere il launcher minimo. Non servono UI, Angular, Python packages non indispensabili o `sqlite3.exe`.
-- Default `API-only`: avviare direttamente la vera `bOps.Api` usando impostazioni equivalenti a quelle dell'AppHost Aspire (`src/bOps.AppHost/Program.cs`; API debug su `http://localhost:5080`). Tre test Windows read-only non necessitano del frontend, SearXNG, container Linux o Docker. Non avviare Docker per abitudine.
-- Auto-detect di API già in esecuzione, con verifica positiva di identità, autorizzazioni, configurazione e percorso di DB/audit. Preferire una **API benchmark dedicata** su porta loopback propria, con file task/audit/sessions temporanei, ma mantenere identici sorgenti di settings, vault, provider e policy e documentare ogni override. Non avviare un secondo writer sullo stesso SQLite; non spegnere processi non creati dal benchmark.
-- Se richiesto `-HostMode Aspire` o una dipendenza necessita Docker, avviare Docker Desktop/servizio e Aspire solo se effettivamente disponibili, con timeout/readiness e verifica degli errori. UAC non può eliminare il bisogno di login o setup iniziale a Docker, provider o vault: in questi casi fallire con motivo preciso anziché fingere automazione assoluta.
+- Default `API-only`: avviare direttamente la vera `bOps.Api` in ambiente `Development`, con URL loopback isolato. Tre test Windows read-only non necessitano del frontend, SearXNG, container Linux o Docker.
+- Il launcher avvia una **API benchmark dedicata** su porta loopback selezionata dinamicamente e isola i database task/audit/sessioni, messaggi di sistema, delegazioni e inventory delle probe. Riutilizza la configurazione Development del worktree selezionato per settings, vault e provider; sovrascrive per quel solo processo la policy con `Read=Automatic` e tutti gli altri livelli `Forbidden`, così nessuna mutazione o approvazione può essere eseguita automaticamente. Path/hash della policy configurata e override sono nella provenance. Non contatta né spegne API già in esecuzione e non avvia Aspire/Docker perché gli scenari sono test Windows API-only.
+- UAC non elimina il bisogno di setup iniziale del provider o del vault: credenziali non accessibili nella shell elevata producono un errore prima dei task. Non vengono esportate chiavi.
 - Credenziali API, master key e provider key: mai in argomenti di processo, ZIP, log, codice o commit; riutilizzare fonti configurate in modo sicuro senza leggere/esportare vault in chiaro. Se il segreto non è accessibile nella shell elevata, rilevare blocker prima dei test; l'installazione iniziale può richiedere setup una tantum.
 - Non sono permessi auto-approval, remediation, resume/reconciliation automatica o mutazioni di sistema. Per gli stessi prompt originali imporre una policy effettivamente read-only sul benchmark host; fallire closed se non è dimostrabile e registrare l'eventuale scostamento di ambiente dalla baseline storica. Non inserire 'read-only' nel goal (cambierebbe la prova).
 - Progress in console, bounded wait/retry e cleanup solo dei child process creati dallo script. Conservare risultati parziali in caso di errore. Nessun caricamento automatico dello ZIP.
@@ -60,8 +80,8 @@ Fixture offline/sintetiche: avvio self-UAC una volta; path con spazi; API già a
 
 ## Acceptance gate
 
-1. Implementare BENCH-00 in commit solo tool/tests/docs su branch AF-05G, **senza cambiare il runner**.
-2. L'operatore lancia in locale e ottiene ZIP pre-fix con nove task e acquisizione integrale o gap dichiarati; non committare evidenza reale.
+1. Implementare BENCH-00 in commit solo tool/tests/docs sul nuovo branch dedicato basato sul branch AF-05H H2+H4, **senza cambiare il runner**.
+2. L'operatore esegue il collector con `-TargetRepoRoot` sul worktree AF-05G e ottiene ZIP baseline con nove task e acquisizione integrale o gap dichiarati; non committare evidenza reale.
 3. Caricare ZIP nel progetto ChatGPT per analisi esterna.
-4. Solo successivamente AF-05H-small (early-final→replan e deterministic disclosure), secondo ZIP identico, confronto esterno, CI e merge PR #100.
+4. Eseguire quindi lo stesso collector sul worktree AF-05H H2+H4, ottenendo secondo ZIP comparabile; il confronto esterno, CI e merge PR #100 seguono la raccolta.
 5. Quindi ARCH-01/02/03 e KNOW-01/02/03, come definito nel piano di convergenza.
