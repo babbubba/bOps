@@ -47,6 +47,23 @@ public sealed class AgentFrameworkBoundaryTests
     }
 
     [Fact]
+    public void Runtime_HasNoSecondModelFacingHistoryEngine()
+    {
+        // ADR-0052 §23 / AF-05: the HARDEN-8 custom history engine was removed; the MAF context layer is the only one. These
+        // names must not come back as a parallel engine (a new one needs its own ADR, not a quiet re-introduction).
+        string[] removed = ["BoundedHistory", "BOPS_HISTORY", "VerbatimHistorySteps", "LegacySafeRequest", "UseLegacySafeProjectionWhenUnknown"];
+        var offenders = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Select(path => (path, text: File.ReadAllText(path)))
+            .SelectMany(file => removed.Where(name => file.text.Contains(name, StringComparison.Ordinal))
+                .Select(name => $"{Path.GetRelativePath(RepositoryRoot, file.path).Replace('\\', '/')}: {name}"))
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void ProductionCode_CallsChatModelDirectlyOnlyAtGovernedOrAdapterBoundaries()
     {
         var sourceRoot = Path.Combine(RepositoryRoot, "src");
