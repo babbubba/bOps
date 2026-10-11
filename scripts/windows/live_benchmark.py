@@ -123,6 +123,38 @@ def submit_task(api: str, key: str, goal: str, idem: str, attempts=12):
     raise TimeoutError("Task submission did not succeed after bounded retries.")
 
 
+class RunningTaskNotExecuting(RuntimeError):
+    pass
+
+
+def poll_task(api: str, key: str, task_id: str, timeout_seconds: int, on_response=None):
+    deadline = time.monotonic() + timeout_seconds
+    terminal = {status.lower() for status in TERMINAL}
+    while time.monotonic() < deadline:
+        try:
+            code, raw, payload = http_json(api + f"/api/agents/tasks/{task_id}", key, timeout=30)
+        except (OSError, TimeoutError):
+            time.sleep(2)
+            continue
+        if code == 404:
+            time.sleep(1)
+            continue
+        if code in (429, 503):
+            time.sleep(3)
+            continue
+        if code != 200:
+            raise RuntimeError(f"Task poll {task_id} failed HTTP {code}.")
+        if on_response is not None:
+            on_response(raw)
+        state = str((payload or {}).get("status", (payload or {}).get("Status", "")))
+        if state.lower() in terminal:
+            return raw, payload
+        if state.lower() == "running" and payload.get("executing") is False:
+            raise RunningTaskNotExecuting(f"Task {task_id} is persisted Running but the API reports no executor.")
+        time.sleep(2)
+    raise TimeoutError(f"Task {task_id} did not reach a terminal state before timeout.")
+
+
 def write_json(path: pathlib.Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -314,34 +346,17 @@ def run(args):
                 task_folder = run_root / "tasks" / task_id
                 task_folder.mkdir(parents=True, exist_ok=True)
                 (task_folder / "api-accepted-original.json").write_bytes(raw)
-                task_deadline = time.monotonic() + args.task_timeout
-                last_status = None
-                while time.monotonic() < task_deadline:
-                    try:
-                        code, raw_status, payload = http_json(api + f"/api/agents/tasks/{task_id}", os.environ["BOPS_API_KEY"], timeout=30)
-                    except (OSError, TimeoutError):
-                        time.sleep(2); continue
-                    if code == 404:
-                        time.sleep(1); continue
-                    if code in (429, 503):
-                        time.sleep(3); continue
-                    if code != 200:
-                        raise RuntimeError(f"Task poll {task_id} failed HTTP {code}.")
-                    last_status = payload
-                    (task_folder / "api-latest-original.json").write_bytes(raw_status)
-                    state = str(payload.get("status", payload.get("Status", "")))
-                    if state.lower() in {x.lower() for x in TERMINAL}:
-                        terminal[task_id] = raw_status
-                        (task_folder / "api-terminal-original.json").write_bytes(raw_status)
-                        break
-                    if state.lower() == "running" and payload.get("executing") is False:
-                        (task_folder / "api-last-original.json").write_bytes(raw_status)
-                        write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "running-not-executing", "automaticRecovery": False})
-                        raise RuntimeError(f"Task {task_id} is persisted Running but the API reports no executor; it was not resumed or reconciled.")
-                    time.sleep(2)
-                else:
-                    write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "task-timeout", "lastApiResponse": last_status})
-                    raise TimeoutError(f"Task {task_id} remained non-terminal; partial capture retained.")
+                try:
+                    raw_status, _ = poll_task(api, os.environ["BOPS_API_KEY"], task_id, args.task_timeout,
+                                              lambda raw: (task_folder / "api-latest-original.json").write_bytes(raw))
+                except RunningTaskNotExecuting:
+                    write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "running-not-executing", "automaticRecovery": False})
+                    raise
+                except TimeoutError:
+                    write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "task-timeout"})
+                    raise
+                terminal[task_id] = raw_status
+                (task_folder / "api-terminal-original.json").write_bytes(raw_status)
                 # Capture the persisted source after every completed task; an interruption preserves all earlier rows.
                 captured_ids = extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
                 roster_ids = {item["taskId"] for item in roster}

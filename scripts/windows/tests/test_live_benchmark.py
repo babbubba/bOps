@@ -79,6 +79,29 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual("idempotent", response["taskId"])
         self.assertEqual([("same-key", {"goal": "goal"})] * 2, calls)
 
+    def test_poll_retries_temporary_404_503_then_finishes_serially(self):
+        responses = [
+            (404, b"", None), (503, b"busy", None),
+            (200, b'{"status":"Running","executing":true}', {"status": "Running", "executing": True}),
+            (200, b'{"status":"Completed","executing":false}', {"status": "Completed", "executing": False}),
+        ]
+        with patch.object(bench, "http_json", side_effect=responses) as request, patch.object(bench.time, "sleep"):
+            seen = []
+            raw, payload = bench.poll_task("http://local", "key", "task", 60, seen.append)
+        self.assertEqual(4, request.call_count)
+        self.assertEqual(2, len(seen))
+        self.assertEqual(b'{"status":"Completed","executing":false}', raw)
+        self.assertEqual("Completed", payload["status"])
+
+    def test_poll_does_not_recover_or_reconcile_orphaned_running_task(self):
+        with patch.object(bench, "http_json", return_value=(200, b'{"status":"Running","executing":false}',
+                                                             {"status": "Running", "executing": False})):
+            with self.assertRaises(bench.RunningTaskNotExecuting):
+                bench.poll_task("http://local", "key", "task", 30)
+        with patch.object(bench.time, "monotonic", return_value=10):
+            with self.assertRaises(TimeoutError):
+                bench.poll_task("http://local", "key", "task", 0)
+
     def test_wal_snapshot_exports_full_state_and_only_complete_matching_audit(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
