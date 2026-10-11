@@ -4524,9 +4524,8 @@ public sealed partial class AgentRunner(
             ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
-              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above. If you judge the goal " +
-              "already achieved, answer without a tool call: while planned steps remain unresolved the runtime re-evaluates the " +
-              "plan before it accepts any final answer.";
+              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above; while planned steps " +
+              "remain, a final answer makes the runtime re-evaluate the plan.";
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
         if (limitations is not null)
