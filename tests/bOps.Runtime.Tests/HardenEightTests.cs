@@ -200,21 +200,24 @@ public sealed class HardenEightTests
     }
 
     [Fact]
-    public async Task FifthEvidenceRead_AuditsOnce_DoesNoRead_AndFailsWithOneSyntheticStep()
+    public async Task FifthEvidenceRead_AuditsOnceAsExhausted_DoesNoRead_AndTheTaskContinues()
     {
+        // ADR-0052 AF-04 supersedes the HARDEN-8 terminal limit: four valid reads are served, the fifth is refused without a
+        // raw read and without ending the task, and the task goes on to its final answer.
         var taskId = Guid.Parse("87654321-4321-4321-4321-cba987654321");
         var directive = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Call("test.read"), directive, directive, directive, directive, directive);
+            PlanningTestSupport.PlanResponse(), Call("test.read"), directive, directive, directive, directive, directive, Final());
         var audit = new RecordingAuditSink();
 
         var state = await Runner(model, audit, tools: [new FakeReadTool(output: "abc")]).RunAsync("goal", Actor, taskId);
 
-        Assert.Equal((AgentTaskStatus.Failed, TaskTerminalKind.RuntimeFailure), (state.Status, state.TerminalReason!.Kind));
-        Assert.Equal("EvidenceRead/v1 limit exceeded", state.Steps[^1].Observation);
-        Assert.Null(state.Steps[^1].ToolCall);
-        Assert.Equal(5, audit.Events.OfType<EvidenceReadAuditEvent>().Count());
-        Assert.Single(audit.Events.OfType<EvidenceReadAuditEvent>(), item => item.ResultCode == EvidenceReadResultCode.LimitExceeded);
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.DoesNotContain(state.Steps, step => step.Observation == "EvidenceRead/v1 limit exceeded");
+        Assert.Equal(
+            [.. Enumerable.Repeat(EvidenceReadResultCode.Success, 4), EvidenceReadResultCode.LimitExceeded],
+            audit.Events.OfType<EvidenceReadAuditEvent>().Select(item => item.ResultCode));
+        Assert.Equal(0, audit.Events.OfType<EvidenceReadAuditEvent>().Last().ReturnedLength);
     }
 
     [Theory]
@@ -268,6 +271,29 @@ public sealed class HardenEightTests
     }
 
     [Fact]
+    public async Task ReplanEvidenceRead_ExhaustionIsSoft_AndTheReplanStillCompletes()
+    {
+        var taskId = Guid.Parse("55667788-1234-1234-1234-123456789abc");
+        var directive = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(stepCount: 1),
+            Call("test.read", "c0"),
+            Call("test.read", "c1"),
+            directive, directive, directive, directive, directive,
+            PlanningTestSupport.PlanResponse(revision: 1),
+            Final());
+        var audit = new RecordingAuditSink();
+
+        var state = await Runner(model, audit, tools: [new FakeReadTool(output: "abc")]).RunAsync("goal", Actor, taskId);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(2, state.Plans.Count);
+        Assert.Equal(
+            [.. Enumerable.Repeat(EvidenceReadResultCode.Success, 4), EvidenceReadResultCode.LimitExceeded],
+            audit.Events.OfType<EvidenceReadAuditEvent>().Select(item => item.ResultCode));
+    }
+
+    [Fact]
     public async Task ContextOverflow_RetriesOnceAtK0_AndNextLogicalCallRestoresConfiguredK()
     {
         var model = new ObjectSequenceModel(
@@ -313,7 +339,7 @@ public sealed class HardenEightTests
         var taskId = Guid.Parse("13572468-1234-1234-1234-123456789abc");
         var read = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
         var model = new ObjectSequenceModel(
-            PlanningTestSupport.PlanResponse(), Call("test.read"), read, read, read, read, Transient(), read);
+            PlanningTestSupport.PlanResponse(), Call("test.read"), read, read, read, read, Transient(), read, Final());
         var audit = new RecordingAuditSink();
         var options = new AgentRunnerOptions
         {
@@ -325,11 +351,11 @@ public sealed class HardenEightTests
 
         var state = await runner.RunAsync("goal", Actor, taskId);
 
-        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(5, audit.Events.OfType<EvidenceReadAuditEvent>().Count());
         Assert.Single(audit.Events.OfType<EvidenceReadAuditEvent>(), item =>
             item.ResultCode == EvidenceReadResultCode.LimitExceeded);
-        Assert.Equal(8, model.Requests.Count);
+        Assert.Equal(9, model.Requests.Count);
     }
 
     [Fact]
@@ -338,16 +364,16 @@ public sealed class HardenEightTests
         var taskId = Guid.Parse("24681357-1234-1234-1234-123456789abc");
         var read = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
         var model = new ObjectSequenceModel(
-            PlanningTestSupport.PlanResponse(), Call("test.read"), read, read, read, read, ContextOverflow(), read);
+            PlanningTestSupport.PlanResponse(), Call("test.read"), read, read, read, read, ContextOverflow(), read, Final());
         var audit = new RecordingAuditSink();
 
         var state = await Runner(model, audit, tools: [new FakeReadTool(output: "abc")]).RunAsync("goal", Actor, taskId);
 
-        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(5, audit.Events.OfType<EvidenceReadAuditEvent>().Count());
         Assert.Single(audit.Events.OfType<EvidenceReadAuditEvent>(), item =>
             item.ResultCode == EvidenceReadResultCode.LimitExceeded);
-        Assert.Equal(8, model.Requests.Count);
+        Assert.Equal(9, model.Requests.Count);
     }
 
     [Fact]

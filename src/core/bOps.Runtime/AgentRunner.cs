@@ -866,10 +866,13 @@ public sealed partial class AgentRunner(
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
                 // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
-                var offersEvidenceControl = steps.Any(step =>
+                // ADR-0052 AF-04: once the logical call's read budget is spent the function is no longer offered (the surface never
+                // grows back to the full catalog), and the prompt says so instead of leaving the model to infer it.
+                var evidenceReadExhausted = logicalCall.Evidence.Exhausted;
+                var offersEvidenceControl = !evidenceReadExhausted && steps.Any(step =>
                     Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                    correctingArguments, aggressive, offersEvidenceControl, grounding);
+                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
@@ -1307,10 +1310,11 @@ public sealed partial class AgentRunner(
             run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
             return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
         }
-        catch (EvidenceReadLimitExceededException)
+        catch (EvidenceControlProtocolExceededException)
         {
             run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForEvidenceReadLimitAsync(run, replanCalls, ct));
+            return (plan, await FailAsync(run, ControlProtocolFailureMessage,
+                (TaskTerminalKind.RuntimeFailure, null), replanCalls, ct));
         }
         catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
         {
@@ -2307,20 +2311,27 @@ public sealed partial class AgentRunner(
         return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
     }
 
-    private async Task<TaskState> StopForEvidenceReadLimitAsync(
-        ExecutionRun run, IReadOnlyList<ModelCallRecord> calls, CancellationToken ct)
+    private const string ControlProtocolFailureMessage =
+        "The model repeatedly sent runtime control requests that returned no evidence (malformed, unsupported, not offered, invalid or past the read budget).";
+
+    /// <summary>A served read spends a read slot; every other control request is a bounded protocol rejection that spends none (ADR-0052 AF-04).</summary>
+    private static void CountControlRequest(EvidenceReadBudget budget, EvidenceReadResult result)
     {
-        run.Steps.Add(new PlanStep(
-            run.Steps.Count,
-            TaskResumePolicy.EvidenceReadLimitStepDescription,
-            null,
-            null,
-            "EvidenceRead/v1 limit exceeded")
+        BOpsTelemetry.EvidenceReadEventsTotal.Add(1, new KeyValuePair<string, object?>("outcome", result.Code switch
         {
-            ModelCalls = calls,
-            ExecutionAttempt = run.ExecutionAttempt,
-        });
-        return await FinishAsync(run, AgentTaskStatus.Failed, TaskTerminalKind.RuntimeFailure, ct);
+            EvidenceReadResultCode.Success => "served",
+            EvidenceReadResultCode.LimitExceeded => "exhausted",
+            EvidenceReadResultCode.Malformed => "malformed",
+            _ => "unavailable",
+        }));
+        if (result.Code == EvidenceReadResultCode.Success)
+        {
+            budget.RecordServedRead();
+        }
+        else
+        {
+            budget.RecordRejection();
+        }
     }
 
     /// <summary>
@@ -2753,15 +2764,8 @@ public sealed partial class AgentRunner(
 
         while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
         {
-            logicalCall.EvidenceReadAttempts++;
+            var evidence = logicalCall.Evidence;
             var directive = recognition.Directive;
-            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
-            {
-                await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
-                    EvidenceReadResultCode.LimitExceeded, 0, delegation, ct);
-                throw new EvidenceReadLimitExceededException();
-            }
-
             if (activeAttemptBudget.Value?.IsExpired == true)
             {
                 await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
@@ -2771,7 +2775,9 @@ public sealed partial class AgentRunner(
 
             var result = recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed
                 ? new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0)
-                : EvidenceRead.Read(taskId, steps, directive!);
+                : evidence.Exhausted
+                    ? new EvidenceReadResult(EvidenceReadResultCode.LimitExceeded, null, 0)
+                    : EvidenceRead.Read(taskId, steps, directive!);
             if (activeAttemptBudget.Value?.IsExpired == true)
             {
                 await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
@@ -2779,12 +2785,18 @@ public sealed partial class AgentRunner(
                 throw new AttemptDurationBudgetExceededException();
             }
 
+            CountControlRequest(evidence, result);
             await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
                 result.Code, result.ReturnedLength, delegation, ct);
+            if (evidence.ProtocolBoundExceeded)
+            {
+                throw new EvidenceControlProtocolExceededException();
+            }
+
             logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
             logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
                 recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                    ? EvidenceRead.Reply(directive!, result)
+                    ? EvidenceRead.Reply(directive!, result, evidence.ReadsRemaining)
                     : "EvidenceRead/v1 rejected: Malformed."));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
@@ -2906,7 +2918,9 @@ public sealed partial class AgentRunner(
             // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
             // PRE-3B1: it is served only when this very model-call view offered it (the request that carried AvailableTools).
             var control = EvidenceRead.RecognizeControl(run.TaskId, response);
+            // AF-04: a valid read asked for after exhaustion is answered as exhaustion, not as a generic "not offered".
             if (control.Kind is ControlCallKind.Valid or ControlCallKind.Malformed
+                && !(control.Kind == ControlCallKind.Valid && logicalCall.Evidence.Exhausted)
                 && !requestFactory(logicalCall.Aggressive).AvailableTools.Any(tool => tool.Name == EvidenceRead.ControlFunctionName))
             {
                 control = new ControlCallRecognition(ControlCallKind.NotOffered, control.Call, null);
@@ -2923,26 +2937,8 @@ public sealed partial class AgentRunner(
                 break;
             }
 
-            logicalCall.EvidenceReadAttempts++;
+            var evidence = logicalCall.Evidence;
             var directive = recognition.Directive;
-            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
-            {
-                await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
-                    EvidenceReadResultCode.LimitExceeded, returnedLength: 0, ct);
-                run.Steps.Add(new PlanStep(
-                    run.Steps.Count,
-                    TaskResumePolicy.EvidenceReadLimitStepDescription,
-                    null,
-                    null,
-                    "EvidenceRead/v1 limit exceeded")
-                {
-                    ModelCalls = calls,
-                    ExecutionAttempt = run.ExecutionAttempt,
-                });
-                return (response, await FinishAsync(run, AgentTaskStatus.Failed,
-                    TaskTerminalKind.RuntimeFailure, ct));
-            }
-
             if (run.AttemptBudget.IsExpired)
             {
                 await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
@@ -2954,6 +2950,11 @@ public sealed partial class AgentRunner(
             if (recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed)
             {
                 result = new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0);
+            }
+            else if (evidence.Exhausted)
+            {
+                // ADR-0052 AF-04: no raw access, no task failure; the request is a bounded protocol rejection.
+                result = new EvidenceReadResult(EvidenceReadResultCode.LimitExceeded, null, 0);
             }
             else
             {
@@ -2967,10 +2968,18 @@ public sealed partial class AgentRunner(
                 return (response, await StopForAttemptDurationAsync(run, calls));
             }
 
+            CountControlRequest(evidence, result);
             await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                 result.Code, result.ReturnedLength, ct);
+            if (evidence.ProtocolBoundExceeded)
+            {
+                // Not a read-budget exhaustion: the model keeps sending control requests that return nothing. Bounded, then a protocol failure.
+                return (response, await FailAsync(run, ControlProtocolFailureMessage,
+                    (TaskTerminalKind.RuntimeFailure, null), calls, ct));
+            }
+
             var reply = recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                ? EvidenceRead.Reply(directive!, result)
+                ? EvidenceRead.Reply(directive!, result, evidence.ReadsRemaining)
                 : control.Kind == ControlCallKind.Unsupported
                     ? "Runtime control call rejected: Unsupported. Only runtime.evidence_read exists."
                     : control.Kind == ControlCallKind.NotOffered
@@ -4512,7 +4521,8 @@ public sealed partial class AgentRunner(
 
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
-        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null)
+        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
+        bool evidenceReadExhausted = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
@@ -4525,9 +4535,10 @@ public sealed partial class AgentRunner(
             routingInstruction += " " + EvidenceControlInstruction;
         }
 
+        var evidenceReadSection = evidenceReadExhausted ? EvidenceRead.ExhaustedFeedback : EvidenceReadInstructions;
         var prompt = plan.Steps.Count == 0
-            ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
-            : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
+            ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
+            : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
               $"{routingInstruction} Propose the concrete tool call for the next unfinished step above, or report " +
               "completion if the goal is already achieved.";
@@ -4900,7 +4911,7 @@ public sealed partial class AgentRunner(
 
         internal bool HasCompactableHistory { get; set; }
 
-        internal int EvidenceReadAttempts { get; set; }
+        internal EvidenceReadBudget Evidence { get; } = new();
 
         internal List<ChatTurn> ContinuationTurns { get; } = [];
     }

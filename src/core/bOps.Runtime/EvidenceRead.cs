@@ -47,14 +47,19 @@ internal sealed record ControlCallRecognition(ControlCallKind Kind, ModelToolCal
     internal static ControlCallRecognition None { get; } = new(ControlCallKind.None, null, null);
 }
 
-internal sealed record EvidenceReadResult(EvidenceReadResultCode Code, string? Fragment, int ReturnedLength);
+internal sealed record EvidenceReadResult(EvidenceReadResultCode Code, string? Fragment, int ReturnedLength, int? SourceLength = null);
 
 /// <summary>Exact recognition, current-task resolution and UTF-16 range semantics for <c>EvidenceRead/v1</c>.</summary>
 internal static class EvidenceRead
 {
     internal const string Discriminator = "EvidenceRead/v1";
     internal const int ChunkCharacters = 4000;
+
+    /// <summary>The raw reads one logical call may be served (ADR-0052 AF-04: the budget of valid reads only).</summary>
     internal const int MaxAttempts = 4;
+
+    /// <summary>The control requests that returned no evidence one logical call may have corrected before it is a protocol failure.</summary>
+    internal const int MaxControlRejections = 4;
 
     /// <summary>
     /// The runtime-internal control function (PRE-3A, ADR-0046 amendment). It is not a package tool: never in the
@@ -199,7 +204,7 @@ internal static class EvidenceRead
 
         if (directive.Offset == source.Length)
         {
-            return new EvidenceReadResult(EvidenceReadResultCode.EndOfEvidence, string.Empty, 0);
+            return new EvidenceReadResult(EvidenceReadResultCode.EndOfEvidence, string.Empty, 0, source.Length);
         }
 
         var returned = Math.Min(directive.Length, source.Length - directive.Offset);
@@ -209,14 +214,27 @@ internal static class EvidenceRead
             return new EvidenceReadResult(EvidenceReadResultCode.OutOfRange, null, 0);
         }
 
-        return new EvidenceReadResult(EvidenceReadResultCode.Success, source.Substring(directive.Offset, returned), returned);
+        return new EvidenceReadResult(EvidenceReadResultCode.Success, source.Substring(directive.Offset, returned), returned, source.Length);
     }
 
-    internal static string Reply(EvidenceReadDirective directive, EvidenceReadResult result) => result.Code switch
+    internal const string ExhaustedFeedback =
+        "EvidenceRead budget exhausted for this reasoning call. Continue using the evidence already available. "
+        + "No further evidence reads are available in this call.";
+
+    /// <summary>
+    /// The runtime-authored reply to one control request. <paramref name="readsRemaining"/> is the valid-read allowance left after it.
+    /// Cursor values (<c>sourceLength</c>, <c>nextOffset</c>, <c>endOfSource</c>) are given only where the persisted source made them certain.
+    /// </summary>
+    internal static string Reply(EvidenceReadDirective directive, EvidenceReadResult result, int readsRemaining) => result.Code switch
     {
         EvidenceReadResultCode.Success =>
-            $"EvidenceRead/v1 Success; offset={directive.Offset}; returned={result.ReturnedLength}.\n{AgentRunner.WrapToolOutput(result.Fragment!)}",
-        EvidenceReadResultCode.EndOfEvidence => "EvidenceRead/v1 EndOfEvidence; returned=0.",
+            $"EvidenceRead/v1 Success; offset={directive.Offset}; returned={result.ReturnedLength}; sourceLength={result.SourceLength}; "
+            + $"nextOffset={directive.Offset + result.ReturnedLength}; endOfSource={(directive.Offset + result.ReturnedLength >= result.SourceLength ? "true" : "false")}; "
+            + $"readsRemaining={readsRemaining}.\n{AgentRunner.WrapToolOutput(result.Fragment!)}"
+            + (readsRemaining == 0 ? $"\n{ExhaustedFeedback}" : string.Empty),
+        EvidenceReadResultCode.EndOfEvidence =>
+            $"EvidenceRead/v1 EndOfEvidence; returned=0; sourceLength={result.SourceLength}; endOfSource=true; readsRemaining={readsRemaining}.",
+        EvidenceReadResultCode.LimitExceeded => $"EvidenceRead/v1 rejected: LimitExceeded. {ExhaustedFeedback}",
         _ => $"EvidenceRead/v1 rejected: {result.Code}.",
     };
 

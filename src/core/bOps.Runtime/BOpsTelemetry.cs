@@ -55,6 +55,10 @@ public static class BOpsTelemetry
     public static Counter<long> ContextOverflowRetriesTotal { get; } =
         Meter.CreateCounter<long>("bops.context.overflow_retries_total");
 
+    /// <summary>Control-function evidence read outcomes (served/exhausted/malformed/unavailable), by outcome only. Never carries evidence, ids or arguments.</summary>
+    public static Counter<long> EvidenceReadEventsTotal { get; } =
+        Meter.CreateCounter<long>("bops.evidence_read.events_total");
+
     /// <summary>Summarization outcomes (requested/applied/skipped/failed), tagged by outcome and dedicated flag. Never carries content.</summary>
     public static Counter<long> SummaryEventsTotal { get; } =
         Meter.CreateCounter<long>("bops.summary.events_total");
