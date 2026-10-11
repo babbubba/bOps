@@ -629,3 +629,14 @@ Informative only; no decision above changes. AF-04 is implemented locally on `fe
 ## 30. AF-05 implementation evidence (2026-10-11)
 
 Informative only; no decision above changes, and the §11 pipeline order is unchanged (it was measured, not altered). AF-05 is implemented locally on `feat/af-05-maf-regression-tuning-cleanup`. The MAF context layer is now the only model-facing history path: a provider/model with an exact `Agent:Context:Profiles` entry is projected against its budget, and an unlisted pair (for example the router `openrouter/free`) receives only a structural tool-result bound with no invented capacity (`profile_source = unknown-structural`). The HARDEN-8 `BoundedHistory` request, `Agent:VerbatimHistorySteps` and the K=0 rebuild are removed; `ContextOverflow` keeps one bounded aggressive projection. A runtime-authored evidence index keeps `EvidenceRead/v1` addressable without the compact records. Measurements are deterministic-fixture evidence only (no live provider was available); see `agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md` and `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`. A measured weakness outside this ADR — the ADR-0042 grounding block's 12-fact newest-first salience crowding out earlier steps' facts — is recorded there as a recommendation for a separate ADR-0042 amendment.
+
+
+## 31. AF-05G implementation evidence (2026-10-11)
+
+Informative only; no decision above changes. The evidence index of §30 and the `runtime.evidence_read` offer were gated on a persisted result longer than `MaxObservationCharacters`,
+which is the runtime's own observation limit and not the context layer's compaction rule; a result that was never over it could be compacted away and no longer reached. AF-05G on
+`fix/af-05g-evidence-addressability-grounding` makes addressability a property of the persisted step alone (an executed tool step with readable persisted output or observation): the control
+function is offered beside the single step tool, and the index is added to step and replan prompts, whenever such a step exists and the logical call's read budget is not exhausted. The
+read budgets, soft exhaustion, exact step-scoped tool authority and the text protocol of the replan are unchanged; the context layer still decides nothing about which runtime functions
+are authorized. The 12-fact grounding salience recorded in §30 as a recommendation is now the ADR-0042 "step-diverse grounding selection (AF-05G)" amendment. Details and measurements:
+`agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md` (AF-05G section) and `agentic/_tasks/2026-10-11-af-05-benchmark-results.md` §8.

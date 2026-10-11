@@ -122,6 +122,25 @@ public sealed class MafBenchmarkTests
     }
 
     [Fact]
+    public async Task Matrix_AF05G_EvidenceAddressabilityAndGroundingDiversity()
+    {
+        // AF-05G: the same four workloads whose defaults AF-05 measured, now with the availability of every expected signal.
+        var c508 = await RunAll(RegressionScenarios.C508Equivalent(),
+        [
+            Config(Unknown, null),
+            Config("MAF 10240, summarization off", 10240),
+            Config("MAF 16384, summarization off", 16384),
+        ]);
+        BenchmarkOutput.Append("AF-05G c508-equivalent — unknown profile, 10240, 16384", BenchmarkRow.Table(c508));
+        var small = await RunAll(RegressionScenarios.CompactedSmallResults(), [Config(Unknown, null)]);
+        BenchmarkOutput.Append("AF-05G compacted-small-results (five 2000-character results, nothing over 4000) — unknown profile", BenchmarkRow.Table(small));
+        var shortRun = await RunAll(RegressionScenarios.ShortDiagnostic(), [Config(Unknown, null)]);
+        BenchmarkOutput.Append("AF-05G short-diagnostic — unknown profile", BenchmarkRow.Table(shortRun));
+
+        Assert.All(c508.Concat(small).Concat(shortRun), row => Assert.Equal("Completed", row.Status));
+    }
+
+    [Fact]
     public async Task Sweeps_Tuning()
     {
         var c508 = RegressionScenarios.C508Equivalent();

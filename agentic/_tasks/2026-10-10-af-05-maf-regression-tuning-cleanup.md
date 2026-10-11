@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
-| Status | **Implemented locally — live-provider runs and Windows/Linux CI NOT RUN; not pushed or merged** |
+| Status | **Implemented; branch pushed to `origin/feat/af-05-maf-regression-tuning-cleanup`, not merged. Two review findings (evidence addressability, grounding diversity) closed by AF-05G on `fix/af-05g-evidence-addressability-grounding`. Live-provider runs and Windows/Linux CI NOT RUN** |
 | Depends on | AF-01, AF-02, AF-03, AF-04 complete |
 | Effort | **medium** |
 | Primary risk | declaring success from token reduction while diagnostic quality or safety regresses |
@@ -298,14 +298,14 @@ deadline, `ContextOverflow` classification, exact tool routing.
 | 14 | a persistence migration is needed | No. |
 | 15 | benchmark vs fixture cannot be told apart | No — every number is labelled DETERMINISTIC FIXTURE; the synthetic parts are listed. |
 
-### Recommendation (not applied): ADR-0042 grounding salience
+### Recommendation: ADR-0042 grounding salience — **applied by AF-05G (2026-10-11)**
 
 `EvidenceGrounding/v1` ranks facts "activation-referenced first, then the newest steps first" and shows 12. On the c508 shape the newest fact-bearing step
 (`system.events`, 12 facts) fills the block ("18 additional observed fact(s) are not shown"), so the AF-04 facts of `system.stability` and `system.crashes` never reach
 the final prompt through grounding; once the raw results are compacted they are reachable only by drill-down. An **uncommitted experiment** replacing the order by "referenced first,
 then fact position, then newest step" (round-robin across steps, same 12-fact bound) changed all-in tokens by at most ±0.3 % and raised directly visible facts from
 **1/9 to 7/9** for the unprofiled default and for 12,288/16,384 windows under pressure (c508-extended-10), and left the 9/9 configured cases at 9/9. This changes an Accepted
-rule and its ordering tests, so it needs its own ADR-0042 amendment and the operator's decision; the experiment was reverted.
+rule and its ordering tests, so it needs its own ADR-0042 amendment and the operator's decision; the experiment was reverted. **AF-05G then applied it as the ADR-0042 "step-diverse grounding selection" amendment** (referenced first, then a newest-to-oldest round-robin; see the AF-05G section below).
 
 ### Deviations and residual technical debt
 
@@ -336,12 +336,12 @@ Representative assemblies: Runtime 2,069, Api 509, Cli 124, Architecture 175, Ag
 
 | Item | Status |
 |---|---|
-| Windows CI | **NOT RUN** — the branch was not pushed. |
-| Linux CI | **NOT RUN** — the branch was not pushed (the WSL run above is local evidence only). |
+| Windows CI | **NOT RUN** — the branch is pushed, but `ci.yml` triggers only on pull requests to and pushes to `main`, and no pull request is open. |
+| Linux CI | **NOT RUN** — same reason (the WSL run above is local evidence only). |
 | LiveModel / live local / live external / Anthropic | **NOT RUN** — see Phase 3. |
 | Angular build/tests | Not run: no API/UI/Settings surface changed (the shipped `appsettings.json` lost one obsolete key). |
 
-### Commits (all local; none pushed)
+### Commits (pushed with the branch; tip `4f83329`)
 
 | SHA | Subject |
 |---|---|
@@ -354,3 +354,72 @@ Representative assemblies: Runtime 2,069, Api 509, Cli 124, Architecture 175, Ag
 | `aedd10c` | refactor: keep the overflow recovery decision out of an exception filter |
 | `34371f8` | test: bind and validate the documented context profile configuration |
 | `3698181` | test: guard against a second model-facing history engine |
+
+
+## AF-05G — evidence addressability and grounding diversity (2026-10-11)
+
+Follow-up on `fix/af-05g-evidence-addressability-grounding`, created from `4f83329`. It closes two findings of the direct review of AF-05 and
+does nothing else: no new milestone, no MAF tuning (every default measured by AF-05 is unchanged: `MinimumPreservedToolGroups` 3,
+`MinimumPreservedTurns` 1, `SafetyReserveTokens` 1024, `Summarization.TriggerRatio` 0.9, `RecentGroupsToPreserve` 4). Evidence class:
+**DETERMINISTIC FIXTURE**; no live model was exercised. Tables: [benchmark results §8](2026-10-11-af-05-benchmark-results.md#8-af-05g-post-fix-measurements).
+
+### G1 — raw evidence stays exactly addressable after MAF compaction
+
+**Root cause.** `AgentRunner` offered `runtime.evidence_read`, and `EvidenceIndex.Build` listed a step, only when a persisted result or
+observation was longer than `MaxObservationCharacters` (4,000). That number decides when the *runtime* shortens an observation. It says nothing
+about when the *MAF context layer* removes an old tool result from the projected history (the oldest groups beyond `MinimumPreservedToolGroups = 3`).
+With the unknown profile, four 2,000-character results compact the oldest group while the control function and the index are absent: the
+evidence is persisted and the reasoning model can no longer reach it, unless the tool also produced Facts. That broke the ADR-0052 invariant
+that persisted raw evidence the context may drop stays recoverable.
+
+**Rule now.** A persisted step is addressable when it is an executed tool step (`ToolCall` and `Result` present) whose result output or
+observation is not empty (`EvidenceIndex.IsAddressable`). Size, completeness, facts and whether MAF compacted it play no part. Whenever any
+such step exists and the logical call's read budget is not exhausted, `runtime.evidence_read` is offered beside (never instead of) the single
+step tool, and the protected `EvidenceIndex` block is added to the step prompt and to the replan text prompt. The index lists the newest 16
+addressable steps with id and lengths, no evidence text, and states the rule that any persisted tool step `n` of the task is addressable as
+`ev1:<task>:n`. Everything else is unchanged: `MaxAttempts` 4 served reads, `MaxControlRejections` 4, soft exhaustion (the control function and
+the index disappear and `ExhaustedFeedback` is shown, the step tool stays), exact step-scoped tool authority, no registry entry, no policy,
+approval or entitlement for the control function, the model never has to read anything (a small result costs no extra model call), and the
+replan keeps the text protocol. No persistence schema, MAF authority, `BoundedHistory` or second copy of the evidence is involved.
+
+**Tests.** `EvidenceAddressabilityTests` (runtime: small result offered and indexed with no automatic read and the expected tool intact - T3; fact-less
+exact drill-down - T2; four reads then soft exhaustion - T4; replan text protocol on an old `<4000` result - T5; persist, reopen, resume gives the same
+index and the same drill-down - T6; cross-task, malformed and out-of-range unchanged - T7), `EvidenceIndexTests` (addressability independent of size,
+fact-less steps listed, newest-16 window and the rule line, deterministic and text-free), and `MafRegressionTests.G1_*` (T1: four 2,000-character groups, unknown
+profile, MAF really compacts the oldest, the raw sentinel is gone from the projected history, the control function is offered, the index names step 0 and an exact
+read returns the raw fragment). T1 **fails at `4f83329`** (control function not offered). Test expectations that fixed the tool surface to the single step tool now
+filter the runtime control function out of the *operational* surface, which is what they are about.
+
+**Cost.** The control function declaration, one instruction sentence and the index (about 380 synthetic tokens per call) now ride in every step prompt once a tool
+step exists, so a very short diagnostic pays for it (short diagnostic, unknown profile: 5,705 to 7,599 prompt synthetic tokens, +33 %, five calls). On the c508 shape
+it is +1.4 % (69,600 to 70,544). This follows directly from making addressability independent of size; the alternative (predicting MAF's compaction in the
+runtime) was rejected by the task and would give the runtime a second, unreliable copy of the context layer's decision.
+
+### G2 - grounding diversity
+
+ADR-0042 amendment "step-diverse grounding selection (AF-05G)". Referenced facts keep absolute priority (newest step, then position); the remaining slots are filled
+by a deterministic round-robin over steps newest to oldest, each step's facts in list order (pass 1 takes every step's first remaining fact, pass 2 the second, and so on), up
+to `MaxShownFacts = 12`. Display order, fact ids, markers, entry format, checker, bounds and `MaxShownFacts` are untouched, so `EvidenceGrounding/v1` is not bumped
+(rationale in the amendment). Tests: exact selection, the documented `A1 B1 C1 A2 B2 C2 A3` example, referenced precedence, stable ids, byte-identical rebuild,
+persist/reopen/resume, and the c508 quality gate (`MafRegressionTests.G2T6_*`): for the unknown profile, 10,240 and 16,384 every expected authoritative signal is
+directly visible, a grounded typed fact, or exactly readable through `runtime.evidence_read`, and the grounding block covers `system.stability`, `system.crashes`
+and `system.events`; the coverage test **fails at `4f83329`** (events took all 12 slots). The harness classifies each signal as visible / grounded / exact-addressable
+(`EvidenceAvailability`); a "result recorded" stub counts as none.
+
+### Measured effect (DETERMINISTIC FIXTURE)
+
+| Workload | Visible / grounded / exact-addressable / available | ER served | Synthetic tokens |
+|---|---|---:|---:|
+| c508, unknown profile - before (`4f83329`) | 0 / **1** / 9 / 9 of 9 | 4 | 69,600 prompt |
+| c508, unknown profile - after | 0 / **7** / 9 / 9 of 9 | 4 | 70,544 prompt (70,871 all-in) |
+| c508, 10,240 - after | 9 / 7 / 9 / 9 of 9 | 4 | 70,812 prompt (71,152 all-in) |
+| c508, 16,384 - after | 9 / 7 / 9 / 9 of 9 | 4 | 81,951 prompt (82,291 all-in) |
+| compacted small results (5 x 2,000 chars), unknown - before | n/a (read impossible: 0 served) | 0 | 14,909 prompt |
+| compacted small results, unknown - after | n/a (exact read served) | 1 | 22,434 prompt (22,587 all-in) |
+| short diagnostic, unknown - before / after | 3/0/0/3 to 3/0/3/3 of 3 | 0 | 5,705 to 7,599 prompt (7,714 all-in after) |
+
+### Deviations
+
+1. The index and the control function are now present in every step prompt after the first tool step (see Cost) instead of only after oversize results.
+2. No `EvidenceGrounding` version bump (nothing in the repository ties the selection algorithm to the version; recorded in the ADR-0042 amendment).
+3. The tool-surface assertions of seven existing test classes were adjusted to ignore the runtime control function (see G1 tests); no assertion about the *operational* surface was weakened.

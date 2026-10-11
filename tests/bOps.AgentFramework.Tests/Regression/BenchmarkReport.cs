@@ -30,6 +30,7 @@ internal sealed record BenchmarkRow(
     string Status,
     string Facts,
     string Limitations,
+    string Availability,
     double ProjectionMs)
 {
     internal static BenchmarkRow From(RegressionRun run)
@@ -45,6 +46,9 @@ internal sealed record BenchmarkRow(
                 : worst.Value.Stats.MaxContextTokens is { } max
                     ? $"{max}/{worst.Value.Stats.ReservedOutputTokens} ({worst.Value.Stats.ProfileSource})"
                     : $"unknown ({worst.Value.Stats.ProfileSource})";
+        var availability = run.Model.FinalRequest is null || run.Scenario.ExpectedFacts.Count == 0
+            ? null
+            : EvidenceAvailability.Of(run);
         var facts = run.Model.FinalFactVisibility;
         var limits = run.Model.FinalLimitationVisibility;
         return new BenchmarkRow(
@@ -72,15 +76,18 @@ internal sealed record BenchmarkRow(
             limits.Count == 0 && run.Scenario.ExpectedLimitations.Count == 0
                 ? "n/a"
                 : $"{limits.Count(kv => kv.Value)}/{run.Scenario.ExpectedLimitations.Count}",
+            availability is null
+                ? "n/a"
+                : $"{availability.Count(item => item.Direct)} / {availability.Count(item => item.Grounded)} / {availability.Count(item => item.Addressable)} / {availability.Count(item => item.Available)} of {availability.Count}",
             stats.Sum(p => p.Elapsed.TotalMilliseconds));
     }
 
     internal static string Header =>
-        "| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Projection ms (real) |\n"
-        + "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---:|";
+        "| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |\n"
+        + "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|";
 
     internal string ToMarkdown() => string.Create(CultureInfo.InvariantCulture,
-        $"| {Scenario} | {Configuration} | {Profile} | {PrimaryCalls} | {PrimaryPrompt} | {PrimaryCompletion} | {SummaryCalls} | {SummaryPrompt} | {SummaryCompletion} | **{AllIn}** | {GroupsBeforeAfter} | {ToolGroupsCompacted} | {ReadsServed} | {ReadsExhausted} | {ReadsDenied} | {OperationalSteps} | {Replans} | {Status} | {Facts} | {Limitations} | {ProjectionMs:0.0} |");
+        $"| {Scenario} | {Configuration} | {Profile} | {PrimaryCalls} | {PrimaryPrompt} | {PrimaryCompletion} | {SummaryCalls} | {SummaryPrompt} | {SummaryCompletion} | **{AllIn}** | {GroupsBeforeAfter} | {ToolGroupsCompacted} | {ReadsServed} | {ReadsExhausted} | {ReadsDenied} | {OperationalSteps} | {Replans} | {Status} | {Facts} | {Limitations} | {Availability} | {ProjectionMs:0.0} |");
 
     internal static string Table(IEnumerable<BenchmarkRow> rows)
     {

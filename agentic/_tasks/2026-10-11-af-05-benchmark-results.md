@@ -56,7 +56,7 @@ Quality gate for the c508 shape (asserted by `MafRegressionTests`): kernel crash
 
 **F4 — EvidenceRead exhaustion is soft in every configuration.** All 4 allowed reads served, the model's 2 further requests were not offered/served, the task **Completed**, and `system.cpu`, `system.memory`, `storage.health` each executed exactly once (unknown profile, 12,288, 16,384 and 32,768 windows asserted; `MafRegressionTests`).
 
-**F5 — Grounding saturation (measured, not fixed).** `EvidenceGrounding/v1` shows at most **12** facts, newest steps first (ADR-0042 PRE-5 amendment). In the c508 shape `system.events` is the newest fact-bearing step and emits 12 facts alone, so the block shows 12 and says "18 additional observed fact(s) are not shown": none of the stability or crashes facts reaches the final prompt through grounding. When compaction removes the raw results, those facts are reachable **only** through drill-down. An **uncommitted experiment** that selects facts round-robin across steps (referenced first, then position, then newest) kept the same 12-fact bound and the same tokens (±0.3 %) and raised facts retained from **1/9 to 7/9** (c508-extended-10, unknown profile and 16,384 / 12,288 windows) and from 1/9 to 7/9 (c508-equivalent, unknown profile). This is a change to an Accepted ADR-0042 rule, so it was **not** applied; see the recommendation in the AF-05 packet.
+**F5 — Grounding saturation (measured; fixed by AF-05G, see §8).** `EvidenceGrounding/v1` shows at most **12** facts, newest steps first (ADR-0042 PRE-5 amendment). In the c508 shape `system.events` is the newest fact-bearing step and emits 12 facts alone, so the block shows 12 and says "18 additional observed fact(s) are not shown": none of the stability or crashes facts reaches the final prompt through grounding. When compaction removes the raw results, those facts are reachable **only** through drill-down. An **uncommitted experiment** that selects facts round-robin across steps (referenced first, then position, then newest) kept the same 12-fact bound and the same tokens (±0.3 %) and raised facts retained from **1/9 to 7/9** (c508-extended-10, unknown profile and 16,384 / 12,288 windows) and from 1/9 to 7/9 (c508-equivalent, unknown profile). This is a change to an Accepted ADR-0042 rule, so it was **not** applied; see the recommendation in the AF-05 packet.
 
 **F6 — High-density Facts do not reduce reads in this workload.** The reads in the fixture are scripted, so "reads avoided" is not measurable; what is measurable is that, because of F5, the AF-04 facts of `system.stability` and `system.crashes` are never present in the final prompt when `system.events` is newer. Their value is therefore limited to cases where the step is within the newest 12 facts.
 
@@ -314,3 +314,63 @@ Only the configuration matrices are reproduced; the sweeps of that commit are su
 | c508-extended-10 | MAF 16384, summarization on (dedicated Sum/small) | 16384/1024 (Agent.Context.Profiles) | 24 | 206931 | 556 | 13 | 20288 | 4446 | **232221** | 14->4 | 11 | 4 | 0 | 2 | 17 | 0 | Completed | 1/9 | 3/3 | 54.4 |
 | c508-extended-10 | MAF 12288, summarization off | 12288/1024 (Agent.Context.Profiles) | 24 | 163683 | 556 | 0 | 0 | 0 | **164239** | 14->1 | 13 | 4 | 0 | 2 | 17 | 0 | Completed | 1/9 | 3/3 | 42.4 |
 | c508-extended-10 | MAF 12288, summarization on (task model) | 12288/1024 (Agent.Context.Profiles) | 24 | 163867 | 556 | 6 | 2983 | 2052 | **169458** | 14->1 | 13 | 4 | 0 | 2 | 17 | 0 | Completed | 1/9 | 3/3 | 46.6 |
+
+
+## 8. AF-05G post-fix measurements
+
+Packet section: [AF-05G](2026-10-10-af-05-maf-regression-tuning-cleanup.md#af-05g--evidence-addressability-and-grounding-diversity-2026-10-11). Class:
+**DETERMINISTIC FIXTURE** (synthetic token proxy, scripted model). Regenerate:
+`BOPS_BENCHMARK_OUT=<file> dotnet test tests/bOps.AgentFramework.Tests --configuration Release --filter "FullyQualifiedName~Matrix_AF05G"`.
+The availability column counts, over the expected authoritative signals of the scenario, how many the final reasoning call could use *directly* (in the projected history),
+as a *grounded* typed fact (EvidenceGrounding block), or by *exact* drill-down (the raw result is persisted, `runtime.evidence_read` is offered, the final prompt states the
+addressing rule, and an actual `EvidenceRead.Read` at the signal's offset returns it); "available" is the union. A "result recorded" stub counts as none. The *Facts retained*
+column keeps its AF-05 meaning (visible in the prompt, grounding block included, never the raw drill-down).
+
+### 8.1 Before (commit `4f83329`, same harness and scenarios)
+
+### AF-05G c508-equivalent — unknown profile, 10240, 16384
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| c508-equivalent | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 14 | 69600 | 294 | 0 | 0 | 0 | **69894** | 7->7 | 4 | 4 | 0 | 2 | 7 | 0 | Completed | 1/9 | 3/3 | 0 / 1 / 9 / 9 of 9 | 21.3 |
+| c508-equivalent | MAF 10240, summarization off | 10240/1024 (Agent.Context.Profiles) | 14 | 69899 | 340 | 0 | 0 | 0 | **70239** | 4->0 | 4 | 4 | 0 | 2 | 7 | 0 | Completed | 9/9 | 3/3 | 9 / 1 / 9 / 9 of 9 | 8.7 |
+| c508-equivalent | MAF 16384, summarization off | 16384/1024 (Agent.Context.Profiles) | 14 | 81039 | 340 | 0 | 0 | 0 | **81379** | 0->0 | 0 | 4 | 0 | 2 | 7 | 0 | Completed | 9/9 | 3/3 | 9 / 1 / 9 / 9 of 9 | 4.3 |
+
+### AF-05G compacted-small-results (five 2000-character results, nothing over 4000) — unknown profile
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| compacted-small-results | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 7 | 14909 | 141 | 0 | 0 | 0 | **15050** | 5->5 | 2 | 0 | 0 | 1 | 5 | 0 | Completed | n/a | n/a | n/a | 0.6 |
+
+### AF-05G short-diagnostic — unknown profile
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| short-diagnostic | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 5 | 5705 | 115 | 0 | 0 | 0 | **5820** | 0->0 | 0 | 0 | 0 | 0 | 3 | 0 | Completed | 3/3 | n/a | 3 / 0 / 0 / 3 of 3 | 0.2 |
+
+### 8.2 After (this branch)
+
+### AF-05G c508-equivalent — unknown profile, 10240, 16384
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| c508-equivalent | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 14 | 70544 | 327 | 0 | 0 | 0 | **70871** | 7->7 | 4 | 4 | 0 | 2 | 7 | 0 | Completed | 7/9 | 3/3 | 0 / 7 / 9 / 9 of 9 | 20.9 |
+| c508-equivalent | MAF 10240, summarization off | 10240/1024 (Agent.Context.Profiles) | 14 | 70812 | 340 | 0 | 0 | 0 | **71152** | 4->0 | 4 | 4 | 0 | 2 | 7 | 0 | Completed | 9/9 | 3/3 | 9 / 7 / 9 / 9 of 9 | 5.5 |
+| c508-equivalent | MAF 16384, summarization off | 16384/1024 (Agent.Context.Profiles) | 14 | 81951 | 340 | 0 | 0 | 0 | **82291** | 0->0 | 0 | 4 | 0 | 2 | 7 | 0 | Completed | 9/9 | 3/3 | 9 / 7 / 9 / 9 of 9 | 4.4 |
+
+### AF-05G compacted-small-results (five 2000-character results, nothing over 4000) — unknown profile
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| compacted-small-results | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 8 | 22434 | 153 | 0 | 0 | 0 | **22587** | 5->5 | 2 | 1 | 0 | 0 | 5 | 0 | Completed | n/a | n/a | n/a | 0.8 |
+
+### AF-05G short-diagnostic — unknown profile
+
+| Scenario | Config | Profile (max/reserved, source) | Primary calls | Primary prompt | Primary compl. | Summary calls | Summary prompt | Summary compl. | ALL-IN | Hist. groups before->after (worst call) | Tool groups compacted | ER served | ER exhausted | ER denied (model wanted, not offered) | Op. steps | Replans | Status | Facts retained | Limitations retained | Evidence visible / grounded / exact-addressable / available | Projection ms (real) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|
+| short-diagnostic | unknown profile (structural MAF, the shipped default for an unprofiled model) | unknown (unknown-structural) | 5 | 7599 | 115 | 0 | 0 | 0 | **7714** | 0->0 | 0 | 0 | 0 | 0 | 3 | 0 | Completed | 3/3 | n/a | 3 / 0 / 3 / 3 of 3 | 0.2 |
+
+Reading: with the unknown profile the grounded typed facts rise from 1 to 7 of the 9 expected signals (the other two stay exactly addressable), the four-read exhaustion and the
+task outcome are unchanged, and prompt tokens move +1.4 % on the c508 shape. The compacted-small-results workload could not be read at all before (the oldest 2,000-character
+result was compacted and neither the control function nor the index existed); after the fix the exact read is served. The short diagnostic pays for offering the control
+function and the index (+1,894 synthetic prompt tokens over five calls) and still performs no read, no compaction and no extra model call.
