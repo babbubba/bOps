@@ -43,16 +43,19 @@ public sealed class MafContextProjector : IModelContextProjector
         ct.ThrowIfCancellationRequested();
 
         var profile = options.Resolve(descriptor);
-        if (profile is null)
+        if (profile is null || profile.MaxContextTokens is null)
         {
             var legacyTokens = EstimateRequestTokens(request.LegacySafeRequest);
             return new ModelContextProjectionResult(
                 request.LegacySafeRequest,
                 new ModelContextProjectionStats(
-                    UnknownProfileSource, null, null, null, 0, legacyTokens, legacyTokens, 0, 0, 0)
+                    profile is null ? UnknownProfileSource : ConfiguredProfileSource + ":unknown-legacy-safe",
+                    null, null, null, 0, legacyTokens, legacyTokens, 0, 0, 0)
                 {
                     HistoricalMessagesBefore = request.LegacySafeRequest.History.Count,
                     HistoricalMessagesAfter = request.LegacySafeRequest.History.Count,
+                    HistoricalGroupsBefore = CountAtomicGroups(request.LegacySafeRequest.History),
+                    HistoricalGroupsAfter = CountAtomicGroups(request.LegacySafeRequest.History),
                     HistoricalCharactersBefore = request.LegacySafeRequest.History.Sum(turn => turn.Content?.Length ?? 0),
                     HistoricalCharactersAfter = request.LegacySafeRequest.History.Sum(turn => turn.Content?.Length ?? 0),
                     Strategies = "LegacySafeProjection",
@@ -72,7 +75,9 @@ public sealed class MafContextProjector : IModelContextProjector
         var protectedTokens = EstimateMessages(fixedMessages);
         var toolTokens = EstimateToolTokens(request.AvailableTools);
         var fixedTokens = protectedTokens + toolTokens + options.SafetyReserveTokens;
-        var inputCapacity = profile.MaxContextTokens - profile.ReservedOutputTokens;
+        var maxContextTokens = profile.MaxContextTokens.Value;
+        var reservedOutputTokens = profile.ReservedOutputTokens!.Value;
+        var inputCapacity = maxContextTokens - reservedOutputTokens;
         var historyBudget = inputCapacity - fixedTokens;
         if (historyBudget < 0)
         {
@@ -151,8 +156,8 @@ public sealed class MafContextProjector : IModelContextProjector
             projected,
             new ModelContextProjectionStats(
                 ConfiguredProfileSource,
-                profile.MaxContextTokens,
-                profile.ReservedOutputTokens,
+                maxContextTokens,
+                reservedOutputTokens,
                 inputCapacity,
                 fixedTokens,
                 beforeTokens,
@@ -165,6 +170,8 @@ public sealed class MafContextProjector : IModelContextProjector
                 EstimatedToolTokens = toolTokens,
                 HistoricalMessagesBefore = beforeGroups,
                 HistoricalMessagesAfter = compactedMessages.Count,
+                HistoricalGroupsBefore = CountAtomicGroups(request.HistoricalTurns),
+                HistoricalGroupsAfter = CountAtomicGroups(compactedHistory),
                 HistoricalCharactersBefore = beforeCharacters,
                 HistoricalCharactersAfter = afterCharacters,
             });
@@ -217,6 +224,31 @@ public sealed class MafContextProjector : IModelContextProjector
             FunctionResultContent result => JsonSerializer.Serialize(result.Result).Length,
             _ => 0,
         }));
+
+    private static int CountAtomicGroups(IReadOnlyList<ChatTurn> turns)
+    {
+        var groups = 0;
+        for (var index = 0; index < turns.Count; index++)
+        {
+            groups++;
+            if (turns[index].Role != bOps.Abstractions.ChatRole.Assistant
+                || turns[index].ToolCalls is not { Count: > 0 } calls)
+            {
+                continue;
+            }
+
+            var ids = calls.Select(call => call.Id).ToHashSet(StringComparer.Ordinal);
+            while (index + 1 < turns.Count
+                && turns[index + 1].Role == bOps.Abstractions.ChatRole.Tool
+                && turns[index + 1].ToolCallId is { } id
+                && ids.Remove(id))
+            {
+                index++;
+            }
+        }
+
+        return groups;
+    }
 
     private static string FormatToolGroupWithoutResultData(CompactionMessageGroup group)
     {

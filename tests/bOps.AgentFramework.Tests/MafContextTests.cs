@@ -253,6 +253,23 @@ public sealed class MafContextTests
             },
         };
         Assert.Throws<InvalidOperationException>(() => impossible.Validate());
+
+        var explicitUnknown = new AgentRunnerOptions
+        {
+            Context = new ModelContextOptions
+            {
+                Profiles =
+                [
+                    new ModelContextProfile
+                    {
+                        Provider = "router",
+                        Model = "dynamic",
+                        UseLegacySafeProjectionWhenUnknown = true,
+                    },
+                ],
+            },
+        };
+        explicitUnknown.Validate();
     }
 
     private static MafContextProjector Projector(int maxContextTokens, int reservedOutputTokens = 20) =>

@@ -415,6 +415,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         activity.SetTag("bops.context.history_tokens_after", stats.EstimatedHistoryTokensAfter);
         activity.SetTag("bops.context.history_messages_before", stats.HistoricalMessagesBefore);
         activity.SetTag("bops.context.history_messages_after", stats.HistoricalMessagesAfter);
+        activity.SetTag("bops.context.history_groups_before", stats.HistoricalGroupsBefore);
+        activity.SetTag("bops.context.history_groups_after", stats.HistoricalGroupsAfter);
         activity.SetTag("bops.context.history_characters_before", stats.HistoricalCharactersBefore);
         activity.SetTag("bops.context.history_characters_after", stats.HistoricalCharactersAfter);
         activity.SetTag("bops.context.strategies", stats.Strategies);

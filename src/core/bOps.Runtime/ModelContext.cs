@@ -15,10 +15,16 @@ public sealed record ModelContextProfile
     public string Model { get; init; } = string.Empty;
 
     /// <summary>The model's total context window.</summary>
-    public int MaxContextTokens { get; init; }
+    public int? MaxContextTokens { get; init; }
 
     /// <summary>Tokens reserved for the model response.</summary>
-    public int ReservedOutputTokens { get; init; }
+    public int? ReservedOutputTokens { get; init; }
+
+    /// <summary>
+    /// Explicitly selects the conservative legacy bounded projection when this configured profile
+    /// intentionally leaves capacity unknown.
+    /// </summary>
+    public bool UseLegacySafeProjectionWhenUnknown { get; init; }
 }
 
 /// <summary>Runtime-owned context budgeting and compaction configuration.</summary>
@@ -63,12 +69,21 @@ public sealed record ModelContextOptions
                 throw new InvalidOperationException($"'{key}:Provider' and '{key}:Model' must be non-empty.");
             }
 
-            if (profile.MaxContextTokens <= 0)
+            if (profile.MaxContextTokens is null)
+            {
+                if (profile.ReservedOutputTokens is not null || !profile.UseLegacySafeProjectionWhenUnknown)
+                {
+                    throw new InvalidOperationException(
+                        $"'{key}' with unknown MaxContextTokens must omit ReservedOutputTokens and explicitly enable UseLegacySafeProjectionWhenUnknown.");
+                }
+            }
+            else if (profile.MaxContextTokens <= 0)
             {
                 throw new InvalidOperationException($"'{key}:MaxContextTokens' must be positive.");
             }
-
-            if (profile.ReservedOutputTokens <= 0 || profile.ReservedOutputTokens >= profile.MaxContextTokens)
+            else if (profile.ReservedOutputTokens is null
+                || profile.ReservedOutputTokens <= 0
+                || profile.ReservedOutputTokens >= profile.MaxContextTokens)
             {
                 throw new InvalidOperationException(
                     $"'{key}:ReservedOutputTokens' must be positive and below '{key}:MaxContextTokens'.");
@@ -130,6 +145,10 @@ public sealed record ModelContextProjectionStats(
     /// <summary>Historical message counts before and after projection.</summary>
     public int HistoricalMessagesBefore { get; init; }
     public int HistoricalMessagesAfter { get; init; }
+
+    /// <summary>Atomic historical group counts before and after projection.</summary>
+    public int HistoricalGroupsBefore { get; init; }
+    public int HistoricalGroupsAfter { get; init; }
 
     /// <summary>Historical character counts before and after projection.</summary>
     public int HistoricalCharactersBefore { get; init; }

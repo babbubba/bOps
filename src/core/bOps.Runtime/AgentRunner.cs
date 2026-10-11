@@ -2885,6 +2885,7 @@ public sealed partial class AgentRunner(
         {
             logicalCall.OverflowRetried = true;
             logicalCall.Aggressive = true;
+            BOpsTelemetry.ContextOverflowRetriesTotal.Add(1);
             return await CallModelAsync(taskId, stepIndex, actor, requestFactory(true),
                 delegation, calls, ct, malformedOutput);
         }

@@ -50,4 +50,8 @@ public static class BOpsTelemetry
     /// <summary>Difference between provider-reported and locally estimated input tokens.</summary>
     public static Histogram<long> ContextEstimateDelta { get; } =
         Meter.CreateHistogram<long>("bops.context.estimate_delta", unit: "tokens");
+
+    /// <summary>One bounded retry after a provider classified the request as context overflow.</summary>
+    public static Counter<long> ContextOverflowRetriesTotal { get; } =
+        Meter.CreateCounter<long>("bops.context.overflow_retries_total");
 }
