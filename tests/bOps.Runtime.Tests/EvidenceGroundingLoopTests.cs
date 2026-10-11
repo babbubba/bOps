@@ -259,24 +259,24 @@ public sealed class EvidenceGroundingLoopTests
     }
 
     [Fact]
-    public async Task G12_DisclosureReAskRunsFirst_ThenTheCheck_AndTheCorrectionKeepsTheHeading()
+    public async Task G12_TheDeterministicDisclosureComesFirst_ThenTheCheckSeesTheDisclosedFinal_AndTheCorrectionKeepsTheHeading()
     {
-        const string disclosed = ContradictoryAnswer + "\n\nEvidence limitations\n- test.events returned a partial result.";
+        // AF-05H: no model call between the answer and the check; the check reads the original answer plus the runtime section.
         const string correctedDisclosed = CorrectedAnswer + "\n\nEvidence limitations\n- test.events returned a partial result.";
 
         var (state, model, _) = await RunAsync(Evidence(ToolResultCompleteness.Partial), Options(),
-            Final(ContradictoryAnswer), Final(disclosed), Flagged, Final(correctedDisclosed));
+            Final(ContradictoryAnswer), Flagged, Final(correctedDisclosed));
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(correctedDisclosed, state.Steps[^1].Observation);
-        Assert.Equal("Final response; evidence disclosure re-ask accepted; evidence grounding corrected", state.Steps[^1].Description);
-        Assert.Equal(EvidenceDisclosure.Instruction, LastUserTurn(model.Requests[3]));
-        Assert.Equal(EvidenceGroundingLedger.CheckInstruction, LastUserTurn(model.Requests[4]));
-        Assert.Equal(disclosed, model.Requests[4].History[^2].Content);
+        Assert.Equal("Final response; evidence limitations appended by runtime; evidence grounding corrected", state.Steps[^1].Description);
+        Assert.Equal(EvidenceGroundingLedger.CheckInstruction, LastUserTurn(model.Requests[3]));
+        var checkedCandidate = model.Requests[3].History[^2].Content!;
+        Assert.StartsWith(ContradictoryAnswer + "\n\n## Evidence limitations\n" + EvidenceDisclosure.AppendedLead, checkedCandidate, StringComparison.Ordinal);
+        Assert.True(EvidenceDisclosure.HasHeading(checkedCandidate));
         Assert.Contains("(from partial evidence)", model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.Equal(
-            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceDisclosureReAsk, LogicalModelCallRole.EvidenceGroundingCheck,
-                LogicalModelCallRole.EvidenceGroundingCorrection],
+            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceGroundingCheck, LogicalModelCallRole.EvidenceGroundingCorrection],
             FinalResponse.LogicalCalls(state.Steps[^1]).Select(call => call.Role));
     }
 

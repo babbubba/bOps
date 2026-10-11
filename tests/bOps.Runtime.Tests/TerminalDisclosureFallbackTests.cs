@@ -7,8 +7,9 @@ using static bOps.Runtime.Tests.EvidenceScenario;
 namespace bOps.Runtime.Tests;
 
 /// <summary>
-/// PRE-3B2 (ADR-0042 amendment): a failed disclosure re-ask may fall back only to an already-valid user-facing original; a
-/// protocol/control artifact or an empty response is never a valid fallback, so when its bounded correction fails the task fails.
+/// PRE-3B2 (ADR-0042 amendment): a protocol/control artifact or an empty response is never a valid user-facing final, so when its
+/// bounded correction fails the task fails. Since AF-05H the disclosure itself is deterministic (no re-ask): a valid original is
+/// always kept byte-identical as the prefix of the persisted answer, whatever the model would have replied next.
 /// </summary>
 public sealed class TerminalDisclosureFallbackTests
 {
@@ -66,25 +67,27 @@ public sealed class TerminalDisclosureFallbackTests
     }
 
     [Fact]
-    public async Task T2_ValidProse_InsufficientDisclosure_CorrectionAccepted()
+    public async Task T2_ValidProse_InsufficientDisclosure_TheSectionIsAppended_WithoutAnotherCall()
     {
-        var (state, _) = await RunAsync(Final(ValidProse), Final(DisclosedAnswer));
+        var (state, model) = await RunAsync(Final(ValidProse), Final(DisclosedAnswer));
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
-        Assert.Equal(DisclosedAnswer, state.Steps[^1].Observation);
-        Assert.Equal(FinalResponse.ReAskAcceptedMarker, state.Steps[^1].Description);
+        Assert.Equal(3, model.Calls);
+        Assert.StartsWith(ValidProse + "\n\n## Evidence limitations\n", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(FinalResponse.AppendedMarker, state.Steps[^1].Description);
     }
 
     [Theory]
     [InlineData(ModelFailureKind.Timeout)]
     [InlineData(ModelFailureKind.Unknown)]
-    public async Task T3_T4_T12_ValidProse_ReAskFails_CompletesWithTheByteIdenticalOriginal(ModelFailureKind kind)
+    public async Task T3_T4_T12_ValidProse_AFailureThatWouldFollow_IsNeverReached_AndTheOriginalIsTheExactPrefix(ModelFailureKind kind)
     {
-        var (state, _) = await RunAsync(Final(ValidProse), Failure(kind));
+        var (state, model) = await RunAsync(Final(ValidProse), Failure(kind));
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
-        Assert.Equal(ValidProse, state.Steps[^1].Observation);
-        Assert.Equal(FinalResponse.ReAskNotUsedMarker, state.Steps[^1].Description);
+        Assert.Equal(3, model.Calls);
+        Assert.StartsWith(ValidProse + "\n\n", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(FinalResponse.AppendedMarker, state.Steps[^1].Description);
     }
 
     [Fact]
@@ -147,12 +150,14 @@ public sealed class TerminalDisclosureFallbackTests
     [Theory]
     [InlineData(Artifact)]
     [InlineData(Artifact + "\n\n## Evidence limitations\n- partial")]
-    public async Task T11_ReAskReturnsAnArtifact_NotUsed_ValidOriginalPreserved(string reply)
+    public async Task T11_AnArtifactTheModelWouldReplyNext_IsNeverRequested_ValidOriginalPreserved(string reply)
     {
-        var (state, _) = await RunAsync(Final(ValidProse), Final(reply));
+        var (state, model) = await RunAsync(Final(ValidProse), Final(reply));
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
-        Assert.Equal(ValidProse, state.Steps[^1].Observation);
-        Assert.Equal(FinalResponse.ReAskNotUsedMarker, state.Steps[^1].Description);
+        Assert.Equal(3, model.Calls);
+        Assert.StartsWith(ValidProse, state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.DoesNotContain("<tool_call>", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(FinalResponse.AppendedMarker, state.Steps[^1].Description);
     }
 }

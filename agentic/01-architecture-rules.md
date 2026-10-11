@@ -645,21 +645,24 @@ inspected. Required behaviour:
    `AgentRunnerOptions.MaxReplans`; exhausting it ends the task as `ReplanLimitReached`, distinct
    from `PolicyBlocked` (stuck on the *same* tool) and `MaxStepsReached` (no terminal state
    reached at all).
-9. **Evidence limitations are listed by the runtime and disclosed by the model, once** (HARDEN-9,
+9. **Evidence limitations are listed by the runtime and always disclosed in the final answer** (HARDEN-9, AF-05H,
    ADR-0042, D-038). Every call carries a fixed, product-neutral evidence rule. Every step prompt
    carries the `EvidenceLimitations/v2` digest — built only from persisted typed step data (rule 7,
    never package JSON, never tool text, an unresolved tool name shown only as a fixed token), bounded
    to 16 entries and 4,608 characters, deterministic and identical after a resume. An ordinary final answer given
    under a non-empty digest that has no `Evidence limitations` heading (a deterministic line-based
-   check) is restated by **one** tool-free re-ask (`Agent:EvidenceDisclosureRetries`, 0 or 1). A delegated
-   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload without a prose
-   disclosure re-ask; its v2 digest instead instructs qualification of materially affected supported
-   findings without creating findings or changing evidence IDs or severity to carry limitations. The re-ask
-   never executes, authorizes or audits a tool call, creates no step, replan or status change, and never
-   loses the original answer, which stands unless the restatement carries the heading. The final step's
-   `Description` records which of the three fixed markers applies, and every consumer recognizes a final
-   step through the one shared predicate (an exact marker and no tool call). The runtime never rewrites,
-   truncates or annotates the model's text.
+   check) gets the bounded runtime-authored `EvidenceDisclosure/v2` section appended — the heading, a fixed
+   line and the digest's typed entries — with **no model call** (`Agent:EvidenceDisclosureEnabled`, default
+   true; AF-05H replaced the former model re-ask, which could change the answer's facts). A delegated
+   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload with nothing
+   appended; its v2 digest instead instructs qualification of materially affected supported
+   findings without creating findings or changing evidence IDs or severity to carry limitations. The
+   disclosure never executes, authorizes or audits a tool call, creates no step, replan or status change,
+   and the original answer is always an exact, unchanged prefix of the persisted one. The final step's
+   `Description` records which fixed marker applies (the two historical re-ask markers stay readable), and
+   every consumer recognizes a final step through the one shared predicate (an exact marker and no tool
+   call). The runtime never rewrites or truncates the model's text; the appended section is its only
+   addition, and it is runtime-authored from typed data.
 
 ## D. Observability
 

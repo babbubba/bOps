@@ -1059,20 +1059,18 @@ public sealed partial class AgentRunner(
 
             if (response.IsFinal || response.ToolCalls.Count == 0)
             {
-                // ADR-0042 §6: under listed limitations a final answer without the heading is restated once, never more, and
-                // never by executing anything. The original answer is the persisted one unless the restatement is accepted.
+                // ADR-0042 §6 (AF-05H amendment): under listed limitations a final answer without the heading gets the deterministic
+                // runtime-authored section appended. No model call: the original answer is an exact, unchanged prefix of what is kept.
                 var finalText = response.TextResponse;
                 var disclosure = EvidenceDisclosureOutcome.NotAttempted;
                 if (!diagnostic
                     && limitations is not null
-                    && options.EvidenceDisclosureRetries == 1
-                    && !EvidenceDisclosure.HasHeading(finalText)
-                    && DisclosureBudgetRemains(run, delegation))
+                    && options.EvidenceDisclosureActive
+                    && !EvidenceDisclosure.HasHeading(finalText))
                 {
-                    (finalText, disclosure) = await ReAskForDisclosureAsync(run, request, finalText!, stepIndex, stepCalls, ct);
-                    stepActivity?.SetTag(
-                        "bops.evidence_disclosure_reask",
-                        disclosure == EvidenceDisclosureOutcome.Accepted ? "accepted" : "result_not_used");
+                    finalText = EvidenceDisclosure.Append(finalText!, limitations);
+                    disclosure = EvidenceDisclosureOutcome.Appended;
+                    stepActivity?.SetTag("bops.evidence_disclosure", "appended");
                 }
 
                 // ADR-0042 PRE-5 amendment §5–§8: after disclosure, so the checked text is the persisted one unless corrected.
@@ -3104,59 +3102,14 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>
-    /// Whether the evidence-disclosure re-ask may still be made (ADR-0042 §6): the task's token budget is not already used
-    /// up and a delegated role's meter has no budget or time reason against it — the checks the loop already applies, asked
-    /// without recording a stop, so declining the re-ask can never end the task or the role by its budget.
+    /// Whether the model-backed evidence-grounding check may still be made (ADR-0042 PRE-5): the task's token budget is not already
+    /// used up and a delegated role's meter has no budget or time reason against it — the checks the loop already applies, asked
+    /// without recording a stop, so declining the check can never end the task or the role by its budget. (The disclosure itself
+    /// costs no model call since AF-05H.)
     /// </summary>
     private bool DisclosureBudgetRemains(ExecutionRun run, DelegatedExecutionScope? delegation) =>
         !(options.MaxTotalTokens is { } tokenCap && run.TokensUsed > tokenCap)
         && delegation?.Meter?.IsExhausted(timeProvider.GetUtcNow()) != true;
-
-    /// <summary>
-    /// The one evidence-disclosure re-ask (ADR-0042 §6): the step's request plus the original answer as an assistant turn and
-    /// the fixed <see cref="EvidenceDisclosure.Instruction"/>. It is a restatement only. A reply is adopted only when it is
-    /// non-empty, carries the heading and is not a tool call; a tool call is never executed, authorized or audited as one, an
-    /// empty or heading-less reply and any model failure keep the original answer, and nothing here creates a step, counts
-    /// against a step or replan budget, or changes the task's status. A genuine cancellation propagates as for every model
-    /// call. The turns it adds exist only in this request, so the persisted history stays what a resume rebuilds.
-    /// </summary>
-    private async Task<(string? Text, EvidenceDisclosureOutcome Outcome)> ReAskForDisclosureAsync(
-        ExecutionRun run, ModelContextRequest request, string originalAnswer, int stepIndex,
-        List<ModelCallRecord> stepCalls, CancellationToken ct)
-    {
-        var reAsk = request.AppendProtected(
-            ChatTurn.FromAssistantText(originalAnswer),
-            ChatTurn.FromUser(EvidenceDisclosure.Instruction));
-
-        ModelResponse reply;
-        try
-        {
-            reply = await CallModelAsync(run.TaskId, stepIndex, run.Actor, reAsk, run.Delegation, stepCalls, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The attempts are already recorded and audited; the original answer stands.
-            logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-disclosure re-ask failed; keeping the original answer", run.TaskId, stepIndex);
-            return (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
-        }
-
-        run.TokensUsed += UsageTokens(reply);
-
-        if (reply.ToolCalls.Count > 0)
-        {
-            logger.LogWarning(
-                "Task {TaskId} step {StepIndex}: the evidence-disclosure re-ask returned a tool call; it was not executed", run.TaskId, stepIndex);
-            return (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
-        }
-
-        // PRE-3B2: the reply must itself be a valid user-facing terminal candidate; a protocol/control artifact is never
-        // adopted, even when it happens to carry the heading. The already-valid original stays the fallback.
-        return !string.IsNullOrWhiteSpace(reply.TextResponse)
-            && !TerminalProtocolArtifact.IsArtifact(reply.TextResponse)
-            && EvidenceDisclosure.HasHeading(reply.TextResponse)
-            ? (reply.TextResponse, EvidenceDisclosureOutcome.Accepted)
-            : (originalAnswer, EvidenceDisclosureOutcome.ResultNotUsed);
-    }
 
     /// <summary>What the grounding guard settled: the answer to persist and its outcome, or a failure that ends the attempt.</summary>
     private sealed record GroundingGuardResult(

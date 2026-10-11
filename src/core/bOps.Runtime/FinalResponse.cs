@@ -5,17 +5,22 @@ using bOps.Abstractions;
 
 namespace bOps.Runtime;
 
-/// <summary>What became of the evidence-disclosure re-ask of a final answer (ADR-0042 §6, §13).</summary>
+/// <summary>What became of the evidence disclosure of a final answer (ADR-0042 §6, §13; AF-05H amendment).</summary>
 internal enum EvidenceDisclosureOutcome
 {
-    /// <summary>No re-ask was made: the persisted answer is the model's first final answer.</summary>
+    /// <summary>Nothing was added: the persisted answer is the model's final answer as given.</summary>
     NotAttempted,
 
-    /// <summary>A re-ask was made and its answer, which carries the heading, is the persisted one.</summary>
+    /// <summary>Historical (before AF-05H): a model re-ask was made and its answer is the persisted one. Read, never written.</summary>
     Accepted,
 
-    /// <summary>A re-ask was made and failed or was unusable: the persisted answer is the original.</summary>
+    /// <summary>Historical (before AF-05H): a model re-ask was made and failed; the persisted answer is the original. Read, never written.</summary>
     ResultNotUsed,
+
+    /// <summary>
+    /// AF-05H: the deterministic runtime-authored section was appended; the model's answer is an unchanged prefix. No model call.
+    /// </summary>
+    Appended,
 }
 
 /// <summary>Which logical model call of a step a group of recorded attempts is (ADR-0042 §13, PRE-5 amendment §9).</summary>
@@ -27,7 +32,7 @@ internal enum LogicalModelCallRole
     /// <summary>A call made after an empty reply (<see cref="AgentRunnerOptions.EmptyFinalResponseRetries"/>).</summary>
     EmptyAnswerRetry,
 
-    /// <summary>The evidence-disclosure re-ask of a final step whose description carries a re-ask marker.</summary>
+    /// <summary>The evidence-disclosure re-ask of a historical final step whose description carries a re-ask marker (before AF-05H).</summary>
     EvidenceDisclosureReAsk,
 
     /// <summary>The evidence-grounding check of a final step whose description carries a grounding marker.</summary>
@@ -45,7 +50,7 @@ internal sealed record LogicalModelCall(LogicalModelCallRole Role, IReadOnlyList
 /// <summary>
 /// The persisted final-response step: the fixed <see cref="PlanStep.Description"/> markers, the one shared predicate that
 /// recognizes a final-response step, and the reconstruction of its logical model calls (ADR-0042 §13, PRE-5 amendment §9). A
-/// marker is <see cref="Marker"/>, an optional disclosure suffix and an optional grounding suffix — twelve fixed strings. No
+/// marker is <see cref="Marker"/>, an optional disclosure suffix and an optional grounding suffix — sixteen fixed strings. No
 /// model-call kind is stored; the persisted order, <see cref="ModelCallRecord.ModelAttempt"/> and the marker are enough.
 /// </summary>
 internal static class FinalResponse
@@ -58,6 +63,9 @@ internal static class FinalResponse
 
     /// <summary>A disclosure re-ask was made and failed; the persisted answer is the original.</summary>
     internal const string ReAskNotUsedMarker = "Final response; evidence disclosure re-ask result not used";
+
+    /// <summary>AF-05H: the deterministic limitations section was appended to the unchanged answer; no model call was made for it.</summary>
+    internal const string AppendedMarker = "Final response; evidence limitations appended by runtime";
 
     /// <summary>The grounding suffix: the check reply was valid and cited no contradiction (a model judgement, not a proof).</summary>
     internal const string GroundingNoContradictionCitedSuffix = "; evidence grounding check cited no contradiction";
@@ -81,6 +89,7 @@ internal static class FinalResponse
         {
             EvidenceDisclosureOutcome.Accepted => ReAskAcceptedMarker,
             EvidenceDisclosureOutcome.ResultNotUsed => ReAskNotUsedMarker,
+            EvidenceDisclosureOutcome.Appended => AppendedMarker,
             _ => Marker,
         };
 
@@ -154,7 +163,8 @@ internal static class FinalResponse
             trailing.Add(LogicalModelCallRole.EvidenceGroundingCheck);
         }
 
-        if (DisclosureOf(step) != EvidenceDisclosureOutcome.NotAttempted)
+        // Only the historical re-ask was a model call; the AF-05H appended section is not.
+        if (DisclosureOf(step) is EvidenceDisclosureOutcome.Accepted or EvidenceDisclosureOutcome.ResultNotUsed)
         {
             trailing.Add(LogicalModelCallRole.EvidenceDisclosureReAsk);
         }

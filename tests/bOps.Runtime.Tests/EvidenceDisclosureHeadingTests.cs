@@ -170,13 +170,14 @@ public sealed class EvidenceDisclosureHeadingTests
     }
 
     [Fact]
-    public void Instruction_IsTheFixedVersionedRestatementRequest()
+    public void TheAppendedSection_IsVersionedRuntimeAuthoredAndCarriesTheHeading()
     {
-        Assert.StartsWith("EvidenceDisclosure/v1:", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
-        Assert.Contains("Restate your final answer", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
-        Assert.Contains("Evidence limitations", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
-        Assert.Contains("Keep your conclusions unchanged unless the limitations require qualifying them", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
-        Assert.Contains("Start no new analysis", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
-        Assert.Contains("Do not call tools", EvidenceDisclosure.Instruction, StringComparison.Ordinal);
+        // AF-05H: v1 was the model re-ask instruction, removed; v2 is the deterministic appended section.
+        Assert.Equal("EvidenceDisclosure/v2", EvidenceDisclosure.Version);
+        Assert.Contains(EvidenceDisclosure.Version, EvidenceDisclosure.AppendedLead, StringComparison.Ordinal);
+        Assert.Contains("the answer above is unchanged", EvidenceDisclosure.AppendedLead, StringComparison.Ordinal);
+        var section = EvidenceDisclosure.Section(new EvidenceLimitations("unused", 1, 0) { Entries = ["- step 0: t.x — completeness Partial"] });
+        Assert.Equal("## Evidence limitations\n" + EvidenceDisclosure.AppendedLead + "\n- step 0: t.x — completeness Partial", section);
+        Assert.True(EvidenceDisclosure.HasHeading(section));
     }
 }

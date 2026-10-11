@@ -172,7 +172,6 @@ public sealed class SystemEventsAgentCasesTests
         const string source = "Microsoft-Windows-WHEA-Logger";
         const string denial = "No WHEA 18/19/29 events were observed";
         const string limitations = "\n\nEvidence limitations\n- system.events listed only some of the matched records.";
-        const string disclosed = $"The freezes look software-related. {denial} in the System log.{limitations}";
         const string corrected = $"WHEA Event 19 (a corrected hardware error) was recorded at least once; its relation to the freezes is a hypothesis.{limitations}";
         SystemEventRecord[] records =
         [
@@ -186,8 +185,8 @@ public sealed class SystemEventsAgentCasesTests
             Plan(),
             Asks(j => { j["windowMinutes"] = 60; j["limit"] = 3; }),
             Answers($"The freezes look software-related. {denial} in the System log."),
-            // The broad call lists fewer records than it matched (Partial), so the ADR-0042 §6 re-ask runs first, as in production.
-            Answers(disclosed),
+            // The broad call lists fewer records than it matched (Partial): the ADR-0042 §6 section is appended deterministically
+            // (AF-05H, no model call), and the grounding check then reads that disclosed answer.
             Answers(new JsonObject
             {
                 ["contradictions"] = new JsonArray(new JsonObject { ["fact"] = "F0.1", ["quote"] = denial }),
@@ -208,7 +207,8 @@ public sealed class SystemEventsAgentCasesTests
             model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.Equal(AgentTaskStatus.Completed, task.Status);
         Assert.Equal(corrected, task.Steps[^1].Observation);
-        Assert.Equal("Final response; evidence disclosure re-ask accepted; evidence grounding corrected", task.Steps[^1].Description);
+        Assert.Equal("Final response; evidence limitations appended by runtime; evidence grounding corrected", task.Steps[^1].Description);
+        Assert.Contains("## Evidence limitations", model.Requests[3].History[^2].Content, StringComparison.Ordinal);
         Assert.DoesNotContain(task.Steps, step => step.Observation?.Contains(denial, StringComparison.Ordinal) == true);
     }
 

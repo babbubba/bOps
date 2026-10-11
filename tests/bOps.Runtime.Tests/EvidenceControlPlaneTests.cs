@@ -313,7 +313,8 @@ public sealed class EvidenceControlPlaneTests
         var result = await runner.RunAsync("diagnose", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        Assert.Equal("done", result.Steps[^1].Observation);
+        // AF-05H: the read limitations of the big result are disclosed by the appended runtime section; the answer is its prefix.
+        Assert.StartsWith("done", result.Steps[^1].Observation, StringComparison.Ordinal);
         Assert.True(PrematureFinal.IsStep(result.Steps[^2]));
     }
 
