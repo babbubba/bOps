@@ -249,5 +249,5 @@ Review fix R1 makes `ModelCallBudget` govern the whole logical model call, inclu
 
 - Measure on real tasks whether `MaxAttempts = 4` and `MaxControlRejections = 4` suit the target models, and whether the cursor fields (`nextOffset`, `readsRemaining`) reduce wasted reads; `bops.evidence_read.events_total` gives the served, exhausted, malformed and unavailable rates.
 - Measure fact value with `bops.evidence_facts.emitted_total` per tool, and whether grounding with the new facts keeps MAF-compacted history answerable without EvidenceRead.
-- Decide whether `ReplanningInstructions` should also carry the exhaustion state, and whether a dedicated audit result code for exhaustion is worth a deliberate contract change.
+- Whether a dedicated audit result code for exhaustion is worth a deliberate contract change. (The replan prompt already carries the exhaustion state: review fix R2 rebuilds it from the logical-call state, see deviation 6 above; nothing is left to decide there.)
 - Extend facts to other tools only if measurements show repeated raw reads for the same values.

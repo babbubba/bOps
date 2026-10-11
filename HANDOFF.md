@@ -1,6 +1,21 @@
 # Handoff — V1.3 pre-release stabilization
 
-## Current handoff — 2026-10-10
+## Current handoff — 2026-10-11 (AF-05, local, not pushed)
+
+- AF-05 (MAF regression, tuning and legacy cleanup) is implemented locally on `feat/af-05-maf-regression-tuning-cleanup` (base `a723092`, the
+  verified AF-04R branch). The MAF context layer is the only model-facing history path; `BoundedHistory`, `Agent:VerbatimHistorySteps` and the K=0
+  rebuild are removed. All evidence is **deterministic-fixture class**: no local server and no provider credentials were available, so the local
+  (Qwen-like), OpenRouter/external and Anthropic runs are **NOT RUN**. Windows and Linux CI are **NOT RUN** (nothing was pushed).
+- Packet and evidence: `agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md`; measurements:
+  `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`; operator guide: `docs/operator-configuration.md` §13.
+- **Decision requested** (not applied): the ADR-0042 grounding block shows 12 facts, newest steps first, so on the c508 shape `system.events`
+  crowds out the AF-04 facts of `system.stability` and `system.crashes`. A fair-share order raised directly visible facts 1/9 → 7/9 at the same tokens in an
+  uncommitted experiment; it needs its own ADR-0042 amendment.
+- Not done: CLI cross-provider dedicated summarizer (needs the API's provider profiles and vault in the CLI — a new provider/secret framework);
+  caller-cancellation linking in the broker (breaks token accounting of an in-flight response).
+- Before pushing: the committed branch excludes the operator's local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts).
+
+## Previous handoff — 2026-10-10
 
 - F-25B (ADR-0051 durable ordinary-task mutation journal) is implemented on
   `design/v13-f25-ordinary-mutation-journal`. It adds fenced SQLite intent/outcome persistence, atomic outcome plus

@@ -47,6 +47,23 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   message: one Warning per task when its lifetime replans reach `Agent:ReplanWarningThreshold` (default 3). Docker, Docker build
   contexts and SearXNG moved onto the new registry with unchanged ids. `bOps.Abstractions` is `1.3.0-preview.3` (additive).
 
+### Changed
+
+- AF-05 (ADR-0052): the Microsoft Agent Framework context layer is now the only model-facing history path. The HARDEN-8
+  `BoundedHistory` request, `Agent:VerbatimHistorySteps` (ignored if still present in a configuration) and the K=0 rebuild are removed. A
+  provider/model with an exact `Agent:Context:Profiles` entry is projected against its budget; an unlisted pair (for example the router
+  `openrouter/free`) gets only a structural tool-result bound and **no invented context capacity** (telemetry:
+  `profile_source = unknown-structural`). A profile entry must now state its `MaxContextTokens`/`ReservedOutputTokens`
+  (the capacity-less `UseLegacySafeProjectionWhenUnknown` entry is gone). `ContextOverflow` is recovered by one bounded aggressive
+  projection. See `docs/operator-configuration.md` §13.
+- A runtime-authored **evidence index** (stable ids and persisted lengths of truncated steps, and the rule that addresses any step) keeps
+  `EvidenceRead/v1` usable without the removed compact records.
+- Defaults measured on deterministic fixtures: `Agent:Context:MinimumPreservedToolGroups` 2 → 3, `Agent:Summarization:TriggerRatio` 0.75 → 0.9.
+  Summarization stays off by default and a dedicated summarizer is never implicit. No live provider was run; see
+  `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`.
+- The all-in estimated cost now includes the cost the provider reported for summary calls (never estimated when absent); the
+  estimate-vs-actual prompt telemetry no longer includes the safety reserve.
+
 ### Fixed
 
 - An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next
