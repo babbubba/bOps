@@ -57,7 +57,8 @@ public sealed partial class AgentRunner(
     IEntitlementService? entitlementService = null,
     PinnedProviderConfiguration? pinnedProviderConfiguration = null,
     Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
-    ISystemMessageStore? systemMessages = null)
+    ISystemMessageStore? systemMessages = null,
+    IModelInvocationBroker? invocationBroker = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -100,17 +101,21 @@ public sealed partial class AgentRunner(
         reality diverges from it. Use an empty "steps" array when no further tool execution is planned.
         """;
 
-    private const string ReplanningInstructions =
-        """
-        Your previous plan no longer matches what you have learned. Revise it.
+    private const string ReplanningLead = "Your previous plan no longer matches what you have learned. Revise it.";
 
-        Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to
+    /// <summary>The replan EvidenceRead invitation; offered only while the logical call still has read slots (ADR-0046, AF-04).</summary>
+    private const string ReplanEvidenceReadAvailable =
+        """
+        The evidence index names stable evidence ids and persisted result/observation lengths. To read up to
         4000 UTF-16 code units from one current-task source, reply with only this exact JSON object:
         {"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result|observation","offset":0,"length":4000}
         This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch,
         web.search, or any other tool for it; return the object above as assistant text.
         The runtime will return a bounded continuation and ask for the revised plan again.
+        """;
 
+    private const string ReplanningPlanFormat =
+        """
         Respond with ONLY a single JSON object — no prose before or after it, no markdown code
         fence — in exactly the same shape as before:
 
@@ -128,6 +133,11 @@ public sealed partial class AgentRunner(
         Steps already completed do not need to be repeated. List only what remains; use an empty
         "steps" array when no further tool execution is planned.
         """;
+
+    /// <summary>The replan instructions for the current state of the logical call: the EvidenceRead invitation only while read slots remain, the runtime exhaustion feedback afterwards.</summary>
+    private static string ReplanningInstructions(bool evidenceReadExhausted) =>
+        ReplanningLead + "\n\n" + (evidenceReadExhausted ? EvidenceRead.ExhaustedFeedback : ReplanEvidenceReadAvailable)
+        + "\n\n" + ReplanningPlanFormat;
 
     private const string ProtocolArtifactRetryInstructions =
         "Your last reply was tool-call or control-protocol markup, not an answer. Either call one of the offered tools " +
@@ -157,26 +167,31 @@ public sealed partial class AgentRunner(
 
     private const string EvidenceControlInstruction =
         "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
-        "persisted evidence of this task that the bounded history shows truncated. It does not complete the step, and an " +
+        "persisted evidence of this task that the evidence index lists. It does not complete the step, and an " +
         "operational call in the same reply is not executed.";
 
     private const string EvidenceReadInstructions =
-        "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
+        "The evidence index names stable evidence ids and persisted result/observation lengths. To read up to " +
         "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
         "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}. " +
         "This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch, " +
         "web.search, or any other tool for it; return that exact object as assistant text.";
 
-    /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4).</summary>
+    /// <summary>The goal and current-plan caps of the one ContextOverflow recovery request, and the normal replan plan cap (ADR-0014 HARDEN-8 §§3-4); prompt bounds, not context management.</summary>
     internal const int AggressiveGoalMaxCharacters = 2048;
     internal const int AggressivePlanMaxCharacters = 1024;
     internal const int ReplanPlanMaxCharacters = 2048;
 
-    /// <summary>The least call budget a retry must leave for its next attempt; a wait leaving less ends the call instead (ADR-0039 §4).</summary>
-    private static readonly TimeSpan MinimumModelAttemptWindow = TimeSpan.FromSeconds(1);
-
     // The options are validated once, when the runner is built, so an incoherent model-call budget fails at start-up.
     private readonly AgentRunnerOptions options = ValidatedOptions(options);
+    private readonly IModelInvocationBroker modelInvocationBroker = invocationBroker ?? new ModelInvocationBroker(
+        model,
+        audit,
+        timeProvider,
+        logger,
+        options,
+        pinnedProviderConfiguration,
+        persistPinnedProviderConfiguration);
     private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
 
     /// <summary>
@@ -199,10 +214,30 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>Test seam: replaces the wait between model-call attempts (by default <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>).</summary>
-    internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay { get; set; }
+    internal Func<TimeSpan, CancellationToken, Task>? ModelRetryDelay
+    {
+        get => (modelInvocationBroker as ModelInvocationBroker)?.RetryDelay;
+        set
+        {
+            if (modelInvocationBroker is ModelInvocationBroker broker)
+            {
+                broker.RetryDelay = value;
+            }
+        }
+    }
 
     /// <summary>Test seam: replaces the backoff jitter source, a value in [0, 1) (by default <see cref="Random.Shared"/>).</summary>
-    internal Func<double>? ModelRetryJitter { get; set; }
+    internal Func<double>? ModelRetryJitter
+    {
+        get => (modelInvocationBroker as ModelInvocationBroker)?.RetryJitter;
+        set
+        {
+            if (modelInvocationBroker is ModelInvocationBroker broker)
+            {
+                broker.RetryJitter = value;
+            }
+        }
+    }
 
     private static AgentRunnerOptions ValidatedOptions(AgentRunnerOptions options)
     {
@@ -283,7 +318,7 @@ public sealed partial class AgentRunner(
         // The safe pin is durable before any model attempt, including a delegated role task.
         await taskStore.SaveAsync(run.Build(AgentTaskStatus.Running), CancellationToken.None);
         await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
-        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, [ChatTurn.FromUser(goal)], taskActivity, ct), ct);
+        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, taskActivity, ct), ct);
     }
 
     /// <summary>
@@ -291,7 +326,7 @@ public sealed partial class AgentRunner(
     /// its initial plan call had failed (ADR-0040 §7). A planning failure ends the attempt <see cref="AgentTaskStatus.Failed"/>
     /// through the normal path; it never escapes.
     /// </summary>
-    private async Task<TaskState> PlanAndContinueAsync(ExecutionRun run, List<ChatTurn> history, Activity? taskActivity, CancellationToken ct)
+    private async Task<TaskState> PlanAndContinueAsync(ExecutionRun run, Activity? taskActivity, CancellationToken ct)
     {
         AgentPlan plan;
         var planCalls = new List<ModelCallRecord>();
@@ -336,7 +371,7 @@ public sealed partial class AgentRunner(
 
         await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
 
-        return await ContinueAsync(run, history, plan, PlannedStepPosition.Start, ct);
+        return await ContinueAsync(run, plan, PlannedStepPosition.Start, ct);
     }
 
     /// <summary>
@@ -560,16 +595,15 @@ public sealed partial class AgentRunner(
         await WriteAuditAsync(LifecycleEvent(acquired, TaskLifecycleStage.ExecutionStarted, actor), null, ct);
         return await ExecuteGuardedAsync(run, () =>
         {
-            var history = RebuildHistory(run.Goal, run.Steps);
             if (run.Plans.Count == 0)
             {
-                return PlanAndContinueAsync(run, history, taskActivity, ct);
+                return PlanAndContinueAsync(run, taskActivity, ct);
             }
 
             var plan = run.Plans[^1];
             taskActivity?.SetTag("bops.plan_revision", plan.Revision);
             // ADR-0047: the cursor and the spent validation correction come from the persisted steps, exactly as live.
-            return ContinueAsync(run, history, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
+            return ContinueAsync(run, plan, PlannedStepPosition.Derive(plan, run.Steps, ManifestOf), ct);
         }, ct);
     }
 
@@ -751,7 +785,7 @@ public sealed partial class AgentRunner(
     /// attempt's own executable-step count, never by <c>Steps.Count</c> (ADR-0040 §5.1).
     /// </summary>
     private async Task<TaskState> ContinueAsync(
-        ExecutionRun run, List<ChatTurn> history, AgentPlan plan, PlannedStepPosition position, CancellationToken ct)
+        ExecutionRun run, AgentPlan plan, PlannedStepPosition position, CancellationToken ct)
     {
         var taskId = run.TaskId;
         var actor = run.Actor;
@@ -822,15 +856,10 @@ public sealed partial class AgentRunner(
             }
 
             var logicalCall = new LogicalCallState();
-            ModelRequest BuildStepRequest(bool aggressive)
+            ModelContextRequest BuildStepRequest(bool aggressive)
             {
-                // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4); the
-                // persisted values stay complete and a normal request is unchanged.
-                var built = BoundedHistory.Build(taskId,
-                    aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, steps,
-                    aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName);
-                logicalCall.HasCompactableHistory = built.HasCompactableVerbatimHistory;
-                history = [.. built.Turns, .. logicalCall.ContinuationTurns];
+                // ADR-0052: the runtime only classifies what is protected authority and what is historical context; the MAF context
+                // layer projects the latter for the candidate actually called. The persisted steps stay complete.
                 var stepTools = StepToolViewFor(plan, position.Cursor, delegation);
                 var promptPlan = ConditionalSteps.WithResolvedCurrentStep(plan, steps, position.Cursor, ManifestOf);
                 var latestPlanStep = steps.LastOrDefault(step => step.PlanRevision == plan.Revision);
@@ -840,19 +869,34 @@ public sealed partial class AgentRunner(
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
                 // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
-                var offersEvidenceControl = steps.Any(step =>
-                    Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
-                return new ModelRequest(
-                    BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                        correctingArguments, aggressive, offersEvidenceControl, grounding),
-                    history, offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools);
+                // ADR-0052 AF-04: once the logical call's read budget is spent the function is no longer offered (the surface never
+                // grows back to the full catalog), and the prompt says so instead of leaving the model to infer it.
+                var evidenceReadExhausted = logicalCall.Evidence.Exhausted;
+                // AF-05G: any persisted tool evidence is addressable, whatever its size and whether the context layer compacts it;
+                // MaxObservationCharacters shortens the runtime observation and decides nothing here.
+                var offersEvidenceControl = !evidenceReadExhausted && EvidenceIndex.HasAddressableEvidence(steps);
+                var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps) : null;
+                var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
+                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex);
+                var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
+                var protectedAfter = ReconciliationTurns(steps);
+                protectedAfter.AddRange(logicalCall.ContinuationTurns);
+                return new ModelContextRequest(
+                    systemPrompt,
+                    [ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal)],
+                    RebuildHistoricalTurns(steps),
+                    protectedAfter,
+                    availableTools)
+                {
+                    Aggressive = aggressive,
+                };
             }
 
-            // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
-            // same three-tier history; the logical call can switch once to aggressive K=0 after ContextOverflow.
+            // Rebuilt from persisted steps for every provider call, so live execution and resume see the same context; the logical
+            // call can switch once to the aggressive projection after a provider-reported ContextOverflow.
             var stepCalls = new List<ModelCallRecord>();
 
-            ModelRequest request;
+            ModelContextRequest request;
             ModelResponse? response = null;
             try
             {
@@ -981,7 +1025,7 @@ public sealed partial class AgentRunner(
                     && !EvidenceDisclosure.HasHeading(finalText)
                     && DisclosureBudgetRemains(run, delegation))
                 {
-                    (finalText, disclosure) = await ReAskForDisclosureAsync(run, request, history, finalText!, stepIndex, stepCalls, ct);
+                    (finalText, disclosure) = await ReAskForDisclosureAsync(run, request, finalText!, stepIndex, stepCalls, ct);
                     stepActivity?.SetTag(
                         "bops.evidence_disclosure_reask",
                         disclosure == EvidenceDisclosureOutcome.Accepted ? "accepted" : "result_not_used");
@@ -994,7 +1038,7 @@ public sealed partial class AgentRunner(
                     && grounding is not null
                     && DisclosureBudgetRemains(run, delegation))
                 {
-                    var guarded = await GuardGroundingAsync(run, request, history, finalText!, grounding, stepIndex, stepCalls, ct);
+                    var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, stepIndex, stepCalls, ct);
                     if (guarded.Failure is { } failure)
                     {
                         stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
@@ -1273,10 +1317,11 @@ public sealed partial class AgentRunner(
             run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
             return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
         }
-        catch (EvidenceReadLimitExceededException)
+        catch (EvidenceControlProtocolExceededException)
         {
             run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForEvidenceReadLimitAsync(run, replanCalls, ct));
+            return (plan, await FailAsync(run, ControlProtocolFailureMessage,
+                (TaskTerminalKind.RuntimeFailure, null), replanCalls, ct));
         }
         catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
         {
@@ -2273,20 +2318,27 @@ public sealed partial class AgentRunner(
         return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
     }
 
-    private async Task<TaskState> StopForEvidenceReadLimitAsync(
-        ExecutionRun run, IReadOnlyList<ModelCallRecord> calls, CancellationToken ct)
+    private const string ControlProtocolFailureMessage =
+        "The model repeatedly sent runtime control requests that returned no evidence (malformed, unsupported, not offered, invalid or past the read budget).";
+
+    /// <summary>A served read spends a read slot; every other control request is a bounded protocol rejection that spends none (ADR-0052 AF-04).</summary>
+    private static void CountControlRequest(EvidenceReadBudget budget, EvidenceReadResult result)
     {
-        run.Steps.Add(new PlanStep(
-            run.Steps.Count,
-            TaskResumePolicy.EvidenceReadLimitStepDescription,
-            null,
-            null,
-            "EvidenceRead/v1 limit exceeded")
+        BOpsTelemetry.EvidenceReadEventsTotal.Add(1, new KeyValuePair<string, object?>("outcome", result.Code switch
         {
-            ModelCalls = calls,
-            ExecutionAttempt = run.ExecutionAttempt,
-        });
-        return await FinishAsync(run, AgentTaskStatus.Failed, TaskTerminalKind.RuntimeFailure, ct);
+            EvidenceReadResultCode.Success => "served",
+            EvidenceReadResultCode.LimitExceeded => "exhausted",
+            EvidenceReadResultCode.Malformed => "malformed",
+            _ => "unavailable",
+        }));
+        if (result.Code == EvidenceReadResultCode.Success)
+        {
+            budget.RecordServedRead();
+        }
+        else
+        {
+            budget.RecordRejection();
+        }
     }
 
     /// <summary>
@@ -2461,35 +2513,32 @@ public sealed partial class AgentRunner(
         return true;
     }
 
-    /// <summary>
-    /// Reconstructs the model-facing conversation for a resumed task from its persisted
-    /// <see cref="PlanStep"/>s — the same shape <see cref="ContinueAsync"/> would have built the
-    /// first time: the goal, then each step's tool call and its wrapped observation. A step with
-    /// no <see cref="PlanStep.ToolCall"/> (a final response, or a model-protocol failure) never
-    /// belongs mid-history for a task still worth resuming, so it contributes nothing here.
-    /// </summary>
-    private static List<ChatTurn> RebuildHistory(string goal, IReadOnlyList<PlanStep> steps)
+    /// <summary>Rebuilds only persisted tool protocol groups eligible for deterministic compaction.</summary>
+    private static List<ChatTurn> RebuildHistoricalTurns(
+        IReadOnlyList<PlanStep> steps,
+        int? protectedStepIndex = null)
     {
-        var history = new List<ChatTurn> { ChatTurn.FromUser(goal) };
+        var history = new List<ChatTurn>();
         foreach (var step in steps)
         {
-            if (TaskResumePolicy.IsMutationReconciledStep(step))
-            {
-                // ADR-0051 §9.5: persisted runtime-authored history, as in the bounded history.
-                history.Add(ChatTurn.FromUser(step.Observation ?? string.Empty));
-                continue;
-            }
-
-            if (step.ToolCall is null)
+            if (step.Index == protectedStepIndex
+                || TaskResumePolicy.IsMutationReconciledStep(step)
+                || step.ToolCall is null)
             {
                 continue;
             }
 
-            AddToolCallTurns(history, step.ToolCall, step.UnexecutedToolCalls, WrapToolOutput(step.Observation ?? string.Empty));
+            AddToolCallTurns(history, step.ToolCall, step.UnexecutedToolCalls,
+                WrapToolOutput(step.Observation ?? string.Empty));
         }
 
         return history;
     }
+
+    /// <summary>Persisted runtime-authored reconciliation notices are authoritative and never compacted.</summary>
+    private static List<ChatTurn> ReconciliationTurns(IReadOnlyList<PlanStep> steps) =>
+        [.. steps.Where(TaskResumePolicy.IsMutationReconciledStep)
+            .Select(step => ChatTurn.FromUser(step.Observation ?? string.Empty))];
 
     /// <summary>
     /// The model-facing record of one tool-calling turn, built the same way live and on resume (ADR-0038): the
@@ -2528,8 +2577,12 @@ public sealed partial class AgentRunner(
         var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
         var tokens = 0;
         var logicalCall = new LogicalCallState();
-        ModelRequest BuildPlanningRequest(bool _) =>
-            new(systemPrompt, [.. planningHistory, .. logicalCall.ContinuationTurns], NoNativeTools);
+        ModelContextRequest BuildPlanningRequest(bool aggressive)
+        {
+            var turns = new List<ChatTurn>(planningHistory);
+            turns.AddRange(logicalCall.ContinuationTurns);
+            return new ModelContextRequest(systemPrompt, turns, [], [], NoNativeTools) { Aggressive = aggressive };
+        }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
             BuildPlanningRequest, delegation, calls, logicalCall, ct,
@@ -2588,25 +2641,32 @@ public sealed partial class AgentRunner(
         long tokensBefore, CancellationToken ct)
     {
         var planningTools = ToolViewFor(delegation);
-        var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, planningTools);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
-        ModelRequest BuildReplanRequest(bool aggressive)
+        ModelContextRequest BuildReplanRequest(bool aggressive)
         {
-            // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
-            var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
-            var bounded = BoundedHistory.Build(taskId, requestGoal, stepsSoFar,
-                aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName, triggeringStepIndex);
-            logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
-            var turns = new List<ChatTurn>
+            // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
+            var systemPrompt = BuildPlanningSystemPrompt(
+                ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
+                logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar));
+            var protectedAfter = ReconciliationTurns(stepsSoFar);
+            var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
+            if (trigger?.ToolCall is not null)
             {
-                ChatTurn.FromUser(requestGoal),
-                ChatTurn.FromAssistantText(ProjectForPrompt(
-                    DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)),
+                AddToolCallTurns(protectedAfter, trigger.ToolCall, trigger.UnexecutedToolCalls,
+                    WrapToolOutput(trigger.Observation ?? string.Empty));
+            }
+            protectedAfter.AddRange(logicalCall.ContinuationTurns);
+            return new ModelContextRequest(
+                systemPrompt,
+                [ChatTurn.FromUser(aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal)],
+                RebuildHistoricalTurns(stepsSoFar, triggeringStepIndex),
+                [ChatTurn.FromAssistantText(ProjectForPrompt(
+                    DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)), .. protectedAfter],
+                NoNativeTools)
+            {
+                Aggressive = aggressive,
             };
-            turns.AddRange(bounded.Turns.Skip(1));
-            turns.AddRange(logicalCall.ContinuationTurns);
-            return new ModelRequest(systemPrompt, turns, NoNativeTools);
         }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
@@ -2656,7 +2716,7 @@ public sealed partial class AgentRunner(
         DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         ModelResponse initialResponse,
         long tokensBefore,
         int initialTokens,
@@ -2672,15 +2732,8 @@ public sealed partial class AgentRunner(
 
         while (EvidenceRead.Recognize(response) is { Kind: not RuntimeDirectiveRecognitionKind.None } recognition)
         {
-            logicalCall.EvidenceReadAttempts++;
+            var evidence = logicalCall.Evidence;
             var directive = recognition.Directive;
-            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
-            {
-                await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
-                    EvidenceReadResultCode.LimitExceeded, 0, delegation, ct);
-                throw new EvidenceReadLimitExceededException();
-            }
-
             if (activeAttemptBudget.Value?.IsExpired == true)
             {
                 await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
@@ -2690,7 +2743,9 @@ public sealed partial class AgentRunner(
 
             var result = recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed
                 ? new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0)
-                : EvidenceRead.Read(taskId, steps, directive!);
+                : evidence.Exhausted
+                    ? new EvidenceReadResult(EvidenceReadResultCode.LimitExceeded, null, 0)
+                    : EvidenceRead.Read(taskId, steps, directive!);
             if (activeAttemptBudget.Value?.IsExpired == true)
             {
                 await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
@@ -2698,12 +2753,18 @@ public sealed partial class AgentRunner(
                 throw new AttemptDurationBudgetExceededException();
             }
 
+            CountControlRequest(evidence, result);
             await WriteEvidenceReadAuditEventAsync(taskId, actor, stepIndex, planRevision, directive,
                 result.Code, result.ReturnedLength, delegation, ct);
+            if (evidence.ProtocolBoundExceeded)
+            {
+                throw new EvidenceControlProtocolExceededException();
+            }
+
             logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
             logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
                 recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                    ? EvidenceRead.Reply(directive!, result)
+                    ? EvidenceRead.Reply(directive!, result, evidence.ReadsRemaining)
                     : "EvidenceRead/v1 rejected: Malformed."));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
@@ -2741,8 +2802,8 @@ public sealed partial class AgentRunner(
             StepIndex = stepIndex,
             Actor = actor,
             PlanRevision = planRevision,
-            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
-            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            EvidenceId = directive is null ? null : EvidenceRead.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : EvidenceRead.TakeUtf16(directive.Source, 32),
             Offset = directive?.Offset,
             RequestedLength = directive?.Length,
             ReturnedLength = returnedLength,
@@ -2763,187 +2824,30 @@ public sealed partial class AgentRunner(
     /// returned to the caller, which owns its own bounded corrective re-ask; it is never retried here.
     /// </param>
     private async Task<ModelResponse> CallModelAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation,
+        Guid taskId, int stepIndex, ActorIdentity actor, ModelContextRequest request, DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls, CancellationToken ct, Func<ModelResponse, string?>? malformedOutput = null)
     {
-        var callStartedAt = timeProvider.GetTimestamp();
-        var modelAttempt = 0;
-        var providerAttempt = 0;
-        while (true)
+        var context = new ModelInvocationContext(taskId, stepIndex, actor, calls)
         {
-            modelAttempt++;
-            providerAttempt++;
-            if (activeAttemptBudget.Value?.IsExpired == true)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-
-            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-            var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
-            var startedAtUtc = timeProvider.GetUtcNow();
-            var startedAt = timeProvider.GetTimestamp();
-            var descriptor = model.Descriptor;
-            var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
-                ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
-            AttemptFailure? failure = null;
-            // Only the adapter invocation is inside this boundary (ADR-0039 §1): a failure of the runtime's own bookkeeping after
-            // a successful call is not a model failure and is never classified, recorded or retried as one.
-            ModelResponse? response = null;
-            var attemptBudgetInterrupted = false;
-            try
-            {
-                response = await AttemptModelCallAsync(request, attemptTimeout, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // The task itself was cancelled: that is the operator's decision, never a model failure (ADR-0013, ADR-0039 §1).
-                throw;
-            }
-            catch (OperationCanceledException) when (activeAttemptBudget.Value?.IsExpired == true)
-            {
-                attemptBudgetInterrupted = true;
-                failure = new AttemptFailure(ModelFailureKind.Timeout,
-                    "The execution attempt exhausted its active-duration budget during the model call.", null, null, null);
-            }
-            catch (OperationCanceledException)
-            {
-                // Rule C2 for model calls: the attempt's own timeout fired (or a transport timeout the adapter did not wrap),
-                // not the task's cancellation, so this is a classified, audited failure rather than an escape.
-                failure = new AttemptFailure(ModelFailureKind.Timeout,
-                    $"The model call attempt did not complete within {attemptTimeout.TotalSeconds:0.###} s.", null, null, null);
-            }
-            catch (ModelProtocolException ex)
-            {
-                failure = new AttemptFailure(ex.FailureKind, ModelFailureText.Sanitize(ex.Message), ex.ProviderStatusCode, ex.RetryAfter, ex.Details);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Rule C1 (ADR-0013): an adapter that throws something unexpected is contained like any other failure, but it is
-                // not classified, so it is never retried.
-                logger.LogWarning(ex, "Task {TaskId}: the model adapter threw an unclassified {ExceptionType}", taskId, ex.GetType().Name);
-                failure = new AttemptFailure(ModelFailureKind.Unknown, ModelFailureText.Sanitize($"{ex.GetType().Name}: {ex.Message}"), null, null, null);
-            }
-
-            if (response is not null)
-            {
-                var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-                delegation?.Meter?.AddTokens(UsageTokens(response));
-
-                if (malformedOutput?.Invoke(response) is { } problem)
-                {
-                    var reason = ModelFailureText.Sanitize(problem);
-                    calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Failure, response.Usage, response.Details, reason) with
-                    {
-                        ModelAttempt = modelAttempt,
-                        ProviderAttempt = providerAttempt,
-                        FallbackOrdinal = fallbackOrdinal,
-                        FailureKind = ModelFailureKind.MalformedResponse,
-                        RetryDecision = ModelRetryDecision.NotRetryable,
-                    });
-                    await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, reason, response.Usage,
-                        descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                        ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable,
-                        null, null, ct);
-                    return response;
-                }
-
-                calls.Add(BuildCallRecord(descriptor, startedAtUtc, elapsedMs, ModelCallOutcome.Success, response.Usage, response.Details, null) with
-                {
-                    ModelAttempt = modelAttempt,
-                    ProviderAttempt = providerAttempt,
-                    FallbackOrdinal = fallbackOrdinal,
-                });
-                await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Success, null, response.Usage,
-                    descriptor, response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                    null, null, null, null, ct);
-                return response;
-            }
-
-            if (failure is null)
-            {
-                throw new InvalidOperationException("A model attempt ended with neither a response nor a classified failure.");
-            }
-
-            var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
-            var (decision, delay) = attemptBudgetInterrupted
-                ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
-                : DecideModelRetry(failure, providerAttempt, callStartedAt);
-            if ((decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit) &&
-                ModelFailureText.IsRetryable(failure.Kind) && model is IFallbackChatModelControl fallback && fallback.HasNextCandidate)
-            {
-                var remainingForFallback = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-                if (remainingForFallback < MinimumModelAttemptWindow || activeAttemptBudget.Value?.IsExpired == true)
-                {
-                    decision = ModelRetryDecision.BudgetExhausted;
-                }
-                else if (fallback.TryAdvance())
-                {
-                    decision = ModelRetryDecision.Fallback;
-                }
-            }
-            long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
-            calls.Add(BuildCallRecord(descriptor, startedAtUtc, failedMs, ModelCallOutcome.Failure, null, failure.Details, failure.Message) with
-            {
-                ModelAttempt = modelAttempt,
-                ProviderAttempt = providerAttempt,
-                FallbackOrdinal = fallbackOrdinal,
-                FailureKind = failure.Kind,
-                RetryDecision = decision,
-                RetryDelayMs = delayMs,
-                ProviderStatusCode = failure.StatusCode,
-            });
-            // Rule S9 / principle 4: every attempt is audited whatever the outcome — exactly like a denied or timed-out tool
-            // call (ADR-0013, ADR-0039 §5). StepIndex is -1 for the initial plan call, and the triggering step's index for a
-            // replan — see ADR-0014.
-            await WriteModelCallAuditAsync(taskId, stepIndex, actor, delegation, ModelCallOutcome.Failure, failure.Message, null,
-                descriptor, failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt, fallbackOrdinal,
-                failure.Kind, decision, delayMs, failure.StatusCode, ct);
-
-            if (attemptBudgetInterrupted)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-
-            if (decision == ModelRetryDecision.Fallback)
-            {
-                if (pinnedProviderConfiguration is not null && persistPinnedProviderConfiguration is not null)
-                    await persistPinnedProviderConfiguration(taskId, pinnedProviderConfiguration, CancellationToken.None);
-                providerAttempt = 0;
-                continue;
-            }
-
-            if (decision != ModelRetryDecision.Retry)
-            {
-                throw new ModelProtocolException(DescribeTerminalFailure(failure, decision, providerAttempt)) { FailureKind = failure.Kind };
-            }
-
-            if (logger.IsEnabled(LogLevel.Warning))
-            {
-                logger.LogWarning(
-                    "Task {TaskId}: model call attempt {Attempt} failed ({Kind}); retrying in {DelayMs} ms",
-                    taskId, providerAttempt, failure.Kind, delayMs);
-            }
-
-            try
-            {
-                await DelayForRetryAsync(delay!.Value, ct);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested && activeAttemptBudget.Value?.IsExpired == true)
-            {
-                throw new AttemptDurationBudgetExceededException();
-            }
-        }
+            Delegation = delegation?.Correlation,
+            AccountTokens = delegation?.Meter is { } meter ? meter.AddTokens : null,
+            MalformedResponse = malformedOutput,
+            ExecutionBudgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None,
+            ExecutionBudgetExpired = () => activeAttemptBudget.Value?.IsExpired == true,
+        };
+        return await modelInvocationBroker.InvokeAsync(request, context, ct);
     }
 
     /// <summary>
-    /// HARDEN-8 ContextOverflow recovery at the runtime caller boundary. A logical call with verbatim history retries once
-    /// after rebuilding at K=0; calls without compactable history and a second overflow retain ADR-0039 terminal semantics.
+    /// ContextOverflow recovery at the runtime caller boundary (ADR-0052 AF-05; the successor of the HARDEN-8 K=0 rebuild). A logical
+    /// call that has historical context retries ONCE with an aggressive projection request, which the context layer compacts harder;
+    /// a call without historical context and a second overflow retain ADR-0039 terminal semantics. Never a loop.
     /// </summary>
     private async Task<ModelResponse> CallModelWithOverflowRecoveryAsync(
         Guid taskId,
         int stepIndex,
         ActorIdentity actor,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
@@ -2956,21 +2860,27 @@ public sealed partial class AgentRunner(
                 delegation, calls, ct, malformedOutput);
         }
         catch (ModelProtocolException ex) when (
-            ex.FailureKind == ModelFailureKind.ContextOverflow
-            && !logicalCall.OverflowRetried
-            && logicalCall.HasCompactableHistory)
+            ex.FailureKind == ModelFailureKind.ContextOverflow && !logicalCall.OverflowRetried)
         {
+            // Only a call that has historical context can be projected harder; planning, and a call whose protected context alone
+            // overflowed, keep the ADR-0039 terminal semantics (no identical retry).
+            var recovery = requestFactory(true);
+            if (recovery.HistoricalTurns.Count == 0)
+            {
+                throw;
+            }
+
             logicalCall.OverflowRetried = true;
             logicalCall.Aggressive = true;
-            return await CallModelAsync(taskId, stepIndex, actor, requestFactory(true),
-                delegation, calls, ct, malformedOutput);
+            BOpsTelemetry.ContextOverflowRetriesTotal.Add(1);
+            return await CallModelAsync(taskId, stepIndex, actor, recovery, delegation, calls, ct, malformedOutput);
         }
     }
 
     private async Task<(ModelResponse Response, TaskState? Terminal)> ResolveStepEvidenceReadsAsync(
         ExecutionRun run,
         int stepIndex,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
         ModelResponse initialResponse,
@@ -2982,7 +2892,9 @@ public sealed partial class AgentRunner(
             // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
             // PRE-3B1: it is served only when this very model-call view offered it (the request that carried AvailableTools).
             var control = EvidenceRead.RecognizeControl(run.TaskId, response);
+            // AF-04: a valid read asked for after exhaustion is answered as exhaustion, not as a generic "not offered".
             if (control.Kind is ControlCallKind.Valid or ControlCallKind.Malformed
+                && !(control.Kind == ControlCallKind.Valid && logicalCall.Evidence.Exhausted)
                 && !requestFactory(logicalCall.Aggressive).AvailableTools.Any(tool => tool.Name == EvidenceRead.ControlFunctionName))
             {
                 control = new ControlCallRecognition(ControlCallKind.NotOffered, control.Call, null);
@@ -2999,26 +2911,8 @@ public sealed partial class AgentRunner(
                 break;
             }
 
-            logicalCall.EvidenceReadAttempts++;
+            var evidence = logicalCall.Evidence;
             var directive = recognition.Directive;
-            if (logicalCall.EvidenceReadAttempts > EvidenceRead.MaxAttempts)
-            {
-                await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
-                    EvidenceReadResultCode.LimitExceeded, returnedLength: 0, ct);
-                run.Steps.Add(new PlanStep(
-                    run.Steps.Count,
-                    TaskResumePolicy.EvidenceReadLimitStepDescription,
-                    null,
-                    null,
-                    "EvidenceRead/v1 limit exceeded")
-                {
-                    ModelCalls = calls,
-                    ExecutionAttempt = run.ExecutionAttempt,
-                });
-                return (response, await FinishAsync(run, AgentTaskStatus.Failed,
-                    TaskTerminalKind.RuntimeFailure, ct));
-            }
-
             if (run.AttemptBudget.IsExpired)
             {
                 await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
@@ -3030,6 +2924,11 @@ public sealed partial class AgentRunner(
             if (recognition.Kind == RuntimeDirectiveRecognitionKind.Malformed)
             {
                 result = new EvidenceReadResult(EvidenceReadResultCode.Malformed, null, 0);
+            }
+            else if (evidence.Exhausted)
+            {
+                // ADR-0052 AF-04: no raw access, no task failure; the request is a bounded protocol rejection.
+                result = new EvidenceReadResult(EvidenceReadResultCode.LimitExceeded, null, 0);
             }
             else
             {
@@ -3043,10 +2942,18 @@ public sealed partial class AgentRunner(
                 return (response, await StopForAttemptDurationAsync(run, calls));
             }
 
+            CountControlRequest(evidence, result);
             await WriteEvidenceReadAuditAsync(run, stepIndex, planRevision: null, directive,
                 result.Code, result.ReturnedLength, ct);
+            if (evidence.ProtocolBoundExceeded)
+            {
+                // Not a read-budget exhaustion: the model keeps sending control requests that return nothing. Bounded, then a protocol failure.
+                return (response, await FailAsync(run, ControlProtocolFailureMessage,
+                    (TaskTerminalKind.RuntimeFailure, null), calls, ct));
+            }
+
             var reply = recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
-                ? EvidenceRead.Reply(directive!, result)
+                ? EvidenceRead.Reply(directive!, result, evidence.ReadsRemaining)
                 : control.Kind == ControlCallKind.Unsupported
                     ? "Runtime control call rejected: Unsupported. Only runtime.evidence_read exists."
                     : control.Kind == ControlCallKind.NotOffered
@@ -3100,8 +3007,8 @@ public sealed partial class AgentRunner(
             StepIndex = stepIndex,
             Actor = run.Actor,
             PlanRevision = planRevision,
-            EvidenceId = directive is null ? null : BoundedHistory.TakeUtf16(directive.EvidenceId, 128),
-            Source = directive is null ? null : BoundedHistory.TakeUtf16(directive.Source, 32),
+            EvidenceId = directive is null ? null : EvidenceRead.TakeUtf16(directive.EvidenceId, 128),
+            Source = directive is null ? null : EvidenceRead.TakeUtf16(directive.Source, 32),
             Offset = directive?.Offset,
             RequestedLength = directive?.Length,
             ReturnedLength = returnedLength,
@@ -3129,8 +3036,8 @@ public sealed partial class AgentRunner(
             StepIndex = null,
             Actor = actor,
             PlanRevision = null,
-            EvidenceId = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.EvidenceId, 128),
-            Source = recognition.Directive is null ? null : BoundedHistory.TakeUtf16(recognition.Directive.Source, 32),
+            EvidenceId = recognition.Directive is null ? null : EvidenceRead.TakeUtf16(recognition.Directive.EvidenceId, 128),
+            Source = recognition.Directive is null ? null : EvidenceRead.TakeUtf16(recognition.Directive.Source, 32),
             Offset = recognition.Directive?.Offset,
             RequestedLength = recognition.Directive?.Length,
             ReturnedLength = 0,
@@ -3140,195 +3047,11 @@ public sealed partial class AgentRunner(
         }, delegation, ct);
     }
 
-    /// <summary>One attempt, under its own timeout linked to — but distinguishable from — the task's cancellation.</summary>
-    private async Task<ModelResponse> AttemptModelCallAsync(ModelRequest request, TimeSpan timeout, CancellationToken ct)
-    {
-        using var timeoutSource = new CancellationTokenSource(ClampTimerDue(timeout), timeProvider);
-        var budgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None;
-        using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token, budgetToken);
-        using var waitSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutSource.Token, budgetToken);
-        var call = model.CompleteAsync(request, attemptSource.Token);
-        try
-        {
-            // WaitAsync on the timeout alone: an adapter that ignores its token still cannot hold the loop past the attempt
-            // timeout, while the task's own cancellation keeps its existing meaning — it reaches the adapter through
-            // attemptSource, and a reply the adapter already produced is not thrown away.
-            return await call.WaitAsync(waitSource.Token);
-        }
-        catch (OperationCanceledException) when (!call.IsCompleted)
-        {
-            // The abandoned attempt may still fault later; observe that so it is never an unobserved task exception.
-            _ = call.ContinueWith(
-                static abandoned => _ = abandoned.Exception, CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            throw;
-        }
-    }
-
-    // A CancellationTokenSource timer accepts at most int.MaxValue - 1 milliseconds, and never a negative delay.
-    private static TimeSpan ClampTimerDue(TimeSpan due)
-    {
-        var max = TimeSpan.FromMilliseconds(int.MaxValue - 1);
-        return due <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : due > max ? max : due;
-    }
-
-    private Task DelayAsync(TimeSpan delay, CancellationToken ct) => Task.Delay(delay, timeProvider, ct);
-
-    private async Task DelayForRetryAsync(TimeSpan delay, CancellationToken ct)
-    {
-        if (ModelRetryDelay is not null)
-        {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
-            await ModelRetryDelay(delay, linked.Token);
-            return;
-        }
-
-        using var source = CancellationTokenSource.CreateLinkedTokenSource(
-            ct, activeAttemptBudget.Value?.Token ?? CancellationToken.None);
-        await DelayAsync(delay, source.Token);
-    }
-
-    /// <summary>
-    /// The runtime's retry decision after one failed attempt (ADR-0039 §4): only transient kinds, only while attempts remain,
-    /// never earlier than a provider's <c>Retry-After</c>, never for a <c>Retry-After</c> above the configured maximum, and
-    /// never with a wait that would not leave <see cref="MinimumModelAttemptWindow"/> of the call budget for the next attempt.
-    /// </summary>
-    private (ModelRetryDecision Decision, TimeSpan? Delay) DecideModelRetry(AttemptFailure failure, int attempt, long callStartedAt)
-    {
-        if (!ModelFailureText.IsRetryable(failure.Kind))
-        {
-            return (ModelRetryDecision.NotRetryable, null);
-        }
-
-        if (attempt >= options.ModelCallMaxAttempts)
-        {
-            return (ModelRetryDecision.AttemptsExhausted, null);
-        }
-
-        TimeSpan? retryAfter = failure.RetryAfter is { } asked ? (asked < TimeSpan.Zero ? TimeSpan.Zero : asked) : null;
-        if (retryAfter > options.ModelRetryMaxDelay)
-        {
-            return (ModelRetryDecision.RetryAfterExceedsLimit, null);
-        }
-
-        var backoff = ModelRetryBackoff(attempt);
-        var delay = retryAfter is { } honoured && honoured > backoff ? honoured : backoff;
-        var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-        return delay + MinimumModelAttemptWindow > remaining
-            ? (ModelRetryDecision.BudgetExhausted, null)
-            : (ModelRetryDecision.Retry, delay);
-    }
-
-    /// <summary>Exponential backoff with equal jitter: <c>min(max, base × 2^(attempt−1)) × (0.5 + 0.5 × jitter)</c>.</summary>
-    private TimeSpan ModelRetryBackoff(int attempt)
-    {
-        var exponential = options.ModelRetryBaseDelay.Ticks * Math.Pow(2, Math.Min(attempt - 1, 30));
-        var capped = Math.Min(exponential, options.ModelRetryMaxDelay.Ticks);
-        var jitter = Math.Clamp((ModelRetryJitter ?? Random.Shared.NextDouble)(), 0.0, 1.0);
-        return TimeSpan.FromTicks((long)(capped * (0.5 + (0.5 * jitter))));
-    }
-
-    /// <summary>The operator-facing reason of a terminal model-call failure: what kind, what was tried, then the safe detail.</summary>
-    private string DescribeTerminalFailure(AttemptFailure failure, ModelRetryDecision decision, int attempts)
-    {
-        var tried = decision switch
-        {
-            ModelRetryDecision.AttemptsExhausted => $" Gave up after {attempts} attempts.",
-            ModelRetryDecision.BudgetExhausted =>
-                $" Gave up after {attempts} attempt(s): another wait would exceed the {options.ModelCallBudget.TotalSeconds:0.###} s model-call budget.",
-            ModelRetryDecision.RetryAfterExceedsLimit =>
-                $" The provider asked to retry after {failure.RetryAfter!.Value.TotalSeconds:0.###} s, longer than the " +
-                $"{options.ModelRetryMaxDelay.TotalSeconds:0.###} s limit.",
-            _ when attempts > 1 => $" Not retried after attempt {attempts}.",
-            _ => string.Empty,
-        };
-        var detail = string.IsNullOrEmpty(failure.Message) ? string.Empty : $" Details: {failure.Message}";
-        return $"{ModelFailureText.OperatorReason(failure.Kind)}{tried}{detail}";
-    }
-
-    private Task WriteModelCallAuditAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, DelegatedExecutionScope? delegation, ModelCallOutcome outcome, string? error,
-        ModelUsage? usage, ChatModelDescriptor descriptor, string? actualModel, long durationMs, int modelAttempt,
-        int providerAttempt, int fallbackOrdinal, ModelFailureKind? kind, ModelRetryDecision? decision,
-        long? retryDelayMs, int? statusCode, CancellationToken ct) =>
-        WriteAuditAsync(new ModelCallAuditEvent
-        {
-            TimestampUtc = timeProvider.GetUtcNow(),
-            Node = NodeId.Local,
-            TaskId = taskId,
-            StepIndex = stepIndex,
-            Actor = actor,
-            Provider = descriptor.ProviderId,
-            Model = descriptor.ModelId,
-            Outcome = outcome,
-            ErrorMessage = error,
-            Usage = usage,
-            ActualModel = actualModel,
-            DurationMs = durationMs,
-            ModelAttempt = modelAttempt,
-            ProviderAttempt = providerAttempt,
-            FallbackOrdinal = fallbackOrdinal,
-            FailureKind = kind,
-            RetryDecision = decision,
-            RetryDelayMs = retryDelayMs,
-            ProviderStatusCode = statusCode,
-            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
-            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
-            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
-            PrimaryModel = pinnedProviderConfiguration?.Model,
-        }, delegation, ct);
-
-    /// <summary>What one failed attempt amounted to, in provider-neutral terms, with its message already sanitized.</summary>
-    private sealed record AttemptFailure(
-        ModelFailureKind Kind, string Message, int? StatusCode, TimeSpan? RetryAfter, ModelCallDetails? Details);
-
-    private ModelCallRecord BuildCallRecord(
-        ChatModelDescriptor descriptor, DateTimeOffset startedAtUtc, long durationMs, ModelCallOutcome outcome,
-        ModelUsage? usage, ModelCallDetails? details, string? error)
-    {
-        var request = CapPayload(details?.RequestJson, out var requestCut);
-        var reply = CapPayload(details?.ResponseJson, out var replyCut);
-        return new ModelCallRecord(
-            descriptor.ProviderId, descriptor.ModelId, details?.ActualModel, startedAtUtc, durationMs, outcome, usage,
-            details?.FinishReason, error, request, reply, requestCut || replyCut)
-        {
-            ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
-            ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
-            PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
-            PrimaryModel = pinnedProviderConfiguration?.Model,
-        };
-    }
-
     private PinnedProviderConfiguration? CurrentPinnedProviderConfiguration()
     {
         if (pinnedProviderConfiguration is not null && model is IFallbackChatModelControl fallback)
             pinnedProviderConfiguration.FallbackOrdinal = fallback.FallbackOrdinal;
         return pinnedProviderConfiguration;
-    }
-
-    /// <summary>Bounds a recorded body to <see cref="AgentRunnerOptions.MaxModelPayloadCharacters"/> (0 keeps none), saying so when it cuts.</summary>
-    private string? CapPayload(string? body, out bool truncated)
-    {
-        truncated = false;
-        if (body is null || options.MaxModelPayloadCharacters <= 0)
-        {
-            return null;
-        }
-
-        if (body.Length <= options.MaxModelPayloadCharacters)
-        {
-            return body;
-        }
-
-        truncated = true;
-        var keep = options.MaxModelPayloadCharacters;
-        if (char.IsHighSurrogate(body[keep - 1]))
-        {
-            keep--;
-        }
-
-        return $"{body[..keep]}…[truncated {body.Length - keep} characters]";
     }
 
     /// <summary>
@@ -3349,13 +3072,12 @@ public sealed partial class AgentRunner(
     /// call. The turns it adds exist only in this request, so the persisted history stays what a resume rebuilds.
     /// </summary>
     private async Task<(string? Text, EvidenceDisclosureOutcome Outcome)> ReAskForDisclosureAsync(
-        ExecutionRun run, ModelRequest request, List<ChatTurn> history, string originalAnswer, int stepIndex,
+        ExecutionRun run, ModelContextRequest request, string originalAnswer, int stepIndex,
         List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
-        var reAsk = request with
-        {
-            History = [.. history, ChatTurn.FromAssistantText(originalAnswer), ChatTurn.FromUser(EvidenceDisclosure.Instruction)],
-        };
+        var reAsk = request.AppendProtected(
+            ChatTurn.FromAssistantText(originalAnswer),
+            ChatTurn.FromUser(EvidenceDisclosure.Instruction));
 
         ModelResponse reply;
         try
@@ -3403,16 +3125,15 @@ public sealed partial class AgentRunner(
     /// replaces it or the attempt fails. A genuine cancellation propagates as for every model call.
     /// </summary>
     private async Task<GroundingGuardResult> GuardGroundingAsync(
-        ExecutionRun run, ModelRequest request, List<ChatTurn> history, string candidate, EvidenceGrounding grounding,
+        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding grounding,
         int stepIndex, List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
         GroundingVerdict verdict;
         try
         {
-            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
-            {
-                History = [.. history, ChatTurn.FromAssistantText(candidate), ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)],
-            }, run.Delegation, stepCalls, ct);
+            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                ChatTurn.FromAssistantText(candidate),
+                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)), run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(check);
             verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
         }
@@ -3433,14 +3154,10 @@ public sealed partial class AgentRunner(
         ModelResponse correction;
         try
         {
-            correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
-            {
-                History =
-                [
-                    .. history, ChatTurn.FromAssistantText(candidate),
-                    ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions)),
-                ],
-            }, run.Delegation, stepCalls, ct);
+            correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                ChatTurn.FromAssistantText(candidate),
+                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions))),
+                run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(correction);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -3863,6 +3580,11 @@ public sealed partial class AgentRunner(
             {
                 FailureKind = ToolFailureKind.Validation,
             };
+        }
+
+        if (result.Facts.Count > 0)
+        {
+            BOpsTelemetry.EvidenceFactsEmittedTotal.Add(result.Facts.Count, new KeyValuePair<string, object?>("bops.tool", manifest.Name));
         }
 
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
@@ -4694,8 +4416,9 @@ public sealed partial class AgentRunner(
     private const int MaxCatalogSummaryCharacters = 120;
 
     /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
-    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools) =>
-        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}";
+    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools, string? evidenceIndex = null) =>
+        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}"
+        + (evidenceIndex is null ? string.Empty : $"\n\n{evidenceIndex}");
 
     /// <summary>
     /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level, the first sentence
@@ -4760,7 +4483,9 @@ public sealed partial class AgentRunner(
             .Replace(EvidenceLimitationsDigest.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceLimitationsDigest.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceGroundingLedger.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
-            .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
+            .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceIndex.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceIndex.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
 
         return $"{ToolOutputOpenDelimiter}\n{sanitized}\n{ToolOutputCloseDelimiter}";
     }
@@ -4778,7 +4503,8 @@ public sealed partial class AgentRunner(
 
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
-        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null)
+        bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
+        bool evidenceReadExhausted = false, string? evidenceIndex = null)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
@@ -4791,9 +4517,10 @@ public sealed partial class AgentRunner(
             routingInstruction += " " + EvidenceControlInstruction;
         }
 
+        var evidenceReadSection = evidenceReadExhausted ? EvidenceRead.ExhaustedFeedback : EvidenceReadInstructions;
         var prompt = plan.Steps.Count == 0
-            ? $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n{routingInstruction}"
-            : $"{SystemPrompt}\n\n{EvidenceReadInstructions}\n\n" +
+            ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
+            : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
               $"{routingInstruction} Propose the concrete tool call for the next unfinished step above, or report " +
               "completion if the goal is already achieved.";
@@ -4805,7 +4532,13 @@ public sealed partial class AgentRunner(
         }
 
         // ADR-0042 PRE-5 amendment §3: the grounding block follows the digest, delimited the same way.
-        return grounding is null ? prompt : $"{prompt}\n\n{EvidenceGroundingLedger.Delimit(grounding)}";
+        if (grounding is not null)
+        {
+            prompt = $"{prompt}\n\n{EvidenceGroundingLedger.Delimit(grounding)}";
+        }
+
+        // ADR-0052 AF-05: the drill-down index, only while the control function is offered, so a compacted result stays addressable.
+        return evidenceIndex is null ? prompt : $"{prompt}\n\n{evidenceIndex}";
     }
 
     internal static string DescribePlan(AgentPlan plan)
@@ -5164,9 +4897,8 @@ public sealed partial class AgentRunner(
 
         internal bool OverflowRetried { get; set; }
 
-        internal bool HasCompactableHistory { get; set; }
 
-        internal int EvidenceReadAttempts { get; set; }
+        internal EvidenceReadBudget Evidence { get; } = new();
 
         internal List<ChatTurn> ContinuationTurns { get; } = [];
     }

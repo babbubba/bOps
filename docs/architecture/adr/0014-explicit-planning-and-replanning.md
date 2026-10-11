@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+Amended by: [ADR-0052](0052-microsoft-agent-framework-bops-boundary.md) (Accepted 2026-10-10, D-048) —
+PLAN/REPLAN and bOps execution-state semantics remain authoritative; HARDEN-8's custom model-facing
+history/compaction mechanism becomes migration/reference code progressively superseded by the MAF
+context layer. Persisted raw evidence, evidence addressability and task-budget semantics remain.
+
 ## Context
 
 `agentic/00-project-spec.md`'s roadmap names V0.2 "Explicit agent loop with replanning." V0.1's
@@ -102,6 +107,14 @@ not `AgentPlanner`, "because planning and execution are not yet separated in V0.
   stays on `0.x` until V1.0 specifically so changes like this do not require a migration story.
 
 ## HARDEN-8 amendment — context and budget economy (Accepted 2026-10-04)
+
+> **Implementation status (AF-05, 2026-10-11).** The model-facing history mechanism described below — the three-tier `BoundedHistory`
+> request (`K` verbatim steps, 12 compact records, an archive aggregate), the `<<<BOPS_HISTORY/v1>>>` block, `Agent:VerbatimHistorySteps`
+> and the K=0 rebuild — has been **removed** and replaced by the MAF context layer ([ADR-0052](0052-microsoft-agent-framework-bops-boundary.md)).
+> What this amendment decided and the runtime still does: raw persisted evidence and its addressability (`EvidenceRead/v1`, now with a
+> runtime-authored evidence index instead of the compact records), `MaxTotalTokens`, `MaxAttemptDuration`, the `ContextOverflow`
+> classification with **one** bounded aggressive recovery (the goal and plan prompt caps of §§3–4 are kept), and the deterministic,
+> persisted-state-only rebuild on resume. The text below is the historical decision record and is not edited.
 
 This amendment was accepted on 2026-10-04 after the final independent architecture delta review
 passed. Implementation completed on `feat/harden-08-context-budget-economy` on 2026-10-04 and is ready

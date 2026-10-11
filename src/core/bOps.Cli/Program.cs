@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Audit;
 using bOps.Cli;
 using bOps.Memory;
@@ -303,19 +304,55 @@ var approvalProvider = new ConsoleApprovalProvider();
 // runs, so `bops resume <task-id>` can continue a task that failed, was cancelled or ran out of a
 // per-attempt budget, under the ADR-0040 resumability rule (never a task still stored Running).
 var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? "tasks.db");
+var audit = host.Services.GetRequiredService<IAuditSink>();
+var time = host.Services.GetRequiredService<TimeProvider>();
+var logger = host.Services.GetRequiredService<ILogger<AgentRunner>>();
+// AF-03: the CLI hosts one provider, so an explicit summarizer may only choose another MODEL of that same provider.
+// It is its own governed broker; there is no fallback to any other destination.
+IModelInvocationBroker? summarizerBroker = null;
+if (runnerOptions.Summarization is { Enabled: true, IsDedicated: true } summarization)
+{
+    if (!string.Equals(summarization.Provider, modelOptions.Provider, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "The CLI hosts the single 'ModelProvider:Provider'; 'Agent:Summarization:Provider' must name it (the model may differ).");
+    }
+
+    var summaryModel = chatModelRegistry.Create(new ChatModelOptions(
+        modelOptions.Provider, modelOptions.BaseUrl, modelOptions.ApiKeySecret, summarization.Model!,
+        modelOptions.SupportsNativeToolCalling)
+    {
+        ResolvedApiKey = modelOptions.ResolvedApiKey,
+        RequestTimeout = modelOptions.RequestTimeout,
+    });
+    if (runnerOptions.Context.Resolve(summaryModel.Descriptor) is not { MaxContextTokens: not null })
+    {
+        throw new InvalidOperationException(
+            $"'Agent:Summarization' resolves to {summaryModel.Descriptor.ProviderId}/{summaryModel.Descriptor.ModelId}, "
+            + "which has no exact 'Agent:Context:Profiles' entry with a known MaxContextTokens.");
+    }
+
+    summarizerBroker = new ModelInvocationBroker(summaryModel, audit, time, logger, runnerOptions);
+}
+
+var broker = new ModelInvocationBroker(
+    model, audit, time, logger, runnerOptions,
+    contextProjector: new MafContextProjector(runnerOptions, logger),
+    dedicatedSummarizer: summarizerBroker);
 
 var runner = new AgentRunner(
     model,
     toolRegistry,
     policyEngine,
     approvalProvider,
-    host.Services.GetRequiredService<IAuditSink>(),
+    audit,
     taskStore,
-    host.Services.GetRequiredService<TimeProvider>(),
-    host.Services.GetRequiredService<ILogger<AgentRunner>>(),
+    time,
+    logger,
     runnerOptions,
     skillRegistry,
-    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
+    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+    invocationBroker: broker);
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

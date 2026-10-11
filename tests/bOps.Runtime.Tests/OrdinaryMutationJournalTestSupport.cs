@@ -521,9 +521,10 @@ internal static class JournalHarness
     internal static AgentRunner Runner(
         IChatModel model, ITaskStore store, IAuditSink audit, IToolRegistry registry, PolicyMode policy = PolicyMode.Automatic,
         IApprovalProvider? approver = null, AgentRunnerOptions? options = null, TimeProvider? time = null,
-        IEntitlementService? entitlements = null) =>
+        IEntitlementService? entitlements = null, IModelInvocationBroker? broker = null) =>
         new(model, registry, new MutationPolicyEngine(policy), approver ?? new MarkerAwareApprover(), audit, store,
-            time ?? TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions(), entitlementService: entitlements);
+            time ?? TimeProvider.System, NullLogger<AgentRunner>.Instance, options ?? new AgentRunnerOptions(), entitlementService: entitlements,
+            invocationBroker: broker);
 
     internal static IReadOnlyList<TaskMutationAuditEvent> Mutations(this ConcurrentAuditSink audit) =>
         [.. audit.Events.OfType<TaskMutationAuditEvent>()];

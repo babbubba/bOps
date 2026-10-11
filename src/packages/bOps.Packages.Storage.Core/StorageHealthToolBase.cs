@@ -9,6 +9,7 @@ public abstract class StorageHealthToolBase(string platform) : ITool
     public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         if (!StorageArguments.TryReadList(arguments, "device", out var device, out var limit, out var bytes, out var error)) return ToolCallResult.Failure(error!) with { FailureKind = ToolFailureKind.Validation };
-        return EvidenceCompleteness.Success(StorageFormatting.Health(await CollectAsync(ct), device, limit, bytes));
+        var values = await CollectAsync(ct);
+        return EvidenceCompleteness.Success(StorageFormatting.Health(values, device, limit, bytes)) with { Facts = StorageHealthFacts.From(values, device) };
     }
 }

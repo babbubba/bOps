@@ -137,7 +137,22 @@ Semantic versioning is rigorous from `1.0.0`. Until then the contract is explici
 and the README of the NuGet package says so. Do not publish `1.0.0` before the V1.0
 milestone, and do not promise stability the project cannot yet keep.
 
+### A13 — Microsoft Agent Framework is infrastructure, never operational authority
+
+ADR-0052 makes Microsoft Agent Framework (MAF) the reference implementation for generic agent
+infrastructure. MAF dependencies live behind an isolated implementation boundary; no MAF or
+`Microsoft.Extensions.AI` type may enter `bOps.Abstractions` merely because Runtime uses MAF.
+
+MAF may own model-facing message/context construction, compaction, governed summarization and
+related generic agent plumbing. It may **not** independently choose or execute operational tools,
+authorize an operation, satisfy entitlement/approval, mutate `TaskState`, settle a mutation,
+replace verification/evidence semantics, or bypass bOps model-call audit/budgets. Every model
+inference caused by a task, including a summarizer call, traverses the bOps-governed model
+invocation path.
+
 ---
+
+
 
 ## B. The contract (`bOps.Abstractions`)
 
@@ -596,10 +611,14 @@ inspected. Required behaviour:
 2. **Every `ExecuteAsync` runs under its own timeout** from a linked `CancellationTokenSource`.
    The default is per-tool and configurable; a timeout is `ToolOutcome.Timeout`, distinct from
    failure, and it is audited.
-3. **The history has a budget.** Tool output is truncated to a configured limit before
-   entering the context, with the truncation marked explicitly. `docker.logs` on a chatty
-   container must not be able to blow the context window. Truncation is deterministic
-   (head + tail, never "summarize with another model call" in Phase 1).
+3. **The model context has a budget.** Raw evidence remains persisted by bOps; model-facing
+   history is bounded through the Microsoft Agent Framework context layer (ADR-0052). Generic
+   history compaction may use tool-result compaction, governed LLM summarization, sliding-window
+   compaction and truncation in that order. Current execution authority (system/security rules,
+   current plan/step, exact tool view, correction state, grounding/limitations and reconciliation
+   notices) is protected from generic history compaction. Any summarizer inference is a task model
+   call and must pass through the bOps-governed model invocation path; framework summaries are
+   derived context, never evidence or authority.
 4. **Repeated denials terminate the task.** A `Forbidden` decision produces an audited event
    and an observation; N consecutive denials of the same tool (default 2) end the task as
    `PolicyBlocked`. Without this the model retries a forbidden tool until `MaxSteps`.

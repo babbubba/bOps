@@ -357,6 +357,41 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal("Final response; evidence grounding check cited no contradiction", resumed.Steps[^1].Description);
     }
 
+    [Fact]
+    public async Task G2T5_PersistReopenResume_GivesTheSameStepDiverseSelection()
+    {
+        // AF-05G: three dense steps, none referenced. The selection is one fact per step per pass, live and after reopen.
+        ToolCallResult Dense(string prefix) => ToolCallResult.Success("{}") with
+        {
+            Completeness = ToolResultCompleteness.Complete,
+            Facts = [.. Enumerable.Range(0, 8).Select(i => new EvidenceFact(FactType, $"{prefix}{i}", ToolParameterType.Integer, JsonValue.Create(i)))],
+        };
+        ToolRegistry DenseRegistry() => Registry(
+            new ResultTool("test.d1", Dense("a")), new ResultTool("test.d2", Dense("b")), new ResultTool("test.d3", Dense("c")));
+
+        var store = new InMemoryTaskStore();
+        var liveModel = new ScriptedModel(Plan("test.d1", "test.d2", "test.d3"), Call("test.d1", "c1"), Call("test.d2", "c2"), Call("test.d3", "c3"));
+        var interrupted = await Runner(liveModel, DenseRegistry(), new RecordingAuditSink(), Options(), store: store).RunAsync("diagnose", Actor);
+        Assert.Equal(AgentTaskStatus.Failed, interrupted.Status);
+        var liveBlock = BlockOf(liveModel.Requests[4].SystemPrompt);
+        foreach (var step in new[] { 0, 1, 2 })
+        {
+            Assert.Contains($"- F{step}.1 step {step} ", liveBlock, StringComparison.Ordinal);
+        }
+
+        var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(await store.LoadAsync(interrupted.Id)))!;
+        Assert.Equal(liveBlock, EvidenceGroundingLedger.Delimit(EvidenceGroundingLedger.Build(reloaded.Steps, reloaded.Plans)!));
+
+        var resumeStore = new InMemoryTaskStore();
+        resumeStore.Seed(reloaded);
+        var resumedModel = new ScriptedModel(Final(CorrectedAnswer), Verdict());
+        var resumed = await Runner(resumedModel, DenseRegistry(), new RecordingAuditSink(), Options(), store: resumeStore)
+            .ResumeAsync(reloaded, new ActorIdentity("api-user", "resumer", "Resumer"));
+
+        Assert.Equal(AgentTaskStatus.Completed, resumed.Status);
+        Assert.Equal(liveBlock, BlockOf(resumedModel.Requests[0].SystemPrompt));
+    }
+
     private static string BlockOf(string systemPrompt)
     {
         var start = systemPrompt.IndexOf(EvidenceGroundingLedger.OpenMarker, StringComparison.Ordinal);

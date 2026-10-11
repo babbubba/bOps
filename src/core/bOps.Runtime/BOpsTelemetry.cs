@@ -38,4 +38,48 @@ public static class BOpsTelemetry
     /// <summary>How many times a task's plan was revised — a step deviated from what the plan expected, or the model continued past every step the plan named (rule C8).</summary>
     public static Counter<long> ReplansTotal { get; } =
         Meter.CreateCounter<long>("bops.replans_total", description: "How many times a task's plan was revised.");
+
+    /// <summary>Estimated model input tokens before history compaction.</summary>
+    public static Histogram<long> ContextTokensBefore { get; } =
+        Meter.CreateHistogram<long>("bops.context.tokens_before", unit: "tokens");
+
+    /// <summary>Estimated model input tokens after history compaction.</summary>
+    public static Histogram<long> ContextTokensAfter { get; } =
+        Meter.CreateHistogram<long>("bops.context.tokens_after", unit: "tokens");
+
+    /// <summary>Difference between provider-reported and locally estimated input tokens.</summary>
+    public static Histogram<long> ContextEstimateDelta { get; } =
+        Meter.CreateHistogram<long>("bops.context.estimate_delta", unit: "tokens");
+
+    /// <summary>One bounded retry after a provider classified the request as context overflow.</summary>
+    public static Counter<long> ContextOverflowRetriesTotal { get; } =
+        Meter.CreateCounter<long>("bops.context.overflow_retries_total");
+
+    /// <summary>Control-function evidence read outcomes (served/exhausted/malformed/unavailable), by outcome only. Never carries evidence, ids or arguments.</summary>
+    public static Counter<long> EvidenceReadEventsTotal { get; } =
+        Meter.CreateCounter<long>("bops.evidence_read.events_total");
+
+    /// <summary>Evidence facts a tool call emitted (a count only, tagged by tool; never fact types, keys or values).</summary>
+    public static Counter<long> EvidenceFactsEmittedTotal { get; } =
+        Meter.CreateCounter<long>("bops.evidence_facts.emitted_total");
+
+    /// <summary>Summarization outcomes (requested/applied/skipped/failed), tagged by outcome and dedicated flag. Never carries content.</summary>
+    public static Counter<long> SummaryEventsTotal { get; } =
+        Meter.CreateCounter<long>("bops.summary.events_total");
+
+    /// <summary>Estimated tokens sent to a summarizer in one governed summary call.</summary>
+    public static Histogram<long> SummaryInputEstimatedTokens { get; } =
+        Meter.CreateHistogram<long>("bops.summary.input_estimated_tokens", unit: "tokens");
+
+    /// <summary>Provider-reported tokens by summary part (prompt/completion) for one logical call.</summary>
+    public static Histogram<long> SummaryTokens { get; } =
+        Meter.CreateHistogram<long>("bops.summary.tokens", unit: "tokens");
+
+    /// <summary>Wall-clock duration spent in summary inference for one logical call, in milliseconds.</summary>
+    public static Histogram<double> SummaryDurationMs { get; } =
+        Meter.CreateHistogram<double>("bops.summary.duration_ms", unit: "ms");
+
+    /// <summary>Tokens of one logical call split into primary reasoning, summary and all-in.</summary>
+    public static Histogram<long> TaskCallTokens { get; } =
+        Meter.CreateHistogram<long>("bops.task.call_tokens", unit: "tokens");
 }

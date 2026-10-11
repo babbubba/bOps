@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.AgentFramework\bOps.AgentFramework.csproj" />
     <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\bOps.Memory\bOps.Memory.csproj" />
     <ProjectReference Include="..\bOps.Hosting\bOps.Hosting.csproj" />

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- AF-05: TestDoubles.cs is linked from bOps.Runtime.Tests (most of its doubles are unused here); MAAI001 is the experimental MAF
+         compaction diagnostic, suppressed in the product integration project for the same reason. -->
+    <NoWarn>$(NoWarn);CA1812;MAAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+    <Compile Include="..\bOps.Runtime.Tests\TestDoubles.cs" Link="Linked\TestDoubles.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
+  </ItemGroup>
+
+</Project>

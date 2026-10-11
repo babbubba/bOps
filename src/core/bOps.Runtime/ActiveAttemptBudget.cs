@@ -81,5 +81,6 @@ internal sealed class AttemptDurationStepInterruptedException(PlanStep step, str
 }
 
 internal sealed class TokenBudgetCrossedException : Exception;
-internal sealed class EvidenceReadLimitExceededException : Exception;
+/// <summary>A replan logical call spent its allowance of rejected control requests (not a read-budget exhaustion).</summary>
+internal sealed class EvidenceControlProtocolExceededException : Exception;
 #pragma warning restore CA1032, CA1064

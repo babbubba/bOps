@@ -9,6 +9,12 @@ namespace bOps.Runtime;
 /// </summary>
 public sealed record AgentRunnerOptions
 {
+    /// <summary>Model context profiles and deterministic compaction guard-rails.</summary>
+    public ModelContextOptions Context { get; init; } = new();
+
+    /// <summary>Governed MAF summarization of historical context (AF-03). Off unless explicitly enabled.</summary>
+    public SummarizationOptions Summarization { get; init; } = new();
+
     /// <summary>
     /// The per-execution-attempt step budget (ADR-0040 §5): an anti-infinite-loop guard-rail. Exhausting it ends the attempt
     /// as <c>MaxStepsReached</c>; a resume starts a fresh per-attempt budget, capped by <see cref="MaxLifetimeSteps"/>.
@@ -48,9 +54,6 @@ public sealed record AgentRunnerOptions
     /// resume (ADR-0040 §5). <c>null</c> is an explicit operator opt-out.
     /// </summary>
     public int? MaxTotalTokens { get; init; } = 350_000;
-
-    /// <summary>The latest completed tool-call steps retained verbatim in model-facing history (HARDEN-8), from 0 through 15.</summary>
-    public int VerbatimHistorySteps { get; init; } = 3;
 
     /// <summary>
     /// Active work allowed for one execution attempt. Human approval waiting is excluded. <c>null</c> is an explicit
@@ -135,6 +138,10 @@ public sealed record AgentRunnerOptions
     /// <param name="providerRequestTimeout">The provider's effective transport timeout, when the caller knows it.</param>
     public void Validate(TimeSpan? providerRequestTimeout = null)
     {
+        ArgumentNullException.ThrowIfNull(Context);
+        Context.Validate();
+        Summarization.Validate(Context);
+
         if (MaxSteps < 1)
         {
             throw new InvalidOperationException("'Agent:MaxSteps' must be at least 1.");
@@ -165,11 +172,6 @@ public sealed record AgentRunnerOptions
         if (MaxReplans < 0)
         {
             throw new InvalidOperationException("'Agent:MaxReplans' must not be negative.");
-        }
-
-        if (VerbatimHistorySteps is < 0 or > 15)
-        {
-            throw new InvalidOperationException("'Agent:VerbatimHistorySteps' must be between 0 and 15.");
         }
 
         if (MaxTotalTokens is <= 0)

@@ -83,7 +83,9 @@ public sealed class ConditionalFollowUpTests
 
     private static ModelResponse Final() => new("done", [], true, null);
 
-    private static IEnumerable<string> Offered(ModelRequest request) => request.AvailableTools.Select(tool => tool.Name);
+    /// <summary>The operational (package) tools a request offers; the runtime control function is not one (AF-05G offers it beside the step tool).</summary>
+    private static IEnumerable<string> Offered(ModelRequest request) =>
+        request.AvailableTools.Select(tool => tool.Name).Where(name => name != EvidenceRead.ControlFunctionName);
 
     private static async Task<(InMemoryTaskStore Store, TaskState Task)> PersistedAsync(InMemoryTaskStore store, Guid taskId)
     {
@@ -227,7 +229,7 @@ public sealed class ConditionalFollowUpTests
 
         Assert.Equal(0, follow.ExecutionCount);
         Assert.Equal(2, result.Plans.Count);
-        Assert.Empty(model.Requests[2].AvailableTools);
+        Assert.Empty(Offered(model.Requests[2]));
     }
 
     [Fact]
