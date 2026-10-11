@@ -114,6 +114,27 @@ public sealed class GovernedSummarizationTests
         Assert.Equal(10 + 20, response.Usage.CompletionTokens);
     }
 
+    [Theory]
+    [InlineData(0.010, 0.002, 0.012)]
+    [InlineData(0.010, null, 0.010)]
+    [InlineData(null, 0.002, 0.002)]
+    [InlineData(null, null, null)]
+    public async Task Default_AllInEstimatedCostIsTheKnownPrimaryPlusTheKnownSummaryCostAndNeverInvented(
+        double? primaryCost, double? summaryCost, double? expected)
+    {
+        // AF-05 O7: tokens were already all-in; the estimated cost now is too, using only costs a provider reported.
+        static decimal? Money(double? value) => value is { } amount ? (decimal)amount : null;
+        var task = new ScriptedModel("Task", "big", request => IsSummary(request)
+            ? new ModelResponse("short summary", [], false, new ModelUsage(40, 10, Money(summaryCost)))
+            : new ModelResponse("done", [], true, new ModelUsage(100, 20, Money(primaryCost))));
+        var broker = Broker(task, Options(new SummarizationOptions { Enabled = true, RecentGroupsToPreserve = 1, TriggerRatio = 0.3 }, TaskProfile()));
+
+        var response = await broker.InvokeAsync(BigRequest(), Context([], []));
+
+        Assert.Equal(40 + 100, response.Usage!.PromptTokens);
+        Assert.Equal(Money(expected), response.Usage.EstimatedCostUsd);
+    }
+
     [Fact]
     public async Task Default_FailureIsFailSoftDoesNotAdvanceFallbackAndSummaryIsNotRepeatedOnRetry()
     {

@@ -56,4 +56,46 @@ public sealed class ModelInvocationBrokerTests
         Assert.Equal([ModelCallOutcome.Failure, ModelCallOutcome.Success], calls.Select(call => call.Outcome));
         Assert.Equal(2, audit.Events.OfType<ModelCallAuditEvent>().Count());
     }
+
+    [Fact]
+    public async Task InvokeAsync_CallerCancellationPropagatesAsCancellation_AndIsNotRecordedAsATimeout()
+    {
+        // AF-05 O8: caller cancellation != model timeout != execution budget. A conforming adapter observes the token it is handed.
+        var model = new ScriptedChatModel(async (_, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            return new ModelResponse("unreachable", [], true, null);
+        });
+        var calls = new List<ModelCallRecord>();
+        var broker = new ModelInvocationBroker(
+            model, new RecordingAuditSink(), TimeProvider.System, NullLogger.Instance, new AgentRunnerOptions());
+        using var caller = new CancellationTokenSource();
+
+        var call = broker.InvokeAsync(
+            new ModelRequest("system", [ChatTurn.FromUser("hello")], []),
+            new ModelInvocationContext(Guid.NewGuid(), 0, Actor, calls), caller.Token);
+        await caller.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await call.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Empty(calls);
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ModelTimeoutStaysATimeoutFailureAndIsNotCallerCancellation()
+    {
+        var never = new TaskCompletionSource<ModelResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var model = new ScriptedChatModel((_, _) => never.Task);
+        var calls = new List<ModelCallRecord>();
+        var broker = new ModelInvocationBroker(
+            model, new RecordingAuditSink(), TimeProvider.System, NullLogger.Instance,
+            new AgentRunnerOptions { ModelCallMaxAttempts = 1, ModelCallAttemptTimeout = TimeSpan.FromMilliseconds(100) });
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => broker.InvokeAsync(
+            new ModelRequest("system", [ChatTurn.FromUser("hello")], []),
+            new ModelInvocationContext(Guid.NewGuid(), 0, Actor, calls)));
+
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.Equal(ModelFailureKind.Timeout, Assert.Single(calls).FailureKind);
+    }
 }

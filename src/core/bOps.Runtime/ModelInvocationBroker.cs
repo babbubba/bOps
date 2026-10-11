@@ -301,7 +301,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             {
                 if (projected?.Stats is { } stats && response.Usage is { } projectionUsage)
                 {
-                    var estimated = stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensAfter;
+                    var estimated = stats.EstimatedPromptTokensAfter;
                     var delta = projectionUsage.PromptTokens - estimated;
                     contextActivity?.SetTag("bops.context.actual_prompt_tokens", projectionUsage.PromptTokens);
                     contextActivity?.SetTag("bops.context.estimate_delta", delta);
@@ -554,9 +554,16 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             Usage = new ModelUsage(
                 (int)Math.Min(int.MaxValue, allInPrompt),
                 (int)Math.Min(int.MaxValue, allInCompletion),
-                response.Usage?.EstimatedCostUsd),
+                CombineCost(response.Usage?.EstimatedCostUsd, ledger.EstimatedCostUsd)),
         };
     }
+
+    /// <summary>
+    /// All-in estimated cost: the known primary cost plus the known summary cost. A part with no reported cost contributes nothing
+    /// (it is never estimated), so the result is a lower bound when only one part reports; it is <c>null</c> only when neither does.
+    /// </summary>
+    internal static decimal? CombineCost(decimal? primary, decimal? summary) =>
+        primary is null ? summary : summary is null ? primary : primary + summary;
 
     /// <summary>Exposes only the task's current candidate, with no fallback control and no retained credentials.</summary>
     private sealed class CurrentCandidateModel(IChatModel inner) : IChatModel
@@ -586,6 +593,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         activity.SetTag("bops.context.fixed_tokens", stats.EstimatedFixedTokens);
         activity.SetTag("bops.context.protected_tokens", stats.EstimatedProtectedTokens);
         activity.SetTag("bops.context.tool_schema_tokens", stats.EstimatedToolTokens);
+        activity.SetTag("bops.context.estimated_prompt_tokens_before", stats.EstimatedPromptTokensBefore);
+        activity.SetTag("bops.context.estimated_prompt_tokens_after", stats.EstimatedPromptTokensAfter);
         activity.SetTag("bops.context.history_tokens_before", stats.EstimatedHistoryTokensBefore);
         activity.SetTag("bops.context.history_tokens_after", stats.EstimatedHistoryTokensAfter);
         activity.SetTag("bops.context.history_messages_before", stats.HistoricalMessagesBefore);
@@ -610,9 +619,9 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         var provider = new KeyValuePair<string, object?>("provider", descriptor.ProviderId);
         var model = new KeyValuePair<string, object?>("model", descriptor.ModelId);
         BOpsTelemetry.ContextTokensBefore.Record(
-            stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensBefore, provider, model);
+            stats.EstimatedPromptTokensBefore, provider, model);
         BOpsTelemetry.ContextTokensAfter.Record(
-            stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensAfter, provider, model);
+            stats.EstimatedPromptTokensAfter, provider, model);
     }
 
     private async Task<ModelResponse> AttemptModelCallAsync(
@@ -623,6 +632,10 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     {
         using var timeoutSource = new CancellationTokenSource(ClampTimerDue(timeout), timeProvider);
         using var attemptSource = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutSource.Token, executionBudgetToken);
+        // AF-05 O8 (evaluated, deliberately not changed): the wait is not linked to the caller's token. A conforming adapter observes
+        // 'attemptSource' and ends the call itself; linking the wait too would abandon an in-flight response whose usage the task
+        // must still account (ADR-0040 5.2) and would surface a different exception type. A non-conforming adapter is bounded by the
+        // attempt timeout and the execution budget.
         using var waitSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutSource.Token, executionBudgetToken);
         var call = model.CompleteAsync(request, attemptSource.Token);
         try

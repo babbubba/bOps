@@ -142,6 +142,16 @@ public sealed record ModelContextProjectionStats(
     /// <summary>Estimated tokens occupied by exact offered tool schemas.</summary>
     public int EstimatedToolTokens { get; init; }
 
+    /// <summary>
+    /// The estimated whole prompt before projection: system and protected turns, offered tool schemas and the full historical
+    /// context. It excludes the safety reserve, which is headroom and never a prompt token, so it is comparable with the
+    /// provider-reported prompt tokens.
+    /// </summary>
+    public int EstimatedPromptTokensBefore => EstimatedProtectedTokens + EstimatedToolTokens + EstimatedHistoryTokensBefore;
+
+    /// <summary>The estimated whole prompt after projection; see <see cref="EstimatedPromptTokensBefore"/>.</summary>
+    public int EstimatedPromptTokensAfter => EstimatedProtectedTokens + EstimatedToolTokens + EstimatedHistoryTokensAfter;
+
     /// <summary>Historical message counts before and after projection.</summary>
     public int HistoricalMessagesBefore { get; init; }
     public int HistoricalMessagesAfter { get; init; }

@@ -184,6 +184,13 @@ internal sealed class DiagnosticModel(
             return int.Parse(digest.Groups[1].Value, CultureInfo.InvariantCulture);
         }
 
+        // The AF-05 evidence index (a protected prompt block) and the HARDEN-8 compact records both name the step index.
+        var index = Regex.Match(request.SystemPrompt, $@"step (\d+) {escaped}: id ev1:", RegexOptions.CultureInvariant);
+        if (index.Success)
+        {
+            return int.Parse(index.Groups[1].Value, CultureInfo.InvariantCulture);
+        }
+
         foreach (var turn in request.History)
         {
             if (turn.Content is not { } text)
@@ -195,12 +202,6 @@ internal sealed class DiagnosticModel(
             if (record.Success)
             {
                 return int.Parse(record.Groups[1].Value, CultureInfo.InvariantCulture);
-            }
-
-            var index = Regex.Match(text, $@"step={{?(\d+)}}? tool={escaped}\b", RegexOptions.CultureInvariant);
-            if (index.Success)
-            {
-                return int.Parse(index.Groups[1].Value, CultureInfo.InvariantCulture);
             }
         }
 

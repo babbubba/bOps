@@ -106,7 +106,7 @@ public sealed partial class AgentRunner(
     /// <summary>The replan EvidenceRead invitation; offered only while the logical call still has read slots (ADR-0046, AF-04).</summary>
     private const string ReplanEvidenceReadAvailable =
         """
-        Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to
+        The evidence index names stable evidence ids and persisted result/observation lengths. To read up to
         4000 UTF-16 code units from one current-task source, reply with only this exact JSON object:
         {"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result|observation","offset":0,"length":4000}
         This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch,
@@ -167,11 +167,11 @@ public sealed partial class AgentRunner(
 
     private const string EvidenceControlInstruction =
         "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
-        "persisted evidence of this task that the bounded history shows truncated. It does not complete the step, and an " +
+        "persisted evidence of this task that the evidence index lists. It does not complete the step, and an " +
         "operational call in the same reply is not executed.";
 
     private const string EvidenceReadInstructions =
-        "Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to " +
+        "The evidence index names stable evidence ids and persisted result/observation lengths. To read up to " +
         "4000 UTF-16 code units from one current-task source, reply with only this exact JSON object: " +
         "{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"ev1:<task-guid>:<step-index>\",\"source\":\"result|observation\",\"offset\":0,\"length\":4000}. " +
         "This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch, " +
@@ -880,8 +880,9 @@ public sealed partial class AgentRunner(
                 var evidenceReadExhausted = logicalCall.Evidence.Exhausted;
                 var offersEvidenceControl = !evidenceReadExhausted && steps.Any(step =>
                     Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
+                var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps, options.MaxObservationCharacters) : null;
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted);
+                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
@@ -2681,7 +2682,9 @@ public sealed partial class AgentRunner(
             // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
             var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
             // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
-            var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools);
+            var systemPrompt = BuildPlanningSystemPrompt(
+                ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
+                logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar, options.MaxObservationCharacters));
             var bounded = BoundedHistory.Build(taskId, requestGoal, stepsSoFar,
                 aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName, triggeringStepIndex);
             logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
@@ -4452,8 +4455,9 @@ public sealed partial class AgentRunner(
     private const int MaxCatalogSummaryCharacters = 120;
 
     /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
-    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools) =>
-        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}";
+    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools, string? evidenceIndex = null) =>
+        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}"
+        + (evidenceIndex is null ? string.Empty : $"\n\n{evidenceIndex}");
 
     /// <summary>
     /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level, the first sentence
@@ -4518,7 +4522,9 @@ public sealed partial class AgentRunner(
             .Replace(EvidenceLimitationsDigest.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceLimitationsDigest.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceGroundingLedger.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
-            .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
+            .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceIndex.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            .Replace(EvidenceIndex.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
 
         return $"{ToolOutputOpenDelimiter}\n{sanitized}\n{ToolOutputCloseDelimiter}";
     }
@@ -4537,7 +4543,7 @@ public sealed partial class AgentRunner(
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
         bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
-        bool evidenceReadExhausted = false)
+        bool evidenceReadExhausted = false, string? evidenceIndex = null)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
@@ -4565,7 +4571,13 @@ public sealed partial class AgentRunner(
         }
 
         // ADR-0042 PRE-5 amendment §3: the grounding block follows the digest, delimited the same way.
-        return grounding is null ? prompt : $"{prompt}\n\n{EvidenceGroundingLedger.Delimit(grounding)}";
+        if (grounding is not null)
+        {
+            prompt = $"{prompt}\n\n{EvidenceGroundingLedger.Delimit(grounding)}";
+        }
+
+        // ADR-0052 AF-05: the drill-down index, only while the control function is offered, so a compacted result stays addressable.
+        return evidenceIndex is null ? prompt : $"{prompt}\n\n{evidenceIndex}";
     }
 
     internal static string DescribePlan(AgentPlan plan)

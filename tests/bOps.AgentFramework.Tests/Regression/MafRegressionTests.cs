@@ -126,4 +126,26 @@ public sealed class MafRegressionTests
         Assert.Contains("exceed the selected model profile's input capacity", run.State.Steps[^1].Observation ?? string.Empty,
             StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task TruncatedResult_IsOfferedWithItsStableEvidenceIdAfterMafCompaction()
+    {
+        // AF-05: the limitations digest names the step of a shortened result, but only the runtime-authored evidence index carries
+        // the stable id and lengths the EvidenceRead/v1 text directive (the only read a replan has) needs once the HARDEN-8
+        // compact records are gone.
+        var big = new ScenarioTool("system.big", ToolCallResult.Success(new string('x', 12_000)) with { Completeness = ToolResultCompleteness.Complete });
+        var cpu = new ScenarioTool("system.cpu", ToolCallResult.Success("{\"usagePercent\":4.7}") with { Completeness = ToolResultCompleteness.Complete });
+        var scenario = new RegressionScenario(
+            "complete-truncated", "Check the machine.", [big, cpu],
+            new Dictionary<string, IReadOnlyList<string>> { ["system.cpu"] = ["system.big"] }, [], []);
+
+        var run = await RegressionRunner.RunAsync(scenario, Maf("maf-16k", 16384));
+
+        Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
+        Assert.Equal(0, run.Model.UnaddressableReads);
+        Assert.Equal(1, run.EvidenceReadServed);
+        var stepPrompt = run.Model.Requests.First(request => request.AvailableTools.Any(tool => tool.Name == "system.cpu")).SystemPrompt;
+        Assert.Contains("<<<BOPS_EVIDENCE_INDEX>>>", stepPrompt, StringComparison.Ordinal);
+        Assert.Contains("step 0 system.big: id ev1:" + run.State.Id.ToString("N") + ":0", stepPrompt, StringComparison.Ordinal);
+    }
 }

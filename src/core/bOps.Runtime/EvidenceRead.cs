@@ -116,8 +116,12 @@ internal static class EvidenceRead
         }
 
         return new ControlCallRecognition(ControlCallKind.Valid, call,
-            new EvidenceReadDirective(BoundedHistory.EvidenceId(currentTaskId, step), source, offset, length));
+            new EvidenceReadDirective(EvidenceId(currentTaskId, step), source, offset, length));
     }
+
+    /// <summary>The stable id of a persisted step of <paramref name="taskId"/>: <c>ev1:&lt;task&gt;:&lt;step&gt;</c>.</summary>
+    internal static string EvidenceId(Guid taskId, int stepIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"ev1:{taskId:N}:{stepIndex}");
     private static readonly JsonDocumentOptions StrictJson = new() { AllowDuplicateProperties = false };
 
     internal static RuntimeDirectiveRecognition Recognize(ModelResponse response)

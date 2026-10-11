@@ -101,12 +101,23 @@ public sealed class ModelSummarizationLedger
     /// <summary>All summary tokens, which count toward the task total.</summary>
     public long TotalTokens => PromptTokens + CompletionTokens;
 
+    /// <summary>
+    /// The summed provider-reported estimated cost of the summary calls that reported one, or <c>null</c> when none did. A cost is
+    /// never invented for a call whose provider reported none, so this is a lower bound when only some calls report.
+    /// </summary>
+    public decimal? EstimatedCostUsd { get; private set; }
+
     /// <summary>Records one summary inference.</summary>
     public void Record(ModelUsage? usage, TimeSpan elapsed)
     {
         Calls++;
         PromptTokens += usage?.PromptTokens ?? 0;
         CompletionTokens += usage?.CompletionTokens ?? 0;
+        if (usage?.EstimatedCostUsd is { } cost)
+        {
+            EstimatedCostUsd = (EstimatedCostUsd ?? 0m) + cost;
+        }
+
         Duration += elapsed;
     }
 
