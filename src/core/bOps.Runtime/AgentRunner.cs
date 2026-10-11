@@ -2859,15 +2859,20 @@ public sealed partial class AgentRunner(
                 delegation, calls, ct, malformedOutput);
         }
         catch (ModelProtocolException ex) when (
-            ex.FailureKind == ModelFailureKind.ContextOverflow
-            && !logicalCall.OverflowRetried
-            && requestFactory(true).HistoricalTurns.Count > 0)
+            ex.FailureKind == ModelFailureKind.ContextOverflow && !logicalCall.OverflowRetried)
         {
+            // Only a call that has historical context can be projected harder; planning, and a call whose protected context alone
+            // overflowed, keep the ADR-0039 terminal semantics (no identical retry).
+            var recovery = requestFactory(true);
+            if (recovery.HistoricalTurns.Count == 0)
+            {
+                throw;
+            }
+
             logicalCall.OverflowRetried = true;
             logicalCall.Aggressive = true;
             BOpsTelemetry.ContextOverflowRetriesTotal.Add(1);
-            return await CallModelAsync(taskId, stepIndex, actor, requestFactory(true),
-                delegation, calls, ct, malformedOutput);
+            return await CallModelAsync(taskId, stepIndex, actor, recovery, delegation, calls, ct, malformedOutput);
         }
     }
 
