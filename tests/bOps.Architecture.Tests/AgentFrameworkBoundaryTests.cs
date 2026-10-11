@@ -68,6 +68,25 @@ public sealed class AgentFrameworkBoundaryTests
             $"Production IChatModel.CompleteAsync calls must stay behind the governed broker/provider boundary: {string.Join(", ", offenders)}");
     }
 
+    [Fact]
+    public void Summarization_ReachesAModelOnlyThroughTheGovernedBroker_AndStaysInsideTheMafProject()
+    {
+        var client = File.ReadAllText(Path.Combine(
+            RepositoryRoot, "src", "core", "bOps.AgentFramework", "GovernedSummarizationChatClient.cs"));
+        Assert.Contains("access.Broker.InvokeAsync(", client, StringComparison.Ordinal);
+        foreach (var forbidden in new[] { "IChatModel", ".CompleteAsync(", "HttpClient", "ApiKey", "ISecretProvider" })
+        {
+            Assert.DoesNotContain(forbidden, client, StringComparison.Ordinal);
+        }
+
+        var offenders = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("SummarizationCompactionStrategy", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+            .Where(path => !path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(offenders.Length == 0, $"MAF summarization must stay inside bOps.AgentFramework: {string.Join(", ", offenders)}");
+    }
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)

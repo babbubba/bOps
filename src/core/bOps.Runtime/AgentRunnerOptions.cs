@@ -12,6 +12,9 @@ public sealed record AgentRunnerOptions
     /// <summary>Model context profiles and deterministic compaction guard-rails.</summary>
     public ModelContextOptions Context { get; init; } = new();
 
+    /// <summary>Governed MAF summarization of historical context (AF-03). Off unless explicitly enabled.</summary>
+    public SummarizationOptions Summarization { get; init; } = new();
+
     /// <summary>
     /// The per-execution-attempt step budget (ADR-0040 §5): an anti-infinite-loop guard-rail. Exhausting it ends the attempt
     /// as <c>MaxStepsReached</c>; a resume starts a fresh per-attempt budget, capped by <see cref="MaxLifetimeSteps"/>.
@@ -140,6 +143,7 @@ public sealed record AgentRunnerOptions
     {
         ArgumentNullException.ThrowIfNull(Context);
         Context.Validate();
+        Summarization.Validate(Context);
 
         if (MaxSteps < 1)
         {

@@ -156,6 +156,9 @@ public sealed record ModelContextProjectionStats(
 
     /// <summary>The fixed deterministic pipeline, safe for telemetry.</summary>
     public string Strategies { get; init; } = "ToolResult,SlidingWindow,Truncation";
+
+    /// <summary>Summarization measurements, or <c>null</c> when summarization is not configured for this projection.</summary>
+    public ModelSummaryStats? Summary { get; init; }
 }
 
 /// <summary>The provider request and its safe, aggregate projection measurements.</summary>
@@ -168,5 +171,6 @@ public interface IModelContextProjector
     Task<ModelContextProjectionResult> ProjectAsync(
         ModelContextRequest request,
         ChatModelDescriptor descriptor,
+        ModelSummarizationAccess? summarization = null,
         CancellationToken ct = default);
 }

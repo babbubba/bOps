@@ -24,6 +24,17 @@ internal sealed class ExecutionChatModelFactory(
         return new FallbackChatModel(candidates, pin);
     }
 
+    /// <summary>
+    /// A single-candidate model for an explicitly configured summarizer. It has no fallback chain and resolves the
+    /// credential of exactly that provider for each invocation through the same resolver as every other candidate.
+    /// </summary>
+    internal IChatModel CreateSummarizer(string providerId, string model, TimeSpan? requestTimeout)
+    {
+        var candidate = coordinator.ResolveCandidate(providerId, model, requestTimeout);
+        return new AttemptModel(candidate.ProviderId, candidate.BaseUrl, candidate.Model,
+            candidate.SupportsNativeToolCalling, candidate.RequestTimeout, registry, credentials);
+    }
+
     private sealed class AttemptModel(string providerId, string baseUrl, string model, bool supportsNativeToolCalling,
         TimeSpan? requestTimeout, IChatModelRegistry registry,
         ProviderCredentialResolver credentials) : IChatModel
@@ -62,9 +73,21 @@ internal sealed class ExecutionRunnerFactory(
         var executionModel = testModel ?? models.Create(pin);
         Func<Guid, PinnedProviderConfiguration, CancellationToken, Task> persistPin =
             (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct);
+        // AF-03: an explicitly configured summarizer is its own governed broker (same retry/timeout/audit/accounting),
+        // independent of the task fallback chain, and never falls back to another destination.
+        IModelInvocationBroker? summarizer = null;
+        if (options.Summarization is { Enabled: true, IsDedicated: true } summarization)
+        {
+            var summaryModel = models.CreateSummarizer(summarization.Provider!, summarization.Model!, pin.RequestTimeout);
+            if (options.Context.Resolve(summaryModel.Descriptor) is not { MaxContextTokens: not null })
+                throw new InvalidOperationException(
+                    $"'Agent:Summarization' resolves to {summaryModel.Descriptor.ProviderId}/{summaryModel.Descriptor.ModelId}, " +
+                    "which has no exact 'Agent:Context:Profiles' entry with a known MaxContextTokens.");
+            summarizer = new ModelInvocationBroker(summaryModel, audit, time, logger, options);
+        }
         var broker = new ModelInvocationBroker(
             executionModel, audit, time, logger, options, pin, persistPin,
-            new MafContextProjector(options, logger));
+            new MafContextProjector(options, logger), summarizer);
         return new AgentRunner(executionModel, tools, policy, approvals, audit, tasks, time,
             logger, options, skills, pinnedProviderConfiguration: pin,
             persistPinnedProviderConfiguration: persistPin,

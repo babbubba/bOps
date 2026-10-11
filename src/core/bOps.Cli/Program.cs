@@ -307,9 +307,38 @@ var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? 
 var audit = host.Services.GetRequiredService<IAuditSink>();
 var time = host.Services.GetRequiredService<TimeProvider>();
 var logger = host.Services.GetRequiredService<ILogger<AgentRunner>>();
+// AF-03: the CLI hosts one provider, so an explicit summarizer may only choose another MODEL of that same provider.
+// It is its own governed broker; there is no fallback to any other destination.
+IModelInvocationBroker? summarizerBroker = null;
+if (runnerOptions.Summarization is { Enabled: true, IsDedicated: true } summarization)
+{
+    if (!string.Equals(summarization.Provider, modelOptions.Provider, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "The CLI hosts the single 'ModelProvider:Provider'; 'Agent:Summarization:Provider' must name it (the model may differ).");
+    }
+
+    var summaryModel = chatModelRegistry.Create(new ChatModelOptions(
+        modelOptions.Provider, modelOptions.BaseUrl, modelOptions.ApiKeySecret, summarization.Model!,
+        modelOptions.SupportsNativeToolCalling)
+    {
+        ResolvedApiKey = modelOptions.ResolvedApiKey,
+        RequestTimeout = modelOptions.RequestTimeout,
+    });
+    if (runnerOptions.Context.Resolve(summaryModel.Descriptor) is not { MaxContextTokens: not null })
+    {
+        throw new InvalidOperationException(
+            $"'Agent:Summarization' resolves to {summaryModel.Descriptor.ProviderId}/{summaryModel.Descriptor.ModelId}, "
+            + "which has no exact 'Agent:Context:Profiles' entry with a known MaxContextTokens.");
+    }
+
+    summarizerBroker = new ModelInvocationBroker(summaryModel, audit, time, logger, runnerOptions);
+}
+
 var broker = new ModelInvocationBroker(
     model, audit, time, logger, runnerOptions,
-    contextProjector: new MafContextProjector(runnerOptions, logger));
+    contextProjector: new MafContextProjector(runnerOptions, logger),
+    dedicatedSummarizer: summarizerBroker);
 
 var runner = new AgentRunner(
     model,

@@ -291,18 +291,29 @@ internal sealed class ProviderConfigurationCoordinator(
                 throw new ArgumentException("A fallback model must be nonblank and at most 256 characters.");
             if (!tuples.Add($"{id}\u001f{entry.Model}"))
                 throw new ArgumentException("Duplicate provider/model candidates are not allowed in the fallback chain.");
-            var profile = profileOverride is not null && Canonical(profileOverride.ProviderId).Equals(id, StringComparison.OrdinalIgnoreCase)
-                ? profileOverride : settings.FindProviderProfile(id);
-            var providerDefaults = configuration.GetSection("ModelProvider").Get<ChatModelOptions>()!;
-            var baseUrl = profile?.BaseUrl ??
-                (id.Equals(providerDefaults.Provider, StringComparison.OrdinalIgnoreCase) ? providerDefaults.BaseUrl : null);
-            if (baseUrl is null)
-                throw new ArgumentException($"'{id}' has no stored profile for fallback configuration.");
-            var native = profile?.SupportsNativeToolCalling ?? providerDefaults.SupportsNativeToolCalling;
-            ValidateShape(baseUrl, entry.Model);
-            result.Add(new PinnedProviderCandidate(id, baseUrl, entry.Model, native, requestTimeout));
+            result.Add(ResolveCandidate(id, entry.Model, requestTimeout, profileOverride));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Resolves one explicit provider/model pair with the same provider-profile rules fallback candidates use (stored
+    /// profile, else the configured primary's endpoint). Nothing is chosen automatically; a pair with no endpoint fails.
+    /// </summary>
+    internal PinnedProviderCandidate ResolveCandidate(
+        string providerId, string model, TimeSpan? requestTimeout, ProviderProfile? profileOverride = null)
+    {
+        var id = Canonical(providerId);
+        var profile = profileOverride is not null && Canonical(profileOverride.ProviderId).Equals(id, StringComparison.OrdinalIgnoreCase)
+            ? profileOverride : settings.FindProviderProfile(id);
+        var providerDefaults = configuration.GetSection("ModelProvider").Get<ChatModelOptions>()!;
+        var baseUrl = profile?.BaseUrl ??
+            (id.Equals(providerDefaults.Provider, StringComparison.OrdinalIgnoreCase) ? providerDefaults.BaseUrl : null);
+        if (baseUrl is null)
+            throw new ArgumentException($"'{id}' has no stored profile for fallback configuration.");
+        var native = profile?.SupportsNativeToolCalling ?? providerDefaults.SupportsNativeToolCalling;
+        ValidateShape(baseUrl, model);
+        return new PinnedProviderCandidate(id, baseUrl, model, native, requestTimeout);
     }
 
     private static string Hash(PinnedProviderConfiguration pin)

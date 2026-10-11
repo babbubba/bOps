@@ -13,7 +13,8 @@ namespace bOps.AgentFramework;
 
 /// <summary>
 /// Projects bOps-owned protected and historical context through the deterministic MAF 1.24.0
-/// compaction primitives. No summarization model is used.
+/// compaction primitives. Optional governed summarization runs between tool-result compaction and the
+/// sliding window, only through the broker-owned <see cref="ModelSummarizationAccess"/>.
 /// </summary>
 public sealed class MafContextProjector : IModelContextProjector
 {
@@ -36,6 +37,7 @@ public sealed class MafContextProjector : IModelContextProjector
     public async Task<ModelContextProjectionResult> ProjectAsync(
         ModelContextRequest request,
         ChatModelDescriptor descriptor,
+        ModelSummarizationAccess? summarization = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -116,14 +118,30 @@ public sealed class MafContextProjector : IModelContextProjector
             // Never promote raw tool output (including prompt injection) into assistant text.
             ToolCallFormatter = FormatToolGroupWithoutResultData,
         };
-        var pipeline = new PipelineCompactionStrategy(
-        [
-            toolResults,
-            new SlidingWindowCompactionStrategy(exceedsBudget, options.MinimumPreservedTurns, fitsBudget),
-            new TruncationCompactionStrategy(exceedsBudget, minimumPreservedGroups: 0, fitsBudget),
-        ]);
+        var strategies = new List<CompactionStrategy> { toolResults };
+        SummarizationAttemptState? summaryState = null;
+        using var summarizer = summarization is null
+            ? null
+            : CreateSummarizer(summarization, summaryState = new SummarizationAttemptState());
+        if (summarizer is not null && summarization is not null)
+        {
+            var threshold = (int)(historyBudget * summarization.Options.TriggerRatio);
+            strategies.Add(new SummarizationCompactionStrategy(
+                summarizer,
+                index => EstimateMessages(index.GetIncludedMessages()) > threshold,
+                summarization.Options.RecentGroupsToPreserve,
+                MafSummarization.Prompt,
+                index => EstimateMessages(index.GetIncludedMessages()) <= threshold));
+        }
+
+        strategies.Add(new SlidingWindowCompactionStrategy(exceedsBudget, options.MinimumPreservedTurns, fitsBudget));
+        strategies.Add(new TruncationCompactionStrategy(exceedsBudget, minimumPreservedGroups: 0, fitsBudget));
+        var pipeline = new PipelineCompactionStrategy(strategies);
 
         var compactedMessages = (await CompactionProvider.CompactAsync(pipeline, historical, logger, ct)).ToList();
+        // MAF contains non-cancellation summarizer failures and restores the original groups; a cancellation it
+        // did not rethrow must still stop the task.
+        ct.ThrowIfCancellationRequested();
         compactedMessages.RemoveAll(message => ReferenceEquals(message, historicalAnchor));
         var afterTokens = EstimateMessages(compactedMessages);
         var afterCharacters = EstimateCharacters(compactedMessages);
@@ -174,7 +192,42 @@ public sealed class MafContextProjector : IModelContextProjector
                 HistoricalGroupsAfter = CountAtomicGroups(compactedHistory),
                 HistoricalCharactersBefore = beforeCharacters,
                 HistoricalCharactersAfter = afterCharacters,
+                Strategies = summarizer is null ? "ToolResult,SlidingWindow,Truncation" : "ToolResult,Summarization,SlidingWindow,Truncation",
+                Summary = summarizer is null ? null : SummaryStats(summaryState!, compactedMessages),
             });
+    }
+
+    private GovernedSummarizationChatClient CreateSummarizer(
+        ModelSummarizationAccess access, SummarizationAttemptState state)
+    {
+        var profile = access.Profile;
+        var inputBudget = profile?.MaxContextTokens is { } max && profile.ReservedOutputTokens is { } reserved
+            ? max - reserved - options.SafetyReserveTokens
+            : 0;
+        return new GovernedSummarizationChatClient(access, state, inputBudget, TimeProvider.System);
+    }
+
+    private static ModelSummaryStats SummaryStats(
+        SummarizationAttemptState state, IReadOnlyList<ChatMessage> finalMessages)
+    {
+        var present = finalMessages.Any(message => message.Contents.OfType<TextContent>()
+            .Any(text => text.Text.Contains(MafSummarization.SummaryHeader, StringComparison.Ordinal)));
+        var (outcome, reason) = present
+            ? ("applied", null)
+            : state.FailureReason is not null
+                ? ("failed", state.FailureReason)
+                : state.SkipReason is not null
+                    ? ("skipped", state.SkipReason)
+                    : state.Succeeded
+                        ? ("discarded", "summary-removed-by-window-or-truncation")
+                        : ("not-triggered", null);
+        return new ModelSummaryStats(
+            outcome,
+            reason,
+            state.GroupsFed,
+            present ? 1 : state.GroupsFed,
+            state.InputEstimatedTokens,
+            state.OutputEstimatedTokens);
     }
 
     private static int EstimateRequestTokens(ModelRequest request) =>

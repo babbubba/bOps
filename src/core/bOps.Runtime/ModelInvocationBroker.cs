@@ -56,6 +56,15 @@ public sealed class ModelInvocationContext
     internal CancellationToken ExecutionBudgetToken { get; init; }
 
     internal Func<bool>? ExecutionBudgetExpired { get; init; }
+
+    /// <summary>The same task, records, accounting and execution budgets, without a caller-specific response validator.</summary>
+    internal ModelInvocationContext ForSummarization() => new(TaskId, StepIndex, Actor, Calls)
+    {
+        Delegation = Delegation,
+        AccountTokens = AccountTokens,
+        ExecutionBudgetToken = ExecutionBudgetToken,
+        ExecutionBudgetExpired = ExecutionBudgetExpired,
+    };
 }
 
 /// <summary>
@@ -102,6 +111,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     private readonly PinnedProviderConfiguration? pinnedProviderConfiguration;
     private readonly Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration;
     private readonly IModelContextProjector? contextProjector;
+    private readonly IModelInvocationBroker? dedicatedSummarizer;
+    private IModelInvocationBroker? currentCandidateSummarizer;
 
     /// <summary>Creates one execution-scoped governed broker over the execution-scoped bOps model.</summary>
     public ModelInvocationBroker(
@@ -112,7 +123,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         AgentRunnerOptions options,
         PinnedProviderConfiguration? pinnedProviderConfiguration = null,
         Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
-        IModelContextProjector? contextProjector = null)
+        IModelContextProjector? contextProjector = null,
+        IModelInvocationBroker? dedicatedSummarizer = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(audit);
@@ -129,6 +141,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         this.pinnedProviderConfiguration = pinnedProviderConfiguration;
         this.persistPinnedProviderConfiguration = persistPinnedProviderConfiguration;
         this.contextProjector = contextProjector;
+        this.dedicatedSummarizer = dedicatedSummarizer;
     }
 
     /// <inheritdoc />
@@ -167,19 +180,20 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         return await InvokeCoreAsync(
             request.LegacySafeRequest,
             context,
-            (descriptor, token) => contextProjector.ProjectAsync(request, descriptor, token),
+            (descriptor, summarization, token) => contextProjector.ProjectAsync(request, descriptor, summarization, token),
             ct);
     }
 
     private async Task<ModelResponse> InvokeCoreAsync(
         ModelRequest request,
         ModelInvocationContext context,
-        Func<ChatModelDescriptor, CancellationToken, Task<ModelContextProjectionResult>>? projection,
+        Func<ChatModelDescriptor, ModelSummarizationAccess?, CancellationToken, Task<ModelContextProjectionResult>>? projection,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var callStartedAt = timeProvider.GetTimestamp();
+        var summaryLedger = new ModelSummarizationLedger();
         var modelAttempt = 0;
         var providerAttempt = 0;
         while (true)
@@ -196,8 +210,18 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             var startedAtUtc = timeProvider.GetUtcNow();
             var startedAt = timeProvider.GetTimestamp();
             var descriptor = model.Descriptor;
-            var projected = projection is null ? null : await projection(descriptor, ct);
+            ModelSummarizationAccess? summarizationAccess = null;
+            var projected = projection is null
+                ? null
+                : await projection(descriptor, summarizationAccess = BuildSummarizationAccess(context, summaryLedger), ct);
+            if (projected is not null && context.ExecutionBudgetExpired?.Invoke() == true)
+            {
+                // MAF treats a failed summary as soft; an exhausted execution budget must still end the attempt.
+                throw new AttemptDurationBudgetExceededException();
+            }
+
             var attemptRequest = projected?.Request ?? request;
+            RecordSummaryTelemetry(projected?.Stats, summarizationAccess);
             var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
                 ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
             using var contextActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.model_context");
@@ -283,7 +307,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                         response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                         fallbackOrdinal, ModelFailureKind.MalformedResponse,
                         ModelRetryDecision.NotRetryable, null, null, ct);
-                    return response;
+                    return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
                 }
 
                 context.Calls.Add(BuildCallRecord(
@@ -298,7 +322,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                     context, ModelCallOutcome.Success, null, response.Usage, descriptor,
                     response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                     fallbackOrdinal, null, null, null, null, ct);
-                return response;
+                return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
             }
 
             if (failure is null)
@@ -390,6 +414,128 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 throw new AttemptDurationBudgetExceededException();
             }
         }
+    }
+
+    /// <summary>
+    /// Builds the access the MAF summarizer uses. Default: a governed broker over the task's CURRENT candidate
+    /// (never the primary again, and with no fallback control, so a summary failure cannot advance the task's sticky
+    /// chain). Dedicated: the host-composed broker for the explicitly configured provider/model, which is independent of
+    /// the task's chain and never falls back to another destination.
+    /// </summary>
+    private ModelSummarizationAccess? BuildSummarizationAccess(ModelInvocationContext context, ModelSummarizationLedger ledger)
+    {
+        var summarization = options.Summarization;
+        if (!summarization.Enabled)
+        {
+            return null;
+        }
+
+        var dedicated = summarization.IsDedicated;
+        if (dedicated && dedicatedSummarizer is null)
+        {
+            // The operator named a destination this host did not compose (for example the model-less shared runner).
+            // Never substitute the task model for an explicitly configured destination: no summary is requested.
+            return null;
+        }
+
+        var broker = dedicated
+            ? dedicatedSummarizer!
+            : currentCandidateSummarizer ??= new ModelInvocationBroker(
+                new CurrentCandidateModel(model), audit, timeProvider, logger, options, pinnedProviderConfiguration);
+        var descriptor = broker.Descriptor;
+        return new ModelSummarizationAccess(
+            broker, descriptor, dedicated, options.Context.Resolve(descriptor), context.ForSummarization, ledger, summarization);
+    }
+
+    private static void RecordSummaryTelemetry(ModelContextProjectionStats? stats, ModelSummarizationAccess? access)
+    {
+        if (stats?.Summary is not { } summary || access is null)
+        {
+            return;
+        }
+
+        var dedicated = new KeyValuePair<string, object?>("dedicated", access.Dedicated);
+        var outcome = new KeyValuePair<string, object?>("outcome", summary.Outcome);
+        if (!string.Equals(summary.Outcome, "not-triggered", StringComparison.Ordinal))
+        {
+            BOpsTelemetry.SummaryEventsTotal.Add(1, new KeyValuePair<string, object?>("event", "requested"), dedicated);
+            BOpsTelemetry.SummaryEventsTotal.Add(1, new KeyValuePair<string, object?>("event", summary.Outcome), dedicated);
+            BOpsTelemetry.SummaryInputEstimatedTokens.Record(summary.InputEstimatedTokens, outcome, dedicated);
+        }
+
+        using var activity = BOpsTelemetry.ActivitySource.StartActivity("bops.model_summary");
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.SetTag("bops.summary.requested", !string.Equals(summary.Outcome, "not-triggered", StringComparison.Ordinal));
+        activity.SetTag("bops.summary.outcome", summary.Outcome);
+        activity.SetTag("bops.summary.reason", summary.Reason);
+        activity.SetTag("bops.summary.provider", access.Descriptor.ProviderId);
+        activity.SetTag("bops.summary.model", access.Descriptor.ModelId);
+        activity.SetTag("bops.summary.dedicated", access.Dedicated);
+        activity.SetTag("bops.summary.input_estimated_tokens", summary.InputEstimatedTokens);
+        activity.SetTag("bops.summary.output_estimated_tokens", summary.OutputEstimatedTokens);
+        activity.SetTag("bops.summary.groups_before", summary.GroupsBefore);
+        activity.SetTag("bops.summary.groups_after", summary.GroupsAfter);
+    }
+
+    /// <summary>
+    /// Folds the summary inference of this logical call into the usage the runtime accumulates, so summary tokens count
+    /// toward the task total. The per-attempt records already hold each call's true usage separately.
+    /// </summary>
+    private static ModelResponse AccountSummary(
+        ModelResponse response,
+        ModelContextProjectionStats? stats,
+        ChatModelDescriptor descriptor,
+        ModelSummarizationLedger ledger,
+        System.Diagnostics.Activity? activity)
+    {
+        if (stats?.Summary is null && ledger.Calls == 0)
+        {
+            return response;
+        }
+
+        var primaryPrompt = response.Usage?.PromptTokens ?? 0;
+        var primaryCompletion = response.Usage?.CompletionTokens ?? 0;
+        var allInPrompt = primaryPrompt + ledger.PromptTokens;
+        var allInCompletion = primaryCompletion + ledger.CompletionTokens;
+        activity?.SetTag("bops.task.primary_tokens", primaryPrompt + primaryCompletion);
+        activity?.SetTag("bops.task.summary_tokens", ledger.TotalTokens);
+        activity?.SetTag("bops.task.all_in_tokens", allInPrompt + allInCompletion);
+        var provider = new KeyValuePair<string, object?>("provider", descriptor.ProviderId);
+        var model = new KeyValuePair<string, object?>("model", descriptor.ModelId);
+        BOpsTelemetry.TaskCallTokens.Record(primaryPrompt + primaryCompletion,
+            new KeyValuePair<string, object?>("part", "primary"), provider, model);
+        BOpsTelemetry.TaskCallTokens.Record(ledger.TotalTokens,
+            new KeyValuePair<string, object?>("part", "summary"), provider, model);
+        BOpsTelemetry.TaskCallTokens.Record(allInPrompt + allInCompletion,
+            new KeyValuePair<string, object?>("part", "all_in"), provider, model);
+        if (ledger.Calls == 0)
+        {
+            return response;
+        }
+
+        BOpsTelemetry.SummaryTokens.Record(ledger.PromptTokens, new KeyValuePair<string, object?>("part", "prompt"));
+        BOpsTelemetry.SummaryTokens.Record(ledger.CompletionTokens, new KeyValuePair<string, object?>("part", "completion"));
+        BOpsTelemetry.SummaryDurationMs.Record(ledger.Duration.TotalMilliseconds);
+        return response with
+        {
+            Usage = new ModelUsage(
+                (int)Math.Min(int.MaxValue, allInPrompt),
+                (int)Math.Min(int.MaxValue, allInCompletion),
+                response.Usage?.EstimatedCostUsd),
+        };
+    }
+
+    /// <summary>Exposes only the task's current candidate, with no fallback control and no retained credentials.</summary>
+    private sealed class CurrentCandidateModel(IChatModel inner) : IChatModel
+    {
+        public ChatModelDescriptor Descriptor => inner.Descriptor;
+
+        public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) =>
+            inner.CompleteAsync(request, ct);
     }
 
     private static void TagProjection(

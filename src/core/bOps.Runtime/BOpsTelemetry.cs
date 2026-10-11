@@ -54,4 +54,24 @@ public static class BOpsTelemetry
     /// <summary>One bounded retry after a provider classified the request as context overflow.</summary>
     public static Counter<long> ContextOverflowRetriesTotal { get; } =
         Meter.CreateCounter<long>("bops.context.overflow_retries_total");
+
+    /// <summary>Summarization outcomes (requested/applied/skipped/failed), tagged by outcome and dedicated flag. Never carries content.</summary>
+    public static Counter<long> SummaryEventsTotal { get; } =
+        Meter.CreateCounter<long>("bops.summary.events_total");
+
+    /// <summary>Estimated tokens sent to a summarizer in one governed summary call.</summary>
+    public static Histogram<long> SummaryInputEstimatedTokens { get; } =
+        Meter.CreateHistogram<long>("bops.summary.input_estimated_tokens", unit: "tokens");
+
+    /// <summary>Provider-reported tokens by summary part (prompt/completion) for one logical call.</summary>
+    public static Histogram<long> SummaryTokens { get; } =
+        Meter.CreateHistogram<long>("bops.summary.tokens", unit: "tokens");
+
+    /// <summary>Wall-clock duration spent in summary inference for one logical call, in milliseconds.</summary>
+    public static Histogram<double> SummaryDurationMs { get; } =
+        Meter.CreateHistogram<double>("bops.summary.duration_ms", unit: "ms");
+
+    /// <summary>Tokens of one logical call split into primary reasoning, summary and all-in.</summary>
+    public static Histogram<long> TaskCallTokens { get; } =
+        Meter.CreateHistogram<long>("bops.task.call_tokens", unit: "tokens");
 }

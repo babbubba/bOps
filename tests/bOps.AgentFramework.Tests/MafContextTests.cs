@@ -312,7 +312,8 @@ public sealed class MafContextTests
         public List<string> Descriptors { get; } = [];
 
         public Task<ModelContextProjectionResult> ProjectAsync(
-            ModelContextRequest request, ChatModelDescriptor descriptor, CancellationToken ct = default)
+            ModelContextRequest request, ChatModelDescriptor descriptor,
+            ModelSummarizationAccess? summarization = null, CancellationToken ct = default)
         {
             Descriptors.Add($"{descriptor.ProviderId}/{descriptor.ModelId}");
             return Task.FromResult(new ModelContextProjectionResult(

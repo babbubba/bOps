@@ -34,10 +34,13 @@ public sealed class OrdinaryMutationJournalDurabilityTests
 
         public AgentRunnerOptions Options { get; init; } = new();
 
+        /// <summary>An optional governed broker (AF-03 authority tests); the default broker is used when null.</summary>
+        public IModelInvocationBroker? Broker { get; init; }
+
         public TaskMutationKey Key => new(TaskId, 1, 0);
 
         public AgentRunner NewRunner(JournalScriptModel? model = null, IToolRegistry? registry = null) =>
-            Runner(model ?? new JournalScriptModel(), Store, Audit, registry ?? Registry(Mutate, Observe), Policy, Approver, Options);
+            Runner(model ?? new JournalScriptModel(), Store, Audit, registry ?? Registry(Mutate, Observe), Policy, Approver, Options, broker: Broker);
 
         public IReadOnlyList<TaskMutationJournalEntry> Journal => Store.JournalOf(TaskId);
 
