@@ -317,3 +317,40 @@ rule and its ordering tests, so it needs its own ADR-0042 amendment and the oper
 6. **Evidence index duplicates the digest's step number** for truncated steps (by design: it adds the stable id and lengths); both are bounded.
 7. `MafRegressionTests` serialize with `GovernedSummarizationTests` because that class's telemetry test listens globally for summary activities.
 8. The local, uncommitted edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts) predates this task and is **not** in any commit; only the removal of the obsolete `VerbatimHistorySteps` key from the committed file is.
+
+### Validation
+
+Run from a **clean checkout** of the committed code (git worktree at a short path, so the operator's local `appsettings.json` edit is not in the tree) at `3698181`; every later commit is documentation only.
+
+| Gate | Command | Result |
+|---|---|---|
+| Restore | `dotnet restore bOps.slnx --locked-mode` | **PASS** (exit 0) |
+| Build | `dotnet build bOps.slnx --configuration Release --no-restore` | **PASS — 0 warnings, 0 errors** |
+| Non-live suite | `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"` | **PASS — 35 assemblies, 0 failures, 5,255 passed, 147 skipped** |
+
+Representative assemblies: Runtime 2,069, Api 509, Cli 124, Architecture 175, AgentFramework 83, Policy 308, Memory 99, System.Core 387, Storage.Core 26, OpenAI-compatible provider 125, Anthropic provider 60 — all passed. The 147 skips are the existing platform/environment-dependent tests (Linux-only System/Storage/Service/Scheduler tests on this Windows host, Docker daemon and Filesystem symlink tests), unchanged by AF-05. `LiveModel` tests were **excluded by the filter and not run**; nothing here claims they pass.
+
+**Safety / authority regression gate (green before the cleanup and again after):** exact step-scoped tool routing and argument correction (`RequestDependentAuthorityTests`, `PlannedStepValidationRetryTests`, `SemanticPlannedStepTests`, `ToolCallProtocolTests`), policy denial, approval and entitlement (`EntitlementExecutionTests`, `DelegatedExecutionTests`, Policy tests, Api approval tests), ADR-0050 conditional facts (`ConditionalFollowUpTests`, `HighDensityFactsActivationTests`), the mutation journal, unknown outcome and reconciliation (`OrdinaryMutationJournal*`, `OrdinaryMutationNoDoubleExecutionTests`, `HardenFourteenMutationCompositionTests`, `MutationJournalPolicyTests`), resume and fencing (`ResumeStateMachineTests`, Api `TaskResumeEndpointTests`), grounding and limitations (`EvidenceGrounding*`, `EvidenceLimitation*`, `EvidenceDisclosure*`), prompt injection and summary authority (`SummaryAuthorityTests`, `GovernedSummarizationTests`, `TerminalProtocolArtifactTests`), provider fallback (`FallbackHandshakeTests`, Api `FallbackExecutionTests`/`FallbackChatModelTests`), model failure containment (`ModelCallFailureContainmentTests`, `ModelFailureEndToEndTests`), the logical `ModelCallDeadline` suite and EvidenceRead soft exhaustion (`EvidenceControlPlaneTests`, `HardenEightTests`). The pre-cleanup run at the AF-05 baseline plus the first fixes was 35 assemblies / 0 failures / 5,253 passed; no test was disabled to reach green.
+
+**Linux (local, not CI):** WSL Ubuntu 24.04, .NET 10.0.401, tree copied with `git archive` at `3698181`: Architecture 173 passed / 2 skipped, AgentFramework 83, Runtime 2,069, Policy 308, Memory 99 — all passed. `bOps.Api.Tests` was **not** run on Linux: its build needs the Windows-only Firewall helper project restored, which this ad hoc copy did not set up (environment, not a failure); Linux CI covers it. This is **not** the Linux CI job.
+
+| Item | Status |
+|---|---|
+| Windows CI | **NOT RUN** — the branch was not pushed. |
+| Linux CI | **NOT RUN** — the branch was not pushed (the WSL run above is local evidence only). |
+| LiveModel / live local / live external / Anthropic | **NOT RUN** — see Phase 3. |
+| Angular build/tests | Not run: no API/UI/Settings surface changed (the shipped `appsettings.json` lost one obsolete key). |
+
+### Commits (all local; none pushed)
+
+| SHA | Subject |
+|---|---|
+| `cc561ef` | test: add MAF regression benchmark scenarios |
+| `7db054d` | fix: close MAF context operability gaps |
+| `83e8fcf` | refactor: remove obsolete legacy context projection |
+| `549d9e8` | perf: tune MAF context configuration from measurements |
+| `a30c51d` | test: measure summarization at the product default settings |
+| `83ca757` | docs: document MAF context configuration and AF-05 evidence |
+| `aedd10c` | refactor: keep the overflow recovery decision out of an exception filter |
+| `34371f8` | test: bind and validate the documented context profile configuration |
+| `3698181` | test: guard against a second model-facing history engine |

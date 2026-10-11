@@ -66,6 +66,8 @@ Quality gate for the c508 shape (asserted by `MafRegressionTests`): kernel crash
 
 **F9 — Pipeline order measured, order unchanged.** See §6.
 
+**F10 — EvidenceRead usage (what could and could not be measured).** In every c508 run the scripted model requested 6 reads before `system.cpu`; 4 were served, 2 were not offered once the allowance was spent (soft exhaustion, no failure), 0 were malformed, 0 unavailable, 0 control rejections. Whether a served read was *useful*, and whether the cursor metadata (`nextOffset`, `readsRemaining`) reduces wasted reads, depends on how a real model behaves: **NOT MEASURABLE** with a scripted model, and not claimed. The allowance (4 served / 4 rejected) is therefore unchanged.
+
 ## 4. Tuning decisions
 
 | Setting | Old | New | Scenario | Before → after | Rationale |
