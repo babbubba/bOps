@@ -231,7 +231,7 @@ def extract_records(db_path: pathlib.Path, ids: list[str], out: pathlib.Path, au
         source.close()
 
 
-def package(out: pathlib.Path, zip_path: pathlib.Path):
+def package(out: pathlib.Path, zip_path: pathlib.Path, runs_per_scenario: int = 3):
     temporary_zip = zip_path.with_suffix(zip_path.suffix + ".partial")
     manifest = out / "manifest.json"
     manifest_hash = out / "manifest.sha256"
@@ -239,7 +239,8 @@ def package(out: pathlib.Path, zip_path: pathlib.Path):
     for path in sorted(p for p in out.rglob("*") if p.is_file() and p not in (zip_path, manifest, manifest_hash)):
         data = path.read_bytes()
         files.append({"path": path.relative_to(out).as_posix(), "sizeBytes": len(data), "sha256": sha(data)})
-    write_json(manifest, {"files": files})
+    write_json(manifest, {"runsPerScenario": runs_per_scenario,
+                          "requestedTaskCount": len(SCENARIOS) * runs_per_scenario, "files": files})
     manifest_hash.write_text(sha(manifest.read_bytes()) + "  manifest.json\n", encoding="ascii")
     with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         for path in sorted(p for p in out.rglob("*") if p.is_file() and p != zip_path):
@@ -307,7 +308,13 @@ def run(args):
     archive_path = output / f"bops-live-benchmark-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{anchor[:12]}.zip"
     (run_root / "README-SENSITIVE").write_text(README, encoding="utf-8")
     roster, terminal = [], {}
-    write_json(run_root / "run-roster.json", roster)
+    def write_roster():
+        write_json(run_root / "run-roster.json", {
+            "runsPerScenario": args.runs_per_scenario,
+            "requestedTaskCount": len(SCENARIOS) * args.runs_per_scenario,
+            "tasks": roster,
+        })
+    write_roster()
     status_doc = {"runId": run_id, "state": "starting", "tasks": []}
     try:
         deadline = time.monotonic() + args.startup_timeout
@@ -331,7 +338,7 @@ def run(args):
         else:
             raise TimeoutError("Dedicated bOps.Api did not become ready in time.")
         ordinal = 0
-        for round_number in range(1, 4):
+        for round_number in range(1, args.runs_per_scenario + 1):
             for scenario in SCENARIOS:
                 ordinal += 1
                 intention = f"{scenario['id']}-R{round_number}"
@@ -342,7 +349,7 @@ def run(args):
                     raise RuntimeError(f"Task submission {intention} returned no task id.")
                 entry = {"ordinal": ordinal, "intention": intention, "scenarioId": scenario["id"], "round": round_number,
                          "idempotencyKey": idem, "taskId": task_id, "acceptedAtUtc": utc_now()}
-                roster.append(entry); write_json(run_root / "run-roster.json", roster)
+                roster.append(entry); write_roster()
                 task_folder = run_root / "tasks" / task_id
                 task_folder.mkdir(parents=True, exist_ok=True)
                 (task_folder / "api-accepted-original.json").write_bytes(raw)
@@ -363,8 +370,8 @@ def run(args):
                 status_doc = {"runId": run_id, "state": "running", "tasks": [{"taskId": x["taskId"], "terminalApiCaptured": x["taskId"] in terminal} for x in roster],
                               "unrosteredPersistedTaskIds": sorted(set(captured_ids) - roster_ids)}
                 write_json(run_root / "capture-status.json", status_doc)
-                package(run_root, archive_path)
-                print(f"Captured {ordinal}/9: {intention} ({task_id})", flush=True)
+                package(run_root, archive_path, args.runs_per_scenario)
+                print(f"Captured {ordinal}/{len(SCENARIOS) * args.runs_per_scenario}: {intention} ({task_id})", flush=True)
         status_doc["state"] = "complete"
     except KeyboardInterrupt:
         status_doc["state"] = "interrupted"
@@ -381,7 +388,7 @@ def run(args):
                 status_doc["unrosteredPersistedTaskIds"] = sorted(set(captured_ids) - roster_ids)
                 write_json(run_root / "capture-status.json", status_doc)
             except (sqlite3.Error, OSError): pass
-        package(run_root, archive_path)
+        package(run_root, archive_path, args.runs_per_scenario)
         shutil.rmtree(run_root, ignore_errors=True)
         if process.poll() is None:
             if os.name == "nt":
@@ -395,13 +402,18 @@ def run(args):
         print(f"Archive: {archive_path}", flush=True)
 
 
-def main():
+def make_argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-repo-root", required=True)
+    parser.add_argument("--runs-per-scenario", type=int, choices=range(1, 4), default=3)
     parser.add_argument("--output-root")
     parser.add_argument("--startup-timeout", type=int, default=180)
     parser.add_argument("--task-timeout", type=int, default=5400)
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None):
+    args = make_argument_parser().parse_args(argv)
     run(args)
 
 

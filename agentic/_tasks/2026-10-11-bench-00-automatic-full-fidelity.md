@@ -1,4 +1,4 @@
-# BENCH-00 — Raccolta automatica completa delle nove esecuzioni
+# BENCH-00 — Raccolta automatica completa dei test live
 
 **Status:** IMPLEMENTATO su `feat/bench-00-capture`, basato sul branch `fix/af-05h-live-regression-hardening` (AF-05H H2+H4). **Repo:** bOps OSS. **No subagent.**
 
@@ -24,7 +24,7 @@ Il primo percorso deve puntare al worktree AF-05G con l’HEAD indicato; il seco
 
 ## Finalità
 
-Implementare un benchmark **esclusivamente di acquisizione**, senza valutazioni, classificazioni di qualità, statistiche, diagnosi, riassunti, redazioni o troncamenti delle evidenze. Il comando PowerShell richiede UAC, prepara un host bOps con le impostazioni effettive della configurazione Development, avvia nove task, acquisisce integralmente i record persistiti dei task e i relativi audit, e produce **un unico ZIP privato e autosufficiente** da caricare successivamente nel progetto ChatGPT per l'analisi. Non includere i record di altri task né l'intero DB storico.
+Implementare un benchmark **esclusivamente di acquisizione**, senza valutazioni, classificazioni di qualità, statistiche, diagnosi, riassunti, redazioni o troncamenti delle evidenze. Il comando PowerShell richiede UAC, prepara un host bOps con le impostazioni effettive della configurazione Development, avvia i task richiesti (`-RunsPerScenario`, da 1 a 3; default 3), acquisisce integralmente i record persistiti dei task e i relativi audit, e produce **un unico ZIP privato e autosufficiente**, etichettato come materiale potenzialmente sensibile, da caricare successivamente nel progetto ChatGPT per l'analisi. Non includere i record di altri task né l'intero DB storico.
 
 ## Scenari identici ai tre test originali
 
@@ -40,7 +40,7 @@ Implementare un benchmark **esclusivamente di acquisizione**, senza valutazioni,
 
 > trova la causa dei continui crash che ha questo computer
 
-Eseguire tre round seriali `B01-R1, B02-R1, B03-R1, B01-R2, ... B03-R3`, con nove ID nuovi distinti. Non alterare il testo dei prompt, temperature, provider, modello, selezione fallback o policy senza registrare differenze effettive dalla configurazione di riferimento. N=3 consente confronti esplorativi della variabilità in analisi successive; non è una prova statistica di determinismo.
+Eseguire `-RunsPerScenario` round seriali, ciascuno nell'ordine `B01, B02, B03`; il default 3 produce `B01-R1, B02-R1, B03-R1, ... B03-R3` con nove ID distinti, mentre 1 produce esattamente B01, B02, B03. Manifest e roster registrano il valore richiesto e il totale task. Non alterare il testo dei prompt, temperature, provider, modello, selezione fallback o policy senza registrare differenze effettive dalla configurazione di riferimento. N=3 consente confronti esplorativi della variabilità in analisi successive; non è una prova statistica di determinismo.
 
 ## UX/launcher
 

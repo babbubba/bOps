@@ -15,10 +15,27 @@ spec.loader.exec_module(bench)
 
 
 class CaptureTests(unittest.TestCase):
-    def test_nine_canonical_scenarios_are_round_robin(self):
-        roster = [(scenario["id"], round_no) for round_no in range(1, 4) for scenario in bench.SCENARIOS]
-        self.assertEqual(["B01", "B02", "B03"] * 3, [scenario for scenario, _ in roster])
-        self.assertEqual(9, len(roster))
+    def test_requested_run_counts_produce_expected_round_robin(self):
+        for runs, expected in ((1, ["B01", "B02", "B03"]), (3, ["B01", "B02", "B03"] * 3)):
+            roster = [(scenario["id"], round_no) for round_no in range(1, runs + 1) for scenario in bench.SCENARIOS]
+            self.assertEqual(expected, [scenario for scenario, _ in roster])
+            self.assertEqual(3 * runs, len(roster))
+
+    def test_runs_per_scenario_parser_default_valid_and_invalid_values(self):
+        parser = bench.make_argument_parser()
+        base = ["--target-repo-root", "."]
+        self.assertEqual(3, parser.parse_args(base).runs_per_scenario)
+        self.assertEqual(1, parser.parse_args(base + ["--runs-per-scenario", "1"]).runs_per_scenario)
+        self.assertEqual(3, parser.parse_args(base + ["--runs-per-scenario", "3"]).runs_per_scenario)
+        for value in ("0", "4", "invalid"):
+            with self.subTest(value=value), self.assertRaises(SystemExit):
+                parser.parse_args(base + ["--runs-per-scenario", value])
+
+    def test_powershell_launcher_passes_run_count_to_python_and_uac(self):
+        launcher = (MODULE.parent / "run-live-benchmark.ps1").read_text(encoding="utf-8")
+        self.assertIn("[ValidateRange(1, 3)] [int] $RunsPerScenario = 3", launcher)
+        self.assertIn("-RunsPerScenario $RunsPerScenario -Elevated", launcher)
+        self.assertIn("--runs-per-scenario $RunsPerScenario", launcher)
 
     def test_benchmark_policy_only_allows_read_risk_automatically(self):
         self.assertEqual("defaults:\n  read: automatic\n", bench.READ_ONLY_POLICY)
@@ -127,11 +144,13 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(1, facts["incompleteTrailingLineCount"])
             self.assertEqual("original", json.loads((output / "tasks/task-a/mutation-journal.json").read_text())[0]["payload"])
             archive = root / "capture.zip"
-            bench.package(output, archive)
+            bench.package(output, archive, runs_per_scenario=1)
             with zipfile.ZipFile(archive) as zf:
                 self.assertTrue(zf.testzip() is None)
                 self.assertEqual(state.encode(), zf.read("tasks/task-a/state_json.utf8"))
                 manifest = json.loads(zf.read("manifest.json"))
+                self.assertEqual(1, manifest["runsPerScenario"])
+                self.assertEqual(3, manifest["requestedTaskCount"])
                 for entry in manifest["files"]:
                     self.assertEqual(entry["sha256"], bench.sha(zf.read(entry["path"])))
                 manifest_hash = zf.read("manifest.sha256").decode().split()[0]

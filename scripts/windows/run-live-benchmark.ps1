@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $TargetRepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path,
+    [ValidateRange(1, 3)] [int] $RunsPerScenario = 3,
     [switch] $Elevated
 )
 
@@ -24,7 +25,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 `$targetPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$target64'))
 `$originalCwd = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$cwd64'))
 Set-Location -LiteralPath `$originalCwd
-& `$scriptPath -TargetRepoRoot `$targetPath -Elevated
+& `$scriptPath -TargetRepoRoot `$targetPath -RunsPerScenario $RunsPerScenario -Elevated
 exit `$LASTEXITCODE
 "@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($elevationScript))
@@ -32,5 +33,5 @@ exit `$LASTEXITCODE
     exit $elevatedProcess.ExitCode
 }
 
-& $pythonExe @pythonArgs --target-repo-root $resolvedTarget
+& $pythonExe @pythonArgs --target-repo-root $resolvedTarget --runs-per-scenario $RunsPerScenario
 exit $LASTEXITCODE
