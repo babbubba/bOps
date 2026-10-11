@@ -604,7 +604,7 @@ Relevant upstream references:
 
 ## 27. AF-02 implementation evidence (2026-10-11)
 
-AF-02 is implemented locally by commit `25774e5` on `feat/af-02-maf-context-compaction`.
+AF-02 is implemented locally by commits `25774e5` and `23408a5` on `feat/af-02-maf-context-compaction`.
 
 The implementation keeps the boundary described by this ADR:
 

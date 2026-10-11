@@ -244,7 +244,7 @@ Stop if MAF compaction cannot preserve bOps tool-call/result relationships, if t
 
 ### Delivered structure
 
-- Implementation commit: `25774e5` (`feat: add MAF context compaction`).
+- Implementation commits: `25774e5` (`feat: add MAF context compaction`) and `23408a5` (`feat: complete context profile telemetry`).
 - Added the strict `MafChatTurnMapper` inside `bOps.AgentFramework`. It round-trips the production bOps roles, null/empty/Unicode text, structurally equivalent JSON arguments, multi-call assistant messages and call-id-matched result turns.
 - Added runtime-owned `ModelContextRequest`, profile/options, projection result/statistics and the narrow `IModelContextProjector` boundary. No MAF type entered `bOps.Abstractions` or `bOps.Runtime`.
 - `AgentRunner` now classifies current authority before projection: system/security rules, goal, current plan and step routing, correction state, EvidenceGrounding, EvidenceLimitations, reconciliation notices and logical-call continuations remain outside compactable historical turns.
@@ -278,6 +278,8 @@ Profiles bind under `Agent:Context:Profiles`; lookup is exact provider id + requ
 ```
 
 Invalid, duplicate or impossible profiles fail `AgentRunnerOptions.Validate`; values are never clamped. The computed history allowance is `max context - reserved output - system/protected estimate - exact tool-schema estimate - safety reserve`. If protected/fixed material alone cannot fit, projection throws a classifiable `ContextOverflow` without truncating authority or calling the provider.
+
+A configured profile may deliberately leave `MaxContextTokens` and `ReservedOutputTokens` null only when `UseLegacySafeProjectionWhenUnknown` is explicitly true; that selects the same conservative bounded projection and still does not invent a capacity.
 
 ### Persistence, tools and telemetry
 
