@@ -1,12 +1,18 @@
 [CmdletBinding()]
 param(
     [string] $TargetRepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path,
+    [string] $ConfigSourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')),
+    [string] $ConfigSnapshotPath,
     [ValidateRange(1, 3)] [int] $RunsPerScenario = 3,
+    [switch] $PreflightOnly,
+    [string] $ExpectedUserSid,
     [switch] $Elevated
 )
 
 $ErrorActionPreference = 'Stop'
 $resolvedTarget = (Resolve-Path -LiteralPath $TargetRepoRoot).Path
+$resolvedConfigSource = (Resolve-Path -LiteralPath $ConfigSourceRoot).Path
+if ($ConfigSnapshotPath) { $resolvedSnapshot = [IO.Path]::GetFullPath($ConfigSnapshotPath) }
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }
 if (-not $python) { throw 'Python 3 is required. Install Python and retry; no packages are required.' }
@@ -37,17 +43,40 @@ function ConvertTo-WindowsArgument([string] $Value) {
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+$actualUserSid = $identity.User.Value
+if ($ExpectedUserSid -and $ExpectedUserSid -ne $actualUserSid) {
+    throw 'The elevated benchmark process is running under a different Windows user identity.'
+}
+$expectedUserSid = if ($ExpectedUserSid) { $ExpectedUserSid } else { $actualUserSid }
+if ([string]::IsNullOrEmpty($env:BOPS_VAULT_MASTER_KEY)) {
+    $userVaultMasterKey = [Environment]::GetEnvironmentVariable('BOPS_VAULT_MASTER_KEY', 'User')
+    if (-not [string]::IsNullOrEmpty($userVaultMasterKey)) { $env:BOPS_VAULT_MASTER_KEY = $userVaultMasterKey }
+    $userVaultMasterKey = $null
+}
+if ([string]::IsNullOrEmpty($env:BOPS_VAULT_MASTER_KEY)) {
+    throw 'BOPS_VAULT_MASTER_KEY is unavailable in this Windows user context; no API process was started.'
+}
+$env:BENCH_EXPECTED_WINDOWS_USER_SID = $expectedUserSid
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     if ($Elevated) { throw 'UAC elevation did not grant administrator rights.' }
     $script64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PSCommandPath))
     $target64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($resolvedTarget))
+    $configSource64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($resolvedConfigSource))
+    $snapshot64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$resolvedSnapshot))
+    $userSid64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($expectedUserSid))
     $cwd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Location).Path))
     $elevationScript = @"
 `$scriptPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$script64'))
 `$targetPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$target64'))
+`$configSourcePath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$configSource64'))
+`$snapshotPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$snapshot64'))
+`$expectedSid = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$userSid64'))
 `$originalCwd = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$cwd64'))
 Set-Location -LiteralPath `$originalCwd
-& `$scriptPath -TargetRepoRoot `$targetPath -RunsPerScenario $RunsPerScenario -Elevated
+`$benchArgs = @('-TargetRepoRoot', `$targetPath, '-ConfigSourceRoot', `$configSourcePath, '-RunsPerScenario', '$RunsPerScenario', '-ExpectedUserSid', `$expectedSid, '-Elevated')
+if (`$snapshotPath) { `$benchArgs += @('-ConfigSnapshotPath', `$snapshotPath) }
+if ('$([bool]$PreflightOnly)' -eq 'True') { `$benchArgs += '-PreflightOnly' }
+& `$scriptPath @benchArgs
 exit `$LASTEXITCODE
 "@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($elevationScript))
@@ -55,7 +84,10 @@ exit `$LASTEXITCODE
     exit $elevatedProcess.ExitCode
 }
 
-$pythonArgs += @('--target-repo-root', $resolvedTarget, '--runs-per-scenario', [string]$RunsPerScenario)
+$pythonArgs += @('--target-repo-root', $resolvedTarget, '--config-source-root', $resolvedConfigSource,
+                 '--runs-per-scenario', [string]$RunsPerScenario, '--expected-user-sid', $expectedUserSid)
+if ($resolvedSnapshot) { $pythonArgs += @('--config-snapshot-path', $resolvedSnapshot) }
+if ($PreflightOnly) { $pythonArgs += '--preflight-only' }
 $argumentLine = ($pythonArgs | ForEach-Object { ConvertTo-WindowsArgument ([string]$_) }) -join ' '
 $startInfo = [Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $pythonExe

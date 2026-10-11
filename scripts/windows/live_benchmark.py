@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -12,12 +14,15 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
 import zipfile
 from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 SCENARIOS = [
     {"id": "B01", "goal": "Controlla lo stato attuale di CPU e memoria di questo PC e dimmi se vedi anomalie. Fai solo i controlli necessari e dammi una sintesi."},
@@ -26,7 +31,7 @@ SCENARIOS = [
 ]
 ANCHORS = ["97507aa7a914cdabdfafbd42e382c0f1dfd399da", "07e422a4c9c65bd617cafaf209d2352657f1c130"]
 RUNTIME_PATHS = ["src/core/bOps.Api", "src/core/bOps.AgentFramework", "src/core/bOps.Runtime", "src/core/bOps.Memory", "src/core/bOps.Audit", "src/packages"]
-README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results, audit records and the API startup diagnostic log from this PC. The diagnostic log preserves the API process stdout/stderr and may disclose paths, configuration details, usernames, host names, IP addresses, system events, logs, or secrets recorded by the runtime. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize content and does not upload it.\n"""
+README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results, audit records and the API startup diagnostic log from this PC. The diagnostic log preserves the API process stdout/stderr and may disclose paths, configuration details, usernames, host names, IP addresses, system events, and logs. Known credential values from process environment and configuration files are redacted from that diagnostic log; vault.dat and the master key are not included. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize task evidence and does not upload it.\n"""
 READ_ONLY_POLICY = "defaults:\n  read: automatic\n"
 TERMINAL = {"Completed", "MaxStepsReached", "BudgetExceeded", "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"}
 
@@ -83,6 +88,93 @@ def api_command(project: pathlib.Path):
     return ["dotnet", "run", "--project", str(project), "--no-launch-profile"]
 
 
+def verify_windows_identity(expected_sid: str | None):
+    if os.name != "nt":
+        return {"verified": False, "reason": "Windows identity check is only available on Windows."}
+    rows = list(csv.reader(io.StringIO(subprocess.check_output(
+        ["whoami", "/user", "/fo", "csv", "/nh"], text=True, encoding="utf-8").strip())))
+    actual_sid = rows[0][-1].strip() if rows and rows[0] else ""
+    matches = bool(actual_sid) and (not expected_sid or actual_sid.casefold() == expected_sid.casefold())
+    if not matches:
+        raise RuntimeError("The benchmark process Windows identity does not match the requesting user.")
+    return {"verified": True, "expectedSidMatched": bool(expected_sid)}
+
+
+def secure_private_directory(path: pathlib.Path):
+    if os.name == "nt":
+        account = subprocess.check_output(["whoami"], text=True, encoding="utf-8").strip()
+        subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r",
+                        f"{account}:(OI)(CI)F", "SYSTEM:(OI)(CI)F", "/C"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["icacls", str(path), "/T", "/grant:r", f"{account}:F", "SYSTEM:F", "/C"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        path.chmod(0o700)
+
+
+CONFIG_SNAPSHOT_FILES = ("appsettings.json", "appsettings.Development.json", "settings.json", "vault.dat")
+REQUIRED_SNAPSHOT_FILES = ("appsettings.json", "settings.json", "vault.dat")
+
+
+def config_snapshot_manifest(snapshot: pathlib.Path):
+    manifest_path = snapshot / "config-snapshot.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"Configuration snapshot manifest is missing: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise RuntimeError("Configuration snapshot manifest has an invalid files section.")
+    for name in REQUIRED_SNAPSHOT_FILES:
+        entry = files.get(name) or {}
+        path = snapshot / name
+        if not path.is_file() or entry.get("sha256") != sha(path.read_bytes()):
+            raise RuntimeError(f"Configuration snapshot is incomplete or changed: {name}")
+    if set(files) != set(CONFIG_SNAPSHOT_FILES):
+        raise RuntimeError("Configuration snapshot manifest has an unexpected file roster.")
+    for name, entry in files.items():
+        path = snapshot / name
+        if entry.get("present") and (not path.is_file() or entry.get("sha256") != sha(path.read_bytes())):
+            raise RuntimeError(f"Configuration snapshot is incomplete or changed: {name}")
+    return manifest
+
+
+def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path, reuse_path: pathlib.Path | None = None):
+    if reuse_path is not None:
+        snapshot = reuse_path.resolve()
+        if not snapshot.is_dir():
+            raise RuntimeError(f"Requested configuration snapshot does not exist: {snapshot}")
+        secure_private_directory(snapshot)
+        manifest = config_snapshot_manifest(snapshot)
+        return snapshot, manifest, True
+
+    source_dir = source_root.resolve() / "src" / "core" / "bOps.Api"
+    if not source_dir.is_dir():
+        raise RuntimeError(f"Configuration source API directory not found: {source_dir}")
+    missing = [name for name in REQUIRED_SNAPSHOT_FILES if not (source_dir / name).is_file()]
+    if missing:
+        raise RuntimeError("Configuration source is missing required files: " + ", ".join(missing))
+    snapshot = destination.resolve()
+    snapshot.mkdir(parents=True, exist_ok=False)
+    secure_private_directory(snapshot)
+    files = {}
+    for name in CONFIG_SNAPSHOT_FILES:
+        source = source_dir / name
+        if source.is_file():
+            target = snapshot / name
+            shutil.copyfile(source, target)
+            if os.name != "nt":
+                target.chmod(0o600)
+            files[name] = {"present": True, "sha256": sha(target.read_bytes())}
+        else:
+            files[name] = {"present": False, "sha256": None}
+    manifest = {"schemaVersion": 1, "sourceRoot": str(source_root.resolve()),
+                "createdAtUtc": utc_now(), "files": files}
+    write_json(snapshot / "config-snapshot.json", manifest)
+    if os.name != "nt":
+        (snapshot / "config-snapshot.json").chmod(0o600)
+    return snapshot, manifest, False
+
+
 class ApiStartupFailure(RuntimeError):
     def __init__(self, exit_code, phase: str, log_path: pathlib.Path):
         self.exit_code = exit_code
@@ -92,15 +184,79 @@ class ApiStartupFailure(RuntimeError):
         super().__init__(f"API startup failed ({code_text}; phase {phase}); log: {log_path}")
 
 
+def _copy_redacted_output(pipe, destination, secret_values):
+    secrets = sorted({value.encode("utf-8") for value in secret_values if isinstance(value, str) and value},
+                     key=len, reverse=True)
+    overlap = max((len(value) for value in secrets), default=1) - 1
+    pending = b""
+    while True:
+        chunk = pipe.read(65536)
+        if not chunk:
+            break
+        pending += chunk
+        safe_limit = max(0, len(pending) - overlap)
+        while safe_limit:
+            crossing = []
+            for secret in secrets:
+                position = pending.find(secret)
+                while position >= 0:
+                    if position < safe_limit < position + len(secret):
+                        crossing.append(position)
+                    position = pending.find(secret, position + 1)
+            if not crossing:
+                break
+            safe_limit = min(crossing)
+        safe, pending = pending[:safe_limit], pending[safe_limit:]
+        for secret in secrets:
+            safe = safe.replace(secret, b"[REDACTED: credential]")
+        destination.write(safe)
+    for secret in secrets:
+        pending = pending.replace(secret, b"[REDACTED: credential]")
+    destination.write(pending)
+    destination.flush()
+
+
+def configuration_secret_values(snapshot: pathlib.Path, env: dict):
+    values = {value for name, value in env.items()
+              if any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+              and isinstance(value, str) and value}
+    for name in ("appsettings.json", "appsettings.Development.json", "settings.json"):
+        path = snapshot / name
+        if not path.is_file():
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        def visit(value, key="", sensitive_parent=False):
+            sensitive = sensitive_parent or any(
+                marker in key.casefold() for marker in ("key", "token", "secret", "password", "credential"))
+            if isinstance(value, dict):
+                for child_key, child in value.items():
+                    visit(child, str(child_key), sensitive)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child, key, sensitive)
+            elif isinstance(value, (str, int, float)) and sensitive:
+                if str(value):
+                    values.add(str(value))
+        visit(document)
+    return values
+
+
 def start_api_process(command, cwd: pathlib.Path, env: dict, log_path: pathlib.Path):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stream = log_path.open("wb")
     try:
-        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=stream, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except BaseException:
         stream.close()
         raise
-    return process, stream
+    snapshot = pathlib.Path(env["ASPNETCORE_CONTENTROOT"]) if env.get("ASPNETCORE_CONTENTROOT") else log_path.parent
+    credential_values = configuration_secret_values(snapshot, env)
+    output_thread = threading.Thread(target=_copy_redacted_output, args=(process.stdout, stream, credential_values), daemon=True)
+    output_thread.start()
+    return process, stream, output_thread
 
 
 def check_api_startup(process, log_path: pathlib.Path):
@@ -115,6 +271,52 @@ def include_startup_diagnostic(log_path: pathlib.Path, capture_root: pathlib.Pat
     if log_path.is_file():
         shutil.copyfile(log_path, destination)
     return destination
+
+
+def safe_endpoint(value):
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+        if parsed.port is not None:
+            host += f":{parsed.port}"
+        return urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+    except ValueError:
+        return "<configured endpoint omitted: invalid URL>"
+
+
+def describe_effective_configuration(providers: dict, settings_view: dict | None):
+    active = providers.get("active") or {}
+    description = {
+        "registeredProviders": providers.get("registeredProviderIds", []),
+        "active": {
+            "provider": active.get("provider", active.get("providerId")),
+            "model": active.get("model"),
+            "endpoint": safe_endpoint(active.get("baseUrl", active.get("baseURL"))),
+            "credentialAvailable": active.get("hasApiKey", active.get("credentialAvailable")) is True,
+        },
+        "settingsViewAvailable": isinstance(settings_view, dict),
+    }
+    if isinstance(settings_view, dict):
+        for key in (
+            "activeProviderId", "activeProviderSource", "effectiveModel", "effectiveSupportsNativeToolCalling",
+            "effectiveRequestTimeout", "effectiveBaseUrlSource", "effectiveModelSource",
+            "effectiveToolCallingSource", "effectiveRequestTimeoutSource", "effectiveCredentialAvailable",
+            "effectiveCredentialSource", "effectiveFallbackSource", "configurationGeneration",
+        ):
+            if key in settings_view:
+                description[key] = settings_view[key]
+        if "effectiveBaseUrl" in settings_view:
+            description["effectiveEndpoint"] = safe_endpoint(settings_view["effectiveBaseUrl"])
+        fallbacks = settings_view.get("effectiveFallbacks")
+        if isinstance(fallbacks, list):
+            description["effectiveFallbacks"] = [
+                {key: item.get(key) for key in ("ordinal", "provider", "model", "supportsNativeToolCalling", "credentialAvailable")}
+                | ({"endpoint": safe_endpoint(item.get("baseUrl"))} if "baseUrl" in item else {})
+                for item in fallbacks if isinstance(item, dict)
+            ]
+    return description
 
 
 def reserve_port() -> int:
@@ -192,6 +394,27 @@ def poll_task(api: str, key: str, task_id: str, timeout_seconds: int, on_respons
 def write_json(path: pathlib.Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def build_api_environment(snapshot: pathlib.Path, state_paths: dict[str, pathlib.Path], port: int,
+                          expected_user_sid: str | None, parent_environment=None):
+    env = dict(os.environ if parent_environment is None else parent_environment)
+    api_url = f"http://127.0.0.1:{port}"
+    env.update({
+        "ASPNETCORE_ENVIRONMENT": "Development", "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_CONTENTROOT": str(snapshot), "ASPNETCORE_URLS": api_url,
+        "Settings__FilePath": str(snapshot / "settings.json"),
+        "Vault__FilePath": str(snapshot / "vault.dat"),
+        "Memory__FilePath": str(state_paths["tasks.db"]),
+        "Audit__FilePath": str(state_paths["audit.jsonl"]),
+        "BrowserSession__FilePath": str(state_paths["sessions.db"]),
+        "SystemMessages__FilePath": str(state_paths["system-messages.db"]),
+        "Delegation__FilePath": str(state_paths["delegations.db"]),
+        "Filesystem__Inventory__ManifestStorePath": str(state_paths["filesystem-inventory.db"]),
+        "Policy__FilePath": str(state_paths["read-only-policy.yaml"]),
+        "BENCH_EXPECTED_WINDOWS_USER_SID": expected_user_sid or "",
+    })
+    return env
 
 
 def audit_rows(path: pathlib.Path, task_ids: set[str]):
@@ -273,8 +496,15 @@ def package(out: pathlib.Path, zip_path: pathlib.Path, runs_per_scenario: int = 
     for path in sorted(p for p in out.rglob("*") if p.is_file() and p not in (zip_path, manifest, manifest_hash)):
         data = path.read_bytes()
         files.append({"path": path.relative_to(out).as_posix(), "sizeBytes": len(data), "sha256": sha(data)})
-    write_json(manifest, {"runsPerScenario": runs_per_scenario,
-                          "requestedTaskCount": len(SCENARIOS) * runs_per_scenario, "files": files})
+    startup_path = out / "startup.json"
+    startup = json.loads(startup_path.read_text(encoding="utf-8")) if startup_path.is_file() else {}
+    write_json(manifest, {
+        "runsPerScenario": runs_per_scenario,
+        "requestedTaskCount": len(SCENARIOS) * runs_per_scenario,
+        "configurationProvenance": startup.get("configurationProvenance"),
+        "effectiveConfiguration": startup.get("effectiveConfiguration"),
+        "files": files,
+    })
     manifest_hash.write_text(sha(manifest.read_bytes()) + "  manifest.json\n", encoding="ascii")
     with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         for path in sorted(p for p in out.rglob("*") if p.is_file() and p != zip_path):
@@ -285,9 +515,12 @@ def package(out: pathlib.Path, zip_path: pathlib.Path, runs_per_scenario: int = 
 def run(args):
     root = pathlib.Path(args.target_repo_root).resolve()
     anchor, commit, dirty_status = validate_runtime_target(root)
+    windows_identity = verify_windows_identity(args.expected_user_sid)
     original_policy_path = effective_policy_path(root)
     if not os.environ.get("BOPS_API_KEY"):
         raise RuntimeError("BOPS_API_KEY is unavailable to the elevated process; no tasks were started.")
+    if os.name == "nt" and not os.environ.get("BOPS_VAULT_MASTER_KEY"):
+        raise RuntimeError("BOPS_VAULT_MASTER_KEY is unavailable to the API child process; no API was started.")
     # Resolve repository status without including diff contents or secrets.
     branch = git(root, "branch", "--show-current")
     dirty = bool(git(root, "status", "--porcelain"))
@@ -300,27 +533,26 @@ def run(args):
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     run_root = output / ".capture"
     run_root.mkdir()
+    snapshot_destination = pathlib.Path(tempfile.gettempdir()) / f"bOps-BENCH00-config-{run_id}"
+    config_snapshot_path, snapshot_manifest, snapshot_reused = prepare_config_snapshot(
+        pathlib.Path(args.config_source_root), snapshot_destination,
+        pathlib.Path(args.config_snapshot_path) if args.config_snapshot_path else None,
+    )
     paths = {name: (run_root / name).resolve() for name in (
         "tasks.db", "audit.jsonl", "sessions.db", "system-messages.db", "delegations.db", "filesystem-inventory.db")}
     readonly_policy_path = run_root / "read-only-policy.yaml"
     readonly_policy_path.write_text(READ_ONLY_POLICY, encoding="utf-8")
     startup_log_path = output / "api-startup.log"
     port = reserve_port()
-    env = os.environ.copy()
-    env.update({
-        "ASPNETCORE_ENVIRONMENT": "Development", "DOTNET_ENVIRONMENT": "Development",
-        "ASPNETCORE_URLS": f"http://127.0.0.1:{port}", "Memory__FilePath": str(paths["tasks.db"]),
-        "Audit__FilePath": str(paths["audit.jsonl"]), "BrowserSession__FilePath": str(paths["sessions.db"]),
-        "SystemMessages__FilePath": str(paths["system-messages.db"]), "Delegation__FilePath": str(paths["delegations.db"]),
-        "Filesystem__Inventory__ManifestStorePath": str(paths["filesystem-inventory.db"]),
-        "Policy__FilePath": str(readonly_policy_path),
-    })
+    env = build_api_environment(config_snapshot_path, {**paths, "read-only-policy.yaml": readonly_policy_path},
+                                port, args.expected_user_sid)
+    api_child_master_key_present = bool(env.get("BOPS_VAULT_MASTER_KEY"))
     project = api_project_path(root)
     if not project.is_file():
         raise RuntimeError(f"bOps.Api project not found under target root: {root}")
-    config_files = {}
+    target_config_files = {}
     for config_path in (project.parent / "appsettings.json", project.parent / "appsettings.Development.json", project.parent / "Properties" / "launchSettings.json"):
-        config_files[config_path.name if config_path.parent == project.parent else "Properties/launchSettings.json"] = {
+        target_config_files[config_path.name if config_path.parent == project.parent else "Properties/launchSettings.json"] = {
             "present": config_path.is_file(), "sha256": sha(config_path.read_bytes()) if config_path.is_file() else None,
         }
     process = None
@@ -331,11 +563,28 @@ def run(args):
                "originalPolicyPath": str(original_policy_path),
                "originalPolicySha256": sha(original_policy_path.read_bytes()) if original_policy_path.is_file() else None,
                "effectivePolicyPath": str(readonly_policy_path), "effectivePolicySha256": sha(READ_ONLY_POLICY.encode("utf-8")),
-               "apiBaseUrl": api, "apiProject": str(project), "configurationFileFingerprints": config_files, "hostMode": "API-only",
+               "apiBaseUrl": api, "apiProject": str(project), "targetProjectConfigurationFingerprintsNotLoaded": target_config_files,
+               "hostMode": "API-only",
                "apiWorkingDirectory": str(root), "launchProfileUsed": False,
                "startupDiagnosticLog": str(startup_log_path),
-               "environment": "Development", "isolatedOverrides": {
-                   "ASPNETCORE_URLS": api, "Policy__FilePath": str(readonly_policy_path),
+               "environment": "Development", "windowsIdentityVerification": windows_identity,
+               "apiChildMasterKeyPresent": api_child_master_key_present,
+               "configurationProvenance": {
+                   "sourceRoot": snapshot_manifest["sourceRoot"],
+                   "snapshotRoot": str(config_snapshot_path),
+                   "snapshotReusedExplicitly": snapshot_reused,
+                   "contentRootOverride": str(config_snapshot_path),
+                   "files": snapshot_manifest["files"],
+                   "vaultFileIncludedInArchive": False,
+                   "masterKeyValueIncludedInArchive": False,
+               },
+               "isolatedOverrides": {
+                   "ASPNETCORE_CONTENTROOT": str(config_snapshot_path), "ASPNETCORE_URLS": api,
+                   "Policy__FilePath": str(readonly_policy_path),
+                   "Settings__FilePath": str(config_snapshot_path / "settings.json"),
+                   "Vault__FilePath": str(config_snapshot_path / "vault.dat"),
+                   "apiChildMasterKeyPresent": api_child_master_key_present,
+                   "BENCH_EXPECTED_WINDOWS_USER_SID": args.expected_user_sid or "<verified by launcher>",
                    **{k: str(v) for k,v in paths.items()},
                },
         "originalConfigurationFilesUnchanged": True,
@@ -358,17 +607,22 @@ def run(args):
     status_doc = {"runId": run_id, "state": "starting", "tasks": []}
     startup_failure = False
     try:
-        process, startup_log = start_api_process(api_command(project), root, env, startup_log_path)
+        process, startup_log, startup_output_thread = start_api_process(api_command(project), root, env, startup_log_path)
         deadline = time.monotonic() + args.startup_timeout
         while time.monotonic() < deadline:
             check_api_startup(process, startup_log_path)
             try:
                 code, provider_raw, provider_info = http_json(api + "/api/providers", os.environ["BOPS_API_KEY"], timeout=3)
                 if code == 200:
+                    settings_code, _, settings_view = http_json(api + "/api/settings/", os.environ["BOPS_API_KEY"], timeout=10)
+                    if settings_code != 200:
+                        raise RuntimeError(f"API effective configuration is unavailable (HTTP {settings_code}); no tasks were started.")
                     active = (provider_info or {}).get("active") or {}
-                    startup["effectiveProvider"] = {name: active.get(name) for name in ("providerId", "model", "credentialAvailable")}
+                    credential_available = active.get("hasApiKey", active.get("credentialAvailable")) is True
+                    startup["effectiveConfiguration"] = describe_effective_configuration(provider_info or {}, settings_view)
+                    startup["effectiveProvider"] = startup["effectiveConfiguration"]["active"]
                     write_json(run_root / "startup.json", startup)
-                    if active.get("credentialAvailable") is not True:
+                    if not credential_available:
                         raise RuntimeError("The selected provider credential is unavailable in the benchmark process; no tasks were started.")
                     break
                 if code in (401, 403):
@@ -378,6 +632,11 @@ def run(args):
             time.sleep(1)
         else:
             raise ApiStartupFailure(None, "API readiness timeout", startup_log_path)
+        if args.preflight_only:
+            status_doc = {"runId": run_id, "state": "preflight-complete", "tasks": []}
+            print("BENCH-00 preflight passed: API authentication and provider credential are available; no tasks or model calls were made.", flush=True)
+            print(f"Config snapshot: {config_snapshot_path}", flush=True)
+            return
         ordinal = 0
         for round_number in range(1, args.runs_per_scenario + 1):
             for scenario in SCENARIOS:
@@ -443,6 +702,10 @@ def run(args):
                 try: process.wait(timeout=15)
                 except subprocess.TimeoutExpired: process.kill(); process.wait()
         if startup_log is not None:
+            if 'startup_output_thread' in locals():
+                startup_output_thread.join(timeout=15)
+                if process is not None and process.stdout is not None:
+                    process.stdout.close()
             startup_log.flush()
             startup_log.close()
         include_startup_diagnostic(startup_log_path, run_root)
@@ -450,12 +713,17 @@ def run(args):
         shutil.rmtree(run_root, ignore_errors=True)
         if not startup_failure:
             print(f"Archive: {archive_path}", flush=True)
+            print(f"Config snapshot: {config_snapshot_path}", flush=True)
 
 
 def make_argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-repo-root", required=True)
+    parser.add_argument("--config-source-root", default=str(pathlib.Path(__file__).resolve().parents[2]))
+    parser.add_argument("--config-snapshot-path")
     parser.add_argument("--runs-per-scenario", type=int, choices=range(1, 4), default=3)
+    parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--expected-user-sid")
     parser.add_argument("--output-root")
     parser.add_argument("--startup-timeout", type=int, default=180)
     parser.add_argument("--task-timeout", type=int, default=5400)

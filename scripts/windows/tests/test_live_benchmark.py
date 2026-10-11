@@ -1,4 +1,6 @@
 import importlib.util
+import csv
+import io
 import json
 import os
 import pathlib
@@ -37,7 +39,7 @@ class CaptureTests(unittest.TestCase):
     def test_powershell_launcher_passes_run_count_to_python_and_uac(self):
         launcher = (MODULE.parent / "run-live-benchmark.ps1").read_text(encoding="utf-8")
         self.assertIn("[ValidateRange(1, 3)] [int] $RunsPerScenario = 3", launcher)
-        self.assertIn("-RunsPerScenario $RunsPerScenario -Elevated", launcher)
+        self.assertIn("'-RunsPerScenario', '$RunsPerScenario'", launcher)
         self.assertIn("'--runs-per-scenario', [string]$RunsPerScenario", launcher)
         self.assertIn("$startInfo.ArgumentList.Add([string]$argument)", launcher)
         self.assertIn("$startInfo.Arguments = $argumentLine", launcher)
@@ -61,9 +63,10 @@ class CaptureTests(unittest.TestCase):
             )
             launcher.write_text(launcher_text, encoding="utf-8")
             (script_dir / "live_benchmark.py").write_text(
-                "import json, os, sys\n"
+                "import csv, io, json, os, subprocess, sys\n"
+                "actual = next(csv.reader(io.StringIO(subprocess.check_output(['whoami','/user','/fo','csv','/nh'], text=True).strip())))[-1].strip()\n"
                 "with open(os.environ['BENCH_ARGV_CAPTURE'], 'w', encoding='utf-8') as f: "
-                "json.dump(sys.argv, f)\n",
+                "json.dump({'argv': sys.argv, 'masterKeyPresent': bool(os.environ.get('BOPS_VAULT_MASTER_KEY')), 'actualSid': actual}, f)\n",
                 encoding="utf-8",
             )
             target = root / "target worktree"
@@ -72,17 +75,25 @@ class CaptureTests(unittest.TestCase):
             env = os.environ.copy()
             env["PATH"] = str(root) + os.pathsep + env.get("PATH", "")
             env["BENCH_ARGV_CAPTURE"] = str(capture)
+            env["BOPS_VAULT_MASTER_KEY"] = "synthetic-master-secret"
             result = subprocess.run(
                 [powershell, "-NoProfile", "-File", str(launcher), "-TargetRepoRoot", str(target),
                  "-RunsPerScenario", "1", "-Elevated"],
                 cwd=root, env=env, text=True, capture_output=True, timeout=30,
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            argv = json.loads(capture.read_text(encoding="utf-8"))
+            captured = json.loads(capture.read_text(encoding="utf-8"))
+            argv = captured["argv"]
+            self.assertTrue(captured["masterKeyPresent"])
+            self.assertNotIn("synthetic-master-secret", argv)
             self.assertEqual((script_dir / "live_benchmark.py").resolve(), pathlib.Path(argv[0]).resolve())
             self.assertEqual("--target-repo-root", argv[1])
             self.assertEqual(target.resolve(), pathlib.Path(argv[2]).resolve())
-            self.assertEqual(["--runs-per-scenario", "1"], argv[3:])
+            self.assertEqual("--config-source-root", argv[3])
+            self.assertEqual(str((script_dir.parent.parent).resolve()), argv[4])
+            self.assertEqual(["--runs-per-scenario", "1"], argv[5:7])
+            self.assertEqual("--expected-user-sid", argv[7])
+            self.assertEqual(captured["actualSid"], argv[8])
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell integration test")
     def test_uac_handoff_preserves_target_and_run_count(self):
@@ -101,23 +112,42 @@ class CaptureTests(unittest.TestCase):
             launcher.write_text(text, encoding="utf-8")
             target = root / "target worktree"
             target.mkdir()
+            source = root / "configuration source"
+            source.mkdir()
             payload_file = root / "uac-payload.txt"
             command = (
                 "function Start-Process { param($FilePath,$Verb,$ArgumentList,[switch]$Wait,[switch]$PassThru); "
                 "$payload=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($ArgumentList[-1])); "
                 f"[IO.File]::WriteAllText('{payload_file}', $payload); "
                 "[pscustomobject]@{ExitCode=0} }; "
-                f"& '{launcher}' -TargetRepoRoot '{target}' -RunsPerScenario 1"
+                f"$env:BOPS_VAULT_MASTER_KEY='fixture-master-secret'; "
+                f"& '{launcher}' -TargetRepoRoot '{target}' -ConfigSourceRoot '{source}' -RunsPerScenario 1 -PreflightOnly"
             )
             result = subprocess.run([powershell, "-NoProfile", "-Command", command], cwd=root,
                                     text=True, capture_output=True, timeout=30)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             payload = payload_file.read_text(encoding="utf-8")
-            self.assertIn("-TargetRepoRoot $targetPath -RunsPerScenario 1 -Elevated", payload)
+            self.assertIn("'-TargetRepoRoot', $targetPath", payload)
+            self.assertIn("'-ConfigSourceRoot', $configSourcePath", payload)
+            self.assertIn("'-RunsPerScenario', '1'", payload)
+            self.assertIn("'-ExpectedUserSid', $expectedSid", payload)
+            self.assertIn("-PreflightOnly", payload)
             self.assertIn("$targetPath = [Text.Encoding]::UTF8.GetString", payload)
+            self.assertNotIn("fixture-master-secret", payload)
 
     def test_benchmark_policy_only_allows_read_risk_automatically(self):
         self.assertEqual("defaults:\n  read: automatic\n", bench.READ_ONLY_POLICY)
+
+    @unittest.skipUnless(os.name == "nt", "Windows identity validation")
+    def test_windows_identity_matches_expected_sid_without_revealing_it(self):
+        rows = csv.reader(io.StringIO(
+            subprocess.check_output(["whoami", "/user", "/fo", "csv", "/nh"], text=True).strip()))
+        sid = next(rows)[-1].strip()
+        result = bench.verify_windows_identity(sid)
+        self.assertTrue(result["verified"])
+        self.assertTrue(result["expectedSidMatched"])
+        with self.assertRaisesRegex(RuntimeError, "identity does not match"):
+            bench.verify_windows_identity("S-1-5-21-not-this-user")
 
     def test_failed_repackage_keeps_last_complete_archive(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -144,8 +174,10 @@ class CaptureTests(unittest.TestCase):
             code = ("import sys; sys.stdout.buffer.write(" + repr(stdout) + "); sys.stdout.flush(); "
                     + "sys.stderr.buffer.write((" + repr(stderr_prefix) + " + " + repr("full diagnostic detail ")
                     + " * 12000 + " + repr("\n") + ").encode()); sys.stderr.flush(); sys.exit(1)")
-            process, stream = bench.start_api_process([sys.executable, "-c", code], root, os.environ.copy(), log_path)
+            process, stream, output_thread = bench.start_api_process([sys.executable, "-c", code], root, os.environ.copy(), log_path)
             self.assertEqual(1, process.wait(timeout=15))
+            output_thread.join(timeout=15)
+            process.stdout.close()
             stream.close()
 
             with self.assertRaises(bench.ApiStartupFailure) as caught:
@@ -161,6 +193,172 @@ class CaptureTests(unittest.TestCase):
             with zipfile.ZipFile(archive) as zf:
                 self.assertEqual(original, zf.read("diagnostics/api-startup.log"))
                 self.assertEqual(original, archived_log.read_bytes())
+
+    def test_startup_log_redacts_environment_credentials_without_truncating(self):
+        secret = "synthetic-master-secret"
+        output = b"prefix " + secret.encode() + b" suffix\n"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            log_path = root / "api-startup.log"
+            code = "import os,sys; sys.stdout.write('prefix '); sys.stdout.flush(); sys.stdout.write(os.environ['BOPS_VAULT_MASTER_KEY'] + ' suffix\\n')"
+            env = os.environ.copy()
+            env["BOPS_VAULT_MASTER_KEY"] = secret
+            process, stream, output_thread = bench.start_api_process([sys.executable, "-c", code], root, env, log_path)
+            self.assertEqual(0, process.wait(timeout=15))
+            output_thread.join(timeout=15)
+            process.stdout.close()
+            stream.close()
+            saved = log_path.read_bytes()
+            self.assertEqual(b"prefix [REDACTED: credential] suffix\r\n", saved)
+            self.assertNotIn(secret.encode(), saved)
+
+    def test_startup_log_redacts_credentials_found_in_snapshot_configuration(self):
+        secret = "fixture-provider-secret"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            snapshot = root / "snapshot"
+            snapshot.mkdir()
+            (snapshot / "appsettings.json").write_text(json.dumps({"Provider": {"ApiKey": secret}}), encoding="utf-8")
+            log_path = root / "api-startup.log"
+            env = os.environ.copy()
+            env.update({"ASPNETCORE_CONTENTROOT": str(snapshot), "FIXTURE_OUTPUT": secret})
+            code = "import os,sys; sys.stdout.write(os.environ['FIXTURE_OUTPUT'])"
+            process, stream, output_thread = bench.start_api_process([sys.executable, "-c", code], root, env, log_path)
+            self.assertEqual(0, process.wait(timeout=15))
+            output_thread.join(timeout=15)
+            process.stdout.close()
+            stream.close()
+            self.assertEqual(b"[REDACTED: credential]", log_path.read_bytes())
+            self.assertNotIn(secret.encode(), log_path.read_bytes())
+
+    def test_config_snapshot_requires_sources_and_copies_vault_only_to_private_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source_api = root / "source" / "src" / "core" / "bOps.Api"
+            source_api.mkdir(parents=True)
+            destination = root / "snapshot"
+            with self.assertRaisesRegex(RuntimeError, "missing required files"):
+                bench.prepare_config_snapshot(source_api.parents[2], destination)
+            for name, data in (("appsettings.json", b'{"Provider":"fixture"}'),
+                               ("settings.json", b'{"fixture":true}'), ("vault.dat", b"synthetic-vault"),
+                               ("appsettings.Development.json", b'{"Fixture":"development"}')):
+                (source_api / name).write_bytes(data)
+            snapshot, manifest, reused = bench.prepare_config_snapshot(source_api.parents[2], destination)
+            self.assertFalse(reused)
+            self.assertEqual(b"synthetic-vault", (snapshot / "vault.dat").read_bytes())
+            self.assertEqual(bench.sha(b"synthetic-vault"), manifest["files"]["vault.dat"]["sha256"])
+            self.assertEqual(b'{"Provider":"fixture"}', (source_api / "appsettings.json").read_bytes())
+            archive_root = root / "capture"
+            archive_root.mkdir()
+            (archive_root / "startup.json").write_text(json.dumps({"configurationProvenance": {"files": manifest["files"]}}))
+            archive = root / "capture.zip"
+            bench.package(archive_root, archive)
+            with zipfile.ZipFile(archive) as zf:
+                self.assertFalse(any(pathlib.PurePosixPath(name).name == "vault.dat" for name in zf.namelist()))
+            reused_snapshot, _, reused = bench.prepare_config_snapshot(source_api.parents[2], root / "unused", snapshot)
+            self.assertTrue(reused)
+            self.assertEqual(snapshot, reused_snapshot)
+            self.assertFalse((root / "unused").exists())
+
+    def test_api_environment_isolates_state_and_uses_snapshot_content_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            snapshot = root / "snapshot"
+            state = root / "state"
+            snapshot.mkdir()
+            (snapshot / "settings.json").write_text("{}")
+            (snapshot / "vault.dat").write_bytes(b"fixture")
+            state.mkdir()
+            names = ("tasks.db", "audit.jsonl", "sessions.db", "system-messages.db", "delegations.db", "filesystem-inventory.db", "read-only-policy.yaml")
+            paths = {name: state / name for name in names}
+            env = bench.build_api_environment(snapshot, paths, 48123, "S-1-5-21-fixture", {})
+            self.assertTrue(pathlib.Path(env["ASPNETCORE_CONTENTROOT"]).samefile(snapshot))
+            self.assertTrue(pathlib.Path(env["Settings__FilePath"]).samefile(snapshot / "settings.json"))
+            self.assertTrue(pathlib.Path(env["Vault__FilePath"]).samefile(snapshot / "vault.dat"))
+            for name in names[:-1]:
+                self.assertEqual(str(paths[name]), env[
+                    {"tasks.db": "Memory__FilePath", "audit.jsonl": "Audit__FilePath", "sessions.db": "BrowserSession__FilePath",
+                     "system-messages.db": "SystemMessages__FilePath", "delegations.db": "Delegation__FilePath",
+                     "filesystem-inventory.db": "Filesystem__Inventory__ManifestStorePath"}[name]])
+            self.assertEqual("S-1-5-21-fixture", env["BENCH_EXPECTED_WINDOWS_USER_SID"])
+
+    def test_web_application_create_builder_loads_appsettings_from_snapshot_content_root(self):
+        dotnet = shutil.which("dotnet")
+        if not dotnet:
+            self.skipTest("dotnet SDK is unavailable")
+        with tempfile.TemporaryDirectory(prefix="BENCH content root ") as temp:
+            root = pathlib.Path(temp)
+            project = root / "target" / "ApiFixture"
+            project.mkdir(parents=True)
+            snapshot = root / "snapshot"
+            snapshot.mkdir()
+            working = root / "working"
+            working.mkdir()
+            (project / "ApiFixture.csproj").write_text(
+                "<Project Sdk=\"Microsoft.NET.Sdk.Web\"><PropertyGroup><OutputType>Exe</OutputType>"
+                "<TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings>"
+                "<Nullable>enable</Nullable></PropertyGroup></Project>", encoding="utf-8")
+            (project / "Program.cs").write_text(
+                "var builder = WebApplication.CreateBuilder(args); "
+                "Console.WriteLine(\"BENCH_FIXTURE=\" + builder.Configuration[\"BenchFixture:Value\"]); "
+                "Console.WriteLine(\"BENCH_ROOT=\" + builder.Environment.ContentRootPath);", encoding="utf-8")
+            (snapshot / "appsettings.json").write_text(
+                json.dumps({"BenchFixture": {"Value": "loaded-from-snapshot"}}), encoding="utf-8")
+            env = os.environ.copy()
+            env.update({"ASPNETCORE_CONTENTROOT": str(snapshot), "ASPNETCORE_ENVIRONMENT": "Development",
+                        "DOTNET_ENVIRONMENT": "Development", "DOTNET_CLI_TELEMETRY_OPTOUT": "1"})
+            result = subprocess.run([dotnet, "run", "--project", str(project / "ApiFixture.csproj"), "--no-launch-profile"],
+                                    cwd=working, env=env, text=True, capture_output=True, timeout=120)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("BENCH_FIXTURE=loaded-from-snapshot", result.stdout)
+            roots = [pathlib.Path(line.partition("=")[2]) for line in result.stdout.splitlines()
+                     if line.startswith("BENCH_ROOT=")]
+            self.assertTrue(any(path.samefile(snapshot) for path in roots))
+
+    def test_preflight_checks_provider_without_submitting_tasks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source_api = root / "source" / "src" / "core" / "bOps.Api"
+            source_api.mkdir(parents=True)
+            for name in bench.REQUIRED_SNAPSHOT_FILES:
+                (source_api / name).write_text("{}")
+            target = root / "target"
+            target.mkdir()
+            fake_project = target / "src" / "core" / "bOps.Api" / "bOps.Api.csproj"
+            fake_project.parent.mkdir(parents=True)
+            fake_project.write_text("fixture", encoding="utf-8")
+            output = root / "output"
+            args = bench.make_argument_parser().parse_args([
+                "--target-repo-root", str(target), "--config-source-root", str(source_api.parents[2]),
+                "--output-root", str(output), "--preflight-only",
+            ])
+            process = unittest.mock.Mock()
+            process.poll.side_effect = [None, 0]
+            process.wait.return_value = 0
+            providers = {"active": {"provider": "fixture", "model": "fixture-model", "baseUrl": "https://example.test", "hasApiKey": True}}
+            def fake_http(url, key, **kwargs):
+                if url.endswith("/api/providers"):
+                    return 200, b"{}", providers
+                if url.endswith("/api/settings/"):
+                    return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "fixture-model", "effectiveCredentialAvailable": True}
+                raise AssertionError(url)
+            with patch.object(bench, "validate_runtime_target", return_value=(bench.ANCHORS[0], bench.ANCHORS[0], "")), \
+                 patch.object(bench, "verify_windows_identity", return_value={"verified": True}), \
+                 patch.object(bench, "effective_policy_path", return_value=root / "policy.yaml"), \
+                 patch.object(bench, "git", side_effect=["fixture", ""]), \
+                 patch.object(bench, "api_project_path", return_value=fake_project), \
+                 patch.object(bench, "start_api_process", return_value=(process, None, None)), \
+                 patch.object(bench, "http_json", side_effect=fake_http), \
+                 patch.object(bench, "submit_task", side_effect=AssertionError("preflight must not create tasks")), \
+                 patch.dict(os.environ, {"BOPS_API_KEY": "synthetic-api-key", "BOPS_VAULT_MASTER_KEY": "synthetic-master-key"}):
+                bench.run(args)
+            with zipfile.ZipFile(next(output.glob("*.zip"))) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+                startup = json.loads(zf.read("startup.json"))
+                self.assertEqual("fixture", manifest["effectiveConfiguration"]["active"]["provider"])
+                self.assertEqual(bench.sha(b"{}"), manifest["configurationProvenance"]["files"]["appsettings.json"]["sha256"])
+                self.assertNotIn("vault.dat", zf.namelist())
+            self.assertTrue(pathlib.Path(startup["configurationProvenance"]["snapshotRoot"]).is_dir())
 
     def test_retry_keeps_idempotency_key_and_payload(self):
         calls = []
