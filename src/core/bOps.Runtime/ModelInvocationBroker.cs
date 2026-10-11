@@ -57,13 +57,23 @@ public sealed class ModelInvocationContext
 
     internal Func<bool>? ExecutionBudgetExpired { get; init; }
 
-    /// <summary>The same task, records, accounting and execution budgets, without a caller-specific response validator.</summary>
-    internal ModelInvocationContext ForSummarization() => new(TaskId, StepIndex, Actor, Calls)
+    /// <summary>
+    /// The deadline of the enclosing logical model call when this context serves a nested inference (a summary), so the
+    /// nested broker cannot outlive its parent. <c>null</c> for a top-level call.
+    /// </summary>
+    internal ModelCallDeadline? LogicalCallDeadline { get; init; }
+
+    /// <summary>
+    /// The same task, records, accounting and execution budgets, without a caller-specific response validator, bound to the
+    /// logical-call deadline of the call that requested the summary.
+    /// </summary>
+    internal ModelInvocationContext ForSummarization(ModelCallDeadline parentDeadline) => new(TaskId, StepIndex, Actor, Calls)
     {
         Delegation = Delegation,
         AccountTokens = AccountTokens,
         ExecutionBudgetToken = ExecutionBudgetToken,
         ExecutionBudgetExpired = ExecutionBudgetExpired,
+        LogicalCallDeadline = parentDeadline,
     };
 }
 
@@ -192,7 +202,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var callStartedAt = timeProvider.GetTimestamp();
+        // One deadline for the whole logical call (and, when this is a nested summary call, no later than its parent's).
+        var deadline = new ModelCallDeadline(timeProvider, options.ModelCallBudget, context.LogicalCallDeadline);
         var summaryLedger = new ModelSummarizationLedger();
         var modelAttempt = 0;
         var providerAttempt = 0;
@@ -211,7 +222,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             ModelSummarizationAccess? summarizationAccess = null;
             var projected = projection is null
                 ? null
-                : await projection(descriptor, summarizationAccess = BuildSummarizationAccess(context, summaryLedger), ct);
+                : await projection(descriptor, summarizationAccess = BuildSummarizationAccess(context, summaryLedger, deadline), ct);
             if (projected is not null && context.ExecutionBudgetExpired?.Invoke() == true)
             {
                 // MAF treats a failed summary as soft; an exhausted execution budget must still end the attempt.
@@ -220,7 +231,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
 
             // ModelCallBudget governs the whole logical call, projection (and any summary inference) included, so the
             // attempt window is derived only now, from what projection left over.
-            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+            var remaining = deadline.Remaining;
             var budgetExhaustedBeforeAttempt = remaining < MinimumModelAttemptWindow;
             var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var attemptRequest = projected?.Request ?? request;
@@ -239,7 +250,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 {
                     // The provider is not invoked: the window left is below the minimum usable attempt window.
                     failure = new AttemptFailure(ModelFailureKind.Timeout,
-                        "The model-call budget was exhausted by context projection before the model attempt could start.",
+                        "The model-call budget was exhausted before the model attempt could start.",
                         null, null, null);
                 }
                 else
@@ -348,14 +359,14 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
                 : budgetExhaustedBeforeAttempt
                     ? (ModelRetryDecision.BudgetExhausted, (TimeSpan?)null)
-                    : DecideModelRetry(failure, providerAttempt, callStartedAt);
+                    : DecideModelRetry(failure, providerAttempt, deadline);
             if (!budgetExhaustedBeforeAttempt
                 && (decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit)
                 && ModelFailureText.IsRetryable(failure.Kind)
                 && model is IFallbackChatModelControl fallback
                 && fallback.HasNextCandidate)
             {
-                var remainingForFallback = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+                var remainingForFallback = deadline.Remaining;
                 if (remainingForFallback < MinimumModelAttemptWindow || context.ExecutionBudgetExpired?.Invoke() == true)
                 {
                     decision = ModelRetryDecision.BudgetExhausted;
@@ -436,9 +447,11 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     /// Builds the access the MAF summarizer uses. Default: a governed broker over the task's CURRENT candidate
     /// (never the primary again, and with no fallback control, so a summary failure cannot advance the task's sticky
     /// chain). Dedicated: the host-composed broker for the explicitly configured provider/model, which is independent of
-    /// the task's chain and never falls back to another destination.
+    /// the task's chain and never falls back to another destination. Either way the summary inference runs inside the
+    /// logical-call <paramref name="deadline"/> of this call: it receives no budget of its own beyond what remains of it.
     /// </summary>
-    private ModelSummarizationAccess? BuildSummarizationAccess(ModelInvocationContext context, ModelSummarizationLedger ledger)
+    private ModelSummarizationAccess? BuildSummarizationAccess(
+        ModelInvocationContext context, ModelSummarizationLedger ledger, ModelCallDeadline deadline)
     {
         var summarization = options.Summarization;
         if (!summarization.Enabled)
@@ -460,7 +473,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 new CurrentCandidateModel(model), audit, timeProvider, logger, options, pinnedProviderConfiguration);
         var descriptor = broker.Descriptor;
         return new ModelSummarizationAccess(
-            broker, descriptor, dedicated, options.Context.Resolve(descriptor), context.ForSummarization, ledger, summarization);
+            broker, descriptor, dedicated, options.Context.Resolve(descriptor), () => context.ForSummarization(deadline), ledger, summarization);
     }
 
     private static void RecordSummaryTelemetry(ModelContextProjectionStats? stats, ModelSummarizationAccess? access)
@@ -645,7 +658,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     private (ModelRetryDecision Decision, TimeSpan? Delay) DecideModelRetry(
         AttemptFailure failure,
         int attempt,
-        long callStartedAt)
+        ModelCallDeadline deadline)
     {
         if (!ModelFailureText.IsRetryable(failure.Kind))
         {
@@ -667,7 +680,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
 
         var backoff = ModelRetryBackoff(attempt);
         var delay = retryAfter is { } honoured && honoured > backoff ? honoured : backoff;
-        var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+        var remaining = deadline.Remaining;
         return delay + MinimumModelAttemptWindow > remaining
             ? (ModelRetryDecision.BudgetExhausted, null)
             : (ModelRetryDecision.Retry, delay);

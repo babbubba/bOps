@@ -241,6 +241,10 @@ The keys above are semantically stable once published; they are also in the XML 
 5. **No WHEA or other "high-signal" class fact** for `system.crashes`, and no extra interpretation for stability categories: the DTOs do not classify them separately.
 6. Superseded by review fix R2: the replan system prompt is rebuilt per request from the logical call state; the EvidenceRead invitation is replaced by the same runtime exhaustion feedback once the read slots are spent, so the replan no longer invites a read it will refuse.
 
+### AF-04R/R1 implementation evidence (additive, non-normative)
+
+Review fix R1 makes `ModelCallBudget` govern the whole logical model call, including context projection and MAF summarization. One internal monotonic `ModelCallDeadline` (`bOps.Runtime/ModelCallDeadline.cs`, on the broker's `TimeProvider`) is created when the logical call starts and is read by the projection-time remaining window, retry decisions, the fallback decision and every attempt timeout. `ModelInvocationContext.ForSummarization(deadline)` hands it to the nested summarizer broker (current-candidate or dedicated), which links it to its own local deadline; the more restrictive wins, so a summary, its retries and their delays can never run past the parent. Fallback re-projection keeps the same deadline. `MaxAttemptDuration`, fail-soft summarization, accounting and `bOps.Abstractions` are unchanged. Tests: `GovernedSummarizationTests` ("one logical-call deadline" section).
+
 ### AF-05 handoff
 
 - Measure on real tasks whether `MaxAttempts = 4` and `MaxControlRejections = 4` suit the target models, and whether the cursor fields (`nextOffset`, `readsRemaining`) reduce wasted reads; `bops.evidence_read.events_total` gives the served, exhausted, malformed and unavailable rates.

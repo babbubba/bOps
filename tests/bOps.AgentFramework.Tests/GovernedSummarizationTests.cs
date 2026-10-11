@@ -527,6 +527,374 @@ public sealed class GovernedSummarizationTests
         Assert.All(calls, call => Assert.Equal(ModelCallOutcome.Success, call.Outcome));
     }
 
+    // ---- one logical-call deadline shared with the nested summarizer (R1 final) ------------------------------
+
+    private static readonly TimeSpan Millisecond = TimeSpan.FromMilliseconds(1);
+
+    private static readonly TimeSpan PumpStep = TimeSpan.FromMilliseconds(250);
+
+    private static AgentRunnerOptions DeadlineOptions(int attempts = 1) =>
+        BudgetOptions() with
+        {
+            ModelCallBudget = TimeSpan.FromSeconds(10),
+            ModelCallMaxAttempts = attempts,
+            ModelRetryBaseDelay = TimeSpan.FromSeconds(2),
+            ModelRetryMaxDelay = TimeSpan.FromSeconds(2),
+        };
+
+    private static TaskCompletionSource<CancellationToken> TokenSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Advances to one millisecond before <paramref name="expected"/>, asserts the logical call is still running, then crosses it
+    /// and asserts the call ends. The fake clock delivers timer callbacks on the thread pool, hence the short real-time settle.
+    /// </summary>
+    private static async Task AssertEndsExactlyAtAsync(FakeTimeProvider clock, DateTimeOffset expected, Task invocation)
+    {
+        clock.Advance(expected - clock.GetUtcNow() - Millisecond);
+        await Task.Delay(50, CancellationToken.None);
+        Assert.False(invocation.IsCompleted, "the call ended before the remaining logical-call window elapsed");
+        clock.Advance(Millisecond);
+        await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task InheritedDeadline_LimitsTheNestedSummarizerToWhatTheParentCallHasLeft()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var summaryStarted = TokenSignal();
+        var primaryInvoked = false;
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (!IsSummary(request))
+            {
+                primaryInvoked = true;
+                return Reply("must not be requested", 1, 1);
+            }
+
+            summaryStarted.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        });
+        var calls = new List<ModelCallRecord>();
+        var broker = Broker(model, DeadlineOptions(), clock: clock, projectionCost: TimeSpan.FromSeconds(2));
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context(calls, []));
+        await summaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // 10 s logical budget, 2 s already spent: the summarizer may use 8 s, not a fresh 10 s (or its own 120 s attempt timeout).
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.False(primaryInvoked);
+        Assert.Contains(calls, call => call.Outcome == ModelCallOutcome.Failure && call.FailureKind == ModelFailureKind.Timeout);
+    }
+
+    [Fact]
+    public async Task SummaryCannotRunPastTheParentDeadlineNorRetryAndTheExhaustedParentNeverStartsThePrimary()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var summaryStarted = TokenSignal();
+        var summaryRequests = 0;
+        var primaryInvoked = false;
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (!IsSummary(request))
+            {
+                primaryInvoked = true;
+                return Reply("must not be requested", 1, 1);
+            }
+
+            summaryRequests++;
+            summaryStarted.TrySetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        });
+        var broker = Broker(model, DeadlineOptions(attempts: 3), clock: clock, projectionCost: TimeSpan.FromSeconds(3));
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        await summaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // The summary began with 7 s left; the summarizer is bounded to them even though its provider would take longer.
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.Equal(1, summaryRequests);
+        Assert.False(primaryInvoked);
+    }
+
+    [Fact]
+    public async Task ShortSummary_LeavesThePrimaryExactlyTheRemainingLogicalWindow()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var primaryStarted = TokenSignal();
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (IsSummary(request))
+            {
+                clock.Advance(TimeSpan.FromSeconds(4));
+                return Summary("short summary", 40, 10);
+            }
+
+            primaryStarted.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Reply("unreachable", 1, 1);
+        });
+        var broker = Broker(model, DeadlineOptions(), clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        await primaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // 10 s budget - 4 s summary = 6 s, far below the 120 s attempt timeout.
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+    }
+
+    [Fact]
+    public async Task SummaryRetry_IsAllowedOnlyWhenDelayPlusMinimumWindowFitsTheInheritedDeadline()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var secondAttempt = TokenSignal();
+        var summaryRequests = 0;
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (!IsSummary(request))
+            {
+                return Reply("unreachable", 1, 1);
+            }
+
+            if (++summaryRequests == 1)
+            {
+                clock.Advance(TimeSpan.FromSeconds(2));
+                throw new ModelProtocolException("temporary") { FailureKind = ModelFailureKind.Transient };
+            }
+
+            secondAttempt.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        });
+        var broker = Broker(model, DeadlineOptions(attempts: 2), clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        // 8 s remain after the first failure; the 1-2 s backoff plus the 1 s minimum window fits, so the retry runs.
+        // The clock is stepped through the backoff and then left alone while the retry starts, so its window is exact.
+        while (!secondAttempt.Task.IsCompleted)
+        {
+            clock.Advance(PumpStep);
+            await Task.WhenAny(secondAttempt.Task, Task.Delay(200, CancellationToken.None));
+        }
+
+        await secondAttempt.Task;
+        Assert.Equal(2, summaryRequests);
+        // ...and the retry is itself bounded by the same deadline, not by a new window.
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+    }
+
+    [Fact]
+    public async Task SummaryRetryThatDoesNotFitTheInheritedDeadline_IsDeniedAndThePrimaryKeepsTheRemainder()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var primaryStarted = TokenSignal();
+        var summaryRequests = 0;
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (IsSummary(request))
+            {
+                summaryRequests++;
+                clock.Advance(TimeSpan.FromSeconds(8.5));
+                throw new ModelProtocolException("temporary") { FailureKind = ModelFailureKind.Transient };
+            }
+
+            primaryStarted.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Reply("unreachable", 1, 1);
+        });
+        var calls = new List<ModelCallRecord>();
+        var broker = Broker(model, DeadlineOptions(attempts: 3), clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context(calls, []));
+        await primaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // 1.5 s remain after the summary failure: a retry needs at least 1 s of backoff + 1 s window, so none starts.
+        Assert.Equal(1, summaryRequests);
+        Assert.Equal(ModelRetryDecision.BudgetExhausted, calls[0].RetryDecision);
+        // The summary is fail-soft: the primary still starts and has exactly the 1.5 s the deadline left.
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+    }
+
+    [Fact]
+    public async Task SummaryStoppedByTheInheritedDeadline_FallsBackToTheOriginalGroupsAndThePrimaryCompletes()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var primaryHistory = new List<ChatTurn>();
+        var model = new ClockedModel((request, _) =>
+        {
+            if (IsSummary(request))
+            {
+                clock.Advance(TimeSpan.FromSeconds(8.5));
+                throw new ModelProtocolException("temporary") { FailureKind = ModelFailureKind.Transient };
+            }
+
+            primaryHistory.AddRange(request.History);
+            return Task.FromResult(Reply("done", 100, 20));
+        });
+        var calls = new List<ModelCallRecord>();
+        var tokens = new List<int>();
+        var broker = Broker(model, DeadlineOptions(attempts: 3), clock: clock);
+
+        var response = await broker.InvokeAsync(BigRequest(), Context(calls, tokens));
+
+        Assert.Equal("done", response.TextResponse);
+        Assert.NotEmpty(primaryHistory);
+        Assert.DoesNotContain(primaryHistory, turn => turn.Content?.Contains(MafSummarization.SummaryHeader, StringComparison.Ordinal) == true);
+        // A failed summary returns no usage, so none is invented: only the primary's tokens count.
+        Assert.Equal([120], tokens);
+        Assert.Equal(100, response.Usage!.PromptTokens);
+        Assert.Equal(20, response.Usage.CompletionTokens);
+        Assert.Equal(2, calls.Count);
+        Assert.Equal(ModelCallOutcome.Failure, calls[0].Outcome);
+        Assert.Equal(ModelCallOutcome.Success, calls[1].Outcome);
+    }
+
+    [Fact]
+    public async Task Dedicated_SummarizerRespectsTheParentDeadlineDespiteItsOwnLargerBudgetAndNeverTouchesTheTaskChain()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var task = new FallbackScriptedModel(_ => Reply("must not be requested", 1, 1));
+        var summaryStarted = TokenSignal();
+        var dedicated = new ClockedModel(async (_, ct) =>
+        {
+            summaryStarted.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        }, "Sum", "small");
+        var summarization = new SummarizationOptions
+        {
+            Enabled = true, Provider = "Sum", Model = "small", RecentGroupsToPreserve = 1, TriggerRatio = 0.3,
+        };
+        var outer = Options(summarization, TaskProfile(), SummarizerProfile(16_000)) with
+        {
+            ModelCallBudget = TimeSpan.FromSeconds(10),
+            ModelCallAttemptTimeout = TimeSpan.FromSeconds(120),
+        };
+        var dedicatedOptions = outer with { ModelCallBudget = TimeSpan.FromSeconds(300) };
+        var broker = Broker(task, outer, dedicated, clock, TimeSpan.FromSeconds(3), dedicatedOptions);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        await summaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.Empty(task.Requests);
+        Assert.Equal(0, task.Advances);
+        Assert.Equal(0, task.FallbackOrdinal);
+    }
+
+    [Fact]
+    public async Task Fallback_DoesNotRestartTheDeadlineAndItsReprojectedSummaryInheritsTheResidue()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var fallbackSummary = TokenSignal();
+        var fallbackPrimaryInvoked = false;
+        var candidate = new ClockedFallbackModel(async (request, ct, modelId) =>
+        {
+            if (modelId == "big")
+            {
+                clock.Advance(IsSummary(request) ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(5));
+                return IsSummary(request)
+                    ? Summary("short summary", 40, 10)
+                    : throw new ModelProtocolException("temporary") { FailureKind = ModelFailureKind.Transient };
+            }
+
+            if (!IsSummary(request))
+            {
+                fallbackPrimaryInvoked = true;
+                return Reply("must not be requested", 1, 1);
+            }
+
+            fallbackSummary.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        });
+        var options = Options(
+            new SummarizationOptions { Enabled = true, RecentGroupsToPreserve = 1, TriggerRatio = 0.3 }, TaskProfile(), TaskProfile("B")) with
+        {
+            ModelCallBudget = TimeSpan.FromSeconds(10),
+            ModelCallAttemptTimeout = TimeSpan.FromSeconds(120),
+        };
+        var broker = Broker(candidate, options, clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        await fallbackSummary.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Candidate A spent 1 s (summary) + 5 s (primary): B's reprojection and everything after it share the other 4 s.
+        Assert.Equal(1, candidate.Advances);
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.False(fallbackPrimaryInvoked);
+    }
+
+    [Fact]
+    public async Task WithoutSummarization_TheLogicalDeadlineStillBoundsTheAttemptAndDeniesRetryOnceSpent()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var started = TokenSignal();
+        var requests = 0;
+        var model = new ClockedModel(async (_, ct) =>
+        {
+            requests++;
+            started.TrySetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Reply("unreachable", 1, 1);
+        });
+        var options = Options(new SummarizationOptions { Enabled = false }, TaskProfile()) with
+        {
+            ModelCallBudget = TimeSpan.FromSeconds(10),
+            ModelCallAttemptTimeout = TimeSpan.FromSeconds(120),
+            ModelCallMaxAttempts = 3,
+        };
+        var calls = new List<ModelCallRecord>();
+        var broker = Broker(model, options, clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context(calls, []));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await AssertEndsExactlyAtAsync(clock, ClockStart + TimeSpan.FromSeconds(10), invocation);
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.Equal(1, requests);
+        Assert.Equal(ModelRetryDecision.BudgetExhausted, Assert.Single(calls).RetryDecision);
+    }
+
+    [Fact]
+    public async Task UserCancellationDuringADeadlineBoundedSummaryStaysCancellationNotABudgetTimeout()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        using var cts = new CancellationTokenSource();
+        var summaryStarted = TokenSignal();
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (!IsSummary(request))
+            {
+                return Reply("must not be requested", 1, 1);
+            }
+
+            summaryStarted.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Summary("unreachable", 1, 1);
+        });
+        var broker = Broker(model, DeadlineOptions(), clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []), cts.Token);
+        await summaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
     // ---- harness ------------------------------------------------------------------------------------------
 
     private static bool IsSummary(ModelRequest request) =>
@@ -559,15 +927,26 @@ public sealed class GovernedSummarizationTests
         };
 
     private static ModelInvocationBroker Broker(
-        IChatModel task, AgentRunnerOptions options, IChatModel? dedicated = null, TimeProvider? clock = null)
+        IChatModel task,
+        AgentRunnerOptions options,
+        IChatModel? dedicated = null,
+        FakeTimeProvider? clock = null,
+        TimeSpan projectionCost = default,
+        AgentRunnerOptions? dedicatedOptions = null)
     {
-        clock ??= TimeProvider.System;
+        TimeProvider time = clock ?? TimeProvider.System;
         var summarizer = dedicated is null
             ? null
-            : new ModelInvocationBroker(dedicated, new NullAuditSink(), clock, NullLogger.Instance, options);
+            : new ModelInvocationBroker(dedicated, new NullAuditSink(), time, NullLogger.Instance, dedicatedOptions ?? options);
+        IModelContextProjector projector = new MafContextProjector(options, NullLogger.Instance);
+        if (projectionCost > TimeSpan.Zero)
+        {
+            projector = new AdvancingProjector(clock!, projectionCost, projector);
+        }
+
         return new ModelInvocationBroker(
-            task, new NullAuditSink(), clock, NullLogger.Instance, options,
-            contextProjector: new MafContextProjector(options, NullLogger.Instance), dedicatedSummarizer: summarizer);
+            task, new NullAuditSink(), time, NullLogger.Instance, options,
+            contextProjector: projector, dedicatedSummarizer: summarizer);
     }
 
     private static ModelInvocationContext Context(List<ModelCallRecord> calls, List<int> tokens) =>
@@ -639,11 +1018,51 @@ public sealed class GovernedSummarizationTests
         }
     }
 
-    private sealed class ClockedModel(Func<ModelRequest, CancellationToken, Task<ModelResponse>> handler) : IChatModel
+    private sealed class ClockedModel(
+        Func<ModelRequest, CancellationToken, Task<ModelResponse>> handler, string provider = "Task", string model = "big") : IChatModel
     {
-        public ChatModelDescriptor Descriptor { get; } = new("Task", "big");
+        public ChatModelDescriptor Descriptor { get; } = new(provider, model);
 
         public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) => handler(request, ct);
+    }
+
+    private sealed class ClockedFallbackModel(Func<ModelRequest, CancellationToken, string, Task<ModelResponse>> handler) : IFallbackChatModelControl
+    {
+        private int ordinal;
+
+        public int Advances { get; private set; }
+
+        public ChatModelDescriptor Descriptor => new("Task", ordinal == 0 ? "big" : "B");
+
+        public int FallbackOrdinal => ordinal;
+
+        public bool HasNextCandidate => ordinal == 0;
+
+        public void Advance() => ordinal = 1;
+
+        public bool TryAdvance()
+        {
+            Advances++;
+            ordinal = 1;
+            return true;
+        }
+
+        public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) =>
+            handler(request, ct, Descriptor.ModelId);
+    }
+
+    /// <summary>Charges the fake clock for the time projection spends before any summary inference starts.</summary>
+    private sealed class AdvancingProjector(FakeTimeProvider clock, TimeSpan cost, IModelContextProjector inner) : IModelContextProjector
+    {
+        public Task<ModelContextProjectionResult> ProjectAsync(
+            ModelContextRequest request,
+            ChatModelDescriptor descriptor,
+            ModelSummarizationAccess? summarization = null,
+            CancellationToken ct = default)
+        {
+            clock.Advance(cost);
+            return inner.ProjectAsync(request, descriptor, summarization, ct);
+        }
     }
 
     private sealed class NullAuditSink : IAuditSink
