@@ -601,3 +601,19 @@ Relevant upstream references:
 - https://learn.microsoft.com/en-us/agent-framework/workflows/checkpoints
 - https://github.com/microsoft/agent-framework/tree/main/dotnet/src/Microsoft.Agents.AI/Compaction
 - https://github.com/microsoft/agent-framework/tree/main/dotnet/src/Microsoft.Agents.AI.Harness
+
+## 27. AF-02 implementation evidence (2026-10-11)
+
+AF-02 is implemented locally by commit `25774e5` on `feat/af-02-maf-context-compaction`.
+
+The implementation keeps the boundary described by this ADR:
+
+- bOps classifies protected authority versus compactable persisted-history projections in Runtime-owned types;
+- only `bOps.AgentFramework` maps `ChatTurn` to MAF messages and invokes the pinned 1.24.0 compaction APIs;
+- the production CLI/API path applies deterministic tool-result, sliding-window and truncation strategies before the governed broker calls the selected candidate;
+- fallback candidate changes cause a new exact profile lookup and projection;
+- an unknown profile, including unconfigured `openrouter/free`, uses the conservative legacy bounded request and never receives a guessed capacity;
+- raw persistence, evidence, operational tool routing, approval/policy and provider retry/fallback authority remain unchanged;
+- no summarization inference is enabled.
+
+The compiled MAF package exposes `CompactionProvider.CompactAsync` as the supported public ad-hoc surface; `CompactionMessageIndex.Create` is not public despite appearing in generated XML documentation. The isolated integration therefore uses `CompactAsync` and suppresses the MAF experimental diagnostic only in that project. Focused mapper/compaction/profile/fallback tests and the full non-live solution regression pass; the AF-02 task packet records the exact validation evidence and operator configuration shape.

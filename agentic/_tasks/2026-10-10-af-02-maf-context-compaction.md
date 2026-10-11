@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
-| Status | **Planned** |
+| Status | **Implemented locally — validation complete; not pushed or merged** |
 | Depends on | AF-01 complete |
 | Blocks | AF-03, AF-05 |
 | Effort | **medium** |
@@ -239,3 +239,70 @@ dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=Liv
 ## Stop conditions
 
 Stop if MAF compaction cannot preserve bOps tool-call/result relationships, if the only solution requires MAF types in `bOps.Abstractions`, or if a proposed optimization would delete/alter authoritative persisted evidence.
+
+## Implementation evidence (2026-10-11)
+
+### Delivered structure
+
+- Implementation commit: `25774e5` (`feat: add MAF context compaction`).
+- Added the strict `MafChatTurnMapper` inside `bOps.AgentFramework`. It round-trips the production bOps roles, null/empty/Unicode text, structurally equivalent JSON arguments, multi-call assistant messages and call-id-matched result turns.
+- Added runtime-owned `ModelContextRequest`, profile/options, projection result/statistics and the narrow `IModelContextProjector` boundary. No MAF type entered `bOps.Abstractions` or `bOps.Runtime`.
+- `AgentRunner` now classifies current authority before projection: system/security rules, goal, current plan and step routing, correction state, EvidenceGrounding, EvidenceLimitations, reconciliation notices and logical-call continuations remain outside compactable historical turns.
+- `MafContextProjector` uses the MAF 1.24.0 ad-hoc `CompactionProvider.CompactAsync` path with `ToolResultCompactionStrategy`, `SlidingWindowCompactionStrategy`, then `TruncationCompactionStrategy`. No summarization strategy or summarizer inference exists in AF-02.
+- The tool-result formatter emits only runtime-authored tool name/status metadata. It never copies raw result data into assistant text, so prompt injection inside a historical tool result is either retained as structured `Tool` data or omitted by deterministic compaction.
+- `ModelInvocationBroker` projects immediately before each actual provider attempt. After fallback advances, the next loop reads the new descriptor and resolves/projects with that exact candidate profile; retry, fallback pinning, audit and accounting decisions are otherwise unchanged.
+- CLI, API singleton composition and API execution-scoped composition activate the projector. `BoundedHistory` remains the conservative request when no exact profile exists and remains available for AF-05 comparison/removal.
+
+### Configuration semantics
+
+Profiles bind under `Agent:Context:Profiles`; lookup is exact provider id + requested model id. No provider-family inference exists, and `openrouter/free` remains unknown unless explicitly configured. Unknown capacity uses the existing bounded projection instead of guessing a token window.
+
+```json
+{
+  "Agent": {
+    "Context": {
+      "SafetyReserveTokens": 1024,
+      "MinimumPreservedToolGroups": 2,
+      "MinimumPreservedTurns": 1,
+      "Profiles": [
+        {
+          "Provider": "configured-provider-id",
+          "Model": "exact-model-id",
+          "MaxContextTokens": 128000,
+          "ReservedOutputTokens": 8192
+        }
+      ]
+    }
+  }
+}
+```
+
+Invalid, duplicate or impossible profiles fail `AgentRunnerOptions.Validate`; values are never clamped. The computed history allowance is `max context - reserved output - system/protected estimate - exact tool-schema estimate - safety reserve`. If protected/fixed material alone cannot fit, projection throws a classifiable `ContextOverflow` without truncating authority or calling the provider.
+
+### Persistence, tools and telemetry
+
+- Projection is ephemeral. No `TaskState`, `PlanStep`, raw `ToolCallResult.Output`, `Observation`, plan, evidence fact, verification state, mutation journal or audit schema was changed.
+- Offered tools are passed through unchanged. The MAF layer neither registers nor executes operational tools and cannot widen `AvailableTools`.
+- `bops.model_context` activities and context histograms record provider/model, known/unknown profile source, configured capacities, protected/tool/history estimates, message/character counts, selected deterministic strategies, compacted/dropped counts, provider prompt tokens and estimate delta. No prompt, argument or tool-result content is emitted.
+
+### Tests and guards
+
+- Direct mapper tests cover role/order, null and empty content, Unicode, nested JSON arguments, multiple calls and matched results.
+- Deterministic compaction tests cover atomic multi-call/result groups, preserved executed/unexecuted meaning, prompt injection in raw results, sliding-window and truncation backstops, protected authority/reconciliation, unchanged raw candidate history and unchanged tool surface.
+- Profile tests cover invalid/duplicate configuration, exact candidate-specific selection, `openrouter/free` remaining unknown, protected-context overflow, deterministic repeatability and fallback re-projection from candidate A to candidate B.
+- Existing HARDEN-8, EvidenceRead, evidence grounding/limitations, resume, provider failure, fallback and architecture suites remain in place and green.
+
+### Verification
+
+- `dotnet test tests/bOps.AgentFramework.Tests/bOps.AgentFramework.Tests.csproj --configuration Release --no-restore`: **11 passed, 0 failed**.
+- `dotnet build bOps.slnx --configuration Release --no-restore`: **passed with 0 warnings and 0 errors**.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`: **all projects passed, 0 failures**; existing platform/environment-dependent tests were skipped.
+- Representative totals: Runtime **2050 passed**; API **501 passed**; CLI **124 passed**; architecture **169 passed**; AgentFramework **11 passed**.
+
+### Reviewed MAF surface and deviations
+
+- The implementation was compiled and tested against the pinned `Microsoft.Agents.AI` **1.24.0** package. Its compaction index forms atomic tool-call/result groups and the three required deterministic strategies are available.
+- `CompactionMessageIndex.Create` is not public in the compiled 1.24.0 surface even though it appears in generated API XML. AF-02 therefore uses the supported public ad-hoc `CompactionProvider.CompactAsync` entry point, as allowed by this packet.
+- MAF's experimental diagnostic `MAAI001` is suppressed only in the isolated `bOps.AgentFramework` project, with an explanatory project comment. No experimental MAF surface leaks across that boundary.
+- MAF compaction needs a user-turn anchor to index bOps's assistant/tool-only historical slice. AF-02 supplies a fixed runtime-authored marker solely to the in-memory compaction call and removes it before provider projection; the actual goal remains separately protected and unchanged.
+- No stop condition was reached: MAF preserved atomic relationships; no persisted evidence or `bOps.Abstractions` public shape changed; provider routing/fallback semantics remained runtime-owned.

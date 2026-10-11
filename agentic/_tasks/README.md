@@ -34,7 +34,7 @@ snapshots under `agentic/obsolete/`.
 | 23z | [`V1.3.z Windows kernel dump analysis`](2026-10-08-v1.3z-windows-kernel-dump-analysis.md) | **Merged via PR #91; prerequisite recovery verified live; first real dump execution exposed the global 30 s caller timeout** | alto |
 | 23zz | [`V1.3 pre-release stabilization`](2026-10-08-v1.3-pre-release-stabilization.md) | **Planned — next executable pre-release packet before stable V1.3** | molto alto |
 | AF-01 | [`MAF foundation + governed inference`](2026-10-10-af-01-maf-foundation-governed-inference.md) | **Planned — first ADR-0052 implementation packet** | medio |
-| AF-02 | [`MAF context + compaction`](2026-10-10-af-02-maf-context-compaction.md) | Planned — after AF-01 | medio |
+| AF-02 | [`MAF context + compaction`](2026-10-10-af-02-maf-context-compaction.md) | **Implemented locally — validation complete; not pushed or merged** | medio |
 | AF-03 | [`Governed MAF summarization`](2026-10-10-af-03-governed-summarization.md) | Planned — after AF-01/AF-02 | medio |
 | AF-04 | [`Evidence cleanup + high-density facts`](2026-10-10-af-04-evidence-cleanup.md) | Planned — after AF-02; may parallel AF-03 after shared APIs stabilize | medio |
 | AF-05 | [`MAF regression, tuning + legacy cleanup`](2026-10-10-af-05-maf-regression-tuning-cleanup.md) | Planned — after AF-01…AF-04 | medio |
