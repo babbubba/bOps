@@ -166,7 +166,9 @@ def extract_records(db_path: pathlib.Path, ids: list[str], out: pathlib.Path, au
         source.backup(snapshot)
         snapshot.row_factory = sqlite3.Row
         task_ids = set(ids)
-        for task_id in ids:
+        stored_ids = [row[0] for row in snapshot.execute("SELECT id FROM tasks ORDER BY rowid")]
+        all_ids = list(dict.fromkeys(ids + stored_ids))
+        for task_id in all_ids:
             row = snapshot.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             folder = out / "tasks" / task_id
             folder.mkdir(parents=True, exist_ok=True)
@@ -192,6 +194,7 @@ def extract_records(db_path: pathlib.Path, ids: list[str], out: pathlib.Path, au
             "selectedCompleteLineCount": len(rows), "globalSequenceMayContainOtherTasks": True, **audit_facts,
         })
         snapshot.close()
+        return all_ids
     finally:
         source.close()
 
@@ -245,6 +248,11 @@ def run(args):
     project = api_project_path(root)
     if not project.is_file():
         raise RuntimeError(f"bOps.Api project not found under target root: {root}")
+    config_files = {}
+    for config_path in (project.parent / "appsettings.json", project.parent / "appsettings.Development.json", project.parent / "Properties" / "launchSettings.json"):
+        config_files[config_path.name if config_path.parent == project.parent else "Properties/launchSettings.json"] = {
+            "present": config_path.is_file(), "sha256": sha(config_path.read_bytes()) if config_path.is_file() else None,
+        }
     process = subprocess.Popen(api_command(project), cwd=root, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     api = f"http://127.0.0.1:{port}"
@@ -253,7 +261,7 @@ def run(args):
                "originalPolicyPath": str(original_policy_path),
                "originalPolicySha256": sha(original_policy_path.read_bytes()) if original_policy_path.is_file() else None,
                "effectivePolicyPath": str(readonly_policy_path), "effectivePolicySha256": sha(READ_ONLY_POLICY.encode("utf-8")),
-               "apiBaseUrl": api, "apiProject": str(project), "hostMode": "API-only",
+               "apiBaseUrl": api, "apiProject": str(project), "configurationFileFingerprints": config_files, "hostMode": "API-only",
                "environment": "Development", "isolatedOverrides": {"ASPNETCORE_URLS": api, **{k: str(v) for k,v in paths.items()}},
         "originalConfigurationFilesUnchanged": True,
         "effectivePolicy": "BENCH-00 isolated policy: Read=Automatic; Low/Medium/High/Critical=Forbidden; no approval is automated",
@@ -332,8 +340,10 @@ def run(args):
                     write_json(task_folder / "capture-status.json", {"taskId": task_id, "status": "task-timeout", "lastApiResponse": last_status})
                     raise TimeoutError(f"Task {task_id} remained non-terminal; partial capture retained.")
                 # Capture the persisted source after every completed task; an interruption preserves all earlier rows.
-                extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
-                status_doc = {"runId": run_id, "state": "running", "tasks": [{"taskId": x["taskId"], "terminalApiCaptured": x["taskId"] in terminal} for x in roster]}
+                captured_ids = extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
+                roster_ids = {item["taskId"] for item in roster}
+                status_doc = {"runId": run_id, "state": "running", "tasks": [{"taskId": x["taskId"], "terminalApiCaptured": x["taskId"] in terminal} for x in roster],
+                              "unrosteredPersistedTaskIds": sorted(set(captured_ids) - roster_ids)}
                 write_json(run_root / "capture-status.json", status_doc)
                 package(run_root, archive_path)
                 print(f"Captured {ordinal}/9: {intention} ({task_id})", flush=True)
@@ -347,7 +357,11 @@ def run(args):
     finally:
         write_json(run_root / "capture-status.json", status_doc)
         if paths["tasks.db"].exists():
-            try: extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
+            try:
+                captured_ids = extract_records(paths["tasks.db"], [item["taskId"] for item in roster], run_root, paths["audit.jsonl"])
+                roster_ids = {item["taskId"] for item in roster}
+                status_doc["unrosteredPersistedTaskIds"] = sorted(set(captured_ids) - roster_ids)
+                write_json(run_root / "capture-status.json", status_doc)
             except (sqlite3.Error, OSError): pass
         package(run_root, archive_path)
         shutil.rmtree(run_root, ignore_errors=True)
