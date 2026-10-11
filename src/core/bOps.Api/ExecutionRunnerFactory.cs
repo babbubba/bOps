@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Hosting;
 using bOps.Runtime;
 using Microsoft.Extensions.Logging;
@@ -61,7 +62,9 @@ internal sealed class ExecutionRunnerFactory(
         var executionModel = testModel ?? models.Create(pin);
         Func<Guid, PinnedProviderConfiguration, CancellationToken, Task> persistPin =
             (taskId, updated, ct) => PersistPinAsync(taskId, delegationId, updated, ct);
-        var broker = new ModelInvocationBroker(executionModel, audit, time, logger, options, pin, persistPin);
+        var broker = new ModelInvocationBroker(
+            executionModel, audit, time, logger, options, pin, persistPin,
+            new MafContextProjector(options, logger));
         return new AgentRunner(executionModel, tools, policy, approvals, audit, tasks, time,
             logger, options, skills, pinnedProviderConfiguration: pin,
             persistPinnedProviderConfiguration: persistPin,

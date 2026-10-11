@@ -848,7 +848,7 @@ public sealed partial class AgentRunner(
             }
 
             var logicalCall = new LogicalCallState();
-            ModelRequest BuildStepRequest(bool aggressive)
+            ModelContextRequest BuildStepRequest(bool aggressive)
             {
                 // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4); the
                 // persisted values stay complete and a normal request is unchanged.
@@ -868,17 +868,25 @@ public sealed partial class AgentRunner(
                 // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
                 var offersEvidenceControl = steps.Any(step =>
                     Math.Max(step.Result?.Output?.Length ?? 0, step.Observation?.Length ?? 0) > options.MaxObservationCharacters);
-                return new ModelRequest(
-                    BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                        correctingArguments, aggressive, offersEvidenceControl, grounding),
-                    history, offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools);
+                var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
+                    correctingArguments, aggressive, offersEvidenceControl, grounding);
+                var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
+                var protectedAfter = ReconciliationTurns(steps);
+                protectedAfter.AddRange(logicalCall.ContinuationTurns);
+                return new ModelContextRequest(
+                    systemPrompt,
+                    [ChatTurn.FromUser(run.Goal)],
+                    RebuildHistoricalTurns(steps),
+                    protectedAfter,
+                    availableTools,
+                    new ModelRequest(systemPrompt, history, availableTools));
             }
 
             // HARDEN-8: rebuilt from persisted steps for every provider call. Live execution and resume therefore have the
             // same three-tier history; the logical call can switch once to aggressive K=0 after ContextOverflow.
             var stepCalls = new List<ModelCallRecord>();
 
-            ModelRequest request;
+            ModelContextRequest request;
             ModelResponse? response = null;
             try
             {
@@ -1007,7 +1015,7 @@ public sealed partial class AgentRunner(
                     && !EvidenceDisclosure.HasHeading(finalText)
                     && DisclosureBudgetRemains(run, delegation))
                 {
-                    (finalText, disclosure) = await ReAskForDisclosureAsync(run, request, history, finalText!, stepIndex, stepCalls, ct);
+                    (finalText, disclosure) = await ReAskForDisclosureAsync(run, request, finalText!, stepIndex, stepCalls, ct);
                     stepActivity?.SetTag(
                         "bops.evidence_disclosure_reask",
                         disclosure == EvidenceDisclosureOutcome.Accepted ? "accepted" : "result_not_used");
@@ -1020,7 +1028,7 @@ public sealed partial class AgentRunner(
                     && grounding is not null
                     && DisclosureBudgetRemains(run, delegation))
                 {
-                    var guarded = await GuardGroundingAsync(run, request, history, finalText!, grounding, stepIndex, stepCalls, ct);
+                    var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, stepIndex, stepCalls, ct);
                     if (guarded.Failure is { } failure)
                     {
                         stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
@@ -2517,6 +2525,33 @@ public sealed partial class AgentRunner(
         return history;
     }
 
+    /// <summary>Rebuilds only persisted tool protocol groups eligible for deterministic compaction.</summary>
+    private static List<ChatTurn> RebuildHistoricalTurns(
+        IReadOnlyList<PlanStep> steps,
+        int? protectedStepIndex = null)
+    {
+        var history = new List<ChatTurn>();
+        foreach (var step in steps)
+        {
+            if (step.Index == protectedStepIndex
+                || TaskResumePolicy.IsMutationReconciledStep(step)
+                || step.ToolCall is null)
+            {
+                continue;
+            }
+
+            AddToolCallTurns(history, step.ToolCall, step.UnexecutedToolCalls,
+                WrapToolOutput(step.Observation ?? string.Empty));
+        }
+
+        return history;
+    }
+
+    /// <summary>Persisted runtime-authored reconciliation notices are authoritative and never compacted.</summary>
+    private static List<ChatTurn> ReconciliationTurns(IReadOnlyList<PlanStep> steps) =>
+        [.. steps.Where(TaskResumePolicy.IsMutationReconciledStep)
+            .Select(step => ChatTurn.FromUser(step.Observation ?? string.Empty))];
+
     /// <summary>
     /// The model-facing record of one tool-calling turn, built the same way live and on resume (ADR-0038): the
     /// assistant turn carries every call the model emitted, the executed call is answered with its real observation,
@@ -2554,8 +2589,13 @@ public sealed partial class AgentRunner(
         var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
         var tokens = 0;
         var logicalCall = new LogicalCallState();
-        ModelRequest BuildPlanningRequest(bool _) =>
-            new(systemPrompt, [.. planningHistory, .. logicalCall.ContinuationTurns], NoNativeTools);
+        ModelContextRequest BuildPlanningRequest(bool _)
+        {
+            var turns = new List<ChatTurn>(planningHistory);
+            turns.AddRange(logicalCall.ContinuationTurns);
+            var legacy = new ModelRequest(systemPrompt, turns, NoNativeTools);
+            return new ModelContextRequest(systemPrompt, turns, [], [], NoNativeTools, legacy);
+        }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
             BuildPlanningRequest, delegation, calls, logicalCall, ct,
@@ -2617,7 +2657,7 @@ public sealed partial class AgentRunner(
         var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, planningTools);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
-        ModelRequest BuildReplanRequest(bool aggressive)
+        ModelContextRequest BuildReplanRequest(bool aggressive)
         {
             // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
             var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
@@ -2632,7 +2672,22 @@ public sealed partial class AgentRunner(
             };
             turns.AddRange(bounded.Turns.Skip(1));
             turns.AddRange(logicalCall.ContinuationTurns);
-            return new ModelRequest(systemPrompt, turns, NoNativeTools);
+            var legacy = new ModelRequest(systemPrompt, turns, NoNativeTools);
+            var protectedAfter = ReconciliationTurns(stepsSoFar);
+            var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
+            if (trigger?.ToolCall is not null)
+            {
+                AddToolCallTurns(protectedAfter, trigger.ToolCall, trigger.UnexecutedToolCalls,
+                    WrapToolOutput(trigger.Observation ?? string.Empty));
+            }
+            protectedAfter.AddRange(logicalCall.ContinuationTurns);
+            return new ModelContextRequest(
+                systemPrompt,
+                [ChatTurn.FromUser(goal)],
+                RebuildHistoricalTurns(stepsSoFar, triggeringStepIndex),
+                [ChatTurn.FromAssistantText(DescribePlan(previousPlan)), .. protectedAfter],
+                NoNativeTools,
+                legacy);
         }
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
@@ -2682,7 +2737,7 @@ public sealed partial class AgentRunner(
         DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         ModelResponse initialResponse,
         long tokensBefore,
         int initialTokens,
@@ -2789,7 +2844,7 @@ public sealed partial class AgentRunner(
     /// returned to the caller, which owns its own bounded corrective re-ask; it is never retried here.
     /// </param>
     private async Task<ModelResponse> CallModelAsync(
-        Guid taskId, int stepIndex, ActorIdentity actor, ModelRequest request, DelegatedExecutionScope? delegation,
+        Guid taskId, int stepIndex, ActorIdentity actor, ModelContextRequest request, DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls, CancellationToken ct, Func<ModelResponse, string?>? malformedOutput = null)
     {
         var context = new ModelInvocationContext(taskId, stepIndex, actor, calls)
@@ -2811,7 +2866,7 @@ public sealed partial class AgentRunner(
         Guid taskId,
         int stepIndex,
         ActorIdentity actor,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         DelegatedExecutionScope? delegation,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
@@ -2838,7 +2893,7 @@ public sealed partial class AgentRunner(
     private async Task<(ModelResponse Response, TaskState? Terminal)> ResolveStepEvidenceReadsAsync(
         ExecutionRun run,
         int stepIndex,
-        Func<bool, ModelRequest> requestFactory,
+        Func<bool, ModelContextRequest> requestFactory,
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
         ModelResponse initialResponse,
@@ -3033,13 +3088,12 @@ public sealed partial class AgentRunner(
     /// call. The turns it adds exist only in this request, so the persisted history stays what a resume rebuilds.
     /// </summary>
     private async Task<(string? Text, EvidenceDisclosureOutcome Outcome)> ReAskForDisclosureAsync(
-        ExecutionRun run, ModelRequest request, List<ChatTurn> history, string originalAnswer, int stepIndex,
+        ExecutionRun run, ModelContextRequest request, string originalAnswer, int stepIndex,
         List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
-        var reAsk = request with
-        {
-            History = [.. history, ChatTurn.FromAssistantText(originalAnswer), ChatTurn.FromUser(EvidenceDisclosure.Instruction)],
-        };
+        var reAsk = request.AppendProtected(
+            ChatTurn.FromAssistantText(originalAnswer),
+            ChatTurn.FromUser(EvidenceDisclosure.Instruction));
 
         ModelResponse reply;
         try
@@ -3087,16 +3141,15 @@ public sealed partial class AgentRunner(
     /// replaces it or the attempt fails. A genuine cancellation propagates as for every model call.
     /// </summary>
     private async Task<GroundingGuardResult> GuardGroundingAsync(
-        ExecutionRun run, ModelRequest request, List<ChatTurn> history, string candidate, EvidenceGrounding grounding,
+        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding grounding,
         int stepIndex, List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
         GroundingVerdict verdict;
         try
         {
-            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
-            {
-                History = [.. history, ChatTurn.FromAssistantText(candidate), ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)],
-            }, run.Delegation, stepCalls, ct);
+            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                ChatTurn.FromAssistantText(candidate),
+                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)), run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(check);
             verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
         }
@@ -3117,14 +3170,10 @@ public sealed partial class AgentRunner(
         ModelResponse correction;
         try
         {
-            correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request with
-            {
-                History =
-                [
-                    .. history, ChatTurn.FromAssistantText(candidate),
-                    ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions)),
-                ],
-            }, run.Delegation, stepCalls, ct);
+            correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                ChatTurn.FromAssistantText(candidate),
+                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions))),
+                run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(correction);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Api;
 using bOps.Audit;
 using bOps.Memory;
@@ -169,7 +170,9 @@ builder.Services.AddSingleton(sp =>
     var audit = sp.GetRequiredService<IAuditSink>();
     var time = sp.GetRequiredService<TimeProvider>();
     var logger = sp.GetRequiredService<ILogger<AgentRunner>>();
-    var broker = new ModelInvocationBroker(executionModel, audit, time, logger, runnerOptions);
+    var broker = new ModelInvocationBroker(
+        executionModel, audit, time, logger, runnerOptions,
+        contextProjector: new MafContextProjector(runnerOptions, logger));
     return new AgentRunner(
         executionModel,
         sp.GetRequiredService<IToolRegistry>(),

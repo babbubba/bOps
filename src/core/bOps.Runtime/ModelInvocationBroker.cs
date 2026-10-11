@@ -73,6 +73,20 @@ public interface IModelInvocationBroker
         ModelRequest request,
         ModelInvocationContext context,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Executes a candidate-specific context request. Implementations without a projector retain
+    /// the explicitly supplied conservative legacy request.
+    /// </summary>
+    Task<ModelResponse> InvokeAsync(
+        ModelContextRequest request,
+        ModelInvocationContext context,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        return InvokeAsync(request.LegacySafeRequest, context, ct);
+    }
 }
 
 /// <summary>Runtime implementation of the governed model-invocation boundary (ADR-0039, ADR-0045, ADR-0052).</summary>
@@ -87,6 +101,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     private readonly AgentRunnerOptions options;
     private readonly PinnedProviderConfiguration? pinnedProviderConfiguration;
     private readonly Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration;
+    private readonly IModelContextProjector? contextProjector;
 
     /// <summary>Creates one execution-scoped governed broker over the execution-scoped bOps model.</summary>
     public ModelInvocationBroker(
@@ -96,7 +111,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         ILogger logger,
         AgentRunnerOptions options,
         PinnedProviderConfiguration? pinnedProviderConfiguration = null,
-        Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null)
+        Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
+        IModelContextProjector? contextProjector = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(audit);
@@ -112,6 +128,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         this.options = options;
         this.pinnedProviderConfiguration = pinnedProviderConfiguration;
         this.persistPinnedProviderConfiguration = persistPinnedProviderConfiguration;
+        this.contextProjector = contextProjector;
     }
 
     /// <inheritdoc />
@@ -131,6 +148,36 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        return await InvokeCoreAsync(request, context, projection: null, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<ModelResponse> InvokeAsync(
+        ModelContextRequest request,
+        ModelInvocationContext context,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        if (contextProjector is null)
+        {
+            return await InvokeCoreAsync(request.LegacySafeRequest, context, projection: null, ct);
+        }
+
+        return await InvokeCoreAsync(
+            request.LegacySafeRequest,
+            context,
+            (descriptor, token) => contextProjector.ProjectAsync(request, descriptor, token),
+            ct);
+    }
+
+    private async Task<ModelResponse> InvokeCoreAsync(
+        ModelRequest request,
+        ModelInvocationContext context,
+        Func<ChatModelDescriptor, CancellationToken, Task<ModelContextProjectionResult>>? projection,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
 
         var callStartedAt = timeProvider.GetTimestamp();
         var modelAttempt = 0;
@@ -149,14 +196,19 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             var startedAtUtc = timeProvider.GetUtcNow();
             var startedAt = timeProvider.GetTimestamp();
             var descriptor = model.Descriptor;
+            var projected = projection is null ? null : await projection(descriptor, ct);
+            var attemptRequest = projected?.Request ?? request;
             var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
                 ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
+            using var contextActivity = BOpsTelemetry.ActivitySource.StartActivity("bops.model_context");
+            TagProjection(contextActivity, descriptor, projected?.Stats);
+            RecordProjectionMetrics(descriptor, projected?.Stats);
             AttemptFailure? failure = null;
             ModelResponse? response = null;
             var executionBudgetInterrupted = false;
             try
             {
-                response = await AttemptModelCallAsync(request, attemptTimeout, context.ExecutionBudgetToken, ct);
+                response = await AttemptModelCallAsync(attemptRequest, attemptTimeout, context.ExecutionBudgetToken, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -199,6 +251,17 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
 
             if (response is not null)
             {
+                if (projected?.Stats is { } stats && response.Usage is { } projectionUsage)
+                {
+                    var estimated = stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensAfter;
+                    var delta = projectionUsage.PromptTokens - estimated;
+                    contextActivity?.SetTag("bops.context.actual_prompt_tokens", projectionUsage.PromptTokens);
+                    contextActivity?.SetTag("bops.context.estimate_delta", delta);
+                    BOpsTelemetry.ContextEstimateDelta.Record(delta,
+                        new KeyValuePair<string, object?>("provider", descriptor.ProviderId),
+                        new KeyValuePair<string, object?>("model", descriptor.ModelId));
+                }
+
                 var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
                 context.AccountTokens?.Invoke(UsageTokens(response));
 
@@ -327,6 +390,52 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 throw new AttemptDurationBudgetExceededException();
             }
         }
+    }
+
+    private static void TagProjection(
+        System.Diagnostics.Activity? activity,
+        ChatModelDescriptor descriptor,
+        ModelContextProjectionStats? stats)
+    {
+        if (activity is null || stats is null)
+        {
+            return;
+        }
+
+        activity.SetTag("bops.model.provider", descriptor.ProviderId);
+        activity.SetTag("bops.model.id", descriptor.ModelId);
+        activity.SetTag("bops.context.profile_source", stats.ProfileSource);
+        activity.SetTag("bops.context.max_tokens", stats.MaxContextTokens);
+        activity.SetTag("bops.context.reserved_output_tokens", stats.ReservedOutputTokens);
+        activity.SetTag("bops.context.input_budget_tokens", stats.InputBudgetTokens);
+        activity.SetTag("bops.context.fixed_tokens", stats.EstimatedFixedTokens);
+        activity.SetTag("bops.context.protected_tokens", stats.EstimatedProtectedTokens);
+        activity.SetTag("bops.context.tool_schema_tokens", stats.EstimatedToolTokens);
+        activity.SetTag("bops.context.history_tokens_before", stats.EstimatedHistoryTokensBefore);
+        activity.SetTag("bops.context.history_tokens_after", stats.EstimatedHistoryTokensAfter);
+        activity.SetTag("bops.context.history_messages_before", stats.HistoricalMessagesBefore);
+        activity.SetTag("bops.context.history_messages_after", stats.HistoricalMessagesAfter);
+        activity.SetTag("bops.context.history_characters_before", stats.HistoricalCharactersBefore);
+        activity.SetTag("bops.context.history_characters_after", stats.HistoricalCharactersAfter);
+        activity.SetTag("bops.context.strategies", stats.Strategies);
+        activity.SetTag("bops.context.compacted_tool_groups", stats.CompactedToolGroups);
+        activity.SetTag("bops.context.dropped_turns", stats.DroppedTurns);
+        activity.SetTag("bops.context.dropped_groups", stats.DroppedGroups);
+    }
+
+    private static void RecordProjectionMetrics(ChatModelDescriptor descriptor, ModelContextProjectionStats? stats)
+    {
+        if (stats is null)
+        {
+            return;
+        }
+
+        var provider = new KeyValuePair<string, object?>("provider", descriptor.ProviderId);
+        var model = new KeyValuePair<string, object?>("model", descriptor.ModelId);
+        BOpsTelemetry.ContextTokensBefore.Record(
+            stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensBefore, provider, model);
+        BOpsTelemetry.ContextTokensAfter.Record(
+            stats.EstimatedFixedTokens + stats.EstimatedHistoryTokensAfter, provider, model);
     }
 
     private async Task<ModelResponse> AttemptModelCallAsync(

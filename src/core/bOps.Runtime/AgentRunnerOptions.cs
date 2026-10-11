@@ -9,6 +9,9 @@ namespace bOps.Runtime;
 /// </summary>
 public sealed record AgentRunnerOptions
 {
+    /// <summary>Model context profiles and deterministic compaction guard-rails.</summary>
+    public ModelContextOptions Context { get; init; } = new();
+
     /// <summary>
     /// The per-execution-attempt step budget (ADR-0040 §5): an anti-infinite-loop guard-rail. Exhausting it ends the attempt
     /// as <c>MaxStepsReached</c>; a resume starts a fresh per-attempt budget, capped by <see cref="MaxLifetimeSteps"/>.
@@ -135,6 +138,9 @@ public sealed record AgentRunnerOptions
     /// <param name="providerRequestTimeout">The provider's effective transport timeout, when the caller knows it.</param>
     public void Validate(TimeSpan? providerRequestTimeout = null)
     {
+        ArgumentNullException.ThrowIfNull(Context);
+        Context.Validate();
+
         if (MaxSteps < 1)
         {
             throw new InvalidOperationException("'Agent:MaxSteps' must be at least 1.");

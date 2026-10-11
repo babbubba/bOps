@@ -38,4 +38,16 @@ public static class BOpsTelemetry
     /// <summary>How many times a task's plan was revised — a step deviated from what the plan expected, or the model continued past every step the plan named (rule C8).</summary>
     public static Counter<long> ReplansTotal { get; } =
         Meter.CreateCounter<long>("bops.replans_total", description: "How many times a task's plan was revised.");
+
+    /// <summary>Estimated model input tokens before history compaction.</summary>
+    public static Histogram<long> ContextTokensBefore { get; } =
+        Meter.CreateHistogram<long>("bops.context.tokens_before", unit: "tokens");
+
+    /// <summary>Estimated model input tokens after history compaction.</summary>
+    public static Histogram<long> ContextTokensAfter { get; } =
+        Meter.CreateHistogram<long>("bops.context.tokens_after", unit: "tokens");
+
+    /// <summary>Difference between provider-reported and locally estimated input tokens.</summary>
+    public static Histogram<long> ContextEstimateDelta { get; } =
+        Meter.CreateHistogram<long>("bops.context.estimate_delta", unit: "tokens");
 }

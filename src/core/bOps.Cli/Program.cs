@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Audit;
 using bOps.Cli;
 using bOps.Memory;
@@ -306,7 +307,9 @@ var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? 
 var audit = host.Services.GetRequiredService<IAuditSink>();
 var time = host.Services.GetRequiredService<TimeProvider>();
 var logger = host.Services.GetRequiredService<ILogger<AgentRunner>>();
-var broker = new ModelInvocationBroker(model, audit, time, logger, runnerOptions);
+var broker = new ModelInvocationBroker(
+    model, audit, time, logger, runnerOptions,
+    contextProjector: new MafContextProjector(runnerOptions, logger));
 
 var runner = new AgentRunner(
     model,
