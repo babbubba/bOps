@@ -280,6 +280,25 @@ public sealed class EvidenceControlPlaneTests
     }
 
     [Fact]
+    public async Task R2_NormalStep_MaxFourServedReads_FifthNotServed_ExpectedToolStillOffered_TaskProceeds()
+    {
+        var model = new FakeChatModel(
+            TwoStepPlan(), Tool(Big), ReadAt(0), ReadAt(1), ReadAt(2), ReadAt(3), ReadAt(4), Tool(Next), Final());
+        var (runner, audit, next, _) = Build(model);
+
+        var result = await runner.RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Equal(1, next.ExecutionCount);
+        var codes = audit.Events.OfType<EvidenceReadAuditEvent>().Select(read => read.ResultCode).ToList();
+        Assert.Equal(4, codes.Count(code => code == EvidenceReadResultCode.Success));
+        Assert.Equal(EvidenceReadResultCode.LimitExceeded, codes[^1]);
+        Assert.Equal([Next], Offered(model.Requests[6]));
+        Assert.DoesNotContain("\"runtime\":\"EvidenceRead/v1\"", model.Requests[6].SystemPrompt, StringComparison.Ordinal);
+        Assert.Contains(EvidenceRead.ExhaustedFeedback, model.Requests[6].SystemPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AF04_AfterExhaustion_FinalAnswerCompletesTheTask()
     {
         var model = new FakeChatModel(

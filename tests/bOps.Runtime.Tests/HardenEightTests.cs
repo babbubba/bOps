@@ -293,6 +293,69 @@ public sealed class HardenEightTests
             audit.Events.OfType<EvidenceReadAuditEvent>().Select(item => item.ResultCode));
     }
 
+    private const string EvidenceReadJsonShape = "\"runtime\":\"EvidenceRead/v1\"";
+
+    // Requests: 0 plan, 1-2 steps, 3 first replan call, 4..6 after reads 1..3, 7 after the fourth read (exhausted).
+    [Fact]
+    public async Task R2_ReplanAfterFourServedReads_NoLongerOffersEvidenceRead_AndCompletes()
+    {
+        var taskId = Guid.Parse("66778899-1234-1234-1234-123456789abc");
+        var directive = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(stepCount: 1),
+            Call("test.read", "c0"),
+            Call("test.read", "c1"),
+            directive, directive, directive, directive,
+            PlanningTestSupport.PlanResponse(revision: 1),
+            Final());
+        var audit = new RecordingAuditSink();
+
+        var state = await Runner(model, audit, tools: [new FakeReadTool(output: "abc")]).RunAsync("goal", Actor, taskId);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(2, state.Plans.Count);
+        Assert.Equal(Enumerable.Repeat(EvidenceReadResultCode.Success, 4),
+            audit.Events.OfType<EvidenceReadAuditEvent>().Select(item => item.ResultCode));
+        for (var index = 3; index <= 6; index++)
+        {
+            Assert.Contains(EvidenceReadJsonShape, model.Requests[index].SystemPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain(EvidenceRead.ExhaustedFeedback, model.Requests[index].SystemPrompt, StringComparison.Ordinal);
+        }
+
+        var exhausted = model.Requests[7].SystemPrompt;
+        Assert.Contains(EvidenceRead.ExhaustedFeedback, exhausted, StringComparison.Ordinal);
+        Assert.DoesNotContain(EvidenceReadJsonShape, exhausted, StringComparison.Ordinal);
+        Assert.DoesNotContain("EvidenceRead/v1", exhausted, StringComparison.Ordinal);
+        Assert.Contains("\"expectedTool\"", exhausted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task R2_ReplanModelThatInsistsOnEvidenceReadAfterExhaustion_StaysBoundedByControlRejections()
+    {
+        var taskId = Guid.Parse("77889900-1234-1234-1234-123456789abc");
+        var directive = new ModelResponse(ReadDirective(taskId, 0, "result", 0, 1), [], false, null);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(stepCount: 1),
+            Call("test.read", "c0"),
+            Call("test.read", "c1"),
+            directive, directive, directive, directive,
+            directive, directive, directive, directive, directive, directive);
+        var audit = new RecordingAuditSink();
+
+        var state = await Runner(model, audit, tools: [new FakeReadTool(output: "abc")]).RunAsync("goal", Actor, taskId);
+
+        Assert.Equal((AgentTaskStatus.Failed, TaskTerminalKind.RuntimeFailure), (state.Status, state.TerminalReason!.Kind));
+        var reads = audit.Events.OfType<EvidenceReadAuditEvent>().ToList();
+        Assert.Equal(4, reads.Count(read => read.ResultCode == EvidenceReadResultCode.Success));
+        Assert.Equal(EvidenceRead.MaxControlRejections + 1, reads.Count(read => read.ResultCode == EvidenceReadResultCode.LimitExceeded));
+        // Every request issued after exhaustion already carried the corrected prompt: the failure is the model's, not a stale instruction.
+        foreach (var request in model.Requests.Skip(7))
+        {
+            Assert.DoesNotContain("EvidenceRead/v1", request.SystemPrompt, StringComparison.Ordinal);
+            Assert.Contains(EvidenceRead.ExhaustedFeedback, request.SystemPrompt, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task ContextOverflow_RetriesOnceAtK0_AndNextLogicalCallRestoresConfiguredK()
     {

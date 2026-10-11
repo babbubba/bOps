@@ -239,7 +239,7 @@ The keys above are semantically stable once published; they are also in the XML 
 3. **No dedicated audit code for exhaustion.** `EvidenceReadResultCode.LimitExceeded` (existing) is reused so no public contract changes; its XML comment predates AF-04.
 4. **Legacy text directive** is still served in step turns whether or not the typed control is offered (pre-existing); after exhaustion it is answered with the same exhaustion rejection.
 5. **No WHEA or other "high-signal" class fact** for `system.crashes`, and no extra interpretation for stability categories: the DTOs do not classify them separately.
-6. `ReplanningInstructions` is static text; the replan learns about exhaustion from the runtime reply, not from the system prompt.
+6. Superseded by review fix R2: the replan system prompt is rebuilt per request from the logical call state; the EvidenceRead invitation is replaced by the same runtime exhaustion feedback once the read slots are spent, so the replan no longer invites a read it will refuse.
 
 ### AF-05 handoff
 

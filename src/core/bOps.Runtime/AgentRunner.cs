@@ -101,17 +101,21 @@ public sealed partial class AgentRunner(
         reality diverges from it. Use an empty "steps" array when no further tool execution is planned.
         """;
 
-    private const string ReplanningInstructions =
-        """
-        Your previous plan no longer matches what you have learned. Revise it.
+    private const string ReplanningLead = "Your previous plan no longer matches what you have learned. Revise it.";
 
+    /// <summary>The replan EvidenceRead invitation; offered only while the logical call still has read slots (ADR-0046, AF-04).</summary>
+    private const string ReplanEvidenceReadAvailable =
+        """
         Bounded history records name stable evidence ids and persisted result/observation lengths. To read up to
         4000 UTF-16 code units from one current-task source, reply with only this exact JSON object:
         {"runtime":"EvidenceRead/v1","evidenceId":"ev1:<task-guid>:<step-index>","source":"result|observation","offset":0,"length":4000}
         This is an internal runtime directive, not a URL or an operational tool call. Do not call web.fetch,
         web.search, or any other tool for it; return the object above as assistant text.
         The runtime will return a bounded continuation and ask for the revised plan again.
+        """;
 
+    private const string ReplanningPlanFormat =
+        """
         Respond with ONLY a single JSON object — no prose before or after it, no markdown code
         fence — in exactly the same shape as before:
 
@@ -129,6 +133,11 @@ public sealed partial class AgentRunner(
         Steps already completed do not need to be repeated. List only what remains; use an empty
         "steps" array when no further tool execution is planned.
         """;
+
+    /// <summary>The replan instructions for the current state of the logical call: the EvidenceRead invitation only while read slots remain, the runtime exhaustion feedback afterwards.</summary>
+    private static string ReplanningInstructions(bool evidenceReadExhausted) =>
+        ReplanningLead + "\n\n" + (evidenceReadExhausted ? EvidenceRead.ExhaustedFeedback : ReplanEvidenceReadAvailable)
+        + "\n\n" + ReplanningPlanFormat;
 
     private const string ProtocolArtifactRetryInstructions =
         "Your last reply was tool-call or control-protocol markup, not an answer. Either call one of the offered tools " +
@@ -2665,13 +2674,14 @@ public sealed partial class AgentRunner(
         long tokensBefore, CancellationToken ct)
     {
         var planningTools = ToolViewFor(delegation);
-        var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions, planningTools);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
         ModelContextRequest BuildReplanRequest(bool aggressive)
         {
             // The one ContextOverflow recovery also projects the goal and the current plan (ADR-0014 HARDEN-8 §4).
             var requestGoal = aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal;
+            // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
+            var systemPrompt = BuildPlanningSystemPrompt(ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools);
             var bounded = BoundedHistory.Build(taskId, requestGoal, stepsSoFar,
                 aggressive ? 0 : options.VerbatimHistorySteps, RegisteredToolName, triggeringStepIndex);
             logicalCall.HasCompactableHistory = bounded.HasCompactableVerbatimHistory;
