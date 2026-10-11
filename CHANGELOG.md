@@ -49,6 +49,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Changed
 
+- AF-05H (ADR-0042 amendment): the evidence disclosure no longer asks the model to restate its answer. Under listed
+  limitations an answer without the `Evidence limitations` heading gets a bounded runtime-authored section appended from the
+  typed digest; the answer itself is never changed and no model call or token is spent. `Agent:EvidenceDisclosureEnabled`
+  (default true) replaces `Agent:EvidenceDisclosureRetries`, which is still read as a deprecated alias (0 disables).
 - AF-05 (ADR-0052): the Microsoft Agent Framework context layer is now the only model-facing history path. The HARDEN-8
   `BoundedHistory` request, `Agent:VerbatimHistorySteps` (ignored if still present in a configuration) and the K=0 rebuild are removed. A
   provider/model with an exact `Agent:Context:Profiles` entry is projected against its budget; an unlisted pair (for example the router
@@ -66,6 +70,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- AF-05H (ADR-0046 amendment): a final answer given while the accepted plan still has unresolved planned steps no longer completes
+  the task. The paid call is kept on a bookkeeping step and the plan is re-evaluated by the normal governed replan; an empty
+  replan lets a new tool-free call give the final answer. The execution plan shows the replaced steps as superseded.
 - An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next
   turn offers the same single tool once more, for one correction. A second validation failure replans with zero native
   tools. The cursor and the spent correction are derived from persisted steps, so a resume can neither reset nor skip the

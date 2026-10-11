@@ -1,6 +1,17 @@
 # Handoff — V1.3 pre-release stabilization
 
-## Current handoff — 2026-10-11 (AF-05, local, not pushed)
+## Current handoff — 2026-10-11 (AF-05H, H2 + H4)
+
+- Operator scope decision: only the blockers H2 (a premature final replans, ADR-0046 amendment) and H4 (deterministic evidence disclosure,
+  ADR-0042 amendment) are on `fix/af-05h-live-regression-hardening` (base AF-05G `97507aa`). Packet:
+  `agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`; measurements: benchmark results §9.
+- H1 (context operating range) is isolated on `feat/af-05h-h1-context-operating-range` (one commit on `97507aa`) so it can be left out of a
+  merge while current behaviour is measured and MAF is evaluated as orchestrator. H3 and H5 are implemented only on
+  `backup/af-05h-h1-h5-full` and are not part of this phase.
+- `Agent:EvidenceDisclosureEnabled` replaces `Agent:EvidenceDisclosureRetries` (still read as a deprecated alias). Live runs NOT RUN.
+- Operator note: the local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts, `VerbatimHistorySteps`) is still not committed.
+
+## Previous handoff — 2026-10-11 (AF-05, local, not pushed)
 
 - AF-05 (MAF regression, tuning and legacy cleanup) is implemented locally on `feat/af-05-maf-regression-tuning-cleanup` (base `a723092`, the
   verified AF-04R branch). The MAF context layer is the only model-facing history path; `BoundedHistory`, `Agent:VerbatimHistorySteps` and the K=0
