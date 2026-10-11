@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
-| Status | **Planned** |
+| Status | **Implemented locally** (branch `feat/af-03-governed-summarization`) |
 | Depends on | AF-01 and AF-02 complete |
 | Blocks | AF-05 |
 | Effort | **medium** |
@@ -194,3 +194,102 @@ If live credentials/models are available, a live smoke is useful but not the cor
 - prompt-injection/authority tests pass;
 - no persisted evidence semantics changed;
 - full non-live regression passes.
+
+## Implementation evidence (2026-10-11)
+
+### MAF API actually used (Microsoft.Agents.AI 1.24.0)
+
+`Microsoft.Agents.AI.Compaction.SummarizationCompactionStrategy(IChatClient chatClient, CompactionTrigger trigger, int minimumPreservedGroups, string? summarizationPrompt, CompactionTrigger? target)`, composed in `PipelineCompactionStrategy` by `MafContextProjector` and driven through the same `CompactionProvider.CompactAsync` ad-hoc entry point as AF-02. Behaviour observed by probing the compiled package before implementation:
+
+- one `GetResponseAsync` call per compaction, carrying `[system prompt, every message older than the preserved groups]`;
+- the reply replaces the older groups with a single assistant message prefixed `[Summary]`;
+- a non-cancellation exception from the client is **swallowed by the strategy and the original groups are left untouched** (verified: output identical to input); an `OperationCanceledException` propagates;
+- an **empty** reply is accepted by MAF as a summary, so the governed client rejects empty/blank/tool-call/not-smaller replies itself by throwing (which MAF contains and restores).
+
+### Final pipeline
+
+`ToolResultCompactionStrategy → SummarizationCompactionStrategy (only when enabled and a summarizer access exists) → SlidingWindowCompactionStrategy → TruncationCompactionStrategy`. The AF-02 deterministic strategies are unchanged. Only the AF-02 historical/compactable slice enters MAF; system/security rules, goal, plan and step routing, correction state, EvidenceGrounding, EvidenceLimitations and reconciliation notices stay in the protected before/after history and are never summarized.
+
+### Classes added / modified
+
+- `bOps.Runtime`: `SummarizationOptions` (+ `AgentRunnerOptions.Summarization`, validated), `ModelSummarizationAccess`, `ModelSummarizationLedger`, `CachedSummary`, `ModelSummaryStats`; `ModelContextProjectionStats.Summary`; `IModelContextProjector.ProjectAsync(..., ModelSummarizationAccess? summarization, ct)`; `ModelInvocationBroker` (summarizer wiring, ledger, all-in accounting, summary telemetry, execution-budget re-check after projection); `ModelInvocationContext.ForSummarization()` (internal); new instruments in `BOpsTelemetry`.
+- `bOps.AgentFramework`: `GovernedSummarizationChatClient` (+ `MafSummarization`, `SummarizationAttemptState`, `SummarizationUnavailableException`), `MafContextProjector` (strategy insertion, summary stats).
+- Hosts: `ExecutionChatModelFactory.CreateSummarizer`, `ProviderConfigurationCoordinator.ResolveCandidate` (extracted from `BuildFallbacks`, same rules), `ExecutionRunnerFactory` and the CLI `Program.cs` (dedicated summarizer broker composition).
+- `bOps.Abstractions`, persistence, `EvidenceFact` and audit contracts: **unchanged**.
+
+### Configuration
+
+```json
+{
+  "Agent": {
+    "Summarization": {
+      "Enabled": true,
+      "Provider": "LlamaCpp",
+      "Model": "Qwen3-8B",
+      "TriggerRatio": 0.75,
+      "RecentGroupsToPreserve": 4
+    },
+    "Context": {
+      "Profiles": [
+        { "Provider": "LlamaCpp", "Model": "Qwen3-8B", "MaxContextTokens": 16384, "ReservedOutputTokens": 1024 }
+      ]
+    }
+  }
+}
+```
+
+- `Enabled` defaults to **false**. With it off no summary inference can occur.
+- `Provider` and `Model` are both omitted (default) or both set. Half-configurations, blank values, `TriggerRatio` outside (0, 1], `RecentGroupsToPreserve` outside 1–64, and a dedicated pair with no exact `Agent:Context:Profiles` entry having a known `MaxContextTokens` fail `AgentRunnerOptions.Validate`; nothing is clamped.
+- `TriggerRatio` (default 0.75) and `RecentGroupsToPreserve` (default 4) are **initial tuning defaults, to be verified in AF-05**.
+
+### Routing semantics
+
+- **Default** (no `Provider`/`Model`): the summarizer is a governed broker over the task's **current** candidate (`CurrentCandidateModel`). After a fallback advance it follows the advanced candidate; it never returns to the primary. It exposes no fallback control, so a summary failure can never advance the task's sticky chain. It is retried only under the normal broker retry/timeout rules.
+- **Dedicated**: a separate `ModelInvocationBroker` over exactly the configured provider/model (API: `ProviderConfigurationCoordinator.ResolveCandidate`, the same provider-profile rules and `ProviderCredentialResolver` as fallback candidates, credential resolved per invocation; CLI: the single `ModelProvider` provider with a different model only). It is independent of the task chain, has no fallback of its own and never routes elsewhere. If a host composes no broker for a configured dedicated pair, no summary is requested — the task model is never substituted.
+- No cost/speed/locality/availability-based selection exists.
+
+### Failure policy (fail-soft)
+
+Summary failure (model failure, empty/unusable reply, tool calls in the reply, reply not smaller than the input, summarizer profile unknown, input larger than the summarizer's own budget) leaves the original groups and continues with SlidingWindow/Truncation. It is never mapped to `RuntimeFailure` by itself. Task cancellation propagates; an exhausted execution budget ends the attempt. The outcome of a summary of the same destination+input is memoized for the logical call, so primary retries and fallback re-projections do not pay twice (a different candidate/summarizer is a different key).
+
+### Data egress
+
+A dedicated summarizer receives untrusted historical context (the compactable slice, never the protected context) and nothing else. This is explicit operator consent through `Provider`/`Model`. Input is a fixed runtime-authored prompt plus one delimited `<historical-context untrusted="true">` user message (historical text cannot close the delimiter); the summarizer request offers no tools and carries no credentials. A failed dedicated summarizer never causes the same context to be sent anywhere else.
+
+### Summary authority
+
+The reply is re-injected as an **assistant** turn wrapped with a runtime header/footer stating it is derived, untrusted and non-authoritative; it is never a system turn. The projection is ephemeral and the candidate history, `TaskState`, facts, completeness, verification, journal and policy are untouched.
+
+### Token accounting and telemetry
+
+- Each summary attempt is an ordinary audited `ModelCallRecord`/`ModelCallAuditEvent` appended to the same task call list (requested provider/model, usage, duration, failure, retry) and goes through the same `AccountTokens` hook (delegation meter).
+- The broker folds the summary prompt/completion tokens of the logical call into the `ModelResponse.Usage` the runtime accumulates, so summary tokens count toward `Agent:MaxTotalTokens`; the per-attempt records keep each call's true usage. Resume accounting already sums the call records.
+- Instruments: `bops.summary.events_total` (requested/applied/skipped/failed/discarded, dedicated), `bops.summary.input_estimated_tokens`, `bops.summary.tokens` (prompt/completion), `bops.summary.duration_ms`, `bops.task.call_tokens` (primary/summary/all_in) and `bops.model_summary` activity tags (provider, model, dedicated, outcome/reason, input/output estimate, groups before/after). `bops.model_context` carries the primary/summary/all-in token tags. Never summary text, history, tool output, arguments, credentials or evidence content.
+
+### Tests added
+
+- `bOps.AgentFramework.Tests/GovernedSummarizationTests`: option validation matrix; default routing through the broker with record/usage accounting; default failure fail-soft without advancing fallback and without repeating on retry; current-candidate follow after fallback; dedicated routing; dedicated failure never reaching the task provider; summarizer context-budget skip; empty and tool-call replies; cancellation propagation; no call when history fits or the feature is disabled; prompt-injection fixture; delimiter escape; telemetry without content.
+- `bOps.Runtime.Tests/SummaryAuthorityTests` (4): a hostile summary contradicting a persisted `EvidenceFact`, claiming completeness over a partial result, claiming a mutation succeeded over an ambiguous journal entry, and steering toward an unoffered tool — facts, limitations, journal and tool surface remain decided by their owners.
+- `bOps.Api.Tests/ProviderConfigurationCoordinatorTests` (+3): fresh per-invocation credential for the summarizer; missing credential is an Authentication failure with no borrowed key; unsupported or endpoint-less provider rejected.
+- `bOps.Architecture.Tests/AgentFrameworkBoundaryTests` (+1): the summarization client reaches a model only via `IModelInvocationBroker`; `SummarizationCompactionStrategy` appears only in `bOps.AgentFramework`.
+
+### Verification
+
+- `dotnet restore bOps.slnx --locked-mode`: passed.
+- `dotnet build bOps.slnx --configuration Release --no-restore`: **0 warnings, 0 errors**.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`: **34 test assemblies, 0 failures**. Representative totals: Runtime **2054**, API **504**, CLI **124**, Architecture **170**, AgentFramework **42** (all passed); existing platform-dependent tests remain skipped as before.
+- Regression coverage kept green in the same run: AF-01 broker, AF-02 mapping/profile/deterministic compaction, ADR-0042 grounding/limitations, ADR-0045 fallback, ADR-0046 tool routing, ADR-0047 correction, ADR-0050 conditional activation, ADR-0051 mutation/reconciliation, resume and provider-failure containment suites.
+- A locally running `bOps.Api.exe` (not started by this work) locked the Debug output directory, so verification used the Release configuration only; the process was left untouched.
+
+### Deviations and notes
+
+1. **No public call-purpose field.** Distinguishing summary attempts from reasoning in audit would need a new public property on `ModelCallRecord`/`ModelCallAuditEvent`; per this packet it was not added. Summary attempts are audited and recorded like every attempt; the purpose appears in telemetry (`bops.model_summary`, `bops.task.call_tokens`). With a dedicated summarizer the requested provider/model also distinguishes them.
+2. **Default is opt-in** (`Enabled=false`) because enabling LLM summarization changes cost and, with a dedicated pair, the data destination.
+3. **CLI dedicated scope**: the CLI hosts one provider, so `Agent:Summarization:Provider` must equal `ModelProvider:Provider` there (a different model is allowed).
+4. **A dedicated pair must have its own known profile** (validation error rather than a runtime guess). The runtime still handles an unknown summarizer profile fail-soft.
+5. **Value caveat for AF-05**: with the mandated order, AF-02 tool-result compaction replaces old results by runtime-authored status lines before summarization, so the summarizer mostly sees recent raw groups and those lines. AF-05 should measure whether summarizing before tool-result compaction, or keeping a bounded excerpt in the compacted line, gives a better all-in cost.
+
+### AF-04 / AF-05 handoff
+
+- AF-04 (EvidenceRead cleanup) is not started and was not needed for AF-03.
+- AF-05 should tune `TriggerRatio`, `RecentGroupsToPreserve` and the order/formatter caveat above on real tasks, judged on all-in tokens/latency (`bops.task.call_tokens`), and decide whether a call-purpose audit field is worth a deliberate contract change.

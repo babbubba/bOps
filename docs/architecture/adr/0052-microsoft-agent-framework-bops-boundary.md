@@ -617,3 +617,7 @@ The implementation keeps the boundary described by this ADR:
 - no summarization inference is enabled.
 
 The compiled MAF package exposes `CompactionProvider.CompactAsync` as the supported public ad-hoc surface; `CompactionMessageIndex.Create` is not public despite appearing in generated XML documentation. The isolated integration therefore uses `CompactAsync` and suppresses the MAF experimental diagnostic only in that project. Focused mapper/compaction/profile/fallback tests and the full non-live solution regression pass; the AF-02 task packet records the exact validation evidence and operator configuration shape.
+
+## 28. AF-03 implementation evidence (2026-10-11)
+
+AF-03 is implemented locally on `feat/af-03-governed-summarization`. The decision in this ADR is unchanged: MAF `SummarizationCompactionStrategy` runs only inside `bOps.AgentFramework`, every summary inference goes through a bOps `IModelInvocationBroker` (the task current candidate by default, or an explicitly configured provider/model that is an operator data-egress choice with no automatic fallback), summaries are derived non-authoritative context, and a summary failure is fail-soft. Configuration, routing, failure and accounting details are recorded in the AF-03 task packet.
