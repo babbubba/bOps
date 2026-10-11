@@ -205,8 +205,6 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 throw new AttemptDurationBudgetExceededException();
             }
 
-            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
-            var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var startedAtUtc = timeProvider.GetUtcNow();
             var startedAt = timeProvider.GetTimestamp();
             var descriptor = model.Descriptor;
@@ -220,6 +218,11 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 throw new AttemptDurationBudgetExceededException();
             }
 
+            // ModelCallBudget governs the whole logical call, projection (and any summary inference) included, so the
+            // attempt window is derived only now, from what projection left over.
+            var remaining = options.ModelCallBudget - timeProvider.GetElapsedTime(callStartedAt);
+            var budgetExhaustedBeforeAttempt = remaining < MinimumModelAttemptWindow;
+            var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var attemptRequest = projected?.Request ?? request;
             RecordSummaryTelemetry(projected?.Stats, summarizationAccess);
             var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
@@ -232,7 +235,17 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             var executionBudgetInterrupted = false;
             try
             {
-                response = await AttemptModelCallAsync(attemptRequest, attemptTimeout, context.ExecutionBudgetToken, ct);
+                if (budgetExhaustedBeforeAttempt)
+                {
+                    // The provider is not invoked: the window left is below the minimum usable attempt window.
+                    failure = new AttemptFailure(ModelFailureKind.Timeout,
+                        "The model-call budget was exhausted by context projection before the model attempt could start.",
+                        null, null, null);
+                }
+                else
+                {
+                    response = await AttemptModelCallAsync(attemptRequest, attemptTimeout, context.ExecutionBudgetToken, ct);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -333,8 +346,11 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             var failedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
             var (decision, delay) = executionBudgetInterrupted
                 ? (ModelRetryDecision.NotRetryable, (TimeSpan?)null)
-                : DecideModelRetry(failure, providerAttempt, callStartedAt);
-            if ((decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit)
+                : budgetExhaustedBeforeAttempt
+                    ? (ModelRetryDecision.BudgetExhausted, (TimeSpan?)null)
+                    : DecideModelRetry(failure, providerAttempt, callStartedAt);
+            if (!budgetExhaustedBeforeAttempt
+                && (decision is ModelRetryDecision.AttemptsExhausted or ModelRetryDecision.RetryAfterExceedsLimit)
                 && ModelFailureText.IsRetryable(failure.Kind)
                 && model is IFallbackChatModelControl fallback
                 && fallback.HasNextCandidate)

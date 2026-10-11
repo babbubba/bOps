@@ -3,6 +3,7 @@ using System.Text.Json;
 using bOps.Abstractions;
 using bOps.Runtime;
 using Microsoft.Extensions.Logging.Abstractions;
+using bOps.Runtime.Tests;
 
 namespace bOps.AgentFramework.Tests;
 
@@ -425,6 +426,107 @@ public sealed class GovernedSummarizationTests
         Assert.All(tags, tag => Assert.DoesNotContain("Ignore", tag.Value?.ToString() ?? string.Empty, StringComparison.Ordinal));
     }
 
+    // ---- logical-call budget across projection (R1) -------------------------------------------------------
+
+    private static readonly DateTimeOffset ClockStart = new(2026, 10, 11, 8, 0, 0, TimeSpan.Zero);
+
+    private static AgentRunnerOptions BudgetOptions() =>
+        Options(new SummarizationOptions { Enabled = true, RecentGroupsToPreserve = 1, TriggerRatio = 0.3 }, TaskProfile()) with
+        {
+            ModelCallBudget = TimeSpan.FromSeconds(300),
+            ModelCallAttemptTimeout = TimeSpan.FromSeconds(120),
+        };
+
+    [Fact]
+    public async Task SummaryThatConsumesTheBudget_LeavesNoWindowAndTheProviderIsNeverInvokedNorFallenBackTo()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var task = new FallbackScriptedModel(request =>
+        {
+            if (!IsSummary(request))
+            {
+                return Reply("must not be requested", 1, 1);
+            }
+
+            clock.Advance(TimeSpan.FromSeconds(299.5));
+            return Summary("short summary", 40, 10);
+        });
+        var calls = new List<ModelCallRecord>();
+        var tokens = new List<int>();
+        var broker = Broker(task, BudgetOptions(), clock: clock);
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => broker.InvokeAsync(BigRequest(), Context(calls, tokens)));
+
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+        Assert.DoesNotContain(task.Requests, request => !IsSummary(request));
+        Assert.Equal(0, task.Advances);
+        // The summary attempt stays recorded and its tokens stay accounted; the unattempted primary is recorded as a terminal budget failure.
+        Assert.Equal(ModelCallOutcome.Success, calls[0].Outcome);
+        Assert.Equal([50], tokens);
+        var terminal = Assert.Single(calls, call => call.Outcome == ModelCallOutcome.Failure);
+        Assert.Equal(ModelRetryDecision.BudgetExhausted, terminal.RetryDecision);
+        Assert.Equal(ModelFailureKind.Timeout, terminal.FailureKind);
+    }
+
+    [Fact]
+    public async Task PrimaryAttemptWindow_IsBoundedByWhatTheSummaryLeftOfTheLogicalBudget()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var primaryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var model = new ClockedModel(async (request, ct) =>
+        {
+            if (IsSummary(request))
+            {
+                clock.Advance(TimeSpan.FromSeconds(250));
+                return Summary("short summary", 40, 10);
+            }
+
+            primaryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Reply("unreachable", 1, 1);
+        });
+        var broker = Broker(model, BudgetOptions(), clock: clock);
+
+        var invocation = broker.InvokeAsync(BigRequest(), Context([], []));
+        await primaryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // 300 s budget - 250 s summary = 50 s left, below the 120 s attempt timeout.
+        clock.Advance(TimeSpan.FromSeconds(50) - TimeSpan.FromMilliseconds(1));
+        Assert.False(invocation.IsCompleted);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => invocation.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(ModelFailureKind.Timeout, failure.FailureKind);
+    }
+
+    [Fact]
+    public async Task ShortSummary_LeavesTheNormalAttemptWindowAndAccountsSummaryPlusPrimaryTokens()
+    {
+        var clock = new FakeTimeProvider(ClockStart);
+        var task = new FallbackScriptedModel(request =>
+        {
+            if (IsSummary(request))
+            {
+                clock.Advance(TimeSpan.FromSeconds(1));
+                return Summary("short summary", 40, 10);
+            }
+
+            return Reply("done", 100, 20);
+        });
+        var calls = new List<ModelCallRecord>();
+        var tokens = new List<int>();
+        var broker = Broker(task, BudgetOptions(), clock: clock);
+
+        var response = await broker.InvokeAsync(BigRequest(), Context(calls, tokens));
+
+        Assert.Equal("done", response.TextResponse);
+        Assert.Equal(0, task.Advances);
+        Assert.Equal([50, 120], tokens);
+        Assert.Equal(140, response.Usage!.PromptTokens);
+        Assert.Equal(30, response.Usage.CompletionTokens);
+        Assert.All(calls, call => Assert.Equal(ModelCallOutcome.Success, call.Outcome));
+    }
+
     // ---- harness ------------------------------------------------------------------------------------------
 
     private static bool IsSummary(ModelRequest request) =>
@@ -456,13 +558,15 @@ public sealed class GovernedSummarizationTests
             },
         };
 
-    private static ModelInvocationBroker Broker(IChatModel task, AgentRunnerOptions options, IChatModel? dedicated = null)
+    private static ModelInvocationBroker Broker(
+        IChatModel task, AgentRunnerOptions options, IChatModel? dedicated = null, TimeProvider? clock = null)
     {
+        clock ??= TimeProvider.System;
         var summarizer = dedicated is null
             ? null
-            : new ModelInvocationBroker(dedicated, new NullAuditSink(), TimeProvider.System, NullLogger.Instance, options);
+            : new ModelInvocationBroker(dedicated, new NullAuditSink(), clock, NullLogger.Instance, options);
         return new ModelInvocationBroker(
-            task, new NullAuditSink(), TimeProvider.System, NullLogger.Instance, options,
+            task, new NullAuditSink(), clock, NullLogger.Instance, options,
             contextProjector: new MafContextProjector(options, NullLogger.Instance), dedicatedSummarizer: summarizer);
     }
 
@@ -533,6 +637,13 @@ public sealed class GovernedSummarizationTests
             RequestModels.Add(Descriptor.ModelId);
             return Task.FromResult(handler(request));
         }
+    }
+
+    private sealed class ClockedModel(Func<ModelRequest, CancellationToken, Task<ModelResponse>> handler) : IChatModel
+    {
+        public ChatModelDescriptor Descriptor { get; } = new("Task", "big");
+
+        public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default) => handler(request, ct);
     }
 
     private sealed class NullAuditSink : IAuditSink

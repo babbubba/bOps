@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
   </ItemGroup>
