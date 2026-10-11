@@ -41,6 +41,56 @@ public sealed class AgentContextBudgetConfigurationTests
     }
 
     [Fact]
+    public void DocumentedProfileAndSummarizationConfiguration_BindsValidatesAndResolvesOnlyTheExactPair()
+    {
+        // The shape documented in docs/operator-configuration.md section 13 (environment form: Agent__Context__Profiles__0__Provider ...).
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Agent:Context:Profiles:0:Provider"] = "LlamaCpp",
+                ["Agent:Context:Profiles:0:Model"] = "local-model",
+                ["Agent:Context:Profiles:0:MaxContextTokens"] = "32768",
+                ["Agent:Context:Profiles:0:ReservedOutputTokens"] = "4096",
+                ["Agent:Context:Profiles:1:Provider"] = "OpenRouter",
+                ["Agent:Context:Profiles:1:Model"] = "openrouter/free",
+                ["Agent:Context:Profiles:1:MaxContextTokens"] = "16384",
+                ["Agent:Context:Profiles:1:ReservedOutputTokens"] = "2048",
+                ["Agent:Summarization:Enabled"] = "true",
+                ["Agent:Summarization:Provider"] = "LlamaCpp",
+                ["Agent:Summarization:Model"] = "local-model",
+            })
+            .Build();
+
+        var options = Bind(configuration);
+        options.Validate();
+
+        Assert.Equal(2, options.Context.Profiles.Count);
+        Assert.Equal(32768, options.Context.Resolve(new bOps.Abstractions.ChatModelDescriptor("LlamaCpp", "local-model"))!.MaxContextTokens);
+        Assert.Equal(16384, options.Context.Resolve(new bOps.Abstractions.ChatModelDescriptor("OpenRouter", "openrouter/free"))!.MaxContextTokens);
+        // Exact matching: nothing is inferred from a family, a neighbouring model or a different case.
+        Assert.Null(options.Context.Resolve(new bOps.Abstractions.ChatModelDescriptor("LlamaCpp", "local-model-2")));
+        Assert.Null(options.Context.Resolve(new bOps.Abstractions.ChatModelDescriptor("llamacpp", "local-model")));
+        Assert.Null(options.Context.Resolve(new bOps.Abstractions.ChatModelDescriptor("OpenRouter", "anthropic/claude-x")));
+        Assert.True(options.Summarization.IsDedicated);
+    }
+
+    [Fact]
+    public void AProfileWithoutACapacity_FailsValidationInsteadOfSelectingAnyLegacyBehaviour()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Agent:Context:Profiles:0:Provider"] = "OpenRouter",
+                ["Agent:Context:Profiles:0:Model"] = "openrouter/free",
+            })
+            .Build();
+
+        Assert.Throws<InvalidOperationException>(() => Bind(configuration).Validate());
+    }
+
+    [Fact]
     public void ARemovedHistoryOptionInAnExistingConfiguration_IsIgnoredNotRejected()
     {
         var configuration = new ConfigurationBuilder()
