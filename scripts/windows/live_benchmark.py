@@ -26,7 +26,7 @@ SCENARIOS = [
 ]
 ANCHORS = ["97507aa7a914cdabdfafbd42e382c0f1dfd399da", "07e422a4c9c65bd617cafaf209d2352657f1c130"]
 RUNTIME_PATHS = ["src/core/bOps.Api", "src/core/bOps.AgentFramework", "src/core/bOps.Runtime", "src/core/bOps.Memory", "src/core/bOps.Audit", "src/packages"]
-README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results and audit records from this PC. It may disclose usernames, host names, IP addresses, system events, logs, or secrets recorded by the runtime. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize content and does not upload it.\n"""
+README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results, audit records and the API startup diagnostic log from this PC. The diagnostic log preserves the API process stdout/stderr and may disclose paths, configuration details, usernames, host names, IP addresses, system events, logs, or secrets recorded by the runtime. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize content and does not upload it.\n"""
 READ_ONLY_POLICY = "defaults:\n  read: automatic\n"
 TERMINAL = {"Completed", "MaxStepsReached", "BudgetExceeded", "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"}
 
@@ -81,6 +81,40 @@ def api_project_path(root: pathlib.Path):
 
 def api_command(project: pathlib.Path):
     return ["dotnet", "run", "--project", str(project), "--no-launch-profile"]
+
+
+class ApiStartupFailure(RuntimeError):
+    def __init__(self, exit_code, phase: str, log_path: pathlib.Path):
+        self.exit_code = exit_code
+        self.phase = phase
+        self.log_path = log_path
+        code_text = f"exit code {exit_code}" if exit_code is not None else "exit code unavailable"
+        super().__init__(f"API startup failed ({code_text}; phase {phase}); log: {log_path}")
+
+
+def start_api_process(command, cwd: pathlib.Path, env: dict, log_path: pathlib.Path):
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    stream = log_path.open("wb")
+    try:
+        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=stream, stderr=subprocess.STDOUT)
+    except BaseException:
+        stream.close()
+        raise
+    return process, stream
+
+
+def check_api_startup(process, log_path: pathlib.Path):
+    exit_code = process.poll()
+    if exit_code is not None:
+        raise ApiStartupFailure(exit_code, "API process startup", log_path)
+
+
+def include_startup_diagnostic(log_path: pathlib.Path, capture_root: pathlib.Path):
+    destination = capture_root / "diagnostics" / "api-startup.log"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if log_path.is_file():
+        shutil.copyfile(log_path, destination)
+    return destination
 
 
 def reserve_port() -> int:
@@ -270,6 +304,7 @@ def run(args):
         "tasks.db", "audit.jsonl", "sessions.db", "system-messages.db", "delegations.db", "filesystem-inventory.db")}
     readonly_policy_path = run_root / "read-only-policy.yaml"
     readonly_policy_path.write_text(READ_ONLY_POLICY, encoding="utf-8")
+    startup_log_path = output / "api-startup.log"
     port = reserve_port()
     env = os.environ.copy()
     env.update({
@@ -288,8 +323,8 @@ def run(args):
         config_files[config_path.name if config_path.parent == project.parent else "Properties/launchSettings.json"] = {
             "present": config_path.is_file(), "sha256": sha(config_path.read_bytes()) if config_path.is_file() else None,
         }
-    process = subprocess.Popen(api_command(project), cwd=root, env=env,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    process = None
+    startup_log = None
     api = f"http://127.0.0.1:{port}"
     startup = {"startedAtUtc": utc_now(), "targetRepoRoot": str(root), "gitCommit": commit, "runtimeReferenceCommit": anchor,
                "gitBranch": branch, "gitDirty": dirty, "gitDirtyPaths": [line[3:] for line in dirty_status.splitlines()],
@@ -297,7 +332,12 @@ def run(args):
                "originalPolicySha256": sha(original_policy_path.read_bytes()) if original_policy_path.is_file() else None,
                "effectivePolicyPath": str(readonly_policy_path), "effectivePolicySha256": sha(READ_ONLY_POLICY.encode("utf-8")),
                "apiBaseUrl": api, "apiProject": str(project), "configurationFileFingerprints": config_files, "hostMode": "API-only",
-               "environment": "Development", "isolatedOverrides": {"ASPNETCORE_URLS": api, **{k: str(v) for k,v in paths.items()}},
+               "apiWorkingDirectory": str(root), "launchProfileUsed": False,
+               "startupDiagnosticLog": str(startup_log_path),
+               "environment": "Development", "isolatedOverrides": {
+                   "ASPNETCORE_URLS": api, "Policy__FilePath": str(readonly_policy_path),
+                   **{k: str(v) for k,v in paths.items()},
+               },
         "originalConfigurationFilesUnchanged": True,
         "effectivePolicy": "BENCH-00 isolated policy: Read=Automatic; Low/Medium/High/Critical=Forbidden; no approval is automated",
         "harness": "BENCH-00 stdlib Python", "python": sys.version,
@@ -316,11 +356,12 @@ def run(args):
         })
     write_roster()
     status_doc = {"runId": run_id, "state": "starting", "tasks": []}
+    startup_failure = False
     try:
+        process, startup_log = start_api_process(api_command(project), root, env, startup_log_path)
         deadline = time.monotonic() + args.startup_timeout
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise RuntimeError(f"bOps.Api exited during startup (exit {process.returncode}); see output is intentionally not captured because it may contain secrets.")
+            check_api_startup(process, startup_log_path)
             try:
                 code, provider_raw, provider_info = http_json(api + "/api/providers", os.environ["BOPS_API_KEY"], timeout=3)
                 if code == 200:
@@ -336,7 +377,7 @@ def run(args):
                 pass
             time.sleep(1)
         else:
-            raise TimeoutError("Dedicated bOps.Api did not become ready in time.")
+            raise ApiStartupFailure(None, "API readiness timeout", startup_log_path)
         ordinal = 0
         for round_number in range(1, args.runs_per_scenario + 1):
             for scenario in SCENARIOS:
@@ -376,6 +417,10 @@ def run(args):
     except KeyboardInterrupt:
         status_doc["state"] = "interrupted"
         raise
+    except ApiStartupFailure as exc:
+        startup_failure = True
+        status_doc = {"runId": run_id, "state": "partial-error", "error": str(exc), "tasks": roster}
+        raise
     except Exception as exc:
         status_doc = {"runId": run_id, "state": "partial-error", "error": str(exc), "tasks": roster}
         raise
@@ -388,9 +433,7 @@ def run(args):
                 status_doc["unrosteredPersistedTaskIds"] = sorted(set(captured_ids) - roster_ids)
                 write_json(run_root / "capture-status.json", status_doc)
             except (sqlite3.Error, OSError): pass
-        package(run_root, archive_path, args.runs_per_scenario)
-        shutil.rmtree(run_root, ignore_errors=True)
-        if process.poll() is None:
+        if process is not None and process.poll() is None:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 try: process.wait(timeout=15)
@@ -399,7 +442,14 @@ def run(args):
                 process.terminate()
                 try: process.wait(timeout=15)
                 except subprocess.TimeoutExpired: process.kill(); process.wait()
-        print(f"Archive: {archive_path}", flush=True)
+        if startup_log is not None:
+            startup_log.flush()
+            startup_log.close()
+        include_startup_diagnostic(startup_log_path, run_root)
+        package(run_root, archive_path, args.runs_per_scenario)
+        shutil.rmtree(run_root, ignore_errors=True)
+        if not startup_failure:
+            print(f"Archive: {archive_path}", flush=True)
 
 
 def make_argument_parser():
@@ -420,6 +470,10 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
+    except ApiStartupFailure as error:
+        code_text = f"exit code {error.exit_code}" if error.exit_code is not None else "exit code unavailable"
+        print(f"BENCH-00 failed: {code_text}; phase: {error.phase}; log: {error.log_path}", file=sys.stderr)
+        sys.exit(1)
     except Exception as error:
         print(f"BENCH-00 failed: {error}", file=sys.stderr)
         sys.exit(1)

@@ -4,6 +4,7 @@ import os
 import pathlib
 import shutil
 import sqlite3
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -130,6 +131,36 @@ class CaptureTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     bench.package(capture, archive)
             self.assertEqual(b"previous complete archive", archive.read_bytes())
+
+    def test_api_exit_one_preserves_complete_startup_output_in_local_log_and_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            log_path = root / "api-startup.log"
+            stdout = b"dotnet stdout before failure\n"
+            stderr_prefix = "Unhandled exception: "
+            stderr_suffix = "full diagnostic detail " * 12000 + "\n"
+            stderr = (stderr_prefix + stderr_suffix).encode("utf-8")
+            original = stdout + stderr
+            code = ("import sys; sys.stdout.buffer.write(" + repr(stdout) + "); sys.stdout.flush(); "
+                    + "sys.stderr.buffer.write((" + repr(stderr_prefix) + " + " + repr("full diagnostic detail ")
+                    + " * 12000 + " + repr("\n") + ").encode()); sys.stderr.flush(); sys.exit(1)")
+            process, stream = bench.start_api_process([sys.executable, "-c", code], root, os.environ.copy(), log_path)
+            self.assertEqual(1, process.wait(timeout=15))
+            stream.close()
+
+            with self.assertRaises(bench.ApiStartupFailure) as caught:
+                bench.check_api_startup(process, log_path)
+            self.assertEqual(1, caught.exception.exit_code)
+            self.assertEqual(log_path, caught.exception.log_path)
+            self.assertEqual(original, log_path.read_bytes())
+
+            capture_root = root / "capture"
+            archived_log = bench.include_startup_diagnostic(log_path, capture_root)
+            archive = root / "forensic.zip"
+            bench.package(capture_root, archive)
+            with zipfile.ZipFile(archive) as zf:
+                self.assertEqual(original, zf.read("diagnostics/api-startup.log"))
+                self.assertEqual(original, archived_log.read_bytes())
 
     def test_retry_keeps_idempotency_key_and_payload(self):
         calls = []
