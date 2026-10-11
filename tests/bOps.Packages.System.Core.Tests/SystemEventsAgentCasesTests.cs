@@ -140,12 +140,16 @@ public sealed class SystemEventsAgentCasesTests
 
     private static ModelResponse Answers(string text) => new(text, [], true, null);
 
+    /// <summary>The replan a premature final triggers (AF-05H) when the model gives up on its planned step: nothing left to do.</summary>
+    private static ModelResponse EmptyPlan() =>
+        new(new JsonObject { ["rationale"] = "Nothing left to read.", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+
     private static async Task<(TaskState Task, ScriptedModel Model, RecordingAudit Audit)> RunAsync(
-        string goal, ModelResponse ask, SystemEventRecord[]? records = null)
+        string goal, ModelResponse ask, SystemEventRecord[]? records = null, ModelResponse[]? afterFirstAnswer = null)
     {
         var registry = new ToolRegistry(new Probe());
         registry.Register(new PackageId("test.package"), new LogTool(records ?? Log));
-        var model = new ScriptedModel(Plan(), ask, Answers("done"));
+        var model = new ScriptedModel([Plan(), ask, Answers("done"), .. afterFirstAnswer ?? []]);
         var audit = new RecordingAudit();
         var runner = new AgentRunner(
             model, registry, new ReadOnlyPolicy(), new NoApprovals(), audit, new MemoryStore(), TimeProvider.System,
@@ -283,7 +287,9 @@ public sealed class SystemEventsAgentCasesTests
     [Fact]
     public async Task ABadRequest_ComesBackAsAnObservationTheModelCanCorrect_NotACrash()
     {
-        var (task, _, _) = await RunAsync("Look back a year", Asks(j => j["windowMinutes"] = 525_600));
+        // The planned read never succeeded, so the model's answer is re-evaluated (AF-05H): the empty replan lets it complete.
+        var (task, _, _) = await RunAsync(
+            "Look back a year", Asks(j => j["windowMinutes"] = 525_600), afterFirstAnswer: [EmptyPlan(), Answers("done")]);
 
         var step = ToolStep(task);
         Assert.False(step.Result!.Succeeded);

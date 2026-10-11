@@ -75,11 +75,13 @@ public sealed class EvidenceDisclosureLoopTests
             Call(PartialTool, "c1"),
             Call(PartialTool, "c2"),
             PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 2, expectedTool: PartialTool),
+            Final(DisclosedAnswer), // AF-05H: revision 1 still has two unresolved steps, so this final is re-evaluated
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 2),
             Final(DisclosedAnswer));
 
         await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("diagnose", Actor);
 
-        Assert.Equal(5, model.Requests.Count);
+        Assert.Equal(7, model.Requests.Count);
         var replan = SystemPromptOf(model, 3);
         var step = SystemPromptOf(model, 4);
         Assert.DoesNotContain("BOPS_EVIDENCE_LIMITATIONS", replan, StringComparison.Ordinal);
@@ -166,7 +168,9 @@ public sealed class EvidenceDisclosureLoopTests
     public async Task AValidationFailureNeverCorrected_IsListed_AndTriggersTheReAsk()
     {
         var tool = new ResultTool("test.needs", Complete(), [new ToolParameter("must", ToolParameterType.String, "Required.")]);
-        var model = new FakeChatModel(Plan("test.needs"), Call("test.needs"), Final(OriginalAnswer), Final(DisclosedAnswer));
+        var model = new FakeChatModel(Plan("test.needs"), Call("test.needs"), Final(OriginalAnswer),
+            // AF-05H: the correction is still owed, so the first final is re-evaluated by a replan, which drops the step.
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), Final(OriginalAnswer), Final(DisclosedAnswer));
 
         var state = await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("diagnose", Actor);
 

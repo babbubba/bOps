@@ -2,6 +2,7 @@
 
 Status: **Accepted and implemented — 2026-10-07**
 Date: 2026-10-07
+Amended: 2026-10-11 by AF-05H — "a premature final replans" (end of this document)
 
 ## Context
 
@@ -171,3 +172,41 @@ The single-`ExpectedTool` visibility rule governs **operational** authority. Int
 
 - A control function is valid only when advertised in the model-call control view for that turn (the same request that carries `AvailableTools`). A `runtime.evidence_read` call that was not offered is a control protocol error (`NotOffered`): nothing is read, no step is written, the planned cursor does not move and no PRE-2/ADR-0047 correction is spent. `runtime.*` names the runtime does not implement stay control protocol errors, never package tools or final prose.
 - Runtime control/tool protocol artifacts are not valid user-facing terminal responses. A candidate final response whose whole shape is a tool/control envelope (`<tool_call>` / `<function=` markup, or a serialized `{name, arguments}` call object) is not accepted; the model gets one bounded terminal correction, and if the artifact persists the task fails rather than completes. Prose that merely mentions a function name is unaffected. What happens when a disclosure re-ask fails is PRE-3B2, not decided here.
+
+## Amendment — a premature final replans (AF-05H, 2026-10-11)
+
+**Status: Accepted.** Live runs on a real 64k-window model completed two tasks whose accepted plan still had unresolved
+executable steps: one harmless step (LIVE-2) and five diagnostically relevant ones (LIVE-3, whose own answer said the cause could
+not be determined without further analysis). Both ended `Completed`, and the execution-plan projection then showed the unresolved
+suffix of the active revision as failed. Accepting any tool-free reply as completion was the cause.
+
+1. **Acceptance rule.** A final candidate (a reply with no tool call) is accepted directly only when the current plan revision has
+   no unresolved executable step: the persisted `PlannedStepPosition` fold, after `ConditionalSteps.Settle`, has its cursor at or
+   past the end of the plan. An empty or fully consumed plan, or one whose remaining steps were skipped deterministically by
+   ADR-0050 conditions, therefore completes as before.
+2. **Otherwise the runtime replans.** The reply is not completion. The paid call is recorded once on a runtime-authored, non-tool
+   **bookkeeping step** (`Premature final response; plan re-evaluation required`): it carries the call's `ModelCalls` (audited and
+   token-accounted like every call), a runtime-authored observation naming only the unresolved planned positions and their
+   catalog-validated tool names, no tool call, no result, no planned-step index. It is never evidence (not addressable, never a
+   limitation), never a final-response step, and it consumes no planned step; it counts as one step of the attempt like any other
+   paid step. The answer's text is not repeated to the replan.
+3. **The replan is the normal governed replan** of §4: zero native tools, through the broker, audited, token-counted, counted
+   against the attempt and lifetime replan budgets, transactional (a malformed reply after its one retry leaves the accepted plan in
+   force and fails the attempt). Its protected trigger turn is the bookkeeping observation plus the fixed directive: *the model
+   indicated the goal may already be achieved, but the accepted plan still has unresolved executable steps; re-evaluate; return an
+   empty `steps` array if no further operational work is needed, otherwise the revised remaining plan.*
+4. **Empty replan.** `{"steps":[]}` is an accepted revision. The next normal step call offers no operational tool, and the final
+   it produces — a new call in the context of the empty revision, never the earlier premature reply — completes the task.
+5. **Non-empty replan.** Execution continues with the new revision.
+6. **Resume.** The fold treats a bookkeeping step as `ReplanRequired` for every plan contract, so an attempt that ended after the
+   bookkeeping step and before the replan (for example at its step limit) replans first on resume, with the same runtime-authored
+   trigger turn; after an accepted replan the new revision starts at its first step.
+7. **Projection.** The unresolved suffix of a revision replaced by such a replan is `Superseded`, as for every accepted replan; an
+   empty active revision has no steps. While the replan is still owed, the unattempted step stays `Pending`, never `Failed`. No
+   new status is introduced.
+8. **Bounds.** No planned tool is ever executed without a model call, MAF decides nothing about completion, and the replan budget
+   bounds a model that keeps answering early.
+
+The step prompt now says that while planned steps remain unresolved the runtime re-evaluates the plan before it accepts a final
+answer. Tests: `EarlyFinalReplanTests`, `LiveRegressionTests` (AF-05H fixtures). Evidence:
+`agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`.

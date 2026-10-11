@@ -1013,6 +1013,50 @@ public sealed partial class AgentRunner(
                 return await FailAsync(run, DescribeEmptyResponse(stepCalls), (TaskTerminalKind.EmptyResponse, null), stepCalls, ct);
             }
 
+            if ((response.IsFinal || response.ToolCalls.Count == 0) && PrematureFinal.HasUnresolvedStep(plan, position))
+            {
+                // ADR-0046 early-final amendment (AF-05H): a final candidate is accepted only when the settled plan has no unresolved
+                // executable step. The paid call is kept on a non-tool bookkeeping step (no evidence, not a final step) and the plan is
+                // re-evaluated by the normal governed replan; nothing here completes the task or executes a planned tool.
+                steps.Add(new PlanStep(stepIndex, PrematureFinal.StepDescription, null, null,
+                    PrematureFinal.Observation(plan, position.Cursor), plan.Revision)
+                {
+                    ModelCalls = stepCalls,
+                    ExecutionAttempt = run.ExecutionAttempt,
+                });
+                run.CountStep();
+                stepActivity?.SetTag("bops.premature_final", "replan");
+                BOpsTelemetry.StepDurationMs.Record(stepStopwatch.Elapsed.TotalMilliseconds);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation(
+                        "Task {TaskId} step {StepIndex}: final answer proposed while plan revision {Revision} still had unresolved steps from {Cursor}; replanning",
+                        taskId, stepIndex, plan.Revision, position.Cursor);
+                }
+
+                if (await BudgetStopAsync(run, ct) is { } stoppedAtPrematureFinal)
+                {
+                    return stoppedAtPrematureFinal;
+                }
+
+                if (run.AttemptSteps >= stepCap)
+                {
+                    // No step left for this attempt: the replan is owed to the resume, which derives the same ReplanRequired position.
+                    break;
+                }
+
+                var (revisedPlan, replanTerminal) = await ReplanWithinBudgetAsync(run, plan, string.Empty, stepIndex, ct);
+                if (replanTerminal is not null)
+                {
+                    return replanTerminal;
+                }
+
+                plan = revisedPlan;
+                position = PlannedStepPosition.Start;
+                await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
+                continue;
+            }
+
             if (response.IsFinal || response.ToolCalls.Count == 0)
             {
                 // ADR-0042 §6: under listed limitations a final answer without the heading is restated once, never more, and
@@ -2655,6 +2699,11 @@ public sealed partial class AgentRunner(
             {
                 AddToolCallTurns(protectedAfter, trigger.ToolCall, trigger.UnexecutedToolCalls,
                     WrapToolOutput(trigger.Observation ?? string.Empty));
+            }
+            else if (trigger is not null && PrematureFinal.IsStep(trigger))
+            {
+                // AF-05H: runtime-authored from the persisted plan, identical live and on resume; the premature answer itself is not repeated.
+                protectedAfter.Add(ChatTurn.FromUser(PrematureFinal.ReplanTurn(trigger)));
             }
             protectedAfter.AddRange(logicalCall.ContinuationTurns);
             return new ModelContextRequest(
@@ -4522,8 +4571,9 @@ public sealed partial class AgentRunner(
             ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
-              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above, or report " +
-              "completion if the goal is already achieved.";
+              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above. If you judge the goal " +
+              "already achieved, answer without a tool call: while planned steps remain unresolved the runtime re-evaluates the " +
+              "plan before it accepts any final answer.";
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
         if (limitations is not null)

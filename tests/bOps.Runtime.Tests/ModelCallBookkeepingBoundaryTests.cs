@@ -51,7 +51,7 @@ public sealed class ModelCallBookkeepingBoundaryTests
     }
 
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan() =>
-        (_, _) => Task.FromResult(PlanningTestSupport.PlanResponse());
+        (_, _) => Task.FromResult(PlanningTestSupport.PlanResponse(stepCount: 0));
 
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Done() =>
         (_, _) => Task.FromResult(new ModelResponse("Done.", [], true, null));

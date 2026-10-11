@@ -101,7 +101,7 @@ public sealed class HardenEightTests
     [Fact]
     public async Task EvidenceReadPrompt_SaysTheDirectiveIsNeitherAUrlNorAToolCall()
     {
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 0), Final());
 
         var state = await Runner(model, new RecordingAuditSink()).RunAsync("goal", Actor);
 
@@ -186,7 +186,7 @@ public sealed class HardenEightTests
         var claim = malformed
             ? "```json\n{\"runtime\":\"EvidenceRead/v1\"}\n```"
             : ReadDirective(taskId, 0, "result", 0, 1);
-        var model = new FakeChatModel(new ModelResponse(claim, [], false, null), PlanningTestSupport.PlanResponse(), Final());
+        var model = new FakeChatModel(new ModelResponse(claim, [], false, null), PlanningTestSupport.PlanResponse(stepCount: 0), Final());
         var audit = new RecordingAuditSink();
 
         var state = await Runner(model, audit).RunAsync("goal", Actor, taskId);
@@ -209,7 +209,7 @@ public sealed class HardenEightTests
             Call("test.read", "c0"),
             Call("test.read", "c1"),
             new ModelResponse(ReadDirective(taskId, 0, "result", 4_000, 100), [], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             Final());
         var audit = new RecordingAuditSink();
 
@@ -237,7 +237,7 @@ public sealed class HardenEightTests
             Call("test.read", "c0"),
             Call("test.read", "c1"),
             directive, directive, directive, directive, directive,
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             Final());
         var audit = new RecordingAuditSink();
 
@@ -263,7 +263,7 @@ public sealed class HardenEightTests
             Call("test.read", "c0"),
             Call("test.read", "c1"),
             directive, directive, directive, directive,
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             Final());
         var audit = new RecordingAuditSink();
 
@@ -490,7 +490,7 @@ public sealed class HardenEightTests
     public async Task OriginalFinalAnswerMayCrossTokenCap_AndStillCompletes()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(stepCount: 0),
             new ModelResponse("done", [], true, new ModelUsage(6, 0, null)));
         var state = await Runner(model, new RecordingAuditSink(), new AgentRunnerOptions { MaxTotalTokens = 5 })
             .RunAsync("goal", Actor);

@@ -124,7 +124,7 @@ public sealed class EvidenceAddressabilityTests
         var directive = new ModelResponse(
             $"{{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"{EvidenceRead.EvidenceId(taskId, 0)}\",\"source\":\"result\",\"offset\":{MarkerOffset},\"length\":21}}",
             [], false, null);
-        var model = new FakeChatModel(Plan(First), Call(First, "c0"), Call(First, "c1"), directive, Plan(First), Final("done"));
+        var model = new FakeChatModel(Plan(First), Call(First, "c0"), Call(First, "c1"), directive, Plan(), Final("done"));
         var (_, _, registry) = Tools();
         var audit = new RecordingAuditSink();
 

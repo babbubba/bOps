@@ -230,7 +230,7 @@ public sealed class HardenEightBlockerFixTests
         var stored = (await store.LoadAsync(TaskId))!;
         Assert.Equal(15, TaskResumePolicy.EffectiveAccounting(stored).TokensUsed);
         var resumeModel = new SequenceModel(
-            PlanningTestSupport.PlanResponse() with { Usage = new ModelUsage(1, 1, null) },
+            PlanningTestSupport.PlanResponse(stepCount: 0) with { Usage = new ModelUsage(1, 1, null) },
             new ModelResponse("done", [], true, new ModelUsage(1, 1, null)));
         var resumed = await Runner(resumeModel, new RecordingAuditSink(), DurationOptions(), store, clock).ResumeAsync(stored, Actor);
 
@@ -294,6 +294,8 @@ public sealed class HardenEightBlockerFixTests
             ContextOverflow(),
             PlanningTestSupport.IndexedCall("test.read", 1, "c1"),
             PlanningTestSupport.IndexedCall("test.read", 2, "c2"),
+            PlanningTestSupport.IndexedCall("test.read", 3, "c3"),
+            PlanningTestSupport.IndexedCall("test.read", 4, "c4"),
             Final());
 
         var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool(parameters: [PlanningTestSupport.CallIndexParameter])]).RunAsync(goal, Actor, TaskId);
@@ -333,6 +335,9 @@ public sealed class HardenEightBlockerFixTests
             Call("test.read", "c1"),
             ContextOverflow(),
             PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 5, revision: 1),
+            new ModelResponse("done\n\nEvidence limitations\n- the exhausted-plan proposal was not executed.", [], true, null),
+            // AF-05H: revision 1 still has five unresolved steps, so that final is re-evaluated; the replan drops them.
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 2),
             new ModelResponse("done\n\nEvidence limitations\n- the exhausted-plan proposal was not executed.", [], true, null));
 
         var state = await Runner(model, new RecordingAuditSink(), tools: [new FakeReadTool()]).RunAsync(goal, Actor, TaskId);
@@ -358,7 +363,8 @@ public sealed class HardenEightBlockerFixTests
 
         // The next logical call (a step) is back to the configured request.
         Assert.Equal(goal, model.Requests[5].History[0].Content);
-        Assert.Equal(6, model.Requests.Count);
+        // AF-05H: then the re-evaluation of that premature final (an empty replan) and the accepted final.
+        Assert.Equal(8, model.Requests.Count);
     }
 
     [Fact]

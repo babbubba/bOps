@@ -162,7 +162,8 @@ public sealed class TerminalProtocolArtifactTests
     public async Task T6_ProseMentioningTheControlFunction_StaysAFinalResponse()
     {
         const string prose = "I could not retrieve the additional evidence because runtime.evidence_read was unavailable.";
-        var model = new FakeChatModel(TwoStepPlan(), Text(prose));
+        // An empty plan: the prose is the first step call's reply, accepted because no planned step remains (AF-05H).
+        var model = new FakeChatModel(new ModelResponse("{\"rationale\":\"r\",\"steps\":[]}", [], false, null), Text(prose));
         var (runner, _, _, _) = Build(model);
 
         var result = await runner.RunAsync("diagnose", Actor);

@@ -81,6 +81,9 @@ public sealed class EvidenceControlPlaneTests
 
     private static ModelResponse Final() => new("done", [], true, null);
 
+    private static ModelResponse EmptyPlan() =>
+        new(new JsonObject { ["rationale"] = "nothing left", ["steps"] = new JsonArray() }.ToJsonString(), [], false, null);
+
     private static string[] Offered(ModelRequest request) => [.. request.AvailableTools.Select(tool => tool.Name)];
 
     private static bool HistoryMentions(ModelRequest request, string text) =>
@@ -302,13 +305,16 @@ public sealed class EvidenceControlPlaneTests
     public async Task AF04_AfterExhaustion_FinalAnswerCompletesTheTask()
     {
         var model = new FakeChatModel(
-            TwoStepPlan(), Tool(Big), ReadAt(0), ReadAt(1), ReadAt(2), ReadAt(3), ReadAt(4), Final());
+            TwoStepPlan(), Tool(Big), ReadAt(0), ReadAt(1), ReadAt(2), ReadAt(3), ReadAt(4), Final(),
+            // AF-05H: the second planned step is still unresolved, so that final is re-evaluated by a replan, which drops it.
+            EmptyPlan(), Final());
         var (runner, _, _, _) = Build(model);
 
         var result = await runner.RunAsync("diagnose", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal("done", result.Steps[^1].Observation);
+        Assert.True(PrematureFinal.IsStep(result.Steps[^2]));
     }
 
     [Fact]

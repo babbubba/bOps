@@ -64,8 +64,14 @@ internal readonly record struct PlannedStepPosition(
         return position;
     }
 
+    /// <summary>
+    /// The position after <paramref name="step"/>. A rejected premature final (AF-05H) consumes no planned step and requires the
+    /// replan that follows it, for every plan contract, so a resume interrupted before that replan replans first.
+    /// </summary>
     internal PlannedStepPosition After(AgentPlan plan, PlanStep step) =>
-        plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);
+        ReplanRequired ? this
+        : PrematureFinal.IsStep(step) ? this with { ReplanRequired = true }
+        : plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);
 
     private PlannedStepPosition AfterSemantic(PlanStep step)
     {

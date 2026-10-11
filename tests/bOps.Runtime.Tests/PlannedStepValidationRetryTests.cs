@@ -192,7 +192,7 @@ public sealed class PlannedStepValidationRetryTests
             .RunAsync("diagnose", Actor);
 
         var (resumeStore, persisted) = await PersistedAsync(store, interrupted.Id);
-        var model = new FakeChatModel(Valid(ToolB), Final());
+        var model = new FakeChatModel(Valid(ToolB), Valid(ToolC), Final());
 
         var result = await Runner(model, resumeStore, Tool(ToolA), Tool(ToolB), Tool(ToolC)).ResumeAsync(persisted, Resumer);
 

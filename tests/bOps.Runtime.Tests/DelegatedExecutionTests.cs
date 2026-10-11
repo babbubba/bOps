@@ -126,7 +126,7 @@ public sealed class DelegatedExecutionTests
         var other = new RecordingReadTool("sample.other", []);
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "sample.other"), Call("sample.other"),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [new FakeReadTool("sample.read"), other]);
 
         var result = await harness.Runner.RunDelegatedAsync("look around", Operator, scope);
@@ -166,7 +166,7 @@ public sealed class DelegatedExecutionTests
         var read = new RecordingReadTool("sample.read", []);
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Forbidden, "policy says no"), tools: [read]);
 
         var result = await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -211,7 +211,7 @@ public sealed class DelegatedExecutionTests
         var read = new RecordingReadTool("sample.read", []);
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "sample.read"), Call("sample.read"),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.read"), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [read]);
 
         var result = await harness.Runner.RunDelegatedAsync("look at the cpu", Operator, scope);
@@ -247,7 +247,7 @@ public sealed class DelegatedExecutionTests
         var action = new CountingActionTool("sample.action");
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "sample.action"), Call("sample.action"),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "sample.action"), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), Final());
         var harness = Create(model, new StubPolicyEngine(PolicyMode.Automatic), tools: [new FakeReadTool("sample.read"), action]);
 
         var result = await harness.Runner.RunDelegatedAsync("fix it", Operator, scope);
