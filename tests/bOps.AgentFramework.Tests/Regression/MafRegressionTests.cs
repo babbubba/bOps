@@ -215,4 +215,49 @@ public sealed class MafRegressionTests
             Assert.InRange(request.AvailableTools.Count, 1, 2);
         }
     }
+
+    // ---- AF-05G G2-T6: the quality gate for the path that serves an unprofiled model ----
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(10240)]
+    [InlineData(16384)]
+    public async Task G2T6_C508_EveryAuthoritativeSignal_IsVisibleOrGroundedOrExactlyAddressable(int? window)
+    {
+        var configuration = window is null
+            ? new RegressionConfiguration("unknown-profile", RegressionRunner.BaseOptions(null))
+            : Maf($"maf-{window}", window.Value);
+
+        var run = await RegressionRunner.RunAsync(RegressionScenarios.C508Equivalent(), configuration);
+
+        Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
+        Assert.Equal(4, run.EvidenceReadServed);
+        Assert.Equal(7, run.OperationalSteps);
+        var availability = EvidenceAvailability.Of(run);
+        Assert.Equal(run.Scenario.ExpectedFacts.Count, availability.Count);
+        Assert.All(availability, item => Assert.True(item.Available, $"{item.Label}: {item.Describe()}"));
+        Assert.All(run.Model.FinalLimitationVisibility, kv => Assert.True(kv.Value, $"expected limitation not visible: {kv.Key}"));
+        Assert.Contains("Evidence limitations", run.State.Steps[^1].Observation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task G2T6_C508_UnknownProfile_TheGroundingBlockCoversEveryDiagnosticStep_NotOnlyTheNewestDenseOne()
+    {
+        var run = await RegressionRunner.RunAsync(
+            RegressionScenarios.C508Equivalent(), new RegressionConfiguration("unknown-profile", RegressionRunner.BaseOptions(null)));
+
+        var prompt = run.Model.FinalRequest!.SystemPrompt;
+        var start = prompt.IndexOf(EvidenceGroundingLedger.OpenMarker, StringComparison.Ordinal);
+        var block = prompt[start..prompt.IndexOf(EvidenceGroundingLedger.CloseMarker, StringComparison.Ordinal)];
+        foreach (var tool in new[] { "system.stability", "system.crashes", "system.events" })
+        {
+            Assert.Contains($" {tool}: type ", block, StringComparison.Ordinal);
+        }
+
+        // The typed facts alone already carry the headline counts of the two earlier diagnostics, not just the events step's.
+        var grounded = EvidenceAvailability.Of(run).Where(item => item.Grounded).Select(item => item.Label).ToList();
+        Assert.Contains("kernelCrash=6", grounded);
+        Assert.Contains("crashes observed=126", grounded);
+        Assert.Contains("events groups", grounded);
+    }
 }

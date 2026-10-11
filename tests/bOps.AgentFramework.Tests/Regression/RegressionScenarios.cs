@@ -79,7 +79,7 @@ internal static class RegressionScenarios
                 new("crash groups", "type \"system.crashes.group-count\"", "\"groupCount\":31"),
                 new("minidump/dump references", "type \"system.crashes.dump-reference-count\"", "\"dumpReferences\":5"),
                 new("kernel dump path", "type \"system.crashes.kernel-dump-path\"", "newestKernelDump"),
-                new("events groups", "type \"system.events.matched-count\""),
+                new("events groups", "type \"system.events.matched-count\"", "\"groups\":56"),
             ],
             [
                 new("events partial/truncated", "system.events — completeness Partial"),

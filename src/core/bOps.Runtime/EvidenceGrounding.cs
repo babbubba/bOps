@@ -159,11 +159,21 @@ internal static class EvidenceGroundingLedger
             }
         }
 
-        // Deterministic salience: facts a conditional follow-up refers to, then the newest steps, facts in list order.
+        // Deterministic salience (ADR-0042 PRE-5 amendment §3, refined by AF-05G): facts a conditional follow-up refers to first, then
+        // a step-diverse round-robin over the rest, so one high-density recent step cannot take every remaining slot. Both phases
+        // use only the step index, the fact's list position and whether an activation refers to it; the opaque Type and Key are
+        // never read, and nothing is scored. A fact that cannot be shown within MaxEntryCharacters takes no slot.
+        var rendered = candidates
+            .Select(candidate => (candidate.Step, candidate.Position, candidate.Referenced,
+                Fact: Render(candidate.Step, candidate.Position, candidate.Fact)))
+            .Where(candidate => candidate.Fact is not null)
+            .ToList();
         var shown = new List<(int Step, int Position, GroundedFact Fact)>();
-        foreach (var candidate in candidates
-                     .OrderBy(candidate => candidate.Referenced ? 0 : 1)
-                     .ThenByDescending(candidate => candidate.Step.Index)
+
+        // Phase 1: the referenced facts, newest step first, facts in list order.
+        foreach (var candidate in rendered
+                     .Where(candidate => candidate.Referenced)
+                     .OrderByDescending(candidate => candidate.Step.Index)
                      .ThenBy(candidate => candidate.Position))
         {
             if (shown.Count == MaxShownFacts)
@@ -171,9 +181,27 @@ internal static class EvidenceGroundingLedger
                 break;
             }
 
-            if (Render(candidate.Step, candidate.Position, candidate.Fact) is { } grounded)
+            shown.Add((candidate.Step.Index, candidate.Position, candidate.Fact!));
+        }
+
+        // Phase 2: with the slots left, one fact per step per pass, steps newest to oldest, each step's facts in list order.
+        var queues = rendered
+            .Where(candidate => !candidate.Referenced)
+            .GroupBy(candidate => candidate.Step.Index)
+            .OrderByDescending(group => group.Key)
+            .Select(group => group.OrderBy(candidate => candidate.Position).ToList())
+            .ToList();
+        for (var pass = 0; shown.Count < MaxShownFacts && queues.Any(queue => queue.Count > pass); pass++)
+        {
+            foreach (var queue in queues.Where(queue => queue.Count > pass))
             {
-                shown.Add((candidate.Step.Index, candidate.Position, grounded));
+                if (shown.Count == MaxShownFacts)
+                {
+                    break;
+                }
+
+                var candidate = queue[pass];
+                shown.Add((candidate.Step.Index, candidate.Position, candidate.Fact!));
             }
         }
 
