@@ -63,7 +63,7 @@ public abstract class SystemDumpAnalyzeToolBase : IToolAuditSummaryProvider
             };
         }
 
-        return ToolCallResult.Success(output) with { Completeness = completeness };
+        return ToolCallResult.Success(output) with { Completeness = completeness, Facts = DumpAnalysisFacts.From(output) };
     }
 
     private static ToolResultCompleteness Completeness(string output)

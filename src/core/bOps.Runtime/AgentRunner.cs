@@ -3608,6 +3608,11 @@ public sealed partial class AgentRunner(
             };
         }
 
+        if (result.Facts.Count > 0)
+        {
+            BOpsTelemetry.EvidenceFactsEmittedTotal.Add(result.Facts.Count, new KeyValuePair<string, object?>("bops.tool", manifest.Name));
+        }
+
         toolActivity?.SetTag("bops.outcome", result.Outcome.ToString());
         BOpsTelemetry.ToolDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
             new KeyValuePair<string, object?>("bops.tool", manifest.Name),

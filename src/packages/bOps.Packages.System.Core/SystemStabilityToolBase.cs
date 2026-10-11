@@ -45,7 +45,8 @@ public abstract class SystemStabilityToolBase : IToolAuditSummaryProvider
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(query!, ct).ConfigureAwait(false);
-        return EvidenceCompleteness.Success(StabilityFormatting.Format(snapshot, query!));
+        var output = StabilityFormatting.Format(snapshot, query!);
+        return EvidenceCompleteness.Success(output) with { Facts = StabilityFacts.From(output, query!) };
     }
 
     /// <inheritdoc />
