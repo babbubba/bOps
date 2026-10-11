@@ -326,6 +326,7 @@ def run(args):
                     if code != 200:
                         raise RuntimeError(f"Task poll {task_id} failed HTTP {code}.")
                     last_status = payload
+                    (task_folder / "api-latest-original.json").write_bytes(raw_status)
                     state = str(payload.get("status", payload.get("Status", "")))
                     if state.lower() in {x.lower() for x in TERMINAL}:
                         terminal[task_id] = raw_status
