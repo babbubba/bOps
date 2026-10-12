@@ -2940,7 +2940,7 @@ public sealed partial class AgentRunner(
                 return null;
             }
 
-            problem = CompletedChecks.RepeatProblem(parsed, completedChecks);
+            problem = CompletedChecks.RepeatProblem(parsed, completedChecks, previousPlan);
             return problem is null ? parsed : null;
         }
 

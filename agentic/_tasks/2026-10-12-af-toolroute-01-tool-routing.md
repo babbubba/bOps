@@ -50,9 +50,10 @@ terminal `ReplanLimitReached`. The tool names below are the ones in the persiste
 3. **Completed plan**: a dedicated, non-contradictory routing instruction; the replan after a proposal from a completed plan gets
    a runtime-authored turn explaining why the call did not run.
 4. **Completed checks** (`CompletedChecks`, contract-level, persisted steps only): listed in every replan prompt (bounded, sensitive
-   values redacted); a replan step that provably repeats a completed successful complete read check (same tool, identical complete
-   `expectedArguments`) is a validation problem of the existing corrective re-ask. New tools, different arguments and empty plans
-   are accepted; mutations, failures, partial results and conditional steps never count. Insisting fails explicitly
+   values redacted); a replan that only replays the whole previous plan, or a step repeating a completed successful complete read
+   check (same tool, identical complete `expectedArguments`) that already ran twice, is a validation problem of the existing
+   corrective re-ask (R1: read-only checks reflect live state, so one fresh sample of a check, or of a subset of the plan, is
+   diagnosis and is accepted). New tools, different arguments and empty plans are accepted; mutations, failures, partial results and conditional steps never count. Insisting fails explicitly
    (`ModelFailure`/`MalformedResponse`, plan preserved). No suppression, merge or rewrite.
 
 `Completed` is never imposed: after a completed plan the model either answers (as before) or proposes a new check that goes
