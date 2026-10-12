@@ -33,9 +33,9 @@ public sealed class ContextGateTests
         var sent = harness.Broker.Request!;
         Assert.Equal(Instructions, sent.SystemPrompt);
         Assert.Equal(
-            [ContextOrigin.Runtime, ContextOrigin.Task, ContextOrigin.ToolResult],
-            sent.History.Where(turn => turn.Provenance is not null).Select(turn => turn.Provenance!.Origin));
-        Assert.Null(sent.History[2].Provenance); // replayed model output: no origin established, none invented
+            [ContextOrigin.Runtime, ContextOrigin.Task, ContextOrigin.Model, ContextOrigin.ToolResult],
+            sent.History.Select(turn => turn.Provenance!.Origin));
+        Assert.Equal(ContextOrigin.Model, sent.History[2].Provenance!.Origin); // replayed model output is attributed as such
         Assert.Empty(sent.AvailableTools);       // MAF declared no tools, so none is offered
     }
 
@@ -196,7 +196,7 @@ public sealed class ContextGateTests
         Assert.Contains("\"ContextGateRejection\":\"SystemElevation\"", json, StringComparison.Ordinal);
         Assert.Contains(
             "\"ContextProvenance\":[{\"Provenance\":{\"Origin\":\"Runtime\"},\"Turns\":1},"
-            + "{\"Provenance\":{\"Origin\":\"Task\"},\"Turns\":1},{\"Provenance\":{\"Origin\":\"ToolResult\"},\"Turns\":1},{\"Turns\":1}]",
+            + "{\"Provenance\":{\"Origin\":\"Task\"},\"Turns\":1},{\"Provenance\":{\"Origin\":\"ToolResult\"},\"Turns\":1},{\"Provenance\":{\"Origin\":\"Model\"},\"Turns\":1}]",
             json, StringComparison.Ordinal);
         Assert.Equal(json, JsonSerializer.Serialize<AuditEvent>(audit));
         var roundTrip = Assert.IsType<ModelCallAuditEvent>(JsonSerializer.Deserialize<AuditEvent>(json));

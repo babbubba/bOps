@@ -30,6 +30,12 @@ public enum ContextOrigin
 
     /// <summary>Output of a tool call. Always data, never instruction (agentic/03-security-rules.md, S5).</summary>
     ToolResult,
+
+    /// <summary>
+    /// The model's own text or requested tool calls, replayed as context. It is a proposal, never an instruction: the runtime
+    /// decides and executes. Ordered last, as the most data-like origin.
+    /// </summary>
+    Model,
 }
 
 /// <summary>
@@ -48,8 +54,19 @@ public sealed record ContextProvenance
     /// <summary>Provenance of tool output.</summary>
     public static ContextProvenance ToolResult { get; } = new() { Origin = ContextOrigin.ToolResult };
 
+    /// <summary>Provenance of the model's own output replayed as context.</summary>
+    public static ContextProvenance Model { get; } = new() { Origin = ContextOrigin.Model };
+
     /// <summary>Where the content comes from.</summary>
     public required ContextOrigin Origin { get; init; }
+
+    /// <summary>
+    /// <c>true</c> when the content was produced by compacting other turns (a placeholder or a summary) rather than authored by the
+    /// <see cref="Origin"/> itself. <see cref="Origin"/> is then the most data-like origin among the turns it may have been built
+    /// from, never a more trusted one. Omitted when <c>false</c>, so a non-derived turn serializes as before.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Derived { get; init; }
 
     /// <summary>The id the host assigned to the admitted provider instance that supplied the content, when applicable.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -93,6 +110,7 @@ public sealed record ContextProvenanceCount
             .GroupBy(turn => turn.Provenance)
             .OrderBy(group => group.Key is null ? 1 : 0)
             .ThenBy(group => group.Key?.Origin)
+            .ThenBy(group => group.Key?.Derived)
             .ThenBy(group => group.Key?.AdmittedProviderId, StringComparer.Ordinal)
             .ThenBy(group => group.Key?.PackId, StringComparer.Ordinal)
             .ThenBy(group => group.Key?.PackVersion, StringComparer.Ordinal)

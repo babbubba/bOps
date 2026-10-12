@@ -82,7 +82,7 @@ public sealed record ChatTurn
 
     /// <summary>
     /// Where this turn's content comes from (ADR-0054 G2-2), assigned by bOps code when the turn is admitted. <c>null</c>
-    /// means no origin was established — model output replayed as history, or a turn from before provenance existed — and is
+    /// means no origin was established — a turn from before provenance existed, or one built without a factory — and is
     /// never read as trusted; it is omitted from the serialized turn, so such a turn is byte-identical to an older one.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -99,12 +99,13 @@ public sealed record ChatTurn
     public static ChatTurn FromSystem(string content) =>
         new() { Role = ChatRole.System, Content = content, Provenance = ContextProvenance.Runtime };
 
-    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn carrying only text, with no tool calls.</summary>
-    public static ChatTurn FromAssistantText(string content) => new() { Role = ChatRole.Assistant, Content = content };
+    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn carrying only text, with no tool calls. It is the model's output.</summary>
+    public static ChatTurn FromAssistantText(string content) =>
+        new() { Role = ChatRole.Assistant, Content = content, Provenance = ContextProvenance.Model };
 
-    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn requesting one or more tool calls.</summary>
+    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn requesting one or more tool calls. It is the model's output.</summary>
     public static ChatTurn FromAssistantToolCalls(IReadOnlyList<ModelToolCall> toolCalls) =>
-        new() { Role = ChatRole.Assistant, ToolCalls = toolCalls };
+        new() { Role = ChatRole.Assistant, ToolCalls = toolCalls, Provenance = ContextProvenance.Model };
 
     /// <summary>Builds a <see cref="ChatRole.Tool"/> turn carrying the result of one call.</summary>
     public static ChatTurn FromToolResult(string toolCallId, string content) =>

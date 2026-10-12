@@ -50,8 +50,8 @@ public sealed class ContextProvenanceTests
             request.ProtectedBeforeHistory.Concat(historical).Concat(request.ProtectedAfterHistory).Select(Shape),
             projected.Request.History.Select(Shape));
         Assert.Equal(
-            [ContextOrigin.Task, ContextOrigin.ToolResult, ContextOrigin.ToolResult, ContextOrigin.Runtime],
-            projected.Request.History.Where(turn => turn.Provenance is not null).Select(turn => turn.Provenance!.Origin));
+            [ContextOrigin.Task, ContextOrigin.Model, ContextOrigin.ToolResult, ContextOrigin.Model, ContextOrigin.ToolResult, ContextOrigin.Runtime],
+            projected.Request.History.Select(turn => turn.Provenance!.Origin));
     }
 
     [Fact]
@@ -73,12 +73,30 @@ public sealed class ContextProvenanceTests
         var projected = await Projector(maxContextTokens: 300).ProjectAsync(request, Descriptor);
 
         Assert.Equal(1, projected.Stats.CompactedToolGroups);
-        // The compaction placeholder is built from tool output, so it is attributed as data (ToolResult), not as runtime text.
+        // The compaction placeholder is built from model output and tool output, so it is attributed as the most data-like of them
+        // and marked derived; it never takes the runtime's authority.
         Assert.Equal(
-            [ContextOrigin.Task, ContextOrigin.ToolResult, ContextOrigin.Runtime],
+            [ContextOrigin.Task, ContextOrigin.Model, ContextOrigin.Runtime],
             projected.Request.History.Select(turn => turn.Provenance?.Origin).OfType<ContextOrigin>());
         Assert.Equal(3, projected.Request.History.Count);
         Assert.All(projected.Request.History, turn => Assert.NotNull(turn.Provenance));
+        Assert.Equal([false, true, false], projected.Request.History.Select(turn => turn.Provenance!.Derived));
+    }
+
+    [Fact]
+    public async Task Compaction_OverAMixOfAttributedAndUnattributedHistory_DoesNotLaunderTheUnattributedOne()
+    {
+        var historical = new ChatTurn[]
+        {
+            ChatTurn.FromAssistantToolCalls([new ModelToolCall("c1", "safe.read", ToolArguments.Empty)]),
+            new() { Role = bOps.Abstractions.ChatRole.Tool, ToolCallId = "c1", Content = "old turn without provenance " + new string('x', 3000) },
+        };
+        var request = new ModelContextRequest("system", [ChatTurn.FromUser("goal", ContextProvenance.Task)], historical, [], []);
+
+        var projected = await Projector(maxContextTokens: 300).ProjectAsync(request, Descriptor);
+
+        Assert.Equal(1, projected.Stats.CompactedToolGroups);
+        Assert.Null(projected.Request.History[1].Provenance);
     }
 
     [Fact]
@@ -86,7 +104,7 @@ public sealed class ContextProvenanceTests
     {
         var legacy = new ChatTurn[]
         {
-            ChatTurn.FromAssistantToolCalls([new ModelToolCall("c1", "safe.read", ToolArguments.Empty)]),
+            new() { Role = bOps.Abstractions.ChatRole.Assistant, ToolCalls = [new ModelToolCall("c1", "safe.read", ToolArguments.Empty)] },
             new() { Role = bOps.Abstractions.ChatRole.Tool, ToolCallId = "c1", Content = "old turn without provenance" },
         };
         var request = new ModelContextRequest("system", [ChatTurn.FromUser("goal")], legacy, [], []);
@@ -137,10 +155,10 @@ public sealed class ContextProvenanceTests
 
         var withHistory = Assert.IsType<ModelCallAuditEvent>(audit.Events[0]);
         Assert.Equal(
-            [(ContextOrigin.Task, 1), (null, 1)],
+            [(ContextOrigin.Task, 1), (ContextOrigin.Model, 1)],
             withHistory.ContextProvenance!.Select(count => (count.Provenance?.Origin, count.Turns)));
         var json = JsonSerializer.Serialize<AuditEvent>(withHistory);
-        Assert.Contains("\"ContextProvenance\":[{\"Provenance\":{\"Origin\":\"Task\"},\"Turns\":1},{\"Turns\":1}]", json, StringComparison.Ordinal);
+        Assert.Contains("\"ContextProvenance\":[{\"Provenance\":{\"Origin\":\"Task\"},\"Turns\":1},{\"Provenance\":{\"Origin\":\"Model\"},\"Turns\":1}]", json, StringComparison.Ordinal);
         Assert.DoesNotContain("ContextGateRejection", json, StringComparison.Ordinal);
 
         var noHistory = Assert.IsType<ModelCallAuditEvent>(audit.Events[1]);

@@ -29,14 +29,14 @@ public sealed class ContextProvenanceRunnerTests
         var result = await runner.RunAsync("check cpu", Actor);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        // Planning call and step call: the operator's goal is Task. A model-authored turn carries no origin.
+        // Planning call and step call: the operator's goal is Task. A model-authored turn is attributed to the model.
         Assert.All(model.Requests.Take(3), request =>
             Assert.Equal(ContextOrigin.Task, Assert.Single(request.History, turn => turn.Role == ChatRole.User).Provenance!.Origin));
         // After the tool ran, its observation is attributed as data, never as runtime text.
         var observation = Assert.Single(model.Requests[2].History, turn => turn.Role == ChatRole.Tool);
         Assert.Equal(ContextOrigin.ToolResult, observation.Provenance!.Origin);
         Assert.All(model.Requests.SelectMany(request => request.History).Where(turn => turn.Role == ChatRole.Assistant),
-            turn => Assert.Null(turn.Provenance));
+            turn => Assert.Equal(ContextOrigin.Model, turn.Provenance!.Origin));
 
         var calls = audit.Events.OfType<ModelCallAuditEvent>().ToList();
         Assert.Equal(model.Requests.Count, calls.Count);

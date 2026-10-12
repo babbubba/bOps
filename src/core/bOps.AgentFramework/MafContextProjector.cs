@@ -213,20 +213,24 @@ public sealed class MafContextProjector : IModelContextProjector
 
     /// <summary>
     /// Maps the compacted messages back to bOps turns, keeping each surviving message's provenance. A message the compaction
-    /// created (a tool-group placeholder or a summary) is derived from the historical context, so it takes the most data-like
-    /// provenance among the historical turns it may have been built from (<see cref="ContextOrigin"/> is ordered from most to
-    /// least trusted) and never a more trusted one; when none of them carries provenance it carries none either.
+    /// created (a tool-group placeholder or a summary) is derived from the historical context, so it is marked
+    /// <see cref="ContextProvenance.Derived"/> and takes the most data-like origin among the historical turns it may have been
+    /// built from (<see cref="ContextOrigin"/> is ordered from most to least trusted), never a more trusted one. When any of those
+    /// turns carries no provenance the derived message carries none either: a legacy turn must not be laundered into an attributed one.
     /// </summary>
     private static List<ChatTurn> ReattachProvenance(
         List<ChatMessage> compacted,
         Dictionary<ChatMessage, ContextProvenance?> provenanceByMessage,
         IReadOnlyList<ChatTurn> historicalTurns)
     {
-        var derived = historicalTurns
-            .Select(turn => turn.Provenance)
-            .OfType<ContextProvenance>()
-            .OrderByDescending(provenance => provenance.Origin)
-            .FirstOrDefault();
+        var derived = historicalTurns.Any(turn => turn.Provenance is null)
+            ? null
+            : historicalTurns
+                .Select(turn => turn.Provenance)
+                .OfType<ContextProvenance>()
+                .OrderByDescending(provenance => provenance.Origin)
+                .Select(provenance => new ContextProvenance { Origin = provenance.Origin, Derived = true })
+                .FirstOrDefault();
         var turns = new List<ChatTurn>(compacted.Count);
         foreach (var message in compacted)
         {

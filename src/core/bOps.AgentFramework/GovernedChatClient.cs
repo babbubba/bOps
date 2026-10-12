@@ -17,27 +17,89 @@ namespace bOps.AgentFramework;
 /// must be exactly the <see cref="ModelRequest"/> bOps authorised for this call, otherwise the call is audited and refused
 /// before the broker, with no model call.
 /// </summary>
-/// <param name="broker">The governed broker that makes the actual call.</param>
-/// <param name="contextFactory">Supplies the task-owned context of the logical call.</param>
-/// <param name="authorizedRequestFactory">
-/// Supplies the request bOps projected for this call: the protected instructions, the turns with the provenance bOps assigned,
-/// and the step's allow-listed tools. It is the only source of authority for what may reach the model.
-/// </param>
-/// <param name="audit">Receives the audit event of every refusal.</param>
-/// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
-public sealed class GovernedChatClient(
-    IModelInvocationBroker broker,
-    Func<ModelInvocationContext> contextFactory,
-    Func<ModelRequest> authorizedRequestFactory,
-    IAuditSink audit,
-    TimeProvider? timeProvider = null) : IChatClient
+public sealed class GovernedChatClient : IChatClient
 {
-    private readonly IModelInvocationBroker broker = broker ?? throw new ArgumentNullException(nameof(broker));
-    private readonly Func<ModelInvocationContext> contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
-    private readonly Func<ModelRequest> authorizedRequestFactory = authorizedRequestFactory ?? throw new ArgumentNullException(nameof(authorizedRequestFactory));
-    private readonly IAuditSink audit = audit ?? throw new ArgumentNullException(nameof(audit));
-    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IModelInvocationBroker broker;
+    private readonly Func<ModelInvocationContext> contextFactory;
+    private readonly Func<(ModelRequest Authorized, ModelContextRequest? Projectable)> authorizedFactory;
+    private readonly IAuditSink audit;
+    private readonly TimeProvider timeProvider;
     private bool disposed;
+
+    /// <summary>Creates a client whose broker receives the authorised request as it is, with no context projection.</summary>
+    /// <param name="broker">The governed broker that makes the actual call.</param>
+    /// <param name="contextFactory">Supplies the task-owned context of the logical call.</param>
+    /// <param name="authorizedRequestFactory">
+    /// Supplies the request bOps projected for this call: the protected instructions, the turns with the provenance bOps assigned,
+    /// and the step's allow-listed tools. It is the only source of authority for what may reach the model.
+    /// </param>
+    /// <param name="audit">Receives the audit event of every refusal.</param>
+    /// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
+    public GovernedChatClient(
+        IModelInvocationBroker broker,
+        Func<ModelInvocationContext> contextFactory,
+        Func<ModelRequest> authorizedRequestFactory,
+        IAuditSink audit,
+        TimeProvider? timeProvider = null)
+        : this(broker, contextFactory, Wrap(authorizedRequestFactory), audit, timeProvider)
+    {
+    }
+
+    /// <summary>
+    /// Creates a client for a request that the broker still has to project (compact) per candidate model. The messages MAF presents
+    /// must equal <see cref="ModelContextRequest.ToUnprojectedRequest"/>; once the gate accepts them the broker receives the
+    /// authorised <see cref="ModelContextRequest"/> itself, so projection, recovery and audit are exactly those of the current path.
+    /// </summary>
+    /// <param name="broker">The governed broker that makes the actual call.</param>
+    /// <param name="contextFactory">Supplies the task-owned context of the logical call.</param>
+    /// <param name="authorizedContextRequestFactory">Supplies the context request bOps authorised for this call.</param>
+    /// <param name="audit">Receives the audit event of every refusal.</param>
+    /// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
+    public GovernedChatClient(
+        IModelInvocationBroker broker,
+        Func<ModelInvocationContext> contextFactory,
+        Func<ModelContextRequest> authorizedContextRequestFactory,
+        IAuditSink audit,
+        TimeProvider? timeProvider = null)
+        : this(broker, contextFactory, Wrap(authorizedContextRequestFactory), audit, timeProvider)
+    {
+    }
+
+    private GovernedChatClient(
+        IModelInvocationBroker broker,
+        Func<ModelInvocationContext> contextFactory,
+        Func<(ModelRequest, ModelContextRequest?)> authorizedFactory,
+        IAuditSink audit,
+        TimeProvider? timeProvider)
+    {
+        this.broker = broker ?? throw new ArgumentNullException(nameof(broker));
+        this.contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+        this.authorizedFactory = authorizedFactory;
+        this.audit = audit ?? throw new ArgumentNullException(nameof(audit));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    /// <summary>How many times this client reached the broker. A governed turn must reach it exactly once.</summary>
+    internal int BrokerInvocations { get; private set; }
+
+    /// <summary>The broker's own response to the last call, before it was mapped to the MAF shape.</summary>
+    internal ModelResponse? LastBrokerResponse { get; private set; }
+
+    private static Func<(ModelRequest, ModelContextRequest?)> Wrap(Func<ModelRequest> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        return () => (factory(), null);
+    }
+
+    private static Func<(ModelRequest, ModelContextRequest?)> Wrap(Func<ModelContextRequest> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        return () =>
+        {
+            var projectable = factory();
+            return (projectable.ToUnprojectedRequest(), projectable);
+        };
+    }
 
     /// <inheritdoc />
     public async Task<ChatResponse> GetResponseAsync(
@@ -49,14 +111,19 @@ public sealed class GovernedChatClient(
         ArgumentNullException.ThrowIfNull(messages);
 
         var context = contextFactory();
-        var authorized = authorizedRequestFactory();
+        var (authorized, projectable) = authorizedFactory();
         var verdict = ContextGate.Evaluate([.. messages], options, authorized, broker.Descriptor);
         if (verdict.Request is not { } request)
         {
             throw await RefuseAsync(context, authorized, verdict, cancellationToken);
         }
 
-        var response = await broker.InvokeAsync(request, context, cancellationToken);
+        // The gate has proven the effective context is the authorised one; the broker receives the bOps request, never MAF's.
+        BrokerInvocations++;
+        var response = projectable is null
+            ? await broker.InvokeAsync(request, context, cancellationToken)
+            : await broker.InvokeAsync(projectable with { AvailableTools = request.AvailableTools }, context, cancellationToken);
+        LastBrokerResponse = response;
         return MapResponse(response);
     }
 

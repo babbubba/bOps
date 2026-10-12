@@ -104,6 +104,63 @@ public sealed class AgentFrameworkBoundaryTests
         Assert.True(offenders.Length == 0, $"MAF summarization must stay inside bOps.AgentFramework: {string.Join(", ", offenders)}");
     }
 
+    [Fact]
+    public void TheMafAgent_IsBuiltInOnePlace_StatelessAndWithoutAFrameworkToolLoop()
+    {
+        // AF-TURN-01A: the one construction point of a ChatClientAgent is MafGovernedTurn; behavioural guards exercise that very code.
+        var production = ProductionSources().ToList();
+        var constructors = production.Where(file => file.Text.Contains("ChatClientAgent", StringComparison.Ordinal))
+            .Select(file => file.Path).ToArray();
+        Assert.Equal(["src/core/bOps.AgentFramework/MafGovernedTurn.cs"], constructors);
+
+        var turn = production.Single(file => file.Path == "src/core/bOps.AgentFramework/MafGovernedTurn.cs").Text;
+        Assert.Contains("UseProvidedChatClientAsIs = true", turn, StringComparison.Ordinal);
+        foreach (var forbidden in new[]
+        {
+            "FunctionInvokingChatClient", "UseFunctionInvocation", "AIFunctionFactory.Create(", "AsDeclarationOnly", "AIContextProvider",
+            "ChatHistoryProvider", "AgentSession", "GetNewSessionAsync", "ConversationId",
+        })
+        {
+            Assert.DoesNotContain(forbidden, turn.Replace("CreateSessionAsync", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
+        }
+
+        var loops = production.Where(file => file.Text.Contains("FunctionInvokingChatClient", StringComparison.Ordinal)
+            || file.Text.Contains("UseFunctionInvocation", StringComparison.Ordinal)).Select(file => file.Path).ToArray();
+        Assert.Empty(loops);
+    }
+
+    [Fact]
+    public void InsideTheMafProject_OnlyTheGovernedLeavesReachTheBroker()
+    {
+        var offenders = ProductionSources()
+            .Where(file => file.Path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
+            .Where(file => file.Text.Contains(".InvokeAsync(", StringComparison.Ordinal))
+            .Select(file => file.Path)
+            .Where(path => path is not "src/core/bOps.AgentFramework/GovernedChatClient.cs"
+                and not "src/core/bOps.AgentFramework/GovernedSummarizationChatClient.cs")
+            .ToArray();
+        Assert.True(offenders.Length == 0, $"A broker call that does not pass the context gate: {string.Join(", ", offenders)}");
+    }
+
+    [Fact]
+    public void TheMafTurnPath_IsNotComposedByAnyProductionHost_UntilItIsDeliberatelyActivated()
+    {
+        // AF-TURN-01A keeps the path off in production configurations until the equivalence suite is accepted. Activating it is a
+        // deliberate change that updates this test together with its host wiring and decision record.
+        var composed = ProductionSources()
+            .Where(file => !file.Path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
+            .Where(file => file.Text.Contains("MafGovernedTurnBroker", StringComparison.Ordinal))
+            .Select(file => file.Path)
+            .ToArray();
+        Assert.Empty(composed);
+    }
+
+    private static IEnumerable<(string Path, string Text)> ProductionSources() =>
+        Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Select(path => (Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'), File.ReadAllText(path)));
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
