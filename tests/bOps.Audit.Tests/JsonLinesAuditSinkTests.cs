@@ -185,6 +185,50 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         Assert.Equal(lifecycle, Assert.IsType<PluginLifecycleAuditEvent>(restored));
     }
 
+    [Fact]
+    public async Task WriteAsync_PersistsTheContextProvenanceOfAModelCall_ThroughTheRealSinkAndChain()
+    {
+        // ADR-0054 G2-2: the typed provenance counts and a context-gate refusal are in the persisted model-call event, and an event
+        // without them is written exactly as before.
+        var withProvenance = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.NewGuid(), StepIndex = 1, Actor = Actor,
+            Provider = "p", Model = "m", Outcome = ModelCallOutcome.Failure, ErrorMessage = "Context gate rejected",
+            ContextGateRejection = "SystemElevation",
+            ContextProvenance =
+            [
+                new ContextProvenanceCount { Provenance = ContextProvenance.Runtime, Turns = 2 },
+                new ContextProvenanceCount
+                {
+                    Provenance = new ContextProvenance { Origin = ContextOrigin.Skill, PackId = "pack", PackVersion = "1.0.0", PackHash = "sha256:ab" },
+                    Turns = 1,
+                },
+                new ContextProvenanceCount { Turns = 3 },
+            ],
+        };
+        var without = withProvenance with { ContextProvenance = null, ContextGateRejection = null };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(withProvenance);
+            await sink.WriteAsync(without);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        var persisted = JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>();
+        var restored = Assert.IsType<ModelCallAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(persisted));
+        Assert.Equal("SystemElevation", restored.ContextGateRejection);
+        Assert.Equal([2, 1, 3], restored.ContextProvenance!.Select(count => count.Turns));
+        Assert.Equal(ContextOrigin.Skill, restored.ContextProvenance![1].Provenance!.Origin);
+        Assert.Equal("sha256:ab", restored.ContextProvenance[1].Provenance!.PackHash);
+        Assert.Null(restored.ContextProvenance[2].Provenance);
+
+        var legacy = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("ContextProvenance", legacy, StringComparison.Ordinal);
+        Assert.DoesNotContain("ContextGateRejection", legacy, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(TaskLifecycleStage.RecoveryRejected)]
     [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]

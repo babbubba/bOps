@@ -443,6 +443,20 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>The pinned primary model of the execution this call belongs to, when pinned.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PrimaryModel { get; init; }
+
+    /// <summary>
+    /// The turns of the request this attempt sent, counted by provenance (ADR-0054 G2-2), in a deterministic order. <c>null</c>
+    /// (and omitted) for an event written before provenance existed and for a call that sent no history.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ContextProvenanceCount>? ContextProvenance { get; init; }
+
+    /// <summary>
+    /// Set when the context gate refused the request before any model call (ADR-0054 G2-1): the stable rejection code. The
+    /// event then records no provider attempt, because none was made.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContextGateRejection { get; init; }
 }
 
 /// <summary>

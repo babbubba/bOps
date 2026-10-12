@@ -3,6 +3,7 @@
 
 using bOps.Abstractions;
 using bOps.Runtime;
+using bOps.Runtime.Tests;
 using Microsoft.Extensions.AI;
 
 namespace bOps.AgentFramework.Tests;
@@ -15,13 +16,29 @@ public sealed class GovernedChatClientTests
         var broker = new RecordingBroker();
         var calls = new List<ModelCallRecord>();
         using var cts = new CancellationTokenSource();
+        var authorized = new ModelRequest(
+            "system",
+            [
+                ChatTurn.FromUser("hello", ContextProvenance.Task),
+                new ChatTurn
+                {
+                    Role = bOps.Abstractions.ChatRole.Assistant,
+                    Content = "checking",
+                    ToolCalls = [new ModelToolCall("call-1", "test.read", ToolArguments.FromJson(
+                        new System.Text.Json.Nodes.JsonObject { ["path"] = "C:/tmp" }))],
+                },
+                ChatTurn.FromToolResult("call-1", "ok"),
+            ],
+            []);
         using var client = new GovernedChatClient(
             broker,
             () => new ModelInvocationContext(
                 Guid.Parse("31f0216f-37da-43cb-89c1-637040cff540"),
                 2,
                 ActorIdentity.FromOperatingSystemUser("maf-test"),
-                calls));
+                calls),
+            () => authorized,
+            new RecordingAuditSink());
         var messages = new[]
         {
             new ChatMessage(Microsoft.Extensions.AI.ChatRole.User, "hello"),
@@ -61,14 +78,16 @@ public sealed class GovernedChatClientTests
         var broker = new RecordingBroker();
         using var client = new GovernedChatClient(
             broker,
-            () => new ModelInvocationContext(Guid.NewGuid(), 0, ActorIdentity.FromOperatingSystemUser("maf-test"), []));
+            () => new ModelInvocationContext(Guid.NewGuid(), 0, ActorIdentity.FromOperatingSystemUser("maf-test"), []),
+            () => new ModelRequest(string.Empty, [ChatTurn.FromUser("hello", ContextProvenance.Task)], []),
+            new RecordingAuditSink());
         var tool = AIFunctionFactory.Create(() => "must not execute", "dangerous");
 
-        var error = await Assert.ThrowsAsync<NotSupportedException>(() => client.GetResponseAsync(
+        var error = await Assert.ThrowsAsync<ModelProtocolException>(() => client.GetResponseAsync(
             [new ChatMessage(Microsoft.Extensions.AI.ChatRole.User, "hello")],
             new ChatOptions { Tools = [tool] }));
 
-        Assert.Contains("tools", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ToolInvocable", error.Message, StringComparison.Ordinal);
         Assert.Equal(0, broker.Invocations);
     }
 

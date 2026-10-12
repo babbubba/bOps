@@ -946,7 +946,7 @@ public sealed partial class AgentRunner(
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
                 return new ModelContextRequest(
                     systemPrompt,
-                    [ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal)],
+                    [ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, ContextProvenance.Task)],
                     RebuildHistoricalTurns(steps),
                     protectedAfter,
                     availableTools)
@@ -989,7 +989,7 @@ public sealed partial class AgentRunner(
                 for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
                 {
                     logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
-                        IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions));
+                        IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions, ContextProvenance.Runtime));
                     response = await CallModelWithOverflowRecoveryAsync(
                         taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                     request = BuildStepRequest(logicalCall.Aggressive);
@@ -1032,7 +1032,7 @@ public sealed partial class AgentRunner(
                 try
                 {
                     logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse!));
-                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(ProtocolArtifactRetryInstructions));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(ProtocolArtifactRetryInstructions, ContextProvenance.Runtime));
                     response = await CallModelWithOverflowRecoveryAsync(
                         taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                     request = BuildStepRequest(logicalCall.Aggressive);
@@ -2800,7 +2800,7 @@ public sealed partial class AgentRunner(
     /// <summary>Persisted runtime-authored reconciliation notices are authoritative and never compacted.</summary>
     private static List<ChatTurn> ReconciliationTurns(IReadOnlyList<PlanStep> steps) =>
         [.. steps.Where(TaskResumePolicy.IsMutationReconciledStep)
-            .Select(step => ChatTurn.FromUser(step.Observation ?? string.Empty))];
+            .Select(step => ChatTurn.FromUser(step.Observation ?? string.Empty, ContextProvenance.ToolResult))];
 
     /// <summary>
     /// The model-facing record of one tool-calling turn, built the same way live and on resume (ADR-0038): the
@@ -2834,7 +2834,7 @@ public sealed partial class AgentRunner(
         Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
         long tokensBefore, CancellationToken ct)
     {
-        var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal) };
+        var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal, ContextProvenance.Task) };
         var planningTools = ToolViewFor(delegation);
         var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
         var tokens = 0;
@@ -2871,7 +2871,7 @@ public sealed partial class AgentRunner(
                 logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
             }
 
-            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(problem, response)));
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(problem, response), ContextProvenance.Runtime));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
                 BuildPlanningRequest, delegation, calls, logicalCall, ct,
@@ -2948,18 +2948,18 @@ public sealed partial class AgentRunner(
                     WrapToolOutput(trigger.Observation ?? string.Empty));
                 if (completedPlanNotice is not null)
                 {
-                    protectedAfter.Add(ChatTurn.FromUser(completedPlanNotice));
+                    protectedAfter.Add(ChatTurn.FromUser(completedPlanNotice, ContextProvenance.Runtime));
                 }
             }
             else if (trigger is not null && PrematureFinal.IsStep(trigger))
             {
                 // AF-05H: runtime-authored from the persisted plan, identical live and on resume; the premature answer itself is not repeated.
-                protectedAfter.Add(ChatTurn.FromUser(PrematureFinal.ReplanTurn(trigger)));
+                protectedAfter.Add(ChatTurn.FromUser(PrematureFinal.ReplanTurn(trigger), ContextProvenance.Runtime));
             }
             protectedAfter.AddRange(logicalCall.ContinuationTurns);
             return new ModelContextRequest(
                 systemPrompt,
-                [ChatTurn.FromUser(aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal)],
+                [ChatTurn.FromUser(aggressive ? ProjectForPrompt(goal, AggressiveGoalMaxCharacters) : goal, ContextProvenance.Task)],
                 RebuildHistoricalTurns(stepsSoFar, triggeringStepIndex),
                 [ChatTurn.FromAssistantText(ProjectForPrompt(
                     DescribePlan(previousPlan), aggressive ? AggressivePlanMaxCharacters : ReplanPlanMaxCharacters)), .. protectedAfter],
@@ -3000,7 +3000,7 @@ public sealed partial class AgentRunner(
         }
 
         logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(replanProblem, response)));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(replanProblem, response), ContextProvenance.Runtime));
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
@@ -3107,7 +3107,8 @@ public sealed partial class AgentRunner(
             logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
                 recognition.Kind == RuntimeDirectiveRecognitionKind.Valid
                     ? EvidenceRead.Reply(directive!, result, evidence.ReadsRemaining)
-                    : "EvidenceRead/v1 rejected: Malformed."));
+                    : "EvidenceRead/v1 rejected: Malformed.",
+                recognition.Kind == RuntimeDirectiveRecognitionKind.Valid ? ContextProvenance.ToolResult : ContextProvenance.Runtime));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
                 delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools));
@@ -3304,7 +3305,8 @@ public sealed partial class AgentRunner(
             if (control.Kind == ControlCallKind.None)
             {
                 logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-                logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(reply));
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
+                    reply, recognition.Kind == RuntimeDirectiveRecognitionKind.Valid ? ContextProvenance.ToolResult : ContextProvenance.Runtime));
             }
             else
             {
@@ -3430,7 +3432,7 @@ public sealed partial class AgentRunner(
         {
             var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
                 ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction)), run.Delegation, stepCalls, ct);
+                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction, ContextProvenance.Runtime)), run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(check);
             verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
         }
@@ -3453,7 +3455,7 @@ public sealed partial class AgentRunner(
         {
             correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
                 ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions))),
+                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions), ContextProvenance.Runtime)),
                 run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(correction);
         }

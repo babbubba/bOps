@@ -13,14 +13,30 @@ namespace bOps.AgentFramework;
 /// <summary>
 /// Adapts the <see cref="IChatClient"/> surface consumed by Microsoft Agent Framework to the
 /// bOps-governed model invocation broker. It has no credentials, retry policy, fallback selection
-/// or tool executor of its own.
+/// or tool executor of its own. Every request first passes the final context gate (ADR-0054 G2-1): the effective MAF context
+/// must be exactly the <see cref="ModelRequest"/> bOps authorised for this call, otherwise the call is audited and refused
+/// before the broker, with no model call.
 /// </summary>
+/// <param name="broker">The governed broker that makes the actual call.</param>
+/// <param name="contextFactory">Supplies the task-owned context of the logical call.</param>
+/// <param name="authorizedRequestFactory">
+/// Supplies the request bOps projected for this call: the protected instructions, the turns with the provenance bOps assigned,
+/// and the step's allow-listed tools. It is the only source of authority for what may reach the model.
+/// </param>
+/// <param name="audit">Receives the audit event of every refusal.</param>
+/// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
 public sealed class GovernedChatClient(
     IModelInvocationBroker broker,
-    Func<ModelInvocationContext> contextFactory) : IChatClient
+    Func<ModelInvocationContext> contextFactory,
+    Func<ModelRequest> authorizedRequestFactory,
+    IAuditSink audit,
+    TimeProvider? timeProvider = null) : IChatClient
 {
     private readonly IModelInvocationBroker broker = broker ?? throw new ArgumentNullException(nameof(broker));
     private readonly Func<ModelInvocationContext> contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
+    private readonly Func<ModelRequest> authorizedRequestFactory = authorizedRequestFactory ?? throw new ArgumentNullException(nameof(authorizedRequestFactory));
+    private readonly IAuditSink audit = audit ?? throw new ArgumentNullException(nameof(audit));
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private bool disposed;
 
     /// <inheritdoc />
@@ -31,12 +47,45 @@ public sealed class GovernedChatClient(
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(messages);
-        ValidateOptions(options);
 
-        var history = MafChatTurnMapper.FromMaf(messages);
-        var request = new ModelRequest(options?.Instructions ?? string.Empty, history, []);
-        var response = await broker.InvokeAsync(request, contextFactory(), cancellationToken);
+        var context = contextFactory();
+        var authorized = authorizedRequestFactory();
+        var verdict = ContextGate.Evaluate([.. messages], options, authorized, broker.Descriptor);
+        if (verdict.Request is not { } request)
+        {
+            throw await RefuseAsync(context, authorized, verdict, cancellationToken);
+        }
+
+        var response = await broker.InvokeAsync(request, context, cancellationToken);
         return MapResponse(response);
+    }
+
+    /// <summary>Audits the refusal and returns the failure that stops the call before the broker. The audit carries the code, never any message content.</summary>
+    private async Task<ModelProtocolException> RefuseAsync(
+        ModelInvocationContext context, ModelRequest authorized, ContextGateResult verdict, CancellationToken ct)
+    {
+        var code = verdict.Code!.Value.ToString();
+        var reason = $"Context gate rejected the request before any model call: {code}. {verdict.Detail}";
+        await audit.WriteAsync(
+            new ModelCallAuditEvent
+            {
+                TimestampUtc = timeProvider.GetUtcNow(),
+                Node = NodeId.Local,
+                TaskId = context.TaskId,
+                StepIndex = context.StepIndex,
+                Actor = context.Actor,
+                Provider = broker.Descriptor.ProviderId,
+                Model = broker.Descriptor.ModelId,
+                Outcome = ModelCallOutcome.Failure,
+                ErrorMessage = reason,
+                FailureKind = ModelFailureKind.InvalidRequest,
+                RetryDecision = ModelRetryDecision.NotRetryable,
+                ContextGateRejection = code,
+                ContextProvenance = authorized.History.Count == 0 ? null : ContextProvenanceCount.Summarize(authorized.History),
+                Delegation = context.Delegation,
+            },
+            ct);
+        return new ModelProtocolException(reason) { FailureKind = ModelFailureKind.InvalidRequest };
     }
 
     /// <inheritdoc />
@@ -75,51 +124,6 @@ public sealed class GovernedChatClient(
 
     /// <inheritdoc />
     public void Dispose() => disposed = true;
-
-    private void ValidateOptions(ChatOptions? options)
-    {
-        if (options is null)
-        {
-            return;
-        }
-
-        if (options.Tools is { Count: > 0 })
-        {
-            throw new NotSupportedException(
-                "MAF tools are not enabled by AF-01; operational tool authority remains with bOps.");
-        }
-
-        if (!string.IsNullOrEmpty(options.ModelId)
-            && !string.Equals(options.ModelId, broker.Descriptor.ModelId, StringComparison.Ordinal))
-        {
-            throw new NotSupportedException(
-                "A MAF caller cannot override the provider/model selected and pinned by bOps.");
-        }
-
-        if (!string.IsNullOrEmpty(options.ConversationId)
-            || options.ContinuationToken is not null
-            || options.AllowBackgroundResponses == true)
-        {
-            throw new NotSupportedException("Stateful or background MAF responses are not enabled by AF-01.");
-        }
-
-        if (options.Temperature is not null
-            || options.MaxOutputTokens is not null
-            || options.TopP is not null
-            || options.TopK is not null
-            || options.FrequencyPenalty is not null
-            || options.PresencePenalty is not null
-            || options.Seed is not null
-            || options.Reasoning is not null
-            || options.ResponseFormat is not null
-            || options.StopSequences is { Count: > 0 }
-            || options.RawRepresentationFactory is not null
-            || options.AdditionalProperties is { Count: > 0 })
-        {
-            throw new NotSupportedException(
-                "This MAF request uses generation options that the AF-01 bOps model contract does not represent.");
-        }
-    }
 
     private static ChatResponse MapResponse(ModelResponse response)
     {

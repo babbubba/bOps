@@ -330,7 +330,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                         context, ModelCallOutcome.Failure, reason, response.Usage, descriptor,
                         response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                         fallbackOrdinal, ModelFailureKind.MalformedResponse,
-                        ModelRetryDecision.NotRetryable, null, null, ct);
+                        ModelRetryDecision.NotRetryable, null, null, attemptRequest.History, ct);
                     return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
                 }
 
@@ -345,7 +345,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 await WriteModelCallAuditAsync(
                     context, ModelCallOutcome.Success, null, response.Usage, descriptor,
                     response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
-                    fallbackOrdinal, null, null, null, null, ct);
+                    fallbackOrdinal, null, null, null, null, attemptRequest.History, ct);
                 return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
             }
 
@@ -393,7 +393,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             await WriteModelCallAuditAsync(
                 context, ModelCallOutcome.Failure, failure.Message, null, descriptor,
                 failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt,
-                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, ct);
+                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, attemptRequest.History, ct);
 
             if (executionBudgetInterrupted)
             {
@@ -742,6 +742,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         ModelRetryDecision? decision,
         long? retryDelayMs,
         int? statusCode,
+        IReadOnlyList<ChatTurn> history,
         CancellationToken ct)
     {
         AuditEvent evt = new ModelCallAuditEvent
@@ -769,6 +770,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
             PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
             PrimaryModel = pinnedProviderConfiguration?.Model,
+            ContextProvenance = history.Count == 0 ? null : ContextProvenanceCount.Summarize(history),
         };
         if (context.Delegation is not null)
         {

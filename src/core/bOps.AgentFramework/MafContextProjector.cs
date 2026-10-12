@@ -53,6 +53,13 @@ public sealed class MafContextProjector : IModelContextProjector
         var protectedBefore = MafChatTurnMapper.ToMaf(request.ProtectedBeforeHistory);
         var protectedAfter = MafChatTurnMapper.ToMaf(request.ProtectedAfterHistory);
         var historical = MafChatTurnMapper.ToMaf(request.HistoricalTurns).ToList();
+        // G2-2: provenance never travels inside a MAF message (a tag there is only a label). bOps keeps it beside the messages it
+        // built, keyed by reference, and re-attaches it to the very same messages after compaction.
+        var provenanceByMessage = new Dictionary<ChatMessage, ContextProvenance?>(ReferenceEqualityComparer.Instance);
+        for (var index = 0; index < historical.Count; index++)
+        {
+            provenanceByMessage[historical[index]] = request.HistoricalTurns[index].Provenance;
+        }
         var fixedMessages = new List<ChatMessage>
         {
             new(Microsoft.Extensions.AI.ChatRole.System, request.SystemPrompt),
@@ -162,7 +169,7 @@ public sealed class MafContextProjector : IModelContextProjector
             };
         }
 
-        var compactedHistory = MafChatTurnMapper.FromMaf(compactedMessages);
+        var compactedHistory = ReattachProvenance(compactedMessages, provenanceByMessage, request.HistoricalTurns);
         var projectedHistory = new List<ChatTurn>(
             request.ProtectedBeforeHistory.Count + compactedHistory.Count + request.ProtectedAfterHistory.Count);
         projectedHistory.AddRange(request.ProtectedBeforeHistory);
@@ -202,6 +209,32 @@ public sealed class MafContextProjector : IModelContextProjector
                 Strategies = StrategyLabel(profile is not null, summarizer is not null, aggressive),
                 Summary = summarizer is null ? null : SummaryStats(summaryState!, compactedMessages),
             });
+    }
+
+    /// <summary>
+    /// Maps the compacted messages back to bOps turns, keeping each surviving message's provenance. A message the compaction
+    /// created (a tool-group placeholder or a summary) is derived from the historical context, so it takes the most data-like
+    /// provenance among the historical turns it may have been built from (<see cref="ContextOrigin"/> is ordered from most to
+    /// least trusted) and never a more trusted one; when none of them carries provenance it carries none either.
+    /// </summary>
+    private static List<ChatTurn> ReattachProvenance(
+        List<ChatMessage> compacted,
+        Dictionary<ChatMessage, ContextProvenance?> provenanceByMessage,
+        IReadOnlyList<ChatTurn> historicalTurns)
+    {
+        var derived = historicalTurns
+            .Select(turn => turn.Provenance)
+            .OfType<ContextProvenance>()
+            .OrderByDescending(provenance => provenance.Origin)
+            .FirstOrDefault();
+        var turns = new List<ChatTurn>(compacted.Count);
+        foreach (var message in compacted)
+        {
+            var provenance = provenanceByMessage.TryGetValue(message, out var original) ? original : derived;
+            turns.AddRange(MafChatTurnMapper.FromMaf([message]).Select(turn => turn with { Provenance = provenance }));
+        }
+
+        return turns;
     }
 
     private static string StrategyLabel(bool known, bool summarized, bool aggressive)

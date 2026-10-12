@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>The role of one turn in a model conversation.</summary>
@@ -78,11 +80,24 @@ public sealed record ChatTurn
     /// <summary>Present on a <see cref="ChatRole.Tool"/> turn, matching the <see cref="ModelToolCall.Id"/> it answers.</summary>
     public string? ToolCallId { get; init; }
 
-    /// <summary>Builds a <see cref="ChatRole.User"/> turn.</summary>
+    /// <summary>
+    /// Where this turn's content comes from (ADR-0054 G2-2), assigned by bOps code when the turn is admitted. <c>null</c>
+    /// means no origin was established — model output replayed as history, or a turn from before provenance existed — and is
+    /// never read as trusted; it is omitted from the serialized turn, so such a turn is byte-identical to an older one.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ContextProvenance? Provenance { get; init; }
+
+    /// <summary>Builds a <see cref="ChatRole.User"/> turn with no established origin.</summary>
     public static ChatTurn FromUser(string content) => new() { Role = ChatRole.User, Content = content };
 
-    /// <summary>Builds a <see cref="ChatRole.System"/> turn.</summary>
-    public static ChatTurn FromSystem(string content) => new() { Role = ChatRole.System, Content = content };
+    /// <summary>Builds a <see cref="ChatRole.User"/> turn whose origin the calling bOps code establishes.</summary>
+    public static ChatTurn FromUser(string content, ContextProvenance provenance) =>
+        new() { Role = ChatRole.User, Content = content, Provenance = provenance };
+
+    /// <summary>Builds a <see cref="ChatRole.System"/> turn. Only bOps code builds one, so it is runtime-authored.</summary>
+    public static ChatTurn FromSystem(string content) =>
+        new() { Role = ChatRole.System, Content = content, Provenance = ContextProvenance.Runtime };
 
     /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn carrying only text, with no tool calls.</summary>
     public static ChatTurn FromAssistantText(string content) => new() { Role = ChatRole.Assistant, Content = content };
@@ -93,7 +108,7 @@ public sealed record ChatTurn
 
     /// <summary>Builds a <see cref="ChatRole.Tool"/> turn carrying the result of one call.</summary>
     public static ChatTurn FromToolResult(string toolCallId, string content) =>
-        new() { Role = ChatRole.Tool, ToolCallId = toolCallId, Content = content };
+        new() { Role = ChatRole.Tool, ToolCallId = toolCallId, Content = content, Provenance = ContextProvenance.ToolResult };
 }
 
 /// <summary>Token and cost accounting for one model call, carried into <see cref="ModelCallAuditEvent"/>.</summary>
