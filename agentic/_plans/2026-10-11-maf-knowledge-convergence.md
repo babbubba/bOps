@@ -23,8 +23,8 @@
 | 4 | **AF-05H4-VERIFY — ablation disclosure** | Confrontare H4 on/off con H2 fissato, identico input/model/config quando possibile. Verificare disclosure append deterministicamente, precisione dei conteggi (es. bugcheck), alterazione del testo finale, output non duplicato e costi. H1/H3/H5 restano **deferred**. |
 | 5 | **BENCH-00 ufficiale 3×3 A/B** | Solo dopo i gate mirati: tre round seriali per variante, 9 task ciascuna, stessi scenari, configurazione congelata, stesso collector, SHA/provenance, hash della policy corretto e fixture comparabili; comparazione esterna (non nel collector). |
 | 6 | **Decisione PR #100** | PR #100 rimane intatta e aperta fino a review/CI e approvazione dell'operatore. Nessun merge implicito degli ulteriori branch AF-05H o BENCH-00. |
-| 7 | **ARCH-01** | ADR: **unico motore OSS** Local + Coordinator, contratti Knowledge/Experience/Playbook, versionamento/pinning, adapter commerciali, modifica coerente roadmap/V1.4-D. |
-| 8 | **ARCH-02** | Spike MAF Agent/Workflow su parità delle garanzie bOps; niente sostituzione preventiva del runner. |
+| 7 | **ARCH-01** | **DONE (documentale, 2026-10-12, ADR-0053 Proposed, in attesa di review operatore)**: ADR: **unico motore OSS** Local + Coordinator, contratti Knowledge/Experience/Playbook, versionamento/pinning, adapter commerciali, modifica coerente roadmap/V1.4-D. Matrice di ownership, invarianti I-1…I-10 e confini in `docs/architecture/adr/0053-maf-convergence-architecture-boundaries.md`. |
+| 8 | **ARCH-02** | Spike MAF Agent/Workflow su parità delle garanzie bOps; niente sostituzione preventiva del runner. Piano e gate: `agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md` (non avviato). |
 | 9 | **ARCH-03** | Decisione documentata di convergenza solo con parità e regressioni dimostrate. |
 | 10 | **KNOW-01** | Knowledge/Experience Pack firmati e playbook dichiarativi indipendenti, contract OSS, validazione/trust store e activation atomica. |
 | 11 | **KNOW-02** | Playbook Windows crash read-only, correlazione temporale e confutazione ipotesi, eventi/WHEA/dump senza attribuzioni causali non supportate. |
