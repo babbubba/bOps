@@ -10,6 +10,7 @@ using bOps.Audit;
 using bOps.Knowledge;
 using bOps.Knowledge.Tests;
 using bOps.Memory;
+using bOps.Packages.Sys.Windows;
 using bOps.Runtime;
 using bOps.Runtime.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -136,20 +137,38 @@ internal sealed class KnowledgeProcess : IDisposable
     /// <summary>
     /// The explicitly selected test-host composition used by HOST-CANARY-01A. It accepts a caller-supplied model but reuses the
     /// normal runner, the one governed MAF broker and the normal knowledge host; it is not another executor or a production host.
+    /// Windows diagnostics require a separate explicit opt-in and replace the dummy tool surface. This selection is independent
+    /// of withHost, so a future benchmark can use the same operational catalog with or without an authorized knowledge host.
     /// </summary>
     internal CanaryRig ComposeCanary(
         IChatModel model,
         IKnowledgeTaskHost? host = null,
         bool withHost = true,
         ITaskStore? store = null,
-        ILogger<AgentRunner>? diagnosticLogger = null)
+        ILogger<AgentRunner>? diagnosticLogger = null,
+        bool withWindowsSystemEvents = false)
     {
         ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
         var other = new RecordingReadTool("test.other", []);
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
-        registry.Register(new PackageId("test.package"), read);
-        registry.Register(new PackageId("test.package"), other);
+        if (withWindowsSystemEvents)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException("The diagnostic canary requires Windows.");
+            }
+
+            // Use the existing registration factory, selecting only the native Read tool. Never register the provider's
+            // remaining surface (including process mutation); no wrapper, alternate dispatch, or copied manifest/schema.
+            var events = new WindowsSystemToolProvider().GetTools().OfType<WindowsSystemEventsTool>().Single();
+            registry.Register(new PackageId("bops.packages.system.windows"), events);
+        }
+        else
+        {
+            registry.Register(new PackageId("test.package"), read);
+            registry.Register(new PackageId("test.package"), other);
+        }
         var options = new AgentRunnerOptions();
         var inner = new ModelInvocationBroker(
             model, world.Audit, TimeProvider.System, diagnosticLogger ?? (ILogger)NullLogger.Instance, options, contextProjector: new MafContextProjector(options, diagnosticLogger ?? (ILogger)NullLogger.Instance));
@@ -159,7 +178,7 @@ internal sealed class KnowledgeProcess : IDisposable
             model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(), world.Audit, taskStore,
             TimeProvider.System, diagnosticLogger ?? NullLogger<AgentRunner>.Instance, options, invocationBroker: maf,
             knowledgeHost: withHost ? host ?? Host : null);
-        return new CanaryRig(runner, maf, read, other, taskStore);
+        return new CanaryRig(runner, maf, read, other, taskStore, registry);
     }
 
     public void Dispose()
@@ -177,7 +196,7 @@ internal sealed record RunnerRig(
 
 /// <summary>The reusable result of the isolated canary composition; no member exposes a second dispatch path.</summary>
 internal sealed record CanaryRig(
-    AgentRunner Runner, MafGovernedTurnBroker Maf, RecordingReadTool Read, RecordingReadTool Other, ITaskStore Store);
+    AgentRunner Runner, MafGovernedTurnBroker Maf, RecordingReadTool Read, RecordingReadTool Other, ITaskStore Store, IToolRegistry Registry);
 
 /// <summary>The host's knowledge policy for tests: tenant to pack, and the one registered source.</summary>
 internal sealed class TestPolicy(InMemoryPackSource source, IReadOnlyDictionary<TenantId, PackReference> bindings) : IKnowledgeTaskPolicy
