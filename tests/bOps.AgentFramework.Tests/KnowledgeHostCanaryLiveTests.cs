@@ -4,6 +4,7 @@
 using System.Net.Sockets;
 using System.Text.Json;
 using bOps.Abstractions;
+using bOps.Api;
 using bOps.Knowledge;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Runtime;
@@ -194,7 +195,7 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
         }
     }
 
-    /// <summary>Reads only the committed, local llama.cpp profile; environment/provider fallbacks are intentionally ignored.</summary>
+    /// <summary>Pins the local llama.cpp profile and resolves its credential through the production services.</summary>
     private static class LocalQwenConfiguration
     {
         private const string SettingsPath = "src/core/bOps.Api/settings.json";
@@ -207,12 +208,18 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
                 throw new InvalidOperationException("Local llama.cpp settings were not found. Run from this repository's test project.");
             }
 
-            using var document = JsonDocument.Parse(File.ReadAllText(fullPath));
-            var profile = document.RootElement.GetProperty("Providers").GetProperty("LlamaCpp");
-            var provider = profile.GetProperty("ProviderId").GetString();
-            var baseUrl = profile.GetProperty("BaseUrl").GetString();
-            var model = profile.GetProperty("Model").GetString();
-            var nativeTools = profile.GetProperty("SupportsNativeToolCalling").GetBoolean();
+            var apiDirectory = Path.GetDirectoryName(fullPath)!;
+            using var configuration = new ConfigurationManager();
+            configuration.SetBasePath(apiDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .AddEnvironmentVariables();
+            var settings = new SettingsStore(fullPath, TimeProvider.System);
+            var profile = settings.FindProviderProfile("LlamaCpp")
+                ?? throw new InvalidOperationException("The local LlamaCpp profile is missing.");
+            var provider = profile.ProviderId;
+            var baseUrl = profile.BaseUrl;
+            var model = profile.Model;
+            var nativeTools = profile.SupportsNativeToolCalling;
             if (!string.Equals(provider, "LlamaCpp", StringComparison.Ordinal) ||
                 string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model) ||
                 !model.StartsWith("Qwen", StringComparison.OrdinalIgnoreCase) ||
@@ -221,8 +228,23 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
                 throw new InvalidOperationException("The committed LlamaCpp profile is not a local Qwen endpoint.");
             }
 
-            return new ChatModelOptions(provider!, baseUrl!, null, model!, nativeTools)
+            var secrets = new EnvironmentSecretProvider();
+            var masterReference = configuration.GetSection("Vault:MasterKeySecret").Get<SecretReference>();
+            var masterSecret = masterReference is null ? null : secrets.GetSecret(masterReference);
+            if (masterReference is not null && (string.IsNullOrEmpty(masterSecret) || masterSecret.Length < 20))
+                throw new InvalidOperationException("The configured Vault master key is unavailable or too short.");
+
+            // The master key unlocks the store; only the resolved provider API key reaches the adapter.
+            using var vault = masterSecret is null ? null : new VaultStore(
+                Path.GetFullPath(configuration["Vault:FilePath"] ?? "vault.dat", apiDirectory),
+                VaultCipher.DeriveKey(masterSecret), TimeProvider.System);
+            var apiKey = new ProviderCredentialResolver(configuration, secrets, vault).Resolve(provider);
+            if (string.IsNullOrEmpty(apiKey))
+                throw new InvalidOperationException("The local LlamaCpp provider credential is unavailable.");
+
+            return new ChatModelOptions(provider, baseUrl, null, model, nativeTools)
             {
+                ResolvedApiKey = apiKey,
                 RequestTimeout = TimeSpan.FromSeconds(120),
             };
         }

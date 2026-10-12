@@ -19,11 +19,15 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
     <Compile Include="..\bOps.Runtime.Tests\TestDoubles.cs" Link="Linked\TestDoubles.cs" />
+    <!-- Reuse the production credential resolver without starting the API host or copying Vault logic. -->
+    <Compile Include="..\..\src\core\bOps.Api\ProviderCredentialResolver.cs" Link="Linked\ProviderCredentialResolver.cs" />
     <!-- KNOW-01A: the signed-pack test support (throw-away test keys only) is shared with bOps.Knowledge.Tests. -->
     <Compile Include="..\bOps.Knowledge.Tests\Support\*.cs" Link="Support\%(Filename)%(Extension)" />
   </ItemGroup>
