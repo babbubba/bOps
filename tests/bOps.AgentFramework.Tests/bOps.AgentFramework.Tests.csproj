@@ -20,6 +20,8 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Microsoft.Extensions.Configuration" />
+    <!-- Supplies Configuration and Logging.Abstractions at runtime. Restore after changing this
+         reference: builds that skip restore can omit AspNetCore.App from runtimeconfig.json. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
