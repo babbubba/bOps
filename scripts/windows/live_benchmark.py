@@ -226,7 +226,41 @@ def config_snapshot_manifest(snapshot: pathlib.Path):
         path = snapshot / name
         if entry.get("present") and (not path.is_file() or entry.get("sha256") != sha(path.read_bytes())):
             raise RuntimeError(f"Configuration snapshot is incomplete or changed: {name}")
+    settings = json.loads((snapshot / "settings.json").read_text(encoding="utf-8"))
+    selected = selected_ui_configuration(settings)
+    if manifest.get("selectedConfiguration") not in (None, selected):
+        raise RuntimeError("Configuration snapshot is stale or its selected provider/model metadata changed.")
+    fingerprint = sha(json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    if manifest.get("configurationFingerprint") not in (None, fingerprint):
+        raise RuntimeError("Configuration snapshot fingerprint does not match its files.")
+    manifest.setdefault("selectedConfiguration", selected)
+    manifest.setdefault("configurationFingerprint", fingerprint)
+    manifest.setdefault("snapshotCompatibility", "legacy-schema-1")
     return manifest
+
+
+def selected_ui_configuration(settings: dict):
+    provider = settings.get("activeProviderId")
+    profile = (settings.get("providers") or {}).get(provider) if provider else None
+    if not provider or not isinstance(profile, dict) or not profile.get("model") or not profile.get("baseUrl"):
+        raise RuntimeError("Saved UI configuration is missing an active provider, model, or endpoint.")
+    return {"provider": provider, "modelId": profile["model"], "endpoint": safe_endpoint(profile["baseUrl"]),
+            "endpointFingerprint": sha(profile["baseUrl"].encode("utf-8"))}
+
+
+def verify_loaded_configuration(provider_info: dict, settings_view: dict, selected: dict):
+    active = provider_info.get("active") or {}
+    provider = active.get("provider", active.get("providerId"))
+    model = settings_view.get("effectiveModel")
+    endpoint = safe_endpoint(settings_view.get("effectiveBaseUrl", active.get("baseUrl", active.get("baseURL"))))
+    if provider != selected["provider"] or active.get("model") != selected["modelId"] or model != selected["modelId"]:
+        raise RuntimeError("Loaded API provider/model does not match the saved UI selection; no tasks were started.")
+    raw_endpoint = settings_view.get("effectiveBaseUrl", active.get("baseUrl", active.get("baseURL")))
+    if endpoint != selected["endpoint"] or sha(str(raw_endpoint).encode("utf-8")) != selected["endpointFingerprint"]:
+        raise RuntimeError("Loaded API endpoint does not match the saved UI selection; no tasks were started.")
+    if settings_view.get("effectiveFallbacks"):
+        raise RuntimeError("Automatic fallback models are configured; comparative benchmark requires an empty fallback chain.")
+    return {"provider": provider, "modelId": model, "endpoint": endpoint}
 
 
 def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path, reuse_path: pathlib.Path | None = None):
@@ -236,6 +270,11 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
             raise RuntimeError(f"Requested configuration snapshot does not exist: {snapshot}")
         secure_private_directory(snapshot)
         manifest = config_snapshot_manifest(snapshot)
+        source_dir = source_root.resolve() / "src" / "core" / "bOps.Api"
+        for name, entry in manifest["files"].items():
+            source = source_dir / name
+            if bool(entry.get("present")) != source.is_file() or (source.is_file() and entry.get("sha256") != sha(source.read_bytes())):
+                raise RuntimeError(f"Configuration snapshot is stale relative to the current UI configuration: {name}")
         return snapshot, manifest, True
 
     source_dir = source_root.resolve() / "src" / "core" / "bOps.Api"
@@ -258,8 +297,13 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
             files[name] = {"present": True, "sha256": sha(target.read_bytes())}
         else:
             files[name] = {"present": False, "sha256": None}
+    try:
+        selected = selected_ui_configuration(json.loads((snapshot / "settings.json").read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError("Saved UI settings are invalid or incomplete.") from exc
     manifest = {"schemaVersion": 1, "sourceRoot": str(source_root.resolve()),
-                "createdAtUtc": utc_now(), "files": files}
+                "createdAtUtc": utc_now(), "files": files, "selectedConfiguration": selected,
+                "configurationFingerprint": sha(json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8"))}
     write_json(snapshot / "config-snapshot.json", manifest)
     if os.name != "nt":
         (snapshot / "config-snapshot.json").chmod(0o600)
@@ -414,7 +458,7 @@ def safe_endpoint(value):
         host = parsed.hostname or ""
         if parsed.port is not None:
             host += f":{parsed.port}"
-        return urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+        return urlunsplit((parsed.scheme, host, "", "", ""))
     except ValueError:
         return "<configured endpoint omitted: invalid URL>"
 
@@ -711,6 +755,8 @@ def run(args):
                    "snapshotReusedExplicitly": snapshot_reused,
                    "contentRootOverride": str(config_snapshot_path),
                    "files": snapshot_manifest["files"],
+                   "selectedConfiguration": snapshot_manifest["selectedConfiguration"],
+                   "configurationFingerprint": snapshot_manifest["configurationFingerprint"],
                    "vaultFileIncludedInArchive": False,
                    "masterKeyValueIncludedInArchive": False,
                },
@@ -758,6 +804,7 @@ def run(args):
                     startup["effectiveConfiguration"] = describe_effective_configuration(provider_info or {}, settings_view)
                     startup["effectiveProvider"] = startup["effectiveConfiguration"]["active"]
                     write_json(run_root / "startup.json", startup)
+                    verify_loaded_configuration(provider_info or {}, settings_view or {}, snapshot_manifest["selectedConfiguration"])
                     if not credential_available:
                         raise RuntimeError("The selected provider credential is unavailable in the benchmark process; no tasks were started.")
                     break
@@ -775,6 +822,7 @@ def run(args):
             return
         ordinal = 0
         for round_number, scenario in scenario_runs(args.runs_per_scenario):
+            config_snapshot_manifest(config_snapshot_path)
             ordinal += 1
             intention = f"{scenario['id']}-R{round_number}"
             idem = str(uuid.uuid4())

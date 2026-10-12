@@ -153,6 +153,77 @@ class RuntimeTargetTests(unittest.TestCase):
 
 
 class CaptureTests(unittest.TestCase):
+    def _write_ui_config(self, root, provider="fixture", model="fixture-model"):
+        api = root / "source" / "src" / "core" / "bOps.Api"
+        api.mkdir(parents=True, exist_ok=True)
+        (api / "appsettings.json").write_text("{}", encoding="utf-8")
+        (api / "appsettings.Development.json").unlink(missing_ok=True)
+        (api / "settings.json").write_text(json.dumps({"activeProviderId": provider, "providers": {
+            provider: {"model": model, "baseUrl": "https://example.invalid/v1"}}}), encoding="utf-8")
+        (api / "vault.dat").write_bytes(b"ciphertext-only-fixture")
+        return api.parents[2], api
+
+    def test_snapshot_rejects_changed_ui_provider_and_stale_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, api = self._write_ui_config(root)
+            snap, _, _ = bench.prepare_config_snapshot(source, root / "snapshot")
+            (api / "settings.json").write_text(json.dumps({"activeProviderId": "openrouter", "providers": {
+                "openrouter": {"model": "new-model", "baseUrl": "https://example.invalid/v1"}}}), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "stale relative"):
+                bench.prepare_config_snapshot(source, root / "unused", snap)
+
+    def test_snapshot_requires_selected_ui_configuration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, api = self._write_ui_config(root)
+            (api / "settings.json").write_text('{"providers":{}}', encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "missing an active provider"):
+                bench.prepare_config_snapshot(source, root / "snapshot")
+
+    def test_legacy_schema_snapshot_remains_reusable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, _ = self._write_ui_config(root)
+            snap, manifest, _ = bench.prepare_config_snapshot(source, root / "snapshot")
+            manifest.pop("selectedConfiguration")
+            manifest.pop("configurationFingerprint")
+            manifest.pop("snapshotCompatibility", None)
+            bench.write_json(snap / "config-snapshot.json", manifest)
+            _, reused_manifest, reused = bench.prepare_config_snapshot(source, root / "unused", snap)
+            self.assertTrue(reused)
+            self.assertEqual("fixture-model", reused_manifest["selectedConfiguration"]["modelId"])
+
+    def test_snapshot_never_copies_vault_into_capture_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, _ = self._write_ui_config(root)
+            _, _, _ = bench.prepare_config_snapshot(source, root / "snapshot")
+            capture = root / "capture"
+            capture.mkdir()
+            (capture / "startup.json").write_text("{}", encoding="utf-8")
+            archive = root / "capture.zip"
+            bench.package(capture, archive)
+            with zipfile.ZipFile(archive) as zf:
+                content = b"".join(zf.read(name) for name in zf.namelist())
+            self.assertNotIn(b"ciphertext-only-fixture", content)
+            self.assertNotIn(b"vault.dat", content)
+
+    def test_loaded_provider_model_and_fallbacks_are_fail_closed(self):
+        selected = {"provider": "llamacpp", "modelId": "model-q4", "endpoint": "http://localhost:8080",
+                    "endpointFingerprint": bench.sha(b"http://localhost:8080/v1")}
+        good = {"active": {"provider": "llamacpp", "model": "model-q4", "baseUrl": "http://localhost:8080/v1"}}
+        settings = {"effectiveModel": "model-q4", "effectiveBaseUrl": "http://localhost:8080/v1", "effectiveFallbacks": []}
+        self.assertEqual("llamacpp", bench.verify_loaded_configuration(good, settings, selected)["provider"])
+        cases = (("openrouter", "model-q4", []), ("llamacpp", "other", []),
+                 ("llamacpp", "model-q4", [{"provider": "openrouter"}]))
+        for active, model, fallbacks in cases:
+            with self.subTest(active=active, model=model, fallbacks=fallbacks):
+                bad_provider = {"active": {"provider": active, "model": model, "baseUrl": "http://localhost:8080/v1"}}
+                bad_settings = {"effectiveModel": model, "effectiveBaseUrl": "http://localhost:8080/v1", "effectiveFallbacks": fallbacks}
+                with self.assertRaises(RuntimeError):
+                    bench.verify_loaded_configuration(bad_provider, bad_settings, selected)
+
     def test_requested_run_counts_produce_expected_round_robin(self):
         for runs, expected in ((1, ["B01", "B02", "B03"]), (3, ["B01", "B02", "B03"] * 3)):
             roster = [(scenario["id"], round_no) for round_no in range(1, runs + 1) for scenario in bench.SCENARIOS]
@@ -503,7 +574,7 @@ class CaptureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "missing required files"):
                 bench.prepare_config_snapshot(source_api.parents[2], destination)
             for name, data in (("appsettings.json", b'{"Provider":"fixture"}'),
-                               ("settings.json", b'{"fixture":true}'), ("vault.dat", b"synthetic-vault"),
+                               ("settings.json", b'{"activeProviderId":"fixture","providers":{"fixture":{"model":"fixture-model","baseUrl":"http://localhost:1234/v1"}}}'), ("vault.dat", b"synthetic-vault"),
                                ("appsettings.Development.json", b'{"Fixture":"development"}')):
                 (source_api / name).write_bytes(data)
             snapshot, manifest, reused = bench.prepare_config_snapshot(source_api.parents[2], destination)
@@ -585,6 +656,8 @@ class CaptureTests(unittest.TestCase):
             source_api.mkdir(parents=True)
             for name in bench.REQUIRED_SNAPSHOT_FILES:
                 (source_api / name).write_text("{}")
+            (source_api / "settings.json").write_text(json.dumps({"activeProviderId": "fixture", "providers": {
+                "fixture": {"model": "fixture-model", "baseUrl": "https://example.test"}}}), encoding="utf-8")
             target = root / "target"
             target.mkdir()
             fake_project = target / "src" / "core" / "bOps.Api" / "bOps.Api.csproj"
@@ -604,7 +677,9 @@ class CaptureTests(unittest.TestCase):
                 if url.endswith("/api/providers"):
                     return 200, b"{}", providers
                 if url.endswith("/api/settings/"):
-                    return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "fixture-model", "effectiveCredentialAvailable": True}
+                    return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "fixture-model",
+                                         "effectiveBaseUrl": "https://example.test", "effectiveFallbacks": [],
+                                         "effectiveCredentialAvailable": True}
                 raise AssertionError(url)
             provenance = {"candidateCommit": bench.ANCHORS[-1], "baselineCommit": bench.ANCHORS[-1],
                           "validationMode": "expected-target-commit", "changedFiles": [],
