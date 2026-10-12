@@ -561,7 +561,7 @@ public sealed class EvidenceGroundingLedgerTests
     }
 
     [Fact]
-    public void Markers_AllTwelveCombinations_AreFinalSteps_AndRoundTripTheirOutcomes()
+    public void Markers_AllSixteenCombinations_AreFinalSteps_AndRoundTripTheirOutcomes()
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var disclosure in Enum.GetValues<EvidenceDisclosureOutcome>())
@@ -579,7 +579,7 @@ public sealed class EvidenceGroundingLedgerTests
             }
         }
 
-        Assert.Equal(12, seen.Count);
+        Assert.Equal(16, seen.Count); // four disclosure outcomes (two historical re-ask ones, AF-05H appended) x four grounding outcomes
         Assert.False(FinalResponse.IsFinalStep(new PlanStep(1, "Final response; evidence grounding", null, null, "answer")));
 
         // The three rows written before PRE-5 read back unchanged, and nothing near a marker is one.

@@ -409,7 +409,8 @@ public sealed class FallbackExecutionTests
     {
         var book = new Book()
             .Script(Primary, Plan("fbtest.info"), Fail(), NoToolPlan(), Final("second"))
-            .Script(Secondary, Final("first"));
+            // AF-05H: the planned step is unresolved, so the first final is re-evaluated on the sticky secondary, which drops it.
+            .Script(Secondary, Final("first"), NoToolPlan(), Final("first"));
         using var host = NewHost(book, ("Anthropic", "sonnet-x"));
 
         var first = await StartAndWait(host);
@@ -419,7 +420,7 @@ public sealed class FallbackExecutionTests
         Assert.Equal(AgentTaskStatus.Completed, second.Status);
         Assert.Equal(0, second.PinnedProviderConfiguration!.FallbackOrdinal);
         Assert.Equal(4, book.CallsTo(Primary));
-        Assert.Equal(1, book.CallsTo(Secondary));
+        Assert.Equal(3, book.CallsTo(Secondary));
         Assert.Equal(0, host.Coordinator.Current.Pin.FallbackOrdinal);
         Assert.Equal(1, (await host.Tasks.LoadAsync(first.Id))!.PinnedProviderConfiguration!.FallbackOrdinal);
     }

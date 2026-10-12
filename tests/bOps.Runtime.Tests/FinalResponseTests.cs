@@ -181,9 +181,9 @@ public sealed class FinalResponseTests
     }
 
     [Fact]
-    public async Task TheRunnersRecordedModelCalls_ReconstructIntoNormalEmptyRetryAndReAsk()
+    public async Task TheRunnersRecordedModelCalls_ReconstructIntoNormalAndEmptyRetry_TheAppendedDisclosureAddsNone()
     {
-        // empty reply on the step call, then the answer; then a heading-less answer is restated by the re-ask.
+        // empty reply on the step call, then the answer; a heading-less answer gets the deterministic section (AF-05H): no call.
         var tool = new ResultTool("test.partial", Partial());
         var model = new FakeChatModel(
             Plan("test.partial"), Call("test.partial"),
@@ -192,12 +192,11 @@ public sealed class FinalResponseTests
         var state = await Runner(model, Registry(tool), new RecordingAuditSink()).RunAsync("goal", Actor);
 
         var final = state.Steps[^1];
-        Assert.Equal(FinalResponse.ReAskAcceptedMarker, final.Description);
+        Assert.Equal(FinalResponse.AppendedMarker, final.Description);
         var calls = FinalResponse.LogicalCalls(final);
-        Assert.Equal(
-            [LogicalModelCallRole.Answer, LogicalModelCallRole.EmptyAnswerRetry, LogicalModelCallRole.EvidenceDisclosureReAsk],
-            calls.Select(c => c.Role));
+        Assert.Equal([LogicalModelCallRole.Answer, LogicalModelCallRole.EmptyAnswerRetry], calls.Select(c => c.Role));
         Assert.All(calls, call => Assert.Single(call.Attempts));
-        Assert.Equal(3, final.ModelCalls!.Count);
+        Assert.Equal(2, final.ModelCalls!.Count);
+        Assert.Equal(4, model.Requests.Count);
     }
 }

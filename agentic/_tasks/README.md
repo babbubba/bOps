@@ -38,6 +38,7 @@ snapshots under `agentic/obsolete/`.
 | AF-03 | [`Governed MAF summarization`](2026-10-10-af-03-governed-summarization.md) | **Implemented locally** | medio |
 | AF-04 | [`Evidence cleanup + high-density facts`](2026-10-10-af-04-evidence-cleanup.md) | **Implemented locally** (+ review fixes R1/R2) | medio |
 | AF-05 | [`MAF regression, tuning + legacy cleanup`](2026-10-10-af-05-maf-regression-tuning-cleanup.md) | **Implemented locally — live-provider runs and Windows/Linux CI NOT RUN; not pushed or merged** (benchmark record: [results](2026-10-11-af-05-benchmark-results.md)) | medio |
+| AF-05H | [`Live regression hardening (H2, H4)`](2026-10-11-af-05h-live-regression-hardening.md) | **H2 + H4 on `fix/af-05h-live-regression-hardening`; H1 isolated on its own branch; H3/H5 deferred** — deterministic fixtures, not merged | medio |
 | 24 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future — blocked until stable V1.3 gate | molto alto |
 | 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
 | 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |

@@ -13,6 +13,8 @@ persisted as a completed answer.
 AF-05G amendment: "Amendment — step-diverse grounding selection (AF-05G)" (2026-10-11, at the end of this document) —
 the non-referenced part of the PRE-5 fact selection is a deterministic step-diverse round-robin instead of newest-first
 only; nothing else of the amendment changes.
+AF-05H amendment: "Amendment — deterministic evidence disclosure (AF-05H)" (2026-10-11, at the end of this document) —
+§6's model re-ask is replaced by a deterministic runtime-authored section appended to the unchanged answer; no model call.
 HARDEN-11 gap: addressed by [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) §16–§17
 (Accepted 2026-10-05, D-041) — typed evidence-limitation metadata in delegation results and the plan approval view;
 strict `FindingsOf` (first-complete-object tolerance rejected)
@@ -1203,3 +1205,50 @@ round-robin. The repository has no rule that ties a selection algorithm to a tem
 | G2-T4 | Same persisted state, any input order | Byte-identical block. |
 | G2-T5 | Persist → reopen → resume | Live and resumed requests carry the same block. |
 | G2-T6 | c508-equivalent on the unknown profile, 10,240 and 16,384 | Every expected authoritative signal is directly visible, a grounded typed fact, or exactly readable through `runtime.evidence_read` (ADR-0052); the grounding block covers `system.stability`, `system.crashes` and `system.events`. |
+
+## Amendment — deterministic evidence disclosure (AF-05H)
+
+Status: **Accepted (2026-10-11, AF-05H).** Supersedes the re-ask mechanism of §6 and its bounds; the detector, the digest,
+the evidence rule, the Diagnostic-role exception and PRE-5 grounding are unchanged.
+
+### Problem
+
+A live run's first final answer correctly reported 26 kernel live dumps with one code and one with another. Its heading-less
+answer was re-asked under `EvidenceDisclosure/v1`; the restatement rewrote the whole answer and reported 27 with the first
+code. The grounding check did not catch it (the grounding block carried the total, not the per-code split). A safety phase
+introduced a factual error.
+
+### Rule
+
+1. The disclosure phase never rewrites the final answer and makes no model call.
+2. When the persisted digest is non-empty, the role is not the delegated Diagnostic one, `Agent:EvidenceDisclosureEnabled`
+   is true and the detector of §6 finds no heading, the runtime appends a bounded section:
+   `answer` + (a closing fence line, only when the answer ends inside an unclosed fence) + a blank line + `## Evidence limitations`,
+   the fixed line `Added by bOps from typed tool results (EvidenceDisclosure/v2); the answer above is unchanged. ...`, the
+   digest's listed entry lines exactly as rendered from typed fields (outcome, failure kind, completeness, shortened length,
+   shape-checked tool name or fixed token), and the digest's omission line when entries are not shown. It never contains tool
+   output, error messages, observations, arguments or model text, so evidence cannot forge it, and it is at most the digest
+   bound (4,608 characters).
+3. The original answer is an exact, byte-identical prefix of the persisted final. An answer that already has a valid heading is
+   persisted byte-identical. With no listed limitations nothing is appended.
+4. The section is a pure function of the persisted steps; the final is persisted once and a resume never recomputes it.
+5. The final step's `Description` is `Final response; evidence limitations appended by runtime` (with the PRE-5 grounding
+   suffixes). The two historical re-ask markers stay readable for persisted rows, and only they reconstruct a re-ask logical
+   call; the appended section contributes no logical model call.
+6. PRE-5 grounding, when it applies, checks the original answer plus the appended section; there is no model-generated
+   disclosure in between. A grounding correction must keep the heading, as before.
+7. Configuration: `Agent:EvidenceDisclosureEnabled` (default true). `Agent:EvidenceDisclosureRetries` is deprecated: still read
+   so existing configurations keep their meaning (0 disables, 1 changes nothing, any other value fails validation); it never
+   causes a model call. The shipped settings carry only the new key.
+
+### Residual gap (not solved here)
+
+"Not contradicted" is not "fully supported": a model claim that no typed fact contradicts can still be unsupported. AF-05H only
+guarantees that the disclosure phase itself cannot alter factual claims; a general claim-support/entailment checker is a
+separate task.
+
+### Tests
+
+`DeterministicDisclosureTests` (byte-identical prefix, heading present, no limitations, zero extra calls and tokens, determinism
+and reload, forged evidence, bound, the live 26-versus-27 regression, switch and deprecated alias, budget, delegated roles,
+historical markers), `EvidenceGroundingLoopTests.G12_*`, `TerminalDisclosureFallbackTests`, `EvidenceDisclosureHeadingTests`.

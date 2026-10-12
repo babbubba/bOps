@@ -16,8 +16,9 @@ public sealed class FallbackHandshakeTests
     private static readonly ActorIdentity Actor = ActorIdentity.FromOperatingSystemUser("test-user");
     private static readonly DateTimeOffset Start = new(2026, 10, 6, 8, 0, 0, TimeSpan.Zero);
 
+    // No tool step is ever called in these scripts, so the plan is empty: a final answer is accepted only once no step remains (AF-05H).
     private static readonly Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan =
-        (_, _) => Task.FromResult(PlanningTestSupport.PlanResponse());
+        (_, _) => Task.FromResult(PlanningTestSupport.PlanResponse(stepCount: 0));
 
     private static readonly Func<ModelRequest, CancellationToken, Task<ModelResponse>> Done =
         (_, _) => Task.FromResult(new ModelResponse("Done.", [], true, null));

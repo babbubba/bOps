@@ -80,7 +80,7 @@ internal static class EvidenceLimitationsDigest
             text.Append('\n').Append(entry);
         }
 
-        return new EvidenceLimitations(text.ToString(), shown.Count, omitted);
+        return new EvidenceLimitations(text.ToString(), shown.Count, omitted) { Entries = shown };
     }
 
     /// <summary>The production fixed text, including the invariant decimal omission count.</summary>
@@ -285,4 +285,8 @@ internal sealed record LimitedStep(PlanStep Step, bool UnknownTool, bool Complet
 /// <param name="Text">The digest, starting with its version line; at most <see cref="EvidenceLimitationsDigest.MaxCharacters"/> characters.</param>
 /// <param name="EntryCount">How many steps it lists.</param>
 /// <param name="OmittedCount">How many earlier qualifying steps it does not list (also said in the text).</param>
-internal sealed record EvidenceLimitations(string Text, int EntryCount, int OmittedCount);
+internal sealed record EvidenceLimitations(string Text, int EntryCount, int OmittedCount)
+{
+    /// <summary>The listed entry lines exactly as in <see cref="Text"/>, rendered from typed fields only (AF-05H deterministic disclosure).</summary>
+    public IReadOnlyList<string> Entries { get; init; } = [];
+}

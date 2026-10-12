@@ -86,6 +86,8 @@ public sealed class DiagnosisProviderPathAuthorityTests
         ["steps"] = new JsonArray(new JsonObject { ["description"] = "look", ["expectedTool"] = "host.info" }),
     }.ToJsonString());
 
+    private static string EmptyPlan() => Text(new JsonObject { ["rationale"] = "r", ["steps"] = new JsonArray() }.ToJsonString());
+
     private static string ToolCall(string id, string name) => new JsonObject
     {
         ["model"] = "vendor/picked",
@@ -118,7 +120,7 @@ public sealed class DiagnosisProviderPathAuthorityTests
             Plan(),                                             // Discovery: replan after the rejection
             ToolCall("call_2", "host_info"),                    // Discovery: the Read tool it was offered
             Text("Read the host.\n\nEvidence limitations\n- one call named an unknown tool."),
-            Plan(),                                             // Diagnostic: plan
+            EmptyPlan(),                                        // Diagnostic: plan (AF-05H: a final is accepted only once no step remains)
             Text("{\"findings\":[{\"summary\":\"Host read.\",\"evidenceIds\":[\"discovery-1\"]}]}"))
         {
             ForbidNativeToolsWhen = IsPlanningRequest,
@@ -158,7 +160,8 @@ public sealed class DiagnosisProviderPathAuthorityTests
         // it is not a package tool and grants nothing. What matters is that no name but host_info and the control function appears.
         var operational = offered.Select(names => names.Where(name => name != "runtime_evidence_read").ToList()).ToList();
         Assert.All(operational, names => Assert.True(names.Count == 0 || names.SequenceEqual(["host_info"]), string.Join(",", names)));
-        Assert.Equal(3, operational.Count(names => names.Count == 1)); // two Discovery calls and the Diagnostic final-answer call
+        // The two Discovery calls; the Diagnostic plan is empty, so its final-answer call offers no operational tool (AF-05H).
+        Assert.Equal(2, operational.Count(names => names.Count == 1));
 
         var limitation = Assert.Single(Assert.Single(run.Roles, r => r.Agent.Role == AgentRoleKind.Discovery).EvidenceLimitations!);
         Assert.True(limitation.UnknownTool);

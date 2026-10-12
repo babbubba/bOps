@@ -127,7 +127,7 @@ public sealed class ReplanThresholdMessageTests
         store.Seed(stored);
 
         var result = await Runner(
-            new FakeChatModel(Hang(), PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.hangs"), new ModelResponse("done", [], true, null)),
+            new FakeChatModel(Hang(), PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), new ModelResponse("done", [], true, null)),
             messages, Options(), store).ResumeAsync(stored, Resumer);
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
@@ -146,7 +146,7 @@ public sealed class ReplanThresholdMessageTests
         var result = await Runner(
             new FakeChatModel(
                 Hang(), PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.hangs"),
-                Hang(), PlanningTestSupport.PlanResponse(revision: 2, expectedTool: "test.hangs"),
+                Hang(), PlanningTestSupport.PlanResponse(stepCount: 0, revision: 2),
                 new ModelResponse("done", [], true, null)),
             messages, Options(), store).ResumeAsync(stored, Resumer);
 
@@ -183,7 +183,7 @@ public sealed class ReplanThresholdMessageTests
             new ModelResponse("MODEL-REPLY-SENTINEL", [new ModelToolCall("c1", "test.hangs", ToolArguments.Empty)], false, null),
             PlanningTestSupport.PlanResponse(revision: 1, rationale: "RATIONALE-SENTINEL", expectedTool: "test.hangs"),
             Hang(), PlanningTestSupport.PlanResponse(revision: 2, expectedTool: "test.hangs"),
-            Hang(), PlanningTestSupport.PlanResponse(revision: 3, expectedTool: "test.hangs"),
+            Hang(), PlanningTestSupport.PlanResponse(stepCount: 0, revision: 3),
             new ModelResponse("done", [], true, null));
 
         await Runner(model, messages, Options()).RunAsync(SecretGoal, Actor);
@@ -210,11 +210,13 @@ public sealed class ReplanThresholdMessageTests
 
     private static List<ModelResponse> ReplanningModelScript(int replans)
     {
-        var script = new List<ModelResponse> { PlanningTestSupport.PlanResponse(expectedTool: "test.hangs") };
+        // The plan the closing "done" answers is empty, so it is accepted without another replan (AF-05H); every earlier plan has
+        // the one step whose call times out and replans.
+        var script = new List<ModelResponse> { PlanningTestSupport.PlanResponse(stepCount: replans == 0 ? 0 : 1, expectedTool: "test.hangs") };
         for (var i = 0; i < replans; i++)
         {
             script.Add(Hang());
-            script.Add(PlanningTestSupport.PlanResponse(revision: 1 + i, expectedTool: "test.hangs"));
+            script.Add(PlanningTestSupport.PlanResponse(stepCount: i == replans - 1 ? 0 : 1, revision: 1 + i, expectedTool: "test.hangs"));
         }
 
         script.Add(new ModelResponse("done", [], true, null));

@@ -879,10 +879,12 @@ only partially available: `Partial`/`Unavailable`, non-validation failures (neve
 (`Observation.StartsWith(Output, Ordinal)` false), and validation failures unless a later step on the same resolved
 `ToolCall.ToolName` succeeded — the only supersession rule; unknown-tool rejections appear as `(unknown tool)` and are
 never superseded. Typed metadata only selects fixed runtime-authored text (rules S5, C7). (7) **Disclosure.** When the
-digest is non-empty and a deterministic detector finds no `Evidence limitations` heading, at most one re-ask
-(`EvidenceDisclosure/v1`, `Agent:EvidenceDisclosureRetries` 0–1, default 1) asks for a restatement; it **never executes
-a tool**, adds no step or replan, never changes the task status, and keeps the original answer unless the re-ask
-returns an answer with a valid heading; the final step's `Description` records the outcome. (8) **`excludeSources`.**
+digest is non-empty and a deterministic detector finds no `Evidence limitations` heading, the runtime appends the
+bounded `EvidenceDisclosure/v2` section built from the digest's typed entries (**AF-05H, 2026-10-11**: it replaced the
+`EvidenceDisclosure/v1` model re-ask, whose restatement changed a fact in a live run). It makes **no model call**, never
+executes a tool, adds no step or replan, never changes the task status, and the original answer is always an exact
+prefix of the persisted one (`Agent:EvidenceDisclosureEnabled`, default true; the deprecated
+`Agent:EvidenceDisclosureRetries` 0 still disables it); the final step's `Description` records the outcome. (8) **`excludeSources`.**
 `system.events` gains a comma-separated `String` (≤ 8 entries of ≤ 128 characters, ≤ 1,024 total, `source` character
 set, no duplicates, not equal to `source`), matched case-insensitively on the canonical `source`, excluded natively on
 Windows (`Provider[@Name!=…]`, before the scan ceiling) plus a shared post-filter, post-filtered on Linux, echoed as an

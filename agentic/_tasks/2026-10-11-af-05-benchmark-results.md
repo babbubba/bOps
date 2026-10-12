@@ -374,3 +374,49 @@ Reading: with the unknown profile the grounded typed facts rise from 1 to 7 of t
 task outcome are unchanged, and prompt tokens move +1.4 % on the c508 shape. The compacted-small-results workload could not be read at all before (the oldest 2,000-character
 result was compacted and neither the control function nor the index existed); after the fix the exact read is served. The short diagnostic pays for offering the control
 function and the index (+1,894 synthetic prompt tokens over five calls) and still performs no read, no compaction and no extra model call.
+
+## 9. AF-05H measurements (2026-10-11, H2 and H4)
+
+Evidence class: **DETERMINISTIC FIXTURE** (scripted model, synthetic token proxy = UTF-8 bytes x 2/7, synthetic data). **No live model was
+exercised.** Scope: H2 (premature final replans) and H4 (deterministic disclosure); H1, H3 and H5 are not on this branch.
+
+The same harness file (`LiveRegressionHarness.cs`, `LiveTokenBenchmarkTests.cs`, pre-AF-05H APIs only) was copied into a worktree of
+`97507aa` for the before rows. *Step inference* includes every normal step call (tool proposals, the premature final and the accepted
+final); *ER continuation* is the call after a served or denied read; *Disclosure* is the removed model re-ask. *Check* is the functional
+property each live run violated.
+
+| Build | Fixture | Config | Status | Replans | Premature finals | Tools succeeded | ER served | Planning | Replanning | Step inference | ER continuation | Summarization | Grounding check | Disclosure calls / tokens | Total | Check |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| before (97507aa) | LIVE-1 short cpu/memory | unknown | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6643 | 0 | 0 | 0 | 0 / 0 | **7938** | n/a |
+| before (97507aa) | LIVE-1 short cpu/memory | MAF 32768 | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6643 | 0 | 0 | 0 | 0 / 0 | **7938** | n/a |
+| before (97507aa) | LIVE-1 short cpu/memory | MAF 65536 | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6643 | 0 | 0 | 0 | 0 / 0 | **7938** | n/a |
+| before (97507aa) | LIVE-2 long stability | unknown | Completed | 0 | 0 | 7 | 4 | 1523 | 0 | 30465 | 36356 | 0 | 3306 | 1 / 3233 | **74883** | FACT DRIFTED (27 × 0x193) |
+| before (97507aa) | LIVE-2 long stability | MAF 32768 | Completed | 0 | 0 | 7 | 4 | 1523 | 0 | 37820 | 36839 | 0 | 6863 | 1 / 6789 | **89834** | FACT DRIFTED (27 × 0x193) |
+| before (97507aa) | LIVE-2 long stability | MAF 65536 | Completed | 0 | 0 | 7 | 4 | 1523 | 0 | 37820 | 36839 | 0 | 6863 | 1 / 6789 | **89834** | FACT DRIFTED (27 × 0x193) |
+| before (97507aa) | LIVE-3 focused crash | unknown | Completed | 1 | 0 | 1 | 0 | 1472 | 2066 | 12130 | 0 | 0 | 4161 | 1 / 4074 | **23903** | SUFFIX ABANDONED (1/6) |
+| before (97507aa) | LIVE-3 focused crash | MAF 32768 | Completed | 1 | 0 | 1 | 0 | 1472 | 2066 | 12146 | 0 | 0 | 4177 | 1 / 4091 | **23952** | SUFFIX ABANDONED (1/6) |
+| before (97507aa) | LIVE-3 focused crash | MAF 65536 | Completed | 1 | 0 | 1 | 0 | 1472 | 2066 | 12146 | 0 | 0 | 4177 | 1 / 4091 | **23952** | SUFFIX ABANDONED (1/6) |
+
+| Build | Fixture | Config | Status | Replans | Premature finals | Tools succeeded | ER served | Planning | Replanning | Step inference | ER continuation | Summarization | Grounding check | Disclosure calls / tokens | Total | Check |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| after (H2+H4) | LIVE-1 short cpu/memory | unknown | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6676 | 0 | 0 | 0 | 0 / 0 | **7971** | n/a |
+| after (H2+H4) | LIVE-1 short cpu/memory | MAF 32768 | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6676 | 0 | 0 | 0 | 0 / 0 | **7971** | n/a |
+| after (H2+H4) | LIVE-1 short cpu/memory | MAF 65536 | Completed | 0 | 0 | 3 | 0 | 1295 | 0 | 6676 | 0 | 0 | 0 | 0 / 0 | **7971** | n/a |
+| after (H2+H4) | LIVE-2 long stability | unknown | Completed | 1 | 1 | 7 | 4 | 1523 | 2270 | 33402 | 36390 | 0 | 3223 | 0 / 0 | **76808** | count kept (26 × 0x193) |
+| after (H2+H4) | LIVE-2 long stability | MAF 32768 | Completed | 1 | 1 | 7 | 4 | 1523 | 5826 | 44312 | 36872 | 0 | 6780 | 0 / 0 | **95313** | count kept (26 × 0x193) |
+| after (H2+H4) | LIVE-2 long stability | MAF 65536 | Completed | 1 | 1 | 7 | 4 | 1523 | 5826 | 44312 | 36872 | 0 | 6780 | 0 / 0 | **95313** | count kept (26 × 0x193) |
+| after (H2+H4) | LIVE-3 focused crash | unknown | Completed | 2 | 1 | 6 | 0 | 1472 | 5437 | 39952 | 0 | 0 | 3381 | 0 / 0 | **50242** | suffix executed (6/6) |
+| after (H2+H4) | LIVE-3 focused crash | MAF 32768 | Completed | 2 | 1 | 6 | 0 | 1472 | 5453 | 47276 | 0 | 0 | 6912 | 0 / 0 | **61113** | suffix executed (6/6) |
+| after (H2+H4) | LIVE-3 focused crash | MAF 65536 | Completed | 2 | 1 | 6 | 0 | 1472 | 5453 | 47276 | 0 | 0 | 6912 | 0 / 0 | **61113** | suffix executed (6/6) |
+
+Reading (unknown profile, the shipped default):
+
+| Fixture | Before → after | Where it moved | Functional result |
+|---|---|---|---|
+| LIVE-1 short | 7,938 → 7,971 (+0.4 %) | the step-prompt sentence | unchanged: 0 replans, 0 reads, 0 summaries |
+| LIVE-2 long | 74,883 → 76,808 (+2.6 %) | disclosure 3,233 → **0** (1 call → 0); +2,270 replanning and +2,937 step inference for the premature-final re-evaluation and the new tool-free final call | count kept (26 × 0x193) instead of drifting to 27; superfluous step `Superseded` instead of `Failed` |
+| LIVE-3 focused | 23,903 → 50,242 | disclosure 4,074 → **0**; the rest is the five diagnostics that now really run | suffix executed 6/6 instead of abandoned after 1/6 |
+
+Per purpose, LIVE-2 (unknown): planning 1,523 → 1,523; replanning 0 → 2,270; step inference 30,465 → 33,402; EvidenceRead continuation
+36,356 → 36,390; summarization 0 → 0; grounding check 3,306 → 3,223; **disclosure 3,233 → 0**. The extra cost of LIVE-3 is the work the
+live run skipped, not overhead.

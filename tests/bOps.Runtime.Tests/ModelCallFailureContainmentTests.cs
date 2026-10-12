@@ -57,7 +57,8 @@ public sealed class ModelCallFailureContainmentTests
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Reply(ModelResponse response) =>
         (_, _) => Task.FromResult(response);
 
-    private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan() => Reply(PlanningTestSupport.PlanResponse());
+    // These scripts never call a planned tool, so the plan is empty: a final is accepted only once no step remains (AF-05H).
+    private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan() => Reply(PlanningTestSupport.PlanResponse(stepCount: 0));
 
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Done(string text = "Done.") =>
         Reply(new ModelResponse(text, [], true, null));
@@ -454,7 +455,9 @@ public sealed class ModelCallFailureContainmentTests
     public async Task AMalformedPlanFollowedByAValidOne_UsesTheValidPlan_AndKeepsTheMalformedAttemptOnRecord()
     {
         var h = Create(new ScriptedChatModel(
-            Reply(new ModelResponse("""{"steps":[],"steps":[]}""", [], false, null)), Plan(), Done()));
+            Reply(new ModelResponse("""{"steps":[],"steps":[]}""", [], false, null)), Reply(PlanningTestSupport.PlanResponse()), Done(),
+            // AF-05H: the valid plan's step is unresolved, so that final is re-evaluated; the replan drops it.
+            Plan(), Done()));
 
         var task = await h.Runner.RunAsync("check", Actor);
 

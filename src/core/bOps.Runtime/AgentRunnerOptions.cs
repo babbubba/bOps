@@ -93,11 +93,21 @@ public sealed record AgentRunnerOptions
     public int EmptyFinalResponseRetries { get; init; } = 1;
 
     /// <summary>
-    /// Whether a final answer given while the runtime lists evidence limitations, and carrying no
-    /// <c>Evidence limitations</c> heading, is asked once more to restate itself with the section (ADR-0042 §6). <c>1</c> (the
-    /// default) allows that one tool-free re-ask; <c>0</c> disables it. No other value is valid: the re-ask never loops.
+    /// Whether a final answer given while the runtime lists evidence limitations, and carrying no <c>Evidence limitations</c>
+    /// heading, gets the deterministic runtime-authored limitations section appended (ADR-0042 §6, AF-05H). No model call is made
+    /// and the answer's own text is never changed. Default <c>true</c>.
     /// </summary>
-    public int EvidenceDisclosureRetries { get; init; } = 1;
+    public bool EvidenceDisclosureEnabled { get; init; } = true;
+
+    /// <summary>
+    /// <b>Deprecated (AF-05H)</b>; use <see cref="EvidenceDisclosureEnabled"/>. It used to count the model re-asks of the disclosure,
+    /// which no longer exist. It is still read so an existing configuration keeps its meaning: <c>0</c> disables the disclosure,
+    /// <c>1</c> leaves <see cref="EvidenceDisclosureEnabled"/> in charge, any other value fails validation. It never causes a model call.
+    /// </summary>
+    public int? EvidenceDisclosureRetries { get; init; }
+
+    /// <summary>Whether the deterministic disclosure is applied: <see cref="EvidenceDisclosureEnabled"/>, unless the deprecated key says 0.</summary>
+    public bool EvidenceDisclosureActive => EvidenceDisclosureEnabled && EvidenceDisclosureRetries is not 0;
 
     /// <summary>
     /// The most characters of each request body and each reply body kept with a recorded model call; a longer body is
@@ -197,10 +207,11 @@ public sealed record AgentRunnerOptions
                 $"'Agent:ReplanWarningThreshold' ({threshold}) must be at least 1 and not greater than 'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}).");
         }
 
-        if (EvidenceDisclosureRetries is not (0 or 1))
+        if (EvidenceDisclosureRetries is { } retries and not (0 or 1))
         {
             throw new InvalidOperationException(
-                $"'Agent:EvidenceDisclosureRetries' ({EvidenceDisclosureRetries}) must be 0 (disabled) or 1.");
+                $"'Agent:EvidenceDisclosureRetries' ({retries}) is deprecated; when present it must be 0 (disabled) or 1. "
+                + "Use 'Agent:EvidenceDisclosureEnabled'.");
         }
 
         if (ModelCallMaxAttempts < 1)

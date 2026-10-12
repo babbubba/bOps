@@ -64,8 +64,9 @@ public sealed partial class HardenEightE2ETests
         Assert.Equal(39, read.StepIndex);
         Assert.True(model.SawRetrievedSentinel);
 
-        // Four plan revisions across three execution attempts, and the index never lists more than its bound.
-        Assert.Equal(4, completed.Plans.Count);
+        // Four plan revisions across three execution attempts, plus the empty revision that re-evaluated the closing premature
+        // final (AF-05H), and the index never lists more than its bound.
+        Assert.Equal(5, completed.Plans.Count);
         foreach (var prompt in model.StepSystemPrompts)
         {
             var start = prompt.IndexOf(EvidenceIndex.OpenMarker, StringComparison.Ordinal);
@@ -119,8 +120,11 @@ public sealed partial class HardenEightE2ETests
             if (request.SystemPrompt.Contains("lay out your plan", StringComparison.Ordinal)
                 || request.SystemPrompt.Contains("Revise it", StringComparison.Ordinal))
             {
-                return Task.FromResult(PlanningTestSupport.PlanResponseIndexed("test.partial",
-                    PlanSizes[plansIssued], startIndex: PlanSizes.Take(plansIssued).Sum() + plansIssued++));
+                // AF-05H: the last plan is larger than what remains, so the closing "done" is re-evaluated; nothing is left to do.
+                return Task.FromResult(plansIssued >= PlanSizes.Length
+                    ? PlanningTestSupport.PlanResponse(stepCount: 0)
+                    : PlanningTestSupport.PlanResponseIndexed("test.partial",
+                        PlanSizes[plansIssued], startIndex: PlanSizes.Take(plansIssued).Sum() + plansIssued++));
             }
 
             StepSystemPrompts.Add(request.SystemPrompt);

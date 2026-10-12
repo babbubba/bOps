@@ -42,7 +42,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_RecordsTheModelTheTimeAndTheTokens_OfTheCallThatProducedAStep()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(stepCount: 0),
             Reply("All good.", usage: new ModelUsage(120, 45, null), details: Details()));
 
         var task = await CreateRunner(model, new RecordingAuditSink()).RunAsync("check", Actor);
@@ -62,7 +62,7 @@ public sealed class ModelCallRecordingTests
     [Fact]
     public async Task RunAsync_KeepsTheExactRequestAndReplyBodies_OfEveryCall()
     {
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Reply("Done.", details: Details()));
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 0), Reply("Done.", details: Details()));
 
         var task = await CreateRunner(model, new RecordingAuditSink()).RunAsync("check", Actor);
 
@@ -103,7 +103,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_MeasuresHowLongTheModelTook_ForTheRecordAndForTheAudit()
     {
         var clock = new FakeTimeProvider(Start);
-        var model = new SlowChatModel(clock, TimeSpan.FromMilliseconds(1500), PlanningTestSupport.PlanResponse(), Reply("Done.", details: Details()));
+        var model = new SlowChatModel(clock, TimeSpan.FromMilliseconds(1500), PlanningTestSupport.PlanResponse(stepCount: 0), Reply("Done.", details: Details()));
         var audit = new RecordingAuditSink();
 
         var task = await CreateRunner(model, audit, time: clock).RunAsync("check", Actor);
@@ -139,7 +139,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_AsksAgain_WhenTheModelEndsWithNoTextAndNoToolCall()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(),
+            PlanningTestSupport.PlanResponse(stepCount: 0),
             Reply(null, usage: new ModelUsage(100, 700, null), details: Details("empty-model", "stop")),
             Reply("Here is the answer.", usage: new ModelUsage(110, 20, null)));
 
@@ -156,7 +156,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_TellsTheModelItsReplyWasEmpty_WithoutKeepingTheEmptyTurnInTheConversation()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Reply(null), Reply("Here is the answer."));
+            PlanningTestSupport.PlanResponse(stepCount: 0), Reply(null), Reply("Here is the answer."));
 
         await CreateRunner(model, new RecordingAuditSink()).RunAsync("check", Actor);
 
@@ -239,7 +239,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_CutsALongBody_AndSaysSo()
     {
         var details = new ModelCallDetails("actual", "stop", new string('q', 50), new string('r', 8));
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Reply("Done.", details: details));
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 0), Reply("Done.", details: details));
         var options = new AgentRunnerOptions { MaxModelPayloadCharacters = 20 };
 
         var task = await CreateRunner(model, new RecordingAuditSink(), options).RunAsync("check", Actor);
@@ -254,7 +254,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_DoesNotSplitASurrogatePair_WhenItCutsABody()
     {
         var details = new ModelCallDetails("actual", "stop", "ab😀cd", null);
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(), Reply("Done.", details: details));
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponse(stepCount: 0), Reply("Done.", details: details));
         var options = new AgentRunnerOptions { MaxModelPayloadCharacters = 3 };
 
         var task = await CreateRunner(model, new RecordingAuditSink(), options).RunAsync("check", Actor);
@@ -267,7 +267,7 @@ public sealed class ModelCallRecordingTests
     public async Task RunAsync_KeepsNoBodies_WhenTheLimitIsZero_ButStillRecordsTheModelTimeAndTokens()
     {
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(), Reply("Done.", usage: new ModelUsage(7, 3, null), details: Details()));
+            PlanningTestSupport.PlanResponse(stepCount: 0), Reply("Done.", usage: new ModelUsage(7, 3, null), details: Details()));
         var options = new AgentRunnerOptions { MaxModelPayloadCharacters = 0 };
 
         var task = await CreateRunner(model, new RecordingAuditSink(), options).RunAsync("check", Actor);
