@@ -46,6 +46,12 @@ public interface IKnowledgeReadSession : IDisposable
     /// </summary>
     ToolManifest Manifest { get; }
 
+    /// <summary>
+    /// Re-admits an exact, previously served result for this task under current authority, without reading content again.
+    /// Sessions that cannot verify issuance, scope and current admission fail closed. This grants no instruction authority.
+    /// </summary>
+    bool IsEvidenceAdmitted(ChatTurn result, ModelInvocationContext context) => false;
+
     /// <summary>Handles one model reply: serves or refuses a call of this session, or reports that the reply is not its.</summary>
     Task<KnowledgeReadOutcome> HandleAsync(
         ModelResponse response, KnowledgeReadAuthority authority, ModelInvocationContext context, CancellationToken ct = default);

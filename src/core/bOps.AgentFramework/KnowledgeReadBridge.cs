@@ -134,8 +134,10 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     private readonly TimeProvider timeProvider;
     private readonly KnowledgeReadBudget budget;
     private readonly Func<KnowledgeAdmissionCode?>? currentAuthority;
+    private KnowledgeTaskScope? scope;
     private int reads;
     private int rejections;
+    private readonly Dictionary<ChatTurn, (Guid TaskId, ActorIdentity Actor)> issuedEvidence = new(ReferenceEqualityComparer.Instance);
 
     private KnowledgeReadBridge(
         string providerId,
@@ -227,6 +229,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         var bridge = await CreateCoreAsync(
             admitted.ProviderId, pin, VerifiedSnapshotSkills.Open(admitted.Snapshot), audit, timeProvider, budget, currentAuthority, ct);
 #pragma warning restore CA2000
+        bridge.scope = admitted.Scope;
         try
         {
             RequireIntact(admitted.Snapshot);
@@ -419,7 +422,9 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             }
             else if (result.Code == KnowledgeReadResultCode.Success)
             {
-                turns.Add(ChatTurn.FromToolResult(other.Id, result.Reply) with { Provenance = SkillProvenance(result) });
+                var evidence = ChatTurn.FromToolResult(other.Id, result.Reply) with { Provenance = SkillProvenance(result) };
+                issuedEvidence.Add(evidence, (context.TaskId, context.Actor));
+                turns.Add(evidence);
             }
             else
             {
@@ -431,7 +436,20 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     }
 
     /// <inheritdoc />
-    public void Dispose() => provider.Dispose();
+    public void Dispose()
+    {
+        issuedEvidence.Clear();
+        provider.Dispose();
+    }
+
+    /// <inheritdoc />
+    public bool IsEvidenceAdmitted(ChatTurn result, ModelInvocationContext context) =>
+        currentAuthority is not null
+        && scope is not null && scope.TaskId == context.TaskId && scope.Tenant.Value == pin.TenantId
+        && issuedEvidence.TryGetValue(result, out var issued)
+        && issued.TaskId == context.TaskId && issued.Actor == context.Actor
+        && context.Delegation is null
+        && currentAuthority() is null;
 
     private static string RejectionReply(KnowledgeReadResultCode code) =>
         $"Runtime control call rejected: {code}. runtime.knowledge_read returns reference data from the pinned skill pack only.";

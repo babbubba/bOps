@@ -98,7 +98,9 @@ internal sealed class KnowledgeTaskHost(
 
     private async Task<KnowledgeTaskOpening> OpenAsync(KnowledgeAdmissionRequest request, CancellationToken ct)
     {
-        var opening = await KnowledgeBridgeAdmission.OpenAsync(service, request, audit, clock, budget, authorizeEveryRead: true, ct);
+        var opening = await KnowledgeBridgeAdmission.OpenAsync(service, request, audit, clock, budget, authorizeEveryRead: true,
+            scopeAuthority: () => tenants.Resolve(request.Actor) == request.Scope.Tenant
+                ? null : KnowledgeAdmissionCode.TenantNotAllowed, ct: ct);
         if (opening.Bridge is not { } bridge || opening.Result.Pack is not { } admitted)
         {
             opening.Bridge?.Dispose();

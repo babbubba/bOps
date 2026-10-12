@@ -28,6 +28,7 @@ internal static class KnowledgeBridgeAdmission
         TimeProvider? timeProvider = null,
         KnowledgeReadBudget? budget = null,
         bool authorizeEveryRead = false,
+        Func<KnowledgeAdmissionCode?>? scopeAuthority = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -42,7 +43,8 @@ internal static class KnowledgeBridgeAdmission
             {
 #pragma warning disable CA2000 // Ownership of the bridge passes to the caller in the returned opening.
                 bridge = await KnowledgeReadBridge.CreateFromSnapshotAsync(
-                    admitted, audit, timeProvider, budget, authorizeEveryRead ? () => CurrentAuthority(service, request, admitted) : null, ct);
+                    admitted, audit, timeProvider, budget,
+                    authorizeEveryRead ? () => scopeAuthority?.Invoke() ?? CurrentAuthority(service, request, admitted) : null, ct);
 #pragma warning restore CA2000
             }
             catch (KnowledgePackIntegrityException ex)

@@ -1069,6 +1069,7 @@ public sealed partial class AgentRunner(
                 }
 
                 var protectedAfter = ReconciliationTurns(steps);
+                protectedAfter.AddRange(ContinuedKnowledgeEvidence(run, stepIndex));
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
                 return new ModelContextRequest(
                     systemPrompt,
@@ -3382,8 +3383,23 @@ public sealed partial class AgentRunner(
                 if (served.Handled)
                 {
                     // ADR-0038 first-call-wins, as for the evidence read: the control call was answered and nothing else of the reply
-                    // ran; every call id is answered in the continuation, which is context of this logical call only.
+                    // ran; every call id is answered in this logical call. Only attested successful results can cross steps.
                     logicalCall.ContinuationTurns.AddRange(served.ContinuationTurns);
+                    if (served.Code == KnowledgeReadResultCode.Success)
+                    {
+                        var context = new ModelInvocationContext(run.TaskId, stepIndex, run.Actor, calls)
+                        {
+                            Delegation = run.Delegation?.Correlation,
+                        };
+                        foreach (var knowledgeResult in served.ContinuationTurns.Where(turn => turn.Role == ChatRole.Tool))
+                        {
+                            var call = response.ToolCalls.SingleOrDefault(candidate => candidate.Id == knowledgeResult.ToolCallId);
+                            if (call?.ToolName == knowledge.Manifest.Name && knowledge.IsEvidenceAdmitted(knowledgeResult, context))
+                            {
+                                run.KnowledgeEvidence.Add(new ContinuedKnowledgeRead(stepIndex, call, knowledgeResult));
+                            }
+                        }
+                    }
                     if (served.ProtocolBoundExceeded)
                     {
                         return (response, await FailAsync(run, ControlProtocolFailureMessage,
@@ -5343,6 +5359,30 @@ public sealed partial class AgentRunner(
         }
     }
 
+    private sealed record ContinuedKnowledgeRead(int StepIndex, ModelToolCall Call, ChatTurn Result);
+
+    private static List<ChatTurn> ContinuedKnowledgeEvidence(ExecutionRun run, int stepIndex)
+    {
+        var context = new ModelInvocationContext(run.TaskId, stepIndex, run.Actor, []) { Delegation = run.Delegation?.Correlation };
+        // Retain only exact results attested by the issuing session and matching the runtime's admitted binding.
+        // Reauthorization also checks the tenant's snapshot. No framework history, new read or persistent content is involved.
+        run.KnowledgeEvidence.RemoveAll(evidence =>
+            run.KnowledgeBinding is not { } binding
+            || evidence.Result.Provenance is not { } provenance
+            || provenance.Origin is not (ContextOrigin.Knowledge or ContextOrigin.Skill or ContextOrigin.Experience)
+            || provenance.TenantId != binding.TenantId || provenance.PackId != binding.PackId
+            || provenance.PackVersion != binding.Version || provenance.PackHash != binding.ManifestHash
+            || run.Knowledge?.IsEvidenceAdmitted(evidence.Result, context) != true);
+        List<ChatTurn> turns = [];
+        foreach (var evidence in run.KnowledgeEvidence.Where(evidence => evidence.StepIndex < stepIndex))
+        {
+            turns.Add(ChatTurn.FromAssistantToolCalls([evidence.Call]));
+            turns.Add(evidence.Result);
+        }
+
+        return turns;
+    }
+
     /// <summary>
     /// The in-memory state of one execution attempt (ADR-0040): the task's identity and origin, its steps and plans, its
     /// lifetime accounting carried in from earlier attempts, and this attempt's own step and replan counters.
@@ -5378,6 +5418,9 @@ public sealed partial class AgentRunner(
 
         /// <summary>This attempt's knowledge session; never persisted, disposed when the attempt ends.</summary>
         public IKnowledgeReadSession? Knowledge { get; set; }
+
+        /// <summary>Bounded, admitted read results for this attempt only; never serialized into task state.</summary>
+        public List<ContinuedKnowledgeRead> KnowledgeEvidence { get; } = [];
 
         /// <summary>Whether the task journals its side-effecting calls (ADR-0051 §8.1); fixed when the task was created.</summary>
         public TaskMutationJournalMode MutationJournalMode { get; init; }
