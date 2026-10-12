@@ -128,6 +128,21 @@ internal sealed class KnowledgeProcess : IDisposable
     {
         ArgumentNullException.ThrowIfNull(script);
         var model = new ScriptedRunnerModel(script) { BeforeResponse = beforeResponse };
+        var composed = ComposeCanary(model, host, withHost, store);
+        return new RunnerRig(composed.Runner, model, composed.Maf, composed.Read, composed.Other, composed.Store);
+    }
+
+    /// <summary>
+    /// The explicitly selected test-host composition used by HOST-CANARY-01A. It accepts a caller-supplied model but reuses the
+    /// normal runner, the one governed MAF broker and the normal knowledge host; it is not another executor or a production host.
+    /// </summary>
+    internal CanaryRig ComposeCanary(
+        IChatModel model,
+        IKnowledgeTaskHost? host = null,
+        bool withHost = true,
+        ITaskStore? store = null)
+    {
+        ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
         var other = new RecordingReadTool("test.other", []);
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
@@ -142,7 +157,7 @@ internal sealed class KnowledgeProcess : IDisposable
             model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(), world.Audit, taskStore,
             TimeProvider.System, NullLogger<AgentRunner>.Instance, options, invocationBroker: maf,
             knowledgeHost: withHost ? host ?? Host : null);
-        return new RunnerRig(runner, model, maf, read, other, taskStore);
+        return new CanaryRig(runner, maf, read, other, taskStore);
     }
 
     public void Dispose()
@@ -157,6 +172,10 @@ internal sealed class KnowledgeProcess : IDisposable
 /// <summary>The runner and the doubles around it, so a test can assert what the model saw and what ran.</summary>
 internal sealed record RunnerRig(
     AgentRunner Runner, ScriptedRunnerModel Model, MafGovernedTurnBroker Maf, RecordingReadTool Read, RecordingReadTool Other, ITaskStore Store);
+
+/// <summary>The reusable result of the isolated canary composition; no member exposes a second dispatch path.</summary>
+internal sealed record CanaryRig(
+    AgentRunner Runner, MafGovernedTurnBroker Maf, RecordingReadTool Read, RecordingReadTool Other, ITaskStore Store);
 
 /// <summary>The host's knowledge policy for tests: tenant to pack, and the one registered source.</summary>
 internal sealed class TestPolicy(InMemoryPackSource source, IReadOnlyDictionary<TenantId, PackReference> bindings) : IKnowledgeTaskPolicy
