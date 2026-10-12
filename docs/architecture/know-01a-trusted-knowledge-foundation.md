@@ -53,7 +53,7 @@ Test keys are generated in memory per run and never written; no credential, toke
 ## Integrations not yet demonstrated (NOT DETERMINED)
 
 - **Runner wiring.** `AgentRunner` does not offer or serve `runtime.knowledge_read` (KNOW-01B); no host composes any of this; tenant authority, registry, trust store location, grants source and the engine version passed to the verifier are all host work.
-- **Linux and a real symlink on Windows.** Tests use a junction on Windows and a symlink elsewhere; the Linux run is recorded in the commit report.
+- **CI and a real symlink on Windows.** Windows and Linux CI have not run (nothing is pushed), and CI stays authoritative. Local evidence: Windows (all non-live suites green except one unrelated, pre-existing flaky test, `VaultStoreTests.ConcurrentSets_ForDifferentProviders_BothSucceed_WithoutLosingAnEntry`, an `UnauthorizedAccessException` race in `VaultStore.SaveAll`; it passes in isolation and is outside this change) and Linux from a `git archive` copy in WSL Ubuntu-24.04, with real symlinks: `bOps.Knowledge.Tests` 92/92, `bOps.AgentFramework.Tests` 210/210, `bOps.Architecture.Tests` 187 passed and 2 platform skips, `bOps.Audit.Tests` 29/29. On Windows the link tests use a junction (a reparse point, like a symlink for these checks), not a symbolic link.
 - **Third-party MAF providers.** No decorator exists; the design avoids admitting them rather than wrapping them.
 - **Experience search and its mandatory tenant filter.** Only the isolation of whole Experience packs is shown.
 - **Task-store resume, snapshot garbage collection, signing tooling, key distribution and rotation, time-limited key validity.**
