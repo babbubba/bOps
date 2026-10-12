@@ -39,6 +39,8 @@
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
     <!-- AF-TOOLROUTE-01: the B03 reproduction runs the real OpenAI-compatible adapter, which owns the wire names. -->
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.OpenAiCompatible\bOps.Packages.Providers.OpenAiCompatible.csproj" />
+    <!-- HOST-CANARY-01B: the opt-in live canary constructs the existing local llama.cpp package directly. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
   </ItemGroup>
 
 </Project>
