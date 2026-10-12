@@ -51,6 +51,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(TaskLifecycleAuditEvent), "taskLifecycle")]
 [JsonDerivedType(typeof(EvidenceReadAuditEvent), "evidenceRead")]
 [JsonDerivedType(typeof(TaskMutationAuditEvent), "taskMutation")]
+[JsonDerivedType(typeof(KnowledgeReadAuditEvent), "knowledgeRead")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -172,6 +173,71 @@ public sealed record EvidenceReadAuditEvent : AuditEvent
 
     /// <summary>How the attempt ended.</summary>
     public required EvidenceReadResultCode ResultCode { get; init; }
+}
+
+/// <summary>How an attempted <c>runtime.knowledge_read</c> ended (ADR-0054 section 5). The names are stable audit codes.</summary>
+public enum KnowledgeReadResultCode
+{
+    /// <summary>The operation was served and, where content was read, it matched its pin.</summary>
+    Success = 0,
+    /// <summary>The call did not have the exact required shape.</summary>
+    Malformed = 1,
+    /// <summary>The tool was not offered on this turn, or knowledge reads are not eligible for the step.</summary>
+    NotOffered = 2,
+    /// <summary>The call named something that is not the public knowledge-read tool (an internal framework function, a script runner, another runtime function).</summary>
+    Unsupported = 3,
+    /// <summary>The skill is not in the pinned pack.</summary>
+    UnknownSkill = 4,
+    /// <summary>The resource is not in the pinned skill.</summary>
+    UnknownResource = 5,
+    /// <summary>The read budget of the task is exhausted.</summary>
+    LimitExceeded = 6,
+    /// <summary>The content actually produced did not match its pinned hash; nothing was returned.</summary>
+    IntegrityMismatch = 7,
+    /// <summary>The verified content exceeds the per-read size bound; nothing was returned.</summary>
+    TooLarge = 8,
+}
+
+/// <summary>
+/// Metadata-only record of an attempted <c>runtime.knowledge_read</c> (ADR-0054 section 5): which pack, skill and resource were
+/// actually read, by name and hash, and how the attempt ended. It never contains the content or any tool arguments, and it is
+/// emitted for denials and rejections too.
+/// </summary>
+public sealed record KnowledgeReadAuditEvent : AuditEvent
+{
+    /// <summary>The operation: <c>discover</c>, <c>load</c> or <c>read_resource</c>, or <c>null</c> when the call could not be read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Operation { get; init; }
+
+    /// <summary>The pack the content came from, when the read resolved to one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackId { get; init; }
+
+    /// <summary>The pack version.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackVersion { get; init; }
+
+    /// <summary>The pinned pack hash.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackHash { get; init; }
+
+    /// <summary>The skill read, only when it resolved to a pinned skill (a model-claimed name is never recorded).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Skill { get; init; }
+
+    /// <summary>The resource read, only when it resolved to a pinned resource.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Resource { get; init; }
+
+    /// <summary>The hash of the content actually read and verified; <c>null</c> when nothing was served.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHash { get; init; }
+
+    /// <summary>The number of UTF-16 code units returned; zero for a rejection.</summary>
+    public required int ReturnedLength { get; init; }
+
+    /// <summary>How the attempt ended.</summary>
+    public required KnowledgeReadResultCode ResultCode { get; init; }
 }
 
 /// <summary>

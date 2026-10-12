@@ -47,7 +47,24 @@ public sealed class MafTurnEquivalenceTests
     {
         var current = await RunAsync(scenario, maf: false);
         var governed = await RunAsync(scenario, maf: true);
+        AssertIdentical(scenario, current, governed);
+        Assert.Equal(0, governed.ComposedTurns);
+    }
 
+    [Theory]
+    [MemberData(nameof(Scenarios))]
+    public async Task AGovernedMafTurnComposedByTheBopsContextProvider_IsObservablyIdenticalToTheCurrentPath(string scenario)
+    {
+        // AF-TURN-01B: the protected instructions and protected turns now reach the agent through the one admitted bOps provider.
+        // What the provider, the audit sink and the task store observe must not change by a byte.
+        var current = await RunAsync(scenario, maf: false);
+        var composed = await RunAsync(scenario, maf: true, provider: true);
+        AssertIdentical(scenario, current, composed);
+        Assert.True(composed.ComposedTurns > 0, "the scenario really went through the bOps context provider");
+    }
+
+    private static void AssertIdentical(string scenario, Outcome current, Outcome governed)
+    {
         // A comparison of two empty runs would prove nothing.
         Assert.NotEmpty(current.ProviderRequests);
         Assert.Equal(current.ProviderRequests.Count, governed.ProviderRequests.Count);
@@ -139,7 +156,7 @@ public sealed class MafTurnEquivalenceTests
 
     // ---- scenarios ----
 
-    private static async Task<Outcome> RunAsync(string scenario, bool maf)
+    private static async Task<Outcome> RunAsync(string scenario, bool maf, bool provider = false)
     {
         var tools = new List<CountingTool> { new("test.read", "ok") };
         var options = new AgentRunnerOptions();
@@ -232,7 +249,10 @@ public sealed class MafTurnEquivalenceTests
         var inner = new ModelInvocationBroker(
             model, audit, TimeProvider.System, NullLogger.Instance, options,
             contextProjector: new MafContextProjector(options, NullLogger.Instance));
-        IModelInvocationBroker broker = maf ? new MafGovernedTurnBroker(inner, audit) : inner;
+        var mafBroker = maf
+            ? new MafGovernedTurnBroker(inner, audit, null, provider ? MafContextAssembly.BopsProvider : MafContextAssembly.InputOnly)
+            : null;
+        IModelInvocationBroker broker = mafBroker is null ? inner : mafBroker;
         var runner = new AgentRunner(
             model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(), audit, store,
             TimeProvider.System, NullLogger<AgentRunner>.Instance, options, invocationBroker: broker);
@@ -251,7 +271,10 @@ public sealed class MafTurnEquivalenceTests
             [.. model.Requests.Select(Normalise)],
             [.. audit.Events.Select(evt => Normalise(JsonSerializer.Serialize(evt)))],
             Normalise(JsonSerializer.Serialize(state)),
-            tools.ToDictionary(tool => tool.Manifest.Name, tool => tool.Executions));
+            tools.ToDictionary(tool => tool.Manifest.Name, tool => tool.Executions))
+        {
+            ComposedTurns = mafBroker?.ComposedTurns ?? 0,
+        };
     }
 
     /// <summary>
@@ -305,7 +328,10 @@ public sealed class MafTurnEquivalenceTests
     }
 
     private sealed record Outcome(
-        IReadOnlyList<string> ProviderRequests, IReadOnlyList<string> Audit, string State, IReadOnlyDictionary<string, int> Executions);
+        IReadOnlyList<string> ProviderRequests, IReadOnlyList<string> Audit, string State, IReadOnlyDictionary<string, int> Executions)
+    {
+        public int ComposedTurns { get; init; }
+    }
 
     /// <summary>A scripted provider that records, as JSON, the exact request it received (after bOps projected the context).</summary>
     private sealed class ScriptedModel(IReadOnlyList<object> script) : IChatModel

@@ -24,6 +24,7 @@ public sealed class GovernedChatClient : IChatClient
     private readonly Func<(ModelRequest Authorized, ModelContextRequest? Projectable)> authorizedFactory;
     private readonly IAuditSink audit;
     private readonly TimeProvider timeProvider;
+    private readonly string? admittedProviderId;
     private bool disposed;
 
     /// <summary>Creates a client whose broker receives the authorised request as it is, with no context projection.</summary>
@@ -35,13 +36,18 @@ public sealed class GovernedChatClient : IChatClient
     /// </param>
     /// <param name="audit">Receives the audit event of every refusal.</param>
     /// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
+    /// <param name="admittedContextProviderId">
+    /// The id the host assigned to the one bOps-authored context provider instance it composed for this call, or <c>null</c> when no
+    /// provider is composed (every provider message is then refused). Admission never replaces the exact comparison.
+    /// </param>
     public GovernedChatClient(
         IModelInvocationBroker broker,
         Func<ModelInvocationContext> contextFactory,
         Func<ModelRequest> authorizedRequestFactory,
         IAuditSink audit,
-        TimeProvider? timeProvider = null)
-        : this(broker, contextFactory, Wrap(authorizedRequestFactory), audit, timeProvider)
+        TimeProvider? timeProvider = null,
+        string? admittedContextProviderId = null)
+        : this(broker, contextFactory, Wrap(authorizedRequestFactory), audit, timeProvider, admittedContextProviderId)
     {
     }
 
@@ -55,13 +61,15 @@ public sealed class GovernedChatClient : IChatClient
     /// <param name="authorizedContextRequestFactory">Supplies the context request bOps authorised for this call.</param>
     /// <param name="audit">Receives the audit event of every refusal.</param>
     /// <param name="timeProvider">The clock for the audit event; the system clock by default.</param>
+    /// <param name="admittedContextProviderId">See the constructor above.</param>
     public GovernedChatClient(
         IModelInvocationBroker broker,
         Func<ModelInvocationContext> contextFactory,
         Func<ModelContextRequest> authorizedContextRequestFactory,
         IAuditSink audit,
-        TimeProvider? timeProvider = null)
-        : this(broker, contextFactory, Wrap(authorizedContextRequestFactory), audit, timeProvider)
+        TimeProvider? timeProvider = null,
+        string? admittedContextProviderId = null)
+        : this(broker, contextFactory, Wrap(authorizedContextRequestFactory), audit, timeProvider, admittedContextProviderId)
     {
     }
 
@@ -70,8 +78,10 @@ public sealed class GovernedChatClient : IChatClient
         Func<ModelInvocationContext> contextFactory,
         Func<(ModelRequest, ModelContextRequest?)> authorizedFactory,
         IAuditSink audit,
-        TimeProvider? timeProvider)
+        TimeProvider? timeProvider,
+        string? admittedContextProviderId)
     {
+        this.admittedProviderId = admittedContextProviderId;
         this.broker = broker ?? throw new ArgumentNullException(nameof(broker));
         this.contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
         this.authorizedFactory = authorizedFactory;
@@ -112,7 +122,7 @@ public sealed class GovernedChatClient : IChatClient
 
         var context = contextFactory();
         var (authorized, projectable) = authorizedFactory();
-        var verdict = ContextGate.Evaluate([.. messages], options, authorized, broker.Descriptor);
+        var verdict = ContextGate.Evaluate([.. messages], options, authorized, broker.Descriptor, admittedProviderId);
         if (verdict.Request is not { } request)
         {
             throw await RefuseAsync(context, authorized, verdict, cancellationToken);

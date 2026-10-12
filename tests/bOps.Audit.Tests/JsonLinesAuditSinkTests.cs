@@ -229,6 +229,45 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         Assert.DoesNotContain("ContextGateRejection", legacy, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task WriteAsync_PersistsAKnowledgeReadByNameAndHash_NeverByContent_ThroughTheRealSinkAndChain()
+    {
+        // AF-TURN-01B: a knowledge read and a refusal are chained and round-trip; the event has no field that can carry content.
+        var served = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.NewGuid(), StepIndex = 2, Actor = Actor,
+            Operation = "read_resource", PackId = "pack", PackVersion = "1.0.0", PackHash = "ph", Skill = "nginx-triage",
+            Resource = "checklist", ContentHash = "ch", ReturnedLength = 120, ResultCode = KnowledgeReadResultCode.Success,
+        };
+        var refused = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = served.TaskId, StepIndex = 2, Actor = Actor,
+            ReturnedLength = 0, ResultCode = KnowledgeReadResultCode.Unsupported,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(served);
+            await sink.WriteAsync(refused);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        var persisted = JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>();
+        var restored = Assert.IsType<KnowledgeReadAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(persisted));
+        Assert.Equal("ch", restored.ContentHash);
+        Assert.Equal("checklist", restored.Resource);
+        Assert.Equal(KnowledgeReadResultCode.Success, restored.ResultCode);
+        Assert.Contains("\"eventType\":\"knowledgeRead\"", persisted, StringComparison.Ordinal);
+
+        var bare = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("Skill", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("PackId", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            typeof(KnowledgeReadAuditEvent).GetProperties().Select(property => property.Name),
+            name => name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash");
+    }
+
     [Theory]
     [InlineData(TaskLifecycleStage.RecoveryRejected)]
     [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]

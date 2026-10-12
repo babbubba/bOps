@@ -14,7 +14,7 @@ internal enum ContextGateCode
     /// <summary>The effective context carries a message replayed from a MAF chat history.</summary>
     HistoryMessage,
 
-    /// <summary>The effective context carries a message a MAF context provider added; no provider is admitted.</summary>
+    /// <summary>The effective context carries a message a MAF context provider added that is not the one provider the host admitted.</summary>
     UnadmittedProvider,
 
     /// <summary>A System message is not one of the messages bOps projected.</summary>
@@ -64,13 +64,19 @@ internal sealed record ContextGateResult(ModelRequest? Request, ContextGateCode?
 /// effective context against the request bOps itself authorised for this call: a message is admitted when, and only when, it is
 /// exactly the next bOps-projected turn, and it then enters the broker as that bOps turn, with the provenance bOps assigned to it.
 /// A MAF source attribution, <c>AdditionalProperties</c>, a message id or a provider name is never read to grant anything; the
-/// attribution is read only to refuse a message with a more specific reason. Because no provider is admitted yet, any message a
-/// provider or a chat history adds fails the comparison by construction.
+/// attribution is read only to refuse a message with a more specific reason. Without an admitted provider any message a provider or
+/// a chat history adds is refused; with one (AF-TURN-01B) the host names the single bOps-authored provider instance it composed
+/// for this call, a message tagged by anything else is refused, and a message the admitted provider tagged still has to equal the
+/// next bOps-projected turn: admission lets a message be compared, it never lets one be believed.
 /// </summary>
 internal static class ContextGate
 {
     public static ContextGateResult Evaluate(
-        IReadOnlyList<ChatMessage> messages, ChatOptions? options, ModelRequest authorized, ChatModelDescriptor descriptor)
+        IReadOnlyList<ChatMessage> messages,
+        ChatOptions? options,
+        ModelRequest authorized,
+        ChatModelDescriptor descriptor,
+        string? admittedProviderId = null)
     {
         if (CheckOptions(options, descriptor) is { } optionsRejection)
         {
@@ -86,10 +92,17 @@ internal static class ContextGate
                     "A message comes from a MAF chat history; governed turns are stateless.");
             }
 
+            if (source == AgentRequestMessageSourceType.AIContextProvider
+                && admittedProviderId is not null
+                && string.Equals(message.GetAgentRequestMessageSourceId(), admittedProviderId, StringComparison.Ordinal))
+            {
+                continue; // the host-composed bOps provider; the exact comparison below still decides
+            }
+
             if (source != AgentRequestMessageSourceType.External)
             {
                 return ContextGateResult.Reject(ContextGateCode.UnadmittedProvider,
-                    "A message was added by a MAF context provider, and no provider is admitted.");
+                    "A message was added by a MAF context provider that the host did not admit for this call.");
             }
         }
 

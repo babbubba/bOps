@@ -6,6 +6,7 @@ namespace bOps.Architecture.Tests;
 public sealed class AgentFrameworkBoundaryTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] ConfigurationNames = ["knowledge_read", "BopsProvider", "ExperimentalProvider", "AgentSkills", "SkillsProvider"];
 
     [Fact]
     public void AbstractionsProjectAndSource_DoNotReferenceAgentFrameworkTypes()
@@ -117,7 +118,7 @@ public sealed class AgentFrameworkBoundaryTests
         Assert.Contains("UseProvidedChatClientAsIs = true", turn, StringComparison.Ordinal);
         foreach (var forbidden in new[]
         {
-            "FunctionInvokingChatClient", "UseFunctionInvocation", "AIFunctionFactory.Create(", "AsDeclarationOnly", "AIContextProvider",
+            "FunctionInvokingChatClient", "UseFunctionInvocation", "AIFunctionFactory.Create(", "AsDeclarationOnly",
             "ChatHistoryProvider", "AgentSession", "GetNewSessionAsync", "ConversationId",
         })
         {
@@ -137,7 +138,8 @@ public sealed class AgentFrameworkBoundaryTests
             .Where(file => file.Text.Contains(".InvokeAsync(", StringComparison.Ordinal))
             .Select(file => file.Path)
             .Where(path => path is not "src/core/bOps.AgentFramework/GovernedChatClient.cs"
-                and not "src/core/bOps.AgentFramework/GovernedSummarizationChatClient.cs")
+                and not "src/core/bOps.AgentFramework/GovernedSummarizationChatClient.cs"
+                and not "src/core/bOps.AgentFramework/KnowledgeReadBridge.cs") // invokes framework AIFunctions, never a broker (see the bridge test)
             .ToArray();
         Assert.True(offenders.Length == 0, $"A broker call that does not pass the context gate: {string.Join(", ", offenders)}");
     }
@@ -153,6 +155,71 @@ public sealed class AgentFrameworkBoundaryTests
             .Select(file => file.Path)
             .ToArray();
         Assert.Empty(composed);
+    }
+
+    [Fact]
+    public void TheOnlyMafContextProvider_IsTheBopsAuthoredOneComposedPerCall_AndTheTurnTakesItOnlyFromTheComposition()
+    {
+        // AF-TURN-01B: a context provider reaches the agent only as the composition bOps built for this call.
+        var production = ProductionSources().ToList();
+        var providers = production.Where(file => System.Text.RegularExpressions.Regex.IsMatch(file.Text, @":\s*AIContextProvider\b"))
+            .Select(file => file.Path).ToArray();
+        Assert.Equal(["src/core/bOps.AgentFramework/BopsContextProvider.cs"], providers);
+
+        var turn = production.Single(file => file.Path == "src/core/bOps.AgentFramework/MafGovernedTurn.cs").Text;
+        Assert.Contains("AIContextProviders = composition is null ? null : [composition.Provider]", turn, StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(turn, "AIContextProviders"));
+        Assert.DoesNotContain("AgentSkillsProvider", turn, StringComparison.Ordinal);
+
+        // The framework skills provider is used in one place, as a library invoked by bOps, never as an agent provider.
+        var skills = production.Where(file => file.Text.Contains("AgentSkillsProvider", StringComparison.Ordinal))
+            .Select(file => file.Path).ToArray();
+        Assert.Equal(["src/core/bOps.AgentFramework/KnowledgeReadBridge.cs"], skills);
+    }
+
+    [Fact]
+    public void TheKnowledgeBridgeAndTheContextProvider_AreComposedByNoProductionHost_AndNoConfigurationCanEnableThem()
+    {
+        // ADR-0054 G2: nothing Knowledge/Skills can be active in a production configuration. Admission is made by the code that
+        // constructs a host (a test host today); there is no option, setting or data file that turns it on.
+        string[] names =
+        [
+            "KnowledgeReadBridge", "ExperimentalProviderAdmission", "FixtureSkillPack", "BopsContextProvider",
+            "MafContextComposition", "MafContextAssembly", "KnowledgeReadAuditEvent",
+        ];
+        var composed = ProductionSources()
+            .Where(file => !file.Path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
+            .Where(file => file.Path != "src/core/bOps.Abstractions/Audit.cs" && file.Path != "src/core/bOps.Audit/AuditJsonContext.cs")
+            .SelectMany(file => names.Where(name => file.Text.Contains(name, StringComparison.Ordinal)).Select(name => $"{file.Path}: {name}"))
+            .ToArray();
+        Assert.Empty(composed);
+
+        var configuration = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.json", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.EndsWith("packages.lock.json", StringComparison.Ordinal))
+            .Where(path => ConfigurationNames.Any(name => File.ReadAllText(path).Contains(name, StringComparison.OrdinalIgnoreCase)))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+            .ToArray();
+        Assert.Empty(configuration);
+    }
+
+    [Fact]
+    public void TheKnowledgeBridge_HasNoModelNoAgentNoLoopAndNoScriptRunner()
+    {
+        var bridge = ProductionSources().Single(file => file.Path == "src/core/bOps.AgentFramework/KnowledgeReadBridge.cs").Text;
+        foreach (var forbidden in new[]
+        {
+            "IChatClient", "IChatModel", "IModelInvocationBroker", "ChatClientAgent", "FunctionInvokingChatClient", "UseFunctionInvocation",
+            ".RunAsync(", "GetResponseAsync", "AgentFileSkillScriptRunner", "AgentFileSkillsSource", "AgentSkillsProviderOptions { DisableRunSkillScriptApproval",
+        })
+        {
+            Assert.DoesNotContain(forbidden, bridge, StringComparison.Ordinal);
+        }
+
+        // The framework's script function is named only to be refused; it has no entry in the table of invocable functions.
+        Assert.Contains("functions[function.Name] = function", bridge, StringComparison.Ordinal);
+        Assert.Contains("AgentSkillsProvider.LoadSkillToolName or AgentSkillsProvider.ReadSkillResourceToolName", bridge, StringComparison.Ordinal);
     }
 
     private static IEnumerable<(string Path, string Text)> ProductionSources() =>
