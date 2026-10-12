@@ -153,6 +153,14 @@ class RuntimeTargetTests(unittest.TestCase):
 
 
 class CaptureTests(unittest.TestCase):
+    def setUp(self):
+        # Source resolution tests must not inherit an operator's configured paths.
+        environment = {key: value for key, value in os.environ.items()
+                       if key.casefold() not in {"settings__filepath", "vault__filepath"}}
+        fixture_environment = patch.dict(os.environ, environment, clear=True)
+        fixture_environment.start()
+        self.addCleanup(fixture_environment.stop)
+
     def _write_ui_config(self, root, provider="fixture", model="fixture-model"):
         api = root / "source" / "src" / "core" / "bOps.Api"
         api.mkdir(parents=True, exist_ok=True)
@@ -162,6 +170,112 @@ class CaptureTests(unittest.TestCase):
             provider: {"model": model, "baseUrl": "https://example.invalid/v1"}}}), encoding="utf-8")
         (api / "vault.dat").write_bytes(b"ciphertext-only-fixture")
         return api.parents[2], api
+
+    def test_real_api_settings_schema_from_git_root_in_both_target_modes(self):
+        model = "nvidia/nemotron-3-super-120b-a12b:free"
+        for expected in (None, "a" * 40):
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as temp:
+                root = pathlib.Path(temp)
+                source, api = self._write_ui_config(root)
+                saved = {"SchemaVersion": 1, "Revision": 7, "ActiveProviderId": "OpenRouter",
+                         "Providers": {"OpenRouter": {"ProviderId": "OpenRouter", "Model": model,
+                                                       "BaseUrl": "https://openrouter.ai/api/v1"}}, "Fallbacks": []}
+                (api / "settings.json").write_text(json.dumps(saved), encoding="utf-8-sig")
+                # Runtime validation mode does not change source resolution.
+                args = bench.make_argument_parser().parse_args([
+                    "--target-repo-root", str(source), "--config-source-root", str(source)] +
+                    (["--expected-target-commit", expected] if expected else []))
+                snap, manifest, _ = bench.prepare_config_snapshot(pathlib.Path(args.config_source_root), root / "snap")
+                selected = manifest["selectedConfiguration"]
+                self.assertEqual(str(source.resolve()), manifest["sourceRoot"])
+                self.assertEqual("OpenRouter", selected["provider"])
+                self.assertEqual(model, selected["modelId"])
+                self.assertEqual((api / "settings.json").read_bytes(), (snap / "settings.json").read_bytes())
+                bench.verify_loaded_configuration(
+                    {"active": {"provider": "OpenRouter", "model": model}},
+                    {"effectiveModel": model, "effectiveBaseUrl": "https://openrouter.ai/api/v1",
+                     "effectiveFallbacks": []}, selected)
+                self.assertEqual(manifest["configurationFingerprint"],
+                                 bench.config_snapshot_manifest(snap)["configurationFingerprint"])
+                self.assertTrue(bench.prepare_config_snapshot(source, root / "unused", snap)[2])
+
+    def test_configured_paths_use_api_working_directory_and_configuration_precedence(self):
+        for mode in ("relative", "absolute", "development", "environment", "relative-environment"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temp:
+                root = pathlib.Path(temp)
+                source, api = self._write_ui_config(root)
+                custom = api / "custom files"
+                custom.mkdir()
+                settings = custom / "selected.json"
+                vault = custom / "encrypted.dat"
+                settings.write_bytes((api / "settings.json").read_bytes())
+                vault.write_bytes(b"custom-ciphertext")
+                values = {"Settings": {"FilePath": str(settings) if mode == "absolute" else "custom files/selected.json"},
+                          "Vault": {"FilePath": str(vault) if mode == "absolute" else "custom files/encrypted.dat"}}
+                if mode in ("development", "environment", "relative-environment"):
+                    bench.write_json(api / "appsettings.json", {"Settings": {"FilePath": "missing.json"},
+                                                               "Vault": {"FilePath": "missing.dat"}})
+                if mode == "development":
+                    bench.write_json(api / "appsettings.Development.json", values)
+                elif mode not in ("environment", "relative-environment"):
+                    bench.write_json(api / "appsettings.json", values)
+                overrides = {"Settings__FilePath": str(settings), "Vault__FilePath": str(vault)} if mode == "environment" else (
+                    {"settings__filepath": "custom files/selected.json", "vault__filepath": "custom files/encrypted.dat"}
+                    if mode == "relative-environment" else {})
+                with patch.dict(os.environ, overrides):
+                    snap, manifest, _ = bench.prepare_config_snapshot(source, root / "snap")
+                    self.assertEqual(settings.read_bytes(), (snap / "settings.json").read_bytes())
+                    self.assertEqual(vault.read_bytes(), (snap / "vault.dat").read_bytes())
+                    self.assertEqual(bench.sha(vault.read_bytes()), manifest["files"]["vault.dat"]["sha256"])
+                    self.assertTrue(bench.prepare_config_snapshot(source, root / "unused", snap)[2])
+                    # Default files are decoys and cannot drive freshness checks.
+                    (api / "settings.json").write_text("{}", encoding="utf-8")
+                    (api / "vault.dat").write_bytes(b"decoy-changed")
+                    self.assertTrue(bench.prepare_config_snapshot(source, root / "unused", snap)[2])
+                    vault.write_bytes(b"changed-ciphertext")
+                    with self.assertRaisesRegex(RuntimeError, "stale relative.*vault.dat"):
+                        bench.prepare_config_snapshot(source, root / "unused", snap)
+
+    def test_development_path_override_preserves_other_section_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, api = self._write_ui_config(root)
+            custom = api / "custom"
+            custom.mkdir()
+            (custom / "selected.json").write_bytes((api / "settings.json").read_bytes())
+            (custom / "encrypted.dat").write_bytes(b"custom-ciphertext")
+            bench.write_json(api / "appsettings.json", {
+                "Settings": {"FilePath": "custom/selected.json"}, "Vault": {"FilePath": "missing.dat"}})
+            bench.write_json(api / "appsettings.Development.json", {
+                "settings": {"OtherOption": True}, "vault": {"filepath": "custom/encrypted.dat"}})
+            snap, _, _ = bench.prepare_config_snapshot(source, root / "snap")
+            self.assertEqual(b"custom-ciphertext", (snap / "vault.dat").read_bytes())
+            self.assertEqual("fixture-model", bench.config_snapshot_manifest(snap)["selectedConfiguration"]["modelId"])
+
+    def test_configured_path_missing_does_not_fall_back_to_default_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source, api = self._write_ui_config(root)
+            bench.write_json(api / "appsettings.json", {"Settings": {"FilePath": "missing.json"}})
+            with self.assertRaisesRegex(RuntimeError, "missing required files: settings.json"):
+                bench.prepare_config_snapshot(source, root / "snap")
+
+    def test_snapshot_rejects_tampering_with_files_metadata_and_fingerprint(self):
+        for change in ("file", "metadata", "fingerprint"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                root = pathlib.Path(temp)
+                source, _ = self._write_ui_config(root)
+                snap, manifest, _ = bench.prepare_config_snapshot(source, root / "snap")
+                if change == "file":
+                    (snap / "settings.json").write_text("{}", encoding="utf-8")
+                else:
+                    if change == "metadata":
+                        manifest["selectedConfiguration"]["modelId"] = "wrong-model"
+                    else:
+                        manifest["configurationFingerprint"] = "invalid"
+                    bench.write_json(snap / "config-snapshot.json", manifest)
+                with self.assertRaises(RuntimeError):
+                    bench.prepare_config_snapshot(source, root / "unused", snap)
 
     def test_snapshot_rejects_changed_ui_provider_and_stale_source(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -635,6 +749,7 @@ class CaptureTests(unittest.TestCase):
             (project / "Program.cs").write_text(
                 "var builder = WebApplication.CreateBuilder(args); "
                 "Console.WriteLine(\"BENCH_FIXTURE=\" + builder.Configuration[\"BenchFixture:Value\"]); "
+                "Console.WriteLine(\"BENCH_CWD=\" + Directory.GetCurrentDirectory()); "
                 "Console.WriteLine(\"BENCH_ROOT=\" + builder.Environment.ContentRootPath);", encoding="utf-8")
             (snapshot / "appsettings.json").write_text(
                 json.dumps({"BenchFixture": {"Value": "loaded-from-snapshot"}}), encoding="utf-8")
@@ -648,16 +763,25 @@ class CaptureTests(unittest.TestCase):
             roots = [pathlib.Path(line.partition("=")[2]) for line in result.stdout.splitlines()
                      if line.startswith("BENCH_ROOT=")]
             self.assertTrue(any(path.samefile(snapshot) for path in roots))
+            working_directories = [pathlib.Path(line.partition("=")[2]) for line in result.stdout.splitlines()
+                                   if line.startswith("BENCH_CWD=")]
+            self.assertTrue(any(path.samefile(project) for path in working_directories))
 
     def test_preflight_checks_provider_without_submitting_tasks(self):
+        for expected in (None, bench.ANCHORS[-1]):
+            for reuse in (False, True):
+                with self.subTest(expected=expected, reuse=reuse):
+                    self._check_offline_preflight(expected, reuse)
+
+    def _check_offline_preflight(self, expected, reuse):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             source_api = root / "source" / "src" / "core" / "bOps.Api"
             source_api.mkdir(parents=True)
             for name in bench.REQUIRED_SNAPSHOT_FILES:
                 (source_api / name).write_text("{}")
-            (source_api / "settings.json").write_text(json.dumps({"activeProviderId": "fixture", "providers": {
-                "fixture": {"model": "fixture-model", "baseUrl": "https://example.test"}}}), encoding="utf-8")
+            (source_api / "settings.json").write_text(json.dumps({"ActiveProviderId": "fixture", "Providers": {
+                "fixture": {"Model": "fixture-model", "BaseUrl": "https://example.test"}}, "Fallbacks": []}), encoding="utf-8")
             target = root / "target"
             target.mkdir()
             fake_project = target / "src" / "core" / "bOps.Api" / "bOps.Api.csproj"
@@ -667,8 +791,9 @@ class CaptureTests(unittest.TestCase):
             args = bench.make_argument_parser().parse_args([
                 "--target-repo-root", str(target), "--config-source-root", str(source_api.parents[2]),
                 "--output-root", str(output), "--preflight-only",
-                "--expected-target-commit", bench.ANCHORS[-1],
-            ])
+            ] + (["--expected-target-commit", expected] if expected else []))
+            if reuse:
+                args.config_snapshot_path = str(bench.prepare_config_snapshot(source_api.parents[2], root / "snapshot")[0])
             process = unittest.mock.Mock()
             process.poll.side_effect = [None, 0]
             process.wait.return_value = 0
@@ -689,19 +814,22 @@ class CaptureTests(unittest.TestCase):
                  patch.object(bench, "verify_windows_identity", return_value={"verified": True}), \
                  patch.object(bench, "effective_policy_path", return_value=root / "policy.yaml"), \
                  patch.object(bench, "git", side_effect=["fixture", ""]), \
-                 patch.object(bench, "api_project_path", return_value=fake_project), \
                  patch.object(bench, "start_api_process", return_value=(process, None, None)), \
                  patch.object(bench, "http_json", side_effect=fake_http), \
                  patch.object(bench, "submit_task", side_effect=AssertionError("preflight must not create tasks")), \
                  patch.dict(os.environ, {"BOPS_API_KEY": "synthetic-api-key", "BOPS_VAULT_MASTER_KEY": "synthetic-master-key"}):
                 bench.run(args)
-            validate.assert_called_once_with(target.resolve(), bench.ANCHORS[-1])
+            validate.assert_called_once_with(target.resolve(), expected)
             with zipfile.ZipFile(next(output.glob("*.zip"))) as zf:
                 manifest = json.loads(zf.read("manifest.json"))
                 startup = json.loads(zf.read("startup.json"))
                 self.assertEqual("fixture", manifest["effectiveConfiguration"]["active"]["provider"])
                 self.assertEqual(bench.sha(b"{}"), manifest["configurationProvenance"]["files"]["appsettings.json"]["sha256"])
                 self.assertNotIn("vault.dat", zf.namelist())
+                content = b"".join(zf.read(name) for name in zf.namelist())
+                self.assertNotIn(b"synthetic-master-key", content)
+                self.assertNotIn(b"synthetic-api-key", content)
+                self.assertEqual(reuse, startup["configurationProvenance"]["snapshotReusedExplicitly"])
                 self.assertEqual(provenance, manifest["runtimeProvenance"])
                 self.assertEqual(provenance, startup["runtimeProvenance"])
             self.assertTrue(pathlib.Path(startup["configurationProvenance"]["snapshotRoot"]).is_dir())

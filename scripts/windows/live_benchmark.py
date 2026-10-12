@@ -207,6 +207,33 @@ CONFIG_SNAPSHOT_FILES = ("appsettings.json", "appsettings.Development.json", "se
 REQUIRED_SNAPSHOT_FILES = ("appsettings.json", "settings.json", "vault.dat")
 
 
+def configuration_source_files(source_root: pathlib.Path):
+    # dotnet run uses the API project directory as its working directory. Keep
+    # ConfigSourceRoot at the Git root, just as the collector has always done.
+    source_dir = api_project_path(source_root.resolve()).parent
+    if not source_dir.is_dir():
+        raise RuntimeError(f"Configuration source API directory not found: {source_dir}")
+    sources = {name: source_dir / name for name in CONFIG_SNAPSHOT_FILES}
+    paths = {"settings": "settings.json", "vault": "vault.dat"}
+    for name in ("appsettings.json", "appsettings.Development.json"):
+        if sources[name].is_file():
+            document = json.loads(sources[name].read_text(encoding="utf-8-sig"))
+            for section, values in document.items():
+                if section.casefold() in paths and isinstance(values, dict):
+                    for key, value in values.items():
+                        if key.casefold() == "filepath":
+                            paths[section.casefold()] = value
+    # IConfiguration environment keys are case insensitive too.
+    environment = {key.casefold(): value for key, value in os.environ.items()}
+    for section, filename in (("settings", "settings.json"), ("vault", "vault.dat")):
+        value = environment.get(f"{section}__filepath", paths[section])
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(f"Configuration source has an invalid {section} file path.")
+        path = pathlib.Path(value)
+        sources[filename] = (path if path.is_absolute() else source_dir / path).resolve()
+    return sources
+
+
 def config_snapshot_manifest(snapshot: pathlib.Path):
     manifest_path = snapshot / "config-snapshot.json"
     if not manifest_path.is_file():
@@ -226,7 +253,7 @@ def config_snapshot_manifest(snapshot: pathlib.Path):
         path = snapshot / name
         if entry.get("present") and (not path.is_file() or entry.get("sha256") != sha(path.read_bytes())):
             raise RuntimeError(f"Configuration snapshot is incomplete or changed: {name}")
-    settings = json.loads((snapshot / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads((snapshot / "settings.json").read_text(encoding="utf-8-sig"))
     selected = selected_ui_configuration(settings)
     if manifest.get("selectedConfiguration") not in (None, selected):
         raise RuntimeError("Configuration snapshot is stale or its selected provider/model metadata changed.")
@@ -240,12 +267,20 @@ def config_snapshot_manifest(snapshot: pathlib.Path):
 
 
 def selected_ui_configuration(settings: dict):
-    provider = settings.get("activeProviderId")
-    profile = (settings.get("providers") or {}).get(provider) if provider else None
-    if not provider or not isinstance(profile, dict) or not profile.get("model") or not profile.get("baseUrl"):
+    # SettingsJsonContext persists PascalCase; older collector snapshots used
+    # camelCase. Normalize property names only, never provider dictionary keys.
+    if not isinstance(settings, dict):
         raise RuntimeError("Saved UI configuration is missing an active provider, model, or endpoint.")
-    return {"provider": provider, "modelId": profile["model"], "endpoint": safe_endpoint(profile["baseUrl"]),
-            "endpointFingerprint": sha(profile["baseUrl"].encode("utf-8"))}
+    settings = {key.casefold(): value for key, value in settings.items()}
+    provider = settings.get("activeproviderid")
+    providers = settings.get("providers")
+    profile = providers.get(provider) if isinstance(providers, dict) and isinstance(provider, str) else None
+    profile = {key.casefold(): value for key, value in profile.items()} if isinstance(profile, dict) else {}
+    if not isinstance(provider, str) or not provider.strip() or any(
+            not isinstance(profile.get(key), str) or not profile[key].strip() for key in ("model", "baseurl")):
+        raise RuntimeError("Saved UI configuration is missing an active provider, model, or endpoint.")
+    return {"provider": provider, "modelId": profile["model"], "endpoint": safe_endpoint(profile["baseurl"]),
+            "endpointFingerprint": sha(profile["baseurl"].encode("utf-8"))}
 
 
 def verify_loaded_configuration(provider_info: dict, settings_view: dict, selected: dict):
@@ -270,17 +305,15 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
             raise RuntimeError(f"Requested configuration snapshot does not exist: {snapshot}")
         secure_private_directory(snapshot)
         manifest = config_snapshot_manifest(snapshot)
-        source_dir = source_root.resolve() / "src" / "core" / "bOps.Api"
+        sources = configuration_source_files(source_root)
         for name, entry in manifest["files"].items():
-            source = source_dir / name
+            source = sources[name]
             if bool(entry.get("present")) != source.is_file() or (source.is_file() and entry.get("sha256") != sha(source.read_bytes())):
                 raise RuntimeError(f"Configuration snapshot is stale relative to the current UI configuration: {name}")
         return snapshot, manifest, True
 
-    source_dir = source_root.resolve() / "src" / "core" / "bOps.Api"
-    if not source_dir.is_dir():
-        raise RuntimeError(f"Configuration source API directory not found: {source_dir}")
-    missing = [name for name in REQUIRED_SNAPSHOT_FILES if not (source_dir / name).is_file()]
+    sources = configuration_source_files(source_root)
+    missing = [name for name in REQUIRED_SNAPSHOT_FILES if not sources[name].is_file()]
     if missing:
         raise RuntimeError("Configuration source is missing required files: " + ", ".join(missing))
     snapshot = destination.resolve()
@@ -288,7 +321,7 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
     secure_private_directory(snapshot)
     files = {}
     for name in CONFIG_SNAPSHOT_FILES:
-        source = source_dir / name
+        source = sources[name]
         if source.is_file():
             target = snapshot / name
             shutil.copyfile(source, target)
@@ -298,7 +331,7 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
         else:
             files[name] = {"present": False, "sha256": None}
     try:
-        selected = selected_ui_configuration(json.loads((snapshot / "settings.json").read_text(encoding="utf-8")))
+        selected = selected_ui_configuration(json.loads((snapshot / "settings.json").read_text(encoding="utf-8-sig")))
     except (json.JSONDecodeError, TypeError) as exc:
         raise RuntimeError("Saved UI settings are invalid or incomplete.") from exc
     manifest = {"schemaVersion": 1, "sourceRoot": str(source_root.resolve()),
