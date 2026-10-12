@@ -4891,7 +4891,7 @@ public sealed partial class AgentRunner(
 
     /// <summary>
     /// The tools a plan may name, as prompt text only, in ordinal order: canonical name, risk level, the first sentence
-    /// and bounded non-sensitive parameter identity metadata. This is not an executable surface.
+    /// and the non-sensitive expected-argument schema. This is not an executable surface.
     /// </summary>
     internal static string DescribeToolCatalog(IReadOnlyList<ToolManifest> tools)
     {
@@ -4902,6 +4902,13 @@ public sealed partial class AgentRunner(
 
         var builder = new StringBuilder(
             "Tools available in later steps. Name one in \"expectedTool\" only if it fits; you cannot call a tool in this reply.\n");
+        builder.Append("Only the listed parameters may appear in expectedArguments; unknown names, sensitive parameters and null values are forbidden. ")
+            .Append("Required/optional describes execution arguments; expectedArguments remains an optional equality-only subset. ")
+            .Append("Use JSON strings for String, Path, Duration and Enum, integers for Integer, numbers for Number, booleans for Boolean, ")
+            .Append("and arrays of strings for PathList. Values and enum membership are exact, without coercion. ")
+            .Append("minimum/maximum are inclusive; minLength/maxLength count characters; minItems/maxItems count array items. ")
+            .Append("expectedArguments allows at most ").Append(SemanticExpectedArguments.MaximumConstraintCount)
+            .Append(" properties and ").Append(SemanticExpectedArguments.MaximumSerializedBytes).Append(" serialized UTF-8 bytes.\n");
         foreach (var manifest in tools.OrderBy(manifest => manifest.Name, StringComparer.Ordinal))
         {
             builder.Append("- ").Append(manifest.Name).Append(" [").Append(manifest.Risk).Append("]: ")
@@ -4918,9 +4925,30 @@ public sealed partial class AgentRunner(
                         .Append(parameter.Required ? " required" : " optional");
                     if (parameter.AllowedValues is { Count: > 0 } allowed)
                     {
-                        builder.Append(" allowed[").AppendJoin('|', allowed).Append(']');
+                        builder.Append(" allowed=").Append(JsonSerializer.Serialize(allowed));
+                    }
+                    AppendConstraint("minimum", parameter.Minimum);
+                    AppendConstraint("maximum", parameter.Maximum);
+                    AppendConstraint("minLength", parameter.MinLength);
+                    AppendConstraint("maxLength", parameter.MaxLength);
+                    AppendConstraint("minItems", parameter.MinItems);
+                    AppendConstraint("maxItems", parameter.MaxItems);
+
+                    void AppendConstraint(string name, double? value)
+                    {
+                        if (value is { } bound)
+                        {
+                            builder.Append(' ').Append(name).Append('=')
+                                .Append(bound.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
                     }
                 }
+            }
+            else
+            {
+                builder.Append(manifest.Parameters.Count == 0
+                    ? " Parameters: none (no execution arguments). Omit expectedArguments or use {}."
+                    : " Parameters: none permitted in planning. Omit expectedArguments or use {}.");
             }
 
             builder.Append('\n');

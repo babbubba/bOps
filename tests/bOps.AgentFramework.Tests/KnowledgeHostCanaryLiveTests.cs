@@ -21,8 +21,11 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
 {
     private const string RunSwitch = "BOPS_RUN_LIVE_QWEN_KNOWLEDGE_CANARY";
     private const string Checklist = "nginx -t; ss -ltnp :80";
-    private const string Goal = "Read the local signed knowledge resource nginx-triage/references/checklist.md through "
-        + "runtime.knowledge_read. Then use the existing read-only test step to complete the plan and answer with the exact checklist command. "
+    internal const string Goal = "Plan the existing read-only test.read step to complete the task. "
+        + "Knowledge is an auxiliary capability available during execution, not a plannable operational step: "
+        + "do not put runtime.knowledge_read in expectedTool or put Knowledge arguments on test.read. "
+        + "During execution, read the local signed knowledge resource nginx-triage/references/checklist.md through "
+        + "runtime.knowledge_read before completing test.read, then answer with the exact checklist command. "
         + "Do not guess the command; it is not in this request.";
 
     [LocalQwenKnowledgeCanaryFact]
