@@ -159,6 +159,22 @@ public sealed partial class AgentRunner(
         "run. Correct the call for this same step; do not produce or attempt another plan step. This is the only semantic " +
         "correction allowed for this plan step.";
 
+    /// <summary>AF-TOOLROUTE-01: the one correction turn after a call named a tool that was not offered while the step's own tool was.</summary>
+    private const string ToolNameCorrectionInstructions =
+        "The previous call named a tool that is not offered for this step, so nothing ran. Call the single offered tool, by " +
+        "the exact name it has in this request's tool list, for this same planned step. This is the only tool-name correction " +
+        "allowed for this plan step.";
+
+    /// <summary>
+    /// AF-TOOLROUTE-01: the routing instruction once every planned step is resolved. It replaced a contradictory pair (call no tool;
+    /// propose the call for the next unfinished step) that led a live model to call a tool it was never offered.
+    /// </summary>
+    private const string PlanCompleteInstructions =
+        "Every planned step above is complete and no operational tool is offered. Give your final answer now from the evidence " +
+        "already collected. Only if that evidence is genuinely insufficient, propose the one new check you need instead: it will " +
+        "not run, and the runtime will ask you to revise the plan with it. Repeating a completed check with the same arguments " +
+        "adds no evidence.";
+
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Every listed step " +
         "must have a non-empty expectedTool from the catalog and valid expectedArguments. Repeated uses of one tool need " +
@@ -912,6 +928,9 @@ public sealed partial class AgentRunner(
                 var correctingArguments = plan.SemanticContractVersion == 1
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
+                var correctingToolName = plan.SemanticContractVersion == 1
+                    && latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.UnofferedTool;
+                var planExhaustedForPrompt = plan.Steps.Count > 0 && position.Cursor >= plan.Steps.Count;
                 // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
                 // ADR-0052 AF-04: once the logical call's read budget is spent the function is no longer offered (the surface never
                 // grows back to the full catalog), and the prompt says so instead of leaving the model to infer it.
@@ -921,7 +940,8 @@ public sealed partial class AgentRunner(
                 var offersEvidenceControl = !evidenceReadExhausted && EvidenceIndex.HasAddressableEvidence(steps);
                 var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps) : null;
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex);
+                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex,
+                    correctingToolName, planExhaustedForPrompt);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
@@ -1210,8 +1230,14 @@ public sealed partial class AgentRunner(
                         taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation, mutations: run.Mutations);
                     if (semanticContract)
                     {
+                        // AF-TOOLROUTE-01: a call the adapter or the step view refused by name while the step's own tool was offered
+                        // ran nothing; as the step's first deviation it keeps the planned step for one bounded correction instead of
+                        // replanning at once. After a spent ADR-0047/0050 correction it replans as before.
                         var classification = resolved is null
-                            ? (PlannedStepExecutionClassification?)null
+                            ? primaryCall.ToolNameError is not null && stepTools.Count == 1 && authorization == AuthorizationKind.UnknownTool
+                              && !position.SemanticCorrectionSpent && !position.ArgumentCorrectionSpent
+                                ? PlannedStepExecutionClassification.UnofferedTool
+                                : (PlannedStepExecutionClassification?)null
                             : step.Result is { Outcome: ToolOutcome.Failure, FailureKind: ToolFailureKind.Validation }
                                 ? PlannedStepExecutionClassification.ArgumentValidationFailure
                                 : PlannedStepExecutionClassification.Matched;
@@ -1339,7 +1365,11 @@ public sealed partial class AgentRunner(
                     taskId, afterStep.Cursor, position.Cursor);
             }
 
-            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
+            // AF-TOOLROUTE-01: the first not-offered call of a planned step is corrected in place; the fold sets ReplanRequired on the second.
+            var nameCorrectionPending = step.ExecutionClassification == PlannedStepExecutionClassification.UnofferedTool
+                && !position.ReplanRequired;
+            var deviated = (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
+                    || (authorization == AuthorizationKind.UnknownTool && !nameCorrectionPending))
                 || step.Result?.Outcome == ToolOutcome.Timeout
                 || verification == VerificationStatus.Refuted
                 || position.ReplanRequired;
@@ -2898,11 +2928,35 @@ public sealed partial class AgentRunner(
         var planningTools = ToolViewFor(delegation);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
+        // AF-TOOLROUTE-01: the read-only checks already completed, from persisted steps only (identical on resume). They are shown to
+        // the replan, and a candidate step repeating one with identical arguments is a validation problem for the corrective re-ask.
+        var completedChecks = CompletedChecks.From(stepsSoFar, ManifestOf);
+        var completedSection = CompletedChecks.Describe(completedChecks);
+        var revision = previousPlan.Revision + 1;
+        AgentPlan? ParseReplan(string? text, out string? problem)
+        {
+            if (TryParsePlan(text, revision, planningTools, out problem) is not { } parsed)
+            {
+                return null;
+            }
+
+            problem = CompletedChecks.RepeatProblem(parsed, completedChecks);
+            return problem is null ? parsed : null;
+        }
+
+        string? MalformedReplan(ModelResponse response) =>
+            EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None
+                ? null
+                : ParseReplan(response.TextResponse, out var problem) is null ? problem : null;
+
+        var completedPlanNotice = CompletedPlanNotice(previousPlan, stepsSoFar, triggeringStepIndex);
         ModelContextRequest BuildReplanRequest(bool aggressive)
         {
             // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
+            var instructions = ReplanningInstructions(logicalCall.Evidence.Exhausted)
+                + (completedSection is null ? string.Empty : $"\n\n{completedSection}");
             var systemPrompt = BuildPlanningSystemPrompt(
-                ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
+                instructions, planningTools,
                 logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar));
             var protectedAfter = ReconciliationTurns(stepsSoFar);
             var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
@@ -2910,6 +2964,10 @@ public sealed partial class AgentRunner(
             {
                 AddToolCallTurns(protectedAfter, trigger.ToolCall, trigger.UnexecutedToolCalls,
                     WrapToolOutput(trigger.Observation ?? string.Empty));
+                if (completedPlanNotice is not null)
+                {
+                    protectedAfter.Add(ChatTurn.FromUser(completedPlanNotice));
+                }
             }
             else if (trigger is not null && PrematureFinal.IsStep(trigger))
             {
@@ -2931,13 +2989,13 @@ public sealed partial class AgentRunner(
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
+            MalformedReplan);
         tokens += UsageTokens(response);
         (response, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
+            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, MalformedReplan, ct);
 
-        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1, planningTools, out var replanProblem) is { } plan)
+        if (ParseReplan(response.TextResponse, out var replanProblem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -2964,13 +3022,13 @@ public sealed partial class AgentRunner(
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
+            MalformedReplan);
         tokens += UsageTokens(retryResponse);
         (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, ct);
+            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, MalformedReplan, ct);
 
-        if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1, planningTools) is { } retryPlan)
+        if (ParseReplan(retryResponse.TextResponse, out _) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -2983,6 +3041,30 @@ public sealed partial class AgentRunner(
             await checkpoint(true);
         }
         return (null, tokens);
+    }
+
+    /// <summary>
+    /// AF-TOOLROUTE-01: the runtime-authored turn after a replan trigger that proposed a tool call once every step of its revision was
+    /// resolved, derived from persisted steps only. In BENCH B03 the bare "not offered" observation was read as a naming error and
+    /// the completed plan was proposed again; this states why the call did not run and what a revision may contain.
+    /// </summary>
+    private string? CompletedPlanNotice(AgentPlan plan, IReadOnlyList<PlanStep> steps, int triggeringStepIndex)
+    {
+        if (plan.Steps.Count == 0
+            || steps.FirstOrDefault(step => step.Index == triggeringStepIndex) is not { ToolCall: not null } trigger
+            || trigger.PlanRevision != plan.Revision)
+        {
+            return null;
+        }
+
+        var before = steps.Where(step => step.Index < triggeringStepIndex).ToList();
+        var position = PlannedStepPosition.Derive(plan, before, ManifestOf).Settle(plan, before, ManifestOf);
+        return position.ReplanRequired || position.Cursor < plan.Steps.Count
+            ? null
+            : $"Every step of plan revision {plan.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture)} was " +
+              "complete when that call was proposed. It did not run because a completed plan offers no operational tool, not " +
+              "because of how it was named. Plan only a genuinely new check (a different tool, or different arguments from the " +
+              "completed checks), or return an empty \"steps\" array to answer from the evidence already collected.";
     }
 
     private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(
@@ -2998,7 +3080,7 @@ public sealed partial class AgentRunner(
         ModelResponse initialResponse,
         long tokensBefore,
         int initialTokens,
-        IReadOnlyList<ToolManifest> planningTools,
+        Func<ModelResponse, string?> malformedReplan,
         CancellationToken ct)
     {
         var response = initialResponse;
@@ -3046,7 +3128,7 @@ public sealed partial class AgentRunner(
                     : "EvidenceRead/v1 rejected: Malformed."));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
-                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools));
+                delegation, calls, logicalCall, ct, malformedReplan);
             tokens += UsageTokens(response);
             if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
             {
@@ -4737,14 +4819,17 @@ public sealed partial class AgentRunner(
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
         bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
-        bool evidenceReadExhausted = false, string? evidenceIndex = null)
+        bool evidenceReadExhausted = false, string? evidenceIndex = null, bool correctingToolName = false, bool planExhausted = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
             ? "The single offered native tool is the current plan step's tool. Invoke it at most once, with the concrete arguments this step requires."
               + (correctingSemantics ? $" {SemanticCorrectionInstructions}" : string.Empty)
               + (correctingArguments ? $" {ArgumentCorrectionInstructions}" : string.Empty)
-            : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
+              + (correctingToolName ? $" {ToolNameCorrectionInstructions}" : string.Empty)
+            : planExhausted
+                ? PlanCompleteInstructions
+                : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
         if (offersEvidenceControl)
         {
             routingInstruction += " " + EvidenceControlInstruction;
@@ -4755,8 +4840,10 @@ public sealed partial class AgentRunner(
             ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
-              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above; while planned steps " +
-              "remain, a final answer makes the runtime re-evaluate the plan.";
+              (planExhausted && stepTools.Count == 0
+                  ? routingInstruction
+                  : $"{routingInstruction} Propose the concrete tool call for the next unfinished step above; while planned steps " +
+                    "remain, a final answer makes the runtime re-evaluate the plan.");
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
         if (limitations is not null)

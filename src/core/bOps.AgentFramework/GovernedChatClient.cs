@@ -131,9 +131,7 @@ public sealed class GovernedChatClient(
 
         foreach (var call in response.ToolCalls)
         {
-            var arguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(call.Arguments.ToJson())
-                ?? new Dictionary<string, object?>(StringComparer.Ordinal);
-            contents.Add(new FunctionCallContent(call.Id, call.ToolName, arguments));
+            contents.Add(MafChatTurnMapper.ToMafFunctionCall(call));
         }
 
         var mapped = new ChatResponse(new ChatMessage(MafChatRole.Assistant, contents))

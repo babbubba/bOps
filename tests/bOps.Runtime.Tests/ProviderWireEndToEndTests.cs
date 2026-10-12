@@ -244,9 +244,8 @@ public sealed class ProviderWireEndToEndTests
         var live = new StrictOpenAiProvider(
             Plan("fs.size", steps: 1),                        // 0 plan: one planned step
             ToolCalls(("call_1", invalidRawName, "{}")),       // 1 TURN N: the model returns an invalid tool name
-            Plan("fs.size"),                                   // 2 the replan an UnknownTool deviation triggers
-            ToolCalls(("call_2", "fs_size", "{}")),             // 3 TURN N+1: a legitimate offered tool — must not be blocked
-            Text("Finished."));                                 // 4 final
+            ToolCalls(("call_2", "fs_size", "{}")),             // 2 TURN N+1 (AF-TOOLROUTE-01 in-step correction): the offered tool — must not be blocked
+            Text("Finished."));                                 // 3 final
         var audit = new RecordingAuditSink();
 
         var result = await Runner(Model(live), Registry([tool]), audit).RunAsync("goal", Actor);

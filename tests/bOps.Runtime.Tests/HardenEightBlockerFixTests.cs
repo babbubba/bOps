@@ -334,7 +334,8 @@ public sealed class HardenEightBlockerFixTests
             Call("test.read", "c0"),
             Call("test.read", "c1"),
             ContextOverflow(),
-            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 5, revision: 1),
+            // AF-TOOLROUTE-01: the revision plans new checks; re-planning the completed test.read {} would be refused as a repeat.
+            PlanningTestSupport.PlanResponseWithDistinctSteps(stepCount: 5, revision: 1, expectedTool: "test.read.next"),
             new ModelResponse("done\n\nEvidence limitations\n- the exhausted-plan proposal was not executed.", [], true, null),
             // AF-05H: revision 1 still has five unresolved steps, so that final is re-evaluated; the replan drops them.
             PlanningTestSupport.PlanResponse(stepCount: 0, revision: 2),

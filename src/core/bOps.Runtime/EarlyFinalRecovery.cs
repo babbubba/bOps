@@ -110,7 +110,7 @@ internal static class EarlyFinalRecovery
         }
 
         var cursor = position.Cursor;
-        if (position.SemanticCorrectionSpent || position.ArgumentCorrectionSpent)
+        if (position.SemanticCorrectionSpent || position.ArgumentCorrectionSpent || position.ToolCorrectionSpent)
         {
             return Refuse(EarlyFinalRecoveryReason.PendingCorrection, cursor);
         }

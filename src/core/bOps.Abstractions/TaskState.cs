@@ -173,6 +173,12 @@ public enum PlannedStepExecutionClassification
 
     /// <summary>The call matched semantically but failed complete manifest argument validation.</summary>
     ArgumentValidationFailure,
+
+    /// <summary>
+    /// The call named a tool that was not offered while the planned step's tool was (AF-TOOLROUTE-01); nothing ran. Persisted:
+    /// append only.
+    /// </summary>
+    UnofferedTool,
 }
 
 /// <summary>

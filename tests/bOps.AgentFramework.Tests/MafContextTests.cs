@@ -43,6 +43,48 @@ public sealed class MafContextTests
         Assert.Equal("c2", roundTrip[4].ToolCallId);
     }
 
+    /// <summary>
+    /// AF-TOOLROUTE-01 (BENCH B03): an adapter rejection survives the MAF boundary, so a rejected raw name is never handed back to a
+    /// provider adapter as a canonical tool call; an accepted call stays free of rejection markers.
+    /// </summary>
+    [Fact]
+    public async Task Mapper_AndProjector_PreserveAdapterRejections_OfHistoricalToolCalls()
+    {
+        var rejected = new ModelToolCall("c-rejected", "system_crashes", ToolArguments.Empty)
+        {
+            ToolNameError = "'system_crashes' is not a tool that was offered in this request.",
+        };
+        var malformed = new ModelToolCall("c-malformed", "system.events", ToolArguments.Empty)
+        {
+            ArgumentsError = "The arguments were not a JSON object.",
+        };
+        var accepted = new ModelToolCall("c-ok", "system.crashes", ToolArguments.Empty);
+        var historical = new ChatTurn[]
+        {
+            ChatTurn.FromAssistantToolCalls([accepted]),
+            ChatTurn.FromToolResult("c-ok", "ok"),
+            ChatTurn.FromAssistantToolCalls([rejected]),
+            ChatTurn.FromToolResult("c-rejected", "ERROR (validation): Unknown tool."),
+            ChatTurn.FromAssistantToolCalls([malformed]),
+            ChatTurn.FromToolResult("c-malformed", "ERROR (validation): malformed arguments."),
+        };
+
+        var roundTrip = MafChatTurnMapper.FromMaf(MafChatTurnMapper.ToMaf(historical));
+        var projected = await Projector(maxContextTokens: 100_000).ProjectAsync(
+            ContextRequest(historical), new ChatModelDescriptor("provider", "model"));
+
+        foreach (var calls in new[] { roundTrip, projected.Request.History }.Select(turns =>
+                     turns.Where(turn => turn.ToolCalls is not null).SelectMany(turn => turn.ToolCalls!).ToDictionary(call => call.Id)))
+        {
+            Assert.Equal(rejected.ToolNameError, calls["c-rejected"].ToolNameError);
+            Assert.Null(calls["c-rejected"].ArgumentsError);
+            Assert.Equal(malformed.ArgumentsError, calls["c-malformed"].ArgumentsError);
+            Assert.Null(calls["c-malformed"].ToolNameError);
+            Assert.Null(calls["c-ok"].ToolNameError);
+            Assert.Null(calls["c-ok"].ArgumentsError);
+        }
+    }
+
     [Fact]
     public async Task Projector_CompactsToolGroupAtomicallyWithoutPromotingResultInjection()
     {

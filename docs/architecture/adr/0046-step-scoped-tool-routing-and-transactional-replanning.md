@@ -276,3 +276,45 @@ model spent two 4,096-token replies on reasoning and the attempt ended `EmptyRes
    or answer without further deliberation; its bound and the `EmptyResponse` terminal are unchanged.
 
 Tests: `PlanningCorrectionTests` (B02 shapes). Evidence: `agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md`.
+
+## Amendment — coherent tool names, in-step name correction and no repeated completed checks (AF-TOOLROUTE-01, 2026-10-12)
+
+**Status: Accepted.** BENCH 1×3 on AF-PLAN-01 (`1292266`, archive `20261012T111826Z`, OpenRouter Nemotron) ended B03
+`ReplanLimitReached` after all five planned read checks had run. The persisted requests show three causes:
+
+- **Protocol (MAF boundary).** `MafChatTurnMapper` dropped `ModelToolCall.ToolNameError`/`ArgumentsError` on the history
+  round trip of the context projector. After the model called the not-offered `system_crashes`, later requests carried that
+  raw name as an ordinary canonical call: adapters sent it verbatim instead of the HARDEN-1 placeholder, and it collided with
+  `system.crashes`, whose alias became `system_2Ecrashes`. The same tool was published under two names; the model copied the
+  escape (`system_2Eevents`) and was refused again. Names were never accepted loosely: every refusal was correct.
+- **Step prompt.** With every planned step resolved, the prompt said both "do not call an operational tool" and "propose the
+  concrete tool call for the next unfinished step".
+- **Replan.** The replan saw only "not a tool that was offered", read it as a naming error and re-proposed the five completed
+  checks with identical arguments. Each accepted revision restarted at its first step and re-ran them.
+
+1. **Lossless boundary.** Adapter rejections travel across the MAF boundary as reserved `AdditionalProperties`
+   (`bops.toolNameError`, `bops.argumentsError`) and come back unchanged. A rejected raw name therefore never contributes to a
+   request's alias map, and a canonical tool keeps one wire name for the whole task. No alias, prefix or fuzzy match is
+   introduced; `ToolWireNames` is unchanged.
+2. **In-step name correction.** A call refused by name (adapter or §1 step view) while the current planned step's single tool
+   is offered, as that step's **first** deviation, is classified `UnofferedTool` (append-only persisted value) and keeps the
+   step: the next call offers the same single tool with a fixed correction sentence. Nothing runs, the refusal is audited as
+   `UnknownTool` as before, policy is never consulted. A second refusal, or one after a spent ADR-0047/0050 correction,
+   replans as before. The persisted fold carries the budget (`ToolCorrectionSpent`), so resume continues identically; the
+   AF-05H2 early-final continuation treats it as a pending correction and refuses.
+3. **Completed plan.** With every planned step resolved the prompt says so: answer from the evidence, or propose the one new
+   check needed, which will not run and leads to a replan. The replan that follows such a proposal gets a runtime-authored turn
+   stating that the plan was complete and that the call was refused for that reason, not for its name.
+4. **Completed checks.** Every replan prompt lists the task's completed read checks (successful, not partial/unavailable, not
+   refuted, read-only, from persisted steps; sensitive values redacted; bounded to 2,048 characters). A replan step whose tool
+   and complete `expectedArguments` equal one of them (absent arguments equal `{}`; conditional steps excluded) is a validation
+   problem of the existing corrective re-ask: `Plan step N repeats completed task step K (tool with identical arguments)…`.
+   Any different argument, a different tool or an empty plan is accepted unchanged. This is **not** §6 suppression: nothing is
+   dropped, merged or rewritten, and mutations, failures and partial results never count. A model that repeats after the
+   correction fails the attempt as `ModelFailure`/`MalformedResponse` with the plan preserved (early-final replans keep the
+   AF-05H2 continuation rules); replan counts and budgets are unchanged.
+
+Not changed: provider adapters and `ToolWireNames`, policy, approval, entitlement, mutation journal, audit schema, accounting,
+resume rules, the AF-05H2-R2 and AF-PLAN-01 recoveries, EvidenceRead, the collector. MAF orchestration is not used for
+routing or replanning (ARCH-02 decides). Tests: `ToolRoutingTests`, `ToolRoutingRegressionTests` (B03 on the real adapter and
+MAF projector), `MafContextTests`. Evidence: `agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md`.

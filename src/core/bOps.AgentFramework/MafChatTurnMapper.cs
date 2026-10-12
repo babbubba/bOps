@@ -13,6 +13,41 @@ namespace bOps.AgentFramework;
 /// <summary>Strict, lossless mapping at the bOps/MAF conversation boundary.</summary>
 internal static class MafChatTurnMapper
 {
+    /// <summary>
+    /// AF-TOOLROUTE-01: the reserved <see cref="AIContent.AdditionalProperties"/> keys that carry a call's adapter rejection across the
+    /// boundary. Without them a rejected raw name (for example <c>system_crashes</c>, never offered) came back as an ordinary
+    /// canonical call: provider adapters then sent it verbatim and let it collide with the offered tool's alias, so the same tool
+    /// was published under a different wire name from one request to the next.
+    /// </summary>
+    internal const string ToolNameErrorProperty = "bops.toolNameError";
+
+    internal const string ArgumentsErrorProperty = "bops.argumentsError";
+
+    internal static FunctionCallContent ToMafFunctionCall(ModelToolCall call)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        var content = new FunctionCallContent(
+            call.Id,
+            call.ToolName,
+            JsonSerializer.Deserialize<Dictionary<string, object?>>(call.Arguments.ToJson())
+                ?? new Dictionary<string, object?>(StringComparer.Ordinal));
+        if (call.ToolNameError is not null || call.ArgumentsError is not null)
+        {
+            content.AdditionalProperties = [];
+            if (call.ToolNameError is { } nameError)
+            {
+                content.AdditionalProperties[ToolNameErrorProperty] = nameError;
+            }
+
+            if (call.ArgumentsError is { } argumentsError)
+            {
+                content.AdditionalProperties[ArgumentsErrorProperty] = argumentsError;
+            }
+        }
+
+        return content;
+    }
+
     internal static IReadOnlyList<ChatMessage> ToMaf(IEnumerable<ChatTurn> turns)
     {
         ArgumentNullException.ThrowIfNull(turns);
@@ -29,11 +64,7 @@ internal static class MafChatTurnMapper
 
             if (turn.ToolCalls is { Count: > 0 })
             {
-                contents.AddRange(turn.ToolCalls.Select(call => new FunctionCallContent(
-                    call.Id,
-                    call.ToolName,
-                    JsonSerializer.Deserialize<Dictionary<string, object?>>(call.Arguments.ToJson())
-                        ?? new Dictionary<string, object?>(StringComparer.Ordinal))));
+                contents.AddRange(turn.ToolCalls.Select(ToMafFunctionCall));
             }
 
             if (turn.Role == BopsChatRole.Tool)
@@ -151,8 +182,22 @@ internal static class MafChatTurnMapper
             throw new NotSupportedException("MAF function-call arguments must map to a JSON object.");
         }
 
-        return new ModelToolCall(call.CallId, call.Name, ToolArguments.FromJson(arguments));
+        return new ModelToolCall(call.CallId, call.Name, ToolArguments.FromJson(arguments))
+        {
+            ToolNameError = RejectionOf(call, ToolNameErrorProperty),
+            ArgumentsError = RejectionOf(call, ArgumentsErrorProperty),
+        };
     }
+
+    private static string? RejectionOf(FunctionCallContent call, string key) =>
+        call.AdditionalProperties?.TryGetValue(key, out var value) == true
+            ? value switch
+            {
+                string text => text,
+                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+                _ => throw new NotSupportedException($"MAF function-call property '{key}' must be a string."),
+            }
+            : null;
 
     private static string? SerializeFunctionResult(object? result) => result switch
     {
