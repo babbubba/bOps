@@ -100,7 +100,7 @@ public sealed record TaskAccounting
     /// <summary>Creates an accounting record.</summary>
     /// <param name="TokensUsed">Prompt plus completion tokens of every model reply that reported usage.</param>
     /// <param name="LifetimeSteps">Executable steps taken; synthetic failure steps are never counted.</param>
-    /// <param name="LifetimeReplans">Accepted plan revisions after revision 0.</param>
+    /// <param name="LifetimeReplans">Accepted non-early-final replans plus reserved early-final attempts (including failures), each counted once.</param>
     public TaskAccounting(long TokensUsed, int LifetimeSteps, int LifetimeReplans)
     {
         this.TokensUsed = TokensUsed;
@@ -117,7 +117,7 @@ public sealed record TaskAccounting
     /// <summary>Executable steps taken; synthetic failure steps are never counted.</summary>
     public int LifetimeSteps { get; init; }
 
-    /// <summary>Accepted plan revisions after revision 0.</summary>
+    /// <summary>Accepted non-early-final replans plus reserved early-final attempts, each counted once regardless of acceptance.</summary>
     public int LifetimeReplans { get; init; }
 }
 

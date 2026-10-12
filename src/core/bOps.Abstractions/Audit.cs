@@ -484,6 +484,9 @@ public enum TaskLifecycleStage
 
     /// <summary>A recovery was refused, lost the transition to another writer, or the store cannot perform it.</summary>
     RecoveryRejected = 6,
+
+    /// <summary>A received malformed early-final replan retained the persisted plan and authorized a read-only continuation.</summary>
+    EarlyFinalPlanContinued = 7,
 }
 
 /// <summary>

@@ -312,7 +312,8 @@ public static class TaskResumePolicy
 
     /// <summary>ADR-0040 §5.4: tokens from every recorded model call (plans and steps hold disjoint records), executable steps only, revisions after 0.</summary>
     internal static TaskAccounting DeriveAccounting(TaskState task) => new(
-        task.Plans.Sum(plan => RecordedTokens(plan.ModelCalls)) + task.Steps.Sum(step => RecordedTokens(step.ModelCalls)),
+        task.Plans.Sum(plan => RecordedTokens(plan.ModelCalls))
+            + task.Steps.Sum(step => RecordedTokens(step.ModelCalls) + RecordedTokens(step.EarlyFinalReplanCalls)),
         task.Steps.Count(step => !IsSyntheticFailureStep(step)),
         Math.Max(0, task.Plans.Count - 1));
 
@@ -321,7 +322,7 @@ public static class TaskResumePolicy
         step.ToolCall is null
         && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
             or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription
-            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription;
+            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription or EarlyFinalRecovery.StepDescription;
 
     /// <summary>Whether <paramref name="step"/> is the runtime-authored history of a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
     internal static bool IsMutationReconciledStep(PlanStep step) =>

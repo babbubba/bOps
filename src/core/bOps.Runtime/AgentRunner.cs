@@ -797,6 +797,20 @@ public sealed partial class AgentRunner(
         // ADR-0040 §5.1: a fresh per-attempt budget, never more than what the task has left over its lifetime.
         var stepCap = Math.Min(options.MaxSteps, options.MaxLifetimeSteps - run.LifetimeSteps);
 
+        // Resume does not inherit a read-only capability that disappeared while the task was stopped.
+        if (steps.LastOrDefault(step => step.PlanRevision == plan.Revision) is { } recovery
+            && EarlyFinalRecovery.IsStep(recovery))
+        {
+            var beforeRecovery = steps.Where(step => step.Index < recovery.Index).ToList();
+            var triggerIndex = beforeRecovery.LastOrDefault(step => step.PlanRevision == plan.Revision)?.Index ?? -1;
+            if (EarlyFinalRecovery.SafePosition(plan, beforeRecovery, triggerIndex, ManifestOf,
+                    ToolViewFor(delegation)) is not { } safe || safe.Cursor != position.Cursor)
+            {
+                return await FailAsync(run, "Persisted early-final recovery is no longer safe.",
+                    (TaskTerminalKind.RuntimeFailure, null), [], ct);
+            }
+        }
+
         // ADR-0047: a resumed plan whose current step already exhausted its validation correction is replaced before any
         // operational tool is offered again; the live loop never enters here with that position.
         if (position.ReplanRequired)
@@ -805,14 +819,15 @@ public sealed partial class AgentRunner(
             // provider outage records one with no plan revision): it is the replan's triggering step, as it was live.
             var trigger = steps.Last(step => step.PlanRevision == plan.Revision);
             var (resumedPlan, terminal) = await ReplanWithinBudgetAsync(
-                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct);
+                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct,
+                PrematureFinal.IsStep(trigger) ? ReplanTrigger.EarlyFinalWithUnresolvedPlan : ReplanTrigger.PlanDeviation);
             if (terminal is not null)
             {
                 return terminal;
             }
 
             plan = resumedPlan;
-            position = PlannedStepPosition.Start;
+            position = PlannedStepPosition.Derive(plan, steps, ManifestOf).Settle(plan, steps, ManifestOf);
             await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
         }
 
@@ -1045,14 +1060,15 @@ public sealed partial class AgentRunner(
                     break;
                 }
 
-                var (revisedPlan, replanTerminal) = await ReplanWithinBudgetAsync(run, plan, string.Empty, stepIndex, ct);
+                var (revisedPlan, replanTerminal) = await ReplanWithinBudgetAsync(run, plan, string.Empty, stepIndex, ct,
+                    ReplanTrigger.EarlyFinalWithUnresolvedPlan);
                 if (replanTerminal is not null)
                 {
                     return replanTerminal;
                 }
 
                 plan = revisedPlan;
-                position = PlannedStepPosition.Start;
+                position = PlannedStepPosition.Derive(plan, steps, ManifestOf).Settle(plan, steps, ManifestOf);
                 await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
                 continue;
             }
@@ -1329,8 +1345,30 @@ public sealed partial class AgentRunner(
     /// that ended the attempt.
     /// </summary>
     private async Task<(AgentPlan Plan, TaskState? Terminal)> ReplanWithinBudgetAsync(
-        ExecutionRun run, AgentPlan plan, string observation, int stepIndex, CancellationToken ct)
+        ExecutionRun run, AgentPlan plan, string observation, int stepIndex, CancellationToken ct,
+        ReplanTrigger trigger = ReplanTrigger.PlanDeviation)
     {
+        ct.ThrowIfCancellationRequested();
+        if (run.AttemptBudget.IsExpired)
+        {
+            throw new AttemptDurationBudgetExceededException();
+        }
+        if (await BudgetStopAsync(run, ct) is { } budgetStop)
+        {
+            return (plan, budgetStop);
+        }
+        var earlyFinal = trigger == ReplanTrigger.EarlyFinalWithUnresolvedPlan;
+        var triggerStep = run.Steps.FirstOrDefault(step => step.Index == stepIndex);
+        if (run.AttemptReplans > options.MaxReplans || run.LifetimeReplans > options.MaxLifetimeReplans)
+        {
+            return (plan, await FinishAsync(run, AgentTaskStatus.ReplanLimitReached,
+                run.LifetimeReplans > options.MaxLifetimeReplans ? TaskTerminalKind.LifetimeReplanLimit : TaskTerminalKind.ReplanLimit, ct));
+        }
+        if (earlyFinal && triggerStep is { EarlyFinalReplanFailed: true }
+            && EarlyFinalRecovery.HasMalformedCheckpoint(triggerStep) && run.LifetimeReplans > 0)
+        {
+            return await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, [], ct);
+        }
         // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
         if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
         {
@@ -1342,48 +1380,149 @@ public sealed partial class AgentRunner(
         }
 
         var replanCalls = new List<ModelCallRecord>();
-        AgentPlan accepted;
-        try
+        AgentPlan? accepted;
+        var checkpointTokens = 0L;
+        var checkpointCalls = 0;
+        List<ModelCallRecord> UncheckpointedCalls() => replanCalls.Skip(checkpointCalls).ToList();
+        async Task CheckpointAsync(bool failed)
         {
-            (accepted, var replanTokens) = await ReplanAsync(
-                run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
-                run.TokensUsed, ct);
-            run.TokensUsed += replanTokens;
+            var recordedTokens = TaskResumePolicy.RecordedTokens(replanCalls);
+            run.TokensUsed += recordedTokens - checkpointTokens;
+            checkpointTokens = recordedTokens;
+            var slot = run.Steps.FindIndex(step => step.Index == stepIndex);
+            var original = run.Steps[slot];
+            run.Steps[slot] = original with
+            {
+                EarlyFinalReplanCalls = [.. original.EarlyFinalReplanCalls ?? [], .. UncheckpointedCalls()],
+                EarlyFinalReplanFailed = failed,
+            };
+            checkpointCalls = replanCalls.Count;
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
             if (TokenBudgetExceeded(run))
             {
-                return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+                throw new TokenBudgetCrossedException();
             }
+        }
+        // Reserve even failed early-final attempts before the first paid call, including across cancellation/resume.
+        if (earlyFinal)
+        {
+            run.AttemptReplans++;
+            run.LifetimeReplans++;
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
+        }
+        async Task PreserveCancelledReplanAsync(bool tokensAccounted)
+        {
+            if (!tokensAccounted)
+            {
+                run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            }
+            run.Steps.Add(new PlanStep(run.Steps.Count, TaskResumePolicy.ExecutionInterruptedStepDescription,
+                null, null, "Replan cancelled; no continuation authorized.")
+            {
+                ModelCalls = UncheckpointedCalls(),
+                ExecutionAttempt = run.ExecutionAttempt,
+            });
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
+        }
+        try
+        {
+            (accepted, _) = await ReplanAsync(
+                run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
+                run.TokensUsed, trigger, earlyFinal ? CheckpointAsync : null, ct);
         }
         catch (TokenBudgetCrossedException)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await StopForTokenCrossingAsync(run, UncheckpointedCalls(), ct));
         }
         catch (EvidenceControlProtocolExceededException)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
             return (plan, await FailAsync(run, ControlProtocolFailureMessage,
-                (TaskTerminalKind.RuntimeFailure, null), replanCalls, ct));
+                (TaskTerminalKind.RuntimeFailure, null), UncheckpointedCalls(), ct));
         }
         catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForAttemptDurationAsync(run, replanCalls));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await StopForAttemptDurationAsync(run, UncheckpointedCalls()));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await PreserveCancelledReplanAsync(tokensAccounted: false);
+            throw;
+        }
+        catch (TaskExecutionSupersededException)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", run.TaskId, stepIndex);
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await FailAsync(run, FailureReason(ex), FailureKindOf(ex), replanCalls, ct));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await FailAsync(run, FailureReason(ex), FailureKindOf(ex), UncheckpointedCalls(), ct));
         }
 
+        run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+        if (ct.IsCancellationRequested)
+        {
+            await PreserveCancelledReplanAsync(tokensAccounted: true);
+            ct.ThrowIfCancellationRequested();
+        }
+        if (TokenBudgetExceeded(run))
+        {
+            return (plan, await StopForTokenCrossingAsync(run, UncheckpointedCalls(), ct));
+        }
+        if (accepted is null)
+        {
+            return earlyFinal
+                ? await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, UncheckpointedCalls(), ct)
+                : (plan, await FailAsync(run, "Provider/model returned a malformed response.",
+                    (TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse), UncheckpointedCalls(), ct));
+        }
+        if (checkpointCalls > 0)
+        {
+            accepted = accepted with { ModelCalls = UncheckpointedCalls() };
+        }
         run.Plans.Add(accepted);
-        run.AttemptReplans++;
-        run.LifetimeReplans++;
+        if (!earlyFinal)
+        {
+            run.AttemptReplans++;
+            run.LifetimeReplans++;
+        }
         BOpsTelemetry.ReplansTotal.Add(1);
         await PublishReplanThresholdAsync(run, replanCalls, ct);
 
         return (accepted, await BudgetStopAsync(run, ct));
+    }
+
+    private async Task<(AgentPlan Plan, TaskState? Terminal)> ContinueAfterMalformedEarlyFinalReplanAsync(
+        ExecutionRun run, AgentPlan plan, int stepIndex, List<ModelCallRecord> calls, CancellationToken ct)
+    {
+        if (EarlyFinalRecovery.SafePosition(plan, run.Steps, stepIndex, ManifestOf,
+                ToolViewFor(run.Delegation)) is { } recoveryPosition)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (run.AttemptBudget.IsExpired)
+            {
+                return (plan, await StopForAttemptDurationAsync(run, calls));
+            }
+            run.Steps.Add(new PlanStep(run.Steps.Count, EarlyFinalRecovery.StepDescription, null, null,
+                $"Malformed replan: retaining plan revision {plan.Revision}, pending cursor {recoveryPosition.Cursor}; "
+                + "read-only continuation remains subject to normal tool authority, validation and authorization.", plan.Revision)
+            {
+                EarlyFinalRecoveryCursor = recoveryPosition.Cursor,
+                ModelCalls = calls,
+                ExecutionAttempt = run.ExecutionAttempt,
+            });
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
+            await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running),
+                TaskLifecycleStage.EarlyFinalPlanContinued, run.Actor) with { StepIndex = run.Steps.Count - 1 },
+                run.Delegation, CancellationToken.None);
+            ct.ThrowIfCancellationRequested();
+            return (plan, await BudgetStopAsync(run, ct));
+        }
+        return (plan, await FailAsync(run, "Malformed replan; no safe persisted-plan continuation.",
+            (TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse), calls, ct));
     }
 
     /// <summary>
@@ -2677,10 +2816,10 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
-    private async Task<(AgentPlan Plan, int Tokens)> ReplanAsync(
+    private async Task<(AgentPlan? Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
-        long tokensBefore, CancellationToken ct)
+        long tokensBefore, ReplanTrigger trigger, Func<bool, Task>? checkpoint, CancellationToken ct)
     {
         var planningTools = ToolViewFor(delegation);
         var logicalCall = new LogicalCallState();
@@ -2729,6 +2868,23 @@ public sealed partial class AgentRunner(
             return (plan with { ModelCalls = calls }, tokens);
         }
 
+        // Repeating an output-limited plan at the same limit buys no additional authority. Other C8 triggers retain their
+        // existing retry; only a received malformed response may authorize the early-final recovery path.
+        if (trigger == ReplanTrigger.EarlyFinalWithUnresolvedPlan
+            && string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+        {
+            if (checkpoint is not null)
+            {
+                await checkpoint(true);
+            }
+            return (null, tokens);
+        }
+
+        if (checkpoint is not null)
+        {
+            await checkpoint(false);
+        }
+
         logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
         logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
 
@@ -2748,10 +2904,11 @@ public sealed partial class AgentRunner(
         logger.LogWarning(
             "Task {TaskId} step {StepIndex}: the model did not produce a usable replan after one retry; preserving the current plan",
             taskId, triggeringStepIndex);
-        throw new ModelProtocolException("Provider/model returned a malformed response.")
+        if (checkpoint is not null)
         {
-            FailureKind = ModelFailureKind.MalformedResponse,
-        };
+            await checkpoint(true);
+        }
+        return (null, tokens);
     }
 
     private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(

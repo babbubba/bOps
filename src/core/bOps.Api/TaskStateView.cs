@@ -27,7 +27,11 @@ internal static class TaskStateView
 
         return task with
         {
-            Steps = [.. task.Steps.Select(step => step.ModelCalls is null ? step : step with { ModelCalls = Strip(step.ModelCalls) })],
+            Steps = [.. task.Steps.Select(step => step with
+            {
+                ModelCalls = step.ModelCalls is null ? null : Strip(step.ModelCalls),
+                EarlyFinalReplanCalls = step.EarlyFinalReplanCalls is null ? null : Strip(step.EarlyFinalReplanCalls),
+            })],
             Plans = [.. task.Plans.Select(plan => plan.ModelCalls is null ? plan : plan with { ModelCalls = Strip(plan.ModelCalls) })],
         };
     }

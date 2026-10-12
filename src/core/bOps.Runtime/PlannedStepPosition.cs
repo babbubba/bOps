@@ -13,7 +13,8 @@ internal readonly record struct PlannedStepPosition(
     int Cursor,
     bool SemanticCorrectionSpent,
     bool ArgumentCorrectionSpent,
-    bool ReplanRequired)
+    bool ReplanRequired,
+    bool EarlyFinalPending = false)
 {
     internal static PlannedStepPosition Start => default;
 
@@ -69,8 +70,10 @@ internal readonly record struct PlannedStepPosition(
     /// replan that follows it, for every plan contract, so a resume interrupted before that replan replans first.
     /// </summary>
     internal PlannedStepPosition After(AgentPlan plan, PlanStep step) =>
-        ReplanRequired ? this
-        : PrematureFinal.IsStep(step) ? this with { ReplanRequired = true }
+        EarlyFinalRecovery.IsStep(step) ? (ReplanRequired && EarlyFinalPending && step.EarlyFinalRecoveryCursor == Cursor
+            ? this with { ReplanRequired = false, EarlyFinalPending = false } : this with { ReplanRequired = true })
+        : ReplanRequired ? this
+        : PrematureFinal.IsStep(step) ? this with { ReplanRequired = true, EarlyFinalPending = true }
         : plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);
 
     private PlannedStepPosition AfterSemantic(PlanStep step)

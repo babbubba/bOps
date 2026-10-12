@@ -142,7 +142,7 @@ public sealed record ChatModelDescriptor
 /// <summary>
 /// What an adapter knows about one call to a provider beyond the content of the reply, kept so a
 /// call can be understood afterwards: which model actually answered, why it stopped, and the exact
-/// request and reply bodies. The runtime stores it; it never acts on it.
+/// request and reply bodies. Finish reason may guide bounded protocol recovery; it grants no tool authority.
 /// </summary>
 public sealed record ModelCallDetails
 {

@@ -16,6 +16,35 @@ public sealed class SqliteTaskStoreTests : IDisposable
     private readonly string _filePath = Path.Combine(Path.GetTempPath(), $"bops-memory-tests-{Guid.NewGuid():N}.db");
 
     [Fact]
+    public async Task Reopen_PreservesEarlyFinalRecoveryCursorAndMalformedCallEvidence()
+    {
+        var call = new ModelCallRecord("fake", "fake-model", "fake-model", DateTimeOffset.UnixEpoch, 1,
+            ModelCallOutcome.Failure, new ModelUsage(17, 4096, null), "length", "malformed plan", "request", "raw response", false)
+        {
+            FailureKind = ModelFailureKind.MalformedResponse,
+        };
+        var recovery = new PlanStep(1, "Malformed early-final replan; persisted plan continuation", null, null,
+            "Retaining revision 0, cursor 1", 0)
+        {
+            EarlyFinalRecoveryCursor = 1,
+            ExecutionAttempt = 2,
+            ModelCalls = [call],
+            EarlyFinalReplanCalls = [call with { FinishReason = "stop" }],
+            EarlyFinalReplanFailed = true,
+        };
+        var task = SampleTask(AgentTaskStatus.Running) with { Steps = [recovery], Accounting = new TaskAccounting(8226, 1, 1) };
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+        var reloaded = await new SqliteTaskStore(_filePath).LoadAsync(task.Id);
+        Assert.Equal(1, Assert.Single(reloaded!.Steps).EarlyFinalRecoveryCursor);
+        Assert.Equal(0, reloaded.Steps[0].PlanRevision);
+        Assert.Equal(2, reloaded.Steps[0].ExecutionAttempt);
+        Assert.Equal(call, Assert.Single(reloaded.Steps[0].ModelCalls!));
+        Assert.Equal(call with { FinishReason = "stop" }, Assert.Single(reloaded.Steps[0].EarlyFinalReplanCalls!));
+        Assert.True(reloaded.Steps[0].EarlyFinalReplanFailed);
+        Assert.Equal(task.Accounting, reloaded.Accounting);
+    }
+
+    [Fact]
     public async Task SaveAsync_ThenLoadAsync_RoundTripsTheFullTaskState()
     {
         var store = new SqliteTaskStore(_filePath);
