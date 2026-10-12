@@ -3,6 +3,7 @@
 
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 using bOps.Api;
 using bOps.Knowledge;
@@ -97,11 +98,28 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
     public async Task OfflineDiagnostics_SurviveDisposalAndExplainPlanningFailureWithoutPayloads()
     {
         const string secret = "sensitive-provider-prompt-pack-content";
+        var invalidPlan = new JsonObject
+        {
+            ["rationale"] = secret,
+            ["steps"] = new JsonArray(new JsonObject
+            {
+                ["description"] = secret,
+                ["expectedTool"] = "test.read",
+                ["expectedArguments"] = new JsonObject
+                {
+                    ["path"] = secret,
+                    [secret] = new JsonObject { [secret] = secret },
+                    ["operation"] = 42,
+                    ["resource"] = new JsonArray(secret),
+                    ["skill"] = null,
+                },
+            }),
+        }.ToJsonString();
         var diagnostics = new KnowledgeCanaryDiagnostics();
         string snapshot;
         using (var canary = KnowledgeHostCanary.Create(KnowledgeCanaryActivation.Authorized(KnowledgeRunnerWorld.TenantA)))
         {
-            var inner = new ScriptedRunnerModel([Script.Final(secret), Script.Final(secret), Script.Final(secret)]);
+            var inner = new ScriptedRunnerModel([Script.Final(invalidPlan), Script.Final(invalidPlan)]);
             var model = new CappedRecordingChatModel(inner, 5, diagnostics);
             var rig = canary.Compose(model, diagnostics);
             var state = await rig.Runner.RunAsync("offline diagnostic probe", KnowledgeRunnerWorld.ActorA);
@@ -119,10 +137,33 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
         Assert.Equal(2, root.GetProperty("ActualLlmCalls").GetInt32());
         Assert.Equal("MalformedResponse", root.GetProperty("FailureKind").GetString());
         Assert.NotEmpty(root.GetProperty("Exceptions").EnumerateArray());
-        Assert.Contains("The plan reply did not contain a JSON object", snapshot, StringComparison.Ordinal);
+        Assert.Contains("undeclared-parameter", snapshot, StringComparison.Ordinal);
+        Assert.Contains("has invalid expectedArguments", snapshot, StringComparison.Ordinal);
+        var shapes = root.GetProperty("Replies")[0].GetProperty("PlanArguments")[0];
+        Assert.Equal("test.read", shapes.GetProperty("Tool").GetString());
+        var arguments = shapes.GetProperty("Arguments");
+        Assert.Equal("path", arguments[0].GetProperty("Key").GetString());
+        Assert.Equal("String", arguments[0].GetProperty("Type").GetString());
+        Assert.Equal("<unrecognized-argument>", arguments[1].GetProperty("Key").GetString());
+        Assert.Equal("Object", arguments[1].GetProperty("Type").GetString());
+        Assert.Equal("Number", arguments[2].GetProperty("Type").GetString());
+        Assert.Equal("Array", arguments[3].GetProperty("Type").GetString());
+        Assert.Equal("Null", arguments[4].GetProperty("Type").GetString());
+        Assert.Empty(root.GetProperty("KnowledgeReads").EnumerateArray());
+        Assert.Equal(0, root.GetProperty("Plans").GetInt32());
+        Assert.Equal(0, root.GetProperty("Executed").GetProperty("Read").GetInt32());
         Assert.DoesNotContain(secret, snapshot, StringComparison.Ordinal);
         Assert.DoesNotContain("offline diagnostic probe", snapshot, StringComparison.Ordinal);
         Assert.Equal("<unrecognized-tool>", KnowledgeCanaryDiagnostics.SafeTool(secret));
+
+        diagnostics.RecordResponse(new ModelResponse(null, [], false, new ModelUsage(1, 4096, null))
+        {
+            Details = new ModelCallDetails(secret, "length", secret, secret),
+        });
+        diagnostics.RecordResponse(new ModelResponse(null, [], false, null)
+        {
+            Details = new ModelCallDetails(secret, secret, secret, secret),
+        });
 
         // Transport exception chains keep the useful codes, never messages or provider details.
         diagnostics.CaptureException(new ModelProtocolException(secret, new HttpRequestException(secret, null, System.Net.HttpStatusCode.Unauthorized))
@@ -132,6 +173,11 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
         });
         var transport = await diagnostics.SnapshotAsync(null, null, null, 0);
         Assert.Contains("401", transport, StringComparison.Ordinal);
+        Assert.Contains("\"FinishReason\":\"length\"", transport, StringComparison.Ordinal);
+        using var transportDocument = JsonDocument.Parse(transport);
+        var transportReplies = transportDocument.RootElement.GetProperty("Replies");
+        Assert.Equal("<unrecognized-finish-reason>",
+            transportReplies[transportReplies.GetArrayLength() - 1].GetProperty("FinishReason").GetString());
         Assert.DoesNotContain(secret, transport, StringComparison.Ordinal);
     }
 

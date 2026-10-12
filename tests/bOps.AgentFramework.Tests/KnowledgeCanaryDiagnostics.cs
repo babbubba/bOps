@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 using bOps.Runtime;
 using Microsoft.Extensions.Logging;
@@ -73,11 +74,76 @@ internal sealed class KnowledgeCanaryDiagnostics : ILogger<AgentRunner>
         _ => "<unrecognized-tool>",
     };
 
+    // Unknown identifiers can themselves contain secrets. Keep protocol vocabulary only, never arbitrary model text.
+    private static string SafeArgument(string name) => name switch
+    {
+        "operation" or "skill" or "resource" or "path" or "skillName" or "resourceName" or "packId"
+            or "command" or "discriminator" => name,
+        _ => "<unrecognized-argument>",
+    };
+
+    private static string? SafeFinish(string? reason) => reason switch
+    {
+        null => null,
+        "stop" or "length" or "tool_calls" or "content_filter" => reason,
+        _ => "<unrecognized-finish-reason>",
+    };
+
+    // Classify the authoritative runtime rejection, without exporting its interpolated names, values or exception text.
+    private static string? ArgumentRejection(string? message)
+    {
+        if (message is null) return null;
+        if (message.Contains("expectedArguments was not a JSON object", StringComparison.Ordinal)) return "not-object";
+        if (message.Contains("cannot constrain unavailable tool", StringComparison.Ordinal)) return "unavailable-tool";
+        if (!message.Contains("has invalid expectedArguments", StringComparison.Ordinal)) return null;
+        (string Phrase, string Code)[] reasons =
+        [
+            ("properties; at most", "property-count-limit"), ("-byte limit", "serialized-byte-limit"),
+            ("names undeclared parameter", "undeclared-parameter"), ("sensitive parameter", "sensitive-parameter"),
+            ("may not be null", "null-parameter"), ("is not a valid", "declared-type-mismatch"),
+            ("not one of the allowed values", "enum-value"),
+            (" length ", "string-length-bound"), ("items, below minimum", "minimum-items"),
+            ("below minimum", "minimum-bound"),
+            ("exceeds maximum", "maximum-bound"), ("exceeding maximum", "maximum-items"),
+            ("schema is not usable", "invalid-manifest-schema"),
+        ];
+        return reasons.FirstOrDefault(reason => message.Contains(reason.Phrase, StringComparison.Ordinal)).Code
+            ?? "unclassified-expected-arguments";
+    }
+
+    private static object[] PlanArgumentShapes(string? text)
+    {
+        if (text is null || AgentRunner.PlanJsonCandidate(text) is not { } candidate) return [];
+        try
+        {
+            if (JsonNode.Parse(candidate, documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false })
+                is not JsonObject root || root["steps"] is not JsonArray steps) return [];
+            return steps.Take(16).OfType<JsonObject>().Select(step => (object)new
+            {
+                Tool = step["expectedTool"] is JsonValue tool && tool.TryGetValue<string>(out var name)
+                    ? SafeTool(name) : "<invalid-tool>",
+                ExpectedArgumentsType = step.TryGetPropertyValue("expectedArguments", out var arguments)
+                    ? (arguments?.GetValueKind() ?? JsonValueKind.Null).ToString() : "absent",
+                Arguments = arguments is JsonObject values ? values.Take(16).Select(pair => new
+                {
+                    Key = SafeArgument(pair.Key),
+                    Type = (pair.Value?.GetValueKind() ?? JsonValueKind.Null).ToString(),
+                }).ToArray() : [],
+            }).ToArray();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+        {
+            return []; // Diagnostic parsing must never affect the canary's runtime result.
+        }
+    }
+
     internal void RecordResponse(ModelResponse response) => replies.Add(new
     {
         Phase,
         TextPresent = !string.IsNullOrWhiteSpace(response.TextResponse),
         response.IsFinal,
+        FinishReason = SafeFinish(response.Details?.FinishReason),
+        PlanArguments = Phase == "planning" ? PlanArgumentShapes(response.TextResponse) : [],
         Usage = response.Usage is { } usage ? new { usage.PromptTokens, usage.CompletionTokens } : null,
         Proposed = response.ToolCalls.Select(call => new
         {
@@ -146,6 +212,7 @@ internal sealed class KnowledgeCanaryDiagnostics : ILogger<AgentRunner>
                 evt.ProviderStatusCode, Retry = evt.RetryDecision?.ToString(), evt.ModelAttempt, evt.DurationMs,
                 ContextGateRefused = evt.ContextGateRejection is not null,
                 Cause = evt.ErrorMessage is null ? null : SafeCause(evt.ErrorMessage),
+                ArgumentRejection = ArgumentRejection(evt.ErrorMessage),
                 Usage = evt.Usage is { } usage ? new { usage.PromptTokens, usage.CompletionTokens } : null,
             }).ToArray(),
             ToolAudit = events.OfType<ToolCallAuditEvent>().Select(evt => new
