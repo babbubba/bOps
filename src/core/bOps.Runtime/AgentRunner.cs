@@ -1369,6 +1369,11 @@ public sealed partial class AgentRunner(
         {
             return await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, [], ct);
         }
+        // AF-05H2-R2: an output-limited replan of this revision is not repeated; no attempt is reserved for a call never made.
+        if (earlyFinal && EarlyFinalRecovery.SkipsPaidReplan(plan, run.Steps, stepIndex))
+        {
+            return await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, [], ct);
+        }
         // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
         if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
         {
@@ -1498,14 +1503,21 @@ public sealed partial class AgentRunner(
     private async Task<(AgentPlan Plan, TaskState? Terminal)> ContinueAfterMalformedEarlyFinalReplanAsync(
         ExecutionRun run, AgentPlan plan, int stepIndex, List<ModelCallRecord> calls, CancellationToken ct)
     {
-        if (EarlyFinalRecovery.SafePosition(plan, run.Steps, stepIndex, ManifestOf,
-                ToolViewFor(run.Delegation)) is { } recoveryPosition)
+        var (decision, safePosition) = EarlyFinalRecovery.Evaluate(plan, run.Steps, stepIndex, ManifestOf, ToolViewFor(run.Delegation));
+        // The decision is persisted on the rejected early final, beside its replan calls, only together with what it decided.
+        void RecordDecision()
+        {
+            var slot = run.Steps.FindIndex(step => step.Index == stepIndex);
+            run.Steps[slot] = run.Steps[slot] with { EarlyFinalRecoveryDecision = decision };
+        }
+        if (safePosition is { } recoveryPosition)
         {
             ct.ThrowIfCancellationRequested();
             if (run.AttemptBudget.IsExpired)
             {
                 return (plan, await StopForAttemptDurationAsync(run, calls));
             }
+            RecordDecision();
             run.Steps.Add(new PlanStep(run.Steps.Count, EarlyFinalRecovery.StepDescription, null, null,
                 $"Malformed replan: retaining plan revision {plan.Revision}, pending cursor {recoveryPosition.Cursor}; "
                 + "read-only continuation remains subject to normal tool authority, validation and authorization.", plan.Revision)
@@ -1521,7 +1533,17 @@ public sealed partial class AgentRunner(
             ct.ThrowIfCancellationRequested();
             return (plan, await BudgetStopAsync(run, ct));
         }
-        return (plan, await FailAsync(run, "Malformed replan; no safe persisted-plan continuation.",
+        logger.LogWarning("Task {TaskId} step {StepIndex}: persisted-plan continuation refused ({Reason}, blocking step {BlockingStep})",
+            run.TaskId, stepIndex, decision.Reason, decision.BlockingStepIndex);
+        RecordDecision();
+        await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running),
+            TaskLifecycleStage.EarlyFinalPlanContinuationRefused, run.Actor) with
+            {
+                StepIndex = stepIndex,
+                RefusalCode = EarlyFinalRecovery.RefusalCode(decision.Reason),
+            },
+            run.Delegation, CancellationToken.None);
+        return (plan, await FailAsync(run, $"Malformed replan; no safe persisted-plan continuation ({decision.Reason}).",
             (TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse), calls, ct));
     }
 

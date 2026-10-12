@@ -67,12 +67,25 @@ public sealed class TaskModelCallsEndpointsTests
         var call = stored.Steps[0].ModelCalls![0];
         await store.SaveAsync(stored with
         {
-            Steps = [stored.Steps[0] with { EarlyFinalReplanCalls = [call], EarlyFinalReplanFailed = true }],
+            Steps = [stored.Steps[0] with
+            {
+                EarlyFinalReplanCalls = [call],
+                EarlyFinalReplanFailed = true,
+                EarlyFinalRecoveryDecision = new EarlyFinalRecoveryDecision
+                {
+                    Accepted = true, Reason = EarlyFinalRecoveryReason.Continued, PlanRevision = 0, Cursor = 1,
+                    ResolvedValidationStepIndexes = [0],
+                },
+            }],
         });
         var body = await client.GetStringAsync(new Uri($"/api/agents/tasks/{id}", UriKind.Relative));
         using var json = JsonDocument.Parse(body);
         var step = json.RootElement.GetProperty("steps")[0];
         Assert.True(step.GetProperty("earlyFinalReplanFailed").GetBoolean());
+        var decision = step.GetProperty("earlyFinalRecoveryDecision");
+        Assert.True(decision.GetProperty("accepted").GetBoolean());
+        Assert.Equal(1, decision.GetProperty("cursor").GetInt32());
+        Assert.Equal(0, decision.GetProperty("resolvedValidationStepIndexes")[0].GetInt32());
         AssertModelCallWithoutBodies(step.GetProperty("earlyFinalReplanCalls")[0]);
         Assert.DoesNotContain("a very long conversation", body, StringComparison.Ordinal);
         Assert.Equal(RequestBody, (await store.LoadAsync(id))!.Steps[0].EarlyFinalReplanCalls![0].RequestJson);

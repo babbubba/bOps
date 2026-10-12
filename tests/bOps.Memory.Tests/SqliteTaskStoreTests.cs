@@ -45,6 +45,36 @@ public sealed class SqliteTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Reopen_PreservesTheEarlyFinalRecoveryDecision_AndReadsStepsWrittenWithoutIt()
+    {
+        var decision = new EarlyFinalRecoveryDecision
+        {
+            Accepted = false, Reason = EarlyFinalRecoveryReason.UnresolvedToolFailure, PlanRevision = 1, Cursor = 6,
+            BlockingStepIndex = 3, ResolvedValidationStepIndexes = [1, 2], PaidReplanSkipped = true,
+        };
+        var early = new PlanStep(8, "Premature final response; plan re-evaluation required", null, null, "x", 1)
+        {
+            EarlyFinalReplanFailed = true,
+            EarlyFinalRecoveryDecision = decision,
+        };
+        var legacy = new PlanStep(9, "Premature final response; plan re-evaluation required", null, null, "y", 1);
+        var task = SampleTask(AgentTaskStatus.Failed) with { Steps = [early, legacy] };
+        await new SqliteTaskStore(_filePath).SaveAsync(task);
+        var reloaded = (await new SqliteTaskStore(_filePath).LoadAsync(task.Id))!;
+        var restored = reloaded.Steps[0].EarlyFinalRecoveryDecision!;
+        Assert.Equal(decision with { ResolvedValidationStepIndexes = restored.ResolvedValidationStepIndexes }, restored);
+        Assert.Equal([1, 2], restored.ResolvedValidationStepIndexes!);
+        Assert.Null(reloaded.Steps[1].EarlyFinalRecoveryDecision);
+        // The additive field is omitted when absent, so a step written by an earlier version has exactly the same shape.
+        Assert.DoesNotContain("EarlyFinalRecoveryDecision",
+            System.Text.Json.JsonSerializer.Serialize(legacy), StringComparison.Ordinal);
+        var minimal = System.Text.Json.JsonSerializer.Deserialize<EarlyFinalRecoveryDecision>(
+            """{"Accepted":true,"Reason":0,"PlanRevision":0}""")!;
+        Assert.Equal((true, EarlyFinalRecoveryReason.Continued, (int?)null, false),
+            (minimal.Accepted, minimal.Reason, minimal.Cursor, minimal.PaidReplanSkipped));
+    }
+
+    [Fact]
     public async Task SaveAsync_ThenLoadAsync_RoundTripsTheFullTaskState()
     {
         var store = new SqliteTaskStore(_filePath);

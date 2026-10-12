@@ -3,6 +3,7 @@
 Status: **Accepted and implemented — 2026-10-07**
 Date: 2026-10-07
 Amended: 2026-10-11 by AF-05H — "a premature final replans" (end of this document)
+Amended: 2026-10-12 by AF-05H2 — "an early-final replan without a plan" (end of this document)
 
 ## Context
 
@@ -210,3 +211,42 @@ suffix of the active revision as failed. Accepting any tool-free reply as comple
 The step prompt now says that while planned steps remain unresolved the runtime re-evaluates the plan before it accepts a final
 answer. Tests: `EarlyFinalReplanTests`, `LiveRegressionTests` (AF-05H fixtures). Evidence:
 `agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`.
+
+## Amendment — an early-final replan without a plan (AF-05H2, 2026-10-12)
+
+**Status: Accepted.** Live BENCH-00/BENCH-01 runs ended `Failed` when the early-final replan of §3 of the AF-05H amendment
+stopped at the provider's output limit (`finish_reason=length`, 4096 completion tokens) without a parseable plan, although the
+next planned step was a harmless read. AF-05H2-R1 (`3d2afb7`) added a bounded, runtime-authored continuation of the persisted
+plan; BENCH-01 then showed it refused every task whose history contained a call the runtime had rejected for invalid arguments
+(`SemanticMismatch` or `ArgumentValidationFailure`) even though a matched, successful call of the same planned step followed.
+R2 corrects that and makes the decision explicit.
+
+1. **Scope.** Only a replan triggered by a rejected early final, whose reply was received and was not a plan, is eligible.
+   Provider exceptions, other C8 triggers, budgets, cancellation and accepted plans (including empty ones) are unchanged. A
+   received `length` reply is not retried at the same limit; other malformed replies keep the single corrective retry.
+2. **Continuation proof.** The persisted plan continues at its unchanged cursor only when: the plan has the semantic contract;
+   the early final is the latest step of the revision; the fold over the earlier steps is coherent, has an unresolved step and no
+   spent correction pending; the pending step is unconditional, and its tool is registered, read-only and offered in the current
+   tool view; every earlier tool call of every revision has a result, used a registered read-only tool, was not denied, did not
+   time out and was not refuted; and every earlier failure is a validation-class rejection of the planned tool in the current
+   revision that a later `Matched`, successful call of the same tool at the same planned index resolved. Anything else is
+   refused. A validation failure corrected only in a later revision stays unresolved.
+3. **Anti-loop and cost.** A continuation of a revision must be strictly further along than any earlier continuation of the same
+   revision (`RepeatedWithoutProgress` otherwise). Once an early-final replan of a revision stopped at the output limit and was
+   continued, a later early final of that revision is not sent to the model again: the proof above decides directly, with no
+   reserved replan. Early-final replan attempts that make a paid call are reserved against the attempt and lifetime replan budgets
+   before the call; continuations are never charged.
+4. **Decision record.** Every evaluation is persisted on the early-final step as an additive, optional
+   `EarlyFinalRecoveryDecision` (accepted, typed `EarlyFinalRecoveryReason`, revision, cursor, blocking step, the resolved
+   validation steps, whether a paid replan was skipped). An acceptance writes a runtime-authored continuation record and the
+   `EarlyFinalPlanContinued` lifecycle audit event; a refusal writes the `EarlyFinalPlanContinuationRefused` lifecycle audit event
+   with a stable snake_case refusal code, then fails the attempt as a malformed-response model failure. Steps written before this
+   amendment have no decision and fold as before.
+5. **Authority.** A continuation grants nothing: the model still has to call the pending tool, which then passes validation,
+   step authority, policy, entitlement, approval and the mutation journal as any other call. Resume re-proves a persisted
+   continuation against the current tool view and the journal admission still refuses an unknown mutation outcome.
+6. **Model calls.** Replan calls of an early final are kept on its step as `EarlyFinalReplanCalls`, disjoint from its own
+   `ModelCalls`; token accounting, the API projection and the web UI read both.
+
+Tests: `EarlyFinalReplanTests`, `EarlyFinalValidationRecoveryTests` (BENCH-01 B02/B03 shapes). Evidence:
+`agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md`, `agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md`.

@@ -238,7 +238,7 @@
                         }
                       </span>
                       <span class="flex items-center gap-2">
-                        @if (step.modelCalls?.length) {
+                        @if (stepModelCalls(step).length) {
                           <button
                             type="button"
                             (click)="toggleModelInfo(modelInfoKey(task.id, step.index))"
@@ -258,16 +258,16 @@
                         }
                       </span>
                     </div>
-                    @if (step.modelCalls?.length && isModelInfoOpen(modelInfoKey(task.id, step.index))) {
+                    @if (stepModelCalls(step).length && isModelInfoOpen(modelInfoKey(task.id, step.index))) {
                       <div
                         [id]="'model-info-' + task.id + '-' + step.index"
                         class="mt-2 flex flex-col gap-2 rounded bg-bg p-2 text-xs text-muted"
                       >
-                        @for (call of step.modelCalls; track $index) {
+                        @for (call of stepModelCalls(step); track $index) {
                           @let served = modelServed(call);
                           <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                            @if (step.modelCalls!.length > 1) {
-                              <dt class="col-span-2 font-semibold">{{ 'dashboard.step.modelInfo.call' | t: { number: $index + 1, total: step.modelCalls!.length } }}</dt>
+                            @if (stepModelCalls(step).length > 1) {
+                              <dt class="col-span-2 font-semibold">{{ 'dashboard.step.modelInfo.call' | t: { number: $index + 1, total: stepModelCalls(step).length } }}</dt>
                             }
                             <dt>{{ 'dashboard.step.modelInfo.model' | t }}</dt>
                             <dd class="break-all">

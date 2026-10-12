@@ -410,20 +410,45 @@ public sealed class EarlyFinalReplanTests
             step => Assert.Equal(ProjectedStepStatus.Completed, step.Status));
     }
 
+    // AF-05H2-R2: an output-limited replan is not paid for again in the same revision, and a continuation needs progress.
     [Fact]
-    public async Task MalformedRecoveryWithoutProgress_IsBoundedByAttemptAndLifetimeReplans()
+    public async Task OutputLimitedRecoveryWithoutProgress_FailsWithoutASecondPaidReplan()
     {
         var model = new FakeChatModel(Plan(A), Final(), Malformed("length"), Final(), Malformed("length"), Final());
-        var (runner, _, tools) = Build(model, options: new AgentRunnerOptions { MaxReplans = 2, MaxLifetimeReplans = 2 });
+        var (runner, audit, tools) = Build(model, options: new AgentRunnerOptions { MaxReplans = 2, MaxLifetimeReplans = 2 });
         var result = await runner.RunAsync("diagnose", Actor);
-        Assert.Equal(AgentTaskStatus.ReplanLimitReached, result.Status);
-        Assert.Equal(TaskTerminalKind.LifetimeReplanLimit, result.TerminalReason!.Kind);
-        Assert.Equal(2, result.Accounting!.LifetimeReplans);
-        Assert.Equal(8226, result.Accounting.TokensUsed);
-        Assert.Equal(6, model.Requests.Count);
+        Assert.Equal(AgentTaskStatus.Failed, result.Status);
+        Assert.Equal(ModelFailureKind.MalformedResponse, result.TerminalReason!.FailureKind);
+        Assert.Equal(1, result.Accounting!.LifetimeReplans);
+        Assert.Equal(4113, result.Accounting.TokensUsed);
+        Assert.Equal(4, model.Requests.Count);
         Assert.Equal(0, tools[A].ExecutionCount);
         Assert.DoesNotContain(result.Steps, FinalResponse.IsFinalStep);
+        var second = result.Steps.Last(PrematureFinal.IsStep);
+        Assert.Null(second.EarlyFinalReplanCalls);
+        Assert.Equal(new EarlyFinalRecoveryDecision
+        {
+            Accepted = false, Reason = EarlyFinalRecoveryReason.RepeatedWithoutProgress, PlanRevision = 0, Cursor = 0,
+            BlockingStepIndex = result.Steps.Single(EarlyFinalRecovery.IsStep).Index,
+        }, second.EarlyFinalRecoveryDecision);
+        Assert.Contains(audit.Events.OfType<TaskLifecycleAuditEvent>(), e =>
+            e.Stage == TaskLifecycleStage.EarlyFinalPlanContinuationRefused && e.RefusalCode == "repeated_without_progress");
         Assert.Equal(0, PlannedStepPosition.Derive(result.Plans[0], result.Steps).Cursor);
+    }
+
+    [Fact]
+    public async Task MalformedRecoveryWithoutProgress_IsBoundedEvenWhenTheReplanWasNotOutputLimited()
+    {
+        var model = new FakeChatModel(Plan(A), Final(), Malformed(), Malformed(), Final(), Malformed(), Malformed(), Final());
+        var (runner, _, tools) = Build(model, options: new AgentRunnerOptions { MaxReplans = 2, MaxLifetimeReplans = 2 });
+        var result = await runner.RunAsync("diagnose", Actor);
+        Assert.Equal(AgentTaskStatus.Failed, result.Status);
+        Assert.Equal(2, result.Accounting!.LifetimeReplans);
+        Assert.Equal(4 * 4113, result.Accounting.TokensUsed);
+        Assert.Equal(7, model.Requests.Count);
+        Assert.Equal(0, tools[A].ExecutionCount);
+        Assert.Equal(EarlyFinalRecoveryReason.RepeatedWithoutProgress,
+            result.Steps.Last(PrematureFinal.IsStep).EarlyFinalRecoveryDecision!.Reason);
     }
 
     [Theory]

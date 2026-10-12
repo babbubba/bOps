@@ -188,6 +188,7 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     [Theory]
     [InlineData(TaskLifecycleStage.RecoveryRejected)]
     [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]
+    [InlineData(TaskLifecycleStage.EarlyFinalPlanContinuationRefused)]
     public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem(TaskLifecycleStage stage)
     {
         // ADR-0051 §14.1: the additive journal event and the two recovery lifecycle stages serialize through the real sink into
