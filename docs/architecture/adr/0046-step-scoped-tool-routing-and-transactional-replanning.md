@@ -250,3 +250,29 @@ R2 corrects that and makes the decision explicit.
 
 Tests: `EarlyFinalReplanTests`, `EarlyFinalValidationRecoveryTests` (BENCH-01 B02/B03 shapes). Evidence:
 `agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md`, `agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md`.
+
+## Amendment — a failed initial plan fails the attempt (AF-PLAN-01, 2026-10-12)
+
+**Status: Accepted.** BENCH-01 R2 B02 (`2dbb7b3`) proposed a fenced plan whose `system.events` step had `expectedArguments`
+`limit: 1000` against the declared maximum of 500. The fence was parsed; the step failed `SemanticExpectedArguments.Validate`.
+The generic re-ask did not name the problem, the model repeated it, and the runtime continued with an empty plan as ADR-0014 and
+ADR-0039 §8 prescribed. Under §2 of this ADR an empty plan offers no native tool, so that continuation cannot make progress: the
+model spent two 4,096-token replies on reasoning and the attempt ended `EmptyResponse` without any tool call.
+
+1. **Exact correction.** A rejected initial plan is re-asked with the runtime's own validation problem (bounded to 512
+   characters) ahead of the standing format instruction. A reply cut at the output limit with no text gets an output-limit notice
+   instead, with no empty assistant turn. The replan corrective re-ask carries the problem the same way; its count and the
+   AF-05H2 early-final rules are unchanged.
+2. **Bound.** At most two corrections follow the first reply (`AgentRunner.MaxPlanCorrections`). A correction whose reply
+   leaves the identical problem ends the corrections: an identical request would fail the same way. Each call is recorded,
+   audited and charged as before, and the token budget is checked after every call.
+3. **No plan-less continuation.** When no valid plan results, the attempt fails as `ModelFailure`/`MalformedResponse` with a
+   synthetic failure step `Planning failed: … Last problem: …` carrying the planning calls. No plan is persisted, so a resume plans
+   again (ADR-0040 §7). This supersedes the empty-plan degradation of ADR-0014 and ADR-0039 §8 for the initial plan; an accepted
+   empty plan is unchanged.
+4. **Framing only.** The plan text is taken from the first markdown fence that holds a JSON object, otherwise from the outermost
+   braces. Strict JSON, schema, `expectedArguments`, activation and discriminator validation are unchanged.
+5. **Step loop.** The one empty-reply re-ask (`EmptyFinalResponseRetries`) tells an output-limited model to call the offered tool
+   or answer without further deliberation; its bound and the `EmptyResponse` terminal are unchanged.
+
+Tests: `PlanningCorrectionTests` (B02 shapes). Evidence: `agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md`.

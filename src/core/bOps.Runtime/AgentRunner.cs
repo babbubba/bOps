@@ -165,6 +165,35 @@ public sealed partial class AgentRunner(
         "pairwise-discriminating expectedArguments. Reply again with ONLY the JSON object — " +
         "no prose, no markdown code fence.";
 
+    /// <summary>AF-PLAN-01: corrective re-asks of the initial plan call after the first reply. Bounded, never repeated without progress.</summary>
+    internal const int MaxPlanCorrections = 2;
+
+    private const int MaxPlanProblemCharacters = 512;
+
+    private const string OutputLimitedPlanInstructions =
+        "Your reply reached the output limit before any plan text was produced. Do not deliberate further: reply now " +
+        "with ONLY the compact JSON plan object — no prose, no markdown code fence.";
+
+    private const string OutputLimitedEmptyRetryInstructions =
+        "Your last reply reached the output limit while reasoning and had no text and no tool call. Do not deliberate " +
+        "further: call the offered tool now, or give your final answer to the operator's goal in plain text.";
+
+    /// <summary>The corrective re-ask after an unusable plan reply: the runtime's exact problem, or the output-limit notice for an empty truncated reply.</summary>
+    private static string PlanCorrectionInstructions(string? problem, ModelResponse response)
+    {
+        if (IsOutputLimited(response) && string.IsNullOrWhiteSpace(response.TextResponse))
+        {
+            return OutputLimitedPlanInstructions;
+        }
+
+        return problem is null
+            ? PlanRetryInstructions
+            : $"The runtime rejected that plan: {ProjectForPrompt(problem, MaxPlanProblemCharacters)} {PlanRetryInstructions}";
+    }
+
+    private static bool IsOutputLimited(ModelResponse response) =>
+        string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
+
     private const string EvidenceControlInstruction =
         "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
         "persisted evidence of this task that the evidence index lists. It does not complete the step, and an " +
@@ -940,7 +969,8 @@ public sealed partial class AgentRunner(
                 // rather than the task being completed with nothing to show.
                 for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
                 {
-                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(EmptyResponseRetryInstructions));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
+                        IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions));
                     response = await CallModelWithOverflowRecoveryAsync(
                         taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                     request = BuildStepRequest(logicalCall.Aggressive);
@@ -2796,45 +2826,67 @@ public sealed partial class AgentRunner(
             throw new TokenBudgetCrossedException();
         }
 
-        var initialDirective = EvidenceRead.Recognize(response);
         await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
-
-        if (initialDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(response.TextResponse, revision: 0, planningTools) is { } plan)
+        if (InitialPlanOf(response, planningTools, out var problem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
 
-        // One bounded retry against the model's own malformed reply, mirroring the JSON-schema
-        // fallback pattern in OpenAiCompatibleChatModel (plan §3.1.1) — a model that ignores the
-        // required format once often complies when told precisely what was wrong.
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
-
-        var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
-            BuildPlanningRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
-        tokens += UsageTokens(retryResponse);
-        if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
+        // AF-PLAN-01: bounded corrective re-asks, each telling the model the runtime's exact problem (or that its reply was
+        // cut off at the output limit). A correction that leaves the same problem is not repeated: the next identical
+        // request would fail the same way.
+        for (var correction = 1; correction <= MaxPlanCorrections; correction++)
         {
-            throw new TokenBudgetCrossedException();
+            if (!(IsOutputLimited(response) && string.IsNullOrWhiteSpace(response.TextResponse)))
+            {
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+            }
+
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(problem, response)));
+
+            response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
+                BuildPlanningRequest, delegation, calls, logicalCall, ct,
+                MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
+            tokens += UsageTokens(response);
+            if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
+            {
+                throw new TokenBudgetCrossedException();
+            }
+
+            await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
+            var previousProblem = problem;
+            if (InitialPlanOf(response, planningTools, out problem) is { } correctedPlan)
+            {
+                return (correctedPlan with { ModelCalls = calls }, tokens);
+            }
+
+            if (string.Equals(problem, previousProblem, StringComparison.Ordinal))
+            {
+                break;
+            }
         }
 
-        var retryDirective = EvidenceRead.Recognize(retryResponse);
-        await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, retryResponse, ct);
-
-        if (retryDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(retryResponse.TextResponse, revision: 0, planningTools) is { } retryPlan)
+        // A plan-less continuation offers no native tool (ADR-0046 step-scoped routing), so it cannot make progress: the
+        // attempt fails here, its paid calls recorded, and a resume plans again.
+        logger.LogWarning("Task {TaskId}: the model did not produce a valid plan after bounded corrections", taskId);
+        throw new ModelProtocolException(
+            $"Planning failed: the model did not produce a valid plan after {calls.Count} attempt(s). " +
+            $"Last problem: {ModelFailureText.Sanitize(problem ?? "unknown")}")
         {
-            return (retryPlan with { ModelCalls = calls }, tokens);
+            FailureKind = ModelFailureKind.MalformedResponse,
+        };
+    }
+
+    /// <summary>The initial plan in <paramref name="response"/>, or <c>null</c> with why it is not one; a runtime directive is never a plan here.</summary>
+    private static AgentPlan? InitialPlanOf(ModelResponse response, IReadOnlyList<ToolManifest> tools, out string? problem)
+    {
+        if (EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None)
+        {
+            problem = "The reply was an EvidenceRead directive; no evidence exists before the initial plan.";
+            return null;
         }
 
-        logger.LogWarning(
-            "Task {TaskId}: the model did not produce a parseable plan after one retry; proceeding without an explicit plan", taskId);
-        return (new AgentPlan(0, "Planning failed after a malformed response; proceeding step by step without an explicit plan.", [])
-        {
-            ModelCalls = calls,
-        }, tokens);
+        return TryParsePlan(response.TextResponse, revision: 0, tools, out problem);
     }
 
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
@@ -2885,7 +2937,7 @@ public sealed partial class AgentRunner(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
             logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
 
-        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1, planningTools) is { } plan)
+        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1, planningTools, out var replanProblem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -2908,7 +2960,7 @@ public sealed partial class AgentRunner(
         }
 
         logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(replanProblem, response)));
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
@@ -4857,6 +4909,37 @@ public sealed partial class AgentRunner(
         return new EvidenceFactExists(source, factType, factKey, bindArgument);
     }
 
+    /// <summary>
+    /// The text a plan is parsed from: the body of the first markdown code fence that holds a JSON object, otherwise the span
+    /// from the first '{' to the last '}'. Only the framing is lenient; the candidate still meets the full plan validation.
+    /// </summary>
+    internal static string? PlanJsonCandidate(string text)
+    {
+        const string fence = "```";
+        var open = text.IndexOf(fence, StringComparison.Ordinal);
+        while (open >= 0)
+        {
+            var bodyStart = text.IndexOf('\n', open + fence.Length);
+            var close = bodyStart < 0 ? -1 : text.IndexOf(fence, bodyStart, StringComparison.Ordinal);
+            if (close < 0)
+            {
+                break;
+            }
+
+            var body = text[(bodyStart + 1)..close].Trim();
+            if (body.StartsWith('{') && body.EndsWith('}'))
+            {
+                return body;
+            }
+
+            open = text.IndexOf(fence, close + fence.Length, StringComparison.Ordinal);
+        }
+
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        return start < 0 || end <= start ? null : text[start..(end + 1)];
+    }
+
     private static AgentPlan? TryParsePlan(
         string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem)
     {
@@ -4867,9 +4950,7 @@ public sealed partial class AgentRunner(
             return null;
         }
 
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start)
+        if (PlanJsonCandidate(text) is not { } candidate)
         {
             problem = "The plan reply did not contain a JSON object.";
             return null;
@@ -4877,7 +4958,7 @@ public sealed partial class AgentRunner(
 
         try
         {
-            if (JsonNode.Parse(text[start..(end + 1)], nodeOptions: null, documentOptions: StrictPlanJson) is not JsonObject root)
+            if (JsonNode.Parse(candidate, nodeOptions: null, documentOptions: StrictPlanJson) is not JsonObject root)
             {
                 problem = "The plan reply was not a JSON object.";
                 return null;
