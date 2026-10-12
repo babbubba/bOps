@@ -863,24 +863,24 @@ public sealed class AgentRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_DegradesToAnEmptyPlan_WhenTheModelNeverProducesValidPlanJson()
+    public async Task RunAsync_FailsExplicitly_WhenTheModelNeverProducesValidPlanJson()
     {
-        // Bounded retry (mirroring the JSON-schema fallback in OpenAiCompatibleChatModel, plan
-        // §3.1.1): one malformed reply is retried once; still malformed, the task proceeds
-        // reactively rather than failing outright — rule C1, applied to planning.
+        // Bounded correction (AF-PLAN-01): the same problem twice ends the attempt. A plan-less continuation would offer
+        // no native tool under step-scoped routing (ADR-0046), so it is never entered — rule C1, applied to planning.
         var model = new FakeChatModel(
             new ModelResponse("I'll figure it out as I go.", [], false, null),
-            new ModelResponse("Sure, let me think about that.", [], false, null),
-            new ModelResponse("All good.", [], true, null));
+            new ModelResponse("Sure, let me think about that.", [], false, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
 
         var result = await CreateRunner(model, registry, audit).RunAsync("check things", Actor);
 
-        Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        Assert.Single(result.Plans);
-        Assert.Empty(result.Plans[0].Steps);
-        Assert.Contains("Planning failed", result.Plans[0].Rationale, StringComparison.Ordinal);
+        Assert.Equal(AgentTaskStatus.Failed, result.Status);
+        Assert.Equal(TaskTerminalKind.ModelFailure, result.TerminalReason!.Kind);
+        Assert.Equal(ModelFailureKind.MalformedResponse, result.TerminalReason.FailureKind);
+        Assert.Empty(result.Plans);
+        Assert.StartsWith("Planning failed", Assert.Single(result.Steps).Observation, StringComparison.Ordinal);
+        Assert.Equal(2, model.Requests.Count);
     }
 
     [Fact]

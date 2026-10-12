@@ -484,6 +484,12 @@ public enum TaskLifecycleStage
 
     /// <summary>A recovery was refused, lost the transition to another writer, or the store cannot perform it.</summary>
     RecoveryRejected = 6,
+
+    /// <summary>A received malformed early-final replan retained the persisted plan and authorized a read-only continuation.</summary>
+    EarlyFinalPlanContinued = 7,
+
+    /// <summary>An early-final replan produced no plan and the persisted-plan continuation was refused; <see cref="TaskLifecycleAuditEvent.RefusalCode"/> says why.</summary>
+    EarlyFinalPlanContinuationRefused = 8,
 }
 
 /// <summary>
@@ -518,7 +524,7 @@ public sealed record TaskLifecycleAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TaskTerminalKind? TerminalKind { get; init; }
 
-    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/> and <see cref="TaskLifecycleStage.RecoveryRejected"/>, the stable refusal code (for example <c>task_running</c>).</summary>
+    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/>, <see cref="TaskLifecycleStage.RecoveryRejected"/> and <see cref="TaskLifecycleStage.EarlyFinalPlanContinuationRefused"/>, the stable refusal code (for example <c>task_running</c>).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RefusalCode { get; init; }
 

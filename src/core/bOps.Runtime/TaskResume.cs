@@ -312,16 +312,29 @@ public static class TaskResumePolicy
 
     /// <summary>ADR-0040 §5.4: tokens from every recorded model call (plans and steps hold disjoint records), executable steps only, revisions after 0.</summary>
     internal static TaskAccounting DeriveAccounting(TaskState task) => new(
-        task.Plans.Sum(plan => RecordedTokens(plan.ModelCalls)) + task.Steps.Sum(step => RecordedTokens(step.ModelCalls)),
+        task.Plans.Sum(plan => RecordedTokens(plan.ModelCalls))
+            + task.Steps.Sum(step => RecordedTokens(step.ModelCalls) + RecordedTokens(step.EarlyFinalReplanCalls)),
         task.Steps.Count(step => !IsSyntheticFailureStep(step)),
         Math.Max(0, task.Plans.Count - 1));
+
+    /// <summary>
+    /// AF-05H2-R2: the replan history behind <see cref="TaskAccounting.LifetimeReplans"/>, derived from persisted state only.
+    /// <see cref="ReplanBreakdown.Charged"/> is the budget counter; accepted revisions, early-final replan attempts (each one
+    /// logical attempt of one or two paid calls, accepted or not) and deterministic persisted-plan continuations are distinct.
+    /// </summary>
+    internal static ReplanBreakdown ReplanBreakdownOf(TaskState task) => new(
+        EffectiveAccounting(task).LifetimeReplans,
+        Math.Max(0, task.Plans.Count - 1),
+        task.Steps.Count(step => PrematureFinal.IsStep(step) && step.EarlyFinalReplanCalls is { Count: > 0 }),
+        task.Steps.Count(EarlyFinalRecovery.IsStep),
+        task.Steps.Count(step => PrematureFinal.IsStep(step) && step.EarlyFinalRecoveryDecision is { PaidReplanSkipped: true }));
 
     /// <summary>Whether <paramref name="step"/> is a runtime-authored record rather than an executed or proposed step (ADR-0040 §5.2, ADR-0051 §13): never counted against a step budget.</summary>
     internal static bool IsSyntheticFailureStep(PlanStep step) =>
         step.ToolCall is null
         && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
             or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription
-            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription;
+            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription or EarlyFinalRecovery.StepDescription;
 
     /// <summary>Whether <paramref name="step"/> is the runtime-authored history of a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
     internal static bool IsMutationReconciledStep(PlanStep step) =>
@@ -331,3 +344,12 @@ public static class TaskResumePolicy
     internal static long RecordedTokens(IReadOnlyList<ModelCallRecord>? calls) =>
         calls?.Sum(call => (long)(call.Usage?.PromptTokens ?? 0) + (call.Usage?.CompletionTokens ?? 0)) ?? 0;
 }
+
+/// <summary>AF-05H2-R2: the kinds of replan activity a task's persisted history records.</summary>
+/// <param name="Charged">Replan attempts charged to the lifetime budget (<see cref="TaskAccounting.LifetimeReplans"/>).</param>
+/// <param name="Accepted">Accepted plan revisions after revision 0.</param>
+/// <param name="EarlyFinalAttempts">Early-final replan attempts that made at least one paid call, accepted or not.</param>
+/// <param name="DeterministicContinuations">Runtime-authored persisted-plan continuations; never a paid call or a charge.</param>
+/// <param name="SkippedPaidReplans">Early finals whose output-limited replan was not repeated.</param>
+internal readonly record struct ReplanBreakdown(
+    int Charged, int Accepted, int EarlyFinalAttempts, int DeterministicContinuations, int SkippedPaidReplans);

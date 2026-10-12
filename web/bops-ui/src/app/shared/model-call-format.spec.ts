@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ModelCallRecord } from '../core/api/models';
-import { modelServed } from './model-call-format';
+import { modelServed, stepModelCalls } from './model-call-format';
 
 function call(overrides: Partial<ModelCallRecord> = {}): ModelCallRecord {
   return {
@@ -28,5 +28,18 @@ describe('modelServed', () => {
   it('reports no separate actual model when it is the one requested or is unknown', () => {
     expect(modelServed(call({ actualModel: 'openrouter/free' })).actual).toBeNull();
     expect(modelServed(call({ actualModel: null })).actual).toBeNull();
+  });
+});
+
+describe('stepModelCalls', () => {
+  it('lists a step’s own calls, then the replan calls that followed a rejected premature final', () => {
+    const own = call({ finishReason: 'stop' });
+    const replan = call({ outcome: 1, finishReason: 'length', errorMessage: 'malformed' });
+    expect(stepModelCalls({ modelCalls: [own], earlyFinalReplanCalls: [replan] })).toEqual([own, replan]);
+  });
+
+  it('reads steps stored without either collection', () => {
+    expect(stepModelCalls({})).toEqual([]);
+    expect(stepModelCalls({ modelCalls: null, earlyFinalReplanCalls: null })).toEqual([]);
   });
 });

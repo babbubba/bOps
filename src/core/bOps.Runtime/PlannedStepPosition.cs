@@ -7,13 +7,16 @@ namespace bOps.Runtime;
 
 /// <summary>
 /// Pure persisted fold of planned-step progress. ADR-0050 keeps semantic and complete argument-validation corrections as
-/// independent one-use budgets; legacy plans retain ADR-0047's expected-tool-only fold.
+/// independent one-use budgets; legacy plans retain ADR-0047's expected-tool-only fold. AF-TOOLROUTE-01 adds a third independent
+/// one-use budget: a call naming a tool that was not offered while the step's own tool was.
 /// </summary>
 internal readonly record struct PlannedStepPosition(
     int Cursor,
     bool SemanticCorrectionSpent,
     bool ArgumentCorrectionSpent,
-    bool ReplanRequired)
+    bool ReplanRequired,
+    bool EarlyFinalPending = false,
+    bool ToolCorrectionSpent = false)
 {
     internal static PlannedStepPosition Start => default;
 
@@ -69,8 +72,10 @@ internal readonly record struct PlannedStepPosition(
     /// replan that follows it, for every plan contract, so a resume interrupted before that replan replans first.
     /// </summary>
     internal PlannedStepPosition After(AgentPlan plan, PlanStep step) =>
-        ReplanRequired ? this
-        : PrematureFinal.IsStep(step) ? this with { ReplanRequired = true }
+        EarlyFinalRecovery.IsStep(step) ? (ReplanRequired && EarlyFinalPending && step.EarlyFinalRecoveryCursor == Cursor
+            ? this with { ReplanRequired = false, EarlyFinalPending = false } : this with { ReplanRequired = true })
+        : ReplanRequired ? this
+        : PrematureFinal.IsStep(step) ? this with { ReplanRequired = true, EarlyFinalPending = true }
         : plan.SemanticContractVersion == 1 ? AfterSemantic(step) : AfterLegacy(plan, step);
 
     private PlannedStepPosition AfterSemantic(PlanStep step)
@@ -95,6 +100,11 @@ internal readonly record struct PlannedStepPosition(
                 return ArgumentCorrectionSpent
                     ? this with { ReplanRequired = true }
                     : this with { ArgumentCorrectionSpent = true };
+            case PlannedStepExecutionClassification.UnofferedTool:
+                // Only as the step's first deviation (AF-TOOLROUTE-01); persisted history that says otherwise fails closed to replan.
+                return ToolCorrectionSpent || SemanticCorrectionSpent || ArgumentCorrectionSpent
+                    ? this with { ReplanRequired = true }
+                    : this with { ToolCorrectionSpent = true };
             case PlannedStepExecutionClassification.Matched:
                 return IsDeviation(step)
                     ? this with { ReplanRequired = true }

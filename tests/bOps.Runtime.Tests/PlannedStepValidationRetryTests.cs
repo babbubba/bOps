@@ -79,14 +79,14 @@ public sealed class PlannedStepValidationRetryTests
     public async Task AFirstValidationFailure_KeepsTheCurrentPlannedTool_ForOneCorrectiveTurn()
     {
         var (toolA, toolB) = (Tool(ToolA), Tool(ToolB));
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponseFor(ToolA, ToolB), Invalid(ToolA), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponseFor(ToolA, ToolB), Invalid(ToolA), Valid(ToolA), Valid(ToolB), Final());
 
         var result = await Runner(model, new InMemoryTaskStore(), toolA, toolB).RunAsync("diagnose", Actor);
 
         var failed = result.Steps[0];
         Assert.Equal(ToolA, failed.ToolCall!.ToolName);
         Assert.Equal((ToolOutcome.Failure, ToolFailureKind.Validation), (failed.Result!.Outcome, failed.Result.FailureKind));
-        Assert.Equal(0, toolA.ExecutionCount);
+        Assert.Equal(1, toolA.ExecutionCount);
 
         var correction = model.Requests[2];
         Assert.Equal([ToolA], Offered(correction));

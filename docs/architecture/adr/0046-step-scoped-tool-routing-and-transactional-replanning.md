@@ -3,6 +3,7 @@
 Status: **Accepted and implemented — 2026-10-07**
 Date: 2026-10-07
 Amended: 2026-10-11 by AF-05H — "a premature final replans" (end of this document)
+Amended: 2026-10-12 by AF-05H2 — "an early-final replan without a plan" (end of this document)
 
 ## Context
 
@@ -210,3 +211,110 @@ suffix of the active revision as failed. Accepting any tool-free reply as comple
 The step prompt now says that while planned steps remain unresolved the runtime re-evaluates the plan before it accepts a final
 answer. Tests: `EarlyFinalReplanTests`, `LiveRegressionTests` (AF-05H fixtures). Evidence:
 `agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`.
+
+## Amendment — an early-final replan without a plan (AF-05H2, 2026-10-12)
+
+**Status: Accepted.** Live BENCH-00/BENCH-01 runs ended `Failed` when the early-final replan of §3 of the AF-05H amendment
+stopped at the provider's output limit (`finish_reason=length`, 4096 completion tokens) without a parseable plan, although the
+next planned step was a harmless read. AF-05H2-R1 (`3d2afb7`) added a bounded, runtime-authored continuation of the persisted
+plan; BENCH-01 then showed it refused every task whose history contained a call the runtime had rejected for invalid arguments
+(`SemanticMismatch` or `ArgumentValidationFailure`) even though a matched, successful call of the same planned step followed.
+R2 corrects that and makes the decision explicit.
+
+1. **Scope.** Only a replan triggered by a rejected early final, whose reply was received and was not a plan, is eligible.
+   Provider exceptions, other C8 triggers, budgets, cancellation and accepted plans (including empty ones) are unchanged. A
+   received `length` reply is not retried at the same limit; other malformed replies keep the single corrective retry.
+2. **Continuation proof.** The persisted plan continues at its unchanged cursor only when: the plan has the semantic contract;
+   the early final is the latest step of the revision; the fold over the earlier steps is coherent, has an unresolved step and no
+   spent correction pending; the pending step is unconditional, and its tool is registered, read-only and offered in the current
+   tool view; every earlier tool call of every revision has a result, used a registered read-only tool, was not denied, did not
+   time out and was not refuted; and every earlier failure is a validation-class rejection of the planned tool in the current
+   revision that a later `Matched`, successful call of the same tool at the same planned index resolved. Anything else is
+   refused. A validation failure corrected only in a later revision stays unresolved.
+3. **Anti-loop and cost.** A continuation of a revision must be strictly further along than any earlier continuation of the same
+   revision (`RepeatedWithoutProgress` otherwise). Once an early-final replan of a revision stopped at the output limit and was
+   continued, a later early final of that revision is not sent to the model again: the proof above decides directly, with no
+   reserved replan. Early-final replan attempts that make a paid call are reserved against the attempt and lifetime replan budgets
+   before the call; continuations are never charged.
+4. **Decision record.** Every evaluation is persisted on the early-final step as an additive, optional
+   `EarlyFinalRecoveryDecision` (accepted, typed `EarlyFinalRecoveryReason`, revision, cursor, blocking step, the resolved
+   validation steps, whether a paid replan was skipped). An acceptance writes a runtime-authored continuation record and the
+   `EarlyFinalPlanContinued` lifecycle audit event; a refusal writes the `EarlyFinalPlanContinuationRefused` lifecycle audit event
+   with a stable snake_case refusal code, then fails the attempt as a malformed-response model failure. Steps written before this
+   amendment have no decision and fold as before.
+5. **Authority.** A continuation grants nothing: the model still has to call the pending tool, which then passes validation,
+   step authority, policy, entitlement, approval and the mutation journal as any other call. Resume re-proves a persisted
+   continuation against the current tool view and the journal admission still refuses an unknown mutation outcome.
+6. **Model calls.** Replan calls of an early final are kept on its step as `EarlyFinalReplanCalls`, disjoint from its own
+   `ModelCalls`; token accounting, the API projection and the web UI read both.
+
+Tests: `EarlyFinalReplanTests`, `EarlyFinalValidationRecoveryTests` (BENCH-01 B02/B03 shapes). Evidence:
+`agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md`, `agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md`.
+
+## Amendment — a failed initial plan fails the attempt (AF-PLAN-01, 2026-10-12)
+
+**Status: Accepted.** BENCH-01 R2 B02 (`2dbb7b3`) proposed a fenced plan whose `system.events` step had `expectedArguments`
+`limit: 1000` against the declared maximum of 500. The fence was parsed; the step failed `SemanticExpectedArguments.Validate`.
+The generic re-ask did not name the problem, the model repeated it, and the runtime continued with an empty plan as ADR-0014 and
+ADR-0039 §8 prescribed. Under §2 of this ADR an empty plan offers no native tool, so that continuation cannot make progress: the
+model spent two 4,096-token replies on reasoning and the attempt ended `EmptyResponse` without any tool call.
+
+1. **Exact correction.** A rejected initial plan is re-asked with the runtime's own validation problem (bounded to 512
+   characters) ahead of the standing format instruction. A reply cut at the output limit with no text gets an output-limit notice
+   instead, with no empty assistant turn. The replan corrective re-ask carries the problem the same way; its count and the
+   AF-05H2 early-final rules are unchanged.
+2. **Bound.** At most two corrections follow the first reply (`AgentRunner.MaxPlanCorrections`). A correction whose reply
+   leaves the identical problem ends the corrections: an identical request would fail the same way. Each call is recorded,
+   audited and charged as before, and the token budget is checked after every call.
+3. **No plan-less continuation.** When no valid plan results, the attempt fails as `ModelFailure`/`MalformedResponse` with a
+   synthetic failure step `Planning failed: … Last problem: …` carrying the planning calls. No plan is persisted, so a resume plans
+   again (ADR-0040 §7). This supersedes the empty-plan degradation of ADR-0014 and ADR-0039 §8 for the initial plan; an accepted
+   empty plan is unchanged.
+4. **Framing only.** The plan text is taken from the first markdown fence that holds a JSON object, otherwise from the outermost
+   braces. Strict JSON, schema, `expectedArguments`, activation and discriminator validation are unchanged.
+5. **Step loop.** The one empty-reply re-ask (`EmptyFinalResponseRetries`) tells an output-limited model to call the offered tool
+   or answer without further deliberation; its bound and the `EmptyResponse` terminal are unchanged.
+
+Tests: `PlanningCorrectionTests` (B02 shapes). Evidence: `agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md`.
+
+## Amendment — coherent tool names, in-step name correction and no repeated completed checks (AF-TOOLROUTE-01, 2026-10-12)
+
+**Status: Accepted.** BENCH 1×3 on AF-PLAN-01 (`1292266`, archive `20261012T111826Z`, OpenRouter Nemotron) ended B03
+`ReplanLimitReached` after all five planned read checks had run. The persisted requests show three causes:
+
+- **Protocol (MAF boundary).** `MafChatTurnMapper` dropped `ModelToolCall.ToolNameError`/`ArgumentsError` on the history
+  round trip of the context projector. After the model called the not-offered `system_crashes`, later requests carried that
+  raw name as an ordinary canonical call: adapters sent it verbatim instead of the HARDEN-1 placeholder, and it collided with
+  `system.crashes`, whose alias became `system_2Ecrashes`. The same tool was published under two names; the model copied the
+  escape (`system_2Eevents`) and was refused again. Names were never accepted loosely: every refusal was correct.
+- **Step prompt.** With every planned step resolved, the prompt said both "do not call an operational tool" and "propose the
+  concrete tool call for the next unfinished step".
+- **Replan.** The replan saw only "not a tool that was offered", read it as a naming error and re-proposed the five completed
+  checks with identical arguments. Each accepted revision restarted at its first step and re-ran them.
+
+1. **Lossless boundary.** Adapter rejections travel across the MAF boundary as reserved `AdditionalProperties`
+   (`bops.toolNameError`, `bops.argumentsError`) and come back unchanged. A rejected raw name therefore never contributes to a
+   request's alias map, and a canonical tool keeps one wire name for the whole task. No alias, prefix or fuzzy match is
+   introduced; `ToolWireNames` is unchanged.
+2. **In-step name correction.** A call refused by name (adapter or §1 step view) while the current planned step's single tool
+   is offered, as that step's **first** deviation, is classified `UnofferedTool` (append-only persisted value) and keeps the
+   step: the next call offers the same single tool with a fixed correction sentence. Nothing runs, the refusal is audited as
+   `UnknownTool` as before, policy is never consulted. A second refusal, or one after a spent ADR-0047/0050 correction,
+   replans as before. The persisted fold carries the budget (`ToolCorrectionSpent`), so resume continues identically; the
+   AF-05H2 early-final continuation treats it as a pending correction and refuses.
+3. **Completed plan.** With every planned step resolved the prompt says so: answer from the evidence, or propose the one new
+   check needed, which will not run and leads to a replan. The replan that follows such a proposal gets a runtime-authored turn
+   stating that the plan was complete and that the call was refused for that reason, not for its name.
+4. **Completed checks.** Every replan prompt lists the task's completed read checks (successful, not partial/unavailable, not
+   refuted, read-only, from persisted steps; sensitive values redacted; bounded to 2,048 characters). A replan step whose tool
+   and complete `expectedArguments` equal one of them (absent arguments equal `{}`; conditional steps excluded) is a validation
+   problem of the existing corrective re-ask: `Plan step N repeats completed task step K (tool with identical arguments)…`.
+   Any different argument, a different tool or an empty plan is accepted unchanged. This is **not** §6 suppression: nothing is
+   dropped, merged or rewritten, and mutations, failures and partial results never count. A model that repeats after the
+   correction fails the attempt as `ModelFailure`/`MalformedResponse` with the plan preserved (early-final replans keep the
+   AF-05H2 continuation rules); replan counts and budgets are unchanged.
+
+Not changed: provider adapters and `ToolWireNames`, policy, approval, entitlement, mutation journal, audit schema, accounting,
+resume rules, the AF-05H2-R2 and AF-PLAN-01 recoveries, EvidenceRead, the collector. MAF orchestration is not used for
+routing or replanning (ARCH-02 decides). Tests: `ToolRoutingTests`, `ToolRoutingRegressionTests` (B03 on the real adapter and
+MAF projector), `MafContextTests`. Evidence: `agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md`.

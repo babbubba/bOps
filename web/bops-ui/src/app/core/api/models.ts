@@ -152,6 +152,11 @@ export interface PlanStep {
   planRevision: number | null;
   /** Absent on a step stored before model calls were kept. */
   modelCalls?: ModelCallRecord[] | null;
+  /**
+   * The replan calls that followed a rejected premature final answer, after that step's own `modelCalls` and disjoint from
+   * them. Absent on every other step. Use `stepModelCalls` to read all of a step's calls.
+   */
+  earlyFinalReplanCalls?: ModelCallRecord[] | null;
   /** Typed runtime verification outcome; absent for legacy and unverified steps. */
   verificationStatus?: number | null;
 }

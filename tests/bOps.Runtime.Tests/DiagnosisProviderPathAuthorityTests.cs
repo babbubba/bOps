@@ -117,8 +117,7 @@ public sealed class DiagnosisProviderPathAuthorityTests
         var provider = new StrictOpenAiProvider(
             Plan(),                                             // Discovery: plan
             ToolCall("call_1", "service_restart"),              // Discovery: a tool it was never offered
-            Plan(),                                             // Discovery: replan after the rejection
-            ToolCall("call_2", "host_info"),                    // Discovery: the Read tool it was offered
+            ToolCall("call_2", "host_info"),                    // Discovery: the in-step correction (AF-TOOLROUTE-01) — the offered Read tool
             Text("Read the host.\n\nEvidence limitations\n- one call named an unknown tool."),
             EmptyPlan(),                                        // Diagnostic: plan (AF-05H: a final is accepted only once no step remains)
             Text("{\"findings\":[{\"summary\":\"Host read.\",\"evidenceIds\":[\"discovery-1\"]}]}"))

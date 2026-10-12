@@ -159,11 +159,55 @@ public sealed partial class AgentRunner(
         "run. Correct the call for this same step; do not produce or attempt another plan step. This is the only semantic " +
         "correction allowed for this plan step.";
 
+    /// <summary>AF-TOOLROUTE-01: the one correction turn after a call named a tool that was not offered while the step's own tool was.</summary>
+    private const string ToolNameCorrectionInstructions =
+        "The previous call named a tool that is not offered for this step, so nothing ran. Call the single offered tool, by " +
+        "the exact name it has in this request's tool list, for this same planned step. This is the only tool-name correction " +
+        "allowed for this plan step.";
+
+    /// <summary>
+    /// AF-TOOLROUTE-01: the routing instruction once every planned step is resolved. It replaced a contradictory pair (call no tool;
+    /// propose the call for the next unfinished step) that led a live model to call a tool it was never offered.
+    /// </summary>
+    private const string PlanCompleteInstructions =
+        "Every planned step above is complete and no operational tool is offered. Give your final answer now from the evidence " +
+        "already collected. Only if that evidence is genuinely insufficient, propose the one new check you need instead: it will " +
+        "not run, and the runtime will ask you to revise the plan with it.";
+
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Every listed step " +
         "must have a non-empty expectedTool from the catalog and valid expectedArguments. Repeated uses of one tool need " +
         "pairwise-discriminating expectedArguments. Reply again with ONLY the JSON object — " +
         "no prose, no markdown code fence.";
+
+    /// <summary>AF-PLAN-01: corrective re-asks of the initial plan call after the first reply. Bounded, never repeated without progress.</summary>
+    internal const int MaxPlanCorrections = 2;
+
+    private const int MaxPlanProblemCharacters = 512;
+
+    private const string OutputLimitedPlanInstructions =
+        "Your reply reached the output limit before any plan text was produced. Do not deliberate further: reply now " +
+        "with ONLY the compact JSON plan object — no prose, no markdown code fence.";
+
+    private const string OutputLimitedEmptyRetryInstructions =
+        "Your last reply reached the output limit while reasoning and had no text and no tool call. Do not deliberate " +
+        "further: call the offered tool now, or give your final answer to the operator's goal in plain text.";
+
+    /// <summary>The corrective re-ask after an unusable plan reply: the runtime's exact problem, or the output-limit notice for an empty truncated reply.</summary>
+    private static string PlanCorrectionInstructions(string? problem, ModelResponse response)
+    {
+        if (IsOutputLimited(response) && string.IsNullOrWhiteSpace(response.TextResponse))
+        {
+            return OutputLimitedPlanInstructions;
+        }
+
+        return problem is null
+            ? PlanRetryInstructions
+            : $"The runtime rejected that plan: {ProjectForPrompt(problem, MaxPlanProblemCharacters)} {PlanRetryInstructions}";
+    }
+
+    private static bool IsOutputLimited(ModelResponse response) =>
+        string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
 
     private const string EvidenceControlInstruction =
         "The native function runtime.evidence_read is a runtime control function, not an operational tool: use it to read " +
@@ -797,6 +841,20 @@ public sealed partial class AgentRunner(
         // ADR-0040 §5.1: a fresh per-attempt budget, never more than what the task has left over its lifetime.
         var stepCap = Math.Min(options.MaxSteps, options.MaxLifetimeSteps - run.LifetimeSteps);
 
+        // Resume does not inherit a read-only capability that disappeared while the task was stopped.
+        if (steps.LastOrDefault(step => step.PlanRevision == plan.Revision) is { } recovery
+            && EarlyFinalRecovery.IsStep(recovery))
+        {
+            var beforeRecovery = steps.Where(step => step.Index < recovery.Index).ToList();
+            var triggerIndex = beforeRecovery.LastOrDefault(step => step.PlanRevision == plan.Revision)?.Index ?? -1;
+            if (EarlyFinalRecovery.SafePosition(plan, beforeRecovery, triggerIndex, ManifestOf,
+                    ToolViewFor(delegation)) is not { } safe || safe.Cursor != position.Cursor)
+            {
+                return await FailAsync(run, "Persisted early-final recovery is no longer safe.",
+                    (TaskTerminalKind.RuntimeFailure, null), [], ct);
+            }
+        }
+
         // ADR-0047: a resumed plan whose current step already exhausted its validation correction is replaced before any
         // operational tool is offered again; the live loop never enters here with that position.
         if (position.ReplanRequired)
@@ -805,14 +863,15 @@ public sealed partial class AgentRunner(
             // provider outage records one with no plan revision): it is the replan's triggering step, as it was live.
             var trigger = steps.Last(step => step.PlanRevision == plan.Revision);
             var (resumedPlan, terminal) = await ReplanWithinBudgetAsync(
-                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct);
+                run, plan, WrapToolOutput(trigger.Observation ?? string.Empty), trigger.Index, ct,
+                PrematureFinal.IsStep(trigger) ? ReplanTrigger.EarlyFinalWithUnresolvedPlan : ReplanTrigger.PlanDeviation);
             if (terminal is not null)
             {
                 return terminal;
             }
 
             plan = resumedPlan;
-            position = PlannedStepPosition.Start;
+            position = PlannedStepPosition.Derive(plan, steps, ManifestOf).Settle(plan, steps, ManifestOf);
             await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
         }
 
@@ -868,6 +927,9 @@ public sealed partial class AgentRunner(
                 var correctingArguments = plan.SemanticContractVersion == 1
                     ? latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.ArgumentValidationFailure
                     : position.ArgumentCorrectionSpent;
+                var correctingToolName = plan.SemanticContractVersion == 1
+                    && latestPlanStep?.ExecutionClassification == PlannedStepExecutionClassification.UnofferedTool;
+                var planExhaustedForPrompt = plan.Steps.Count > 0 && position.Cursor >= plan.Steps.Count;
                 // PRE-3A: the runtime control function is offered beside, never instead of, the single step tool; it grants no authority.
                 // ADR-0052 AF-04: once the logical call's read budget is spent the function is no longer offered (the surface never
                 // grows back to the full catalog), and the prompt says so instead of leaving the model to infer it.
@@ -877,7 +939,8 @@ public sealed partial class AgentRunner(
                 var offersEvidenceControl = !evidenceReadExhausted && EvidenceIndex.HasAddressableEvidence(steps);
                 var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps) : null;
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
-                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex);
+                    correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex,
+                    correctingToolName, planExhaustedForPrompt);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
@@ -925,7 +988,8 @@ public sealed partial class AgentRunner(
                 // rather than the task being completed with nothing to show.
                 for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
                 {
-                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(EmptyResponseRetryInstructions));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
+                        IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions));
                     response = await CallModelWithOverflowRecoveryAsync(
                         taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                     request = BuildStepRequest(logicalCall.Aggressive);
@@ -1045,14 +1109,15 @@ public sealed partial class AgentRunner(
                     break;
                 }
 
-                var (revisedPlan, replanTerminal) = await ReplanWithinBudgetAsync(run, plan, string.Empty, stepIndex, ct);
+                var (revisedPlan, replanTerminal) = await ReplanWithinBudgetAsync(run, plan, string.Empty, stepIndex, ct,
+                    ReplanTrigger.EarlyFinalWithUnresolvedPlan);
                 if (replanTerminal is not null)
                 {
                     return replanTerminal;
                 }
 
                 plan = revisedPlan;
-                position = PlannedStepPosition.Start;
+                position = PlannedStepPosition.Derive(plan, steps, ManifestOf).Settle(plan, steps, ManifestOf);
                 await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
                 continue;
             }
@@ -1164,8 +1229,14 @@ public sealed partial class AgentRunner(
                         taskId, stepIndex, actor, primaryCall, plan.Revision, ct, delegation: delegation, mutations: run.Mutations);
                     if (semanticContract)
                     {
+                        // AF-TOOLROUTE-01: a call the adapter or the step view refused by name while the step's own tool was offered
+                        // ran nothing; as the step's first deviation it keeps the planned step for one bounded correction instead of
+                        // replanning at once. After a spent ADR-0047/0050 correction it replans as before.
                         var classification = resolved is null
-                            ? (PlannedStepExecutionClassification?)null
+                            ? primaryCall.ToolNameError is not null && stepTools.Count == 1 && authorization == AuthorizationKind.UnknownTool
+                              && !position.SemanticCorrectionSpent && !position.ArgumentCorrectionSpent
+                                ? PlannedStepExecutionClassification.UnofferedTool
+                                : (PlannedStepExecutionClassification?)null
                             : step.Result is { Outcome: ToolOutcome.Failure, FailureKind: ToolFailureKind.Validation }
                                 ? PlannedStepExecutionClassification.ArgumentValidationFailure
                                 : PlannedStepExecutionClassification.Matched;
@@ -1293,7 +1364,11 @@ public sealed partial class AgentRunner(
                     taskId, afterStep.Cursor, position.Cursor);
             }
 
-            var deviated = authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UnknownTool or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
+            // AF-TOOLROUTE-01: the first not-offered call of a planned step is corrected in place; the fold sets ReplanRequired on the second.
+            var nameCorrectionPending = step.ExecutionClassification == PlannedStepExecutionClassification.UnofferedTool
+                && !position.ReplanRequired;
+            var deviated = (authorization is AuthorizationKind.PolicyDenied or AuthorizationKind.UserRejected or AuthorizationKind.EntitlementDenied
+                    || (authorization == AuthorizationKind.UnknownTool && !nameCorrectionPending))
                 || step.Result?.Outcome == ToolOutcome.Timeout
                 || verification == VerificationStatus.Refuted
                 || position.ReplanRequired;
@@ -1329,8 +1404,35 @@ public sealed partial class AgentRunner(
     /// that ended the attempt.
     /// </summary>
     private async Task<(AgentPlan Plan, TaskState? Terminal)> ReplanWithinBudgetAsync(
-        ExecutionRun run, AgentPlan plan, string observation, int stepIndex, CancellationToken ct)
+        ExecutionRun run, AgentPlan plan, string observation, int stepIndex, CancellationToken ct,
+        ReplanTrigger trigger = ReplanTrigger.PlanDeviation)
     {
+        ct.ThrowIfCancellationRequested();
+        if (run.AttemptBudget.IsExpired)
+        {
+            throw new AttemptDurationBudgetExceededException();
+        }
+        if (await BudgetStopAsync(run, ct) is { } budgetStop)
+        {
+            return (plan, budgetStop);
+        }
+        var earlyFinal = trigger == ReplanTrigger.EarlyFinalWithUnresolvedPlan;
+        var triggerStep = run.Steps.FirstOrDefault(step => step.Index == stepIndex);
+        if (run.AttemptReplans > options.MaxReplans || run.LifetimeReplans > options.MaxLifetimeReplans)
+        {
+            return (plan, await FinishAsync(run, AgentTaskStatus.ReplanLimitReached,
+                run.LifetimeReplans > options.MaxLifetimeReplans ? TaskTerminalKind.LifetimeReplanLimit : TaskTerminalKind.ReplanLimit, ct));
+        }
+        if (earlyFinal && triggerStep is { EarlyFinalReplanFailed: true }
+            && EarlyFinalRecovery.HasMalformedCheckpoint(triggerStep) && run.LifetimeReplans > 0)
+        {
+            return await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, [], ct);
+        }
+        // AF-05H2-R2: an output-limited replan of this revision is not repeated; no attempt is reserved for a call never made.
+        if (earlyFinal && EarlyFinalRecovery.SkipsPaidReplan(plan, run.Steps, stepIndex))
+        {
+            return await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, [], ct);
+        }
         // ADR-0040 §5.1: a per-attempt replan budget, and a lifetime one that always wins.
         if (run.AttemptReplans >= options.MaxReplans || run.LifetimeReplans >= options.MaxLifetimeReplans)
         {
@@ -1342,48 +1444,166 @@ public sealed partial class AgentRunner(
         }
 
         var replanCalls = new List<ModelCallRecord>();
-        AgentPlan accepted;
-        try
+        AgentPlan? accepted;
+        var checkpointTokens = 0L;
+        var checkpointCalls = 0;
+        List<ModelCallRecord> UncheckpointedCalls() => replanCalls.Skip(checkpointCalls).ToList();
+        async Task CheckpointAsync(bool failed)
         {
-            (accepted, var replanTokens) = await ReplanAsync(
-                run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
-                run.TokensUsed, ct);
-            run.TokensUsed += replanTokens;
+            var recordedTokens = TaskResumePolicy.RecordedTokens(replanCalls);
+            run.TokensUsed += recordedTokens - checkpointTokens;
+            checkpointTokens = recordedTokens;
+            var slot = run.Steps.FindIndex(step => step.Index == stepIndex);
+            var original = run.Steps[slot];
+            run.Steps[slot] = original with
+            {
+                EarlyFinalReplanCalls = [.. original.EarlyFinalReplanCalls ?? [], .. UncheckpointedCalls()],
+                EarlyFinalReplanFailed = failed,
+            };
+            checkpointCalls = replanCalls.Count;
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
             if (TokenBudgetExceeded(run))
             {
-                return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+                throw new TokenBudgetCrossedException();
             }
+        }
+        // Reserve even failed early-final attempts before the first paid call, including across cancellation/resume.
+        if (earlyFinal)
+        {
+            run.AttemptReplans++;
+            run.LifetimeReplans++;
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), ct);
+        }
+        async Task PreserveCancelledReplanAsync(bool tokensAccounted)
+        {
+            if (!tokensAccounted)
+            {
+                run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            }
+            run.Steps.Add(new PlanStep(run.Steps.Count, TaskResumePolicy.ExecutionInterruptedStepDescription,
+                null, null, "Replan cancelled; no continuation authorized.")
+            {
+                ModelCalls = UncheckpointedCalls(),
+                ExecutionAttempt = run.ExecutionAttempt,
+            });
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
+        }
+        try
+        {
+            (accepted, _) = await ReplanAsync(
+                run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
+                run.TokensUsed, trigger, earlyFinal ? CheckpointAsync : null, ct);
         }
         catch (TokenBudgetCrossedException)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForTokenCrossingAsync(run, replanCalls, ct));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await StopForTokenCrossingAsync(run, UncheckpointedCalls(), ct));
         }
         catch (EvidenceControlProtocolExceededException)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
             return (plan, await FailAsync(run, ControlProtocolFailureMessage,
-                (TaskTerminalKind.RuntimeFailure, null), replanCalls, ct));
+                (TaskTerminalKind.RuntimeFailure, null), UncheckpointedCalls(), ct));
         }
         catch (AttemptDurationBudgetExceededException) when (!ct.IsCancellationRequested)
         {
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await StopForAttemptDurationAsync(run, replanCalls));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await StopForAttemptDurationAsync(run, UncheckpointedCalls()));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await PreserveCancelledReplanAsync(tokensAccounted: false);
+            throw;
+        }
+        catch (TaskExecutionSupersededException)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Task {TaskId} step {StepIndex}: replanning failed", run.TaskId, stepIndex);
-            run.TokensUsed += TaskResumePolicy.RecordedTokens(replanCalls);
-            return (plan, await FailAsync(run, FailureReason(ex), FailureKindOf(ex), replanCalls, ct));
+            run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+            return (plan, await FailAsync(run, FailureReason(ex), FailureKindOf(ex), UncheckpointedCalls(), ct));
         }
 
+        run.TokensUsed += TaskResumePolicy.RecordedTokens(UncheckpointedCalls());
+        if (ct.IsCancellationRequested)
+        {
+            await PreserveCancelledReplanAsync(tokensAccounted: true);
+            ct.ThrowIfCancellationRequested();
+        }
+        if (TokenBudgetExceeded(run))
+        {
+            return (plan, await StopForTokenCrossingAsync(run, UncheckpointedCalls(), ct));
+        }
+        if (accepted is null)
+        {
+            return earlyFinal
+                ? await ContinueAfterMalformedEarlyFinalReplanAsync(run, plan, stepIndex, UncheckpointedCalls(), ct)
+                : (plan, await FailAsync(run, "Provider/model returned a malformed response.",
+                    (TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse), UncheckpointedCalls(), ct));
+        }
+        if (checkpointCalls > 0)
+        {
+            accepted = accepted with { ModelCalls = UncheckpointedCalls() };
+        }
         run.Plans.Add(accepted);
-        run.AttemptReplans++;
-        run.LifetimeReplans++;
+        if (!earlyFinal)
+        {
+            run.AttemptReplans++;
+            run.LifetimeReplans++;
+        }
         BOpsTelemetry.ReplansTotal.Add(1);
         await PublishReplanThresholdAsync(run, replanCalls, ct);
 
         return (accepted, await BudgetStopAsync(run, ct));
+    }
+
+    private async Task<(AgentPlan Plan, TaskState? Terminal)> ContinueAfterMalformedEarlyFinalReplanAsync(
+        ExecutionRun run, AgentPlan plan, int stepIndex, List<ModelCallRecord> calls, CancellationToken ct)
+    {
+        var (decision, safePosition) = EarlyFinalRecovery.Evaluate(plan, run.Steps, stepIndex, ManifestOf, ToolViewFor(run.Delegation));
+        // The decision is persisted on the rejected early final, beside its replan calls, only together with what it decided.
+        void RecordDecision()
+        {
+            var slot = run.Steps.FindIndex(step => step.Index == stepIndex);
+            run.Steps[slot] = run.Steps[slot] with { EarlyFinalRecoveryDecision = decision };
+        }
+        if (safePosition is { } recoveryPosition)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (run.AttemptBudget.IsExpired)
+            {
+                return (plan, await StopForAttemptDurationAsync(run, calls));
+            }
+            RecordDecision();
+            run.Steps.Add(new PlanStep(run.Steps.Count, EarlyFinalRecovery.StepDescription, null, null,
+                $"Malformed replan: retaining plan revision {plan.Revision}, pending cursor {recoveryPosition.Cursor}; "
+                + "read-only continuation remains subject to normal tool authority, validation and authorization.", plan.Revision)
+            {
+                EarlyFinalRecoveryCursor = recoveryPosition.Cursor,
+                ModelCalls = calls,
+                ExecutionAttempt = run.ExecutionAttempt,
+            });
+            await SaveOwnedAsync(run, run.Build(AgentTaskStatus.Running), CancellationToken.None);
+            await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running),
+                TaskLifecycleStage.EarlyFinalPlanContinued, run.Actor) with { StepIndex = run.Steps.Count - 1 },
+                run.Delegation, CancellationToken.None);
+            ct.ThrowIfCancellationRequested();
+            return (plan, await BudgetStopAsync(run, ct));
+        }
+        logger.LogWarning("Task {TaskId} step {StepIndex}: persisted-plan continuation refused ({Reason}, blocking step {BlockingStep})",
+            run.TaskId, stepIndex, decision.Reason, decision.BlockingStepIndex);
+        RecordDecision();
+        await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running),
+            TaskLifecycleStage.EarlyFinalPlanContinuationRefused, run.Actor) with
+            {
+                StepIndex = stepIndex,
+                RefusalCode = EarlyFinalRecovery.RefusalCode(decision.Reason),
+            },
+            run.Delegation, CancellationToken.None);
+        return (plan, await FailAsync(run, $"Malformed replan; no safe persisted-plan continuation ({decision.Reason}).",
+            (TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse), calls, ct));
     }
 
     /// <summary>
@@ -2635,61 +2855,90 @@ public sealed partial class AgentRunner(
             throw new TokenBudgetCrossedException();
         }
 
-        var initialDirective = EvidenceRead.Recognize(response);
         await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
-
-        if (initialDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(response.TextResponse, revision: 0, planningTools) is { } plan)
+        if (InitialPlanOf(response, planningTools, out var problem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
 
-        // One bounded retry against the model's own malformed reply, mirroring the JSON-schema
-        // fallback pattern in OpenAiCompatibleChatModel (plan §3.1.1) — a model that ignores the
-        // required format once often complies when told precisely what was wrong.
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
-
-        var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
-            BuildPlanningRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
-        tokens += UsageTokens(retryResponse);
-        if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
+        // AF-PLAN-01: bounded corrective re-asks, each telling the model the runtime's exact problem (or that its reply was
+        // cut off at the output limit). A correction that leaves the same problem is not repeated: the next identical
+        // request would fail the same way.
+        for (var correction = 1; correction <= MaxPlanCorrections; correction++)
         {
-            throw new TokenBudgetCrossedException();
+            if (!(IsOutputLimited(response) && string.IsNullOrWhiteSpace(response.TextResponse)))
+            {
+                logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
+            }
+
+            logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(problem, response)));
+
+            response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
+                BuildPlanningRequest, delegation, calls, logicalCall, ct,
+                MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
+            tokens += UsageTokens(response);
+            if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
+            {
+                throw new TokenBudgetCrossedException();
+            }
+
+            await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
+            var previousProblem = problem;
+            if (InitialPlanOf(response, planningTools, out problem) is { } correctedPlan)
+            {
+                return (correctedPlan with { ModelCalls = calls }, tokens);
+            }
+
+            if (string.Equals(problem, previousProblem, StringComparison.Ordinal))
+            {
+                break;
+            }
         }
 
-        var retryDirective = EvidenceRead.Recognize(retryResponse);
-        await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, retryResponse, ct);
-
-        if (retryDirective.Kind == RuntimeDirectiveRecognitionKind.None
-            && TryParsePlan(retryResponse.TextResponse, revision: 0, planningTools) is { } retryPlan)
+        // A plan-less continuation offers no native tool (ADR-0046 step-scoped routing), so it cannot make progress: the
+        // attempt fails here, its paid calls recorded, and a resume plans again.
+        logger.LogWarning("Task {TaskId}: the model did not produce a valid plan after bounded corrections", taskId);
+        throw new ModelProtocolException(
+            $"Planning failed: the model did not produce a valid plan after {calls.Count} attempt(s). " +
+            $"Last problem: {ModelFailureText.Sanitize(problem ?? "unknown")}")
         {
-            return (retryPlan with { ModelCalls = calls }, tokens);
+            FailureKind = ModelFailureKind.MalformedResponse,
+        };
+    }
+
+    /// <summary>The initial plan in <paramref name="response"/>, or <c>null</c> with why it is not one; a runtime directive is never a plan here.</summary>
+    private static AgentPlan? InitialPlanOf(ModelResponse response, IReadOnlyList<ToolManifest> tools, out string? problem)
+    {
+        if (EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None)
+        {
+            problem = "The reply was an EvidenceRead directive; no evidence exists before the initial plan.";
+            return null;
         }
 
-        logger.LogWarning(
-            "Task {TaskId}: the model did not produce a parseable plan after one retry; proceeding without an explicit plan", taskId);
-        return (new AgentPlan(0, "Planning failed after a malformed response; proceeding step by step without an explicit plan.", [])
-        {
-            ModelCalls = calls,
-        }, tokens);
+        return TryParsePlan(response.TextResponse, revision: 0, tools, out problem);
     }
 
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
-    private async Task<(AgentPlan Plan, int Tokens)> ReplanAsync(
+    private async Task<(AgentPlan? Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
-        long tokensBefore, CancellationToken ct)
+        long tokensBefore, ReplanTrigger trigger, Func<bool, Task>? checkpoint, CancellationToken ct)
     {
         var planningTools = ToolViewFor(delegation);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
+        // AF-TOOLROUTE-01: the read-only checks already completed, from persisted steps only (identical on resume), are shown to the
+        // replan as information. Nothing is refused: re-sampling live state is legitimate, and the replan budgets bound a cycle.
+        var completedSection = CompletedChecks.Describe(CompletedChecks.From(stepsSoFar, ManifestOf));
+        var revision = previousPlan.Revision + 1;
+        var completedPlanNotice = CompletedPlanNotice(previousPlan, stepsSoFar, triggeringStepIndex);
         ModelContextRequest BuildReplanRequest(bool aggressive)
         {
             // Rebuilt per request: once the logical call's read slots are spent, the prompt stops inviting EvidenceRead.
+            var instructions = ReplanningInstructions(logicalCall.Evidence.Exhausted)
+                + (completedSection is null ? string.Empty : $"\n\n{completedSection}");
             var systemPrompt = BuildPlanningSystemPrompt(
-                ReplanningInstructions(logicalCall.Evidence.Exhausted), planningTools,
+                instructions, planningTools,
                 logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar));
             var protectedAfter = ReconciliationTurns(stepsSoFar);
             var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
@@ -2697,6 +2946,10 @@ public sealed partial class AgentRunner(
             {
                 AddToolCallTurns(protectedAfter, trigger.ToolCall, trigger.UnexecutedToolCalls,
                     WrapToolOutput(trigger.Observation ?? string.Empty));
+                if (completedPlanNotice is not null)
+                {
+                    protectedAfter.Add(ChatTurn.FromUser(completedPlanNotice));
+                }
             }
             else if (trigger is not null && PrematureFinal.IsStep(trigger))
             {
@@ -2718,29 +2971,46 @@ public sealed partial class AgentRunner(
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
         tokens += UsageTokens(response);
         (response, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
             logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
 
-        if (TryParsePlan(response.TextResponse, previousPlan.Revision + 1, planningTools) is { } plan)
+        if (TryParsePlan(response.TextResponse, revision, planningTools, out var replanProblem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
 
+        // Repeating an output-limited plan at the same limit buys no additional authority. Other C8 triggers retain their
+        // existing retry; only a received malformed response may authorize the early-final recovery path.
+        if (trigger == ReplanTrigger.EarlyFinalWithUnresolvedPlan
+            && string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+        {
+            if (checkpoint is not null)
+            {
+                await checkpoint(true);
+            }
+            return (null, tokens);
+        }
+
+        if (checkpoint is not null)
+        {
+            await checkpoint(false);
+        }
+
         logicalCall.ContinuationTurns.Add(ChatTurn.FromAssistantText(response.TextResponse ?? string.Empty));
-        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanRetryInstructions));
+        logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(PlanCorrectionInstructions(replanProblem, response)));
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(previousPlan.Revision + 1, planningTools));
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
         tokens += UsageTokens(retryResponse);
         (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
             logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, ct);
 
-        if (TryParsePlan(retryResponse.TextResponse, previousPlan.Revision + 1, planningTools) is { } retryPlan)
+        if (TryParsePlan(retryResponse.TextResponse, revision, planningTools) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -2748,10 +3018,35 @@ public sealed partial class AgentRunner(
         logger.LogWarning(
             "Task {TaskId} step {StepIndex}: the model did not produce a usable replan after one retry; preserving the current plan",
             taskId, triggeringStepIndex);
-        throw new ModelProtocolException("Provider/model returned a malformed response.")
+        if (checkpoint is not null)
         {
-            FailureKind = ModelFailureKind.MalformedResponse,
-        };
+            await checkpoint(true);
+        }
+        return (null, tokens);
+    }
+
+    /// <summary>
+    /// AF-TOOLROUTE-01: the runtime-authored turn after a replan trigger that proposed a tool call once every step of its revision was
+    /// resolved, derived from persisted steps only. In BENCH B03 the bare "not offered" observation was read as a naming error and
+    /// the completed plan was proposed again; this states why the call did not run and what a revision may contain.
+    /// </summary>
+    private string? CompletedPlanNotice(AgentPlan plan, IReadOnlyList<PlanStep> steps, int triggeringStepIndex)
+    {
+        if (plan.Steps.Count == 0
+            || steps.FirstOrDefault(step => step.Index == triggeringStepIndex) is not { ToolCall: not null } trigger
+            || trigger.PlanRevision != plan.Revision)
+        {
+            return null;
+        }
+
+        var before = steps.Where(step => step.Index < triggeringStepIndex).ToList();
+        var position = PlannedStepPosition.Derive(plan, before, ManifestOf).Settle(plan, before, ManifestOf);
+        return position.ReplanRequired || position.Cursor < plan.Steps.Count
+            ? null
+            : $"Every step of plan revision {plan.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture)} was " +
+              "complete when that call was proposed. It did not run because a completed plan offers no operational tool, not " +
+              "because of how it was named. Plan only the check you still need (a new one, or a fresh sample of live state), or " +
+              "return an empty \"steps\" array to answer from the evidence already collected.";
     }
 
     private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(
@@ -4506,14 +4801,17 @@ public sealed partial class AgentRunner(
     private static string BuildStepSystemPrompt(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
         bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
-        bool evidenceReadExhausted = false, string? evidenceIndex = null)
+        bool evidenceReadExhausted = false, string? evidenceIndex = null, bool correctingToolName = false, bool planExhausted = false)
     {
         var planText = DescribePlan(plan);
         var routingInstruction = stepTools.Count == 1
             ? "The single offered native tool is the current plan step's tool. Invoke it at most once, with the concrete arguments this step requires."
               + (correctingSemantics ? $" {SemanticCorrectionInstructions}" : string.Empty)
               + (correctingArguments ? $" {ArgumentCorrectionInstructions}" : string.Empty)
-            : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
+              + (correctingToolName ? $" {ToolNameCorrectionInstructions}" : string.Empty)
+            : planExhausted
+                ? PlanCompleteInstructions
+                : "No native tool is authorized for this turn. Report completion if the goal is achieved; do not invent or call an operational tool.";
         if (offersEvidenceControl)
         {
             routingInstruction += " " + EvidenceControlInstruction;
@@ -4524,8 +4822,10 @@ public sealed partial class AgentRunner(
             ? $"{SystemPrompt}\n\n{evidenceReadSection}\n\n{routingInstruction}"
             : $"{SystemPrompt}\n\n{evidenceReadSection}\n\n" +
               $"{(aggressive ? ProjectForPrompt(planText, AggressivePlanMaxCharacters) : planText)}\n\n" +
-              $"{routingInstruction} Propose the concrete tool call for the next unfinished step above; while planned steps " +
-              "remain, a final answer makes the runtime re-evaluate the plan.";
+              (planExhausted && stepTools.Count == 0
+                  ? routingInstruction
+                  : $"{routingInstruction} Propose the concrete tool call for the next unfinished step above; while planned steps " +
+                    "remain, a final answer makes the runtime re-evaluate the plan.");
 
         // ADR-0042 §5: after the plan section, runtime-authored, between markers that tool output cannot forge.
         if (limitations is not null)
@@ -4678,6 +4978,37 @@ public sealed partial class AgentRunner(
         return new EvidenceFactExists(source, factType, factKey, bindArgument);
     }
 
+    /// <summary>
+    /// The text a plan is parsed from: the body of the first markdown code fence that holds a JSON object, otherwise the span
+    /// from the first '{' to the last '}'. Only the framing is lenient; the candidate still meets the full plan validation.
+    /// </summary>
+    internal static string? PlanJsonCandidate(string text)
+    {
+        const string fence = "```";
+        var open = text.IndexOf(fence, StringComparison.Ordinal);
+        while (open >= 0)
+        {
+            var bodyStart = text.IndexOf('\n', open + fence.Length);
+            var close = bodyStart < 0 ? -1 : text.IndexOf(fence, bodyStart, StringComparison.Ordinal);
+            if (close < 0)
+            {
+                break;
+            }
+
+            var body = text[(bodyStart + 1)..close].Trim();
+            if (body.StartsWith('{') && body.EndsWith('}'))
+            {
+                return body;
+            }
+
+            open = text.IndexOf(fence, close + fence.Length, StringComparison.Ordinal);
+        }
+
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        return start < 0 || end <= start ? null : text[start..(end + 1)];
+    }
+
     private static AgentPlan? TryParsePlan(
         string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem)
     {
@@ -4688,9 +5019,7 @@ public sealed partial class AgentRunner(
             return null;
         }
 
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start)
+        if (PlanJsonCandidate(text) is not { } candidate)
         {
             problem = "The plan reply did not contain a JSON object.";
             return null;
@@ -4698,7 +5027,7 @@ public sealed partial class AgentRunner(
 
         try
         {
-            if (JsonNode.Parse(text[start..(end + 1)], nodeOptions: null, documentOptions: StrictPlanJson) is not JsonObject root)
+            if (JsonNode.Parse(candidate, nodeOptions: null, documentOptions: StrictPlanJson) is not JsonObject root)
             {
                 problem = "The plan reply was not a JSON object.";
                 return null;

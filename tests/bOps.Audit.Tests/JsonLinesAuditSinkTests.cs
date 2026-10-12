@@ -185,8 +185,11 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         Assert.Equal(lifecycle, Assert.IsType<PluginLifecycleAuditEvent>(restored));
     }
 
-    [Fact]
-    public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem()
+    [Theory]
+    [InlineData(TaskLifecycleStage.RecoveryRejected)]
+    [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]
+    [InlineData(TaskLifecycleStage.EarlyFinalPlanContinuationRefused)]
+    public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem(TaskLifecycleStage stage)
     {
         // ADR-0051 §14.1: the additive journal event and the two recovery lifecycle stages serialize through the real sink into
         // the same chain; the mutation event has no field for arguments, output, error text or credentials.
@@ -201,7 +204,7 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         var recovery = new TaskLifecycleAuditEvent
         {
             TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = mutation.TaskId, StepIndex = 4, Actor = Actor,
-            Stage = TaskLifecycleStage.RecoveryRejected, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Running,
+            Stage = stage, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Running,
             RefusalCode = "recovery_conflict", TokensUsed = 0, LifetimeSteps = 0, LifetimeReplans = 0, MaxSteps = 10,
             MaxLifetimeSteps = 100, MaxReplans = 3, MaxLifetimeReplans = 10,
         };

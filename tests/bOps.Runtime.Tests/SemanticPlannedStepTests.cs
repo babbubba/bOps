@@ -17,6 +17,7 @@ public sealed class SemanticPlannedStepTests
     private const string Other = "diagnostic.other";
     private const string SemanticCorrection = "arguments did not match the current planned step";
     private const string ArgumentCorrection = "failed argument validation and did not run";
+    private const string ToolNameCorrection = "named a tool that is not offered for this step";
 
     private static RecordingReadTool EventsTool() => new(Events,
     [
@@ -129,17 +130,23 @@ public sealed class SemanticPlannedStepTests
     }
 
     [Fact]
-    public async Task T4_WrongTool_ReplansImmediately_WithoutSpendingSemanticCorrection()
+    public async Task T4_WrongTool_GetsOneToolNameCorrection_ThenReplans_WithoutSpendingSemanticCorrection()
     {
+        // AF-TOOLROUTE-01 (was: replans immediately): the first not-offered call keeps the step for one in-step correction.
         var tool = EventsTool();
-        var model = new FakeChatModel(Plan((Events, Topic("B"))), Call(Other, new JsonObject()), Plan(), Final());
+        var other = OtherTool();
+        var model = new FakeChatModel(
+            Plan((Events, Topic("B"))), Call(Other, new JsonObject()), Call(Other, new JsonObject()), Plan(), Final());
 
-        var result = await Runner(model, new InMemoryTaskStore(), tool, OtherTool()).RunAsync("diagnose", Actor);
+        var result = await Runner(model, new InMemoryTaskStore(), tool, other).RunAsync("diagnose", Actor);
 
-        Assert.Equal(0, tool.ExecutionCount);
-        Assert.Null(result.Steps[0].ExecutionClassification);
-        Assert.Empty(Offered(model.Requests[2]));
+        Assert.Equal((0, 0), (tool.ExecutionCount, other.ExecutionCount));
+        Assert.Equal(PlannedStepExecutionClassification.UnofferedTool, result.Steps[0].ExecutionClassification);
+        Assert.Equal([Events], Offered(model.Requests[2]));
+        Assert.Contains(ToolNameCorrection, model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.DoesNotContain(SemanticCorrection, model.Requests[2].SystemPrompt, StringComparison.Ordinal);
+        Assert.Equal(PlannedStepExecutionClassification.UnofferedTool, result.Steps[1].ExecutionClassification);
+        Assert.Empty(Offered(model.Requests[3]));
         Assert.Equal(1, result.Accounting!.LifetimeReplans);
     }
 

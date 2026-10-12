@@ -1,7 +1,12 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
-import { ModelCallRecord } from '../core/api/models';
+import { ModelCallRecord, PlanStep } from '../core/api/models';
+
+/** Every model call a step records, oldest first: its own calls, then any replan calls that followed a rejected premature final. */
+export function stepModelCalls(step: Pick<PlanStep, 'modelCalls' | 'earlyFinalReplanCalls'>): ModelCallRecord[] {
+  return [...(step.modelCalls ?? []), ...(step.earlyFinalReplanCalls ?? [])];
+}
 
 /**
  * The model a call asked for and the one that answered. They differ when the provider routes: asking for

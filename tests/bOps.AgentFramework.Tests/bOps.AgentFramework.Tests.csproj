@@ -31,6 +31,8 @@
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
+    <!-- AF-TOOLROUTE-01: the B03 reproduction runs the real OpenAI-compatible adapter, which owns the wire names. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.OpenAiCompatible\bOps.Packages.Providers.OpenAiCompatible.csproj" />
   </ItemGroup>
 
 </Project>

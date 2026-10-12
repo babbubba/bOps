@@ -173,6 +173,107 @@ public enum PlannedStepExecutionClassification
 
     /// <summary>The call matched semantically but failed complete manifest argument validation.</summary>
     ArgumentValidationFailure,
+
+    /// <summary>
+    /// The call named a tool that was not offered while the planned step's tool was (AF-TOOLROUTE-01); nothing ran. Persisted:
+    /// append only.
+    /// </summary>
+    UnofferedTool,
+}
+
+/// <summary>
+/// The structured reason for an early-final continuation decision (AF-05H2-R2). Values are persisted: append only.
+/// </summary>
+public enum EarlyFinalRecoveryReason
+{
+    /// <summary>The persisted plan was continued at its unchanged cursor.</summary>
+    Continued = 0,
+
+    /// <summary>The plan predates the semantic step contract, so its cursor cannot be proven.</summary>
+    LegacyPlanContract = 1,
+
+    /// <summary>The evaluated step is not the latest step of the plan revision, or not a rejected early final.</summary>
+    TriggerNotLatest = 2,
+
+    /// <summary>No received malformed replan was recorded for this early final, and no earlier output-limited replan of the revision applies.</summary>
+    NoMalformedReplan = 3,
+
+    /// <summary>The persisted steps do not fold to a coherent planned position.</summary>
+    IncoherentPlanPosition = 4,
+
+    /// <summary>The plan has no unresolved executable step left.</summary>
+    NoUnresolvedPlannedStep = 5,
+
+    /// <summary>The pending planned step has a spent, uncorrected semantic or argument correction.</summary>
+    PendingCorrection = 6,
+
+    /// <summary>An earlier continuation of the same revision was at this cursor or later: nothing progressed.</summary>
+    RepeatedWithoutProgress = 7,
+
+    /// <summary>The pending planned step is conditional.</summary>
+    ConditionalPendingStep = 8,
+
+    /// <summary>The pending planned step's tool is not a registered read-only tool.</summary>
+    PendingToolNotReadOnly = 9,
+
+    /// <summary>The pending planned step's tool is not offered in the current tool view.</summary>
+    PendingToolUnavailable = 10,
+
+    /// <summary>An earlier tool call has no recorded result, so its outcome is unknown.</summary>
+    UnknownToolOutcome = 11,
+
+    /// <summary>An earlier tool call used a tool that is not a registered read-only tool.</summary>
+    NonReadOnlyHistory = 12,
+
+    /// <summary>An earlier tool call was denied by policy, approval, envelope or entitlement.</summary>
+    AuthorizationDenied = 13,
+
+    /// <summary>An earlier tool call timed out.</summary>
+    ToolTimeout = 14,
+
+    /// <summary>An earlier tool call failed and no matched, successful call of the same planned step in the same revision resolved it.</summary>
+    UnresolvedToolFailure = 15,
+
+    /// <summary>An earlier tool call's verification was refuted.</summary>
+    VerificationRefuted = 16,
+}
+
+/// <summary>
+/// The persisted decision about continuing the persisted plan after an early-final replan produced no plan (AF-05H2-R2). It is
+/// runtime-authored, grants no tool authority, and is recorded on the rejected early-final step it concerns.
+/// </summary>
+public sealed record EarlyFinalRecoveryDecision
+{
+    /// <summary>Whether the persisted plan was continued.</summary>
+    public required bool Accepted { get; init; }
+
+    /// <summary>Why; <see cref="EarlyFinalRecoveryReason.Continued"/> exactly when <see cref="Accepted"/>.</summary>
+    public required EarlyFinalRecoveryReason Reason { get; init; }
+
+    /// <summary>The plan revision evaluated.</summary>
+    public required int PlanRevision { get; init; }
+
+    /// <summary>The unchanged pending planned cursor, when the evaluation reached one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Cursor { get; init; }
+
+    /// <summary>The task step that blocked the continuation, when one did.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BlockingStepIndex { get; init; }
+
+    /// <summary>
+    /// Task steps whose calls failed validation without running and were each resolved by a later matched, successful call of
+    /// the same planned step in the same revision. <c>null</c> when there were none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<int>? ResolvedValidationStepIndexes { get; init; }
+
+    /// <summary>
+    /// True when no paid replan was attempted for this early final because an earlier replan of the same revision had already
+    /// stopped at the output limit without a plan.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PaidReplanSkipped { get; init; }
 }
 
 /// <summary>One iteration of the agent loop: the tool call requested (if any), its result, and the observation fed back to the model.</summary>
@@ -215,6 +316,28 @@ public sealed record PlanStep
 
     /// <summary>The calls made to the model to obtain this step, oldest first: normally one, more when an empty reply was asked for again. <c>null</c> for a step recorded before calls were kept, or one that needed no model call.</summary>
     public IReadOnlyList<ModelCallRecord>? ModelCalls { get; init; }
+
+    /// <summary>
+    /// The unchanged planned cursor restored by a runtime-authored early-final recovery record. This record grants no tool
+    /// authority and completes no planned step; null for all other records.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EarlyFinalRecoveryCursor { get; init; }
+
+    /// <summary>Durable replan calls following this rejected early final, disjoint from its original <see cref="ModelCalls"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ModelCallRecord>? EarlyFinalReplanCalls { get; init; }
+
+    /// <summary>True when the bounded early-final replan finished with received malformed replies; it grants no continuation by itself.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EarlyFinalReplanFailed { get; init; }
+
+    /// <summary>
+    /// Why the runtime accepted or refused the persisted-plan continuation after this rejected early final's replan produced no
+    /// plan. <c>null</c> when no continuation was evaluated, including every step recorded before AF-05H2-R2.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EarlyFinalRecoveryDecision? EarlyFinalRecoveryDecision { get; init; }
 
     /// <summary>The tool calls the model emitted in the same turn after <see cref="ToolCall"/> and that bOps deliberately did not execute (one call per step), in emission order. Kept so the model's turn can be rebuilt exactly (ADR-0038); <c>null</c> when there were none, and in every step recorded before this was kept.</summary>
     public IReadOnlyList<ModelToolCall>? UnexecutedToolCalls { get; init; }
