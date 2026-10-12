@@ -5,6 +5,7 @@ using bOps.Abstractions;
 using bOps.Knowledge;
 using bOps.Knowledge.Tests;
 using bOps.Runtime;
+using Microsoft.Extensions.Logging;
 
 namespace bOps.AgentFramework.Tests;
 
@@ -60,7 +61,8 @@ internal sealed class KnowledgeHostCanary : IDisposable
     }
 
     /// <summary>Uses the existing AgentRunner path with the existing KnowledgeTaskHost and MAF broker.</summary>
-    internal CanaryRig Compose(IChatModel model) => process.ComposeCanary(model);
+    internal CanaryRig Compose(IChatModel model, ILogger<AgentRunner>? diagnosticLogger = null) =>
+        process.ComposeCanary(model, diagnosticLogger: diagnosticLogger);
 
     public void Dispose() => world.Dispose();
 }

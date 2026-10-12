@@ -13,6 +13,7 @@ using bOps.Memory;
 using bOps.Runtime;
 using bOps.Runtime.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace bOps.AgentFramework.Tests;
 
@@ -140,7 +141,8 @@ internal sealed class KnowledgeProcess : IDisposable
         IChatModel model,
         IKnowledgeTaskHost? host = null,
         bool withHost = true,
-        ITaskStore? store = null)
+        ITaskStore? store = null,
+        ILogger<AgentRunner>? diagnosticLogger = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
@@ -150,12 +152,12 @@ internal sealed class KnowledgeProcess : IDisposable
         registry.Register(new PackageId("test.package"), other);
         var options = new AgentRunnerOptions();
         var inner = new ModelInvocationBroker(
-            model, world.Audit, TimeProvider.System, NullLogger.Instance, options, contextProjector: new MafContextProjector(options, NullLogger.Instance));
+            model, world.Audit, TimeProvider.System, diagnosticLogger ?? (ILogger)NullLogger.Instance, options, contextProjector: new MafContextProjector(options, diagnosticLogger ?? (ILogger)NullLogger.Instance));
         var maf = new MafGovernedTurnBroker(inner, world.Audit, null, MafContextAssembly.BopsProvider);
         var taskStore = store ?? Store;
         var runner = new AgentRunner(
             model, registry, new DefaultTestPolicyEngine(), new NeverCalledApprovalProvider(), world.Audit, taskStore,
-            TimeProvider.System, NullLogger<AgentRunner>.Instance, options, invocationBroker: maf,
+            TimeProvider.System, diagnosticLogger ?? NullLogger<AgentRunner>.Instance, options, invocationBroker: maf,
             knowledgeHost: withHost ? host ?? Host : null);
         return new CanaryRig(runner, maf, read, other, taskStore);
     }
