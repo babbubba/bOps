@@ -313,7 +313,20 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
                 context.AccountTokens?.Invoke(UsageTokens(response));
 
-                if (context.MalformedResponse?.Invoke(response) is { } problem)
+                var truncated = string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
+                var responseProblem = truncated && !response.ToolCalls.Any(call => call.ToolNameError is null && call.ArgumentsError is null)
+                    ? "The model reached its output limit without a complete usable response."
+                    : response.ToolCalls.Count == 0 && string.IsNullOrWhiteSpace(response.TextResponse)
+                        ? "The model returned no text and no tool call."
+                        : null;
+                // Fail closed even for adapters that expose partial text. Preserve raw diagnostics and native calls,
+                // and return the empty response to the caller's existing bounded correction loop, never retry here.
+                if (truncated)
+                {
+                    response = response with { TextResponse = null, IsFinal = false };
+                }
+
+                if ((responseProblem ?? context.MalformedResponse?.Invoke(response)) is { } problem)
                 {
                     var reason = ModelFailureText.Sanitize(problem);
                     context.Calls.Add(BuildCallRecord(
@@ -330,7 +343,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                         context, ModelCallOutcome.Failure, reason, response.Usage, descriptor,
                         response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                         fallbackOrdinal, ModelFailureKind.MalformedResponse,
-                        ModelRetryDecision.NotRetryable, null, null, attemptRequest.History, ct);
+                        ModelRetryDecision.NotRetryable, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct);
                     return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
                 }
 
@@ -345,7 +358,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 await WriteModelCallAuditAsync(
                     context, ModelCallOutcome.Success, null, response.Usage, descriptor,
                     response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
-                    fallbackOrdinal, null, null, null, null, attemptRequest.History, ct);
+                    fallbackOrdinal, null, null, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct);
                 return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
             }
 
@@ -805,6 +818,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             reply,
             requestCut || replyCut)
         {
+            ProviderStatusCode = details?.ProviderStatusCode,
             ConfigurationGeneration = pinnedProviderConfiguration?.Generation,
             ConfigurationSnapshotHash = pinnedProviderConfiguration?.SnapshotHash,
             PrimaryProvider = pinnedProviderConfiguration?.ProviderId,

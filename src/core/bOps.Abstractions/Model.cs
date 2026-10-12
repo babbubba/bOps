@@ -181,6 +181,9 @@ public sealed record ModelCallDetails
     /// <summary>Why the provider stopped generating, when it says.</summary>
     public string? FinishReason { get; init; }
 
+    /// <summary>The HTTP status received, independently of whether the model reply is usable.</summary>
+    public int? ProviderStatusCode { get; init; }
+
     /// <summary>The request body exactly as sent, without any credential.</summary>
     public string? RequestJson { get; init; }
 

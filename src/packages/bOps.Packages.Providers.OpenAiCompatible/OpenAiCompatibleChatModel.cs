@@ -67,7 +67,11 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             .Select(dto => MapResponseCall(dto, wireNames, offered))
             .ToList();
 
-        return new ModelResponse(message.Content, toolCalls, toolCalls.Count == 0, MapUsage(completion.Body.Usage))
+        // A token-limit stop is not evidence of a completed answer. Keep partial text only in the raw diagnostics;
+        // complete native calls still go through the runtime's existing validation and authorization.
+        var truncated = string.Equals(completion.Details.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
+        var text = truncated ? null : message.Content;
+        return new ModelResponse(text, toolCalls, !truncated && toolCalls.Count == 0 && !string.IsNullOrWhiteSpace(text), MapUsage(completion.Body.Usage))
         {
             Details = completion.Details,
         };
@@ -86,6 +90,13 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             var completion = await SendAsync(payload, ct);
             var text = completion.Body.Choices[0].Message.Content ?? string.Empty;
             lastDetails = completion.Details;
+
+            // Do not parse a truncated JSON fragment as a completed final/tool directive, or spend the fallback's
+            // corrective re-ask on it. The broker records usage and the runner owns bounded empty-response recovery.
+            if (string.Equals(completion.Details.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ModelResponse(null, [], false, MapUsage(completion.Body.Usage)) { Details = completion.Details };
+            }
 
             // HARDEN-8: internal runtime directives are assistant text, never fake operational tools. Preserve a claimed
             // directive verbatim for Runtime before the fallback adapter applies its ordinary final/tool JSON schema.
@@ -240,7 +251,10 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
                     options.Provider, $"returned {(body is null ? "an empty response body" : "no choices")}.", status, failedDetails);
             }
 
-            return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody));
+            return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody)
+            {
+                ProviderStatusCode = status,
+            });
         }
     }
 
