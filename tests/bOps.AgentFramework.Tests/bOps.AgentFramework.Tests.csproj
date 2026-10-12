@@ -24,10 +24,13 @@
   <ItemGroup>
     <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
     <Compile Include="..\bOps.Runtime.Tests\TestDoubles.cs" Link="Linked\TestDoubles.cs" />
+    <!-- KNOW-01A: the signed-pack test support (throw-away test keys only) is shared with bOps.Knowledge.Tests. -->
+    <Compile Include="..\bOps.Knowledge.Tests\Support\*.cs" Link="Support\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />

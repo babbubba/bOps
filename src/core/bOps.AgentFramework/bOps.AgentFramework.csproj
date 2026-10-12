@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Knowledge\bOps.Knowledge.csproj" />
     <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
   </ItemGroup>
 

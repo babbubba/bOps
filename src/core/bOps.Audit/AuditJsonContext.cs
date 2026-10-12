@@ -12,6 +12,7 @@ namespace bOps.Audit;
 [JsonSerializable(typeof(ModelCallAuditEvent))]
 [JsonSerializable(typeof(EvidenceReadAuditEvent))]
 [JsonSerializable(typeof(KnowledgeReadAuditEvent))]
+[JsonSerializable(typeof(KnowledgePackAdmissionAuditEvent))]
 [JsonSerializable(typeof(PolicyDecisionAuditEvent))]
 [JsonSerializable(typeof(ApprovalAuditEvent))]
 [JsonSerializable(typeof(SkillRunAuditEvent))]

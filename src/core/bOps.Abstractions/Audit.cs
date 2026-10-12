@@ -52,6 +52,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(EvidenceReadAuditEvent), "evidenceRead")]
 [JsonDerivedType(typeof(TaskMutationAuditEvent), "taskMutation")]
 [JsonDerivedType(typeof(KnowledgeReadAuditEvent), "knowledgeRead")]
+[JsonDerivedType(typeof(KnowledgePackAdmissionAuditEvent), "knowledgePackAdmission")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -233,11 +234,120 @@ public sealed record KnowledgeReadAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ContentHash { get; init; }
 
+    /// <summary>
+    /// The tenant scope the host bound to the pack when it was admitted (KNOW-01A), or <c>null</c> for a pack that has none. It is
+    /// host authority, never a value the model proposed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TenantId { get; init; }
+
+    /// <summary>The id the host registry assigned to the provider instance that supplied the pack (KNOW-01A), when there is one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProviderId { get; init; }
+
     /// <summary>The number of UTF-16 code units returned; zero for a rejection.</summary>
     public required int ReturnedLength { get; init; }
 
     /// <summary>How the attempt ended.</summary>
     public required KnowledgeReadResultCode ResultCode { get; init; }
+}
+
+/// <summary>How an attempt to admit a knowledge pack for a task ended (KNOW-01A, ADR-0055). The names are stable audit codes.</summary>
+public enum KnowledgeAdmissionCode
+{
+    /// <summary>The pack was verified, snapshotted and pinned.</summary>
+    Admitted = 0,
+    /// <summary>The source is not a provider instance the host registered, or it was unregistered.</summary>
+    ProviderNotAdmitted = 1,
+    /// <summary>The provider registration does not cover the task's tenant.</summary>
+    TenantNotAllowed = 2,
+    /// <summary>The host holds no grant of this pack, version and kind to the tenant.</summary>
+    NotEntitled = 3,
+    /// <summary>The provider may not serve this kind of pack (an untrusted provider never serves a skill pack).</summary>
+    KindNotAllowed = 4,
+    /// <summary>The source has no such pack, or failed to supply it.</summary>
+    SourceUnavailable = 5,
+    /// <summary>The signing key is not in the trust store.</summary>
+    UnknownKey = 6,
+    /// <summary>The publisher was revoked.</summary>
+    PublisherRevoked = 7,
+    /// <summary>The signing key was revoked.</summary>
+    KeyRevoked = 8,
+    /// <summary>The signature does not verify over the manifest.</summary>
+    InvalidSignature = 9,
+    /// <summary>The signature file is not well formed, or uses an unsupported schema or algorithm.</summary>
+    SignatureMalformed = 10,
+    /// <summary>The manifest is not well formed, uses an unsupported schema, or contradicts the signature.</summary>
+    ManifestInvalid = 11,
+    /// <summary>The pack does not declare compatibility with this engine version.</summary>
+    EngineIncompatible = 12,
+    /// <summary>The signed manifest names another pack or version than the one requested.</summary>
+    IdentityMismatch = 13,
+    /// <summary>A path is absolute, escapes the pack, is ambiguous or is not a plain relative file path.</summary>
+    UnsafePath = 14,
+    /// <summary>The pack contains a symbolic link or reparse point.</summary>
+    LinkNotAllowed = 15,
+    /// <summary>The pack contains a file type, script or executable content that packs may not carry.</summary>
+    ForbiddenContent = 16,
+    /// <summary>A file the manifest lists is missing.</summary>
+    MissingResource = 17,
+    /// <summary>The pack contains a file the manifest does not list.</summary>
+    UnexpectedContent = 18,
+    /// <summary>A file does not match the hash the signed manifest lists.</summary>
+    HashMismatch = 19,
+    /// <summary>A size, count or length limit was exceeded.</summary>
+    LimitExceeded = 20,
+    /// <summary>A text file is not valid UTF-8 text.</summary>
+    InvalidContent = 21,
+    /// <summary>A skill name, description or frontmatter is invalid or asks for a privilege.</summary>
+    SkillInvalid = 22,
+    /// <summary>The verified content is not the content a task's pin names.</summary>
+    PinMismatch = 23,
+    /// <summary>The stored snapshot no longer matches the verified pack.</summary>
+    SnapshotTampered = 24,
+}
+
+/// <summary>
+/// Metadata-only record of an attempt to admit a knowledge pack for a task (KNOW-01A, ADR-0055), written for every outcome,
+/// refusals first. Identifiers are recorded only when they passed a strict shape check; for a refused pack they are therefore never
+/// free text a publisher or a model chose. It carries no content, path, key material or signature. Like the other
+/// non-step events, <see cref="AuditEvent.StepIndex"/> is the documented sentinel <c>-1</c>.
+/// </summary>
+public sealed record KnowledgePackAdmissionAuditEvent : AuditEvent
+{
+    /// <summary>The tenant scope the host derived for the task.</summary>
+    public required string TenantId { get; init; }
+
+    /// <summary>The id the host registry assigned to the provider instance, when the source was a registered provider.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProviderId { get; init; }
+
+    /// <summary>The pack id requested by the host.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackId { get; init; }
+
+    /// <summary>The pack version requested by the host.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackVersion { get; init; }
+
+    /// <summary>The kind the signed manifest declares (<c>Knowledge</c>, <c>Experience</c> or <c>Skill</c>), once the signature verified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackKind { get; init; }
+
+    /// <summary>The publisher named by the signature, if it has the shape of an identifier.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Publisher { get; init; }
+
+    /// <summary>The key id named by the signature, if it has the shape of an identifier.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? KeyId { get; init; }
+
+    /// <summary>The SHA-256 of the manifest bytes as bOps computed it: the content identity of the pack.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHash { get; init; }
+
+    /// <summary>How the attempt ended.</summary>
+    public required KnowledgeAdmissionCode Code { get; init; }
 }
 
 /// <summary>

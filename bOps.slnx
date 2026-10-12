@@ -18,6 +18,7 @@
     <Project Path="src/core/bOps.Audit/bOps.Audit.csproj" />
     <Project Path="src/core/bOps.Cli/bOps.Cli.csproj" />
     <Project Path="src/core/bOps.Hosting/bOps.Hosting.csproj" />
+    <Project Path="src/core/bOps.Knowledge/bOps.Knowledge.csproj" />
     <Project Path="src/core/bOps.Memory/bOps.Memory.csproj" />
     <Project Path="src/core/bOps.PluginHost/bOps.PluginHost.csproj" />
     <Project Path="src/core/bOps.Policy/bOps.Policy.csproj" />
@@ -67,6 +68,7 @@
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
     <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />
     <Project Path="tests/bOps.Cli.Tests/bOps.Cli.Tests.csproj" />
+    <Project Path="tests/bOps.Knowledge.Tests/bOps.Knowledge.Tests.csproj" />
     <Project Path="tests/bOps.Memory.Tests/bOps.Memory.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Filesystem.Tests/bOps.Packages.Filesystem.Tests.csproj" />

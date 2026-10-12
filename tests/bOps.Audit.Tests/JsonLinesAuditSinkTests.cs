@@ -13,6 +13,7 @@ namespace bOps.Audit.Tests;
 public sealed class JsonLinesAuditSinkTests : IDisposable
 {
     private static readonly ActorIdentity Actor = new("os-user", "alice", "Alice");
+    private static readonly string[] AdmissionForbiddenWords = ["Signature", "Path", "Pem", "Secret", "Private", "Detail", "Message"];
 
     private readonly string _filePath = Path.Combine(Path.GetTempPath(), $"bops-audit-test-{Guid.NewGuid():N}.jsonl");
 
@@ -266,6 +267,54 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         Assert.DoesNotContain(
             typeof(KnowledgeReadAuditEvent).GetProperties().Select(property => property.Name),
             name => name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash");
+    }
+
+    [Fact]
+    public async Task WriteAsync_PersistsAPackAdmissionAndTheTenantOfARead_WithoutContentKeysOrPaths_ThroughTheRealSinkAndChain()
+    {
+        // KNOW-01A: every admission outcome, refusals included, and the tenant and provider of a read round-trip through the chain.
+        var taskId = Guid.NewGuid();
+        var admitted = new KnowledgePackAdmissionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            TenantId = "tenant-a", ProviderId = "kp.files.1", PackId = "acme.runbooks", PackVersion = "1.0.0", PackKind = "Skill",
+            Publisher = "acme", KeyId = "acme-2026", ContentHash = new string('a', 64), Code = KnowledgeAdmissionCode.Admitted,
+        };
+        var refused = new KnowledgePackAdmissionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            TenantId = "tenant-b", Code = KnowledgeAdmissionCode.ProviderNotAdmitted,
+        };
+        var read = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 1, Actor = Actor,
+            Operation = "discover", PackId = "acme.runbooks", TenantId = "tenant-a", ProviderId = "kp.files.1", ReturnedLength = 10,
+            ResultCode = KnowledgeReadResultCode.Success,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(admitted);
+            await sink.WriteAsync(refused);
+            await sink.WriteAsync(read);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        AuditEvent Restore(int index) => System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(
+            JsonNode.Parse(lines[index])!["EventJson"]!.GetValue<string>())!;
+        Assert.Equal(admitted, Assert.IsType<KnowledgePackAdmissionAuditEvent>(Restore(0)));
+        Assert.Equal(KnowledgeAdmissionCode.ProviderNotAdmitted, Assert.IsType<KnowledgePackAdmissionAuditEvent>(Restore(1)).Code);
+        var restoredRead = Assert.IsType<KnowledgeReadAuditEvent>(Restore(2));
+        Assert.Equal(("tenant-a", "kp.files.1"), (restoredRead.TenantId, restoredRead.ProviderId));
+        Assert.Contains("\"eventType\":\"knowledgePackAdmission\"", JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>(), StringComparison.Ordinal);
+        var bare = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("PackId", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("Publisher", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            typeof(KnowledgePackAdmissionAuditEvent).GetProperties().Select(property => property.Name),
+            name => AdmissionForbiddenWords.Any(word => name.Contains(word, StringComparison.Ordinal))
+                || (name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash"));
     }
 
     [Theory]

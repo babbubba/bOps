@@ -83,6 +83,13 @@ public sealed record ContextProvenance
     /// <summary>The pack content hash, when applicable.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PackHash { get; init; }
+
+    /// <summary>
+    /// The tenant scope the host bound to the pack the content came from, when applicable (KNOW-01A). Assigned by bOps from the
+    /// host's tenant authority, never from pack metadata or a model argument.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TenantId { get; init; }
 }
 
 /// <summary>
@@ -115,6 +122,7 @@ public sealed record ContextProvenanceCount
             .ThenBy(group => group.Key?.PackId, StringComparer.Ordinal)
             .ThenBy(group => group.Key?.PackVersion, StringComparer.Ordinal)
             .ThenBy(group => group.Key?.PackHash, StringComparer.Ordinal)
+            .ThenBy(group => group.Key?.TenantId, StringComparer.Ordinal)
             .Select(group => new ContextProvenanceCount { Provenance = group.Key, Turns = group.Count() })];
     }
 }
