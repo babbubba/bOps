@@ -3,6 +3,7 @@ param(
     [string] $TargetRepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path,
     [string] $ConfigSourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')),
     [string] $ConfigSnapshotPath,
+    [ValidatePattern('^[0-9a-fA-F]{40}$')] [string] $ExpectedTargetCommit,
     [ValidateRange(1, 3)] [int] $RunsPerScenario = 3,
     [switch] $PreflightOnly,
     [string] $ExpectedUserSid,
@@ -63,6 +64,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     $target64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($resolvedTarget))
     $configSource64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($resolvedConfigSource))
     $snapshot64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$resolvedSnapshot))
+    $commit64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$ExpectedTargetCommit))
     $userSid64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($expectedUserSid))
     $cwd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Location).Path))
     $elevationScript = @"
@@ -70,11 +72,13 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 `$targetPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$target64'))
 `$configSourcePath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$configSource64'))
 `$snapshotPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$snapshot64'))
+`$expectedCommit = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$commit64'))
 `$expectedSid = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$userSid64'))
 `$originalCwd = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$cwd64'))
 Set-Location -LiteralPath `$originalCwd
 `$benchArgs = @('-TargetRepoRoot', `$targetPath, '-ConfigSourceRoot', `$configSourcePath, '-RunsPerScenario', '$RunsPerScenario', '-ExpectedUserSid', `$expectedSid, '-Elevated')
 if (`$snapshotPath) { `$benchArgs += @('-ConfigSnapshotPath', `$snapshotPath) }
+if (`$expectedCommit) { `$benchArgs += @('-ExpectedTargetCommit', `$expectedCommit) }
 if ('$([bool]$PreflightOnly)' -eq 'True') { `$benchArgs += '-PreflightOnly' }
 & `$scriptPath @benchArgs
 exit `$LASTEXITCODE
@@ -87,6 +91,7 @@ exit `$LASTEXITCODE
 $pythonArgs += @('--target-repo-root', $resolvedTarget, '--config-source-root', $resolvedConfigSource,
                  '--runs-per-scenario', [string]$RunsPerScenario, '--expected-user-sid', $expectedUserSid)
 if ($resolvedSnapshot) { $pythonArgs += @('--config-snapshot-path', $resolvedSnapshot) }
+if ($ExpectedTargetCommit) { $pythonArgs += @('--expected-target-commit', $ExpectedTargetCommit) }
 if ($PreflightOnly) { $pythonArgs += '--preflight-only' }
 $argumentLine = ($pythonArgs | ForEach-Object { ConvertTo-WindowsArgument ([string]$_) }) -join ' '
 $startInfo = [Diagnostics.ProcessStartInfo]::new()

@@ -9,6 +9,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import socket
 import sqlite3
@@ -31,6 +32,7 @@ SCENARIOS = [
 ]
 ANCHORS = ["97507aa7a914cdabdfafbd42e382c0f1dfd399da", "07e422a4c9c65bd617cafaf209d2352657f1c130"]
 RUNTIME_PATHS = ["src/core/bOps.Api", "src/core/bOps.AgentFramework", "src/core/bOps.Runtime", "src/core/bOps.Memory", "src/core/bOps.Audit", "src/packages"]
+CANDIDATE_RUNTIME_PATHS = ["src/core", "src/packages"]
 README = """PRIVATE — POTENTIALLY SENSITIVE MATERIAL\n\nThis archive contains complete, unredacted task state, model request/response payloads, tool results, audit records and the API startup diagnostic log from this PC. The diagnostic log preserves the API process stdout/stderr and may disclose paths, configuration details, usernames, host names, IP addresses, system events, and logs. Known credential values from process environment and configuration files are redacted from that diagnostic log; vault.dat and the master key are not included. Review before sharing. Keep local ACLs restrictive. This collector does not anonymize task evidence and does not upload it.\n"""
 READ_ONLY_POLICY = "defaults:\n  read: automatic\n"
 TERMINAL = {"Completed", "MaxStepsReached", "BudgetExceeded", "PolicyBlocked", "ReplanLimitReached", "Failed", "Cancelled"}
@@ -84,8 +86,38 @@ def git(root: pathlib.Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True, stderr=subprocess.STDOUT).strip()
 
 
-def validate_runtime_target(root: pathlib.Path):
+def full_commit_sha(value: str) -> str:
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        raise argparse.ArgumentTypeError("ExpectedTargetCommit must be a full 40-character Git SHA.")
+    return value.lower()
+
+
+def validate_runtime_target(root: pathlib.Path, expected_target_commit: str | None = None):
     head = git(root, "rev-parse", "HEAD")
+    if expected_target_commit is not None:
+        expected = full_commit_sha(expected_target_commit)
+        if head != expected:
+            raise RuntimeError("Target HEAD does not match ExpectedTargetCommit.")
+        anchor = ANCHORS[-1]  # The candidate contract requires AF-05H, never AF-05G fallback.
+        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", anchor, head],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if ancestry.returncode != 0:
+            raise RuntimeError("ExpectedTargetCommit must descend from the expected AF-05H baseline.")
+        # Include every core project (also Abstractions), staged changes, both sides
+        # of renames, and untracked source. Generated ignored build outputs are excluded.
+        paths = CANDIDATE_RUNTIME_PATHS
+        changed = subprocess.check_output([
+            "git", "-C", str(root), "diff", "--no-ext-diff", "--no-renames",
+            "--name-only", "-z", "--", *paths])
+        staged = subprocess.check_output([
+            "git", "-C", str(root), "diff", "--no-ext-diff", "--no-renames",
+            "--cached", "--name-only", "-z", "HEAD", "--", *paths])
+        untracked = subprocess.check_output([
+            "git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z", "--", *paths])
+        for name in (changed + staged + untracked).decode("utf-8").split("\0"):
+            if name and pathlib.PurePosixPath(name).name not in {"appsettings.json", "appsettings.Development.json"}:
+                raise RuntimeError(f"Uncommitted runtime source change prevents exact benchmark target: {name}")
+        return anchor, head, git(root, "status", "--porcelain", "--untracked-files=no")
     anchor = next((candidate for candidate in reversed(ANCHORS)
                    if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", candidate, "HEAD"],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0), None)
@@ -101,6 +133,28 @@ def validate_runtime_target(root: pathlib.Path):
             if pathlib.PurePosixPath(changed).name not in {"appsettings.json", "appsettings.Development.json"}:
                 raise RuntimeError(f"Uncommitted runtime source change prevents exact benchmark target: {changed}")
     return anchor, head, status
+
+
+def runtime_provenance(root: pathlib.Path, anchor: str, head: str, expected: str | None):
+    def output(*args):
+        return subprocess.check_output(["git", "-C", str(root), *args])
+
+    # Pin formatting so local diff display preferences do not change fingerprints.
+    diff_args = ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--binary",
+                 "--full-index", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic",
+                 "--src-prefix=a/", "--dst-prefix=b/", "--no-relative", anchor, head]
+    runtime_paths = CANDIDATE_RUNTIME_PATHS if expected is not None else RUNTIME_PATHS
+    return {
+        "validationMode": "expected-target-commit" if expected is not None else "legacy-reference",
+        "candidateCommit": head, "baselineCommit": anchor,
+        "expectedTargetCommit": expected,
+        "changedFiles": [name for name in output("diff", "--no-ext-diff", "--no-renames", "--name-only", "-z",
+                                                anchor, head).decode("utf-8").split("\0") if name],
+        "committedDiffSha256": sha(output(*diff_args)),
+        "runtimeDiffSha256": sha(output(*diff_args, "--", *runtime_paths)),
+        "diffGitArguments": diff_args,
+        "runtimePaths": runtime_paths,
+    }
 
 
 def effective_policy_path(root: pathlib.Path):
@@ -539,6 +593,7 @@ def package(out: pathlib.Path, zip_path: pathlib.Path, runs_per_scenario: int = 
         "requestedTaskCount": len(SCENARIOS) * runs_per_scenario,
         "configurationProvenance": startup.get("configurationProvenance"),
         "effectiveConfiguration": startup.get("effectiveConfiguration"),
+        "runtimeProvenance": startup.get("runtimeProvenance"),
         "files": files,
     })
     manifest_hash.write_text(sha(manifest.read_bytes()) + "  manifest.json\n", encoding="ascii")
@@ -550,7 +605,8 @@ def package(out: pathlib.Path, zip_path: pathlib.Path, runs_per_scenario: int = 
 
 def run(args):
     root = pathlib.Path(args.target_repo_root).resolve()
-    anchor, commit, dirty_status = validate_runtime_target(root)
+    anchor, commit, dirty_status = validate_runtime_target(root, args.expected_target_commit)
+    target_provenance = runtime_provenance(root, anchor, commit, args.expected_target_commit)
     windows_identity = verify_windows_identity(args.expected_user_sid)
     original_policy_path = effective_policy_path(root)
     if not os.environ.get("BOPS_API_KEY"):
@@ -595,6 +651,7 @@ def run(args):
     startup_log = None
     api = f"http://127.0.0.1:{port}"
     startup = {"startedAtUtc": utc_now(), "targetRepoRoot": str(root), "gitCommit": commit, "runtimeReferenceCommit": anchor,
+               "runtimeProvenance": target_provenance,
                "gitBranch": branch, "gitDirty": dirty, "gitDirtyPaths": [line[3:] for line in dirty_status.splitlines()],
                "originalPolicyPath": str(original_policy_path),
                "originalPolicySha256": sha(original_policy_path.read_bytes()) if original_policy_path.is_file() else None,
@@ -759,6 +816,8 @@ def run(args):
 def make_argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-repo-root", required=True)
+    parser.add_argument("--expected-target-commit", "-ExpectedTargetCommit", type=full_commit_sha,
+                        help="Require this full target HEAD SHA and AF-05H ancestry; allow committed runtime changes.")
     parser.add_argument("--config-source-root", default=str(pathlib.Path(__file__).resolve().parents[2]))
     parser.add_argument("--config-snapshot-path")
     parser.add_argument("--runs-per-scenario", type=int, choices=range(1, 4), default=3)

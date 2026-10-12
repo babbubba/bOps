@@ -19,6 +19,139 @@ bench = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bench)
 
 
+class RuntimeTargetTests(unittest.TestCase):
+    """Offline repositories; no bOps processes, provider requests or real UAC."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="BENCH target with spaces ")
+        self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)
+        self.git("init", "--quiet")
+        self.git("config", "user.email", "bench@example.test")
+        self.git("config", "user.name", "BENCH offline fixture")
+        self.git("config", "core.autocrlf", "false")
+        self.source = self.root / "src/core/bOps.Runtime/source with spaces.cs"
+        self.source.parent.mkdir(parents=True)
+        self.source.write_bytes(b"AF-05G\n")
+        config = self.root / "src/core/bOps.Api/appsettings.json"
+        config.parent.mkdir(parents=True)
+        config.write_bytes(b"{}")
+        self.g = self.commit()
+        self.source.write_bytes(b"AF-05H\n")
+        self.h = self.commit()
+        self.source.write_bytes(b"AF-05H2-R1\n")
+        self.candidate = self.commit()
+        self.anchors = patch.object(bench, "ANCHORS", [self.g, self.h])
+        self.anchors.start()
+        self.addCleanup(self.anchors.stop)
+
+    def git(self, *args):
+        return bench.git(self.root, *args)
+
+    def commit(self):
+        self.git("add", ".")
+        self.git("-c", "core.hooksPath=NUL", "commit", "--quiet", "-m", "offline fixture")
+        return self.git("rev-parse", "HEAD")
+
+    def test_exact_candidate_accepts_committed_runtime_and_verifiable_provenance(self):
+        anchor, head, status = bench.validate_runtime_target(self.root, self.candidate)
+        self.assertEqual((self.h, self.candidate, ""), (anchor, head, status))
+        evidence = bench.runtime_provenance(self.root, anchor, head, self.candidate)
+        self.assertEqual("expected-target-commit", evidence["validationMode"])
+        self.assertEqual(self.candidate, evidence["candidateCommit"])
+        self.assertEqual(self.h, evidence["baselineCommit"])
+        self.assertEqual([self.source.relative_to(self.root).as_posix()], evidence["changedFiles"])
+        for key, paths in (("committedDiffSha256", []), ("runtimeDiffSha256", ["--", *evidence["runtimePaths"]])):
+            raw = subprocess.check_output(["git", "-C", str(self.root), *evidence["diffGitArguments"], *paths])
+            self.assertEqual(bench.sha(raw), evidence[key])
+        self.assertEqual(evidence, bench.runtime_provenance(self.root, anchor, head, self.candidate))
+
+    def test_wrong_sha_fails_before_provenance_or_api_startup(self):
+        args = bench.make_argument_parser().parse_args(["--target-repo-root", str(self.root),
+                                                       "--expected-target-commit", self.h, "--preflight-only"])
+        with patch.object(bench, "start_api_process") as start, patch.object(bench, "runtime_provenance") as evidence:
+            with self.assertRaisesRegex(RuntimeError, "HEAD does not match"):
+                bench.run(args)
+        start.assert_not_called()
+        evidence.assert_not_called()
+
+    def test_candidate_requires_af05h_ancestry_even_if_af05g_is_ancestor(self):
+        self.git("checkout", "--quiet", "--detach", self.g)
+        self.source.write_bytes(b"unrelated candidate\n")
+        divergent = self.commit()
+        with self.assertRaisesRegex(RuntimeError, "descend.*AF-05H"):
+            bench.validate_runtime_target(self.root, divergent)
+
+    def test_uncommitted_runtime_changes_rejected_staged_and_unstaged(self):
+        self.source.write_bytes(b"dirty\n")
+        for staged in (False, True):
+            if staged:
+                self.git("add", ".")
+            with self.subTest(staged=staged), self.assertRaisesRegex(RuntimeError, "Uncommitted runtime"):
+                bench.validate_runtime_target(self.root, self.candidate)
+
+    def test_untracked_core_source_and_runtime_rename_to_config_are_rejected(self):
+        extra = self.root / "src/core/bOps.Abstractions/new source.cs"
+        extra.parent.mkdir(parents=True)
+        extra.write_bytes(b"untracked\n")
+        with self.assertRaisesRegex(RuntimeError, "Uncommitted runtime"):
+            bench.validate_runtime_target(self.root, self.candidate)
+        extra.unlink()
+        self.git("mv", self.source.relative_to(self.root).as_posix(),
+                 self.source.with_name("appsettings.json").relative_to(self.root).as_posix())
+        with self.assertRaisesRegex(RuntimeError, "Uncommitted runtime"):
+            bench.validate_runtime_target(self.root, self.candidate)
+
+    def test_staged_change_is_rejected_even_when_working_content_matches_head(self):
+        original = self.source.read_bytes()
+        self.source.write_bytes(b"staged change\n")
+        self.git("add", ".")
+        self.source.write_bytes(original)
+        with self.assertRaisesRegex(RuntimeError, "Uncommitted runtime"):
+            bench.validate_runtime_target(self.root, self.candidate)
+
+    def test_local_configuration_remains_allowed(self):
+        config = self.root / "src/core/bOps.Api/appsettings.json"
+        head = self.candidate
+        config.write_bytes(b'{"local": true}')
+        bench.validate_runtime_target(self.root, head)
+        config.with_name("appsettings.Development.json").write_bytes(b"{}")
+        bench.validate_runtime_target(self.root, head)
+
+    def test_legacy_accepts_g_and_h_and_harness_only_descendants_but_rejects_candidate(self):
+        with self.assertRaisesRegex(RuntimeError, "nearest supported"):
+            bench.validate_runtime_target(self.root)
+        for anchor in (self.g, self.h):
+            self.git("checkout", "--quiet", "--detach", anchor)
+            self.assertEqual(anchor, bench.validate_runtime_target(self.root)[0])
+        (self.root / "harness.txt").write_bytes(b"collector only")
+        descendant = self.commit()
+        self.assertEqual((self.h, descendant, ""), bench.validate_runtime_target(self.root))
+        self.source.write_bytes(b"dirty\n")
+        with self.assertRaisesRegex(RuntimeError, "Uncommitted runtime"):
+            bench.validate_runtime_target(self.root)
+
+    def test_legacy_keeps_local_config_exception_and_reports_legacy_provenance(self):
+        self.git("checkout", "--quiet", "--detach", self.h)
+        (self.root / "src/core/bOps.Api/appsettings.json").write_bytes(b'{"local": true}')
+        anchor, head, _ = bench.validate_runtime_target(self.root)
+        evidence = bench.runtime_provenance(self.root, anchor, head, None)
+        self.assertEqual("legacy-reference", evidence["validationMode"])
+        self.assertEqual([], evidence["changedFiles"])
+        self.assertEqual(bench.sha(b""), evidence["runtimeDiffSha256"])
+
+    def test_parser_requires_full_sha_and_supports_both_spellings(self):
+        parser = bench.make_argument_parser()
+        self.assertIsNone(parser.parse_args(["--target-repo-root", str(self.root)]).expected_target_commit)
+        for flag in ("--expected-target-commit", "-ExpectedTargetCommit"):
+            self.assertEqual(self.candidate, parser.parse_args([
+                "--target-repo-root", str(self.root), flag, self.candidate.upper(), "--preflight-only"
+            ]).expected_target_commit)
+            for value in ("HEAD", "abc123", "g" * 40, "a" * 41):
+                with self.subTest(flag=flag, value=value), self.assertRaises(SystemExit), patch("sys.stderr", io.StringIO()):
+                    parser.parse_args(["--target-repo-root", str(self.root), flag, value])
+
+
 class CaptureTests(unittest.TestCase):
     def test_requested_run_counts_produce_expected_round_robin(self):
         for runs, expected in ((1, ["B01", "B02", "B03"]), (3, ["B01", "B02", "B03"] * 3)):
@@ -156,7 +289,8 @@ class CaptureTests(unittest.TestCase):
             env["BOPS_VAULT_MASTER_KEY"] = "synthetic-master-secret"
             result = subprocess.run(
                 [powershell, "-NoProfile", "-File", str(launcher), "-TargetRepoRoot", str(target),
-                 "-RunsPerScenario", "1", "-Elevated"],
+                 "-RunsPerScenario", "1", "-Elevated", "-PreflightOnly",
+                 "-ExpectedTargetCommit", bench.ANCHORS[-1]],
                 cwd=root, env=env, text=True, capture_output=True, timeout=30,
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -172,6 +306,15 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(["--runs-per-scenario", "1"], argv[5:7])
             self.assertEqual("--expected-user-sid", argv[7])
             self.assertEqual(captured["actualSid"], argv[8])
+            self.assertEqual(["--expected-target-commit", bench.ANCHORS[-1], "--preflight-only"], argv[9:])
+            legacy = subprocess.run(
+                [powershell, "-NoProfile", "-File", str(launcher), "-TargetRepoRoot", str(target),
+                 "-RunsPerScenario", "1", "-Elevated"],
+                cwd=root, env=env, text=True, capture_output=True, timeout=30,
+            )
+            self.assertEqual(0, legacy.returncode, legacy.stdout + legacy.stderr)
+            legacy_argv = json.loads(capture.read_text(encoding="utf-8"))["argv"]
+            self.assertEqual(argv[:9], legacy_argv)
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell integration test")
     def test_uac_handoff_preserves_target_and_run_count(self):
@@ -199,7 +342,8 @@ class CaptureTests(unittest.TestCase):
                 f"[IO.File]::WriteAllText('{payload_file}', $payload); "
                 "[pscustomobject]@{ExitCode=0} }; "
                 f"$env:BOPS_VAULT_MASTER_KEY='fixture-master-secret'; "
-                f"& '{launcher}' -TargetRepoRoot '{target}' -ConfigSourceRoot '{source}' -RunsPerScenario 1 -PreflightOnly"
+                f"& '{launcher}' -TargetRepoRoot '{target}' -ConfigSourceRoot '{source}' -RunsPerScenario 1 "
+                f"-ExpectedTargetCommit {bench.ANCHORS[-1]} -PreflightOnly"
             )
             result = subprocess.run([powershell, "-NoProfile", "-Command", command], cwd=root,
                                     text=True, capture_output=True, timeout=30)
@@ -210,6 +354,22 @@ class CaptureTests(unittest.TestCase):
             self.assertIn("'-RunsPerScenario', '1'", payload)
             self.assertIn("'-ExpectedUserSid', $expectedSid", payload)
             self.assertIn("-PreflightOnly", payload)
+            self.assertIn("@('-ExpectedTargetCommit', $expectedCommit)", payload)
+            # Execute the handoff payload with the launcher replaced by an argv
+            # recorder, proving the decoded value survives the second invocation.
+            recorder = root / "record.ps1"
+            recorder.write_text("[IO.File]::WriteAllText($env:BENCH_UAC_ARGV, ($args | ConvertTo-Json))", encoding="utf-8")
+            replay = root / "replay.ps1"
+            replay.write_text(payload.replace("& $scriptPath @benchArgs", f"& '{recorder}' @benchArgs"), encoding="utf-8")
+            capture = root / "uac-argv.json"
+            env = dict(os.environ, BENCH_UAC_ARGV=str(capture))
+            replay_result = subprocess.run([powershell, "-NoProfile", "-File", str(replay)],
+                                           env=env, text=True, capture_output=True, timeout=30)
+            self.assertEqual(0, replay_result.returncode, replay_result.stdout + replay_result.stderr)
+            argv = json.loads(capture.read_text(encoding="utf-8-sig"))
+            self.assertEqual(bench.ANCHORS[-1], argv[argv.index("-ExpectedTargetCommit") + 1])
+            self.assertEqual(str(target), argv[argv.index("-TargetRepoRoot") + 1])
+            self.assertIn("-PreflightOnly", argv)
             self.assertIn("$targetPath = [Text.Encoding]::UTF8.GetString", payload)
             self.assertNotIn("fixture-master-secret", payload)
 
@@ -409,6 +569,7 @@ class CaptureTests(unittest.TestCase):
             args = bench.make_argument_parser().parse_args([
                 "--target-repo-root", str(target), "--config-source-root", str(source_api.parents[2]),
                 "--output-root", str(output), "--preflight-only",
+                "--expected-target-commit", bench.ANCHORS[-1],
             ])
             process = unittest.mock.Mock()
             process.poll.side_effect = [None, 0]
@@ -420,7 +581,11 @@ class CaptureTests(unittest.TestCase):
                 if url.endswith("/api/settings/"):
                     return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "fixture-model", "effectiveCredentialAvailable": True}
                 raise AssertionError(url)
-            with patch.object(bench, "validate_runtime_target", return_value=(bench.ANCHORS[0], bench.ANCHORS[0], "")), \
+            provenance = {"candidateCommit": bench.ANCHORS[-1], "baselineCommit": bench.ANCHORS[-1],
+                          "validationMode": "expected-target-commit", "changedFiles": [],
+                          "runtimeDiffSha256": bench.sha(b"")}
+            with patch.object(bench, "validate_runtime_target", return_value=(bench.ANCHORS[-1], bench.ANCHORS[-1], "")) as validate, \
+                 patch.object(bench, "runtime_provenance", return_value=provenance), \
                  patch.object(bench, "verify_windows_identity", return_value={"verified": True}), \
                  patch.object(bench, "effective_policy_path", return_value=root / "policy.yaml"), \
                  patch.object(bench, "git", side_effect=["fixture", ""]), \
@@ -430,12 +595,15 @@ class CaptureTests(unittest.TestCase):
                  patch.object(bench, "submit_task", side_effect=AssertionError("preflight must not create tasks")), \
                  patch.dict(os.environ, {"BOPS_API_KEY": "synthetic-api-key", "BOPS_VAULT_MASTER_KEY": "synthetic-master-key"}):
                 bench.run(args)
+            validate.assert_called_once_with(target.resolve(), bench.ANCHORS[-1])
             with zipfile.ZipFile(next(output.glob("*.zip"))) as zf:
                 manifest = json.loads(zf.read("manifest.json"))
                 startup = json.loads(zf.read("startup.json"))
                 self.assertEqual("fixture", manifest["effectiveConfiguration"]["active"]["provider"])
                 self.assertEqual(bench.sha(b"{}"), manifest["configurationProvenance"]["files"]["appsettings.json"]["sha256"])
                 self.assertNotIn("vault.dat", zf.namelist())
+                self.assertEqual(provenance, manifest["runtimeProvenance"])
+                self.assertEqual(provenance, startup["runtimeProvenance"])
             self.assertTrue(pathlib.Path(startup["configurationProvenance"]["snapshotRoot"]).is_dir())
 
     def test_retry_keeps_idempotency_key_and_payload(self):
