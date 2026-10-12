@@ -432,6 +432,31 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(original, zf.read("diagnostics/api-startup.log"))
                 self.assertEqual(original, archived_log.read_bytes())
 
+    def test_preflight_cleanup_stops_child_holding_inherited_stdout(self):
+        """dotnet run's API child can keep the pipe open after the launcher exits."""
+        with tempfile.TemporaryDirectory(prefix="BENCH child cleanup ") as temp:
+            root = pathlib.Path(temp)
+            log_path = root / "api-startup.log"
+            ready_path = root / "child-ready"
+            child = ("import pathlib, time; print('API child ready', flush=True); "
+                     "pathlib.Path(" + repr(str(ready_path)) + ").write_text('ready'); time.sleep(300)")
+            parent = ("import pathlib, subprocess, sys, time\n"
+                      "subprocess.Popen([sys.executable, '-c', " + repr(child) + "])\n"
+                      "ready=pathlib.Path(" + repr(str(ready_path)) + ")\n"
+                      "deadline=time.monotonic()+10\n"
+                      "while not ready.exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+                      "time.sleep(300)\n")
+            process, stream, output_thread = bench.start_api_process(
+                [sys.executable, "-c", parent], root, os.environ.copy(), log_path)
+            deadline = bench.time.monotonic() + 10
+            while not ready_path.exists() and bench.time.monotonic() < deadline:
+                bench.time.sleep(0.01)
+            self.assertTrue(ready_path.exists(), "fixture API child did not start")
+            bench.stop_api_process(process, output_thread, stream)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(output_thread.is_alive())
+            self.assertIn(b"API child ready", log_path.read_bytes())
+
     def test_startup_log_redacts_environment_credentials_without_truncating(self):
         secret = "synthetic-master-secret"
         output = b"prefix " + secret.encode() + b" suffix\n"

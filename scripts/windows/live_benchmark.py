@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -338,7 +339,8 @@ def start_api_process(command, cwd: pathlib.Path, env: dict, log_path: pathlib.P
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stream = log_path.open("wb")
     try:
-        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   start_new_session=(os.name != "nt"))
     except BaseException:
         stream.close()
         raise
@@ -347,6 +349,47 @@ def start_api_process(command, cwd: pathlib.Path, env: dict, log_path: pathlib.P
     output_thread = threading.Thread(target=_copy_redacted_output, args=(process.stdout, stream, credential_values), daemon=True)
     output_thread.start()
     return process, stream, output_thread
+
+
+def stop_api_process(process, output_thread, startup_log):
+    """Stop dotnet and its API child, then drain inherited stdout before closing the log."""
+    if os.name == "nt":
+        # dotnet run is a launcher; bOps.Api can outlive it and keep the pipe open.
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        # start_api_process gives dotnet its own session/process group.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            process.kill()
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.wait()
+    if output_thread is not None:
+        output_thread.join(timeout=15)
+        if output_thread.is_alive() and os.name != "nt":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            output_thread.join(timeout=15)
+    # Never close a pipe while its reader is blocked in read(): on Windows close()
+    # waits for that read lock, which used to strand -PreflightOnly until Ctrl+C.
+    if output_thread is None or not output_thread.is_alive():
+        if process.stdout is not None:
+            process.stdout.close()
+        if startup_log is not None:
+            startup_log.flush()
+            startup_log.close()
 
 
 def check_api_startup(process, log_path: pathlib.Path):
@@ -789,22 +832,11 @@ def run(args):
                 status_doc["unrosteredPersistedTaskIds"] = sorted(set(captured_ids) - roster_ids)
                 write_json(run_root / "capture-status.json", status_doc)
             except (sqlite3.Error, OSError): pass
-        if process is not None and process.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                try: process.wait(timeout=15)
-                except subprocess.TimeoutExpired: process.kill(); process.wait()
-            else:
-                process.terminate()
-                try: process.wait(timeout=15)
-                except subprocess.TimeoutExpired: process.kill(); process.wait()
         if startup_log is not None:
-            if 'startup_output_thread' in locals():
-                startup_output_thread.join(timeout=15)
-                if process is not None and process.stdout is not None:
-                    process.stdout.close()
-            startup_log.flush()
-            startup_log.close()
+            if process is not None:
+                stop_api_process(process, locals().get("startup_output_thread"), startup_log)
+            else:
+                startup_log.close()
         include_startup_diagnostic(startup_log_path, run_root)
         package(run_root, archive_path, args.runs_per_scenario)
         shutil.rmtree(run_root, ignore_errors=True)
