@@ -172,8 +172,7 @@ public sealed partial class AgentRunner(
     private const string PlanCompleteInstructions =
         "Every planned step above is complete and no operational tool is offered. Give your final answer now from the evidence " +
         "already collected. Only if that evidence is genuinely insufficient, propose the one new check you need instead: it will " +
-        "not run, and the runtime will ask you to revise the plan with it. Repeating a completed check with the same arguments " +
-        "adds no evidence.";
+        "not run, and the runtime will ask you to revise the plan with it.";
 
     private const string PlanRetryInstructions =
         "That reply was not a single valid JSON object in the required shape. Every listed step " +
@@ -2928,27 +2927,10 @@ public sealed partial class AgentRunner(
         var planningTools = ToolViewFor(delegation);
         var logicalCall = new LogicalCallState();
         var tokens = 0;
-        // AF-TOOLROUTE-01: the read-only checks already completed, from persisted steps only (identical on resume). They are shown to
-        // the replan, and a candidate step repeating one with identical arguments is a validation problem for the corrective re-ask.
-        var completedChecks = CompletedChecks.From(stepsSoFar, ManifestOf);
-        var completedSection = CompletedChecks.Describe(completedChecks);
+        // AF-TOOLROUTE-01: the read-only checks already completed, from persisted steps only (identical on resume), are shown to the
+        // replan as information. Nothing is refused: re-sampling live state is legitimate, and the replan budgets bound a cycle.
+        var completedSection = CompletedChecks.Describe(CompletedChecks.From(stepsSoFar, ManifestOf));
         var revision = previousPlan.Revision + 1;
-        AgentPlan? ParseReplan(string? text, out string? problem)
-        {
-            if (TryParsePlan(text, revision, planningTools, out problem) is not { } parsed)
-            {
-                return null;
-            }
-
-            problem = CompletedChecks.RepeatProblem(parsed, completedChecks, previousPlan);
-            return problem is null ? parsed : null;
-        }
-
-        string? MalformedReplan(ModelResponse response) =>
-            EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None
-                ? null
-                : ParseReplan(response.TextResponse, out var problem) is null ? problem : null;
-
         var completedPlanNotice = CompletedPlanNotice(previousPlan, stepsSoFar, triggeringStepIndex);
         ModelContextRequest BuildReplanRequest(bool aggressive)
         {
@@ -2989,13 +2971,13 @@ public sealed partial class AgentRunner(
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedReplan);
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
         tokens += UsageTokens(response);
         (response, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, MalformedReplan, ct);
+            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
 
-        if (ParseReplan(response.TextResponse, out var replanProblem) is { } plan)
+        if (TryParsePlan(response.TextResponse, revision, planningTools, out var replanProblem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -3022,13 +3004,13 @@ public sealed partial class AgentRunner(
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedReplan);
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
         tokens += UsageTokens(retryResponse);
         (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, MalformedReplan, ct);
+            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, ct);
 
-        if (ParseReplan(retryResponse.TextResponse, out _) is { } retryPlan)
+        if (TryParsePlan(retryResponse.TextResponse, revision, planningTools) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -3063,8 +3045,8 @@ public sealed partial class AgentRunner(
             ? null
             : $"Every step of plan revision {plan.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture)} was " +
               "complete when that call was proposed. It did not run because a completed plan offers no operational tool, not " +
-              "because of how it was named. Plan only a genuinely new check (a different tool, or different arguments from the " +
-              "completed checks), or return an empty \"steps\" array to answer from the evidence already collected.";
+              "because of how it was named. Plan only the check you still need (a new one, or a fresh sample of live state), or " +
+              "return an empty \"steps\" array to answer from the evidence already collected.";
     }
 
     private async Task<(ModelResponse Response, int Tokens)> ResolveReplanEvidenceReadsAsync(
@@ -3080,7 +3062,7 @@ public sealed partial class AgentRunner(
         ModelResponse initialResponse,
         long tokensBefore,
         int initialTokens,
-        Func<ModelResponse, string?> malformedReplan,
+        IReadOnlyList<ToolManifest> planningTools,
         CancellationToken ct)
     {
         var response = initialResponse;
@@ -3128,7 +3110,7 @@ public sealed partial class AgentRunner(
                     : "EvidenceRead/v1 rejected: Malformed."));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
-                delegation, calls, logicalCall, ct, malformedReplan);
+                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools));
             tokens += UsageTokens(response);
             if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
             {

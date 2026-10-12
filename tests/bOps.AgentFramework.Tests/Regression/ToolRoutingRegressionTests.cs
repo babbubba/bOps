@@ -56,7 +56,7 @@ public sealed partial class ToolRoutingRegressionTests
         Assert.NotEmpty(later);
         Assert.All(later, request => Assert.Equal("_bops_invalid_tool", AssistantCallName(request, rejected.ToolCall.Id)));
 
-        // No unjustified repetition: every check ran once; the deliberately wider crash window is a new check and ran once.
+        // Every check ran once; the deliberately wider crash window is a new check and ran once.
         Assert.Equal(AgentTaskStatus.Completed, run.State.Status);
         Assert.Equal(2, run.Tools["system.crashes"].Successes);
         Assert.All(SingleRunTools, tool => Assert.Equal(1, run.Tools[tool].Successes));
@@ -65,28 +65,23 @@ public sealed partial class ToolRoutingRegressionTests
         Assert.Equal(executed.Count, executed.Distinct(StringComparer.Ordinal).Count());
         Assert.Contains(executed, call => call.Contains("10080", StringComparison.Ordinal));
 
-        // The repeated plan was refused with the exact problem through the governed, audited corrective re-ask; one replan accepted.
+        // The runtime notice and the completed-checks list let the model plan only the wider window at once: one replan accepted.
         Assert.Equal(2, run.State.Plans.Count);
-        var replanCalls = run.State.Plans[1].ModelCalls!;
-        Assert.Equal([ModelCallOutcome.Failure, ModelCallOutcome.Success], replanCalls.Select(call => call.Outcome));
-        Assert.Contains("repeats completed task step 0", replanCalls[0].ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(ModelCallOutcome.Success, Assert.Single(run.State.Plans[1].ModelCalls!).Outcome);
         Assert.Equal(1, run.Audit.Events.OfType<ToolCallAuditEvent>().Count(e => e.Authorization == AuthorizationKind.UnknownTool));
     }
 
     [Fact]
-    public async Task B03_AModelThatKeepsRepeatingTheCompletedPlan_FailsExplicitly_WithoutRerunningAnyCheck()
+    public async Task B03_AModelThatKeepsReplayingTheCompletedPlan_IsStoppedByTheReplanBudget()
     {
         var run = await B03Async(correctsWhenTold: false);
 
-        Assert.Equal(AgentTaskStatus.Failed, run.State.Status);
-        Assert.Equal(TaskTerminalKind.ModelFailure, run.State.TerminalReason!.Kind);
-        Assert.Equal(ModelFailureKind.MalformedResponse, run.State.TerminalReason.FailureKind);
-        Assert.Single(run.State.Plans);
-        Assert.All(run.Tools.Values, tool => Assert.Equal(1, tool.Successes));
-        Assert.Equal(0, run.State.Accounting!.LifetimeReplans);
-        var failedReplan = run.State.Steps[^1].ModelCalls!;
-        Assert.Equal(2, failedReplan.Count);
-        Assert.All(failedReplan, call => Assert.Contains("repeats completed task step 0", call.ErrorMessage, StringComparison.Ordinal));
+        // Replaying is not refused (live state may have changed), but each cycle spends a replan: the existing budget ends it.
+        Assert.Equal(AgentTaskStatus.ReplanLimitReached, run.State.Status);
+        Assert.Equal(TaskTerminalKind.ReplanLimit, run.State.TerminalReason!.Kind);
+        var budget = new AgentRunnerOptions().MaxReplans;
+        Assert.Equal(budget, run.State.Accounting!.LifetimeReplans);
+        Assert.All(run.Tools.Values, tool => Assert.True(tool.Successes <= budget + 1));
     }
 
     private static string? AssistantCallName(string requestBody, string callId)
@@ -208,7 +203,7 @@ public sealed partial class ToolRoutingRegressionTests
 
             if (system.Contains("Revise it.", StringComparison.Ordinal))
             {
-                return correctsWhenTold && lastUser.Contains("repeats completed task step", StringComparison.Ordinal)
+                return correctsWhenTold && lastUser.Contains("Every step of plan revision", StringComparison.Ordinal)
                     ? Text(Plan([("system.crashes", CrashesWeek)]))
                     : Text(Plan(InitialPlan));
             }

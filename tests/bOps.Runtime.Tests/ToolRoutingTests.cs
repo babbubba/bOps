@@ -205,7 +205,7 @@ public sealed class ToolRoutingTests
     // ---- C: a replan sees the completed checks and may not repeat one with identical arguments ----
 
     [Fact]
-    public async Task C1_AfterACompletedPlan_OneFreshSampleOfACompletedCheck_IsAccepted_AndRuns()
+    public async Task C1_AfterACompletedPlan_ResamplingACompletedCheckWithIdenticalArguments_IsAccepted_AndRuns()
     {
         var crashes = CrashesTool();
         var model = new FakeChatModel(
@@ -230,7 +230,7 @@ public sealed class ToolRoutingTests
         Assert.Contains("- task step 0 system.crashes {\"mode\":\"raw\",\"sinceMinutes\":60}", replan.SystemPrompt, StringComparison.Ordinal);
         Assert.Contains("Every step of plan revision 0 was complete", LastUser(replan), StringComparison.Ordinal);
 
-        // The resample was accepted at once: no malformed-reply correction.
+        // Live state may have changed, so the identical read is accepted at once: no malformed-reply correction.
         Assert.Equal(ModelCallOutcome.Success, Assert.Single(result.Plans[1].ModelCalls!).Outcome);
     }
 
@@ -259,33 +259,29 @@ public sealed class ToolRoutingTests
     }
 
     [Fact]
-    public async Task C3_AReplayAfterTheResample_IsRefusedWithTheExactProblem_AndInsistingFailsExplicitly()
+    public async Task C3_ACycleWithoutProgress_IsBoundedByTheExistingReplanBudget_NotByAnExecutionCount()
     {
         var crashes = CrashesTool();
-        var audit = new RecordingAuditSink();
         var unoffered = "'system_crashes' is not a tool that was offered in this request.";
-        var model = new FakeChatModel(
-            Plan((Crashes, Window(60))),
-            Call(Crashes, Window(60)),
-            Call("system_crashes", Window(10_080), unoffered),
-            Plan((Crashes, Window(60))),
-            Call(Crashes, Window(60)),
-            Call("system_crashes", Window(10_080), unoffered),
-            Plan((Crashes, Window(60))),
-            Plan((Crashes, Window(60))));
+        var script = new List<ModelResponse> { Plan((Crashes, Window(60))) };
+        for (var cycle = 0; cycle < 4; cycle++)
+        {
+            script.Add(Call(Crashes, Window(60)));
+            script.Add(Call("system_crashes", Window(10_080), unoffered));
+            script.Add(Plan((Crashes, Window(60))));
+        }
 
-        var result = await Runner(model, new InMemoryTaskStore(), audit, crashes).RunAsync("diagnose", Actor);
+        var model = new FakeChatModel([.. script]);
 
-        Assert.Equal(AgentTaskStatus.Failed, result.Status);
-        Assert.Equal((TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse),
-            (result.TerminalReason!.Kind, result.TerminalReason.FailureKind));
-        Assert.Equal(2, crashes.ExecutionCount);
-        Assert.Equal(2, result.Plans.Count);
-        Assert.Equal(8, model.Requests.Count);
-        Assert.Contains("The runtime rejected that plan: Plan step 0 repeats completed task step 2 (system.crashes",
-            LastUser(model.Requests[7]), StringComparison.Ordinal);
-        Assert.Contains("which already ran 2 time(s)", LastUser(model.Requests[7]), StringComparison.Ordinal);
-        Assert.Contains(audit.Events, e => e is ModelCallAuditEvent { FailureKind: ModelFailureKind.MalformedResponse });
+        var result = await Runner(model, new InMemoryTaskStore(), null, crashes).RunAsync("diagnose", Actor);
+
+        // Identical resamples are never refused; the loop ends where every replan loop ends, at the configured budget.
+        var budget = new AgentRunnerOptions().MaxReplans;
+        Assert.Equal(AgentTaskStatus.ReplanLimitReached, result.Status);
+        Assert.Equal(TaskTerminalKind.ReplanLimit, result.TerminalReason!.Kind);
+        Assert.Equal(budget, result.Accounting!.LifetimeReplans);
+        Assert.Equal(budget + 1, crashes.ExecutionCount);
+        Assert.All(result.Plans.Skip(1), plan => Assert.Equal(ModelCallOutcome.Success, Assert.Single(plan.ModelCalls!).Outcome));
     }
 
     [Fact]
@@ -315,45 +311,6 @@ public sealed class ToolRoutingTests
         ], ManifestOf);
 
         Assert.Equal([0, 1], completed.Select(check => check.StepIndex));
-    }
-
-    [Fact]
-    public void C5_TheRepeatRule_FlagsOnlyReplaysOfProvablyIdenticalChecks()
-    {
-        var read = Manifest(Crashes, RiskLevel.Read, sensitive: false);
-        var noArguments = Manifest(Memory, RiskLevel.Read, sensitive: false);
-        IReadOnlyList<CompletedCheck> completed =
-        [
-            new(0, read, Window(60)),
-            new(1, noArguments, []),
-            new(2, noArguments, []),
-            new(3, read, Window(10_080)),
-        ];
-        AgentPlan Candidate(params PlannedStep[] steps) => new(1, "r", steps) { SemanticContractVersion = 1 };
-        PlannedStep Planned(int index, string tool, JsonObject? expected) =>
-            new(index, "s", tool) { ExpectedArguments = expected is null ? null : ToolArguments.FromJson(expected) };
-
-        // One completed run may be resampled; a check that already ran twice with identical arguments is a replay.
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Crashes, Window(60))), completed));
-        Assert.Contains("Plan step 1 repeats completed task step 2 (system.memory",
-            CompletedChecks.RepeatProblem(Candidate(Planned(0, "other.tool", null), Planned(1, Memory, null)), completed),
-            StringComparison.Ordinal);
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Crashes, Window(43_200))), completed));
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Crashes, new JsonObject { ["mode"] = "raw" })), completed));
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Crashes, null)), completed));
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(), completed));
-
-        // Replaying the whole previous plan adds nothing; resampling a subset of it, or adding a new check to it, is diagnosis.
-        var previous = Candidate(Planned(0, Crashes, Window(43_200)), Planned(1, Memory, null));
-        IReadOnlyList<CompletedCheck> once = [new(0, read, Window(43_200)), new(1, noArguments, [])];
-        Assert.Contains("repeats completed task step", CompletedChecks.RepeatProblem(
-            Candidate(Planned(0, Memory, null), Planned(1, Crashes, Window(43_200))), once, previous), StringComparison.Ordinal);
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Memory, null)), once, previous));
-        Assert.Null(CompletedChecks.RepeatProblem(
-            Candidate(Planned(0, Memory, null), Planned(1, Crashes, Window(60))), once, previous));
-        Assert.Null(CompletedChecks.RepeatProblem(
-            Candidate(Planned(0, Memory, null) with { Activation = new EvidenceFactExists(0, "t", "k") }), completed));
-        Assert.Null(CompletedChecks.RepeatProblem(Candidate(Planned(0, Memory, null)), []));
     }
 
     [Fact]
