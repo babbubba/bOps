@@ -3,6 +3,7 @@
 Status: **Proposed — 2026-10-12** (documentation-only; no code, dependency or configuration change)
 Date: 2026-10-12
 Refines: [ADR-0052](0052-microsoft-agent-framework-bops-boundary.md) (does not supersede it)
+Refined by: [ADR-0054](0054-maf-bplus-convergence-decision.md) (ARCH-03, Proposed)
 Preserves: ADR-0014, ADR-0038, ADR-0040, ADR-0045, ADR-0046, ADR-0047, ADR-0050, ADR-0051
 Plan: `agentic/_plans/2026-10-11-maf-knowledge-convergence.md` (step 7). Next: `agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md`.
 Runtime reference: `998e9523e2ffda0e1b6ce663d152dd5416ecbee7` (branch `fix/af-toolroute-01-tool-routing`).
