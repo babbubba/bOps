@@ -12,7 +12,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $resolvedTarget = (Resolve-Path -LiteralPath $TargetRepoRoot).Path
-$resolvedConfigSource = (Resolve-Path -LiteralPath $ConfigSourceRoot).Path
+$resolvedConfigSource = if ($ConfigSnapshotPath) { [IO.Path]::GetFullPath($ConfigSourceRoot) } else { (Resolve-Path -LiteralPath $ConfigSourceRoot).Path }
 if ($ConfigSnapshotPath) { $resolvedSnapshot = [IO.Path]::GetFullPath($ConfigSnapshotPath) }
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }

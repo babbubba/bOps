@@ -179,6 +179,24 @@ def api_command(project: pathlib.Path):
     return ["dotnet", "run", "--project", str(project), "--no-launch-profile"]
 
 
+def restore_api_helpers(root: pathlib.Path, env: dict):
+    # These projects are built by API AfterTargets, not ProjectReferences, so
+    # dotnet run's implicit restore does not visit them on a fresh checkout.
+    restored = []
+    for name in ("bOps.Packages.Firewall.Windows.Helper", "bOps.Packages.System.Windows.Updates.Helper"):
+        project = root / "src" / "packages" / name / f"{name}.csproj"
+        if not project.is_file():
+            raise RuntimeError(f"API helper project not found: {project}")
+        command = ["dotnet", "restore", str(project), "--locked-mode"]
+        # Restore output can contain feed credentials; never archive or print it.
+        result = subprocess.run(command, cwd=str(root), env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.STDOUT, timeout=180)
+        if result.returncode != 0:
+            raise RuntimeError(f"API helper restore failed ({result.returncode}): {name}; no API was started.")
+        restored.append({"project": str(project), "command": command, "exitCode": result.returncode})
+    return restored
+
+
 def verify_windows_identity(expected_sid: str | None):
     if os.name != "nt":
         return {"verified": False, "reason": "Windows identity check is only available on Windows."}
@@ -251,7 +269,7 @@ def config_snapshot_manifest(snapshot: pathlib.Path):
         raise RuntimeError("Configuration snapshot manifest has an unexpected file roster.")
     for name, entry in files.items():
         path = snapshot / name
-        if entry.get("present") and (not path.is_file() or entry.get("sha256") != sha(path.read_bytes())):
+        if bool(entry.get("present")) != path.is_file() or (path.is_file() and entry.get("sha256") != sha(path.read_bytes())):
             raise RuntimeError(f"Configuration snapshot is incomplete or changed: {name}")
     settings = json.loads((snapshot / "settings.json").read_text(encoding="utf-8-sig"))
     selected = selected_ui_configuration(settings)
@@ -305,11 +323,9 @@ def prepare_config_snapshot(source_root: pathlib.Path, destination: pathlib.Path
             raise RuntimeError(f"Requested configuration snapshot does not exist: {snapshot}")
         secure_private_directory(snapshot)
         manifest = config_snapshot_manifest(snapshot)
-        sources = configuration_source_files(source_root)
-        for name, entry in manifest["files"].items():
-            source = sources[name]
-            if bool(entry.get("present")) != source.is_file() or (source.is_file() and entry.get("sha256") != sha(source.read_bytes())):
-                raise RuntimeError(f"Configuration snapshot is stale relative to the current UI configuration: {name}")
+        # Explicit snapshots are independent of the current UI and source files.
+        # Integrity is checked above; loaded selection and credentials below run
+        # through the same fail-closed API preflight as newly captured snapshots.
         return snapshot, manifest, True
 
     sources = configuration_source_files(source_root)
@@ -775,7 +791,7 @@ def run(args):
                "gitBranch": branch, "gitDirty": dirty, "gitDirtyPaths": [line[3:] for line in dirty_status.splitlines()],
                "originalPolicyPath": str(original_policy_path),
                "originalPolicySha256": sha(original_policy_path.read_bytes()) if original_policy_path.is_file() else None,
-               "effectivePolicyPath": str(readonly_policy_path), "effectivePolicySha256": sha(READ_ONLY_POLICY.encode("utf-8")),
+               "effectivePolicyPath": str(readonly_policy_path), "effectivePolicySha256": sha(readonly_policy_path.read_bytes()),
                "apiBaseUrl": api, "apiProject": str(project), "targetProjectConfigurationFingerprintsNotLoaded": target_config_files,
                "hostMode": "API-only",
                "apiWorkingDirectory": str(root), "launchProfileUsed": False,
@@ -809,7 +825,7 @@ def run(args):
                "timeoutsSeconds": {"startup": args.startup_timeout, "task": args.task_timeout, "http": 30}}
     write_json(run_root / "startup.json", startup)
     write_json(run_root / "scenarios.json", SCENARIOS)
-    archive_path = output / f"bops-live-benchmark-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{anchor[:12]}.zip"
+    archive_path = output / f"bops-live-benchmark-{run_id}-{commit[:12]}.zip"
     (run_root / "README-SENSITIVE").write_text(README, encoding="utf-8")
     roster, terminal = [], {}
     def write_roster():
@@ -822,6 +838,8 @@ def run(args):
     status_doc = {"runId": run_id, "state": "starting", "tasks": []}
     startup_failure = False
     try:
+        startup["helperRestore"] = restore_api_helpers(root, env)
+        write_json(run_root / "startup.json", startup)
         process, startup_log, startup_output_thread = start_api_process(api_command(project), root, env, startup_log_path)
         deadline = time.monotonic() + args.startup_timeout
         while time.monotonic() < deadline:

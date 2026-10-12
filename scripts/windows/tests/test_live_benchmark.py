@@ -233,8 +233,7 @@ class CaptureTests(unittest.TestCase):
                     (api / "vault.dat").write_bytes(b"decoy-changed")
                     self.assertTrue(bench.prepare_config_snapshot(source, root / "unused", snap)[2])
                     vault.write_bytes(b"changed-ciphertext")
-                    with self.assertRaisesRegex(RuntimeError, "stale relative.*vault.dat"):
-                        bench.prepare_config_snapshot(source, root / "unused", snap)
+                    self.assertTrue(bench.prepare_config_snapshot(source, root / "unused", snap)[2])
 
     def test_development_path_override_preserves_other_section_fields(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -261,13 +260,17 @@ class CaptureTests(unittest.TestCase):
                 bench.prepare_config_snapshot(source, root / "snap")
 
     def test_snapshot_rejects_tampering_with_files_metadata_and_fingerprint(self):
-        for change in ("file", "metadata", "fingerprint"):
+        for change in ("file", "vault", "added-optional-file", "metadata", "fingerprint"):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
                 root = pathlib.Path(temp)
                 source, _ = self._write_ui_config(root)
                 snap, manifest, _ = bench.prepare_config_snapshot(source, root / "snap")
                 if change == "file":
                     (snap / "settings.json").write_text("{}", encoding="utf-8")
+                elif change == "vault":
+                    (snap / "vault.dat").write_bytes(b"changed-ciphertext")
+                elif change == "added-optional-file":
+                    (snap / "appsettings.Development.json").write_text("{}", encoding="utf-8")
                 else:
                     if change == "metadata":
                         manifest["selectedConfiguration"]["modelId"] = "wrong-model"
@@ -277,15 +280,20 @@ class CaptureTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     bench.prepare_config_snapshot(source, root / "unused", snap)
 
-    def test_snapshot_rejects_changed_ui_provider_and_stale_source(self):
+    def test_snapshot_reused_after_ui_change_without_reading_source(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             source, api = self._write_ui_config(root)
-            snap, _, _ = bench.prepare_config_snapshot(source, root / "snapshot")
+            snap, manifest, _ = bench.prepare_config_snapshot(source, root / "snapshot")
             (api / "settings.json").write_text(json.dumps({"activeProviderId": "openrouter", "providers": {
                 "openrouter": {"model": "new-model", "baseUrl": "https://example.invalid/v1"}}}), encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "stale relative"):
-                bench.prepare_config_snapshot(source, root / "unused", snap)
+            (api / "vault.dat").unlink()
+            with patch.object(bench, "configuration_source_files", side_effect=AssertionError("explicit snapshot must not read UI")):
+                reused, loaded, explicit = bench.prepare_config_snapshot(root / "missing-source", root / "unused", snap)
+            self.assertEqual(snap, reused)
+            self.assertTrue(explicit)
+            self.assertEqual(manifest["configurationFingerprint"], loaded["configurationFingerprint"])
+            self.assertEqual("fixture-model", loaded["selectedConfiguration"]["modelId"])
 
     def test_snapshot_requires_selected_ui_configuration(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -519,7 +527,9 @@ class CaptureTests(unittest.TestCase):
             target = root / "target worktree"
             target.mkdir()
             source = root / "configuration source"
-            source.mkdir()
+            # Explicit snapshots must survive removal of the original UI source.
+            snapshot = root / "private snapshot"
+            snapshot.mkdir()
             payload_file = root / "uac-payload.txt"
             command = (
                 "function Start-Process { param($FilePath,$Verb,$ArgumentList,[switch]$Wait,[switch]$PassThru); "
@@ -527,7 +537,7 @@ class CaptureTests(unittest.TestCase):
                 f"[IO.File]::WriteAllText('{payload_file}', $payload); "
                 "[pscustomobject]@{ExitCode=0} }; "
                 f"$env:BOPS_VAULT_MASTER_KEY='fixture-master-secret'; "
-                f"& '{launcher}' -TargetRepoRoot '{target}' -ConfigSourceRoot '{source}' -RunsPerScenario 1 "
+                f"& '{launcher}' -TargetRepoRoot '{target}' -ConfigSourceRoot '{source}' -ConfigSnapshotPath '{snapshot}' -RunsPerScenario 1 "
                 f"-ExpectedTargetCommit {bench.ANCHORS[-1]} -PreflightOnly"
             )
             result = subprocess.run([powershell, "-NoProfile", "-Command", command], cwd=root,
@@ -540,6 +550,7 @@ class CaptureTests(unittest.TestCase):
             self.assertIn("'-ExpectedUserSid', $expectedSid", payload)
             self.assertIn("-PreflightOnly", payload)
             self.assertIn("@('-ExpectedTargetCommit', $expectedCommit)", payload)
+            self.assertIn("@('-ConfigSnapshotPath', $snapshotPath)", payload)
             # Execute the handoff payload with the launcher replaced by an argv
             # recorder, proving the decoded value survives the second invocation.
             recorder = root / "record.ps1"
@@ -553,6 +564,7 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(0, replay_result.returncode, replay_result.stdout + replay_result.stderr)
             argv = json.loads(capture.read_text(encoding="utf-8-sig"))
             self.assertEqual(bench.ANCHORS[-1], argv[argv.index("-ExpectedTargetCommit") + 1])
+            self.assertTrue(snapshot.samefile(argv[argv.index("-ConfigSnapshotPath") + 1]))
             self.assertEqual(str(target), argv[argv.index("-TargetRepoRoot") + 1])
             self.assertIn("-PreflightOnly", argv)
             self.assertIn("$targetPath = [Text.Encoding]::UTF8.GetString", payload)
@@ -773,7 +785,33 @@ class CaptureTests(unittest.TestCase):
                 with self.subTest(expected=expected, reuse=reuse):
                     self._check_offline_preflight(expected, reuse)
 
-    def _check_offline_preflight(self, expected, reuse):
+    def test_reused_snapshot_preflight_rejects_wrong_model_endpoint_and_missing_credentials(self):
+        for failure in ("model", "endpoint", "credentials"):
+            with self.subTest(failure=failure):
+                self._check_offline_preflight("a" * 40, True, failure)
+
+    def test_helper_bootstrap_restores_both_projects_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            names = ("bOps.Packages.Firewall.Windows.Helper", "bOps.Packages.System.Windows.Updates.Helper")
+            for name in names:
+                project = root / "src" / "packages" / name / f"{name}.csproj"
+                project.parent.mkdir(parents=True)
+                project.write_text("fixture")
+            env = {"fixture": "environment"}
+            with patch.object(bench.subprocess, "run", return_value=unittest.mock.Mock(returncode=0)) as restore:
+                results = bench.restore_api_helpers(root, env)
+            self.assertEqual(2, len(results))
+            for call, name in zip(restore.call_args_list, names):
+                self.assertEqual(["dotnet", "restore", str(root / "src" / "packages" / name / f"{name}.csproj"), "--locked-mode"], call.args[0])
+                self.assertIs(env, call.kwargs["env"])
+                self.assertEqual(subprocess.DEVNULL, call.kwargs["stdout"])
+            with patch.object(bench.subprocess, "run", return_value=unittest.mock.Mock(returncode=1)) as restore:
+                with self.assertRaisesRegex(RuntimeError, "restore failed.*no API was started"):
+                    bench.restore_api_helpers(root, env)
+                self.assertEqual(1, restore.call_count)
+
+    def _check_offline_preflight(self, expected, reuse, failure=None):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             source_api = root / "source" / "src" / "core" / "bOps.Api"
@@ -794,33 +832,46 @@ class CaptureTests(unittest.TestCase):
             ] + (["--expected-target-commit", expected] if expected else []))
             if reuse:
                 args.config_snapshot_path = str(bench.prepare_config_snapshot(source_api.parents[2], root / "snapshot")[0])
+                (source_api / "settings.json").write_text("{}", encoding="utf-8")
+                (source_api / "vault.dat").unlink()
             process = unittest.mock.Mock()
             process.poll.side_effect = [None, 0]
             process.wait.return_value = 0
             providers = {"active": {"provider": "fixture", "model": "fixture-model", "baseUrl": "https://example.test", "hasApiKey": True}}
+            if failure == "credentials":
+                providers["active"]["hasApiKey"] = False
             def fake_http(url, key, **kwargs):
                 if url.endswith("/api/providers"):
                     return 200, b"{}", providers
                 if url.endswith("/api/settings/"):
-                    return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "fixture-model",
-                                         "effectiveBaseUrl": "https://example.test", "effectiveFallbacks": [],
+                    return 200, b"{}", {"activeProviderId": "fixture", "effectiveModel": "wrong-model" if failure == "model" else "fixture-model",
+                                         "effectiveBaseUrl": "https://wrong.test" if failure == "endpoint" else "https://example.test", "effectiveFallbacks": [],
                                          "effectiveCredentialAvailable": True}
                 raise AssertionError(url)
-            provenance = {"candidateCommit": bench.ANCHORS[-1], "baselineCommit": bench.ANCHORS[-1],
+            runtime_commit = expected or "b" * 40
+            provenance = {"candidateCommit": runtime_commit, "baselineCommit": bench.ANCHORS[-1],
                           "validationMode": "expected-target-commit", "changedFiles": [],
                           "runtimeDiffSha256": bench.sha(b"")}
-            with patch.object(bench, "validate_runtime_target", return_value=(bench.ANCHORS[-1], bench.ANCHORS[-1], "")) as validate, \
+            with patch.object(bench, "validate_runtime_target", return_value=(bench.ANCHORS[-1], runtime_commit, "")) as validate, \
                  patch.object(bench, "runtime_provenance", return_value=provenance), \
                  patch.object(bench, "verify_windows_identity", return_value={"verified": True}), \
                  patch.object(bench, "effective_policy_path", return_value=root / "policy.yaml"), \
                  patch.object(bench, "git", side_effect=["fixture", ""]), \
+                 patch.object(bench, "restore_api_helpers", return_value=[]) as restore, \
                  patch.object(bench, "start_api_process", return_value=(process, None, None)), \
                  patch.object(bench, "http_json", side_effect=fake_http), \
                  patch.object(bench, "submit_task", side_effect=AssertionError("preflight must not create tasks")), \
                  patch.dict(os.environ, {"BOPS_API_KEY": "synthetic-api-key", "BOPS_VAULT_MASTER_KEY": "synthetic-master-key"}):
-                bench.run(args)
+                if failure:
+                    with self.assertRaisesRegex(RuntimeError, "no tasks were started"):
+                        bench.run(args)
+                else:
+                    bench.run(args)
             validate.assert_called_once_with(target.resolve(), expected)
-            with zipfile.ZipFile(next(output.glob("*.zip"))) as zf:
+            restore.assert_called_once()
+            archive = next(output.glob("*.zip"))
+            self.assertTrue(archive.name.endswith(f"-{runtime_commit[:12]}.zip"))
+            with zipfile.ZipFile(archive) as zf:
                 manifest = json.loads(zf.read("manifest.json"))
                 startup = json.loads(zf.read("startup.json"))
                 self.assertEqual("fixture", manifest["effectiveConfiguration"]["active"]["provider"])
@@ -832,6 +883,13 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(reuse, startup["configurationProvenance"]["snapshotReusedExplicitly"])
                 self.assertEqual(provenance, manifest["runtimeProvenance"])
                 self.assertEqual(provenance, startup["runtimeProvenance"])
+                self.assertEqual(runtime_commit, startup["gitCommit"])
+                self.assertEqual(startup["effectivePolicySha256"], bench.sha(zf.read("read-only-policy.yaml")))
+                policy_entry = next(entry for entry in manifest["files"] if entry["path"] == "read-only-policy.yaml")
+                self.assertEqual(startup["effectivePolicySha256"], policy_entry["sha256"])
+                self.assertEqual("fixture-model", manifest["configurationProvenance"]["selectedConfiguration"]["modelId"])
+                self.assertEqual(bench.config_snapshot_manifest(pathlib.Path(startup["configurationProvenance"]["snapshotRoot"]))["configurationFingerprint"],
+                                 manifest["configurationProvenance"]["configurationFingerprint"])
             self.assertTrue(pathlib.Path(startup["configurationProvenance"]["snapshotRoot"]).is_dir())
 
     def test_retry_keeps_idempotency_key_and_payload(self):
