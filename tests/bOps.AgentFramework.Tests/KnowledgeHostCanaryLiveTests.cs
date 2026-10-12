@@ -64,19 +64,8 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
             Assert.Equal(1, rig.Read.ExecutionCount);
             Assert.Equal(0, rig.Other.ExecutionCount);
             Assert.True(state.Steps[^1].Observation?.Contains(Checklist, StringComparison.Ordinal) == true, "Final checklist missing.");
-            Assert.True(canary.AuditEvents.OfType<KnowledgeReadAuditEvent>().Any(read =>
-                read.ResultCode == KnowledgeReadResultCode.Success && read.Operation == "read_resource" &&
-                read.Skill == "nginx-triage" && read.Resource == "references/checklist.md"), "Successful Knowledge read missing.");
             Assert.True(canary.AuditEvents.OfType<ToolCallAuditEvent>().All(call => call.Tool == "test.read"), "Unexpected tool audit.");
-
-            var firstServedKnowledge = model.Requests.FindIndex(request => request.History.Any(turn =>
-                turn.Provenance?.Origin == ContextOrigin.Skill && turn.Content?.Contains(Checklist, StringComparison.Ordinal) == true));
-            Assert.True(firstServedKnowledge >= 0, "The model never received the checklist as attributed Knowledge data.");
-            Assert.All(model.Requests.Take(firstServedKnowledge), request =>
-            {
-                Assert.False(request.SystemPrompt.Contains(Checklist, StringComparison.Ordinal), "Checklist leaked into system prompt.");
-                Assert.False(request.History.Any(turn => turn.Content?.Contains(Checklist, StringComparison.Ordinal) == true), "Checklist served without attribution.");
-            });
+            AssertKnowledgeEvidence(canary, state, model);
         }
         catch (Exception ex)
         {
@@ -95,6 +84,80 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
                 canary?.Dispose();
             }
         }
+    }
+
+    private static void AssertKnowledgeEvidence(KnowledgeHostCanary canary, TaskState state, CappedRecordingChatModel model)
+    {
+        var binding = Assert.IsType<TaskKnowledgeBinding>(state.KnowledgeBinding);
+        Assert.Equal("tenant-a", binding.TenantId);
+        Assert.Equal(KnowledgeRunnerWorld.ActorA, binding.AuthorizedBy);
+        Assert.Equal("acme.nginx-runbooks", binding.PackId);
+        Assert.Equal("1.0.0", binding.Version);
+        Assert.Equal("acme", binding.Publisher);
+        Assert.Equal("acme-2026", binding.KeyId);
+        var contentHash = KnowledgePackFormat.Sha256Hex(System.Text.Encoding.UTF8.GetBytes(Checklist));
+        Assert.Equal(contentHash, binding.ResourceHashes["nginx-triage/references/checklist.md"]);
+        Assert.True(canary.SourceOpens > 0);
+        var admission = Assert.Single(canary.AuditEvents.OfType<KnowledgePackAdmissionAuditEvent>(), evt =>
+            evt.Code == KnowledgeAdmissionCode.Admitted && evt.ContentHash == binding.ManifestHash);
+        Assert.False(string.IsNullOrWhiteSpace(admission.ProviderId));
+        Assert.Contains(canary.AuditEvents.OfType<KnowledgeReadAuditEvent>(), read =>
+            read.ResultCode == KnowledgeReadResultCode.Success && read.Operation == "read_resource" &&
+            read.Skill == "nginx-triage" && read.Resource == "references/checklist.md" &&
+            read.PackId == binding.PackId && read.PackVersion == binding.Version &&
+            read.PackHash == binding.ManifestHash && read.TenantId == binding.TenantId &&
+            read.ProviderId == admission.ProviderId && read.ContentHash == contentHash && read.ReturnedLength >= Checklist.Length);
+
+        var firstServedKnowledge = model.Requests.FindIndex(request => request.History.Any(turn =>
+            turn.Content?.Contains(Checklist, StringComparison.Ordinal) == true &&
+            turn.Provenance is { Origin: ContextOrigin.Skill, Derived: false } provenance &&
+            provenance.Operation == "read_resource" && provenance.Item == "nginx-triage/references/checklist.md" &&
+            provenance.PackId == binding.PackId && provenance.PackVersion == binding.Version &&
+            provenance.PackHash == binding.ManifestHash && provenance.TenantId == binding.TenantId &&
+            provenance.AdmittedProviderId == admission.ProviderId && provenance.ContentHash == contentHash));
+        Assert.True(firstServedKnowledge > 0, "The model never received the checklist as attributed Knowledge data.");
+        // Check each command independently and all request fields, including tool schemas and call arguments.
+        foreach (var command in new[] { "nginx -t", "ss -ltnp :80" })
+        {
+            Assert.DoesNotContain(command, Goal, StringComparison.Ordinal);
+            Assert.All(model.Requests, request => Assert.DoesNotContain(command, request.SystemPrompt, StringComparison.Ordinal));
+            Assert.All(model.Requests.Take(firstServedKnowledge), request =>
+                Assert.DoesNotContain(command, JsonSerializer.Serialize(request), StringComparison.Ordinal));
+        }
+
+        var final = model.Responses[^1];
+        Assert.True(final.IsFinal);
+        Assert.Empty(final.ToolCalls);
+        Assert.Equal("stop", final.Details?.FinishReason);
+        Assert.Contains(Checklist, final.TextResponse, StringComparison.Ordinal);
+        Assert.Equal(final.TextResponse, state.Steps[^1].Observation);
+    }
+
+    [Fact]
+    public async Task OfflineKnowledgeAssertions_RejectIndividualCommandLeaksAndMissingFinalChecklist()
+    {
+        var diagnostics = new KnowledgeCanaryDiagnostics();
+        using var canary = KnowledgeHostCanary.Create(KnowledgeCanaryActivation.Authorized(KnowledgeRunnerWorld.TenantA));
+        var final = Script.Final(Checklist) with { Details = new ModelCallDetails("fake-model", "stop", null, null) };
+        var model = new CappedRecordingChatModel(new ScriptedRunnerModel([
+            Script.Plan("test.read"), Script.Knowledge("k1", "read_resource", "nginx-triage", "references/checklist.md"),
+            Script.Tool("t1", "test.read"), final]), 5, diagnostics);
+        var rig = canary.Compose(model, diagnostics);
+        var state = await rig.Runner.RunAsync(Goal, KnowledgeRunnerWorld.ActorA);
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        AssertKnowledgeEvidence(canary, state, model);
+
+        var original = model.Requests[0];
+        foreach (var command in new[] { "nginx -t", "ss -ltnp :80" })
+        {
+            model.Requests[0] = original with { SystemPrompt = original.SystemPrompt + command };
+            Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertKnowledgeEvidence(canary, state, model));
+            model.Requests[0] = original with { History = [.. original.History, ChatTurn.FromUser(command)] };
+            Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertKnowledgeEvidence(canary, state, model));
+        }
+        model.Requests[0] = original;
+        model.Responses[^1] = final with { TextResponse = "done" };
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertKnowledgeEvidence(canary, state, model));
     }
 
     [Fact]
@@ -221,6 +284,8 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
 
         public List<ModelRequest> Requests { get; } = [];
 
+        public List<ModelResponse> Responses { get; } = [];
+
         public async Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
         {
             if (Requests.Count >= maximumCalls)
@@ -233,6 +298,7 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
             try
             {
                 var response = await inner.CompleteAsync(request, ct);
+                Responses.Add(response);
                 diagnostics.RecordResponse(response);
                 return response;
             }
