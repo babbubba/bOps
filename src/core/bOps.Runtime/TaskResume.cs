@@ -155,6 +155,9 @@ public static class TaskResumePolicy
     /// <summary>The runtime-authored history step a resume appends for a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
     internal const string MutationReconciledStepDescription = "Mutation reconciled";
 
+    /// <summary>The synthetic failure step written when a task's pinned knowledge cannot be admitted again (KNOW-01B, ADR-0056).</summary>
+    internal const string KnowledgeUnavailableStepDescription = "Knowledge unavailable";
+
     /// <summary>
     /// Decides whether an ordinary resume of <paramref name="task"/> would be accepted now, under <paramref name="options"/>, by the
     /// ADR-0040 rules alone. It does not see the task's mutation journal; the runtime, the API and the CLI decide with
@@ -334,7 +337,8 @@ public static class TaskResumePolicy
         step.ToolCall is null
         && step.Description is ModelFailureStepDescription or RuntimeFailureStepDescription or NotStartedStepDescription
             or TokenBudgetStepDescription or EvidenceReadLimitStepDescription or AttemptDurationStepDescription
-            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription or EarlyFinalRecovery.StepDescription;
+            or ExecutionInterruptedStepDescription or MutationReconciledStepDescription or KnowledgeUnavailableStepDescription
+            or EarlyFinalRecovery.StepDescription;
 
     /// <summary>Whether <paramref name="step"/> is the runtime-authored history of a mutation reconciled as already applied (ADR-0051 §9.5).</summary>
     internal static bool IsMutationReconciledStep(PlanStep step) =>

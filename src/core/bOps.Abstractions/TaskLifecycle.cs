@@ -71,6 +71,13 @@ public enum TaskTerminalKind
 
     /// <summary>An administrator recovered an orphaned <see cref="AgentTaskStatus.Running"/> execution attempt (ADR-0051 §8.3); nothing was executed.</summary>
     ExecutionInterrupted = 15,
+
+    /// <summary>
+    /// The knowledge the task is bound to could not be admitted again under the authority that applies now (ADR-0056): the pack or its
+    /// publisher or key was revoked, the grant was withdrawn, the tenant differs, the content no longer matches its pin, or the source
+    /// or snapshot is unavailable. Nothing ran; the cause code is on the failure step and in the audit trail.
+    /// </summary>
+    KnowledgeUnavailable = 16,
 }
 
 /// <summary>Why the latest execution attempt ended. Carries no free text: the operator-facing failure text stays on the synthetic failure step (ADR-0039).</summary>

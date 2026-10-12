@@ -74,5 +74,5 @@ is believed, and where isolation is enforced first.
   to the verifier; KNOW-01B supplies it.
 - The `tenant` concept is a knowledge-isolation scope only. It is not the multi-tenant model of V1.4 and adds no tenant to
   `TaskState`, policy or the runtime.
-- Revocation takes effect for new admissions and resumes, not for a task already holding a verified snapshot.
+- Revocation takes effect for new admissions and resumes, not for a task already holding a verified snapshot. *(Superseded by [ADR-0056](0056-governed-knowledge-read-and-durable-resume.md) §2.4: every read now asks the current authority again.)*
 - Not decided here: publisher tooling to sign packs, pack distribution, snapshot garbage collection, Experience write path and search.

@@ -58,7 +58,8 @@ public sealed partial class AgentRunner(
     PinnedProviderConfiguration? pinnedProviderConfiguration = null,
     Func<Guid, PinnedProviderConfiguration, CancellationToken, Task>? persistPinnedProviderConfiguration = null,
     ISystemMessageStore? systemMessages = null,
-    IModelInvocationBroker? invocationBroker = null)
+    IModelInvocationBroker? invocationBroker = null,
+    IKnowledgeTaskHost? knowledgeHost = null)
 {
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
@@ -359,10 +360,110 @@ public sealed partial class AgentRunner(
         taskActivity?.SetTag("bops.task_id", run.TaskId);
         taskActivity?.SetTag("bops.node", NodeId.Local.Value);
 
-        // The safe pin is durable before any model attempt, including a delegated role task.
-        await taskStore.SaveAsync(run.Build(AgentTaskStatus.Running), CancellationToken.None);
-        await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
-        return await ExecuteGuardedAsync(run, () => PlanAndContinueAsync(run, taskActivity, ct), ct);
+        // KNOW-01B (ADR-0056): the host decides, admits and pins the task's knowledge; the pin is part of the first save, before any
+        // model attempt. A delegated role never receives knowledge, and a host that binds nothing leaves a legacy task.
+        KnowledgeRefusal? knowledgeRefusal = null;
+        if (delegation is null && knowledgeHost is not null)
+        {
+            knowledgeRefusal = await AttachKnowledgeAsync(run, null, () => knowledgeHost.OpenForNewTaskAsync(run.TaskId, actor, ct));
+        }
+
+        try
+        {
+            // The safe pin is durable before any model attempt, including a delegated role task.
+            await taskStore.SaveAsync(run.Build(AgentTaskStatus.Running), CancellationToken.None);
+            await WriteAuditAsync(LifecycleEvent(run.Build(AgentTaskStatus.Running), TaskLifecycleStage.ExecutionStarted, actor), delegation, ct);
+        }
+        catch
+        {
+            run.Knowledge?.Dispose();
+            throw;
+        }
+
+        return await ExecuteGuardedAsync(
+            run,
+            () => knowledgeRefusal is { } refusal ? FailKnowledgeUnavailableAsync(run, refusal, ct) : PlanAndContinueAsync(run, taskActivity, ct),
+            ct);
+    }
+
+    /// <summary>A knowledge opening the host refused, or that the runtime would not accept; the task must not run.</summary>
+    /// <param name="Cause">The closed cause code, when the host gave one.</param>
+    private sealed record KnowledgeRefusal(KnowledgeAdmissionCode? Cause);
+
+    /// <summary>
+    /// Opens the task's knowledge through the host and attaches the session to the run (KNOW-01B, ADR-0056). For a new task
+    /// (<paramref name="pinned"/> is <c>null</c>) a host that binds nothing leaves a legacy task. For a resumed task the stored binding
+    /// is never dropped, replaced or reinterpreted: the host must re-admit exactly that content, or the attempt does not run.
+    /// Nothing thrown by the host escapes (rule C1); it is a refusal without a cause.
+    /// </summary>
+    private async Task<KnowledgeRefusal?> AttachKnowledgeAsync(
+        ExecutionRun run, TaskKnowledgeBinding? pinned, Func<Task<KnowledgeTaskOpening>> open)
+    {
+        KnowledgeTaskOpening opening;
+        try
+        {
+            opening = await open();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Task {TaskId}: the knowledge host failed while opening the task's knowledge", run.TaskId);
+            return new KnowledgeRefusal(null);
+        }
+
+        switch (opening.Status)
+        {
+            case KnowledgeOpeningStatus.NotBound:
+                return pinned is null ? null : new KnowledgeRefusal(null);
+            case KnowledgeOpeningStatus.Bound
+                when opening.Session is { } session && opening.Binding is { } binding
+                    && IsKnowledgeControlManifest(session.Manifest) && (pinned is null || SameKnowledge(pinned, binding)):
+                run.Knowledge = session;
+                run.KnowledgeBinding = pinned ?? binding;
+                return null;
+            case KnowledgeOpeningStatus.Bound:
+                opening.Session?.Dispose();
+                return new KnowledgeRefusal(null);
+            default:
+                return new KnowledgeRefusal(opening.Cause);
+        }
+    }
+
+    /// <summary>A knowledge session may offer only a read-only control function of the runtime namespace, never the evidence read.</summary>
+    private static bool IsKnowledgeControlManifest(ToolManifest manifest) =>
+        manifest.Name.StartsWith(EvidenceRead.ControlNamespace, StringComparison.Ordinal)
+        && !string.Equals(manifest.Name, EvidenceRead.ControlFunctionName, StringComparison.Ordinal)
+        && manifest.Risk == RiskLevel.Read;
+
+    /// <summary>The identity a resumed attempt re-admitted must be exactly the one the task pinned: tenant, pack, version, kind and every hash.</summary>
+    private static bool SameKnowledge(TaskKnowledgeBinding pinned, TaskKnowledgeBinding admitted) =>
+        string.Equals(pinned.TenantId, admitted.TenantId, StringComparison.Ordinal)
+        && string.Equals(pinned.PackId, admitted.PackId, StringComparison.Ordinal)
+        && string.Equals(pinned.Version, admitted.Version, StringComparison.Ordinal)
+        && string.Equals(pinned.Kind, admitted.Kind, StringComparison.Ordinal)
+        && string.Equals(pinned.Publisher, admitted.Publisher, StringComparison.Ordinal)
+        && string.Equals(pinned.KeyId, admitted.KeyId, StringComparison.Ordinal)
+        && string.Equals(pinned.ManifestHash, admitted.ManifestHash, StringComparison.Ordinal)
+        && pinned.ResourceHashes.Count == admitted.ResourceHashes.Count
+        && pinned.ResourceHashes.All(file =>
+            admitted.ResourceHashes.TryGetValue(file.Key, out var hash) && string.Equals(hash, file.Value, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Ends an attempt whose knowledge could not be admitted (fail closed, ADR-0056): nothing ran, the cause code is on the synthetic
+    /// step, and the terminal event carries <see cref="TaskTerminalKind.KnowledgeUnavailable"/>. The admission audit event was already
+    /// written by the host.
+    /// </summary>
+    private Task<TaskState> FailKnowledgeUnavailableAsync(ExecutionRun run, KnowledgeRefusal refusal, CancellationToken ct)
+    {
+        run.Steps.Add(new PlanStep(
+            run.Steps.Count,
+            TaskResumePolicy.KnowledgeUnavailableStepDescription,
+            null,
+            null,
+            $"Knowledge unavailable: {refusal.Cause?.ToString() ?? "NotAdmitted"}. The task is bound to a verified knowledge pack that cannot be admitted again under the authority that applies now; nothing was run.")
+        {
+            ExecutionAttempt = run.ExecutionAttempt,
+        });
+        return FinishAsync(run, AgentTaskStatus.Failed, TaskTerminalKind.KnowledgeUnavailable, ct);
     }
 
     /// <summary>
@@ -601,6 +702,7 @@ public sealed partial class AgentRunner(
             Actor = actor,
             Delegation = null,
             PinnedProviderConfiguration = acquired.PinnedProviderConfiguration,
+            KnowledgeBinding = acquired.KnowledgeBinding,
             MutationJournalMode = acquired.MutationJournalMode,
             AttemptBudget = new ActiveAttemptBudget(timeProvider, options.MaxAttemptDuration),
             Steps = [.. acquired.Steps],
@@ -637,8 +739,24 @@ public sealed partial class AgentRunner(
         run.Mutations = new OrdinaryMutationScope(run.TaskId, run.ExecutionAttempt, run.MutationJournalMode, journalStore, reconciledDone);
 
         await WriteAuditAsync(LifecycleEvent(acquired, TaskLifecycleStage.ExecutionStarted, actor), null, ct);
+
+        // KNOW-01B (ADR-0056): a pin is not an authorisation. A task bound to knowledge re-admits exactly that content under the
+        // authority that applies now, for the resuming actor; a task without a binding stays a legacy task whatever the host holds.
+        KnowledgeRefusal? knowledgeRefusal = null;
+        if (acquired.KnowledgeBinding is { } pinnedKnowledge)
+        {
+            knowledgeRefusal = knowledgeHost is null
+                ? new KnowledgeRefusal(null)
+                : await AttachKnowledgeAsync(run, pinnedKnowledge, () => knowledgeHost.OpenForResumeAsync(run.TaskId, actor, pinnedKnowledge, ct));
+        }
+
         return await ExecuteGuardedAsync(run, () =>
         {
+            if (knowledgeRefusal is { } refusal)
+            {
+                return FailKnowledgeUnavailableAsync(run, refusal, ct);
+            }
+
             if (run.Plans.Count == 0)
             {
                 return PlanAndContinueAsync(run, taskActivity, ct);
@@ -820,6 +938,8 @@ public sealed partial class AgentRunner(
         {
             activeAttemptBudget.Value = priorBudget;
             run.AttemptBudget.Dispose();
+            run.Knowledge?.Dispose();
+            run.Knowledge = null;
         }
     }
 
@@ -942,6 +1062,12 @@ public sealed partial class AgentRunner(
                     correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex,
                     correctingToolName, planExhaustedForPrompt);
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
+                if (run.Knowledge is { } knowledgeSession)
+                {
+                    // KNOW-01B: offered beside, never instead of, the step's tool view; a read grants nothing and completes nothing.
+                    availableTools = [.. availableTools, knowledgeSession.Manifest];
+                }
+
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
                 return new ModelContextRequest(
@@ -974,7 +1100,7 @@ public sealed partial class AgentRunner(
                 }
 
                 var evidenceResolution = await ResolveStepEvidenceReadsAsync(
-                    run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                    run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ExpectedToolAt(plan, position), ct);
                 if (evidenceResolution.Terminal is not null)
                 {
                     return evidenceResolution.Terminal;
@@ -1000,7 +1126,7 @@ public sealed partial class AgentRunner(
                     }
 
                     evidenceResolution = await ResolveStepEvidenceReadsAsync(
-                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ExpectedToolAt(plan, position), ct);
                     if (evidenceResolution.Terminal is not null)
                     {
                         return evidenceResolution.Terminal;
@@ -1043,7 +1169,7 @@ public sealed partial class AgentRunner(
                     }
 
                     var correctionResolution = await ResolveStepEvidenceReadsAsync(
-                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ct);
+                        run, stepIndex, BuildStepRequest, stepCalls, logicalCall, response, ExpectedToolAt(plan, position), ct);
                     if (correctionResolution.Terminal is not null)
                     {
                         return correctionResolution.Terminal;
@@ -2580,6 +2706,10 @@ public sealed partial class AgentRunner(
         return await FinishAsync(run, AgentTaskStatus.BudgetExceeded, TaskTerminalKind.AttemptDurationBudget, CancellationToken.None);
     }
 
+    /// <summary>The expected tool of the planned step at the cursor, if the cursor is on a step and the plan named one.</summary>
+    private static string? ExpectedToolAt(AgentPlan plan, PlannedStepPosition position) =>
+        position.Cursor >= 0 && position.Cursor < plan.Steps.Count ? plan.Steps[position.Cursor].ExpectedTool : null;
+
     private const string ControlProtocolFailureMessage =
         "The model repeatedly sent runtime control requests that returned no evidence (malformed, unsupported, not offered, invalid or past the read budget).";
 
@@ -3227,11 +3357,51 @@ public sealed partial class AgentRunner(
         List<ModelCallRecord> calls,
         LogicalCallState logicalCall,
         ModelResponse initialResponse,
+        string? expectedTool,
         CancellationToken ct)
     {
         var response = initialResponse;
         while (true)
         {
+            // KNOW-01B (ADR-0056): the task's knowledge session sees the reply first. Only its own control call (or a framework skills
+            // function name, which it refuses) is its to serve; a reply whose first runtime control call is another function, and every
+            // reply of a task without knowledge, falls through to the evidence read exactly as before.
+            if (run.Knowledge is { } knowledge)
+            {
+                if (run.AttemptBudget.IsExpired)
+                {
+                    return (response, await StopForAttemptDurationAsync(run, calls));
+                }
+
+                var offered = requestFactory(logicalCall.Aggressive).AvailableTools.Select(tool => tool.Name).ToList();
+                var served = await knowledge.HandleAsync(
+                    response,
+                    new KnowledgeReadAuthority(offered, expectedTool, Eligible: run.Delegation is null),
+                    new ModelInvocationContext(run.TaskId, stepIndex, run.Actor, calls) { Delegation = run.Delegation?.Correlation },
+                    ct);
+                if (served.Handled)
+                {
+                    // ADR-0038 first-call-wins, as for the evidence read: the control call was answered and nothing else of the reply
+                    // ran; every call id is answered in the continuation, which is context of this logical call only.
+                    logicalCall.ContinuationTurns.AddRange(served.ContinuationTurns);
+                    if (served.ProtocolBoundExceeded)
+                    {
+                        return (response, await FailAsync(run, ControlProtocolFailureMessage,
+                            (TaskTerminalKind.RuntimeFailure, null), calls, ct));
+                    }
+
+                    response = await CallModelWithOverflowRecoveryAsync(
+                        run.TaskId, stepIndex, run.Actor, requestFactory, run.Delegation, calls, logicalCall, ct);
+                    run.TokensUsed += UsageTokens(response);
+                    if (TokenBudgetExceeded(run) && !IsOriginalFinalAnswer(response))
+                    {
+                        return (response, await StopForTokenCrossingAsync(run, calls, ct));
+                    }
+
+                    continue;
+                }
+            }
+
             // PRE-3A: the typed runtime.* control call is canonical; the legacy text directive converges on the same Read.
             // PRE-3B1: it is served only when this very model-call view offered it (the request that carried AvailableTools).
             var control = EvidenceRead.RecognizeControl(run.TaskId, response);
@@ -5175,6 +5345,12 @@ public sealed partial class AgentRunner(
 
         public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
 
+        /// <summary>The verified pack the task is bound to (KNOW-01B); fixed when the task was created, <c>null</c> for a legacy task.</summary>
+        public TaskKnowledgeBinding? KnowledgeBinding { get; set; }
+
+        /// <summary>This attempt's knowledge session; never persisted, disposed when the attempt ends.</summary>
+        public IKnowledgeReadSession? Knowledge { get; set; }
+
         /// <summary>Whether the task journals its side-effecting calls (ADR-0051 §8.1); fixed when the task was created.</summary>
         public TaskMutationJournalMode MutationJournalMode { get; init; }
 
@@ -5220,6 +5396,7 @@ public sealed partial class AgentRunner(
                 ResumedAtUtc = ResumedAtUtc,
                 ResumedBy = ResumedBy,
                 PinnedProviderConfiguration = PinnedProviderConfiguration,
+                KnowledgeBinding = KnowledgeBinding,
                 MutationJournalMode = MutationJournalMode,
             };
     }

@@ -317,6 +317,76 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
                 || (name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash"));
     }
 
+    [Fact]
+    public async Task WriteAsync_PersistsAWithdrawnKnowledgeRead_WithItsCause_AndTheReadLevelProvenance_ThroughTheRealSinkAndChain()
+    {
+        // KNOW-01B: a read refused because the authority now in force no longer covers the pin carries a closed cause code and no content;
+        // the read-level provenance of a served turn round-trips without changing how a model call counts provenance; the new terminal
+        // kind is a terminal lifecycle event like any other.
+        var taskId = Guid.NewGuid();
+        var withdrawn = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 0, Actor = Actor,
+            Operation = "load", PackId = "acme.runbooks", PackVersion = "1.0.0", PackHash = new string('a', 64),
+            TenantId = "tenant-a", ProviderId = "kp.files.1", ReturnedLength = 0,
+            ResultCode = KnowledgeReadResultCode.NotAuthorized, CauseCode = KnowledgeAdmissionCode.KeyRevoked,
+        };
+        var unavailable = withdrawn with { ResultCode = KnowledgeReadResultCode.SnapshotUnavailable, CauseCode = KnowledgeAdmissionCode.HashMismatch };
+        var served = new ContextProvenance
+        {
+            Origin = ContextOrigin.Skill, PackId = "acme.runbooks", PackVersion = "1.0.0", PackHash = new string('a', 64), TenantId = "tenant-a",
+            Operation = "read_resource", Item = "nginx-triage/references/checklist.md", ContentHash = new string('b', 64),
+        };
+        var counts = ContextProvenanceCount.Summarize(
+        [
+            ChatTurn.FromToolResult("1", "one") with { Provenance = served },
+            ChatTurn.FromToolResult("2", "two") with { Provenance = served with { Operation = "load", Item = "nginx-triage", ContentHash = new string('c', 64) } },
+        ]);
+        var call = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 0, Actor = Actor,
+            Provider = "p", Model = "m", Outcome = ModelCallOutcome.Success, ContextProvenance = counts,
+        };
+        var terminal = new TaskLifecycleAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            Stage = TaskLifecycleStage.ExecutionTerminal, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Failed,
+            TerminalKind = TaskTerminalKind.KnowledgeUnavailable, TokensUsed = 0, LifetimeSteps = 1, LifetimeReplans = 0, MaxSteps = 10,
+            MaxLifetimeSteps = 100, MaxReplans = 3, MaxLifetimeReplans = 10,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(withdrawn);
+            await sink.WriteAsync(unavailable);
+            await sink.WriteAsync(call);
+            await sink.WriteAsync(terminal);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        AuditEvent Restore(int index) => System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(
+            JsonNode.Parse(lines[index])!["EventJson"]!.GetValue<string>())!;
+        Assert.Equal(withdrawn, Assert.IsType<KnowledgeReadAuditEvent>(Restore(0)));
+        Assert.Equal(
+            (KnowledgeReadResultCode.SnapshotUnavailable, KnowledgeAdmissionCode.HashMismatch),
+            (Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).ResultCode, Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).CauseCode));
+        Assert.Null(Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).ContentHash);
+
+        // Two reads of different items by the same pack and tenant are one provenance group in the model-call audit, as before.
+        var restoredCall = Assert.IsType<ModelCallAuditEvent>(Restore(2));
+        var group = Assert.Single(restoredCall.ContextProvenance!);
+        Assert.Equal(2, group.Turns);
+        Assert.Null(group.Provenance!.Operation);
+        Assert.Null(group.Provenance.Item);
+        Assert.Null(group.Provenance.ContentHash);
+        Assert.Equal(("tenant-a", "acme.runbooks"), (group.Provenance.TenantId, group.Provenance.PackId));
+        Assert.Equal("nginx-triage/references/checklist.md", served.Item); // the turn itself keeps the read-level members
+
+        var restoredTerminal = Assert.IsType<TaskLifecycleAuditEvent>(Restore(3));
+        Assert.Equal(TaskTerminalKind.KnowledgeUnavailable, restoredTerminal.TerminalKind);
+    }
+
     [Theory]
     [InlineData(TaskLifecycleStage.RecoveryRejected)]
     [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]

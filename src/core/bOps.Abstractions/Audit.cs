@@ -197,6 +197,10 @@ public enum KnowledgeReadResultCode
     IntegrityMismatch = 7,
     /// <summary>The verified content exceeds the per-read size bound; nothing was returned.</summary>
     TooLarge = 8,
+    /// <summary>The authority that applies now no longer covers the pinned pack (grant withdrawn, tenant, provider, key or publisher revoked); nothing was returned (KNOW-01B).</summary>
+    NotAuthorized = 9,
+    /// <summary>The verified snapshot is no longer intact or available; nothing was returned (KNOW-01B).</summary>
+    SnapshotUnavailable = 10,
 }
 
 /// <summary>
@@ -250,6 +254,13 @@ public sealed record KnowledgeReadAuditEvent : AuditEvent
 
     /// <summary>How the attempt ended.</summary>
     public required KnowledgeReadResultCode ResultCode { get; init; }
+
+    /// <summary>
+    /// For <see cref="KnowledgeReadResultCode.NotAuthorized"/> and <see cref="KnowledgeReadResultCode.SnapshotUnavailable"/>, why the
+    /// current authority or the snapshot refused the read (KNOW-01B). A closed code, never text.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public KnowledgeAdmissionCode? CauseCode { get; init; }
 }
 
 /// <summary>How an attempt to admit a knowledge pack for a task ended (KNOW-01A, ADR-0055). The names are stable audit codes.</summary>

@@ -118,6 +118,44 @@ public sealed class KnowledgeAdmissionService
             provider.ProviderId, pack.Identity.Kind, pack.Identity.Publisher, pack.Identity.KeyId, pack.Identity.ContentHash);
     }
 
+    /// <summary>
+    /// Whether the authority that applies <em>now</em> still covers a pin (KNOW-01B): the source is still a registered provider for the
+    /// tenant and may serve the kind, the host still grants exactly this pack version and kind to the tenant, and the trust store still
+    /// trusts the publisher and key. It reads no pack and trusts nothing the pin says about itself: a pin names content, it never
+    /// authorises it. Returns <see cref="KnowledgeAdmissionCode.Admitted"/> when nothing has been withdrawn.
+    /// </summary>
+    public KnowledgeAdmissionCode Reauthorize(KnowledgeTaskScope scope, IKnowledgePackSource source, KnowledgePin pin)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(pin);
+
+        if (!string.Equals(pin.TenantId, scope.Tenant.Value, StringComparison.Ordinal))
+        {
+            return KnowledgeAdmissionCode.TenantNotAllowed;
+        }
+
+        var provider = registry.Admit(source, scope);
+        if (provider.Code != KnowledgeAdmissionCode.Admitted)
+        {
+            return provider.Code;
+        }
+
+        if (!PackReference.IsPackId(pin.PackId) || !PackReference.IsVersion(pin.Version)
+            || !grants.TryGetGrantedKind(scope.Tenant, new PackReference(pin.PackId, pin.Version), out var grantedKind)
+            || grantedKind != pin.Kind)
+        {
+            return KnowledgeAdmissionCode.NotEntitled;
+        }
+
+        if (!provider.MayServe(grantedKind))
+        {
+            return KnowledgeAdmissionCode.KindNotAllowed;
+        }
+
+        return verifier.CheckSigner(pin.Publisher, pin.KeyId) ?? KnowledgeAdmissionCode.Admitted;
+    }
+
     /// <summary>Writes the audit event for an attempt. Every outcome is written, refusals included.</summary>
     public Task WriteAuditAsync(IAuditSink audit, KnowledgeAdmissionRequest request, KnowledgeAdmissionResult result, CancellationToken ct = default)
     {

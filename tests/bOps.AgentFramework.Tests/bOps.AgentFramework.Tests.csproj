@@ -31,6 +31,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
+    <!-- KNOW-01B: the resume tests run against the real task store and the real audit sink. -->
+    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
     <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
     <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />

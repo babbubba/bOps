@@ -36,6 +36,8 @@ public sealed partial record TenantId
     /// <summary>A fixed-length, path-safe key for this tenant, used to partition stores.</summary>
     internal string PartitionKey => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Value)))[..32];
 
+    internal static bool IsValid(string? value) => value is not null && Shape().IsMatch(value);
+
     /// <inheritdoc />
     public override string ToString() => Value;
 

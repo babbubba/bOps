@@ -452,4 +452,12 @@ public sealed record TaskState
     /// <summary>The safe provider configuration selected at admission; null on records predating ADR-0045.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PinnedProviderConfiguration? PinnedProviderConfiguration { get; init; }
+
+    /// <summary>
+    /// The verified knowledge pack the task is bound to (KNOW-01B, ADR-0056), taken from the host's admission when the task was
+    /// created and never changed. <c>null</c> for every task created without knowledge and every task persisted before this was
+    /// kept: such a task never receives knowledge, whatever the host is later composed with.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TaskKnowledgeBinding? KnowledgeBinding { get; init; }
 }

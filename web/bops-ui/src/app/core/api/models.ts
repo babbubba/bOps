@@ -39,7 +39,7 @@ export const TaskStatusCompleted: AgentTaskStatus = 1;
 export type TaskOrigin = 0 | 1 | 2;
 
 /** bOps.Abstractions.TaskTerminalKind, in declaration order (ADR-0040 §6). Append-only on the server. */
-export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
+export type TaskTerminalKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16;
 export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   0: 'Completed',
   1: 'StepLimit',
@@ -57,6 +57,7 @@ export const TaskTerminalKindName: Record<TaskTerminalKind, string> = {
   13: 'AttemptDurationBudget',
   14: 'MutationOutcomeUnknown',
   15: 'ExecutionInterrupted',
+  16: 'KnowledgeUnavailable',
 };
 export const TaskTerminalModelFailure: TaskTerminalKind = 8;
 

@@ -16,7 +16,8 @@ internal sealed record KnowledgeBridgeOpening(KnowledgeReadBridge? Bridge, Knowl
 /// then the framework's skills source over that snapshot with the pins and the skill checks of the bridge, and exactly one audit
 /// event for the whole attempt, accepted or refused. A reason the content engine finds after admission (an invalid skill) turns the
 /// attempt into a refusal before anything is audited or served. It composes nothing into a MAF context pipeline and is used by no
-/// production host.
+/// production host. With <c>authorizeEveryRead</c> the bridge asks <see cref="KnowledgeAdmissionService.Reauthorize"/> and the snapshot before
+/// each read (KNOW-01B), so a revocation reaches a task that is already running.
 /// </summary>
 internal static class KnowledgeBridgeAdmission
 {
@@ -26,6 +27,7 @@ internal static class KnowledgeBridgeAdmission
         IAuditSink audit,
         TimeProvider? timeProvider = null,
         KnowledgeReadBudget? budget = null,
+        bool authorizeEveryRead = false,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -39,7 +41,8 @@ internal static class KnowledgeBridgeAdmission
             try
             {
 #pragma warning disable CA2000 // Ownership of the bridge passes to the caller in the returned opening.
-                bridge = await KnowledgeReadBridge.CreateFromSnapshotAsync(admitted, audit, timeProvider, budget, ct);
+                bridge = await KnowledgeReadBridge.CreateFromSnapshotAsync(
+                    admitted, audit, timeProvider, budget, authorizeEveryRead ? () => CurrentAuthority(service, request, admitted) : null, ct);
 #pragma warning restore CA2000
             }
             catch (KnowledgePackIntegrityException ex)
@@ -51,4 +54,16 @@ internal static class KnowledgeBridgeAdmission
         await service.WriteAuditAsync(audit, request, result, ct);
         return new KnowledgeBridgeOpening(bridge, result);
     }
+
+    /// <summary>
+    /// The authority that applies <em>now</em> to an admitted pack (KNOW-01B, ADR-0056): the registration, grant and trust the host holds at
+    /// this moment, then the integrity of the snapshot. <c>null</c> means nothing was withdrawn. The pin is never the answer.
+    /// </summary>
+    private static KnowledgeAdmissionCode? CurrentAuthority(
+        KnowledgeAdmissionService service, KnowledgeAdmissionRequest request, AdmittedKnowledgePack admitted) =>
+        service.Reauthorize(request.Scope, request.Source, admitted.Pin) switch
+        {
+            KnowledgeAdmissionCode.Admitted => admitted.Snapshot.VerifyIntegrity(),
+            var withdrawn => withdrawn,
+        };
 }

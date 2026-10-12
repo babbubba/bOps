@@ -48,15 +48,6 @@ internal sealed record PackPin(
 internal sealed record KnowledgeReadBudget(int MaxReads = 4, int MaxRejections = 4, int MaxCharactersPerRead = 8000);
 
 /// <summary>
-/// What bOps decided about this turn, handed to the bridge by the runtime. It is a snapshot of the authority the runner already
-/// computed (the tools it offered, the step's expected tool, whether reads are eligible); the bridge adds none of its own.
-/// </summary>
-/// <param name="OfferedTools">The tool names offered to the model on this turn.</param>
-/// <param name="ExpectedTool">The step's expected tool, if any. A knowledge read never completes it.</param>
-/// <param name="Eligible">Whether the runtime says this step may read knowledge.</param>
-internal sealed record KnowledgeReadAuthority(IReadOnlyList<string> OfferedTools, string? ExpectedTool, bool Eligible);
-
-/// <summary>
 /// The explicit admission of an experimental knowledge provider by the host (ADR-0054 G2-3). It is created only by code that
 /// constructs the host, never from pack data, frontmatter, metadata or a model reply; nothing a pack says can produce or alter one.
 /// Production hosts compose none (checked by an architecture test).
@@ -103,24 +94,6 @@ internal sealed class KnowledgePackIntegrityException : InvalidOperationExceptio
     public KnowledgeAdmissionCode Code { get; } = KnowledgeAdmissionCode.PinMismatch;
 }
 
-/// <summary>What the bridge did with one model reply.</summary>
-/// <param name="Handled">
-/// <c>false</c> when the reply contains nothing that concerns the bridge (no <c>runtime.knowledge_read</c> or framework-internal call
-/// ahead of any other runtime function): the
-/// runner handles it as it always does and the bridge produced no turn, no audit and no model call.
-/// </param>
-/// <param name="Code">How the knowledge read ended, when it was handled.</param>
-/// <param name="ContinuationTurns">
-/// The turns that answer every call of the reply (the assistant calls, then one result per call id), ready to be appended to the
-/// model context. The served content, if any, carries <see cref="ContextOrigin.Skill"/> provenance with the pack identity.
-/// </param>
-/// <param name="ProtocolBoundExceeded">The model keeps sending reads that return nothing; the runtime should stop the task.</param>
-internal sealed record KnowledgeReadOutcome(
-    bool Handled, KnowledgeReadResultCode? Code, IReadOnlyList<ChatTurn> ContinuationTurns, bool ProtocolBoundExceeded)
-{
-    internal static KnowledgeReadOutcome NotHandled { get; } = new(false, null, [], false);
-}
-
 /// <summary>
 /// The progressive-skills bridge (AF-TURN-01B, ADR-0054 section 5). It lets bOps serve skill discovery, skill loading and skill
 /// resource reads from the Microsoft Agent Framework <c>AgentSkillsProvider</c> without giving MAF any authority:
@@ -137,7 +110,7 @@ internal sealed record KnowledgeReadOutcome(
 /// refused and nothing else of that reply runs, every call id is answered, and the step's expected tool is never marked done.
 /// The bridge is internal, takes only a bOps-owned fixture pack and an explicit host admission, and is composed by no production host.
 /// </summary>
-internal sealed partial class KnowledgeReadBridge : IDisposable
+internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
 {
     /// <summary>The public bOps tool name. The framework's function names are internal details and never appear in a model-facing surface.</summary>
     internal const string PublicToolName = "runtime.knowledge_read";
@@ -160,6 +133,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
     private readonly IAuditSink audit;
     private readonly TimeProvider timeProvider;
     private readonly KnowledgeReadBudget budget;
+    private readonly Func<KnowledgeAdmissionCode?>? currentAuthority;
     private int reads;
     private int rejections;
 
@@ -171,8 +145,10 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         string catalogue,
         IAuditSink audit,
         TimeProvider timeProvider,
-        KnowledgeReadBudget budget)
+        KnowledgeReadBudget budget,
+        Func<KnowledgeAdmissionCode?>? currentAuthority)
     {
+        this.currentAuthority = currentAuthority;
         this.providerId = providerId;
         this.pin = pin;
         this.provider = provider;
@@ -202,6 +178,9 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         ],
     };
 
+    /// <inheritdoc />
+    ToolManifest IKnowledgeReadSession.Manifest => Manifest;
+
     /// <summary>The pack identity and hash this bridge serves.</summary>
     internal PackPin Pin => pin;
 
@@ -218,12 +197,15 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         ArgumentNullException.ThrowIfNull(admission);
         var pin = await PinFixtureAsync(pack, null, ct);
 #pragma warning disable CA2000 // Ownership of the source passes to the skills provider (ownsSource: true), which the bridge disposes.
-        return await CreateCoreAsync(admission.ProviderId, pin, new AgentInMemorySkillsSource(BuildSkills(pack)), audit, timeProvider, budget, ct);
+        return await CreateCoreAsync(admission.ProviderId, pin, new AgentInMemorySkillsSource(BuildSkills(pack)), audit, timeProvider, budget, null, ct);
 #pragma warning restore CA2000
     }
 
     /// <summary>
-    /// Creates a bridge over a pack the admission service verified (KNOW-01A, ADR-0055). The content is read by the framework's own
+    /// Creates a bridge over a pack the admission service verified (KNOW-01A, ADR-0055). When <c>currentAuthority</c> is supplied
+    /// (KNOW-01B, ADR-0056) it is asked before every read, after the call itself was accepted: a pin names content and is never an
+    /// authorisation, so a withdrawn grant, provider, key or publisher, or a snapshot that is no longer intact, refuses the read
+    /// (fail closed, audited with the cause) instead of serving the pinned bytes. The content is read by the framework's own
     /// file skills source from the tenant's immutable snapshot and from nowhere else; the snapshot is re-verified before the pins are
     /// taken and again after the bridge confirmed them, so a file altered at any point of admission, read or not, refuses the pack.
     /// </summary>
@@ -233,6 +215,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         IAuditSink audit,
         TimeProvider? timeProvider = null,
         KnowledgeReadBudget? budget = null,
+        Func<KnowledgeAdmissionCode?>? currentAuthority = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(admitted);
@@ -241,7 +224,8 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
 
         var pin = await PinSnapshotAsync(admitted, ct);
 #pragma warning disable CA2000 // Ownership of the source passes to the skills provider (ownsSource: true), which the bridge disposes.
-        var bridge = await CreateCoreAsync(admitted.ProviderId, pin, VerifiedSnapshotSkills.Open(admitted.Snapshot), audit, timeProvider, budget, ct);
+        var bridge = await CreateCoreAsync(
+            admitted.ProviderId, pin, VerifiedSnapshotSkills.Open(admitted.Snapshot), audit, timeProvider, budget, currentAuthority, ct);
 #pragma warning restore CA2000
         try
         {
@@ -332,7 +316,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(admission);
-        return CreateCoreAsync(admission.ProviderId, pin, source, audit, timeProvider, budget, ct);
+        return CreateCoreAsync(admission.ProviderId, pin, source, audit, timeProvider, budget, null, ct);
     }
 
     /// <summary>
@@ -371,7 +355,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
     /// <summary>
     /// Handles one model reply. Anything that is not a runtime-namespace or framework-internal call is left to the runner untouched.
     /// </summary>
-    internal async Task<KnowledgeReadOutcome> HandleAsync(
+    public async Task<KnowledgeReadOutcome> HandleAsync(
         ModelResponse response, KnowledgeReadAuthority authority, ModelInvocationContext context, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(response);
@@ -419,6 +403,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
             ProviderId = providerId,
             ReturnedLength = result.Reply.Length,
             ResultCode = result.Code,
+            CauseCode = result.Cause,
         }, ct);
 
         // ADR-0038 first-call-wins, as for the evidence read: the control call is answered and nothing else of the reply runs. Every
@@ -434,7 +419,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
             }
             else if (result.Code == KnowledgeReadResultCode.Success)
             {
-                turns.Add(ChatTurn.FromToolResult(other.Id, result.Reply) with { Provenance = SkillProvenance() });
+                turns.Add(ChatTurn.FromToolResult(other.Id, result.Reply) with { Provenance = SkillProvenance(result) });
             }
             else
             {
@@ -451,7 +436,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
     private static string RejectionReply(KnowledgeReadResultCode code) =>
         $"Runtime control call rejected: {code}. runtime.knowledge_read returns reference data from the pinned skill pack only.";
 
-    private ContextProvenance SkillProvenance() => new()
+    private ContextProvenance SkillProvenance(ReadResult result) => new()
     {
         Origin = pin.Origin,
         AdmittedProviderId = providerId,
@@ -459,6 +444,9 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         PackVersion = pin.Version,
         PackHash = pin.ManifestHash,
         TenantId = pin.TenantId,
+        Operation = result.Operation,
+        Item = result.Skill is null ? null : result.Resource is null ? result.Skill : $"{result.Skill}/{result.Resource}",
+        ContentHash = result.ContentHash,
     };
 
     private async Task<ReadResult> ServeAsync(ModelToolCall call, KnowledgeReadAuthority authority, CancellationToken ct)
@@ -477,6 +465,13 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         if (!TryParse(call, out var operation, out var skillName, out var resourceName))
         {
             return ReadResult.Refused(null, KnowledgeReadResultCode.Malformed);
+        }
+
+        // KNOW-01B: a pin is not an authorisation. The authority that applies now is asked for every read that reaches content, before
+        // the budget is spent and before the framework is touched; the model sees only that the read was not authorised.
+        if (currentAuthority?.Invoke() is { } cause)
+        {
+            return ReadResult.Withdrawn(operation, cause);
         }
 
         if (reads >= budget.MaxReads)
@@ -630,6 +625,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
         IAuditSink audit,
         TimeProvider? timeProvider,
         KnowledgeReadBudget? budget,
+        Func<KnowledgeAdmissionCode?>? currentAuthority,
         CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(providerId);
@@ -663,7 +659,7 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
 
             var bridge = new KnowledgeReadBridge(
                 providerId, pin, provider, functions, context.Instructions ?? string.Empty, audit,
-                timeProvider ?? TimeProvider.System, budget ?? new KnowledgeReadBudget());
+                timeProvider ?? TimeProvider.System, budget ?? new KnowledgeReadBudget(), currentAuthority);
             await bridge.VerifyPackAsync(offered, ct);
             return bridge;
         }
@@ -815,8 +811,23 @@ internal sealed partial class KnowledgeReadBridge : IDisposable
     private sealed record ReadResult(
         KnowledgeReadResultCode Code, string? Operation, string? Skill, string? Resource, string? ContentHash, string Reply, bool Resolved)
     {
+        /// <summary>For a refused read, why the current authority or the snapshot refused it.</summary>
+        internal KnowledgeAdmissionCode? Cause { get; init; }
+
         internal static ReadResult Refused(string? operation, KnowledgeReadResultCode code, string? skill = null, string? resource = null) =>
             new(code, operation, skill, resource, null, string.Empty, skill is not null);
+
+        /// <summary>The pack is known (it is pinned), but nothing of it may be read now.</summary>
+        internal static ReadResult Withdrawn(string? operation, KnowledgeAdmissionCode cause) =>
+            new(
+                cause is KnowledgeAdmissionCode.SnapshotTampered or KnowledgeAdmissionCode.MissingResource or KnowledgeAdmissionCode.HashMismatch
+                    or KnowledgeAdmissionCode.UnexpectedContent or KnowledgeAdmissionCode.LinkNotAllowed
+                    ? KnowledgeReadResultCode.SnapshotUnavailable
+                    : KnowledgeReadResultCode.NotAuthorized,
+                operation, null, null, null, string.Empty, true)
+            {
+                Cause = cause,
+            };
     }
 
     /// <summary>A framework skills provider used as a library by bOps. Its host agent can never run a model.</summary>

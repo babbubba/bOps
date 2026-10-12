@@ -84,6 +84,7 @@ export const it: Messages = {
   'enum.terminalKind.AttemptDurationBudget': 'Budget di durata del tentativo esaurito',
   'enum.terminalKind.MutationOutcomeUnknown': 'Esito della modifica sconosciuto',
   'enum.terminalKind.ExecutionInterrupted': 'Esecuzione interrotta e recuperata',
+  'enum.terminalKind.KnowledgeUnavailable': 'La conoscenza associata non è più ammissibile',
   'enum.trust.Unverified': 'Non verificato',
   'enum.trust.Community': 'Community',
   'enum.trust.Verified': 'Verificato',

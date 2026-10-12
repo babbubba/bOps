@@ -90,6 +90,18 @@ public sealed record ContextProvenance
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TenantId { get; init; }
+
+    /// <summary>The knowledge operation that produced the turn: <c>discover</c>, <c>load</c> or <c>read_resource</c> (KNOW-01B).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Operation { get; init; }
+
+    /// <summary>The skill, or <c>skill/resource</c>, the turn was read from; <c>null</c> for a discovery (KNOW-01B).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Item { get; init; }
+
+    /// <summary>The hash of the exact content the turn carries, as verified against the pin (KNOW-01B).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHash { get; init; }
 }
 
 /// <summary>
@@ -114,7 +126,7 @@ public sealed record ContextProvenanceCount
     {
         ArgumentNullException.ThrowIfNull(turns);
         return [.. turns
-            .GroupBy(turn => turn.Provenance)
+            .GroupBy(turn => turn.Provenance is null ? null : turn.Provenance with { Operation = null, Item = null, ContentHash = null })
             .OrderBy(group => group.Key is null ? 1 : 0)
             .ThenBy(group => group.Key?.Origin)
             .ThenBy(group => group.Key?.Derived)

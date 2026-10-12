@@ -107,12 +107,12 @@ public sealed class KnowledgePackBoundaryTests
     [Fact]
     public void TheKnowledgeContracts_AreComposedByNoProductionHost_AndNoConfigurationCanEnableThem()
     {
-        // Admission, the registry, the trust store and the snapshot store exist for KNOW-01B to wire; until then no host builds them.
+        // Admission, the registry, the trust store and the snapshot store are wired by the MAF adapter's internal host (KNOW-01B); no production host builds them.
         string[] names =
         [
             "KnowledgeAdmissionService", "KnowledgeProviderRegistry", "KnowledgeTrustStore", "KnowledgeSnapshotStore", "KnowledgeGrants",
             "KnowledgePackVerifier", "DirectoryKnowledgePackSource", "IKnowledgePackSource", "KnowledgeTaskScope", "KnowledgeBridgeAdmission",
-            "VerifiedSnapshotSkills", "KnowledgePackAdmissionAuditEvent",
+            "VerifiedSnapshotSkills", "KnowledgePackAdmissionAuditEvent", "IKnowledgeTaskPolicy", "KnowledgeBindingChoice",
         ];
         var composed = Sources("src/")
             .Where(file => !file.Path.StartsWith(KnowledgeProject, StringComparison.Ordinal)

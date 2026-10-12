@@ -30,6 +30,12 @@ public sealed class KnowledgeSnapshot
     /// <summary>The pin this snapshot satisfies.</summary>
     public KnowledgePin Pin { get; }
 
+    /// <summary>
+    /// The identifier of this snapshot: the tenant's partition key and the content hash, which is how the store addresses it. It
+    /// names where the verified bytes are kept for that tenant; it reveals no path and is not a credential.
+    /// </summary>
+    public string Id => $"{Path.GetFileName(Path.GetDirectoryName(RootPath))}/{Path.GetFileName(RootPath)}";
+
     internal string RootPath { get; }
 
     /// <summary>

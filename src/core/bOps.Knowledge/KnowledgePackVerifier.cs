@@ -37,6 +37,18 @@ public sealed partial class KnowledgePackVerifier
         this.limits = limits ?? KnowledgePackLimits.Default;
     }
 
+    /// <summary>
+    /// Whether the trust store as it is now still trusts the publisher and key a pin names (KNOW-01B): <c>null</c> when it does, otherwise
+    /// the refusal code. It decides nothing about content; a pin is never trust.
+    /// </summary>
+    internal KnowledgeAdmissionCode? CheckSigner(string publisher, string keyId) => trustStore.Find(publisher, keyId).Status switch
+    {
+        KeyStatus.Trusted => null,
+        KeyStatus.PublisherRevoked => KnowledgeAdmissionCode.PublisherRevoked,
+        KeyStatus.KeyRevoked => KnowledgeAdmissionCode.KeyRevoked,
+        _ => KnowledgeAdmissionCode.UnknownKey,
+    };
+
     /// <summary>Verifies a raw pack. Refusals are results, never exceptions.</summary>
     public PackVerification Verify(RawKnowledgePack raw)
     {
