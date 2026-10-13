@@ -40,7 +40,7 @@ public sealed class KnowledgeBenchmarkExportTests
         var root = result.RootElement;
         Assert.Equal("Completed", root.GetProperty("status").GetString());
         Assert.Equal("Completed", root.GetProperty("terminalCause").GetString());
-        Assert.StartsWith("offline done", root.GetProperty("finalObservation").GetString(), StringComparison.Ordinal);
+        Assert.Equal(KnowledgeBenchmarkExport.RedactedFreeText, root.GetProperty("finalObservation").GetString());
         Assert.Equal(hash, root.GetProperty("corpusSha256").GetString());
         Assert.Equal(0.5, root.GetProperty("configuration").GetProperty("sampling").GetProperty("temperature").GetDouble());
         Assert.False(root.GetProperty("configuration").GetProperty("sampling").TryGetProperty("credential", out _));

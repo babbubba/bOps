@@ -25,6 +25,7 @@ internal sealed class BenchmarkModelObservation
 /// <summary>Test entry-point only. A complete directory is published by a single no-overwrite rename.</summary>
 internal sealed class KnowledgeBenchmarkExport
 {
+    internal const string RedactedFreeText = "[redacted: untrusted benchmark text withheld]";
     internal Guid RunId { get; } = Guid.NewGuid();
     internal string? Commit { get; set; }
     internal string? RequestedCommit { get; set; }
@@ -89,7 +90,7 @@ internal sealed class KnowledgeBenchmarkExport
                     export.State = await export.Store.LoadAsync(export.RunId, CancellationToken.None);
                     if (export.State is not null) export.stateSource = "Persisted";
                 }
-                catch (Exception ex) { recoveryError = ex.GetType().Name; }
+                catch (Exception ex) { recoveryError = SafeExceptionType(ex); }
             }
             timer.Stop();
             try
@@ -158,7 +159,7 @@ internal sealed class KnowledgeBenchmarkExport
                     catch (JsonException) { auditStatus = "Partial"; auditError = "InvalidAuditJson"; break; }
                 }
             }
-            catch (Exception ex) { auditStatus = "Partial"; auditError = ex.GetType().Name; }
+            catch (Exception ex) { auditStatus = "Partial"; auditError = SafeExceptionType(ex); }
         }
         var lifecycle = events?.OfType<TaskLifecycleAuditEvent>().LastOrDefault();
         var terminal = State?.TerminalReason;
@@ -192,9 +193,11 @@ internal sealed class KnowledgeBenchmarkExport
             lastAuditedAccounting = lifecycle is null ? null : new { lifecycle.TokensUsed, lifecycle.LifetimeSteps, lifecycle.LifetimeReplans },
             configurationRepresentation = "Allowlisted numeric/boolean settings and fingerprints; arbitrary text/payloads withheld",
             terminalCause = cause, terminalKind = terminal?.Kind.ToString(), failureKind = kind?.ToString(),
-            exceptionType = failure?.GetType().Name, stateRecoveryError = recoveryError,
+            exceptionType = failure is null ? null : SafeExceptionType(failure), stateRecoveryError = recoveryError,
             // A failed step/tool observation is never a final answer.
-            finalObservation = State is { Status: AgentTaskStatus.Completed, Steps.Count: > 0 } ? State.Steps[^1].Observation : null,
+            finalObservation = State is { Status: AgentTaskStatus.Completed, Steps.Count: > 0 }
+                ? WithholdFreeText(State.Steps[^1].Observation) : null,
+            freeTextRepresentation = "Non-null final observations and unapproved diagnostic identifiers are explicitly redacted; structured outcomes and metrics retained",
             accounting = State?.Accounting, llmCalls = ModelObservation.Calls,
             completeAsyncCalls = ModelObservation.Calls,
             completedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.CompletedCalls,
@@ -223,7 +226,7 @@ internal sealed class KnowledgeBenchmarkExport
             auditedToolsExecuted = tools?.Count(t => t.EffectiveTimeout is not null),
             auditedToolsRefused = tools?.Count(t => t.Outcome == ToolOutcome.Denied),
             auditedToolsExecutionUnknown = tools?.Count(t => t.EffectiveTimeout is null && t.Outcome != ToolOutcome.Denied),
-            tools = tools?.Select(t => new { t.Tool, outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString() }),
+            tools = tools?.Select(t => new { Tool = SafeTool(t.Tool), outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString() }),
             knowledgeReads = reads?.Select(r => new { resultCode = r.ResultCode.ToString() }),
             knowledgeUsed = reads is null ? (bool?)null : reads.Any(r => r.ResultCode == KnowledgeReadResultCode.Success),
             auditStatus, auditError, auditEventCount = audit.Count,
@@ -244,7 +247,9 @@ internal sealed class KnowledgeBenchmarkExport
                 or "Outcome" or "FailureKind" or "ResultCode" or "Code" or "Tool" or "Duration" or "DurationMs"
                 or "EffectiveTimeout" or "ModelAttempt" or "ProviderAttempt" or "RetryDecision" or "RetryDelayMs"
                 or "ProviderStatusCode" or "ExecutionAttempt" or "TokensUsed" or "LifetimeSteps" or "LifetimeReplans")
-                safe[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+                safe[property.Name] = property.Value.ValueKind == JsonValueKind.String && property.Name is "$type" or "Stage" or "Tool"
+                    ? JsonValue.Create(property.Name == "Tool" ? SafeTool(property.Value.GetString()!) : WithholdFreeText(property.Value.GetString()))
+                    : JsonNode.Parse(property.Value.GetRawText());
         if (evt.TryGetProperty("Usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
         {
             var safeUsage = new JsonObject();
@@ -253,6 +258,24 @@ internal sealed class KnowledgeBenchmarkExport
             safe["Usage"] = safeUsage;
         }
         return safe;
+    }
+
+    // Reuse payload-free projection/minimization, not regex sanitization as proof of safety.
+    // Even regex-clean prose may contain a person's name, a credential or raw event data.
+    // Redact the entire value without parsing, truncating or inventing diagnostic assertions.
+    private static string? WithholdFreeText(string? text) => text is null ? null : RedactedFreeText;
+
+    // Only the fixed benchmark tool identifier is approved; a rejected model-proposed name is untrusted text.
+    private static string SafeTool(string tool) => tool == "system.events" ? tool : RedactedFreeText;
+
+    // Custom exception type names are also uncontrolled diagnostic identifiers. Do not export messages/inner exceptions.
+    private static string SafeExceptionType(Exception exception)
+    {
+        var type = exception.GetType();
+        return type == typeof(IOException) || type == typeof(InvalidOperationException) || type == typeof(TimeoutException)
+            || type == typeof(OperationCanceledException) || type == typeof(TaskCanceledException)
+            || type == typeof(HttpRequestException) || type == typeof(JsonException) || type == typeof(ModelProtocolException)
+            ? type.Name : RedactedFreeText;
     }
 
     private static async Task WriteNewAsync(string path, byte[] bytes)
