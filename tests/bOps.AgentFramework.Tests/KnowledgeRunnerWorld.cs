@@ -147,7 +147,8 @@ internal sealed class KnowledgeProcess : IDisposable
         ITaskStore? store = null,
         ILogger<AgentRunner>? diagnosticLogger = null,
         bool withWindowsSystemEvents = false,
-        CanaryEventsActivation? eventsCorpus = null)
+        CanaryEventsActivation? eventsCorpus = null,
+        ITool? governedEvents = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
@@ -167,7 +168,7 @@ internal sealed class KnowledgeProcess : IDisposable
             // and normal dispatch; it cannot change a product registry or bypass runtime governance.
             var events = new WindowsSystemToolProvider().GetTools().OfType<WindowsSystemEventsTool>().Single();
             registry.Register(new PackageId("bops.packages.system.windows"),
-                eventsCorpus is null ? events : new CanaryEventsCorpusTool(events, eventsCorpus));
+                governedEvents ?? (eventsCorpus is null ? events : new CanaryEventsCorpusTool(events, eventsCorpus)));
         }
         else
         {

@@ -65,17 +65,24 @@ internal static class KnowledgeBenchmark
         string path, string hash, RawKnowledgePack? raw = null, KnowledgeTrustStore? trust = null,
         string? manifestPin = null, string? authorizedGrant = null, BenchmarkModelObservation? observation = null)
     {
-        if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A or B condition required.");
+        ValidateCondition(condition, raw, trust, manifestPin, authorizedGrant);
         var replay = Replay(path, hash);
+        var knowledge = condition == "B";
+        var rig = Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay, observation);
+        if (observation is not null) observation.Calls = 0;
+        return rig;
+    }
+
+    internal static void ValidateCondition(string condition, RawKnowledgePack? raw, KnowledgeTrustStore? trust,
+        string? manifestPin, string? authorizedGrant)
+    {
+        if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A or B condition required.");
         var knowledge = condition == "B";
         if (!knowledge && (raw is not null || trust is not null || manifestPin is not null || authorizedGrant is not null))
             throw new InvalidOperationException("A must have no Knowledge inputs or grant.");
         if (knowledge && (raw is null || trust is null ||
             manifestPin != KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span) || authorizedGrant != GrantAuthorization))
             throw new InvalidOperationException("B requires the explicit signed manifest pin and exact grant authorization.");
-        var rig = Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay, observation);
-        if (observation is not null) observation.Calls = 0;
-        return rig;
     }
 
     internal const string GrantAuthorization = "tenant-a/acme.windows-event-runbooks@1.0.0:Knowledge";

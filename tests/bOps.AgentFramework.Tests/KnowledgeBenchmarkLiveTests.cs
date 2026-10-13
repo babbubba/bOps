@@ -15,6 +15,32 @@ public sealed class KnowledgeBenchmarkLiveTests
     [BenchmarkFact("B")]
     public Task WithKnowledge() => RunAsync(true);
 
+    [IntegratedCaptureFact]
+    public async Task CaptureThenAB()
+    {
+        if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_CAPTURE_AB") != "1" ||
+            Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1" ||
+            Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") is not null ||
+            Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_MODE") is not null ||
+            Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_PATH") is not null ||
+            Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_SHA256") is not null ||
+            Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
+            throw new InvalidOperationException("Explicit isolated integrated capture opt-in required; no imports or signing.");
+        using var capture = TrustedEventsCapture.Native();
+        using var captureWorld = new KnowledgeRunnerWorld();
+        await capture.CaptureAsync(captureWorld);
+        foreach (var knowledge in new[] { false, true })
+        {
+            KnowledgeBenchmarkExport? observed = null;
+            await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), knowledge ? "B" : "A", async export =>
+            {
+                observed = export;
+                await ExecuteAsync(knowledge, export, capture);
+            });
+            Validate(knowledge, observed!);
+        }
+    }
+
     private static async Task RunAsync(bool knowledge)
     {
         var condition = knowledge ? "B" : "A";
@@ -29,7 +55,7 @@ public sealed class KnowledgeBenchmarkLiveTests
         Validate(knowledge, observed!);
     }
 
-    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export)
+    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export, TrustedEventsCapture? capture = null)
     {
         var condition = knowledge ? "B" : "A";
         export.RequestedCommit = HexInput("BOPS_KNOW_BENCH_COMMIT", 40);
@@ -39,15 +65,25 @@ public sealed class KnowledgeBenchmarkLiveTests
             throw new InvalidOperationException("A/B replay must be separate from corpus preparation and signing.");
         var manifestPin = Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_MANIFEST_SHA256");
         var authorizedGrant = Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_GRANT");
-        if (!knowledge && (manifestPin is not null || authorizedGrant is not null))
+        if (!knowledge && capture is null && (manifestPin is not null || authorizedGrant is not null))
             throw new InvalidOperationException("A must have no Knowledge pin or grant.");
-        var path = Required("BOPS_EVENTS_CORPUS_PATH");
-        var hash = Required("BOPS_EVENTS_CORPUS_SHA256");
+        if (!knowledge && capture is not null) { manifestPin = null; authorizedGrant = null; }
+        var path = capture is null ? Required("BOPS_EVENTS_CORPUS_PATH") : null;
+        var hash = capture?.Hash ?? Required("BOPS_EVENTS_CORPUS_SHA256");
+        export.CorpusSha256 = hash;
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Minimization acknowledgement required.");
-        var verified = CanaryEventsCorpus.Read(path, hash);
-        export.CorpusProvenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash);
-        _ = KnowledgeBenchmark.Replay(path, hash, requireCaptured: true); // Before any model/client creation.
+        if (capture is null)
+        {
+            var verified = CanaryEventsCorpus.Read(path!, hash);
+            export.CorpusProvenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash);
+            _ = KnowledgeBenchmark.Replay(path!, hash, requireCaptured: true);
+        }
+        else
+        {
+            export.CorpusProvenance = capture.Provenance;
+            CanaryEventsCorpus.RequireRealCorpus(export.CorpusProvenance);
+        }
         var metadataPath = Required("BOPS_KNOW_BENCH_METADATA");
         var metadataBytes = await File.ReadAllBytesAsync(metadataPath);
         if (bOps.Knowledge.KnowledgePackFormat.Sha256Hex(metadataBytes) != Required("BOPS_KNOW_BENCH_METADATA_SHA256"))
@@ -61,7 +97,7 @@ public sealed class KnowledgeBenchmarkLiveTests
                 throw new InvalidOperationException("Execution metadata incomplete.");
         if (root.GetProperty("baseline").GetString() != "Qwen8192" || root.GetProperty("model").GetString() != KnowledgeBenchmark.ModelId ||
             root.GetProperty("nPredict").GetInt32() != 8192 || !root.GetProperty("reasoning").GetBoolean() ||
-            root.GetProperty("corpusSha256").GetString() != hash || root.GetProperty("bopsCommit").GetString() != Required("BOPS_KNOW_BENCH_COMMIT"))
+            root.GetProperty("corpusSha256").GetString() != (capture is null ? hash : "single-run-in-process") || root.GetProperty("bopsCommit").GetString() != Required("BOPS_KNOW_BENCH_COMMIT"))
             throw new InvalidOperationException("Execution metadata incompatible.");
         // This is an operator attestation of effective server settings, not remote server introspection.
         if (Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SETTINGS_VERIFIED") != "1")
@@ -82,8 +118,11 @@ public sealed class KnowledgeBenchmarkLiveTests
         var pack = knowledge ? await KnowledgeBenchmark.LoadAsync() : default;
         using var client = new HttpClient();
         var provider = new LlamaCppProviderPackage(new ClientFactory(client));
-        var rig = KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path, hash,
-            pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
+        var rig = capture is null
+            ? KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path!, hash,
+                pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation)
+            : capture.Compose(world, provider.Create(options), condition, export.RunId,
+                pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
         export.Store = rig.Store;
         await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId));
     }
@@ -128,6 +167,14 @@ public sealed class KnowledgeBenchmarkLiveTests
     private sealed class ClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+    private sealed class IntegratedCaptureFactAttribute : FactAttribute
+    {
+        public IntegratedCaptureFactAttribute()
+        {
+            if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_CAPTURE_AB") != "1")
+                Skip = "Manual integrated native capture/A/B only; never enabled by offline tests.";
+        }
     }
     private sealed class BenchmarkFactAttribute : FactAttribute
     {

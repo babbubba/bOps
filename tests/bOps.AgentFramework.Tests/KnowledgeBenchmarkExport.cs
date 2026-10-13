@@ -166,7 +166,7 @@ internal sealed class KnowledgeBenchmarkExport
             : State?.Status.ToString() ?? "TaskNotObserved";
         var result = new
         {
-            schemaVersion = 2, RunId, condition, baseline = "Qwen8192", Commit, RequestedCommit, Configuration, CorpusSha256, CorpusProvenance, ProviderRequestTimeout,
+            schemaVersion = 2, provenanceScope = "process-local observation; exported metadata cannot attest imported files", RunId, condition, baseline = "Qwen8192", Commit, RequestedCommit, Configuration, CorpusSha256, CorpusProvenance, ProviderRequestTimeout,
             startedAtUtc = started, endedAtUtc = ended, totalExecutionMs = elapsedMs,
             totalBrokerLoopMs = brokerLoopMs, modelLoadMs = (long?)null, generationMs = (long?)null,
             timingsRequireServerTelemetry = true, taskId = State?.Id, status = State?.Status.ToString(),

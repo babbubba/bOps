@@ -42,15 +42,7 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
                 var result = await live.ExecuteAsync(arguments, ct);
                 if (!result.Succeeded || result.Output is null) return result;
                 var captureId = Guid.NewGuid().ToString("D");
-                corpus = CanaryEventsCorpus.Build(arguments, result.Output, "windows-capture", DateTimeOffset.UtcNow, new JsonObject
-                {
-                    ["captureId"] = captureId,
-                    ["auditReference"] = "ToolCallAuditEvent.Summary.corpusProvenance.captureId=" + captureId,
-                    ["invokedTool"] = live.GetType().FullName,
-                    ["manifestSha256"] = CanaryEventsCorpus.JsonHash(JsonSerializer.SerializeToNode(live.Manifest)!),
-                    ["schemaSha256"] = CanaryEventsCorpus.JsonHash(JsonSerializer.SerializeToNode(live.Manifest.Parameters)!),
-                    ["environment"] = "Windows/" + System.Runtime.InteropServices.RuntimeInformation.OSArchitecture,
-                });
+                corpus = CanaryEventsCorpus.Build(arguments, result.Output, "windows-capture", DateTimeOffset.UtcNow, CanaryEventsCorpus.CaptureMetadata(captureId));
                 hash = CanaryEventsCorpus.Hash(corpus);
                 var bytes = CanaryEventsCorpus.Encode(corpus, hash);
                 await destination.WriteAsync(bytes, ct);
@@ -183,6 +175,16 @@ internal static class CanaryEventsCorpus
         if (capture is not null) corpus["capture"] = capture.DeepClone();
         return corpus;
     }
+
+    internal static JsonObject CaptureMetadata(string captureId) => new()
+    {
+        ["captureId"] = captureId,
+        ["auditReference"] = "ToolCallAuditEvent.Summary.corpusProvenance.captureId=" + captureId,
+        ["invokedTool"] = typeof(WindowsSystemEventsTool).FullName,
+        ["manifestSha256"] = JsonHash(JsonSerializer.SerializeToNode(SystemToolManifests.Events("windows"))!),
+        ["schemaSha256"] = JsonHash(JsonSerializer.SerializeToNode(SystemToolManifests.Events("windows").Parameters)!),
+        ["environment"] = "Windows/" + System.Runtime.InteropServices.RuntimeInformation.OSArchitecture,
+    };
 
     private static void ValidateCapture(JsonObject? capture, string origin)
     {
