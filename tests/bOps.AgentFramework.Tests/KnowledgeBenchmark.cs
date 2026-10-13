@@ -32,12 +32,14 @@ internal static class KnowledgeBenchmark
     internal static string Goal => File.ReadAllText(Path.Combine(Root, "docs/benchmarks/know-bench-01a/scenario.txt"));
     internal static ToolArguments Arguments => ToolArguments.FromJson(new JsonObject
         { ["mode"] = "raw", ["windowMinutes"] = 1440, ["minSeverity"] = "warning", ["limit"] = 500, ["maxOutputBytes"] = 65536 });
-    internal static CanaryEventsActivation Replay(string path, string hash)
+    internal static CanaryEventsActivation Replay(string path, string hash, bool requireCaptured = false)
     {
         var verified = CanaryEventsCorpus.Read(path, hash);
         if (verified.Corpus["arguments"]!.GetValue<string>() != CanaryEventsCorpus.Canonical(Arguments.ToJson()))
             throw new InvalidOperationException("Benchmark corpus request incompatible.");
-        return new(true, false, path, hash, true);
+        var provenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash);
+        if (requireCaptured) CanaryEventsCorpus.RequireRealCorpus(provenance);
+        return new(true, false, path, hash, true, CanaryEventsCorpus.Canonical(provenance), requireCaptured);
     }
     internal static KnowledgeProcess Boot(KnowledgeRunnerWorld world, bool knowledge, RawKnowledgePack? raw = null,
         KnowledgeTrustStore? trust = null, bool grant = true)

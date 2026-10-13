@@ -14,7 +14,7 @@ namespace bOps.AgentFramework.Tests;
 
 // Internal test-host configuration only. No environment binding in a product host, public provider or dispatch route.
 internal sealed record CanaryEventsActivation(bool Enabled, bool Capture, string Path, string? ExpectedHash,
-    bool AcceptMinimization);
+    bool AcceptMinimization, string? ExpectedProvenance = null, bool RequireCaptured = false);
 
 internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, CanaryEventsActivation activation)
     : IToolAuditSummaryProvider
@@ -41,7 +41,16 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
                 using var destination = new FileStream(activation.Path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 var result = await live.ExecuteAsync(arguments, ct);
                 if (!result.Succeeded || result.Output is null) return result;
-                corpus = CanaryEventsCorpus.Build(arguments, result.Output, "windows-capture", DateTimeOffset.UtcNow);
+                var captureId = Guid.NewGuid().ToString("D");
+                corpus = CanaryEventsCorpus.Build(arguments, result.Output, "windows-capture", DateTimeOffset.UtcNow, new JsonObject
+                {
+                    ["captureId"] = captureId,
+                    ["auditReference"] = "ToolCallAuditEvent.Summary.corpusProvenance.captureId=" + captureId,
+                    ["invokedTool"] = live.GetType().FullName,
+                    ["manifestSha256"] = CanaryEventsCorpus.JsonHash(JsonSerializer.SerializeToNode(live.Manifest)!),
+                    ["schemaSha256"] = CanaryEventsCorpus.JsonHash(JsonSerializer.SerializeToNode(live.Manifest.Parameters)!),
+                    ["environment"] = "Windows/" + System.Runtime.InteropServices.RuntimeInformation.OSArchitecture,
+                });
                 hash = CanaryEventsCorpus.Hash(corpus);
                 var bytes = CanaryEventsCorpus.Encode(corpus, hash);
                 await destination.WriteAsync(bytes, ct);
@@ -56,14 +65,22 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
                     return Refuse("The requested arguments do not match the captured request.");
             }
 
-            // Output is exactly the persisted, minimized corpus, including its original time window.
+            var provenance = CanaryEventsCorpus.Provenance(corpus, hash, activation.Capture);
+            if ((activation.ExpectedProvenance is not null && activation.ExpectedProvenance != CanaryEventsCorpus.Canonical(provenance))
+                || (activation.RequireCaptured && provenance["classification"]!.GetValue<string>() != "Captured"))
+                return Refuse("Captured provenance unavailable or changed.");
+            var output = JsonNode.Parse(corpus["output"]!.GetValue<string>())!.AsObject();
+            output["benchmarkCorpus"]!["origin"] = provenance["classification"]!.GetValue<string>().ToLowerInvariant();
+            // Keep stored evidence/window, with independently resolved provenance visibly attached.
             // Native facts are deliberately not promoted to fresh observations or replay attestations.
-            return ToolCallResult.Success(corpus["output"]!.GetValue<string>()) with
+            return ToolCallResult.Success(CanaryEventsCorpus.Canonical(output)) with
             {
                 Completeness = (ToolResultCompleteness)corpus["completeness"]!.GetValue<int>(),
                 Facts = [new EvidenceFact("benchmark.events", "executionMode", ToolParameterType.String,
                     JsonValue.Create(activation.Capture ? "capture" : "replay")!),
-                    new EvidenceFact("benchmark.events", "corpusSha256", ToolParameterType.String, JsonValue.Create(hash)!)],
+                    new EvidenceFact("benchmark.events", "corpusSha256", ToolParameterType.String, JsonValue.Create(hash)!),
+                    new EvidenceFact("benchmark.events", "corpusProvenance", ToolParameterType.String,
+                        JsonValue.Create(CanaryEventsCorpus.Canonical(provenance))!)],
             };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
@@ -79,6 +96,8 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
         ["executionMode"] = activation.Capture ? "capture" : "replay",
         ["corpusSha256"] = result.Facts.FirstOrDefault(f => f.Key == "corpusSha256")?.Value.DeepClone(),
         ["snapshotOrigin"] = "unattested-local-corpus",
+        ["corpusProvenance"] = result.Facts.FirstOrDefault(f => f.Key == "corpusProvenance") is { } fact
+            ? JsonNode.Parse(fact.Value.GetValue<string>()) : null,
         ["minimization"] = CanaryEventsCorpus.Minimization,
         ["succeeded"] = result.Succeeded,
     };
@@ -121,10 +140,11 @@ internal static class CanaryEventsCorpus
             throw new InvalidOperationException("Only bounded System/Application requests without free-text filters are supported.");
     }
 
-    internal static JsonObject Build(ToolArguments arguments, string output, string origin, DateTimeOffset capturedUtc)
+    internal static JsonObject Build(ToolArguments arguments, string output, string origin, DateTimeOffset capturedUtc, JsonObject? capture = null)
     {
-        if (origin is not ("synthetic" or "windows-capture") || capturedUtc.Offset != TimeSpan.Zero)
+        if (origin is not ("synthetic" or "windows-capture" or "unverified") || capturedUtc.Offset != TimeSpan.Zero)
             throw new InvalidOperationException("Invalid corpus metadata.");
+        ValidateCapture(capture, origin);
         var root = JsonNode.Parse(output)!.AsObject();
         var to = DateTimeOffset.Parse(root["window"]!["toUtc"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture);
         ValidateArguments(arguments, to);
@@ -142,7 +162,7 @@ internal static class CanaryEventsCorpus
             ["evidence"] = "stored-snapshot; not a fresh Event Log observation; execution mode is in audit and facts",
         };
         var sanitized = Canonical(root);
-        return new JsonObject
+        var corpus = new JsonObject
         {
             ["format"] = "bops-system-events-corpus-v1", ["tool"] = "system.events",
             ["schemaVersion"] = SystemEventFormatting.SchemaVersion,
@@ -160,6 +180,49 @@ internal static class CanaryEventsCorpus
                 : root["status"]!.GetValue<string>() is "unavailable" or "unsupported"
                     ? ToolResultCompleteness.Unavailable : ToolResultCompleteness.Partial),
         };
+        if (capture is not null) corpus["capture"] = capture.DeepClone();
+        return corpus;
+    }
+
+    private static void ValidateCapture(JsonObject? capture, string origin)
+    {
+        if (capture is null) return; // Legacy snapshots have no acquisition receipt.
+        if (origin != "windows-capture" || capture.Count != 6
+            || !Guid.TryParseExact(capture["captureId"]!.GetValue<string>(), "D", out _)
+            || capture["auditReference"]!.GetValue<string>() != "ToolCallAuditEvent.Summary.corpusProvenance.captureId=" + capture["captureId"]!.GetValue<string>()
+            || capture["invokedTool"]!.GetValue<string>() != typeof(WindowsSystemEventsTool).FullName
+            || capture["manifestSha256"]!.GetValue<string>() != JsonHash(JsonSerializer.SerializeToNode(SystemToolManifests.Events("windows"))!)
+            || capture["schemaSha256"]!.GetValue<string>() != JsonHash(JsonSerializer.SerializeToNode(SystemToolManifests.Events("windows").Parameters)!)
+            || capture["environment"]!.GetValue<string>() is not ("Windows/X64" or "Windows/X86" or "Windows/Arm64" or "Windows/Arm"))
+            throw new InvalidOperationException("Inconsistent acquisition metadata.");
+    }
+
+    // A receipt imported from disk is self-asserted: hashes prove integrity, never acquisition.
+    // Captured is available only on the successful native call in this adapter, not by JSON declaration.
+    internal static JsonObject Provenance(JsonObject corpus, string hash, bool capturedHere = false) => new()
+    {
+        ["classification"] = capturedHere ? "Captured" : corpus["origin"]!.GetValue<string>() == "synthetic" ? "Synthetic" : "Unverified",
+        ["guarantee"] = capturedHere ? "observed-local-native-execution; no cryptographic attestation" : "pinned-content-integrity; acquisition-unverified",
+        ["corpusSha256"] = hash,
+        ["captureId"] = corpus["capture"]?["captureId"]?.DeepClone(),
+        ["acquisitionMetadataStatus"] = capturedHere ? "Observed" : "SelfAsserted",
+        ["tool"] = corpus["tool"]!.DeepClone(),
+        ["invokedTool"] = corpus["capture"]?["invokedTool"]?.DeepClone(),
+        ["manifestSha256"] = corpus["capture"]?["manifestSha256"]?.DeepClone(),
+        ["schemaSha256"] = corpus["capture"]?["schemaSha256"]?.DeepClone(),
+        ["recordedUtc"] = corpus["capturedUtc"]!.DeepClone(),
+        ["arguments"] = JsonNode.Parse(corpus["arguments"]!.GetValue<string>()),
+        ["complete"] = corpus["complete"]!.DeepClone(),
+        ["truncated"] = corpus["truncated"]!.DeepClone(),
+        ["completeness"] = corpus["completeness"]!.DeepClone(),
+        ["environment"] = corpus["capture"]?["environment"]?.DeepClone(),
+        ["auditReference"] = corpus["capture"]?["auditReference"]?.DeepClone(),
+    };
+
+    internal static void RequireRealCorpus(JsonObject provenance)
+    {
+        if (provenance["classification"]!.GetValue<string>() != "Captured")
+            throw new InvalidOperationException("Real Windows benchmark requires independently verified acquisition; imported corpus is Synthetic or Unverified.");
     }
 
     private static void Scrub(JsonNode node)
@@ -185,7 +248,8 @@ internal static class CanaryEventsCorpus
         JsonArray array => new JsonArray(array.Select(item => item is null ? null : Ordered(item)).ToArray()),
         _ => node.DeepClone(),
     };
-    internal static string Hash(JsonObject corpus) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Canonical(corpus))));
+    internal static string JsonHash(JsonNode node) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Canonical(node))));
+    internal static string Hash(JsonObject corpus) => JsonHash(corpus);
     internal static byte[] Encode(JsonObject corpus, string hash) => Encoding.UTF8.GetBytes(Canonical(new JsonObject
         { ["corpus"] = corpus.DeepClone(), ["sha256"] = hash }));
 
@@ -210,7 +274,7 @@ internal static class CanaryEventsCorpus
         // changed limits/defaults/assembly contract and inconsistent effective windows/completeness.
         var rebuilt = Build(ToolArguments.FromJson(JsonNode.Parse(corpus["arguments"]!.GetValue<string>())!.AsObject()),
             corpus["output"]!.GetValue<string>(), corpus["origin"]!.GetValue<string>(),
-            DateTimeOffset.Parse(corpus["capturedUtc"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture));
+            DateTimeOffset.Parse(corpus["capturedUtc"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture), corpus["capture"]?.AsObject());
         if (Canonical(rebuilt) != Canonical(corpus)) throw new InvalidOperationException("Incompatible snapshot metadata.");
         return (corpus, hash);
     }

@@ -45,7 +45,9 @@ public sealed class KnowledgeBenchmarkLiveTests
         var hash = Required("BOPS_EVENTS_CORPUS_SHA256");
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Minimization acknowledgement required.");
-        _ = KnowledgeBenchmark.Replay(path, hash); // No capture branch or synthetic fallback.
+        var verified = CanaryEventsCorpus.Read(path, hash);
+        export.CorpusProvenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash);
+        _ = KnowledgeBenchmark.Replay(path, hash, requireCaptured: true); // Before any model/client creation.
         var metadataPath = Required("BOPS_KNOW_BENCH_METADATA");
         var metadataBytes = await File.ReadAllBytesAsync(metadataPath);
         if (bOps.Knowledge.KnowledgePackFormat.Sha256Hex(metadataBytes) != Required("BOPS_KNOW_BENCH_METADATA_SHA256"))

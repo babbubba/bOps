@@ -23,6 +23,8 @@ internal sealed class KnowledgeBenchmarkExport
     internal string? Commit { get; set; }
     internal string? RequestedCommit { get; set; }
     internal string? CorpusSha256 { get; set; }
+    internal JsonObject CorpusProvenance { get; set; } = new()
+        { ["classification"] = "Unverified", ["guarantee"] = "corpus-not-validated" };
     internal JsonObject? Configuration { get; set; }
     internal TimeSpan? ProviderRequestTimeout { get; set; }
     internal KnowledgeRunnerWorld? World { get; set; }
@@ -164,7 +166,7 @@ internal sealed class KnowledgeBenchmarkExport
             : State?.Status.ToString() ?? "TaskNotObserved";
         var result = new
         {
-            schemaVersion = 2, RunId, condition, baseline = "Qwen8192", Commit, RequestedCommit, Configuration, CorpusSha256, ProviderRequestTimeout,
+            schemaVersion = 2, RunId, condition, baseline = "Qwen8192", Commit, RequestedCommit, Configuration, CorpusSha256, CorpusProvenance, ProviderRequestTimeout,
             startedAtUtc = started, endedAtUtc = ended, totalExecutionMs = elapsedMs,
             totalBrokerLoopMs = brokerLoopMs, modelLoadMs = (long?)null, generationMs = (long?)null,
             timingsRequireServerTelemetry = true, taskId = State?.Id, status = State?.Status.ToString(),
