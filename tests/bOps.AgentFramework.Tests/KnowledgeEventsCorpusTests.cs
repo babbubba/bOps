@@ -138,16 +138,23 @@ public sealed class KnowledgeEventsCorpusTests
     private static async Task ManualAsync(string mode)
     {
         if (mode is not ("capture" or "replay")) throw new InvalidOperationException("Unknown corpus mode.");
+        var profile = Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_PROFILE");
+        if (profile is not (null or "01C" or "01D")) throw new InvalidOperationException("Unknown benchmark corpus profile.");
+        if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") is not null)
+            throw new InvalidOperationException("Corpus preparation must be separate from A/B execution.");
+        var arguments = profile == "01D" ? KnowledgeBenchmark.Arguments : Request;
         var path = Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_PATH")
             ?? throw new InvalidOperationException("An explicit corpus path is required.");
         var hash = Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_SHA256");
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Explicit minimization acknowledgement is required.");
+        if (mode == "replay" && profile == "01D")
+            _ = KnowledgeBenchmark.Replay(path, hash ?? throw new InvalidOperationException("Explicit corpus pin required."));
         using var world = new KnowledgeRunnerWorld();
         var process = world.Boot([]);
         var rig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false, withWindowsSystemEvents: true,
             eventsCorpus: new CanaryEventsActivation(true, mode == "capture", path, hash, true));
-        await ExecuteAsync(rig, Request, mode);
+        await ExecuteAsync(rig, arguments, mode);
         var call = Assert.Single(world.Events.OfType<ToolCallAuditEvent>());
         // No event data is printed even on failure. Hash is available in the snapshot's sha256 member.
         Assert.True(call.Outcome == ToolOutcome.Success, "Manual event corpus operation refused; no payload logged.");

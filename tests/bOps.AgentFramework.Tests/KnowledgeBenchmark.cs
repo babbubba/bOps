@@ -58,6 +58,24 @@ internal static class KnowledgeBenchmark
     internal static CanaryRig Compose(KnowledgeProcess process, IChatModel model, bool knowledge, CanaryEventsActivation replay) =>
         process.ComposeCanary(new BenchmarkModel(model), withHost: knowledge, withWindowsSystemEvents: true, eventsCorpus: replay);
 
+    // Shared by the manual A/B entry points and the offline probes. No live/capture fallback.
+    internal static CanaryRig ComposeReplay(KnowledgeRunnerWorld world, IChatModel model, string condition,
+        string path, string hash, RawKnowledgePack? raw = null, KnowledgeTrustStore? trust = null,
+        string? manifestPin = null, string? authorizedGrant = null)
+    {
+        if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A or B condition required.");
+        var replay = Replay(path, hash);
+        var knowledge = condition == "B";
+        if (!knowledge && (raw is not null || trust is not null || manifestPin is not null || authorizedGrant is not null))
+            throw new InvalidOperationException("A must have no Knowledge inputs or grant.");
+        if (knowledge && (raw is null || trust is null ||
+            manifestPin != KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span) || authorizedGrant != GrantAuthorization))
+            throw new InvalidOperationException("B requires the explicit signed manifest pin and exact grant authorization.");
+        return Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay);
+    }
+
+    internal const string GrantAuthorization = "tenant-a/acme.windows-event-runbooks@1.0.0:Knowledge";
+
     // The existing TestPublisher keeps its RSA private key exclusively in memory. Only public artifacts are exported.
     internal static void SignDelivery()
     {

@@ -20,11 +20,18 @@ public sealed class KnowledgeBenchmarkLiveTests
         var condition = knowledge ? "B" : "A";
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") != condition)
             throw new InvalidOperationException("Explicit individual benchmark condition required.");
+        if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_MODE") is not null ||
+            Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
+            throw new InvalidOperationException("A/B replay must be separate from corpus preparation and signing.");
+        var manifestPin = Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_MANIFEST_SHA256");
+        var authorizedGrant = Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_GRANT");
+        if (!knowledge && (manifestPin is not null || authorizedGrant is not null))
+            throw new InvalidOperationException("A must have no Knowledge pin or grant.");
         var path = Required("BOPS_EVENTS_CORPUS_PATH");
         var hash = Required("BOPS_EVENTS_CORPUS_SHA256");
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Minimization acknowledgement required.");
-        var replay = KnowledgeBenchmark.Replay(path, hash); // No capture branch or synthetic fallback.
+        _ = KnowledgeBenchmark.Replay(path, hash); // No capture branch or synthetic fallback.
         var metadataPath = Required("BOPS_KNOW_BENCH_METADATA");
         var metadataBytes = await File.ReadAllBytesAsync(metadataPath);
         if (bOps.Knowledge.KnowledgePackFormat.Sha256Hex(metadataBytes) != Required("BOPS_KNOW_BENCH_METADATA_SHA256"))
@@ -59,10 +66,10 @@ public sealed class KnowledgeBenchmarkLiveTests
         await File.WriteAllBytesAsync(Path.Combine(resultDirectory, "execution-metadata.json"), metadataBytes);
         using var world = new KnowledgeRunnerWorld();
         var pack = knowledge ? await KnowledgeBenchmark.LoadAsync() : default;
-        var process = KnowledgeBenchmark.Boot(world, knowledge, pack.Raw, pack.Trust);
         using var client = new HttpClient();
         var provider = new LlamaCppProviderPackage(new ClientFactory(client));
-        var rig = KnowledgeBenchmark.Compose(process, provider.Create(options), knowledge, replay);
+        var rig = KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path, hash,
+            pack.Raw, pack.Trust, manifestPin, authorizedGrant);
         var timer = System.Diagnostics.Stopwatch.StartNew();
         TaskState? state = null;
         try

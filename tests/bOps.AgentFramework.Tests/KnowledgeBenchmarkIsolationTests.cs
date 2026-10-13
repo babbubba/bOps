@@ -20,16 +20,14 @@ public sealed class KnowledgeBenchmarkIsolationTests
         var corpus = KnowledgeBenchmark.Synthetic();
         var hash = CanaryEventsCorpus.Hash(corpus);
         var path = KnowledgeBenchmark.WriteSynthetic(temporary, corpus);
-        var replay = KnowledgeBenchmark.Replay(path, hash);
         using var a = new KnowledgeRunnerWorld();
         using var b = new KnowledgeRunnerWorld();
-        var pa = KnowledgeBenchmark.Boot(a, false);
-        var pb = KnowledgeBenchmark.Boot(b, true, raw, trust);
         // A even proposes the absent capability: it must receive no content or authority.
         var ma = new BenchmarkProbe([KnowledgeBenchmark.Plan, Script.Knowledge("absent", "discover"), KnowledgeBenchmark.Events, Script.Final("offline done")]);
         var mb = new BenchmarkProbe([KnowledgeBenchmark.Plan, KnowledgeBenchmark.Read, KnowledgeBenchmark.Events, Script.Final("offline done")]);
-        var ra = KnowledgeBenchmark.Compose(pa, ma, false, replay);
-        var rb = KnowledgeBenchmark.Compose(pb, mb, true, replay);
+        var ra = KnowledgeBenchmark.ComposeReplay(a, ma, "A", path, hash);
+        var rb = KnowledgeBenchmark.ComposeReplay(b, mb, "B", path, hash, raw, trust,
+            KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span), KnowledgeBenchmark.GrantAuthorization);
         Assert.Equal(JsonSerializer.Serialize(ra.Registry.GetAvailableManifests()), JsonSerializer.Serialize(rb.Registry.GetAvailableManifests()));
         var sa = await ra.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA);
         var sb = await rb.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA);
@@ -40,8 +38,6 @@ public sealed class KnowledgeBenchmarkIsolationTests
         Assert.Empty(a.Events.OfType<KnowledgeReadAuditEvent>());
         Assert.Empty(a.Events.OfType<KnowledgePackAdmissionAuditEvent>());
         Assert.False(Directory.Exists(a.SnapshotRoot));
-        Assert.Equal(KnowledgeAdmissionCode.ProviderNotAdmitted, pa.Registry.Admit(a.Source,
-            KnowledgeTaskScope.FromAuthority(new ActorIdTenantAuthority(), KnowledgeRunnerWorld.ActorA, Guid.NewGuid())!).Code);
         Assert.Equal("tenant-a", sb.KnowledgeBinding!.TenantId);
         Assert.Equal("Knowledge", sb.KnowledgeBinding.Kind);
         Assert.Equal(KnowledgeBenchmark.Reference.PackId, sb.KnowledgeBinding.PackId);
@@ -106,6 +102,19 @@ public sealed class KnowledgeBenchmarkIsolationTests
         var hash = CanaryEventsCorpus.Hash(corpus);
         var path = KnowledgeBenchmark.WriteSynthetic(temporary, corpus);
         var replay = KnowledgeBenchmark.Replay(path, hash);
+        using (var rejectedWorld = new KnowledgeRunnerWorld())
+        {
+            var probe = new BenchmarkProbe([]);
+            var pin = KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span);
+            Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.ComposeReplay(rejectedWorld, probe, "unknown", path, hash));
+            Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.ComposeReplay(rejectedWorld, probe, "A", path, hash, raw, trust, pin, KnowledgeBenchmark.GrantAuthorization));
+            Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.ComposeReplay(rejectedWorld, probe, "B", path, hash, raw, trust, pin));
+            Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.ComposeReplay(rejectedWorld, probe, "B", path, hash, raw, trust, pin, "tenant-b"));
+            Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.ComposeReplay(rejectedWorld, probe, "B", path, hash, raw, trust, new string('0', 64), KnowledgeBenchmark.GrantAuthorization));
+            Assert.Empty(probe.Requests);
+            Assert.Equal(0, rejectedWorld.Source.Opens);
+            Assert.Empty(rejectedWorld.Events);
+        }
         using (var deniedWorld = new KnowledgeRunnerWorld())
         {
             var denied = KnowledgeBenchmark.Boot(deniedWorld, true, raw, trust, grant: false);
@@ -152,16 +161,31 @@ public sealed class KnowledgeBenchmarkIsolationTests
         changed["arguments"] = CanaryEventsCorpus.Canonical(different);
         await File.WriteAllBytesAsync(path, CanaryEventsCorpus.Encode(changed, CanaryEventsCorpus.Hash(changed)));
         Assert.ThrowsAny<Exception>(() => KnowledgeBenchmark.Replay(path, CanaryEventsCorpus.Hash(changed)));
+        using (var incompatibleWorld = new KnowledgeRunnerWorld())
+            foreach (var condition in new[] { "A", "B" })
+                Assert.ThrowsAny<Exception>(() => KnowledgeBenchmark.ComposeReplay(incompatibleWorld, new BenchmarkProbe([]), condition,
+                    path, CanaryEventsCorpus.Hash(changed)));
         await File.WriteAllBytesAsync(path, CanaryEventsCorpus.Encode(corpus, hash));
         using var replayWorld = new KnowledgeRunnerWorld();
         var process = KnowledgeBenchmark.Boot(replayWorld, false);
         var rig = KnowledgeBenchmark.Compose(process, new BenchmarkProbe([]), false, replay);
+        // Corruption after composition must also be refused by the governed adapter, without native fallback.
+        var tampered = (JsonObject)corpus.DeepClone();
+        tampered["output"] = "altered";
+        await File.WriteAllBytesAsync(path, CanaryEventsCorpus.Encode(tampered, hash));
+        var tamperedResult = await rig.Runner.ExecuteExecutionPlanAsync(Guid.NewGuid(), KnowledgeRunnerWorld.ActorA,
+            new ExecutionPlan("offline", "1", "Tampered corpus probe", [new ExecutionPlanStep(0, "system.events", KnowledgeBenchmark.Arguments, "replay")]), null);
+        Assert.StartsWith("ERROR", Assert.Single(tamperedResult.Evidence).Data);
+        Assert.Equal(ToolOutcome.Failure, replayWorld.Events.OfType<ToolCallAuditEvent>().Last().Outcome);
+        foreach (var condition in new[] { "A", "B" })
+            Assert.ThrowsAny<Exception>(() => KnowledgeBenchmark.ComposeReplay(replayWorld, new BenchmarkProbe([]), condition, path, hash));
+        await File.WriteAllBytesAsync(path, CanaryEventsCorpus.Encode(corpus, hash));
         var incompatible = KnowledgeBenchmark.Arguments.ToJson();
         incompatible["limit"] = 10;
         var result = await rig.Runner.ExecuteExecutionPlanAsync(Guid.NewGuid(), KnowledgeRunnerWorld.ActorA,
             new ExecutionPlan("offline", "1", "Mismatch probe", [new ExecutionPlanStep(0, "system.events", ToolArguments.FromJson(incompatible), "replay")]), null);
         Assert.StartsWith("ERROR", Assert.Single(result.Evidence).Data);
-        Assert.Equal(ToolOutcome.Failure, Assert.Single(replayWorld.Events.OfType<ToolCallAuditEvent>()).Outcome);
+        Assert.All(replayWorld.Events.OfType<ToolCallAuditEvent>(), call => Assert.Equal(ToolOutcome.Failure, call.Outcome));
         Assert.Empty(replayWorld.Events.OfType<ModelCallAuditEvent>());
     }
 }
