@@ -20,6 +20,20 @@ public sealed class KnowledgeBenchmarkLiveTests
         var condition = knowledge ? "B" : "A";
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") != condition)
             throw new InvalidOperationException("Explicit individual benchmark condition required.");
+        KnowledgeBenchmarkExport? observed = null;
+        await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), condition, async export =>
+        {
+            observed = export;
+            await ExecuteAsync(knowledge, export);
+        });
+        Validate(knowledge, observed!);
+    }
+
+    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export)
+    {
+        var condition = knowledge ? "B" : "A";
+        export.RequestedCommit = HexInput("BOPS_KNOW_BENCH_COMMIT", 40);
+        export.CorpusSha256 = HexInput("BOPS_EVENTS_CORPUS_SHA256", 64);
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_MODE") is not null ||
             Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
             throw new InvalidOperationException("A/B replay must be separate from corpus preparation and signing.");
@@ -38,6 +52,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             throw new InvalidOperationException("Shared execution metadata pin mismatch.");
         using var metadata = JsonDocument.Parse(metadataBytes);
         var root = metadata.RootElement;
+        export.Configuration = KnowledgeBenchmarkExport.SafeConfiguration(root);
         foreach (var name in new[] { "baseline", "llamaCppVersion", "model", "modelFileSha256", "quantization", "ctxSize",
                      "nPredict", "reasoning", "sampling", "bopsCommit", "corpusSha256", "providerProfileSha256", "runtimeLimits", "retryPolicy" })
             if (!root.TryGetProperty(name, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -49,47 +64,33 @@ public sealed class KnowledgeBenchmarkLiveTests
         // This is an operator attestation of effective server settings, not remote server introspection.
         if (Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SETTINGS_VERIFIED") != "1")
             throw new InvalidOperationException("Effective server settings must be independently verified for both conditions.");
-        if (root.GetProperty("bopsCommit").GetString() != await GitAsync("rev-parse", "HEAD") ||
+        export.Commit = await GitAsync("rev-parse", "HEAD");
+        if (root.GetProperty("bopsCommit").GetString() != export.Commit ||
             !string.IsNullOrEmpty(await GitAsync("status", "--porcelain", "--untracked-files=no")))
             throw new InvalidOperationException("Benchmark requires the pinned commit and a clean tracked checkout.");
         var options = KnowledgeHostCanaryLiveTests.LocalQwenConfiguration.Read();
+        export.ProviderRequestTimeout = options.RequestTimeout;
         if (options.Model != KnowledgeBenchmark.ModelId) throw new InvalidOperationException("Exact model required.");
         var profile = JsonSerializer.SerializeToUtf8Bytes(new { options.Provider, options.BaseUrl, options.Model,
             options.SupportsNativeToolCalling, options.RequestTimeout });
         if (root.GetProperty("providerProfileSha256").GetString() != bOps.Knowledge.KnowledgePackFormat.Sha256Hex(profile))
             throw new InvalidOperationException("Shared non-secret provider profile mismatch.");
-        var resultRoot = Path.GetFullPath(Required("BOPS_KNOW_BENCH_RESULTS"));
-        if (!Directory.Exists(resultRoot)) throw new InvalidOperationException("Explicit existing artifact directory required.");
-        var resultDirectory = Path.Combine(resultRoot, condition);
-        if (Directory.Exists(resultDirectory)) throw new InvalidOperationException("Condition artifacts already exist; no overwrite.");
-        Directory.CreateDirectory(resultDirectory);
-        await File.WriteAllBytesAsync(Path.Combine(resultDirectory, "execution-metadata.json"), metadataBytes);
-        using var world = new KnowledgeRunnerWorld();
+        var world = new KnowledgeRunnerWorld();
+        export.World = world;
         var pack = knowledge ? await KnowledgeBenchmark.LoadAsync() : default;
         using var client = new HttpClient();
         var provider = new LlamaCppProviderPackage(new ClientFactory(client));
         var rig = KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path, hash,
-            pack.Raw, pack.Trust, manifestPin, authorizedGrant);
-        var timer = System.Diagnostics.Stopwatch.StartNew();
-        TaskState? state = null;
-        try
-        {
-            state = await rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA);
-        }
-        finally
-        {
-            timer.Stop();
-            // Aggregate broker duration includes server loading/retries; never mislabel it as generation time.
-            var result = new { condition, baseline = "Qwen8192", corpusSha256 = hash,
-                totalBrokerLoopMs = timer.ElapsedMilliseconds, modelLoadMs = (long?)null, generationMs = (long?)null,
-                timingsRequireServerTelemetry = true, state?.Status, state?.TerminalReason, state?.Accounting,
-                finalObservation = state is { Steps.Count: > 0 } ? state.Steps[^1].Observation : null,
-                modelAttempts = world.Events.OfType<ModelCallAuditEvent>().Select(call => new
-                { call.DurationMs, call.ModelAttempt, call.ProviderAttempt, call.Outcome, call.FailureKind }),
-                knowledgeUsed = world.Events.OfType<KnowledgeReadAuditEvent>().Any(read => read.ResultCode == KnowledgeReadResultCode.Success) };
-            await File.WriteAllTextAsync(Path.Combine(resultDirectory, "result.json"), JsonSerializer.Serialize(result, KnowledgeBenchmark.JsonOptions));
-            File.Copy(world.AuditFile, Path.Combine(resultDirectory, "audit.jsonl"));
-        }
+            pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
+        export.Store = rig.Store;
+        await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId));
+    }
+
+    private static void Validate(bool knowledge, KnowledgeBenchmarkExport export)
+    {
+        var state = export.State;
+        var world = export.World!;
+        var hash = export.CorpusSha256;
         Assert.NotNull(state);
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.All(world.Events.OfType<ToolCallAuditEvent>(), call => Assert.Equal("system.events", call.Tool));
@@ -102,6 +103,11 @@ public sealed class KnowledgeBenchmarkLiveTests
             Assert.Empty(world.Events.OfType<KnowledgePackAdmissionAuditEvent>());
             Assert.Empty(world.Events.OfType<KnowledgeReadAuditEvent>());
         }
+    }
+    private static string? HexInput(string name, int length)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return value?.Length == length && value.All(Uri.IsHexDigit) ? value : null;
     }
     private static string Required(string name) => Environment.GetEnvironmentVariable(name)
         ?? throw new InvalidOperationException("Explicit benchmark input required: " + name);

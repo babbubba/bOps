@@ -55,13 +55,13 @@ internal static class KnowledgeBenchmark
             bindings: new Dictionary<TenantId, PackReference> { [KnowledgeRunnerWorld.TenantA] = Reference });
     }
     internal static PackGrant Grant => new(KnowledgeRunnerWorld.TenantA, Reference, PackKind.Knowledge);
-    internal static CanaryRig Compose(KnowledgeProcess process, IChatModel model, bool knowledge, CanaryEventsActivation replay) =>
-        process.ComposeCanary(new BenchmarkModel(model), withHost: knowledge, withWindowsSystemEvents: true, eventsCorpus: replay);
+    internal static CanaryRig Compose(KnowledgeProcess process, IChatModel model, bool knowledge, CanaryEventsActivation replay, BenchmarkModelObservation? observation = null) =>
+        process.ComposeCanary(new BenchmarkModel(model, observation), withHost: knowledge, withWindowsSystemEvents: true, eventsCorpus: replay);
 
     // Shared by the manual A/B entry points and the offline probes. No live/capture fallback.
     internal static CanaryRig ComposeReplay(KnowledgeRunnerWorld world, IChatModel model, string condition,
         string path, string hash, RawKnowledgePack? raw = null, KnowledgeTrustStore? trust = null,
-        string? manifestPin = null, string? authorizedGrant = null)
+        string? manifestPin = null, string? authorizedGrant = null, BenchmarkModelObservation? observation = null)
     {
         if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A or B condition required.");
         var replay = Replay(path, hash);
@@ -71,7 +71,9 @@ internal static class KnowledgeBenchmark
         if (knowledge && (raw is null || trust is null ||
             manifestPin != KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span) || authorizedGrant != GrantAuthorization))
             throw new InvalidOperationException("B requires the explicit signed manifest pin and exact grant authorization.");
-        return Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay);
+        var rig = Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay, observation);
+        if (observation is not null) observation.Calls = 0;
+        return rig;
     }
 
     internal const string GrantAuthorization = "tenant-a/acme.windows-event-runbooks@1.0.0:Knowledge";
@@ -123,7 +125,7 @@ internal static class KnowledgeBenchmark
     internal static ModelResponse Events => Script.Calls(new ModelToolCall("events", "system.events", Arguments));
     internal static ModelResponse Read => Script.Knowledge("knowledge", "read_resource", "windows-event-triage", "references/interpretation.md");
 
-    private sealed class BenchmarkModel(IChatModel inner) : IChatModel
+    internal sealed class BenchmarkModel(IChatModel inner, BenchmarkModelObservation? observation) : IChatModel
     {
         private int calls;
         public ChatModelDescriptor Descriptor => inner.Descriptor;
@@ -131,7 +133,13 @@ internal static class KnowledgeBenchmark
         {
             if (!string.Equals(Descriptor.ModelId, ModelId, StringComparison.Ordinal))
                 throw new InvalidOperationException("Benchmark requires exact Qwen3.6-35B model id.");
-            if (++calls > MaximumCalls) throw new InvalidOperationException("Benchmark call budget exhausted.");
+            if (calls >= MaximumCalls)
+            {
+                if (observation is not null) observation.CallLimitReached = true;
+                throw new InvalidOperationException("Benchmark call budget exhausted.");
+            }
+            calls++;
+            if (observation is not null) observation.Calls = (observation.Calls ?? 0) + 1;
             return inner.CompleteAsync(request, ct);
         }
     }
