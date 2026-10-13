@@ -62,8 +62,10 @@ internal sealed class KnowledgeHostCanary : IDisposable
 
     /// <summary>Uses the existing AgentRunner path with the existing KnowledgeTaskHost and MAF broker.</summary>
     internal CanaryRig Compose(
-        IChatModel model, ILogger<AgentRunner>? diagnosticLogger = null, bool withWindowsSystemEvents = false) =>
-        process.ComposeCanary(model, diagnosticLogger: diagnosticLogger, withWindowsSystemEvents: withWindowsSystemEvents);
+        IChatModel model, ILogger<AgentRunner>? diagnosticLogger = null, bool withWindowsSystemEvents = false,
+        CanaryEventsActivation? eventsCorpus = null) =>
+        process.ComposeCanary(model, diagnosticLogger: diagnosticLogger, withWindowsSystemEvents: withWindowsSystemEvents,
+            eventsCorpus: eventsCorpus);
 
     public void Dispose() => world.Dispose();
 }

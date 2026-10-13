@@ -146,12 +146,15 @@ internal sealed class KnowledgeProcess : IDisposable
         bool withHost = true,
         ITaskStore? store = null,
         ILogger<AgentRunner>? diagnosticLogger = null,
-        bool withWindowsSystemEvents = false)
+        bool withWindowsSystemEvents = false,
+        CanaryEventsActivation? eventsCorpus = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
         var other = new RecordingReadTool("test.other", []);
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
+        if (eventsCorpus is not null && !withWindowsSystemEvents)
+            throw new InvalidOperationException("Event corpus requires the explicit Windows diagnostic canary.");
         if (withWindowsSystemEvents)
         {
             if (!OperatingSystem.IsWindows())
@@ -160,9 +163,11 @@ internal sealed class KnowledgeProcess : IDisposable
             }
 
             // Use the existing registration factory, selecting only the native Read tool. Never register the provider's
-            // remaining surface (including process mutation); no wrapper, alternate dispatch, or copied manifest/schema.
+            // remaining surface (including process mutation). Optional corpus decoration stays here, with the same manifest
+            // and normal dispatch; it cannot change a product registry or bypass runtime governance.
             var events = new WindowsSystemToolProvider().GetTools().OfType<WindowsSystemEventsTool>().Single();
-            registry.Register(new PackageId("bops.packages.system.windows"), events);
+            registry.Register(new PackageId("bops.packages.system.windows"),
+                eventsCorpus is null ? events : new CanaryEventsCorpusTool(events, eventsCorpus));
         }
         else
         {
