@@ -17,13 +17,16 @@ internal static class KnowledgeBenchmark
 {
     internal static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true, PropertyNameCaseInsensitive = true };
     internal const string ModelId = "Qwen3.6-35B";
-    internal const int MaximumCalls = 5;
+    // Actual dispatch ceiling with HTTP; also bounds transport-free offline probes.
+    internal const int MaximumCalls = 20;
     internal static AgentRunnerOptions RunnerOptions { get; } = new()
     {
         ModelCallAttemptTimeout = TimeSpan.FromSeconds(90),
         ModelCallBudget = TimeSpan.FromSeconds(300),
-        MaxAttemptDuration = TimeSpan.FromSeconds(600)
+        MaxAttemptDuration = TimeSpan.FromSeconds(1200)
     };
+    internal static CancellationTokenSource ConditionDeadline(TimeProvider? clock = null) =>
+        new(RunnerOptions.MaxAttemptDuration!.Value, clock ?? TimeProvider.System);
     internal static PackReference Reference { get; } = new("acme.windows-event-runbooks", "1.0.0");
     internal static string Root
     {

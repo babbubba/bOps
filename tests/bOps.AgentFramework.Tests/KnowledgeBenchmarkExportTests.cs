@@ -118,7 +118,7 @@ public sealed class KnowledgeBenchmarkExportTests
             }
             if (scenario == "during") Assert.Equal("Persisted", root.GetProperty("stateSource").GetString());
             if (scenario == "protocol") Assert.Equal("Failed", root.GetProperty("status").GetString());
-            if (scenario == "limit") Assert.Equal(5, root.GetProperty("llmCalls").GetInt32());
+            if (scenario == "limit") Assert.Equal(KnowledgeBenchmark.MaximumCalls, root.GetProperty("llmCalls").GetInt32());
             foreach (var line in await File.ReadAllLinesAsync(Path.Combine(output, "A", "audit.jsonl")))
             {
                 using var evt = JsonDocument.Parse(line);
@@ -136,15 +136,15 @@ public sealed class KnowledgeBenchmarkExportTests
 
     private static async Task<TaskState> ExhaustCallLimitAsync(BenchmarkModelObservation observation)
     {
-        var probe = new BenchmarkProbe(Enumerable.Repeat(KnowledgeBenchmark.Events with { Usage = null }, 6));
+        var probe = new BenchmarkProbe(Enumerable.Repeat(KnowledgeBenchmark.Events with { Usage = null }, KnowledgeBenchmark.MaximumCalls + 1));
         var bounded = new KnowledgeBenchmark.BenchmarkModel(probe, observation);
         observation.Calls = 0;
         try
         {
-            for (var i = 0; i < 6; i++) await bounded.CompleteAsync(new ModelRequest("offline", [], []));
+            for (var i = 0; i <= KnowledgeBenchmark.MaximumCalls; i++) await bounded.CompleteAsync(new ModelRequest("offline", [], []));
             throw new InvalidOperationException("The budget probe did not stop.");
         }
-        finally { Assert.Equal(5, probe.Requests.Count); }
+        finally { Assert.Equal(KnowledgeBenchmark.MaximumCalls, probe.Requests.Count); }
     }
 
     private static async Task<TaskState> FailAfterTaskCreatedAsync(CanaryRig rig, Guid id)

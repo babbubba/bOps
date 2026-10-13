@@ -85,7 +85,7 @@ if (!System.Text.RegularExpressions.Regex.IsMatch(facts["modelFileSha256"]!.GetV
     facts["sampling"] is not JsonObject sampling || sampling.Count == 0)
     throw new InvalidOperationException("Incomplete/incompatible server facts; do not substitute defaults");
 var runner = new AgentRunnerOptions { ModelCallAttemptTimeout = TimeSpan.FromSeconds(90),
-    ModelCallBudget = TimeSpan.FromSeconds(300), MaxAttemptDuration = TimeSpan.FromSeconds(600) };
+    ModelCallBudget = TimeSpan.FromSeconds(300), MaxAttemptDuration = TimeSpan.FromSeconds(1200) };
 runner.Validate(options.EffectiveRequestTimeout);
 var metadata = new JsonObject {
     ["baseline"] = "Qwen8192", ["model"] = options.Model,
@@ -98,7 +98,7 @@ var metadata = new JsonObject {
         ["attemptTimeoutMs"] = runner.ModelCallAttemptTimeout.TotalMilliseconds,
         ["totalTimeoutMs"] = runner.ModelCallBudget.TotalMilliseconds,
         ["maxAttemptDurationMs"] = runner.MaxAttemptDuration!.Value.TotalMilliseconds,
-        ["maximumHttpInvocations"] = 5, ["knowledgeLimits"] = "4/4/8000",
+        ["maximumHttpInvocations"] = 20, ["knowledgeLimits"] = "4/4/8000",
         ["allRunnerOptions"] = JsonSerializer.SerializeToNode(runner) },
     ["retryPolicy"] = new JsonObject { ["maxAttempts"] = runner.ModelCallMaxAttempts,
         ["baseDelayMs"] = runner.ModelRetryBaseDelay.TotalMilliseconds,

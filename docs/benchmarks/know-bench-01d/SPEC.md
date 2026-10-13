@@ -29,7 +29,7 @@ Both conditions use Qwen3.6-35B, the exact UTF-8 scenario from 01A, its original
 bounded arguments (raw, 1440 minutes, warning, 500 records, 65536 output bytes),
 ActorA/tenant-a, the same native system.events manifest and governed replay.
 Runtime options, operational policy, registry surface, authorization and the
-five-call cap are identical. Available operational tools and their schemas are
+20-HTTP-request cap are identical. Available operational tools and their schemas are
 compared after the broker projection. The sole extra capability in B is the
 existing runtime.knowledge_read; its schema necessarily cannot be present in A.
 If “identical tool visibility” meant including that capability, it would contradict
@@ -86,9 +86,11 @@ providerProfileSha256 hashes UTF-8 System.Text.Json bytes of the non-secret
 projection `{Provider,BaseUrl,Model,SupportsNativeToolCalling,RequestTimeout}`
 (in that order), read through the existing local configuration helper. No key or
 Vault material is serialized. Record the default AgentRunnerOptions without
-changing them: runtime token/step/time/retry limits remain the existing values;
+changing token/step/retry limits; benchmark condition duration is 1200s,
+model attempt timeout 90s and logical call budget 300s;
 Knowledge reads retain their existing 4/4/8000 limits; both arms cap actual provider
-invocations at five, including planning/retry. Transport timeout remains 120s.
+HTTP requests at 20, including planning, retry and JSON fallback, refusing the
+21st before transport. Transport timeout remains 120s.
 Missing settings are never repaired by increasing a budget.
 
 Future artifacts go into explicit pre-existing BOPS_KNOW_BENCH_RESULTS/A or /B;

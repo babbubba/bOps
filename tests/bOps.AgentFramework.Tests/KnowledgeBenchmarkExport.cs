@@ -126,7 +126,7 @@ internal sealed class KnowledgeBenchmarkExport
                     if (property.Name is "temperature" or "topP" or "topK" or "minP" or "seed" or "repeatPenalty"
                         or "maxSteps" or "maxLifetimeSteps" or "maxTotalTokens" or "maxReplans" or "maxLifetimeReplans"
                         or "requestTimeoutMs" or "attemptTimeoutMs" or "totalTimeoutMs" or "maxAttempts" or "maxRetries"
-                        or "baseDelayMs" or "maxDelayMs" or "maxAttemptDurationMs")
+                        or "baseDelayMs" or "maxDelayMs" or "maxAttemptDurationMs" or "maximumHttpInvocations")
                         if (property.Value.ValueKind is JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False or JsonValueKind.Null)
                             numeric[property.Name] = JsonNode.Parse(property.Value.GetRawText());
                 safe[name] = numeric;
@@ -203,6 +203,7 @@ internal sealed class KnowledgeBenchmarkExport
             completedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.CompletedCalls,
             failedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.FailedCalls,
             logicalModelCalls = models?.Count(m => m.ModelAttempt == 1),
+            modelRetries = models?.Count(m => m.ModelAttempt > 1),
             httpRequestsSent = ModelObservation.Http?.Sent, httpRequestsRefused = ModelObservation.Http?.Refused,
             httpRequestLimit = ModelObservation.Http is null ? (int?)null : KnowledgeBenchmark.MaximumCalls,
             httpBudgetExhausted = ModelObservation.Http is null ? (bool?)null : ModelObservation.Http.Refused > 0,

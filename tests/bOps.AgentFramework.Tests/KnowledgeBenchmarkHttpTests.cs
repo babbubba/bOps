@@ -4,8 +4,11 @@ using System.Net;
 using System.Text.Json;
 using bOps.Abstractions;
 using bOps.Knowledge.Tests;
+using bOps.Knowledge;
 using bOps.Packages.Providers.LlamaCpp;
 using bOps.Runtime;
+using bOps.Runtime.Tests;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace bOps.AgentFramework.Tests;
@@ -15,7 +18,7 @@ public sealed class KnowledgeBenchmarkHttpTests
     private static readonly ModelRequest Request = new("offline", [], []);
 
     [Fact]
-    public async Task RetryAndJsonFallback_CountActualHttpAndRefuseSixthBeforeTransport()
+    public async Task RetryAndJsonFallback_CountTwentyActualHttpAndRefuseTwentyFirstBeforeTransport()
     {
         using var temporary = new TempDirectory();
         var output = temporary.Sub("http");
@@ -25,7 +28,7 @@ public sealed class KnowledgeBenchmarkHttpTests
             await Task.CompletedTask;
             ct.ThrowIfCancellationRequested();
             return index == 1 ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
-                : Reply(index is 2 or 4 ? "invalid JSON" : "{\"final\":\"offline done\"}");
+                : Reply(index is 2 or 4 ? "invalid JSON" : "{\"final\":\"offline done\"}", usage: true);
         });
         await KnowledgeBenchmarkExport.RunAsync(output, "A", async export =>
         {
@@ -41,28 +44,49 @@ public sealed class KnowledgeBenchmarkHttpTests
             var context = new ModelInvocationContext(export.RunId, 0, KnowledgeRunnerWorld.ActorA, new List<ModelCallRecord>());
             Assert.True((await broker.InvokeAsync(Request, context)).IsFinal);
             Assert.True((await broker.InvokeAsync(Request, context)).IsFinal);
+            for (var i = 5; i < 20; i++) Assert.True((await broker.InvokeAsync(Request, context)).IsFinal);
             var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => broker.InvokeAsync(Request, context));
             Assert.Equal(ModelFailureKind.Unknown, failure.FailureKind);
-            Assert.Equal(5, transport.Sends);
-            Assert.Equal(5, budget.Sent);
+            Assert.Equal(20, transport.Sends);
+            Assert.Equal(20, budget.Sent);
             Assert.Equal(1, budget.Refused);
-            Assert.Equal(4, export.ModelObservation.Calls);
-            Assert.Equal(2, export.ModelObservation.CompletedCalls);
+            Assert.Equal(19, export.ModelObservation.Calls);
+            Assert.Equal(17, export.ModelObservation.CompletedCalls);
             Assert.Equal(2, export.ModelObservation.FailedCalls);
             Assert.Contains(export.World.Events.OfType<ModelCallAuditEvent>(), evt => evt.RetryDelayMs is not null);
         });
         using var result = await ReadResultAsync(output);
         Assert.Equal(2, result.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("HttpBudgetExhausted", result.RootElement.GetProperty("terminalCause").GetString());
-        Assert.Equal(3, result.RootElement.GetProperty("logicalModelCalls").GetInt32());
-        Assert.Equal(5, result.RootElement.GetProperty("httpRequestsSent").GetInt32());
-        Assert.Equal(JsonValueKind.Null, result.RootElement.GetProperty("reportedPromptTokens").ValueKind);
-        await VerifyAuditAsync(output, "BudgetExhausted", 6);
+        Assert.Equal(18, result.RootElement.GetProperty("logicalModelCalls").GetInt32());
+        Assert.Equal(1, result.RootElement.GetProperty("modelRetries").GetInt32());
+        Assert.Equal(20, result.RootElement.GetProperty("httpRequestsSent").GetInt32());
+        Assert.Equal(20, result.RootElement.GetProperty("httpRequestLimit").GetInt32());
+        Assert.Equal(17, result.RootElement.GetProperty("usageReportingAttempts").GetInt32());
+        Assert.Equal(119, result.RootElement.GetProperty("reportedPromptTokens").GetInt32());
+        Assert.Equal(51, result.RootElement.GetProperty("reportedCompletionTokens").GetInt32());
+        await VerifyAuditAsync(output, "BudgetExhausted", 21);
     }
 
     [Fact]
-    public async Task TimeoutProviderErrorAndBudget_ExportDistinctCausesWithoutInventedUsage()
+    public async Task IndependentConditionsAndDeadlines_ExportBudgetTimeoutProviderAndComparisonCorrectly()
     {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        using var deadlineA = KnowledgeBenchmark.ConditionDeadline(clock);
+        clock.Advance(TimeSpan.FromSeconds(1199));
+        Assert.False(deadlineA.IsCancellationRequested);
+        using var deadlineB = KnowledgeBenchmark.ConditionDeadline(clock);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(deadlineA.IsCancellationRequested);
+        Assert.False(deadlineB.IsCancellationRequested);
+        clock.Advance(TimeSpan.FromSeconds(1198));
+        Assert.False(deadlineB.IsCancellationRequested);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(deadlineB.IsCancellationRequested);
+        Assert.Equal(TimeSpan.FromSeconds(1200), KnowledgeBenchmark.RunnerOptions.MaxAttemptDuration);
+        Assert.Equal(TimeSpan.FromSeconds(90), KnowledgeBenchmark.RunnerOptions.ModelCallAttemptTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(300), KnowledgeBenchmark.RunnerOptions.ModelCallBudget);
+        Assert.Equal(3, KnowledgeBenchmark.RunnerOptions.ModelCallMaxAttempts);
         KnowledgeBenchmark.RunnerOptions.Validate(TimeSpan.FromSeconds(120));
         Assert.True(KnowledgeBenchmark.RunnerOptions.ModelCallAttemptTimeout < TimeSpan.FromSeconds(120));
         Assert.True(KnowledgeBenchmark.RunnerOptions.ModelCallBudget < KnowledgeBenchmark.RunnerOptions.MaxAttemptDuration);
@@ -83,7 +107,7 @@ public sealed class KnowledgeBenchmarkHttpTests
                 using var client = new HttpClient(budget, disposeHandler: false);
                 var model = CreateModel(client, export.ModelObservation, budget, native: true);
                 if (scenario == "budget")
-                    for (var i = 0; i < 5; i++) Assert.Null((await model.CompleteAsync(Request)).Usage);
+                    for (var i = 0; i < 20; i++) Assert.Null((await model.CompleteAsync(Request)).Usage);
                 var options = new AgentRunnerOptions
                 {
                     ModelCallMaxAttempts = 1, ModelCallAttemptTimeout = TimeSpan.FromMilliseconds(50)
@@ -98,7 +122,7 @@ public sealed class KnowledgeBenchmarkHttpTests
             Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(scenario switch { "timeout" => "Timeout", "provider" => "ProviderOrProtocolError", _ => "HttpBudgetExhausted" },
                 root.GetProperty("terminalCause").GetString());
-            Assert.Equal(scenario == "budget" ? 5 : 1, transport.Sends);
+            Assert.Equal(scenario == "budget" ? 20 : 1, transport.Sends);
             Assert.Equal(transport.Sends, root.GetProperty("httpRequestsSent").GetInt32());
             Assert.Equal(scenario == "budget" ? 1 : 0, root.GetProperty("httpRequestsRefused").GetInt32());
             Assert.Equal(0, root.GetProperty("usageReportingAttempts").GetInt32());
@@ -109,7 +133,102 @@ public sealed class KnowledgeBenchmarkHttpTests
             await VerifyAuditAsync(output, scenario switch
             {
                 "timeout" => "CancelledOrTimedOut", "provider" => "ResponseHeadersReceived", _ => "BudgetExhausted"
-            }, scenario == "budget" ? 6 : 1);
+            }, scenario == "budget" ? 21 : 1);
+        }
+        await VerifyIndependentComparisonAsync(temporary);
+    }
+
+    private static async Task VerifyIndependentComparisonAsync(TempDirectory temporary)
+    {
+        var corpus = KnowledgeBenchmark.Synthetic();
+        var hash = CanaryEventsCorpus.Hash(corpus);
+        var path = KnowledgeBenchmark.WriteSynthetic(temporary, corpus);
+        var (raw, trust) = await KnowledgeBenchmark.LoadAsync();
+        var output = temporary.Sub("comparison");
+        Directory.CreateDirectory(output);
+        var observations = new List<BenchmarkModelObservation>();
+        await KnowledgeBenchmarkComparison.RunAsync(output, async (knowledge, export) =>
+        {
+            observations.Add(export.ModelObservation);
+            export.World = new KnowledgeRunnerWorld();
+            export.CorpusSha256 = hash;
+            export.CorpusProvenance = CanaryEventsCorpus.Provenance(corpus, hash);
+            export.Configuration = new JsonObject { ["runtimeLimits"] = new JsonObject
+                { ["maximumHttpInvocations"] = 20, ["maxAttemptDurationMs"] = 1200000 } };
+            export.ProviderRequestTimeout = TimeSpan.FromSeconds(120);
+            using var transport = new OfflineTransport((index, _) => Task.FromResult(
+                Reply(index % 2 == 1 ? "invalid JSON" : "{\"final\":\"offline wire response\"}")));
+            using var budget = new BenchmarkHttpBudget(transport);
+            using var client = new HttpClient(budget, disposeHandler: false);
+            export.ModelObservation.Http = budget;
+            var provider = new LlamaCppProviderPackage(new ClientFactory(client));
+            var wireModel = provider.Create(new ChatModelOptions("LlamaCpp", "http://offline.invalid/v1", null,
+                KnowledgeBenchmark.ModelId, false) { RequestTimeout = TimeSpan.FromSeconds(120) });
+            var rig = KnowledgeBenchmark.ComposeReplay(export.World, new OfflineWorkflow(wireModel, knowledge),
+                knowledge ? "B" : "A", path, hash, knowledge ? raw : null, knowledge ? trust : null,
+                knowledge ? KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span) : null,
+                knowledge ? KnowledgeBenchmark.GrantAuthorization : null, export.ModelObservation);
+            export.Store = rig.Store;
+            if (!knowledge)
+            {
+                // Spend this arm's first 18 dispatches through the real broker/adapter before the task loop.
+                // Repeated tool decisions would hit the unchanged replan limit before the HTTP ceiling.
+                var prelude = Broker(new KnowledgeBenchmark.BenchmarkModel(wireModel, export.ModelObservation),
+                    export.World, export.ModelObservation, KnowledgeBenchmark.RunnerOptions);
+                var context = new ModelInvocationContext(export.RunId, 0, KnowledgeRunnerWorld.ActorA, new List<ModelCallRecord>());
+                for (var i = 0; i < 9; i++) await prelude.InvokeAsync(Request, context);
+            }
+            using var deadline = KnowledgeBenchmark.ConditionDeadline();
+            try
+            {
+                await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal,
+                    KnowledgeRunnerWorld.ActorA, export.RunId, deadline.Token));
+            }
+            finally { export.ModelObservation.ConditionTimedOut = deadline.IsCancellationRequested; }
+            if (knowledge) Assert.InRange(transport.Sends, 8, 18);
+            else Assert.Equal(20, transport.Sends);
+        }, (knowledge, export) => Assert.Equal(knowledge ? AgentTaskStatus.Completed : AgentTaskStatus.Failed, export.State!.Status));
+        Assert.NotSame(observations[0].Http, observations[1].Http);
+        Assert.Equal(11, observations[0].Calls);
+        Assert.Equal(10, observations[0].CompletedCalls);
+        Assert.Equal(1, observations[0].FailedCalls);
+        Assert.InRange(observations[1].Calls!.Value, 4, 9);
+        Assert.Equal(observations[1].Calls, observations[1].CompletedCalls);
+        Assert.Equal(observations[1].Calls * 2, observations[1].Http!.Sent);
+        Assert.Equal(0, observations[1].FailedCalls);
+        foreach (var condition in new[] { "A", "B" })
+        {
+            using var result = JsonDocument.Parse(await File.ReadAllBytesAsync(Path.Combine(output, condition, "result.json")));
+            var root = result.RootElement;
+            Assert.Equal(condition == "A" ? "HttpBudgetExhausted" : "Completed", root.GetProperty("terminalCause").GetString());
+            Assert.Equal(observations[condition == "A" ? 0 : 1].Http!.Sent, root.GetProperty("httpRequestsSent").GetInt32());
+            Assert.Equal(condition == "A" ? 1 : 0, root.GetProperty("httpRequestsRefused").GetInt32());
+            Assert.Equal(20, root.GetProperty("httpRequestLimit").GetInt32());
+            Assert.Equal("00:20:00", root.GetProperty("effectiveBenchmarkTimeouts").GetProperty("condition").GetString());
+            Assert.Equal(0, root.GetProperty("modelRetries").GetInt32());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("reportedPromptTokens").ValueKind);
+        }
+        using var comparison = JsonDocument.Parse(await File.ReadAllBytesAsync(Path.Combine(output, "comparison.json")));
+        Assert.Equal("Complete", comparison.RootElement.GetProperty("comparisonStatus").GetString());
+        Assert.True(comparison.RootElement.GetProperty("bothArmsExecuted").GetBoolean());
+        Assert.Equal("HttpBudgetExhausted", comparison.RootElement.GetProperty("arms")[0].GetProperty("terminalCause").GetString());
+        Assert.Equal("Completed", comparison.RootElement.GetProperty("arms")[1].GetProperty("terminalCause").GetString());
+        using var metadata = JsonDocument.Parse("""{"runtimeLimits":{"maximumHttpInvocations":20,"maxAttemptDurationMs":1200000}}""");
+        Assert.Equal(20, KnowledgeBenchmarkExport.SafeConfiguration(metadata.RootElement)["runtimeLimits"]!["maximumHttpInvocations"]!.GetValue<int>());
+    }
+
+    // Scripted agent decisions over the real adapter and offline HTTP transport; no LLM or native capture.
+    private sealed class OfflineWorkflow(IChatModel wireModel, bool complete) : IChatModel
+    {
+        private int calls;
+        public ChatModelDescriptor Descriptor => wireModel.Descriptor;
+        public async Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
+        {
+            var wireResponse = await wireModel.CompleteAsync(request, ct);
+            var decision = ++calls == 1 ? KnowledgeBenchmark.Plan
+                : complete && calls == 2 ? KnowledgeBenchmark.Read
+                : complete && calls >= 4 ? Script.Final("offline done") : KnowledgeBenchmark.Events;
+            return decision with { Usage = wireResponse.Usage };
         }
     }
 
@@ -132,11 +251,12 @@ public sealed class KnowledgeBenchmarkHttpTests
         return new(model, world.Audit, TimeProvider.System, NullLogger.Instance, options);
     }
 
-    private static HttpResponseMessage Reply(string text) => new(HttpStatusCode.OK)
+    private static HttpResponseMessage Reply(string text, bool usage = false) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(JsonSerializer.Serialize(new
         {
             model = KnowledgeBenchmark.ModelId,
+            usage = usage ? new { prompt_tokens = 7, completion_tokens = 3 } : null,
             choices = new[] { new { message = new { role = "assistant", content = text }, finish_reason = "stop" } }
         }))
     };

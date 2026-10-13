@@ -137,7 +137,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             : capture.Compose(world, provider.Create(options), condition, export.RunId,
                 pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
         export.Store = rig.Store;
-        using var deadline = new CancellationTokenSource(KnowledgeBenchmark.RunnerOptions.MaxAttemptDuration!.Value);
+        using var deadline = KnowledgeBenchmark.ConditionDeadline();
         try
         {
             await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId, deadline.Token));
