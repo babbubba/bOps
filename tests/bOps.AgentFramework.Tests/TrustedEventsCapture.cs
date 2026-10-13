@@ -60,7 +60,8 @@ internal sealed class TrustedEventsCapture : IDisposable
             throw new InvalidOperationException("Only one ordered A/B execution is permitted.");
         var rig = KnowledgeBenchmark.Boot(world, condition == "B", raw, trust).ComposeCanary(
             new KnowledgeBenchmark.BenchmarkModel(model, observation), withHost: condition == "B",
-            withWindowsSystemEvents: true, governedEvents: new SessionTool(this, taskId, false));
+            withWindowsSystemEvents: true, governedEvents: new SessionTool(this, taskId, false),
+            runnerOptions: KnowledgeBenchmark.RunnerOptions);
         if (observation is not null) observation.Calls = 0;
         return rig;
     }

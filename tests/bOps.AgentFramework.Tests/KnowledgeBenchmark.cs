@@ -18,6 +18,12 @@ internal static class KnowledgeBenchmark
     internal static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true, PropertyNameCaseInsensitive = true };
     internal const string ModelId = "Qwen3.6-35B";
     internal const int MaximumCalls = 5;
+    internal static AgentRunnerOptions RunnerOptions { get; } = new()
+    {
+        ModelCallAttemptTimeout = TimeSpan.FromSeconds(90),
+        ModelCallBudget = TimeSpan.FromSeconds(300),
+        MaxAttemptDuration = TimeSpan.FromSeconds(600)
+    };
     internal static PackReference Reference { get; } = new("acme.windows-event-runbooks", "1.0.0");
     internal static string Root
     {
@@ -58,7 +64,8 @@ internal static class KnowledgeBenchmark
     }
     internal static PackGrant Grant => new(KnowledgeRunnerWorld.TenantA, Reference, PackKind.Knowledge);
     internal static CanaryRig Compose(KnowledgeProcess process, IChatModel model, bool knowledge, CanaryEventsActivation replay, BenchmarkModelObservation? observation = null) =>
-        process.ComposeCanary(new BenchmarkModel(model, observation), withHost: knowledge, withWindowsSystemEvents: true, eventsCorpus: replay);
+        process.ComposeCanary(new BenchmarkModel(model, observation), withHost: knowledge, withWindowsSystemEvents: true, eventsCorpus: replay,
+            runnerOptions: RunnerOptions);
 
     // Shared by the manual A/B entry points and the offline probes. No live/capture fallback.
     internal static CanaryRig ComposeReplay(KnowledgeRunnerWorld world, IChatModel model, string condition,
@@ -138,18 +145,28 @@ internal static class KnowledgeBenchmark
     {
         private int calls;
         public ChatModelDescriptor Descriptor => inner.Descriptor;
-        public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
+        public async Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
         {
             if (!string.Equals(Descriptor.ModelId, ModelId, StringComparison.Ordinal))
                 throw new InvalidOperationException("Benchmark requires exact Qwen3.6-35B model id.");
-            if (calls >= MaximumCalls)
+            if (observation?.Http is null && calls >= MaximumCalls)
             {
                 if (observation is not null) observation.CallLimitReached = true;
                 throw new InvalidOperationException("Benchmark call budget exhausted.");
             }
             calls++;
             if (observation is not null) observation.Calls = (observation.Calls ?? 0) + 1;
-            return inner.CompleteAsync(request, ct);
+            try
+            {
+                var response = await inner.CompleteAsync(request, ct);
+                if (observation is not null) observation.CompletedCalls++;
+                return response;
+            }
+            catch
+            {
+                if (observation is not null) observation.FailedCalls++;
+                throw;
+            }
         }
     }
 }

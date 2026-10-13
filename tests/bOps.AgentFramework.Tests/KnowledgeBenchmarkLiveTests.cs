@@ -108,6 +108,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             throw new InvalidOperationException("Benchmark requires the pinned commit and a clean tracked checkout.");
         var options = KnowledgeHostCanaryLiveTests.LocalQwenConfiguration.Read();
         export.ProviderRequestTimeout = options.RequestTimeout;
+        KnowledgeBenchmark.RunnerOptions.Validate(options.EffectiveRequestTimeout);
         if (options.Model != KnowledgeBenchmark.ModelId) throw new InvalidOperationException("Exact model required.");
         var profile = JsonSerializer.SerializeToUtf8Bytes(new { options.Provider, options.BaseUrl, options.Model,
             options.SupportsNativeToolCalling, options.RequestTimeout });
@@ -116,7 +117,10 @@ public sealed class KnowledgeBenchmarkLiveTests
         var world = new KnowledgeRunnerWorld();
         export.World = world;
         var pack = knowledge ? await KnowledgeBenchmark.LoadAsync() : default;
-        using var client = new HttpClient();
+        using var transport = BenchmarkHttpBudget.CreateTransport();
+        using var httpBudget = new BenchmarkHttpBudget(transport);
+        export.ModelObservation.Http = httpBudget;
+        using var client = new HttpClient(httpBudget, disposeHandler: false);
         var provider = new LlamaCppProviderPackage(new ClientFactory(client));
         var rig = capture is null
             ? KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path!, hash,
@@ -124,7 +128,12 @@ public sealed class KnowledgeBenchmarkLiveTests
             : capture.Compose(world, provider.Create(options), condition, export.RunId,
                 pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
         export.Store = rig.Store;
-        await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId));
+        using var deadline = new CancellationTokenSource(KnowledgeBenchmark.RunnerOptions.MaxAttemptDuration!.Value);
+        try
+        {
+            await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId, deadline.Token));
+        }
+        finally { export.ModelObservation.ConditionTimedOut = deadline.IsCancellationRequested; }
     }
 
     private static void Validate(bool knowledge, KnowledgeBenchmarkExport export)

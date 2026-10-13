@@ -148,7 +148,8 @@ internal sealed class KnowledgeProcess : IDisposable
         ILogger<AgentRunner>? diagnosticLogger = null,
         bool withWindowsSystemEvents = false,
         CanaryEventsActivation? eventsCorpus = null,
-        ITool? governedEvents = null)
+        ITool? governedEvents = null,
+        AgentRunnerOptions? runnerOptions = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         var read = new RecordingReadTool("test.read", []);
@@ -175,7 +176,7 @@ internal sealed class KnowledgeProcess : IDisposable
             registry.Register(new PackageId("test.package"), read);
             registry.Register(new PackageId("test.package"), other);
         }
-        var options = new AgentRunnerOptions();
+        var options = runnerOptions ?? new AgentRunnerOptions();
         var inner = new ModelInvocationBroker(
             model, world.Audit, TimeProvider.System, diagnosticLogger ?? (ILogger)NullLogger.Instance, options, contextProjector: new MafContextProjector(options, diagnosticLogger ?? (ILogger)NullLogger.Instance));
         var maf = new MafGovernedTurnBroker(inner, world.Audit, null, MafContextAssembly.BopsProvider);

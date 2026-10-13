@@ -7,6 +7,7 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using bOps.Runtime;
 
 namespace bOps.AgentFramework.Tests;
 
@@ -14,6 +15,11 @@ internal sealed class BenchmarkModelObservation
 {
     internal int? Calls { get; set; }
     internal bool CallLimitReached { get; set; }
+    internal int CompletedCalls { get; set; }
+    internal int FailedCalls { get; set; }
+    internal BenchmarkHttpBudget? Http { get; set; }
+    internal bool ConditionTimedOut { get; set; }
+    internal AgentRunnerOptions RunnerOptions { get; set; } = KnowledgeBenchmark.RunnerOptions;
 }
 
 /// <summary>Test entry-point only. A complete directory is published by a single no-overwrite rename.</summary>
@@ -157,13 +163,25 @@ internal sealed class KnowledgeBenchmarkExport
         var lifecycle = events?.OfType<TaskLifecycleAuditEvent>().LastOrDefault();
         var terminal = State?.TerminalReason;
         var kind = (failure as ModelProtocolException)?.FailureKind ?? terminal?.FailureKind ?? (failure is not null ? models?.LastOrDefault(m => m.Outcome == ModelCallOutcome.Failure)?.FailureKind : null);
-        var cause = ModelObservation.CallLimitReached ? "LlmCallLimit"
-            : failure is TimeoutException or OperationCanceledException { InnerException: TimeoutException } || kind == ModelFailureKind.Timeout || terminal?.Kind == TaskTerminalKind.AttemptDurationBudget ? "Timeout"
+        var cause = ModelObservation.Http?.Refused > 0 ? "HttpBudgetExhausted"
+            : ModelObservation.CallLimitReached ? "LlmCallLimit"
+            : ModelObservation.ConditionTimedOut || failure is TimeoutException or OperationCanceledException { InnerException: TimeoutException } || kind == ModelFailureKind.Timeout || terminal?.Kind == TaskTerminalKind.AttemptDurationBudget ? "Timeout"
             : failure is OperationCanceledException || terminal?.Kind == TaskTerminalKind.Cancelled ? "Cancelled"
             : failure is ModelProtocolException or HttpRequestException ? "ProviderOrProtocolError"
             : failure is not null ? (State is null && recoveryError is null ? "InfrastructureBeforeObservedTask" : "InfrastructureError")
             : terminal?.Kind == TaskTerminalKind.ModelFailure ? "ProviderOrProtocolError"
             : State?.Status.ToString() ?? "TaskNotObserved";
+        var httpAttempts = ModelObservation.Http?.Attempts;
+        if (httpAttempts is not null)
+        {
+            audit.AddRange(httpAttempts.Select(attempt => JsonSerializer.Serialize(new
+            {
+                schemaVersion = 2, type = "BenchmarkHttpAttempt", TaskId = RunId,
+                attempt.TimestampUtc, attempt.HttpAttempt, attempt.Outcome, attempt.ProviderStatusCode
+            })));
+            // Persisted event order is stable for equal timestamps; HTTP records join the payload-free projection.
+            audit = audit.OrderBy(line => JsonNode.Parse(line)!["TimestampUtc"]!.GetValue<DateTimeOffset>()).ToList();
+        }
         var result = new
         {
             schemaVersion = 2, provenanceScope = "process-local observation; exported metadata cannot attest imported files", RunId, condition, baseline = "Qwen8192", Commit, RequestedCommit, Configuration, CorpusSha256, CorpusProvenance, ProviderRequestTimeout,
@@ -178,6 +196,21 @@ internal sealed class KnowledgeBenchmarkExport
             // A failed step/tool observation is never a final answer.
             finalObservation = State is { Status: AgentTaskStatus.Completed, Steps.Count: > 0 } ? State.Steps[^1].Observation : null,
             accounting = State?.Accounting, llmCalls = ModelObservation.Calls,
+            completeAsyncCalls = ModelObservation.Calls,
+            completedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.CompletedCalls,
+            failedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.FailedCalls,
+            logicalModelCalls = models?.Count(m => m.ModelAttempt == 1),
+            httpRequestsSent = ModelObservation.Http?.Sent, httpRequestsRefused = ModelObservation.Http?.Refused,
+            httpRequestLimit = ModelObservation.Http is null ? (int?)null : KnowledgeBenchmark.MaximumCalls,
+            httpBudgetExhausted = ModelObservation.Http is null ? (bool?)null : ModelObservation.Http.Refused > 0,
+            httpAttempts,
+            effectiveBenchmarkTimeouts = ModelObservation.Http is null ? null : new
+            {
+                attempt = ModelObservation.RunnerOptions.ModelCallAttemptTimeout,
+                logicalCall = ModelObservation.RunnerOptions.ModelCallBudget,
+                condition = ModelObservation.RunnerOptions.MaxAttemptDuration
+            },
+            usageScope = "Only usage returned by the adapter and observed in model audit; not total HTTP usage (corrective JSON replies may be omitted by the adapter)",
             llmCallLimitReached = ModelObservation.Calls is null ? (bool?)null : ModelObservation.CallLimitReached,
             metricSource = events is null ? "NotObserved" : "RecordingSink",
             reportedPromptTokens = models?.Any(m => m.Usage is not null) == true ? models.Sum(m => (long?)m.Usage?.PromptTokens) : null,
@@ -193,7 +226,9 @@ internal sealed class KnowledgeBenchmarkExport
             tools = tools?.Select(t => new { t.Tool, outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString() }),
             knowledgeReads = reads?.Select(r => new { resultCode = r.ResultCode.ToString() }),
             knowledgeUsed = reads is null ? (bool?)null : reads.Any(r => r.ResultCode == KnowledgeReadResultCode.Success),
-            auditStatus, auditError, auditEventCount = audit.Count, auditRepresentation = "Payload-free projection of persisted events in original order"
+            auditStatus, auditError, auditEventCount = audit.Count,
+            auditRepresentation = httpAttempts is null ? "Payload-free projection of persisted events in original order"
+                : "Payload-free persisted model/tool events plus process-local HTTP observations, ordered by timestamp"
         };
         var bytes = JsonSerializer.SerializeToUtf8Bytes(result, KnowledgeBenchmark.JsonOptions);
         using var validated = JsonDocument.Parse(bytes);
