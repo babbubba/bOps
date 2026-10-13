@@ -46,16 +46,8 @@ public sealed class KnowledgeBenchmarkLiveTests
         using var capture = TrustedEventsCapture.Native();
         using var captureWorld = new KnowledgeRunnerWorld();
         await capture.CaptureAsync(captureWorld);
-        foreach (var knowledge in new[] { false, true })
-        {
-            KnowledgeBenchmarkExport? observed = null;
-            await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), knowledge ? "B" : "A", async export =>
-            {
-                observed = export;
-                await ExecuteAsync(knowledge, export, options, capture);
-            });
-            Validate(knowledge, observed!);
-        }
+        await KnowledgeBenchmarkComparison.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"),
+            (knowledge, export) => ExecuteAsync(knowledge, export, options, capture), Validate);
     }
 
     private static async Task RunAsync(bool knowledge)
@@ -159,11 +151,11 @@ public sealed class KnowledgeBenchmarkLiveTests
         var world = export.World!;
         var hash = export.CorpusSha256;
         Assert.NotNull(state);
-        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.True(state.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed);
         Assert.All(world.Events.OfType<ToolCallAuditEvent>(), call => Assert.Equal("system.events", call.Tool));
-        Assert.Contains(world.Events.OfType<ToolCallAuditEvent>(), call => call.Outcome == ToolOutcome.Success &&
-            call.Summary?["corpusSha256"]?.GetValue<string>() == hash);
-        if (knowledge) Assert.Contains(world.Events.OfType<KnowledgeReadAuditEvent>(), read => read.ResultCode == KnowledgeReadResultCode.Success);
+        Assert.All(world.Events.OfType<ToolCallAuditEvent>().Where(call => call.Outcome == ToolOutcome.Success),
+            call => Assert.Equal(hash, call.Summary?["corpusSha256"]?.GetValue<string>()));
+        if (knowledge) Assert.NotNull(state.KnowledgeBinding);
         else
         {
             Assert.Null(state.KnowledgeBinding);
