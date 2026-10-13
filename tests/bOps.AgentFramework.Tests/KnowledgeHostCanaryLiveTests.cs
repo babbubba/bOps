@@ -313,62 +313,90 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
     /// <summary>Pins the local llama.cpp profile and resolves its credential through the production services.</summary>
     internal static class LocalQwenConfiguration
     {
-        private const string SettingsPath = "src/core/bOps.Api/settings.json";
+        private const string ConfigurationPath = "src/core/bOps.Api/appsettings.json";
 
         internal static ChatModelOptions Read()
         {
-            var fullPath = FindSettingsPath();
-            if (fullPath is null)
-            {
-                throw new InvalidOperationException("Local llama.cpp settings were not found. Run from this repository's test project.");
-            }
-
-            var apiDirectory = Path.GetDirectoryName(fullPath)!;
-            using var configuration = new ConfigurationManager();
-            configuration.SetBasePath(apiDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-                .AddEnvironmentVariables();
-            var settings = new SettingsStore(fullPath, TimeProvider.System);
-            var profile = settings.FindProviderProfile("LlamaCpp")
-                ?? throw new InvalidOperationException("The local LlamaCpp profile is missing.");
-            var provider = profile.ProviderId;
-            var baseUrl = profile.BaseUrl;
-            var model = profile.Model;
-            var nativeTools = profile.SupportsNativeToolCalling;
-            if (!string.Equals(provider, "LlamaCpp", StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model) ||
-                !model.StartsWith("Qwen", StringComparison.OrdinalIgnoreCase) ||
-                !Uri.TryCreate(baseUrl, UriKind.Absolute, out var endpoint) || !IsPrivateOrLoopback(endpoint.Host))
-            {
-                throw new InvalidOperationException("The committed LlamaCpp profile is not a local Qwen endpoint.");
-            }
-
-            var secrets = new EnvironmentSecretProvider();
-            var masterReference = configuration.GetSection("Vault:MasterKeySecret").Get<SecretReference>();
-            var masterSecret = masterReference is null ? null : secrets.GetSecret(masterReference);
-            if (masterReference is not null && (string.IsNullOrEmpty(masterSecret) || masterSecret.Length < 20))
-                throw new InvalidOperationException("The configured Vault master key is unavailable or too short.");
-
-            // The master key unlocks the store; only the resolved provider API key reaches the adapter.
-            using var vault = masterSecret is null ? null : new VaultStore(
-                Path.GetFullPath(configuration["Vault:FilePath"] ?? "vault.dat", apiDirectory),
-                VaultCipher.DeriveKey(masterSecret), TimeProvider.System);
-            var apiKey = new ProviderCredentialResolver(configuration, secrets, vault).Resolve(provider);
-            if (string.IsNullOrEmpty(apiKey))
-                throw new InvalidOperationException("The local LlamaCpp provider credential is unavailable.");
-
-            return new ChatModelOptions(provider, baseUrl, null, model, nativeTools)
-            {
-                ResolvedApiKey = apiKey,
-                RequestTimeout = TimeSpan.FromSeconds(120),
-            };
+            var explicitPath = Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_CONFIG");
+            var fullPath = explicitPath ?? FindConfigurationPath();
+            if (string.IsNullOrWhiteSpace(fullPath))
+                throw new InvalidOperationException("Local configuration absent: set BOPS_KNOW_BENCH_CONFIG to the existing appsettings.json.");
+            return Read(fullPath, new EnvironmentSecretProvider(), includeEnvironment: true);
         }
 
-        private static string? FindSettingsPath()
+        // Tests inject throw-away secrets and never consult the operator's environment.
+        internal static ChatModelOptions Read(string fullPath, ISecretProvider secrets, bool includeEnvironment = false)
+        {
+            var failure = "Local appsettings.json configuration absent or invalid.";
+            try
+            {
+                fullPath = Path.GetFullPath(fullPath);
+                if (!File.Exists(fullPath)) throw new InvalidOperationException();
+                var apiDirectory = Path.GetDirectoryName(fullPath)!;
+                using var configuration = new ConfigurationManager();
+                configuration.SetBasePath(apiDirectory)
+                    .AddJsonFile(fullPath, optional: false, reloadOnChange: false);
+                if (includeEnvironment) configuration.AddEnvironmentVariables();
+                failure = "Local settings.json provider configuration absent or invalid.";
+                var settingsPath = Path.GetFullPath(configuration["Settings:FilePath"] ?? "settings.json", apiDirectory);
+                if (!File.Exists(settingsPath)) throw new InvalidOperationException();
+                var settings = new SettingsStore(settingsPath, TimeProvider.System);
+                var profile = settings.FindProviderProfile("LlamaCpp")
+                    ?? throw new InvalidOperationException("The local LlamaCpp profile is missing.");
+                var provider = profile.ProviderId;
+                var baseUrl = profile.BaseUrl;
+                var model = profile.Model;
+                var nativeTools = profile.SupportsNativeToolCalling;
+                failure = "The local LlamaCpp profile is not a local Qwen HTTP endpoint.";
+                if (!string.Equals(provider, "LlamaCpp", StringComparison.Ordinal) ||
+                    string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model) ||
+                    !model.StartsWith("Qwen", StringComparison.OrdinalIgnoreCase) ||
+                    !Uri.TryCreate(baseUrl, UriKind.Absolute, out var endpoint) ||
+                    (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps) ||
+                    !IsPrivateOrLoopback(endpoint.Host))
+                {
+                    throw new InvalidOperationException("The committed LlamaCpp profile is not a local Qwen endpoint.");
+                }
+
+                failure = "Configured Vault master key unavailable or invalid.";
+                var masterReference = configuration.GetSection("Vault:MasterKeySecret").Get<SecretReference>();
+                if (configuration.GetSection("Vault").Exists() && masterReference is null)
+                    throw new InvalidOperationException();
+                var masterSecret = masterReference is null ? null : secrets.GetSecret(masterReference);
+                if (masterReference is not null && (string.IsNullOrEmpty(masterSecret) || masterSecret.Length < 20))
+                    throw new InvalidOperationException("The configured Vault master key is unavailable or too short.");
+
+                // The master key unlocks the store; only the resolved provider API key reaches the adapter.
+                failure = "Configured Vault unavailable or invalid.";
+                var vaultPath = Path.GetFullPath(configuration["Vault:FilePath"] ?? "vault.dat", apiDirectory);
+                if (masterReference is not null && !File.Exists(vaultPath)) throw new InvalidOperationException();
+                using var vault = masterSecret is null ? null : new VaultStore(
+                    vaultPath,
+                    VaultCipher.DeriveKey(masterSecret), TimeProvider.System);
+                if (vault is not null) _ = vault.Version;
+                failure = "Local LlamaCpp provider credential unavailable or unresolvable.";
+                var apiKey = new ProviderCredentialResolver(configuration, secrets, vault).Resolve(provider);
+                if (string.IsNullOrEmpty(apiKey))
+                    throw new InvalidOperationException("The local LlamaCpp provider credential is unavailable.");
+
+                return new ChatModelOptions(provider, baseUrl, null, model, nativeTools)
+                {
+                    ResolvedApiKey = apiKey,
+                    RequestTimeout = TimeSpan.FromSeconds(120),
+                };
+            }
+            catch (Exception)
+            {
+                // No inner exception: parsing, filesystem and crypto errors may contain private data.
+                throw new InvalidOperationException(failure);
+            }
+        }
+
+        private static string? FindConfigurationPath()
         {
             for (var directory = new DirectoryInfo(Environment.CurrentDirectory); directory is not null; directory = directory.Parent)
             {
-                var candidate = Path.Combine(directory.FullName, SettingsPath);
+                var candidate = Path.Combine(directory.FullName, ConfigurationPath);
                 if (File.Exists(candidate)) return candidate;
             }
 

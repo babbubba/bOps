@@ -10,6 +10,22 @@ namespace bOps.AgentFramework.Tests;
 /// <summary>Future manual entry points, visibly skipped unless their individual condition is explicitly selected.</summary>
 public sealed class KnowledgeBenchmarkLiveTests
 {
+    [ConfigurationPreflightFact]
+    public void LocalConfigurationPreflight()
+    {
+        var options = ReadReadyOptions();
+        using var client = new HttpClient();
+        _ = new LlamaCppProviderPackage(new ClientFactory(client)).Create(options);
+    }
+
+    private static ChatModelOptions ReadReadyOptions()
+    {
+        var options = KnowledgeHostCanaryLiveTests.LocalQwenConfiguration.Read();
+        KnowledgeBenchmark.RunnerOptions.Validate(options.EffectiveRequestTimeout);
+        if (options.Model != KnowledgeBenchmark.ModelId) throw new InvalidOperationException("Exact model required.");
+        return options;
+    }
+
     [BenchmarkFact("A")]
     public Task WithoutKnowledge() => RunAsync(false);
     [BenchmarkFact("B")]
@@ -26,6 +42,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_SHA256") is not null ||
             Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
             throw new InvalidOperationException("Explicit isolated integrated capture opt-in required; no imports or signing.");
+        var options = ReadReadyOptions(); // Fail before native capture or model composition.
         using var capture = TrustedEventsCapture.Native();
         using var captureWorld = new KnowledgeRunnerWorld();
         await capture.CaptureAsync(captureWorld);
@@ -35,7 +52,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), knowledge ? "B" : "A", async export =>
             {
                 observed = export;
-                await ExecuteAsync(knowledge, export, capture);
+                await ExecuteAsync(knowledge, export, options, capture);
             });
             Validate(knowledge, observed!);
         }
@@ -46,16 +63,17 @@ public sealed class KnowledgeBenchmarkLiveTests
         var condition = knowledge ? "B" : "A";
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") != condition)
             throw new InvalidOperationException("Explicit individual benchmark condition required.");
+        var options = ReadReadyOptions();
         KnowledgeBenchmarkExport? observed = null;
         await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), condition, async export =>
         {
             observed = export;
-            await ExecuteAsync(knowledge, export);
+            await ExecuteAsync(knowledge, export, options);
         });
         Validate(knowledge, observed!);
     }
 
-    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export, TrustedEventsCapture? capture = null)
+    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export, ChatModelOptions options, TrustedEventsCapture? capture = null)
     {
         var condition = knowledge ? "B" : "A";
         export.RequestedCommit = HexInput("BOPS_KNOW_BENCH_COMMIT", 40);
@@ -106,7 +124,6 @@ public sealed class KnowledgeBenchmarkLiveTests
         if (root.GetProperty("bopsCommit").GetString() != export.Commit ||
             !string.IsNullOrEmpty(await GitAsync("status", "--porcelain", "--untracked-files=no")))
             throw new InvalidOperationException("Benchmark requires the pinned commit and a clean tracked checkout.");
-        var options = KnowledgeHostCanaryLiveTests.LocalQwenConfiguration.Read();
         export.ProviderRequestTimeout = options.RequestTimeout;
         KnowledgeBenchmark.RunnerOptions.Validate(options.EffectiveRequestTimeout);
         if (options.Model != KnowledgeBenchmark.ModelId) throw new InvalidOperationException("Exact model required.");
@@ -176,6 +193,14 @@ public sealed class KnowledgeBenchmarkLiveTests
     private sealed class ClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+    private sealed class ConfigurationPreflightFactAttribute : FactAttribute
+    {
+        public ConfigurationPreflightFactAttribute()
+        {
+            if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_PREFLIGHT") != "1")
+                Skip = "Manual local configuration/Vault preflight only; no capture or LLM calls.";
+        }
     }
     private sealed class IntegratedCaptureFactAttribute : FactAttribute
     {
