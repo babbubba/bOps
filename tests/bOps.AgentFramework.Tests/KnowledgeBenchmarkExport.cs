@@ -226,7 +226,7 @@ internal sealed class KnowledgeBenchmarkExport
             auditedToolsExecuted = tools?.Count(t => t.EffectiveTimeout is not null),
             auditedToolsRefused = tools?.Count(t => t.Outcome == ToolOutcome.Denied),
             auditedToolsExecutionUnknown = tools?.Count(t => t.EffectiveTimeout is null && t.Outcome != ToolOutcome.Denied),
-            tools = tools?.Select(t => new { Tool = SafeTool(t.Tool), outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString() }),
+            tools = tools?.Select(t => new { Tool = SafeTool(t.Tool), outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString(), replayRefusalCode = SafeReplayRefusal(t.Summary) }),
             knowledgeReads = reads?.Select(r => new { resultCode = r.ResultCode.ToString() }),
             knowledgeUsed = reads is null ? (bool?)null : reads.Any(r => r.ResultCode == KnowledgeReadResultCode.Success),
             auditStatus, auditError, auditEventCount = audit.Count,
@@ -257,8 +257,16 @@ internal sealed class KnowledgeBenchmarkExport
                 if (usage.TryGetProperty(name, out var value)) safeUsage[name] = JsonNode.Parse(value.GetRawText());
             safe["Usage"] = safeUsage;
         }
+        if (evt.TryGetProperty("Summary", out var summary) && summary.ValueKind == JsonValueKind.Object
+            && SafeReplayRefusal(JsonNode.Parse(summary.GetRawText())?.AsObject()) is { } code)
+            safe["replayRefusalCode"] = code;
         return safe;
     }
+
+    private static string? SafeReplayRefusal(JsonObject? summary) =>
+        summary?["replayRefusalCode"] is JsonValue value && value.TryGetValue<string>(out var code)
+            && code is "IncompatibleArguments" or "IdentityMismatch" or "AlreadyConsumed" or "IntegrityOrProvenance"
+                ? code : null;
 
     // Reuse payload-free projection/minimization, not regex sanitization as proof of safety.
     // Even regex-clean prose may contain a person's name, a credential or raw event data.

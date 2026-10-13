@@ -6,12 +6,26 @@ using bOps.Abstractions;
 using bOps.Knowledge;
 using bOps.Packages.Sys.Core;
 using bOps.Packages.Sys.Windows;
+using bOps.Runtime;
 
 namespace bOps.AgentFramework.Tests;
 
 // One process-local capability, no import constructor, JSON binding or persistent attestation.
 internal sealed class TrustedEventsCapture : IDisposable
 {
+    internal enum RefusalCode { IncompatibleArguments, IdentityMismatch, AlreadyConsumed, IntegrityOrProvenance }
+
+    internal static ToolManifest ReplayManifest(ToolManifest native) => native with
+    {
+        Description = "Replay the single governed benchmark snapshot using the exact canonical request; one accepted read per condition.",
+        Parameters = [
+            new("mode", ToolParameterType.Enum, "Canonical raw mode.", AllowedValues: ["raw"]),
+            new("windowMinutes", ToolParameterType.Integer, "Canonical 1440 minutes.") { Minimum = 1440, Maximum = 1440 },
+            new("minSeverity", ToolParameterType.Enum, "Canonical warning severity.", AllowedValues: ["warning"]),
+            new("limit", ToolParameterType.Integer, "Canonical 500 events.") { Minimum = 500, Maximum = 500 },
+            new("maxOutputBytes", ToolParameterType.Integer, "Canonical 65536 bytes.") { Minimum = 65536, Maximum = 65536 },
+        ],
+    };
     private readonly ITool source;
     private readonly Guid captureTask = Guid.NewGuid();
     private readonly Guid captureId = Guid.NewGuid();
@@ -71,20 +85,29 @@ internal sealed class TrustedEventsCapture : IDisposable
     private sealed class SessionTool(TrustedEventsCapture owner, Guid taskId, bool capture) : IContextualTool, IToolAuditSummaryProvider
     {
         private int used;
-        public ToolManifest Manifest => owner.source.Manifest;
+        public ToolManifest Manifest { get; } = capture ? owner.source.Manifest : ReplayManifest(owner.source.Manifest);
         public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
-            Task.FromResult(Refuse()); // No host identity: fail closed.
+            Task.FromResult(Refuse(RefusalCode.IdentityMismatch)); // No host identity: fail closed.
         public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, ToolExecutionContext context, CancellationToken ct = default)
         {
-            if (owner.disposed || context.TaskId != taskId || context.Actor != KnowledgeRunnerWorld.ActorA ||
-                Interlocked.Exchange(ref used, 1) != 0) return Refuse();
+            if (context.TaskId != taskId || context.Actor != KnowledgeRunnerWorld.ActorA) return Refuse(RefusalCode.IdentityMismatch);
+            if (owner.disposed) return Refuse(RefusalCode.IntegrityOrProvenance);
+            if (Volatile.Read(ref used) != 0) return Refuse(RefusalCode.AlreadyConsumed);
+            try
+            {
+                if (ArgumentSchema.Validate(Manifest.Parameters, arguments) is not null) return Refuse(RefusalCode.IncompatibleArguments);
+                CanaryEventsCorpus.ValidateArguments(arguments, DateTimeOffset.UnixEpoch);
+                if (CanaryEventsCorpus.Canonical(arguments.ToJson()) != CanaryEventsCorpus.Canonical(KnowledgeBenchmark.Arguments.ToJson()))
+                    return Refuse(RefusalCode.IncompatibleArguments);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Text.Json.JsonException)
+            { return Refuse(RefusalCode.IncompatibleArguments); }
             try
             {
                 ct.ThrowIfCancellationRequested();
-                CanaryEventsCorpus.ValidateArguments(arguments, DateTimeOffset.UnixEpoch);
-                if (CanaryEventsCorpus.Canonical(arguments.ToJson()) != CanaryEventsCorpus.Canonical(KnowledgeBenchmark.Arguments.ToJson())) return Refuse();
                 if (capture)
                 {
+                    if (Interlocked.CompareExchange(ref used, 1, 0) != 0) return Refuse(RefusalCode.AlreadyConsumed);
                     var result = await owner.source.ExecuteAsync(arguments, ct);
                     if (!result.Succeeded || result.Output is null) return result;
                     var native = owner.source is WindowsSystemEventsTool;
@@ -96,20 +119,27 @@ internal sealed class TrustedEventsCapture : IDisposable
                     origin["controlledCaptureId"] = owner.captureId.ToString("D");
                     owner.provenance = CanaryEventsCorpus.Canonical(origin);
                 }
-                else if (!owner.audited) return Refuse();
+                else if (!owner.audited) return Refuse(RefusalCode.IntegrityOrProvenance);
                 var saved = JsonNode.Parse(owner.snapshot!)!.AsObject();
-                if (CanaryEventsCorpus.Hash(saved) != owner.hash || saved["arguments"]!.GetValue<string>() != CanaryEventsCorpus.Canonical(arguments.ToJson())) return Refuse();
+                if (CanaryEventsCorpus.Hash(saved) != owner.hash || saved["arguments"]!.GetValue<string>() != CanaryEventsCorpus.Canonical(arguments.ToJson())) return Refuse(RefusalCode.IntegrityOrProvenance);
+                var expectedOrigin = CanaryEventsCorpus.Provenance(saved, owner.hash!, capturedHere: owner.source is WindowsSystemEventsTool);
+                expectedOrigin["controlledCaptureId"] = owner.captureId.ToString("D");
+                if (CanaryEventsCorpus.Canonical(expectedOrigin) != owner.provenance) return Refuse(RefusalCode.IntegrityOrProvenance);
                 var output = JsonNode.Parse(saved["output"]!.GetValue<string>())!.AsObject();
                 output["benchmarkCorpus"]!["origin"] = JsonNode.Parse(owner.provenance!)!["classification"]!.GetValue<string>().ToLowerInvariant();
-                return ToolCallResult.Success(CanaryEventsCorpus.Canonical(output)) with
+                var accepted = ToolCallResult.Success(CanaryEventsCorpus.Canonical(output)) with
                 {
                     Completeness = (ToolResultCompleteness)saved["completeness"]!.GetValue<int>(),
                     Facts = [new EvidenceFact("benchmark.events", "corpusSha256", ToolParameterType.String, JsonValue.Create(owner.hash)!),
                         new EvidenceFact("benchmark.events", "corpusProvenance", ToolParameterType.String, JsonValue.Create(owner.provenance)!)],
                 };
+                ct.ThrowIfCancellationRequested();
+                // Atomic admission only after validation, provenance and output preparation. Losing callers get no corpus.
+                if (!capture && Interlocked.CompareExchange(ref used, 1, 0) != 0) return Refuse(RefusalCode.AlreadyConsumed);
+                return accepted;
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Text.Json.JsonException or NullReferenceException or FormatException)
-            { return Refuse(); }
+            { return Refuse(RefusalCode.IntegrityOrProvenance); }
         }
         public JsonObject CreateAuditSummary(ToolArguments arguments, ToolCallResult result) => new()
         {
@@ -118,8 +148,13 @@ internal sealed class TrustedEventsCapture : IDisposable
             ["corpusSha256"] = result.Facts.FirstOrDefault(f => f.Key == "corpusSha256")?.Value.DeepClone(),
             ["corpusProvenance"] = result.Facts.FirstOrDefault(f => f.Key == "corpusProvenance") is { } fact ? JsonNode.Parse(fact.Value.GetValue<string>()) : null,
             ["succeeded"] = result.Succeeded,
+            ["replayRefusalCode"] = result.Facts.FirstOrDefault(f => f.Key == "replayRefusalCode")?.Value.DeepClone(),
         };
-        private static ToolCallResult Refuse() => ToolCallResult.Failure("Controlled event snapshot refused.") with { FailureKind = ToolFailureKind.Validation };
+        private static ToolCallResult Refuse(RefusalCode code) => ToolCallResult.Failure("Controlled event snapshot refused.") with
+        {
+            FailureKind = ToolFailureKind.Validation,
+            Facts = [new EvidenceFact("benchmark.events", "replayRefusalCode", ToolParameterType.String, JsonValue.Create(code.ToString())!)],
+        };
     }
 
     private sealed class SyntheticSource(Func<ToolArguments, ToolCallResult> collect) : ITool
