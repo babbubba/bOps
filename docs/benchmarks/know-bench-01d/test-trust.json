@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "keys": [
+    {
+      "publisher": "acme",
+      "keyId": "acme-2026",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyno3BI9\u002BRV2CJJ46dUgk\nn6dx5epH1k6UH9WykAsILW8HAbjHVcMXGlBQ9AV\u002BjGzwUUiXNj7Fv7mA7/nqHAOF\nERFxvLSQw99cCc9xNvXEFbhjTvqQ0aF3oxbzvQ03h17KUKImemnTfe2cWze5fCUI\nf1bHdPye4tHa0zrdAfRT5gh0xjDurGGGbRixf8Rxfk6Qzqm7Ll59wThzEk23qIJF\nAOOPn0eDg5/z3Pmje\u002B\u002BaUYCkIK39sJ7OC9knj9YwowwTCAjCrxyoH4IUolwgyZsm\nMnEwB9bWSNGndqiy9bxR1bw4550rXejNDFgSFOlqgy/kBllUHE85N70y5bYuPFAM\nEQIDAQAB\n-----END PUBLIC KEY-----",
+      "revoked": false
+    }
+  ],
+  "revokedPublishers": []
+}

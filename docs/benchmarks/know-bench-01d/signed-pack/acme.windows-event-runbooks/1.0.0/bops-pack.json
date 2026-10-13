@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "packId": "acme.windows-event-runbooks",
+  "version": "1.0.0",
+  "kind": "Knowledge",
+  "engine": {
+    "min": "1.0.0",
+    "max": "1.9.9"
+  },
+  "publisher": "acme",
+  "keyId": "acme-2026",
+  "contentSha256": "ef8bd50ece5aee5930158bba9c1dea7e44b49d5f35285d13a1f26ff4e6ba065d",
+  "files": [
+    {
+      "path": "windows-event-triage/SKILL.md",
+      "sha256": "332cad009f99ce3c0b0c78b8b8b84df1ca4216177c923ed4408ccca3acda5d74",
+      "size": 205
+    },
+    {
+      "path": "windows-event-triage/references/interpretation.md",
+      "sha256": "735a786f41ab471bf1c3b99bad9eb27e6aaca84e01b70de57b82e59adb494d69",
+      "size": 3776
+    }
+  ]
+}

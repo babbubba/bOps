@@ -311,7 +311,7 @@ public sealed class KnowledgeHostCanaryLiveTests(ITestOutputHelper output)
     }
 
     /// <summary>Pins the local llama.cpp profile and resolves its credential through the production services.</summary>
-    private static class LocalQwenConfiguration
+    internal static class LocalQwenConfiguration
     {
         private const string SettingsPath = "src/core/bOps.Api/settings.json";
 
