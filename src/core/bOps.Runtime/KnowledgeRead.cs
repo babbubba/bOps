@@ -34,6 +34,46 @@ public sealed record KnowledgeReadOutcome(
 }
 
 /// <summary>
+/// The task signals a session may use to select index entries (ADR-0057). The first milestone carries the goal only; later milestones
+/// add optional members. The goal is the operator's text: a session uses it to order entries and never records or repeats it.
+/// </summary>
+/// <param name="Goal">The operator's goal for the task.</param>
+public sealed record KnowledgeIndexQuery(string Goal);
+
+/// <summary>
+/// One rendering of the index data (ADR-0057): a single data turn plus the host-generated facts about it. The runtime verifies the
+/// turn's provenance against the task's persisted binding and inserts it; it never reads the content to decide anything.
+/// </summary>
+/// <param name="DataTurn">The <see cref="ChatRole.User"/> turn that carries the third-party reference data. Its provenance is assigned by the session.</param>
+/// <param name="ListedRefs">The host-generated references listed in the turn (<c>K1</c>, ...), in selection order.</param>
+/// <param name="Omitted">How many authorized entries are not listed in this rendering.</param>
+/// <param name="IndexHash">The SHA-256, lowercase hex, of the content of <paramref name="DataTurn"/>.</param>
+public sealed record KnowledgeIndexRendering(ChatTurn DataTurn, IReadOnlyList<string> ListedRefs, int Omitted, string IndexHash);
+
+/// <summary>
+/// What a session offers as its index for one request (ADR-0057). <see cref="Status"/> says whether an index exists; a published view
+/// carries both renderings, a suppressed one carries a closed reason and none. The listing and counts are host-generated; only the
+/// content of a rendering's data turn originates from a publisher, and it has no authority.
+/// </summary>
+/// <param name="Status">Whether the index is published.</param>
+/// <param name="Suppression">Why it is not, when suppressed.</param>
+/// <param name="Cause">The closed cause reported by the authority in force, for an authority or snapshot suppression.</param>
+/// <param name="Normal">The rendering for a normal request; not null exactly when published.</param>
+/// <param name="Aggressive">The reduced rendering for a request retried after a context overflow; not null exactly when published.</param>
+/// <param name="Listed">The entries listed in the normal rendering, for audit.</param>
+/// <param name="AuthorizedTotal">How many entries the authority in force covers.</param>
+/// <param name="SelectorVersion">The version of the selector that ordered the entries.</param>
+public sealed record KnowledgeIndexView(
+    KnowledgeIndexStatus Status,
+    KnowledgeIndexSuppression? Suppression,
+    KnowledgeAdmissionCode? Cause,
+    KnowledgeIndexRendering? Normal,
+    KnowledgeIndexRendering? Aggressive,
+    IReadOnlyList<KnowledgeIndexListing> Listed,
+    int AuthorizedTotal,
+    string SelectorVersion);
+
+/// <summary>
 /// The knowledge a task may read during one execution attempt (KNOW-01B, ADR-0056). The runner offers <see cref="Manifest"/> beside the
 /// step's tool view and gives every reply to <see cref="HandleAsync"/> before it looks at the reply itself. A session reads nothing it
 /// was not admitted for, never calls a model, and never executes a tool; whatever it serves is attributed data.
@@ -51,6 +91,20 @@ public interface IKnowledgeReadSession : IDisposable
     /// Sessions that cannot verify issuance, scope and current admission fail closed. This grants no instruction authority.
     /// </summary>
     bool IsEvidenceAdmitted(ChatTurn result, ModelInvocationContext context) => false;
+
+    /// <summary>
+    /// Describes the index of what this task may read, under the authority in force when it is called (ADR-0057). It is evaluated
+    /// again on every call and its authority outcome is never remembered. <c>null</c> means the session does not support an index, and
+    /// the runner then builds the request exactly as it did before the index existed. It confers no read authority: a read is
+    /// authorized when it happens.
+    /// </summary>
+    KnowledgeIndexView? DescribeIndex(KnowledgeIndexQuery query) => null;
+
+    /// <summary>
+    /// How many reads the session will still serve in this attempt, or <c>null</c> when it cannot say, in which case the function is
+    /// offered as before (ADR-0057).
+    /// </summary>
+    int? ReadsRemaining => null;
 
     /// <summary>Handles one model reply: serves or refuses a call of this session, or reports that the reply is not its.</summary>
     Task<KnowledgeReadOutcome> HandleAsync(

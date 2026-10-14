@@ -91,7 +91,7 @@ public sealed record ContextProvenance
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TenantId { get; init; }
 
-    /// <summary>The knowledge operation that produced the turn: <c>discover</c>, <c>load</c> or <c>read_resource</c> (KNOW-01B).</summary>
+    /// <summary>The knowledge operation that produced the turn: <c>discover</c>, <c>load</c> or <c>read_resource</c> (KNOW-01B), or <c>index</c> for the pre-read index (ADR-0057).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Operation { get; init; }
 
