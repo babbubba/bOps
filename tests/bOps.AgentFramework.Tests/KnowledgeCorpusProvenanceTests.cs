@@ -84,7 +84,7 @@ public sealed class KnowledgeCorpusProvenanceTests
         Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.Replay(path, changedHash, requireCaptured: true));
         // Mutation after composition is checked again by governed dispatch.
         var refused = await ExecuteAsync(rig);
-        Assert.StartsWith("ERROR", Assert.Single(refused.Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single(refused.Evidence).Data, StringComparison.Ordinal);
         Assert.Equal(ToolOutcome.Failure, world.Events.OfType<ToolCallAuditEvent>().Last().Outcome);
         Assert.Empty(world.Events.OfType<ModelCallAuditEvent>());
     }

@@ -89,7 +89,7 @@ public sealed class TrustedEventsCaptureTests
         var task = Guid.NewGuid();
         var rig = session.Compose(world, new BenchmarkProbe([]), "A", task);
         var wrong = KnowledgeBenchmark.Arguments.ToJson(); wrong["limit"] = 10;
-        Assert.StartsWith("ERROR", Assert.Single((await Execute(rig, task, ToolArguments.FromJson(wrong))).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await Execute(rig, task, ToolArguments.FromJson(wrong))).Evidence).Data, StringComparison.Ordinal);
         var (raw, trust) = await KnowledgeBenchmark.LoadAsync();
         Assert.Throws<InvalidOperationException>(() => session.Compose(world, new BenchmarkProbe([]), "B", Guid.NewGuid(), raw, trust));
         var bTask = Guid.NewGuid();
@@ -99,7 +99,7 @@ public sealed class TrustedEventsCaptureTests
         var altered = JsonNode.Parse((string)field.GetValue(session)!)!;
         altered["status"] = "altered";
         field.SetValue(session, CanaryEventsCorpus.Canonical(altered)); // Adversarial memory corruption, no product mutation API.
-        Assert.StartsWith("ERROR", Assert.Single((await Execute(b, bTask, KnowledgeBenchmark.Arguments)).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await Execute(b, bTask, KnowledgeBenchmark.Arguments)).Evidence).Data, StringComparison.Ordinal);
         Assert.Equal(1, reads);
         Assert.Empty(world.Events.OfType<ModelCallAuditEvent>());
         session.Dispose();

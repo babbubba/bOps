@@ -175,7 +175,7 @@ public sealed class KnowledgeBenchmarkIsolationTests
         await File.WriteAllBytesAsync(path, CanaryEventsCorpus.Encode(tampered, hash));
         var tamperedResult = await rig.Runner.ExecuteExecutionPlanAsync(Guid.NewGuid(), KnowledgeRunnerWorld.ActorA,
             new ExecutionPlan("offline", "1", "Tampered corpus probe", [new ExecutionPlanStep(0, "system.events", KnowledgeBenchmark.Arguments, "replay")]), null);
-        Assert.StartsWith("ERROR", Assert.Single(tamperedResult.Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single(tamperedResult.Evidence).Data, StringComparison.Ordinal);
         Assert.Equal(ToolOutcome.Failure, replayWorld.Events.OfType<ToolCallAuditEvent>().Last().Outcome);
         foreach (var condition in new[] { "A", "B" })
             Assert.ThrowsAny<Exception>(() => KnowledgeBenchmark.ComposeReplay(replayWorld, new BenchmarkProbe([]), condition, path, hash));
@@ -184,7 +184,7 @@ public sealed class KnowledgeBenchmarkIsolationTests
         incompatible["limit"] = 10;
         var result = await rig.Runner.ExecuteExecutionPlanAsync(Guid.NewGuid(), KnowledgeRunnerWorld.ActorA,
             new ExecutionPlan("offline", "1", "Mismatch probe", [new ExecutionPlanStep(0, "system.events", ToolArguments.FromJson(incompatible), "replay")]), null);
-        Assert.StartsWith("ERROR", Assert.Single(result.Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single(result.Evidence).Data, StringComparison.Ordinal);
         Assert.All(replayWorld.Events.OfType<ToolCallAuditEvent>(), call => Assert.Equal(ToolOutcome.Failure, call.Outcome));
         Assert.Empty(replayWorld.Events.OfType<ModelCallAuditEvent>());
     }

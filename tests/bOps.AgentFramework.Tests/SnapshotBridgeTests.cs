@@ -346,7 +346,7 @@ public sealed class SnapshotBridgeTests
         Assert.Equal(KnowledgeReadResultCode.Malformed, withTenant.Code);
         Assert.Equal(KnowledgeReadResultCode.UnknownResource, traversal.Code);
         Assert.Equal(KnowledgeReadResultCode.UnknownSkill, otherSkill.Code);
-        Assert.Equal(["operation", "skill", "resource"], KnowledgeReadBridge.Manifest.Parameters.Select(parameter => parameter.Name));
+        Assert.Equal(["operation", "skill", "resource", "ref", "query", "page"], KnowledgeReadBridge.Manifest.Parameters.Select(parameter => parameter.Name));
         Assert.Equal(RiskLevel.Read, KnowledgeReadBridge.Manifest.Risk);
         Assert.DoesNotContain(host.Audit.Events.OfType<KnowledgeReadAuditEvent>(), read => read.ResultCode == KnowledgeReadResultCode.Success);
     }

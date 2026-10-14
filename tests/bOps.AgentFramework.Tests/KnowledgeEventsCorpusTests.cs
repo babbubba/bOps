@@ -80,7 +80,7 @@ public sealed class KnowledgeEventsCorpusTests
         async Task RefusedAsync(ToolArguments request)
         {
             var report = await ExecuteAsync(rig, request, "replay");
-            Assert.StartsWith("ERROR", Assert.Single(report.Evidence).Data);
+            Assert.StartsWith("ERROR", Assert.Single(report.Evidence).Data, StringComparison.Ordinal);
             Assert.Equal(ToolOutcome.Failure, world.Events.OfType<ToolCallAuditEvent>().Last().Outcome);
             Assert.Equal(ToolFailureKind.Validation, world.Events.OfType<ToolCallAuditEvent>().Last().FailureKind);
         }
@@ -110,21 +110,21 @@ public sealed class KnowledgeEventsCorpusTests
         await RefusedAsync(Request);
         var unsupportedRig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false,
             withWindowsSystemEvents: true, eventsCorpus: Replay(path, CanaryEventsCorpus.Hash(changed)));
-        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(unsupportedRig, Request, "replay")).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(unsupportedRig, Request, "replay")).Evidence).Data, StringComparison.Ordinal);
         await File.WriteAllTextAsync(path, "{}");
         await RefusedAsync(Request);
         await File.WriteAllBytesAsync(path, good);
 
         var disabledRig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false,
             withWindowsSystemEvents: true, eventsCorpus: Replay(path, hash) with { Enabled = false });
-        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(disabledRig, Request, "replay")).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(disabledRig, Request, "replay")).Evidence).Data, StringComparison.Ordinal);
         var noSanitizationRig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false,
             withWindowsSystemEvents: true, eventsCorpus: Replay(path, hash) with { AcceptMinimization = false });
-        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(noSanitizationRig, Request, "replay")).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(noSanitizationRig, Request, "replay")).Evidence).Data, StringComparison.Ordinal);
         // Even an opted-in capture must refuse an existing file before the real collector is called.
         var overwriteRig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false,
             withWindowsSystemEvents: true, eventsCorpus: Replay(path, hash) with { Capture = true });
-        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(overwriteRig, Request, "capture")).Evidence).Data);
+        Assert.StartsWith("ERROR", Assert.Single((await ExecuteAsync(overwriteRig, Request, "capture")).Evidence).Data, StringComparison.Ordinal);
         rig.Registry.SetEnabled(new PackageId("bops.packages.system.windows"), false);
         Assert.Empty(rig.Registry.GetAvailableManifests());
         await ExecuteAsync(rig, Request, "replay");
