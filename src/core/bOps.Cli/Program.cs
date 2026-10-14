@@ -28,6 +28,10 @@ using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
+// ADR-0057 section U.5: this host runs with full globalization (bOps.Cli.csproj) so Knowledge text is really normalized; the culture
+// stays invariant so nothing else changes.
+HostCulture.PinInvariant();
+
 const string UsageMessage = """
     Usage: bops "<goal>" | bops resume <task-id> | bops recover <task-id> --attempt <N> | bops reconcile <task-id> verify|accept|abandon [--note <text>] | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;

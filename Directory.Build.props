@@ -8,6 +8,9 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-all</AnalysisLevel>
+    <!-- Repository default: invariant. Hosts that run Knowledge discovery (bOps.Api, bOps.Cli, bOps.Knowledge.Tests) override it with
+         false in their own project because Unicode normalization needs full globalization; the hosting process, not a library, decides
+         (ADR-0057 section U.5). -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

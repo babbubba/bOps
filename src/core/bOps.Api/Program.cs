@@ -27,6 +27,10 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
+// ADR-0057 section U.5: this host runs with full globalization (bOps.Api.csproj) so Knowledge text is really normalized; the culture
+// stays invariant so nothing else changes.
+HostCulture.PinInvariant();
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
 

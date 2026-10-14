@@ -50,10 +50,16 @@ public static class KnowledgeIndexSelector
     /// enumerates the candidates, on the current culture or on the clock.
     /// </summary>
     /// <exception cref="ArgumentException">A candidate breaks the contract of <see cref="KnowledgeIndexCandidate"/>, or the limits are out of range.</exception>
+    /// <exception cref="KnowledgeNormalizationUnavailableException">
+    /// The process cannot normalize non-ASCII text and the goal or a candidate has some: the NFKC fold would not happen, so nothing is
+    /// ranked. An all-ASCII goal and candidate list is ranked exactly, because ASCII is invariant under every normalization form.
+    /// </exception>
     public static KnowledgeIndexSelection Select(IReadOnlyList<KnowledgeIndexCandidate> candidates, string? goal, KnowledgeIndexLimits limits)
     {
         ArgumentNullException.ThrowIfNull(limits);
         limits.EnsureValid();
+        ArgumentNullException.ThrowIfNull(candidates);
+        EnsureFoldable(candidates, goal);
         KnowledgeIndexCandidate.EnsureValid(candidates);
 
         var ranked = Rank(candidates, goal, keepZero: true);
@@ -67,6 +73,7 @@ public static class KnowledgeIndexSelector
     /// </summary>
     internal static IReadOnlyList<KnowledgeIndexRankedEntry> Rank(IReadOnlyList<KnowledgeIndexCandidate> candidates, string? text, bool keepZero)
     {
+        EnsureFoldable(candidates, text);
         var wanted = Tokenize(text, MaxQueryTokens);
         List<KnowledgeIndexRankedEntry> ranked = new(candidates.Count);
         foreach (var candidate in candidates)
@@ -86,6 +93,33 @@ public static class KnowledgeIndexSelector
         });
         return ranked;
     }
+
+    /// <summary>
+    /// Refuses, before anything is scored, a request whose NFKC fold this process cannot perform. Skill names are ASCII by U7, so only
+    /// the goal or query and the descriptions can need it. Fail closed: no degraded ranking is ever produced.
+    /// </summary>
+    private static void EnsureFoldable(IReadOnlyList<KnowledgeIndexCandidate> candidates, string? text)
+    {
+        if (KnowledgeTextPolicy.NormalizationAvailable)
+        {
+            return;
+        }
+
+        if (NeedsFold(text))
+        {
+            throw new KnowledgeNormalizationUnavailableException();
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (candidate is not null && NeedsFold(candidate.Description))
+            {
+                throw new KnowledgeNormalizationUnavailableException();
+            }
+        }
+    }
+
+    internal static bool NeedsFold(string? text) => text is not null && text.AsSpan().ContainsAnyExceptInRange((char)0, (char)127);
 
     private static int Score(IReadOnlyList<string> wanted, KnowledgeIndexCandidate candidate)
     {
@@ -129,6 +163,12 @@ public static class KnowledgeIndexSelector
         if (string.IsNullOrEmpty(text))
         {
             return [];
+        }
+
+        // Last line of defence for any caller that reaches the fold without the guards above: a fold that would silently do nothing is a failure.
+        if (!KnowledgeTextPolicy.NormalizationAvailable && NeedsFold(text))
+        {
+            throw new KnowledgeNormalizationUnavailableException();
         }
 
         // ADR-0057 section S.2 fixes the fold as NFKC then invariant lower case; this is case folding, not a comparison with upper case.

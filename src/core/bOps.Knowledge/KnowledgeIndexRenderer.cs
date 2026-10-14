@@ -320,6 +320,12 @@ public static class KnowledgeIndexRenderer
     private static string[] QueryLines(
         string packText, KnowledgeIndexPackLabel pack, IReadOnlyList<KnowledgeIndexCandidate> candidates, string? query, KnowledgeIndexLimits limits)
     {
+        if (!KnowledgeTextPolicy.NormalizationAvailable && KnowledgeIndexSelector.NeedsFold(query))
+        {
+            // A runtime limit, not a defect of the query: reported as such, never as a policy violation.
+            throw new KnowledgeNormalizationUnavailableException();
+        }
+
         if (!KnowledgeTextPolicy.IsValidQuery(query))
         {
             throw new ArgumentException("discover query does not conform to the text policy", nameof(query));

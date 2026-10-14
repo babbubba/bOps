@@ -586,6 +586,30 @@ bridge (`:571`), che si applica anche alle pagine `discover`.
 - **Tabelle Unicode:** `Rune.GetUnicodeCategory` è deterministico per versione di .NET; `IsNormalized` può dipendere da ICU per
   code point recenti; mitigato da U3 (`Cn` rifiutato) e dai test su Windows e Linux. [RIS]
 
+### U.5 Runtime di globalizzazione (nota di implementazione, KNOW-M1-B-FIX01)
+
+Nota tecnica collegata: [`know-m1-b-fix01-unicode-globalization.md`](know-m1-b-fix01-unicode-globalization.md). Non cambia lo stato
+dell'ADR, non introduce decisioni di governance e non modifica trust, firma, grant o autorizzazioni.
+
+- **Requisito.** U2 (NFC) e il fold NFKC di U6 e di §S.2 richiedono la normalizzazione Unicode di .NET, che con
+  `InvariantGlobalization=true` **non avviene** (`Normalize` restituisce il testo invariato, `IsNormalized` risponde `true` anche per testo non
+  normalizzato). La disponibilità è decisa dal **processo ospitante** (runtimeconfig), non dalla libreria `bOps.Knowledge`.
+- **Configurazione.** Default del repository invariato (`Directory.Build.props`: invariant). `InvariantGlobalization=false` solo negli host che eseguono
+  la discovery: `bOps.Api`, `bOps.Cli`, `bOps.Knowledge.Tests`; gli altri host di test passano a `false` nel task che li fa esercitare la discovery
+  (T5/T8). Gli host impostano la cultura invariant (`HostCulture.PinInvariant`) per non cambiare altro comportamento. Su Linux serve `libicu`;
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` prevale sul runtimeconfig e riporta il processo alla modalità invariant.
+- **Modalità invariant: chiusura sicura.** `KnowledgeTextPolicy.NormalizationAvailable` (sondato una volta, normalizzando U+212B e U+FF21) è `false`:
+  ogni descrizione o query non ASCII è rifiutata (`NormalizationUnavailable`); il testo ASCII è giudicato esattamente; `KnowledgeIndexSelector.Select` e
+  la query di `discover` sollevano `KnowledgeNormalizationUnavailableException` (codice `KNOW-NORM-UNAVAILABLE`, messaggio fisso senza testo) **prima**
+  di assegnare un punteggio. Nessun fallback accetta metadati non verificati e nessun punteggio degradato è prodotto. In T5 l'eccezione è il caso
+  «`DescribeIndex` lancia» di §C.7 (`Suppressed/SessionFault`, il task prosegue senza indice).
+- **Hash.** Il marker `sha256=` di §C.4 è il prefisso di 12 hex dello SHA-256 del **solo corpo** (righe di voce, senza marker, chiusura e trailer);
+  `IndexHash` è lo SHA-256 dell'**intero** testo D. Il marker non è un prefisso di `IndexHash`; ciò che lega il turno al runtime è `IndexHash`
+  (`contentHash`, audit, verifica T6).
+- **Parte C.** È generata dall'host (`KnowledgeIndexRenderer.RenderControl`) da interi, ref generati dall'host, nome di funzione validato e frasi fisse;
+  nessun testo del publisher è un suo input. Il testo del publisher esiste solo nella Parte D, come dato quotato.
+- **Dipendenze.** Linux: `libicu` (non incluso nel pubblicato self-contained). Windows: ICU (Windows 10 1903+/Server 2019+) o, in sua assenza, NLS.
+
 ---
 
 ## E. Piano di implementazione

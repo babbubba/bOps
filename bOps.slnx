@@ -68,6 +68,7 @@
     <Project Path="tests/bOps.Architecture.Tests/bOps.Architecture.Tests.csproj" />
     <Project Path="tests/bOps.Audit.Tests/bOps.Audit.Tests.csproj" />
     <Project Path="tests/bOps.Cli.Tests/bOps.Cli.Tests.csproj" />
+    <Project Path="tests/bOps.Knowledge.InvariantProbe/bOps.Knowledge.InvariantProbe.csproj" />
     <Project Path="tests/bOps.Knowledge.Tests/bOps.Knowledge.Tests.csproj" />
     <Project Path="tests/bOps.Memory.Tests/bOps.Memory.Tests.csproj" />
     <Project Path="tests/bOps.Packages.Docker.Tests/bOps.Packages.Docker.Tests.csproj" />
