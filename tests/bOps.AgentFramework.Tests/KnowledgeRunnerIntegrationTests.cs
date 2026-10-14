@@ -80,7 +80,7 @@ public sealed class KnowledgeRunnerIntegrationTests
         Assert.All(rig.Model.Requests, request => Assert.DoesNotContain("ss -ltnp", request.SystemPrompt, StringComparison.Ordinal));
 
         // Served content: a Tool turn, attributed to the pack, tenant, provider, operation, item and content hash.
-        var served = rig.Model.Requests[4].History.Where(turn => turn.Provenance?.Origin == ContextOrigin.Skill).ToArray();
+        var served = rig.Model.Requests[4].History.Where(turn => turn.Provenance?.Origin == ContextOrigin.Skill && turn.Role == BopsChatRole.Tool).ToArray();
         Assert.Equal(3, served.Length);
         Assert.All(served, turn =>
         {
@@ -462,8 +462,9 @@ public sealed class KnowledgeRunnerIntegrationTests
         var final = await rig.Runner.RunAsync(Goal, ActorA);
 
         Assert.Equal(AgentTaskStatus.Completed, final.Status);
+        // ADR-0057 AF-04: once the budget is spent the function is withdrawn, so the third attempt is NotOffered, not LimitExceeded.
         Assert.Equal(
-            [KnowledgeReadResultCode.Success, KnowledgeReadResultCode.Success, KnowledgeReadResultCode.LimitExceeded],
+            [KnowledgeReadResultCode.Success, KnowledgeReadResultCode.Success, KnowledgeReadResultCode.NotOffered],
             world.Events.OfType<KnowledgeReadAuditEvent>().Select(read => read.ResultCode));
     }
 

@@ -1068,23 +1068,37 @@ public sealed partial class AgentRunner(
                 var offersEvidenceControl = !evidenceReadExhausted && EvidenceIndex.HasAddressableEvidence(steps);
                 var evidenceIndex = offersEvidenceControl ? EvidenceIndex.Build(taskId, steps) : null;
                 var availableTools = offersEvidenceControl ? [.. stepTools, EvidenceRead.ControlManifest] : stepTools;
-                if (run.Knowledge is { } knowledgeSession)
+                // KNOW-01B: offered beside, never instead of, the step's tool view; a read grants nothing and completes nothing.
+                // ADR-0057 H5/AF-04: withdrawn once the session says no read is left; never conditioned on authority or on the index.
+                var knowledgeSession = run.Knowledge is { ReadsRemaining: not 0 } offeredSession ? offeredSession : null;
+                if (knowledgeSession is not null)
                 {
-                    // KNOW-01B: offered beside, never instead of, the step's tool view; a read grants nothing and completes nothing.
                     availableTools = [.. availableTools, knowledgeSession.Manifest];
                 }
+
+                // ADR-0057 part C: typed host facts only, last in the system prompt; part D: a verified data turn, built per request.
+                var knowledgeIndex = logicalCall.KnowledgeIndex;
+                var knowledgeControl = knowledgeIndex is not null && run.Knowledge is { } indexSession
+                    ? KnowledgeIndexPublication.RenderControl(knowledgeIndex, aggressive, indexSession.Manifest.Name, indexSession.ReadsRemaining)
+                    : null;
 
                 // KNOW-FIX-01: the prompt describes exactly the functions this request offers, so it never contradicts its tool list.
                 var systemPrompt = BuildStepSystemPrompt(promptPlan, limitations, stepTools, correctingSemantics,
                     correctingArguments, aggressive, offersEvidenceControl, grounding, evidenceReadExhausted, evidenceIndex,
-                    correctingToolName, planExhaustedForPrompt, knowledgeFunction: run.Knowledge?.Manifest.Name);
+                    correctingToolName, planExhaustedForPrompt, knowledgeFunction: knowledgeSession?.Manifest.Name,
+                    knowledgeIndexControl: knowledgeControl);
 
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(ContinuedKnowledgeEvidence(run, stepIndex));
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
+                var goalTurn = ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, ContextProvenance.Task);
+                // ADR-0057 H2: the data turn is protected context before the goal, rebuilt for each request, never persisted or repeated.
+                ChatTurn[] protectedBefore = knowledgeIndex is { Status: KnowledgeIndexStatus.Published }
+                    ? [(aggressive ? knowledgeIndex.Aggressive! : knowledgeIndex.Normal!).DataTurn, goalTurn]
+                    : [goalTurn];
                 return new ModelContextRequest(
                     systemPrompt,
-                    [ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, ContextProvenance.Task)],
+                    protectedBefore,
                     RebuildHistoricalTurns(steps),
                     protectedAfter,
                     availableTools)
@@ -1101,6 +1115,8 @@ public sealed partial class AgentRunner(
             ModelResponse? response = null;
             try
             {
+                // ADR-0057 H6: the index is computed, verified and audited before the first model call of the logical call.
+                await RefreshKnowledgeIndexAsync(run, logicalCall, stepIndex, ct);
                 response = await CallModelWithOverflowRecoveryAsync(
                     taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                 request = BuildStepRequest(logicalCall.Aggressive);
@@ -3434,6 +3450,8 @@ public sealed partial class AgentRunner(
                             (TaskTerminalKind.RuntimeFailure, null), calls, ct));
                     }
 
+                    // ADR-0057 H6: authority is asked again before the next call; the reply just served changed the read budget.
+                    await RefreshKnowledgeIndexAsync(run, logicalCall, stepIndex, ct);
                     response = await CallModelWithOverflowRecoveryAsync(
                         run.TaskId, stepIndex, run.Actor, requestFactory, run.Delegation, calls, logicalCall, ct);
                     run.TokensUsed += UsageTokens(response);
@@ -5065,7 +5083,7 @@ public sealed partial class AgentRunner(
         AgentPlan plan, EvidenceLimitations? limitations, IReadOnlyList<ToolManifest> stepTools, bool correctingSemantics,
         bool correctingArguments, bool aggressive = false, bool offersEvidenceControl = false, EvidenceGrounding? grounding = null,
         bool evidenceReadExhausted = false, string? evidenceIndex = null, bool correctingToolName = false, bool planExhausted = false,
-        string? knowledgeFunction = null)
+        string? knowledgeFunction = null, string? knowledgeIndexControl = null)
     {
         var planText = DescribePlan(plan);
         // KNOW-FIX-01: "single native tool" and "no native tool" are only true when no runtime control function is offered beside
@@ -5118,7 +5136,13 @@ public sealed partial class AgentRunner(
         }
 
         // ADR-0052 AF-05: the drill-down index, only while the control function is offered, so a compacted result stays addressable.
-        return evidenceIndex is null ? prompt : $"{prompt}\n\n{evidenceIndex}";
+        if (evidenceIndex is not null)
+        {
+            prompt = $"{prompt}\n\n{evidenceIndex}";
+        }
+
+        // ADR-0057 section C.5: the knowledge index control block is the tail of the system prompt, typed host facts only.
+        return knowledgeIndexControl is null ? prompt : $"{prompt}\n\n{knowledgeIndexControl}";
     }
 
     internal static string DescribePlan(AgentPlan plan)
@@ -5421,6 +5445,74 @@ public sealed partial class AgentRunner(
         }
     }
 
+    /// <summary>
+    /// ADR-0057 H6: asks the session for the index under the authority in force, verifies the data turn against the task's persisted
+    /// binding (H12), audits a changed outcome and stores the effective view for the request builder. Nothing from an earlier call
+    /// survives. An audit failure propagates, so no model call follows an index that could not be recorded.
+    /// </summary>
+    private async Task RefreshKnowledgeIndexAsync(ExecutionRun run, LogicalCallState call, int stepIndex, CancellationToken ct)
+    {
+        call.KnowledgeIndex = null;
+        if (run.Knowledge is not { } reader || run.KnowledgeBinding is not { } binding
+            || !KnowledgeIndexPublication.IsFunctionName(reader.Manifest.Name))
+        {
+            return;
+        }
+
+        KnowledgeIndexView? described;
+        try
+        {
+            described = reader.DescribeIndex(new KnowledgeIndexQuery(run.Goal));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Rule C1 and ADR-0057 section C.7: a session that fails while describing is contained and audited; the task goes on without
+            // an index. Only the exception type is logged. The data turn check and the audit write below are never inside this guard.
+            logger.LogError("Task {TaskId} step {StepIndex}: describing the knowledge index failed ({ExceptionType})",
+                run.TaskId, stepIndex, ex.GetType().Name);
+            described = KnowledgeIndexPublication.Faulted();
+        }
+
+        if (described is null)
+        {
+            return;
+        }
+
+        var effective = KnowledgeIndexPublication.Verify(described, binding);
+        var key = KnowledgeIndexPublication.KeyOf(effective);
+        if (run.LastKnowledgeIndexAuditKey != key)
+        {
+            await WriteAuditAsync(KnowledgeIndexEvent(run, binding, stepIndex, effective), run.Delegation, ct);
+            run.LastKnowledgeIndexAuditKey = key;
+        }
+
+        call.KnowledgeIndex = effective;
+    }
+
+    private KnowledgeIndexAuditEvent KnowledgeIndexEvent(ExecutionRun run, TaskKnowledgeBinding binding, int stepIndex, KnowledgeIndexView view) => new()
+    {
+        TimestampUtc = timeProvider.GetUtcNow(),
+        Node = NodeId.Local,
+        TaskId = run.TaskId,
+        StepIndex = stepIndex,
+        Actor = run.Actor,
+        ExecutionAttempt = run.ExecutionAttempt,
+        Status = view.Status,
+        Suppression = view.Suppression,
+        CauseCode = view.Cause,
+        TenantId = binding.TenantId,
+        ProviderId = view.Normal?.DataTurn.Provenance?.AdmittedProviderId,
+        PackId = binding.PackId,
+        PackVersion = binding.Version,
+        PackHash = binding.ManifestHash,
+        SelectorVersion = string.IsNullOrEmpty(view.SelectorVersion) ? null : view.SelectorVersion,
+        Listed = view.Listed,
+        AuthorizedTotal = view.AuthorizedTotal,
+        Omitted = view.Normal?.Omitted ?? 0,
+        IndexHash = view.Normal?.IndexHash,
+        AggressiveIndexHash = view.Aggressive?.IndexHash,
+    };
+
     private sealed record ContinuedKnowledgeRead(int StepIndex, ModelToolCall Call, ChatTurn Result);
 
     private static List<ChatTurn> ContinuedKnowledgeEvidence(ExecutionRun run, int stepIndex)
@@ -5481,6 +5573,9 @@ public sealed partial class AgentRunner(
         /// <summary>This attempt's knowledge session; never persisted, disposed when the attempt ends.</summary>
         public IKnowledgeReadSession? Knowledge { get; set; }
 
+        /// <summary>The last index outcome audited in this attempt (ADR-0057); in memory only, so a resumed attempt audits again.</summary>
+        public KnowledgeIndexPublication.AuditKey? LastKnowledgeIndexAuditKey { get; set; }
+
         /// <summary>Bounded, admitted read results for this attempt only; never serialized into task state.</summary>
         public List<ContinuedKnowledgeRead> KnowledgeEvidence { get; } = [];
 
@@ -5539,6 +5634,9 @@ public sealed partial class AgentRunner(
         internal bool Aggressive { get; set; }
 
         internal bool OverflowRetried { get; set; }
+
+        /// <summary>The knowledge index in force for this logical call, already verified (ADR-0057); <c>null</c> when the task has none. Never carried to another call.</summary>
+        internal KnowledgeIndexView? KnowledgeIndex { get; set; }
 
 
         internal EvidenceReadBudget Evidence { get; } = new();

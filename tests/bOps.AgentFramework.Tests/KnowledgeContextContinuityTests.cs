@@ -28,9 +28,9 @@ public sealed class KnowledgeContextContinuityTests
         Assert.Equal(4, rig.Model.Requests.Count);
         // These are the requests actually delivered through the governed broker and projector to the scripted provider.
         var initiallyServed = Assert.Single(rig.Model.Requests[2].History,
-            turn => turn.Provenance?.Origin == ContextOrigin.Knowledge);
+            turn => turn.Provenance?.Origin == ContextOrigin.Knowledge && turn.Role == ChatRole.Tool);
         var synthesis = rig.Model.Requests[3];
-        var continued = Assert.Single(synthesis.History, turn => turn.Provenance?.Origin == ContextOrigin.Knowledge);
+        var continued = Assert.Single(synthesis.History, turn => turn.Provenance?.Origin == ContextOrigin.Knowledge && turn.Role == ChatRole.Tool);
         Assert.Equal(initiallyServed, continued);
         Assert.Equal(ChatRole.Tool, continued.Role);
         Assert.Contains("ss -ltnp", continued.Content, StringComparison.Ordinal);
@@ -109,7 +109,7 @@ public sealed class KnowledgeContextContinuityTests
             Assert.Equal(AgentTaskStatus.Completed, state.Status);
             Assert.Equal(4, rig.Model.Requests.Count);
             var synthesis = rig.Model.Requests[3];
-            Assert.DoesNotContain(synthesis.History, turn => turn.Provenance?.Origin == ContextOrigin.Knowledge);
+            Assert.DoesNotContain(synthesis.History, turn => turn.Provenance?.Origin == ContextOrigin.Knowledge && turn.Role == ChatRole.Tool);
             Assert.DoesNotContain(synthesis.History, turn => turn.Content?.Contains("ss -ltnp", StringComparison.Ordinal) == true
                 || turn.Content?.Contains("tampered private evidence", StringComparison.Ordinal) == true);
             Assert.DoesNotContain(synthesis.History, turn => turn.ToolCallId == "k1"

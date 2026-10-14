@@ -222,8 +222,16 @@ internal sealed class TeeAuditSink(ConcurrentAuditSink recorded, IAuditSink pers
 {
     internal ConcurrentAuditSink Recorded { get; } = recorded;
 
+    /// <summary>When set and true for an event, that event is not written and the write fails, like a sink that lost its disk.</summary>
+    internal Func<AuditEvent, bool>? FailWhen { get; set; }
+
     public async Task WriteAsync(AuditEvent evt, CancellationToken ct = default)
     {
+        if (FailWhen?.Invoke(evt) == true)
+        {
+            throw new IOException("audit sink failure injected by the test");
+        }
+
         await Recorded.WriteAsync(evt, ct);
         await persisted.WriteAsync(evt, ct);
     }

@@ -74,7 +74,7 @@ public sealed class KnowledgeBenchmarkIsolationTests
         }
         Assert.All(mb.Requests.Take(2), request => Assert.All(paragraphs, paragraph =>
             Assert.DoesNotContain(JsonSerializer.Serialize(paragraph)[1..^1], JsonSerializer.Serialize(request), StringComparison.Ordinal)));
-        var served = Assert.Single(mb.Requests[2].History, t => t.Provenance?.Origin == ContextOrigin.Knowledge);
+        var served = Assert.Single(mb.Requests[2].History, t => t.Provenance?.Origin == ContextOrigin.Knowledge && t.Role == ChatRole.Tool);
         Assert.Equal(ChatRole.Tool, served.Role);
         Assert.Contains(body, served.Content, StringComparison.Ordinal);
         Assert.Equal(sb.KnowledgeBinding.ManifestHash, served.Provenance!.PackHash);
