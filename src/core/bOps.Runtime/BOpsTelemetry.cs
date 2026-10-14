@@ -59,6 +59,14 @@ public static class BOpsTelemetry
     public static Counter<long> EvidenceReadEventsTotal { get; } =
         Meter.CreateCounter<long>("bops.evidence_read.events_total");
 
+    /// <summary>
+    /// Tool-routing stages, tagged by <c>stage</c> (announced/selected/executed/refused), <c>tool</c> and, for a refusal, a closed
+    /// <c>reason</c> code. A tool tag is only a name the runtime itself offered or registered; a model-proposed name that was not
+    /// offered is recorded as <c>[unoffered]</c>. Never carries arguments or content.
+    /// </summary>
+    public static Counter<long> ToolRoutingEventsTotal { get; } =
+        Meter.CreateCounter<long>("bops.tool_routing.events_total");
+
     /// <summary>Evidence facts a tool call emitted (a count only, tagged by tool; never fact types, keys or values).</summary>
     public static Counter<long> EvidenceFactsEmittedTotal { get; } =
         Meter.CreateCounter<long>("bops.evidence_facts.emitted_total");

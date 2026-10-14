@@ -41,6 +41,14 @@ internal sealed class KnowledgeBenchmarkExport
     private long? brokerLoopMs;
     private string stateSource = "NotObserved";
 
+    // The discriminators the audit contract itself declares; any other value is withheld rather than exported.
+    private static readonly HashSet<string> AuditEventTypes = typeof(AuditEvent)
+        .GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonDerivedTypeAttribute), inherit: false)
+        .Cast<System.Text.Json.Serialization.JsonDerivedTypeAttribute>()
+        .Select(attribute => attribute.TypeDiscriminator as string)
+        .OfType<string>()
+        .ToHashSet(StringComparer.Ordinal);
+
     internal async Task ExecuteTaskAsync(Func<Task<TaskState>> execute)
     {
         var timer = Stopwatch.StartNew();
@@ -79,8 +87,10 @@ internal sealed class KnowledgeBenchmarkExport
         string? recoveryError = null;
         var timer = Stopwatch.StartNew();
         var started = DateTimeOffset.UtcNow;
+        BenchmarkToolRoutingObserver? routing = null;
         try
         {
+            routing = new BenchmarkToolRoutingObserver(export.RunId);
             try { await execute(export); }
             catch (Exception ex) { failure = ex; }
             if (export.State is null && export.Store is not null)
@@ -95,7 +105,7 @@ internal sealed class KnowledgeBenchmarkExport
             timer.Stop();
             try
             {
-                await export.WriteAsync(staging, condition, failure, recoveryError, started, DateTimeOffset.UtcNow, timer.ElapsedMilliseconds);
+                await export.WriteAsync(staging, condition, failure, recoveryError, started, DateTimeOffset.UtcNow, timer.ElapsedMilliseconds, routing?.Snapshot());
                 Directory.Move(staging, destination); // Never replaces an existing condition, including concurrent publishers.
             }
             catch (Exception)
@@ -104,7 +114,11 @@ internal sealed class KnowledgeBenchmarkExport
             }
             if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
-        finally { export.World?.Dispose(); }
+        finally
+        {
+            routing?.Dispose();
+            export.World?.Dispose();
+        }
     }
 
     // Metadata can be supplied by an operator: retain exact configuration fingerprints, never arbitrary payloads.
@@ -135,7 +149,7 @@ internal sealed class KnowledgeBenchmarkExport
     }
 
     private async Task WriteAsync(string staging, string condition, Exception? failure, string? recoveryError,
-        DateTimeOffset started, DateTimeOffset ended, long elapsedMs)
+        DateTimeOffset started, DateTimeOffset ended, long elapsedMs, JsonArray? toolRouting)
     {
         var events = World?.Events.ToArray();
         var models = events?.OfType<ModelCallAuditEvent>().ToArray();
@@ -230,6 +244,9 @@ internal sealed class KnowledgeBenchmarkExport
             tools = tools?.Select(t => new { Tool = SafeTool(t.Tool), outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString(), replayRefusalCode = SafeReplayRefusal(t.Summary) }),
             knowledgeReads = reads?.Select(r => new { resultCode = r.ResultCode.ToString() }),
             knowledgeUsed = reads is null ? (bool?)null : reads.Any(r => r.ResultCode == KnowledgeReadResultCode.Success),
+            // KNOW-FIX-01: runtime tool-routing telemetry of this task only (announced/selected per model call, executed, refused).
+            toolRouting,
+            toolRoutingRepresentation = "Process-local runtime telemetry of this task; approved tool names and closed reason codes only, others redacted",
             auditStatus, auditError, auditEventCount = audit.Count,
             auditRepresentation = httpAttempts is null ? "Payload-free projection of persisted events in original order"
                 : "Payload-free persisted model/tool events plus process-local HTTP observations, ordered by timestamp"
@@ -240,15 +257,21 @@ internal sealed class KnowledgeBenchmarkExport
         await WriteNewAsync(Path.Combine(staging, "audit.jsonl"), System.Text.Encoding.UTF8.GetBytes(string.Join("\n", audit) + (audit.Count > 0 ? "\n" : "")));
     }
 
-    private static JsonObject SafeAudit(JsonElement evt)
+    internal static JsonObject SafeAudit(JsonElement evt)
     {
         var safe = new JsonObject();
+        // KNOW-FIX-01: the persisted discriminator is "eventType" (Audit.cs JsonPolymorphic); only a value the contract declares is kept.
+        if (evt.TryGetProperty("eventType", out var eventType) && eventType.ValueKind == JsonValueKind.String)
+            safe["eventType"] = AuditEventTypes.Contains(eventType.GetString()!) ? eventType.GetString() : RedactedFreeText;
+        // A knowledge read's operation is a closed set; anything else is withheld.
+        if (evt.TryGetProperty("Operation", out var operation) && operation.ValueKind == JsonValueKind.String)
+            safe["Operation"] = operation.GetString() is "discover" or "load" or "read_resource" ? operation.GetString() : RedactedFreeText;
         foreach (var property in evt.EnumerateObject())
-            if (property.Name is "$type" or "TimestampUtc" or "TaskId" or "StepIndex" or "Stage" or "Status" or "TerminalKind"
+            if (property.Name is "TimestampUtc" or "TaskId" or "StepIndex" or "Stage" or "Status" or "TerminalKind"
                 or "Outcome" or "FailureKind" or "ResultCode" or "Code" or "Tool" or "Duration" or "DurationMs"
                 or "EffectiveTimeout" or "ModelAttempt" or "ProviderAttempt" or "RetryDecision" or "RetryDelayMs"
                 or "ProviderStatusCode" or "ExecutionAttempt" or "TokensUsed" or "LifetimeSteps" or "LifetimeReplans")
-                safe[property.Name] = property.Value.ValueKind == JsonValueKind.String && property.Name is "$type" or "Stage" or "Tool"
+                safe[property.Name] = property.Value.ValueKind == JsonValueKind.String && property.Name is "Stage" or "Tool"
                     ? JsonValue.Create(property.Name == "Tool" ? SafeTool(property.Value.GetString()!) : WithholdFreeText(property.Value.GetString()))
                     : JsonNode.Parse(property.Value.GetRawText());
         if (evt.TryGetProperty("Usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
