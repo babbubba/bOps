@@ -1172,3 +1172,29 @@ only by increasing EvidenceRead limits.
 **Implementation.** Five ordered packets AF-01 through AF-05 are indexed under `agentic/_tasks/`: MAF foundation and
 governed inference; context/compaction; governed summarization; evidence cleanup; real regression/tuning/legacy cleanup.
 Benchmarks tune MAF and do not decide whether MAF is adopted.
+
+
+---
+
+### D-049 — ACCEPTED — Knowledge Discovery: deterministic runtime-published index (ADR-0057, KNOW-M0.1)
+
+**Decision.** Accepted 2026-10-14 by the operator (rev. 2 of ADR-0057). The runtime publishes a deterministic index of the
+verified knowledge pack a task is bound to, as one `User`-role external-reference-data turn before the goal, in the operational
+and final step phases only; planning and replanning stay byte-identical. The S5 amendment in `agentic/03-security-rules.md`
+(external reference data) is already merged and is the security basis of this decision. Acceptance authorises development of
+Knowledge Discovery M1 (T1–T8) only.
+
+**Not decided / not authorised.** This is not an authorisation for commercial release, for composing the index in a production
+host, or for any live benchmark, and it supersedes no pending gate. M1 CI and the offline gate (ADR-0057 §H) and the live
+conditions (§H.4) remain in force. No new architectural decision is introduced; ADR-0057 is accepted as written.
+
+**Open dependencies preserved.**
+- **B1** — no guarantee of dynamic revocation of grant, key or publisher during an attempt; revocation is seen at resume
+  (ADR-0057 §L.1; ADR-0056 §4 "live trust-store reload" stays undecided).
+- **B2** — compatibility of consecutive `User` messages must be verified on the real server and template before any live
+  benchmark; the ADR does not authorise merging the index into the goal turn.
+- **ADR-0054 reconciliation** — the "Refined by ADR-0057" note on ADR-0054 §5.1/G2-4 and the state of ADR-0054 are to be
+  reconciled on `docs/arch-03-maf-convergence-decision` before the final merge.
+
+**Implementation.** M1 (KNOW-DISC-01) is indexed in ADR-0057 §E and is not started by this decision.
+

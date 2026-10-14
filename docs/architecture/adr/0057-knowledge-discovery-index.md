@@ -1,7 +1,7 @@
 # ADR-0057 — Knowledge Discovery: indice deterministico pubblicato dal runtime (KNOW-ADR-01)
 
-Stato: **Proposed — rev. 2, 2026-10-14** (KNOW-ADR-01-HARDEN; solo progettazione; richiede accettazione dell'operatore e
-l'emendamento S5 di §G.1 prima di qualunque codice)
+Stato: **Accepted — rev. 2, 2026-10-14** (KNOW-ADR-01-HARDEN; accettato dall'operatore il 2026-10-14, D-049; autorizza
+esclusivamente lo sviluppo di M1; non è un'autorizzazione al rilascio commerciale e non supera alcun gate pendente: vedi M0)
 Base verificata: worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, HEAD
 `d3da032548199ca6a61b7a0cbad9cdd4c2eebdbd`. Tutti i riferimenti `file:riga` sono a quel commit.
 Raffina: ADR-0056 §2.1, §2.6 · ADR-0055 §2.3 · ADR-0054 §5.1 e G2-4
@@ -600,10 +600,25 @@ Ordine vincolante: **M0 → M1 → gate offline → (live su autorizzazione, dop
 | M0.2 | Emendamento S5 testuale di §G.1 in `agentic/03-security-rules.md` | testo approvato e fuso | M1 |
 | M0.3 | Note "Refined by ADR-0057" in ADR-0055 §2.3, ADR-0056 §2.1/§2.4/§2.6, ADR-0054 §5.1 (§G.2) | link presenti | M1 |
 
-Stato M0 (2026-10-14): M0.2 fuso in `agentic/03-security-rules.md` (S5); M0.3 applicato a ADR-0055 §2.3 e ADR-0056 §2.1/§2.4/§2.6.
-La nota su ADR-0054 §5.1/G2-4 è **pendente**: ADR-0054 esiste solo sul branch `docs/arch-03-maf-convergence-decision` (Proposed) e non
-su questo branch; va applicata lì, non ricreata qui. M0.1 (accettazione dell'operatore e voce in `agentic/06-decisions.md`) è
-**pendente**; l'ADR resta *Proposed*.
+Stato M0 (2026-10-14, KNOW-M0.1):
+
+| Task | Stato | Nota |
+|---|---|---|
+| M0.1 | **Completato** | ADR **Accepted** dall'operatore il 2026-10-14; decisione registrata come D-049 in `agentic/06-decisions.md`. |
+| M0.2 | **Completato** | Emendamento S5 fuso in `agentic/03-security-rules.md`. |
+| M0.3 | **Parziale** | Note applicate a ADR-0055 §2.3 e ADR-0056 §2.1/§2.4/§2.6. La nota su ADR-0054 §5.1/G2-4 è **pendente**: ADR-0054 esiste solo sul branch `docs/arch-03-maf-convergence-decision` (Proposed) e non su questo; va applicata lì, non ricreata qui. |
+
+Dipendenze ancora aperte (l'accettazione non le chiude):
+
+- **B1** — nessuna garanzia di revoca dinamica di grant, chiave o publisher durante il tentativo (§L.1). Non blocca M1.
+- **B2** — compatibilità di due messaggi `User` consecutivi da verificare sul server e template del test **prima di qualunque
+  benchmark live** (§H.4 #2). Non verificata.
+- **Riconciliazione ADR-0054** sul branch `docs/arch-03-maf-convergence-decision` (nota §5.1/G2-4 e stato di ADR-0054) **prima del
+  merge finale**.
+- Gate di M1 (CI verde, gate offline §H) e condizioni del live (§H.4) restano integralmente in vigore.
+
+L'accettazione autorizza lo sviluppo di M1 (T1–T8); **non** autorizza il rilascio commerciale, la composizione in un host di
+produzione né il superamento di B1, B2 o di altri gate. M1 non è avviato da questo atto.
 
 ### M1 — KNOW-DISC-01: indice L0 sul formato attuale
 
@@ -881,7 +896,7 @@ riusata fra logical call.
 |---|---|---|---|
 | **B1** | La revoca di grant, chiave o publisher non è osservabile nello stesso attempt: `KnowledgeGrants`/`KnowledgeTrustStore` immutabili, catturati da `KnowledgeAdmissionService` (M11). | L'ADR non afferma e non dichiara supporto alla revoca immediata di grant, chiave o publisher; indice e letture si comportano come oggi; il resume rifiuta. Nessun task M1 la presuppone. **Non blocca M1.** | Decisione separata su reload a caldo (ADR-0056 §4), fuori da questo ADR. |
 | **B2** | Accettazione di due messaggi `user` consecutivi (D, goal) da server OpenAI-compatible con template ad alternanza stretta: non dimostrabile nel repository. | La compatibilità **non è ancora dimostrata**. **Blocca il live (M3)**, non M1 (nessun host di produzione lo compone). La verifica è **obbligatoria prima di qualunque benchmark live** (§H.4 #2). | Verifica sul server e template del test (Qwen3.6-35B via llama.cpp) prima del run; se rifiutato, decisione dell'operatore — l'ADR non autorizza a fondere D nel goal (T10). |
-| **B3** | Accettazione dell'operatore e fusione dell'emendamento S5. | **Blocca M1.** | M0. |
+| **B3** | Accettazione dell'operatore e fusione dell'emendamento S5. | **Risolto il 2026-10-14** (D-049; S5 fuso). Non resta alcun effetto bloccante su M1. | M0.1, M0.2. |
 
 ### L.2 Ipotesi
 
