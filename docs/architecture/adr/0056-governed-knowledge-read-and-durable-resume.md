@@ -24,6 +24,9 @@ not do. It adds no tool, no orchestrator, no second executor and no activation i
    `Not executed` (ADR-0038); malformed or unknown-argument calls are rejected; the read budget and the rejection bound are
    enforced; every attempt, refusal included, is audited; and the content is attributed data in a `Tool` turn. What a package tool
    additionally passes (policy, approval, journal) does not apply because a read of an admitted pack changes nothing on the machine.
+   > **Refined by [ADR-0057](0057-knowledge-discovery-index.md) (§G.2):** the closed argument set is extended with `ref`, `query` and
+   > `page`; `Tool` remains true for content actually read; the pre-read index is the single exception, a `User`-role data turn
+   > governed by S5 (external reference data).
 2. **The runtime depends on two small contracts, not on the Knowledge engine.** `bOps.Runtime` gains `IKnowledgeTaskHost` (open the
    knowledge session of a new or resumed task) and `IKnowledgeReadSession` (handle one model reply). The only implementation lives in
    `bOps.AgentFramework` over the KNOW-01A bridge. `bOps.Runtime` still references only `bOps.Abstractions`; the session declares its
@@ -45,10 +48,16 @@ not do. It adds no tool, no orchestrator, no second executor and no activation i
    `TaskTerminalKind.KnowledgeUnavailable`, the cause code is on the failure step and in the audit, and nothing runs. The task stays
    resumable once the operator restores the authority; the pin is unchanged. A new task whose admission is refused fails the same
    way before planning and records no binding.
+   > **Clarified by [ADR-0057](0057-knowledge-discovery-index.md) (§G.2, B1):** "current authority" covers the grant and the trust store
+   > only as far as the host replaces them. `KnowledgeGrants` and `KnowledgeTrustStore` are immutable and captured by
+   > `KnowledgeAdmissionService`, so within one attempt only provider deregistration, a tenant change and snapshot tampering are observed;
+   > a withdrawn grant or a revoked key or publisher is seen at the next resume. Immediate revocation is not claimed.
 6. **Provenance.** A served turn keeps its origin (by signed pack kind), pack id, version, manifest hash, tenant and provider id, and
    now also the operation and the item and content hash read (`ContextProvenance.Operation/Item/ContentHash`, optional). Model-call
    audit grouping ignores the three read-level fields, so the audit schema of the model call is unchanged. `KnowledgeReadAuditEvent`
    gains `CauseCode` and `KnowledgeReadResultCode` gains `NotAuthorized` and `SnapshotUnavailable`. No event carries content.
+   > **Refined by [ADR-0057](0057-knowledge-discovery-index.md) (§G.2):** `Operation` also takes the value `index`; the model-call
+   > grouping keeps ignoring it.
 
 ## 3. Alternatives considered
 

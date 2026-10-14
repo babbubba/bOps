@@ -31,6 +31,8 @@ is believed, and where isolation is enforced first.
    non-UTF-8 text rejects the whole pack. Frontmatter `allowed-tools` is never a grant: a skill that declares one is rejected.
    A valid signature proves who published the pack, not that its text is safe; served content stays an attributed, delimited
    `Tool` turn that can never be `System`.
+   > **Refined by [ADR-0057](0057-knowledge-discovery-index.md) (§G.2):** served content stays a `Tool` turn; the pre-read index is the
+   > single exception, a `User`-role data turn governed by S5 (external reference data). The prohibition on `System` is unchanged.
 4. **Immutable snapshot and pin.** After verification bOps writes the bytes it already holds in memory to a content-addressed
    directory partitioned by tenant (`<root>/<tenant key>/<manifest hash>`), re-verifies the directory, and serves only from it. The
    source is never read again. A `KnowledgePin` (tenant, id, version, kind, publisher, key id, content hash, per-file hashes) is

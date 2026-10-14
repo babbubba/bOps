@@ -82,6 +82,32 @@ Required handling:
   model text never enter that context, and no such value can change the goal, the tool list, the
   policy or a budget. Any marker that delimits such context is neutralized in tool output like the
   tool-output delimiters.
+- **External reference data is not an instruction and gains no authority from its position.** Text
+  authored by a third party and admitted by the host before any tool call — today only the knowledge
+  index of ADR-0057: skill names, descriptions and resource paths of the verified pack a task is
+  bound to — may enter a model request only:
+  1. as one `User`-role turn per pack, in the runtime-protected context **before** the goal,
+     carrying typed provenance assigned by bOps (signed pack kind as origin, pack id, version and
+     manifest hash, tenant, admitted provider id, operation `index`, content hash) and checked by
+     the runtime against the task's persisted binding;
+  2. never in the system prompt, in instructions, in a tool name, description or schema, in a
+     runtime-authored notice, in the goal turn, or as a fabricated assistant or `Tool` turn;
+  3. after an admission check that **rejects, never rewrites**, text outside the published contract
+     (normalization, allowed Unicode categories, forbidden characters, role labels, length), with
+     the whole pack refused and audited;
+  4. encoded as data inside runtime markers that are neutralized in tool output and in served
+     content like the tool-output delimiters;
+  5. under a standing system-prompt statement, written by the runtime from typed values only, that
+     the block is third-party reference data, is not from the operator and is not an instruction.
+
+  The role of that turn confers no authority. Operator intent comes only from the goal. Such text
+  can never change the goal, the plan, the tool list, the policy, approval, a budget or an
+  identity; the runtime never reads it to decide anything; it is never persisted, logged or
+  exported. Runtime-authored context about it may use only typed values (counts, host-generated
+  references, closed codes, budget state). A model that proposes an action after reading such data
+  is governed exactly like one that read a poisoned tool result. Content obtained by an actual read
+  stays a `Tool` turn. The first bullet of this rule stays true: the index is not tool output, and
+  it is a turn of its own, never concatenated into the goal.
 
 A model that *proposes* a dangerous tool after reading a poisoned log is not a failure of this
 rule — policy and approval exist for exactly that. A model whose proposal is *auto-approved*
