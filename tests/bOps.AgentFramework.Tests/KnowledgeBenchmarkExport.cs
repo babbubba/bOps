@@ -20,6 +20,7 @@ internal sealed class BenchmarkModelObservation
     internal BenchmarkHttpBudget? Http { get; set; }
     internal bool ConditionTimedOut { get; set; }
     internal AgentRunnerOptions RunnerOptions { get; set; } = KnowledgeBenchmark.RunnerOptions;
+    internal BenchmarkKnowledgeDiscovery Discovery { get; } = new();
 }
 
 /// <summary>Test entry-point only. A complete directory is published by a single no-overwrite rename.</summary>
@@ -66,7 +67,7 @@ internal sealed class KnowledgeBenchmarkExport
 
     internal static async Task RunAsync(string root, string condition, Func<KnowledgeBenchmarkExport, Task> execute)
     {
-        if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A/B condition required.");
+        if (condition is not ("A" or "B" or "C")) throw new InvalidOperationException("Explicit A/B/C condition required.");
         var export = new KnowledgeBenchmarkExport();
         string destination;
         string staging;
@@ -244,6 +245,11 @@ internal sealed class KnowledgeBenchmarkExport
             tools = tools?.Select(t => new { Tool = SafeTool(t.Tool), outcome = t.Outcome.ToString(), t.Duration, t.EffectiveTimeout, failureKind = t.FailureKind?.ToString(), replayRefusalCode = SafeReplayRefusal(t.Summary) }),
             knowledgeReads = reads?.Select(r => new { resultCode = r.ResultCode.ToString() }),
             knowledgeUsed = reads is null ? (bool?)null : reads.Any(r => r.ResultCode == KnowledgeReadResultCode.Success),
+            // KNOW-DISC-INV01: the goal differs by design only in condition C; its hash makes the treatment visible without its text.
+            goalSha256 = State?.Goal is { } goal ? BenchmarkKnowledgeDiscovery.Sha256(goal) : null,
+            // KNOW-DISC-INV01 (ADR-0057 T7 subset): index published/presented, function offered/selected, read served, per request.
+            knowledgeDiscovery = ModelObservation.Discovery.Snapshot(events,
+                bound: State?.KnowledgeBinding is not null || events?.OfType<KnowledgePackAdmissionAuditEvent>().Any() == true),
             // KNOW-FIX-01: runtime tool-routing telemetry of this task only (announced/selected per model call, executed, refused).
             toolRouting,
             toolRoutingRepresentation = "Process-local runtime telemetry of this task; approved tool names and closed reason codes only, others redacted",

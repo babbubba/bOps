@@ -27,9 +27,12 @@ public sealed class KnowledgeBenchmarkLiveTests
     }
 
     [BenchmarkFact("A")]
-    public Task WithoutKnowledge() => RunAsync(false);
+    public Task WithoutKnowledge() => RunAsync("A");
     [BenchmarkFact("B")]
-    public Task WithKnowledge() => RunAsync(true);
+    public Task WithKnowledge() => RunAsync("B");
+    // KNOW-DISC-INV01: a separate experiment (different goal), never pooled with B.
+    [BenchmarkFact("C")]
+    public Task WithKnowledgeAndExplicitReadRequest() => RunAsync("C");
 
     [IntegratedCaptureFact]
     public async Task CaptureThenAB()
@@ -47,12 +50,12 @@ public sealed class KnowledgeBenchmarkLiveTests
         using var captureWorld = new KnowledgeRunnerWorld();
         await capture.CaptureAsync(captureWorld);
         await KnowledgeBenchmarkComparison.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"),
-            (knowledge, export) => ExecuteAsync(knowledge, export, options, capture), Validate);
+            (knowledge, export) => ExecuteAsync(knowledge ? "B" : "A", export, options, capture), Validate);
     }
 
-    private static async Task RunAsync(bool knowledge)
+    private static async Task RunAsync(string condition)
     {
-        var condition = knowledge ? "B" : "A";
+        var knowledge = KnowledgeBenchmark.UsesKnowledge(condition);
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") != condition)
             throw new InvalidOperationException("Explicit individual benchmark condition required.");
         var options = ReadReadyOptions();
@@ -60,14 +63,14 @@ public sealed class KnowledgeBenchmarkLiveTests
         await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), condition, async export =>
         {
             observed = export;
-            await ExecuteAsync(knowledge, export, options);
+            await ExecuteAsync(condition, export, options);
         });
         Validate(knowledge, observed!);
     }
 
-    private static async Task ExecuteAsync(bool knowledge, KnowledgeBenchmarkExport export, ChatModelOptions options, TrustedEventsCapture? capture = null)
+    private static async Task ExecuteAsync(string condition, KnowledgeBenchmarkExport export, ChatModelOptions options, TrustedEventsCapture? capture = null)
     {
-        var condition = knowledge ? "B" : "A";
+        var knowledge = KnowledgeBenchmark.UsesKnowledge(condition);
         export.RequestedCommit = HexInput("BOPS_KNOW_BENCH_COMMIT", 40);
         export.CorpusSha256 = HexInput("BOPS_EVENTS_CORPUS_SHA256", 64);
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_MODE") is not null ||
@@ -140,7 +143,7 @@ public sealed class KnowledgeBenchmarkLiveTests
         using var deadline = KnowledgeBenchmark.ConditionDeadline();
         try
         {
-            await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.Goal, KnowledgeRunnerWorld.ActorA, export.RunId, deadline.Token));
+            await export.ExecuteTaskAsync(() => rig.Runner.RunAsync(KnowledgeBenchmark.GoalFor(condition), KnowledgeRunnerWorld.ActorA, export.RunId, deadline.Token));
         }
         finally { export.ModelObservation.ConditionTimedOut = deadline.IsCancellationRequested; }
     }

@@ -39,6 +39,11 @@ internal static class KnowledgeBenchmark
     }
     internal static string Delivery => Path.Combine(Root, "docs/benchmarks/know-bench-01d");
     internal static string Goal => File.ReadAllText(Path.Combine(Root, "docs/benchmarks/know-bench-01a/scenario.txt"));
+    // KNOW-DISC-INV01: C is a separate treatment, not a variant of B. The operator's goal additionally asks for a governed read; the
+    // addendum names no skill, pack or ref, and the read still goes through the offered control function, its budget and its audit.
+    internal static string ExplicitReadAddendum => File.ReadAllText(Path.Combine(Root, "docs/benchmarks/know-bench-01a/scenario-c-addendum.txt"));
+    internal static string GoalFor(string condition) => condition == "C" ? $"{Goal.TrimEnd()}\n\n{ExplicitReadAddendum.Trim()}" : Goal;
+    internal static bool UsesKnowledge(string condition) => condition is "B" or "C";
     internal static ToolArguments Arguments => ToolArguments.FromJson(new JsonObject
         { ["mode"] = "raw", ["windowMinutes"] = 1440, ["minSeverity"] = "warning", ["limit"] = 500, ["maxOutputBytes"] = 65536 });
     internal static CanaryEventsActivation Replay(string path, string hash, bool requireCaptured = false)
@@ -77,7 +82,7 @@ internal static class KnowledgeBenchmark
     {
         ValidateCondition(condition, raw, trust, manifestPin, authorizedGrant);
         var replay = Replay(path, hash);
-        var knowledge = condition == "B";
+        var knowledge = UsesKnowledge(condition);
         var rig = Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay, observation);
         if (observation is not null) observation.Calls = 0;
         return rig;
@@ -86,13 +91,13 @@ internal static class KnowledgeBenchmark
     internal static void ValidateCondition(string condition, RawKnowledgePack? raw, KnowledgeTrustStore? trust,
         string? manifestPin, string? authorizedGrant)
     {
-        if (condition is not ("A" or "B")) throw new InvalidOperationException("Explicit A or B condition required.");
-        var knowledge = condition == "B";
+        if (condition is not ("A" or "B" or "C")) throw new InvalidOperationException("Explicit A, B or C condition required.");
+        var knowledge = UsesKnowledge(condition);
         if (!knowledge && (raw is not null || trust is not null || manifestPin is not null || authorizedGrant is not null))
             throw new InvalidOperationException("A must have no Knowledge inputs or grant.");
         if (knowledge && (raw is null || trust is null ||
             manifestPin != KnowledgePackFormat.Sha256Hex(raw.ManifestBytes.Span) || authorizedGrant != GrantAuthorization))
-            throw new InvalidOperationException("B requires the explicit signed manifest pin and exact grant authorization.");
+            throw new InvalidOperationException("B and C require the explicit signed manifest pin and exact grant authorization.");
     }
 
     internal const string GrantAuthorization = "tenant-a/acme.windows-event-runbooks@1.0.0:Knowledge";
@@ -163,11 +168,13 @@ internal static class KnowledgeBenchmark
             {
                 var response = await inner.CompleteAsync(request, ct);
                 if (observation is not null) observation.CompletedCalls++;
+                observation?.Discovery.Record(request, response);
                 return response;
             }
             catch
             {
                 if (observation is not null) observation.FailedCalls++;
+                observation?.Discovery.Record(request, null);
                 throw;
             }
         }

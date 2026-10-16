@@ -69,6 +69,8 @@ internal sealed class TrustedEventsCapture : IDisposable
         BenchmarkModelObservation? observation = null)
     {
         _ = Hash;
+        // The in-process capture pair is A/B only; C runs from a pinned replay file (KNOW-DISC-INV01).
+        if (condition is not ("A" or "B")) throw new InvalidOperationException("Integrated capture supports only A and B.");
         KnowledgeBenchmark.ValidateCondition(condition, raw, trust, pin, grant);
         if ((condition == "B" && !conditions.Contains("A")) || !conditions.Add(condition))
             throw new InvalidOperationException("Only one ordered A/B execution is permitted.");

@@ -35,7 +35,7 @@ public sealed class KnowledgeBenchmarkCaptureInputTests
             {
                 var export = new KnowledgeBenchmarkExport();
                 var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                    (Task)execute.Invoke(null, [knowledge, export,
+                    (Task)execute.Invoke(null, [knowledge ? "B" : "A", export,
                         new ChatModelOptions("LlamaCpp", "http://127.0.0.1:1/v1", null, KnowledgeBenchmark.ModelId), capture])!);
                 Assert.Equal(expected.Message, error.Message);
                 Assert.Equal(capture.Hash, export.CorpusSha256);
