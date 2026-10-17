@@ -31,6 +31,11 @@
 | 12 | **KNOW-03** | A/B/C model-only vs knowledge vs knowledge+playbook su modelli multipli; misurare costo e qualità. |
 | 13 | **V1.4-D adapted** | Coordinator privato come host/adapter (tenant/RBAC, pgvector, memory, entitlement) senza duplicare engine OSS. |
 
+> **Eccezione sperimentale circoscritta (2026-10-17, ADR-0058 / D-050 proposto).** Per istruzione dell'operatore esiste un pilota Knowledge opt-in,
+> **solo CLI e solo Local Agent**, disattivato per impostazione predefinita. Non supera nessun gate di questa tabella (BENCH-00 3×3, BENCH-01, AF-EVID-01,
+> AF-05H4-VERIFY, ARCH-01/02/03, KNOW-01/02/03 restano come sopra), non tocca l'API e non produce alcuna misura di qualità. L'estensione all'API richiede i
+> criteri di ADR-0058 §6.
+
 ## Gate e metrica del lavoro immediato
 
 1. **Safety invariants**: no auto-approval, nessuna mutazione non autorizzata, niente bypass di policy/entitlement, unknown outcome non ripetuto, history+audit+token accounting originali.

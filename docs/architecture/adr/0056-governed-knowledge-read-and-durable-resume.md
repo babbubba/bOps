@@ -81,5 +81,9 @@ not do. It adds no tool, no orchestrator, no second executor and no activation i
 - The reads of one attempt share one budget; a resume starts a new attempt and a new budget.
 - Nothing is activated: the host, policy and session classes are internal to `bOps.AgentFramework`, no production host composes
   them, and no configuration key exists.
+  > **Refined by [ADR-0058](0058-local-agent-knowledge-pilot.md) (Proposed, 2026-10-17):** the classes stay internal; one factory in
+  > `bOps.AgentFramework` builds the host for the CLI only, behind an opt-in `Knowledge` section that ships disabled. Prerequisites 1, 2 and
+  > 4 of the KNOW-01B report are answered for the Local Agent only (a deliberate host change with updated boundary tests; `local` tenant, operator
+  > trust store and grants, a configured directory source; one configured pack), not for the API.
 - Not decided here: how a Coordinator chooses the pack for a task (the host policy is an input), pack distribution, snapshot
   garbage collection, live trust-store reload, Experience write path.

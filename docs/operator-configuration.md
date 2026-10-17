@@ -610,9 +610,30 @@ The defaults above come from deterministic fixtures, not from a live provider. S
 [AF-05 benchmark results](../agentic/_tasks/2026-10-11-af-05-benchmark-results.md) for what was measured, what is a synthetic
 proxy, and what was **not run** (no local server and no provider credentials were available).
 
+## 14. Knowledge for the Local Agent (CLI pilot, opt-in)
+
+The CLI can bind a task to one signed Knowledge pack you installed and granted, give the model an index of it and serve the reads the
+model asks for. It is an experimental pilot ([ADR-0058](architecture/adr/0058-local-agent-knowledge-pilot.md)): **off unless
+`Knowledge:Enabled` is `true`**, CLI only (never the API, the UI or `bops delegate`), one pack per task, `Knowledge` packs only.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Knowledge:Enabled` | `false` | With `false` or no section the CLI behaves exactly as before. With `true` every key below is validated and a bad value stops the command (exit code 2). |
+| `Knowledge:PacksDirectory` | — | Required, must exist. `<packId>/<version>/` per installed pack. Installing authorises nothing. |
+| `Knowledge:SnapshotsDirectory` | — | Required, separate from the packs directory. |
+| `Knowledge:TrustStorePath` | — | Required. Public keys only (`schemaVersion`, `keys[]`, `revokedPublishers[]`); a private key or an empty list is rejected. |
+| `Knowledge:Grants` | — | Required, at least one `{ PackId, Version, Kind: "Knowledge" }`. No tenant key exists; the tenant is always the Local Agent. |
+| `Knowledge:Binding` | — | Required `{ PackId, Version }`: the pack new tasks use. It must also be granted, or the task is refused. |
+| `Knowledge:Budget` | `MaxReads` 4, `MaxRejections` 4, `MaxCharactersPerRead` 8000 | Ceilings 8 / 8 / 16000. |
+
+Unknown or misspelt keys are an error whether or not the section is enabled. The shipped `appsettings.json` contains only
+`"Knowledge": { "Enabled": false }`: no pack path and no key. Never put a signing key anywhere in bOps configuration; packs are signed
+by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
+means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
+
 ## Related documents
 
-[Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
+[Knowledge pilot](knowledge/local-agent-pilot.md) · [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
 [Delegation policy](agents/delegation-policy.md) · [Architecture decisions](architecture/adr/) ·
 [Vault ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md) ·
 [Model context ADR-0052](architecture/adr/0052-microsoft-agent-framework-bops-boundary.md) ·

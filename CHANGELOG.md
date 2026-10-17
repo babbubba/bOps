@@ -14,6 +14,14 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- Knowledge in the CLI, as an experimental Local Agent pilot (ADR-0058, D-050 proposed). A new opt-in `Knowledge` configuration section
+  (disabled by default; unknown keys and unusable values stop the command with exit code 2) binds a task to one signed Knowledge pack that
+  the operator installed, trusts and granted. The model receives the pack's index on agentic steps and may read it through
+  `runtime.knowledge_read`; admission, the index and every read are audited, and policy, approval and the tool surface are unchanged.
+  CLI only: no API, UI or `bops delegate`. Publisher scripts `scripts/New-KnowledgeSigningKey.ps1` and `scripts/Publish-KnowledgePack.ps1`
+  sign packs outside the runtime, which holds no signing key. Guide: `docs/knowledge/local-agent-pilot.md`. No benchmark was run and no
+  gate is declared passed; ADR-0057 gates B1 and B2 remain open.
+
 - F-25B implements ADR-0051's durable, fenced ordinary-task mutation journal. Every permitted non-`Read` call now
   commits its intent before invocation and records its outcome atomically with its task-history step. Unknown outcomes
   fail closed: resume is blocked until an administrator recovers an orphan and reconciles it (`verify`, accept already

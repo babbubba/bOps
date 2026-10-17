@@ -1,6 +1,17 @@
 # Handoff — V1.3 pre-release stabilization
 
-## Current handoff — 2026-10-11 (AF-05H, H2 + H4)
+## Current handoff — 2026-10-17 (Knowledge in the CLI: Local Agent pilot, uncommitted)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, on top of the uncommitted KNOW-BENCH D1–D3/D7 changes (untouched). **Nothing committed or pushed.**
+- Operator instruction: a circumscribed revision of D-049 for an opt-in Knowledge integration in the local CLI. Decision text: `docs/architecture/adr/0058-local-agent-knowledge-pilot.md`
+  (Proposed) and D-050 (Proposed). The ADR records the gate review: ARCH-01/03 are documentation not in this tree (ADR-0054 is Proposed, not accepted), BENCH-00 3×3 is not run,
+  ADR-0057 B1/B2 are open. No gate is declared passed.
+- Code: `LocalKnowledgeComposition` (AgentFramework), `CliKnowledge` + `CliRunnerComposition` (CLI), `Knowledge:Enabled=false` in the shipped `appsettings.json`,
+  `KnowledgeTrustStore.KeyCount`, publisher scripts `scripts/New-KnowledgeSigningKey.ps1` / `Publish-KnowledgePack.ps1`. API, runtime contracts, policy and audit schema unchanged.
+- Operator guide: `docs/knowledge/local-agent-pilot.md`. Before relying on it, verify ADR-0057 B2 (two consecutive `user` messages) on the model server in use.
+- Not done / designed only: binding by capability or goal, several packs, Experience, a `bops knowledge` command, hot reload of trust and grants, any API composition (ADR-0058 §6–§7).
+
+## Previous handoff — 2026-10-11 (AF-05H, H2 + H4)
 
 - Operator scope decision: only the blockers H2 (a premature final replans, ADR-0046 amendment) and H4 (deterministic evidence disclosure,
   ADR-0042 amendment) are on `fix/af-05h-live-regression-hardening` (base AF-05G `97507aa`). Packet:

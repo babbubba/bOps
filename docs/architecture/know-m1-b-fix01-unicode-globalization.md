@@ -27,7 +27,7 @@ host's `*.runtimeconfig.json`; the `bOps.Knowledge` assembly cannot change it. T
 | `bOps.Cli` (`bops`, `src/core/bOps.Cli`) | yes, `win-x64` and `linux-x64`, self-contained | same | same |
 | `bOps.Knowledge.Tests` | test host | `bOps.Knowledge` directly | `InvariantGlobalization=false` in its project |
 | `bOps.Knowledge.InvariantProbe` (new, test-only) | child process of the previous | `bOps.Knowledge` | `InvariantGlobalization=true`, explicit: it is the invariant runtime under test |
-| `bOps.AgentFramework.Tests`, `bOps.Api.Tests`, `bOps.Api.E2EHost`, `bOps.Cli.Tests` | test hosts | reference `bOps.AgentFramework` / `bOps.Api`, but nothing composes Knowledge yet | **unchanged (invariant)**: switch them in the task that makes them exercise discovery (T5 for the host-side tests, T8 for the index tests) |
+| `bOps.AgentFramework.Tests`, `bOps.Api.Tests`, `bOps.Api.E2EHost`, `bOps.Cli.Tests` | test hosts | reference `bOps.AgentFramework` / `bOps.Api`, but nothing composes Knowledge yet | **unchanged (invariant)**: switch them in the task that makes them exercise discovery (T5 for the host-side tests, T8 for the index tests). *Update (ADR-0058): `bOps.AgentFramework.Tests` already runs with full globalization; `bOps.Cli.Tests` now does too, because it runs the CLI's Knowledge composition in-process (its process tests need nothing: `bops` itself is full-globalization). `bOps.Api*` stay invariant and compose no Knowledge.* |
 | `bOps.AppHost` | dev-only Aspire orchestrator (D-002) | none: it starts `bOps.Api` as a separate process with the Api's own runtimeconfig | unchanged |
 | Windows helpers (`Firewall.Windows.Helper`, `System.Windows.Updates.Helper`), `TestFixtures.WindowsService`, `System.Linux.TestChild` | yes | none | unchanged (invariant) |
 

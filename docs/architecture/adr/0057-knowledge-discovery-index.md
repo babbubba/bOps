@@ -907,6 +907,8 @@ riusata fra logical call.
 - Modifiche al budget di lettura (4/4/8.000); reload a caldo di grant o trust store (B1); authorization epoch/revision (§R.4).
 - Metriche OTel per skill; entitlement; UI.
 - Composizione in un host di produzione o chiave di configurazione.
+  > **Refined by [ADR-0058](0058-local-agent-knowledge-pilot.md) (2026-10-17, Proposed, D-050):** per un solo host, la CLI, per un goal e per `resume`, per il Local Agent,
+  > con una sezione `Knowledge` opt-in disabilitata per impostazione predefinita. Nessun altro host e nessun altro punto di questa lista cambia. B1 e B2 restano aperti.
 - Modifiche a `ContextGate`, policy, approval, journal, `ToolRegistry`, provider, dipendenze NuGet.
 - Verifica di confusabili UTS #39; ammissione di segni combinanti.
 

@@ -5,7 +5,7 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries have status **Accepted**; D-042 was accepted 2026-10-06 and implemented by completed HARDEN-13 (merged via PR #83, `3bed13e3274570a3928ac64706be6246c0d9a978`). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries have status **Accepted**, except D-050 (**Proposed**, awaiting the operator's formal acceptance); D-042 was accepted 2026-10-06 and implemented by completed HARDEN-13 (merged via PR #83, `3bed13e3274570a3928ac64706be6246c0d9a978`). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -1197,4 +1197,26 @@ conditions (§H.4) remain in force. No new architectural decision is introduced;
   reconciled on `docs/arch-03-maf-convergence-decision` before the final merge.
 
 **Implementation.** M1 (KNOW-DISC-01) is indexed in ADR-0057 §E and is not started by this decision.
+
+---
+
+### D-050 — PROPOSED (implemented as an experimental pilot under the operator's instruction of 2026-10-17) — Local Agent knowledge pilot in the CLI (ADR-0058)
+
+**Decision (proposed).** D-049 withheld the authorisation to compose the knowledge index in any production host, and ADR-0055/0056/0057
+plus two architecture tests kept every host without a knowledge composition and without a configuration key. D-050 revises that for
+exactly one host: **`bOps.Cli`, for a goal and for `resume`, for the Local Agent tenant, opt-in, off by default**. The host is built by
+one factory in `bOps.AgentFramework` over the existing KNOW-01B `KnowledgeTaskHost`; the CLI reads a strict `Knowledge` section
+(enabled flag, packs directory, snapshots directory, trust-store file, per-version grants, one binding, a bounded read budget) and a
+misconfiguration ends the command (exit 2) instead of running without knowledge. No MAF turn broker, no `ContextGate`/provider
+composition and no new tool are involved; the runtime contracts, policy, approval, journal, audit schema and the API are unchanged.
+Installed, authorised and used are three distinct states; the runtime holds no signing key (publisher scripts sign outside it).
+
+**Not decided / not authorised.** Knowledge in the API, the UI or `bops delegate`; any tenant other than the Local Agent; Experience,
+playbooks or several packs per task; binding by capability or goal; the acceptance of ADR-0054 or the passing of any gate. BENCH-00
+3×3, BENCH-01, AF-EVID-01 and AF-05H4-VERIFY stay open; ADR-0057 B1 and B2 stay open (B2 now matters to whoever turns the pilot on).
+No live benchmark, quality claim or release is authorised by this entry.
+
+**Open dependencies preserved.** ADR-0054 acceptance and reconciliation with ADR-0057; the API-extension criteria of ADR-0058 §6.
+
+**Implementation.** ADR-0058 §4 lists the change; operator guide `docs/knowledge/local-agent-pilot.md`.
 

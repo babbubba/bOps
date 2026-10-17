@@ -72,6 +72,7 @@ is believed, and where isolation is enforced first.
 
 - G2-3, G2-4 and G2-5 are closed for the pack source path; they remain open for any third-party MAF provider (none is admitted) and for
   Experience search (no store exists yet). Nothing is composed by a production host; there is still no configuration key.
+  *(Refined by [ADR-0058](0058-local-agent-knowledge-pilot.md): the CLI, and only the CLI, composes the Local Agent host behind an opt-in `Knowledge` section.)*
 - Compatibility with the engine is declared by `engine.min`/`engine.max` in the manifest and checked against a version the host passes
   to the verifier; KNOW-01B supplies it.
 - The `tenant` concept is a knowledge-isolation scope only. It is not the multi-tenant model of V1.4 and adds no tenant to
