@@ -10,10 +10,13 @@ Preserves: ADR-0038 (provider wire contract, native-tool-free planning), ADR-005
 ## 0. Sequence of events (stated plainly)
 
 This ADR is **retrospective with respect to the code**. The change was developed first, as LIVE-01B, after a live smoke run of the Local Agent (tasks `514b91d8…` and `e4554137…`, 2026-10-17), and
-exists today as an **uncommitted** modification of the working tree (`Tools.cs`, `AgentRunner.cs`, `SystemToolManifests.cs`, `PlanningContractVisibilityTests.cs`; documented in `HANDOFF.md` and
-`docs/system-events.md`). It touches a public type in `bOps.Abstractions`, which `agentic/05-workflow.md` ("When an ADR is required") says needs an ADR *before the code*. That ordering was not
-followed; this document does not pretend otherwise. It records the decision, which the operator accepted on 2026-10-17, **before the code is committed**. The accepted status covers the
-decision recorded here; the LIVE-01B change itself remains uncommitted until the operator asks for a commit.
+existed, at the time this ADR was written, as an **uncommitted** modification of the working tree (`Tools.cs`, `AgentRunner.cs`, `SystemToolManifests.cs`, `PlanningContractVisibilityTests.cs`;
+documented in `HANDOFF.md` and `docs/system-events.md`). It touches a public type in `bOps.Abstractions`, which `agentic/05-workflow.md` ("When an ADR is required") says needs an ADR *before the
+code*. That ordering was not followed; this document does not pretend otherwise. It recorded the decision, which the operator accepted on 2026-10-17, **before the code was committed**. The accepted
+status covers the decision recorded here.
+
+*Historical note (added later):* the statement above that LIVE-01B was uncommitted described the state when the ADR was written and is no longer current. LIVE-01B was subsequently consolidated in
+commit `8247a4a`.
 
 ## 1. The problem: an information gap between the manifest and the planner
 
@@ -179,7 +182,7 @@ tracked as TOOL-CONTRACT-AUDIT-02.
 
 - One additive member in the public SDK, one rendering branch, one constant, one manifest declaration, one test. Nothing else changes behaviourally.
 - Package authors gain a bounded channel to the planner; the cost of misuse is bounded per item (320 characters) but not per catalog (§9).
-- The ADR is accepted. The HANDOFF and CHANGELOG entries for LIVE-01B are still to be updated to reference ADR-0060 and its status `Accepted`; this is outstanding work, not done by this document.
+- The ADR is accepted. The HANDOFF and CHANGELOG entries for LIVE-01B have been realigned in commit `4589e5a`.
 - If a later decision supersedes or withdraws this one, that decision must state explicitly which components (`PlanningGuidance`, the renderer branch, the `system.events` declaration, the test) are kept, changed or removed; nothing is removed automatically. No stored data depends on them.
 
 ## 14. Still open
