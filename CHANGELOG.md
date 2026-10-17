@@ -68,6 +68,15 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   message: one Warning per task when its lifetime replans reach `Agent:ReplanWarningThreshold` (default 3). Docker, Docker build
   contexts and SearXNG moved onto the new registry with unchanged ids. `bOps.Abstractions` is `1.3.0-preview.3` (additive).
 
+- `system.events` aggregate results carry a top-level `sampleMessageSemantics` text stating that `sampleMessage` belongs only to the newest event of a group (LIVE-04A). Additive, `schemaVersion` stays 2; raw mode is
+  unchanged. Not yet validated with a model on the new aggregation. Committed on `codex/know-bench-01a` as `129b23c`; not released.
+- `system.events` aggregate groups describe the distribution of their original messages (LIVE-04C): `distinctMessages`, `messageVariants` (up to three most frequent variants) and a top-level
+  `messageDistribution`, bounded by `SystemEventsLimits.MessageDistributionBytes` and never dropping a group for them. Additive, `schemaVersion` stays 2. Offline tests only; no live run with the updated
+  output, and the Qwen diagnostic validation is still to be done. Committed on `codex/know-bench-01a` as `c8258a9`; not released.
+- Optional planner-facing `ToolParameter.PlanningGuidance` (LIVE-01B, [ADR-0060](docs/architecture/adr/0060-planner-facing-tool-parameter-guidance.md), Accepted): display-only text rendered in the planning catalog
+  after a non-sensitive parameter's constraints, capped at 320 characters, never validated and never sent to providers; declared for `system.events` `mode`. Additive member of `bOps.Abstractions`.
+  The guidance reached the planner in live tasks; its general effect on plan quality is not shown. Committed on `codex/know-bench-01a` as `8247a4a` (ADR-0060 itself as `70561e3`); not released.
+
 ### Changed
 
 - AF-05H (ADR-0042 amendment): the evidence disclosure no longer asks the model to restate its answer. Under listed
@@ -90,6 +99,9 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   estimate-vs-actual prompt telemetry no longer includes the safety reserve.
 
 ### Fixed
+
+- A persisted-plan continuation that follows a rejected premature final now carries a runtime-authored user turn naming the pending step and its tool, so the recovery request no longer repeats the one that drew the
+  premature final (LIVE-05). The recovery path was exercised in a live task at cursor 0 that continued to `Completed`; the cursor 1 of the earlier failure was not re-validated; reasoning exhaustion during `Replanning` is not declared solved. Committed on `codex/know-bench-01a` as `e148568`; not released.
 
 - AF-05H (ADR-0046 amendment): a final answer given while the accepted plan still has unresolved planned steps no longer completes
   the task. The paid call is kept on a bookkeeping step and the plan is re-evaluated by the normal governed replan; an empty
