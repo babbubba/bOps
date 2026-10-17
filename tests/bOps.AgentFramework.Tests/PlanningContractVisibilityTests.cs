@@ -51,6 +51,26 @@ public sealed class PlanningContractVisibilityTests
     }
 
     [Fact]
+    public void ScopedCatalog_CarriesBoundedPlanningGuidanceForSystemEventsMode()
+    {
+        var events = bOps.Packages.Sys.Core.SystemToolManifests.Events("windows");
+        var withoutGuidance = events with
+        {
+            Parameters = [.. events.Parameters.Select(parameter => parameter with { PlanningGuidance = null })],
+        };
+
+        var line = Assert.Single(AgentRunner.DescribeToolCatalog([events]).Split('\n'), l => l.StartsWith("- system.events", StringComparison.Ordinal));
+        var before = Assert.Single(AgentRunner.DescribeToolCatalog([withoutGuidance]).Split('\n'), l => l.StartsWith("- system.events", StringComparison.Ordinal));
+
+        Assert.Contains("mode:Enum optional allowed=[\"raw\",\"aggregate\"] (Prefer aggregate for overviews, counts, distributions", line, StringComparison.Ordinal);
+        Assert.Contains("use raw to inspect individual events and full messages", line, StringComparison.Ordinal);
+        Assert.Contains("raw may return only a subset (limit or output cap) even when the time window is fully covered", line, StringComparison.Ordinal);
+        Assert.Contains("complete=false or truncated=true is not complete evidence", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("must use aggregate", line, StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(line.Length - before.Length, 1, 330);
+    }
+
+    [Fact]
     public async Task CanaryPlanning_KeepsKnowledgeAuxiliaryAndDescribesArgumentlessTools()
     {
         using var canary = KnowledgeHostCanary.Create(KnowledgeCanaryActivation.Authorized(KnowledgeRunnerWorld.TenantA));

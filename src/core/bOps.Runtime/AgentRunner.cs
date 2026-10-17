@@ -4974,6 +4974,8 @@ public sealed partial class AgentRunner(
 
     private const int MaxCatalogSummaryCharacters = 120;
 
+    private const int MaxCatalogGuidanceCharacters = 320;
+
     /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
     private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools, string? evidenceIndex = null) =>
         $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}"
@@ -5023,6 +5025,10 @@ public sealed partial class AgentRunner(
                     AppendConstraint("maxLength", parameter.MaxLength);
                     AppendConstraint("minItems", parameter.MinItems);
                     AppendConstraint("maxItems", parameter.MaxItems);
+                    if (!string.IsNullOrWhiteSpace(parameter.PlanningGuidance))
+                    {
+                        builder.Append(" (").Append(SummarizeGuidance(parameter.PlanningGuidance)).Append(')');
+                    }
 
                     void AppendConstraint(string name, double? value)
                     {
@@ -5045,6 +5051,18 @@ public sealed partial class AgentRunner(
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static string SummarizeGuidance(string guidance)
+    {
+        var flat = string.Join(' ', guidance.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (flat.Length <= MaxCatalogGuidanceCharacters)
+        {
+            return flat;
+        }
+
+        var keep = char.IsHighSurrogate(flat[MaxCatalogGuidanceCharacters - 1]) ? MaxCatalogGuidanceCharacters - 1 : MaxCatalogGuidanceCharacters;
+        return $"{flat[..keep]}…";
     }
 
     private static string SummarizeDescription(string description)

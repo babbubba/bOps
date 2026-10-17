@@ -115,6 +115,12 @@ public sealed record ToolParameter
     /// <summary>For <see cref="ToolParameterType.Enum"/>, the values the argument may take.</summary>
     public IReadOnlyList<string>? AllowedValues { get; init; }
 
+    /// <summary>
+    /// Optional short, planner-facing note on how this parameter's value changes what the result means (for example a mode that
+    /// trades coverage for detail). Shown in the planning catalog only and never used for validation; it is cut at the catalog's guidance budget.
+    /// </summary>
+    public string? PlanningGuidance { get; init; }
+
     /// <summary>Inclusive numeric lower bound for Integer or Number parameters.</summary>
     public double? Minimum { get; init; }
 

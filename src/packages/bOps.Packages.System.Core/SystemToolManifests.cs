@@ -108,7 +108,11 @@ public static class SystemToolManifests
                 $"Maximum UTF-8 output bytes ({SystemEventsLimits.MinimumOutputBytes}-{SystemEventsLimits.MaximumOutputBytes}).", Required: false) { Minimum = SystemEventsLimits.MinimumOutputBytes, Maximum = SystemEventsLimits.MaximumOutputBytes },
             new ToolParameter("mode", ToolParameterType.Enum,
                 "Output shape: raw (default) returns event rows; aggregate returns groups with counts and first and last times, and is required for windowDays.",
-                Required: false, AllowedValues: SystemEventsArguments.ModeNames),
+                Required: false, AllowedValues: SystemEventsArguments.ModeNames)
+            {
+                PlanningGuidance = "Prefer aggregate for overviews, counts, distributions, general diagnosis and wide time windows; use raw to inspect individual events and full messages. "
+                    + "raw may return only a subset (limit or output cap) even when the time window is fully covered; complete=false or truncated=true is not complete evidence.",
+            },
             new ToolParameter("windowDays", ToolParameterType.Integer,
                 $"How many days back to look (1-{SystemEventsLimits.MaximumWindowDays}). Valid only with mode aggregate, and never together with windowMinutes.", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumWindowDays },
         ],
