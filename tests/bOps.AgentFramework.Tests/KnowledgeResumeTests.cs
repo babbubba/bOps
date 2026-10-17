@@ -289,6 +289,13 @@ public sealed class KnowledgeResumeTests
         var admission = world.Events.OfType<KnowledgePackAdmissionAuditEvent>().Last();
         Assert.Equal((cause, taskId), (admission.Code, admission.TaskId));
         Assert.Equal(3, world.Events.OfType<KnowledgeReadAuditEvent>().Count()); // only the first attempt's reads
+        // ADR-0057 H.1 2c: a refused resume neither describes nor publishes an index. The first attempt did (the list is not empty,
+        // so this is not vacuous); no event belongs to the resumed attempt, and no step request was made for it (asserted above).
+        var indexEvents = world.Events.OfType<KnowledgeIndexAuditEvent>().Where(evt => evt.TaskId == taskId).ToList();
+        Assert.NotEmpty(indexEvents);
+        Assert.True(state.ExecutionAttempt > 1);
+        Assert.All(indexEvents, evt => Assert.Equal(1, evt.ExecutionAttempt));
+        Assert.DoesNotContain(world.Events.OfType<KnowledgeIndexAuditEvent>(), evt => evt.TaskId == taskId && evt.ExecutionAttempt == state.ExecutionAttempt);
         var terminal = world.Events.OfType<TaskLifecycleAuditEvent>().Last(evt => evt.Stage == TaskLifecycleStage.ExecutionTerminal);
         Assert.Equal(taskId, terminal.TaskId);
     }

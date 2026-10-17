@@ -54,4 +54,9 @@
     <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- KNOW-DISC-01 T8-FIX01: the d3da032 request baselines (Golden/d3da032/README.md). -->
+    <None Include="Golden\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

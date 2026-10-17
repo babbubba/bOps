@@ -149,10 +149,11 @@ internal sealed class KnowledgeProcess : IDisposable
         bool withWindowsSystemEvents = false,
         CanaryEventsActivation? eventsCorpus = null,
         ITool? governedEvents = null,
-        AgentRunnerOptions? runnerOptions = null)
+        AgentRunnerOptions? runnerOptions = null,
+        string readOutput = "done")
     {
         ArgumentNullException.ThrowIfNull(model);
-        var read = new RecordingReadTool("test.read", []);
+        var read = new RecordingReadTool("test.read", [], readOutput);
         var other = new RecordingReadTool("test.other", []);
         var registry = new ToolRegistry(new AlwaysAvailableCapabilityProbe());
         if (eventsCorpus is not null && !withWindowsSystemEvents)

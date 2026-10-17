@@ -64,6 +64,12 @@ public sealed partial class AgentRunner(
     private const string ToolOutputOpenDelimiter = "<<<BOPS_TOOL_OUTPUT>>>";
     private const string ToolOutputCloseDelimiter = "<<<END_BOPS_TOOL_OUTPUT>>>";
 
+    /// <summary>The prefixes of the knowledge index markers (ADR-0057 U.2) that tool output must not carry, matched in any case.</summary>
+    private const string KnowledgeIndexOpen = "[knowledge-index";
+    private const string KnowledgeIndexClose = "[/knowledge-index";
+    private const string KnowledgeIndexControlOpen = "[knowledge-index-control";
+    private const string KnowledgeIndexControlClose = "[/knowledge-index-control";
+
     private const string ToolOutputPrompt =
         $"""
         You are bOps, an operations agent. You cannot act directly: you may only propose a tool
@@ -5066,7 +5072,13 @@ public sealed partial class AgentRunner(
             .Replace(EvidenceGroundingLedger.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceGroundingLedger.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
             .Replace(EvidenceIndex.OpenMarker, "«redacted-delimiter»", StringComparison.Ordinal)
-            .Replace(EvidenceIndex.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal);
+            .Replace(EvidenceIndex.CloseMarker, "«redacted-delimiter»", StringComparison.Ordinal)
+            // ADR-0057 U.2: the knowledge index and its control statement, in any case. Replacing the open prefixes also removes the
+            // "-control" forms (they extend "[knowledge-index"); all four are listed so the contract reads as written.
+            .Replace(KnowledgeIndexControlClose, "«redacted-delimiter»", StringComparison.OrdinalIgnoreCase)
+            .Replace(KnowledgeIndexControlOpen, "«redacted-delimiter»", StringComparison.OrdinalIgnoreCase)
+            .Replace(KnowledgeIndexClose, "«redacted-delimiter»", StringComparison.OrdinalIgnoreCase)
+            .Replace(KnowledgeIndexOpen, "«redacted-delimiter»", StringComparison.OrdinalIgnoreCase);
 
         return $"{ToolOutputOpenDelimiter}\n{sanitized}\n{ToolOutputCloseDelimiter}";
     }
