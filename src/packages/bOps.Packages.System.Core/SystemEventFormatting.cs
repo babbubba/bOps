@@ -12,6 +12,16 @@ public static class SystemEventFormatting
     /// <summary>The result schema version.</summary>
     public const int SchemaVersion = 2;
 
+    /// <summary>
+    /// The fixed reading of an aggregate group, carried as the top-level <c>sampleMessageSemantics</c> of an aggregate result: the sample
+    /// describes one event, the count describes the whole group (LIVE-04A). Deterministic, provider-neutral, never derived from the data.
+    /// </summary>
+    public const string SampleMessageSemantics =
+        "sampleMessage is the message of only the newest event of its group (the one at lastSeenUtc). "
+        + "count is the number of events that share the group key (channel, source, unit, eventId, severity). "
+        + "The other events of the group may have different messages: "
+        + "an attribute seen in sampleMessage is not necessarily common to the whole group.";
+
     /// <summary>The wire name of a severity.</summary>
     public static string ToWireValue(SystemEventSeverity severity) => severity switch
     {
@@ -77,6 +87,7 @@ public static class SystemEventFormatting
             var selected = groups.Take(limit).ToArray();
             root["observedGroups"] = groups.Count;
             root["returnedGroups"] = selected.Length;
+            root["sampleMessageSemantics"] = SampleMessageSemantics;
             root["groups"] = entries = new JsonArray(selected.Select(group => (JsonNode)group).ToArray());
             returnedName = "returnedGroups";
             cut = selected.Length < groups.Count;

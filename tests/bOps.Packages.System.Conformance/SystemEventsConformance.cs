@@ -138,6 +138,7 @@ public static partial class SystemToolConformance
         Assert.Equal(2, root["schemaVersion"]!.GetValue<int>());
         Assert.Equal("aggregate", root["mode"]!.GetValue<string>());
         Assert.Null(root["events"]);
+        Assert.False(string.IsNullOrWhiteSpace(root["sampleMessageSemantics"]?.GetValue<string>()));
         var coverageState = AssertCoverage(root);
         var status = root["status"]!.GetValue<string>();
         Assert.Equal(status == "complete" && !root["truncated"]!.GetValue<bool>() && coverageState == "complete", root["complete"]!.GetValue<bool>());

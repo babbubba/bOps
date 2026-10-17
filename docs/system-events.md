@@ -125,6 +125,10 @@ Groups are ordered by `count`, then the newest `lastSeenUtc`, then the key. `obs
 records in both modes; the sample is the newest record's message, cut to 512 characters. Every filter applies
 before grouping.
 
+An aggregate result also carries a top-level `sampleMessageSemantics` (a fixed text, absent in raw mode; additive,
+`schemaVersion` stays 2) stating that `sampleMessage` belongs only to the group's newest event, that `count` covers every
+event sharing the group key, and that attributes seen in the sample are not necessarily common to the whole group.
+
 **Times are record times.** For some events (Kernel-Power 41, the bugcheck record, Windows Error Reporting reports)
 the record is written later than the incident it describes — often at the next boot or in a later WER processing
 burst. `system.events` does not interpret this; `system.crashes` and `system.stability` label it with

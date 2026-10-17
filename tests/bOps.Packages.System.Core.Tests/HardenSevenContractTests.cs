@@ -107,8 +107,12 @@ public sealed class HardenSevenContractTests
         var json = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Aggregate, 50, 32_768))!.AsObject();
 
         Assert.Equal(
-            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "groups"],
+            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "groups"],
             json.Select(pair => pair.Key).ToArray());
+        Assert.Equal(SystemEventFormatting.SampleMessageSemantics, json["sampleMessageSemantics"]!.GetValue<string>());
+        Assert.Equal(2, json["schemaVersion"]!.GetValue<int>());
+        var raw = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Raw, 50, 32_768))!.AsObject();
+        Assert.Null(raw["sampleMessageSemantics"]); // aggregate-only
         Assert.Equal(5, json["observedEvents"]!.GetValue<int>());
         Assert.Equal(3, json["observedGroups"]!.GetValue<int>());
         var groups = json["groups"]!.AsArray();
