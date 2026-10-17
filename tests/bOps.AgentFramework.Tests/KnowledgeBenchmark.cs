@@ -190,6 +190,7 @@ internal static class KnowledgeBenchmark
                 var response = await inner.CompleteAsync(request, ct);
                 if (observation is not null) observation.CompletedCalls++;
                 observation?.Discovery.Record(request, response);
+                observation?.Diagnosis.Observe(request, response); // D7: what the model produced, before the runtime judges it
                 return response;
             }
             catch

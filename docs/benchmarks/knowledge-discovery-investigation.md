@@ -233,6 +233,15 @@ Costanti per tutti i bracci:
 
 ## 11. Comandi PowerShell per l'esecuzione live (NON eseguiti; richiedono autorizzazione dell'operatore)
 
+> **Aggiornato dopo l'audit su `784ac9c`.** Il replay da file non può più essere `Captured`: il passo 3 ora produce un corpus
+> minimizzato (provider e dettagli in allowlist), lo giudica con il quality gate e ne registra l'approvazione esplicita
+> dell'operatore (`OperatorAttested`); i passi 5-6 richiedono anche `BOPS_EVENTS_CORPUS_ATTESTATION_SHA256`. Dettagli, limiti
+> e modello di fiducia in [know-bench-corpus-provenance.md](know-bench-corpus-provenance.md). **D7 (diagnosi protetta e revisione cieca):**
+> ogni run ora archivia la risposta dell'agente in un archivio locale cifrato e ne registra in `result.json` solo id opaco, hash e stato;
+> il passo 5 richiede perciò l'archivio autorizzato e il passo 6 la ripetizione. Protezione dei dati, procedura di revisione cieca e limiti
+> in [know-bench-diagnosis-review.md](know-bench-diagnosis-review.md). Restano aperti, fuori da questa modifica,
+> l'attestazione dei parametri del server e la definizione di C sul planner.
+
 Prima di tutto l'operatore fa il commit di queste modifiche: l'harness rifiuta un checkout tracciato sporco e un HEAD
 diverso da `bopsCommit`. I comandi vanno lanciati da una sessione PowerShell 7 dedicata, dalla root del worktree.
 
@@ -268,19 +277,31 @@ $resp = Invoke-WebRequest -Method Post -Uri "$BaseUrl/chat/completions" -Headers
 ```
 
 ```powershell
-# 3. Capture UNICA del corpus congelato (profilo 01D, argomenti dello scenario), poi verifica in replay
+# 3. Capture UNICA del corpus congelato (profilo 01D, argomenti dello scenario), quality gate, approvazione dell'operatore, replay di verifica.
+#    Modello di fiducia, minimizzazione e quality gate: docs/benchmarks/know-bench-corpus-provenance.md
+#    Un file salvato non è mai "Captured": dopo la revisione dell'operatore diventa OperatorAttested (attestazione operativa, non prova crittografica).
 $env:BOPS_EVENTS_CORPUS_MODE = 'capture'; $env:BOPS_EVENTS_CORPUS_PROFILE = '01D'
 $env:BOPS_EVENTS_CORPUS_PATH = $Corpus;   $env:BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION = '1'
+$Sidecar = $Corpus -replace '\.bops-events\.snapshot\.json$', '.bops-events.attestation.json'
+$Test = 'FullyQualifiedName=bOps.AgentFramework.Tests.KnowledgeEventsCorpusTests.SyntheticCorpus_TwoGovernedReplaysAreIdentical'
 try {
-    dotnet test $Proj --no-build --no-restore --filter 'FullyQualifiedName=bOps.AgentFramework.Tests.KnowledgeEventsCorpusTests.SyntheticCorpus_TwoGovernedReplaysAreIdentical'
-    if ($LASTEXITCODE -ne 0) { throw 'Capture fallita: ispezionare e usare un nuovo nome file.' }
+    # 3a. Capture + quality gate (corpus vuoto, troncato, incompleto o senza copertura System/Application => fallisce con i codici).
+    dotnet test $Proj --no-build --no-restore --filter $Test
+    if ($LASTEXITCODE -ne 0) { throw 'Capture o quality gate falliti: ispezionare e usare un nuovo nome file.' }
     $CorpusSha = (Get-Content -LiteralPath $Corpus -Raw | ConvertFrom-Json).sha256
-    $env:BOPS_EVENTS_CORPUS_MODE = 'replay'; $env:BOPS_EVENTS_CORPUS_SHA256 = $CorpusSha
-    dotnet test $Proj --no-build --no-restore --filter 'FullyQualifiedName=bOps.AgentFramework.Tests.KnowledgeEventsCorpusTests.SyntheticCorpus_TwoGovernedReplaysAreIdentical'
+    # 3b. Dopo aver ISPEZIONATO il file minimizzato, approvazione esplicita: l'operatore ripete lo stesso hash.
+    $env:BOPS_EVENTS_CORPUS_MODE = 'approve'; $env:BOPS_EVENTS_CORPUS_SHA256 = $CorpusSha; $env:BOPS_EVENTS_CORPUS_APPROVE_SHA256 = $CorpusSha
+    dotnet test $Proj --no-build --no-restore --filter $Test
+    if ($LASTEXITCODE -ne 0) { throw 'Approvazione rifiutata.' }
+    $AttestationSha = (Get-Content -LiteralPath $Sidecar -Raw | ConvertFrom-Json).sha256
+    # 3c. Replay attestato di verifica (nessun modello).
+    $env:BOPS_EVENTS_CORPUS_MODE = 'replay'; $env:BOPS_EVENTS_CORPUS_ATTESTATION_SHA256 = $AttestationSha
+    dotnet test $Proj --no-build --no-restore --filter $Test
     if ($LASTEXITCODE -ne 0) { throw 'Replay di verifica fallito.' }
-} finally { Remove-Item Env:BOPS_EVENTS_CORPUS_MODE, Env:BOPS_EVENTS_CORPUS_PROFILE -ErrorAction SilentlyContinue }
-attrib +R $Corpus
-"Corpus SHA-256: $CorpusSha"   # conservarlo separatamente
+} finally { Remove-Item Env:BOPS_EVENTS_CORPUS_MODE, Env:BOPS_EVENTS_CORPUS_PROFILE, Env:BOPS_EVENTS_CORPUS_APPROVE_SHA256 -ErrorAction SilentlyContinue }
+attrib +R $Corpus; attrib +R $Sidecar
+"Corpus SHA-256: $CorpusSha"            # conservare ENTRAMBI gli hash fuori dai file
+"Attestation SHA-256: $AttestationSha"
 ```
 
 ```powershell
@@ -297,9 +318,14 @@ $MetaSha = (Get-FileHash -LiteralPath $MetaPath -Algorithm SHA256).Hash.ToLowerI
 ```powershell
 # 5. Ambiente comune ai tre bracci
 $env:BOPS_EVENTS_CORPUS_PATH = $Corpus; $env:BOPS_EVENTS_CORPUS_SHA256 = $CorpusSha
+$env:BOPS_EVENTS_CORPUS_ATTESTATION_SHA256 = $AttestationSha   # senza attestazione verificata l'harness si ferma prima di contattare il server
 $env:BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION = '1'
 $env:BOPS_KNOW_BENCH_METADATA = $MetaPath; $env:BOPS_KNOW_BENCH_METADATA_SHA256 = $MetaSha
 $env:BOPS_KNOW_BENCH_COMMIT = $Commit
+# D7: archivio locale protetto delle diagnosi. Percorso NUOVO, fuori dal checkout e fuori da $Root\results; l'ACCEPT è l'autorizzazione
+# esplicita della scrittura locale. Senza, i run live si fermano prima del primo ottetto di rete (la qualità non sarebbe misurabile).
+$Archive = 'C:\bops-bench\KNOW-DISC-INV01-private\diagnoses'
+$env:BOPS_KNOW_BENCH_DIAGNOSIS_ARCHIVE = $Archive; $env:BOPS_KNOW_BENCH_DIAGNOSIS_ARCHIVE_ACCEPT = '1'
 $env:BOPS_KNOW_BENCH_SETTINGS_VERIFIED = '1'     # solo dopo la verifica manuale del server
 # $env:BOPS_KNOW_BENCH_CONFIG = '<stesso valore usato per FIX12>'
 $ManifestSha = (Get-FileHash 'docs/benchmarks/know-bench-01d/signed-pack/acme.windows-event-runbooks/1.0.0/bops-pack.json' -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -323,6 +349,7 @@ $orders = @(@('A','B','C'), @('B','C','A'), @('C','A','B'))
 for ($rep = 1; $rep -le 3; $rep++) {
     $dir = Join-Path $Root "results\rep$rep"
     New-Item -ItemType Directory -Force $dir | Out-Null
+    $env:BOPS_KNOW_BENCH_REPETITION = "$rep"      # D7: finisce solo nella mappa privata dell'archivio e in result.json
     foreach ($c in $orders[$rep - 1]) { Invoke-Arm $c $dir }
 }
 ```
@@ -340,9 +367,18 @@ Get-ChildItem (Join-Path $Root 'results') -Recurse -Filter result.json | ForEach
         Http = $r.httpRequestsSent; Retries = $r.modelRetries
         PromptTok = $r.reportedPromptTokens; ComplTok = $r.reportedCompletionTokens; Ms = $r.totalExecutionMs
         Goal = if ($r.goalSha256) { $r.goalSha256.Substring(0, 12) } else { $null }
+        Diagnosis = $r.diagnosis.availability; Archive = $r.diagnosis.archiveStatus; Reviewable = $r.diagnosis.qualityMeasurable
     }
 } | Sort-Object Arm, Rep | Format-Table -AutoSize
 # Validità: A -> Index/Read = NotBound; B e C -> Index = Presented e PlanningWithK = 0; Goal uguale fra A e B, diverso in C.
+# Qualità: un run con Reviewable = False NON ha una qualità misurata (non è zero): vedi know-bench-diagnosis-review.md §7.
+```
+
+```powershell
+# 7b. Revisione cieca (dopo i 9 run): pacchetto per il revisore -> compilazione -> ricongiunzione. Procedura completa in
+#     know-bench-diagnosis-review.md §7; il revisore riceve SOLO la directory del pacchetto.
+.\scripts\Invoke-KnowBenchReview.ps1 -Action ExportPackage -ArchiveRoot $Archive -AcceptLocalArchiveAccess `
+    -PackageDirectory 'C:\bops-bench\KNOW-DISC-INV01-review\package' -CorpusPath $Corpus -CorpusSha256 $CorpusSha -AttestationSha256 $AttestationSha
 ```
 
 ```powershell

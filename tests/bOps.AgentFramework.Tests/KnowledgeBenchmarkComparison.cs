@@ -77,6 +77,9 @@ internal static class KnowledgeBenchmarkComparison
                     var result = JsonNode.Parse(await File.ReadAllBytesAsync(path))!;
                     foreach (var name in new[] { "status", "terminalCause", "terminalKind", "failureKind" })
                         arm[name] = result[name]?.DeepClone();
+                    // D7: whether the quality of this arm can be judged at all; the id, hash and text stay out of the comparison.
+                    foreach (var name in new[] { "availability", "archiveStatus", "qualityMeasurable" })
+                        arm["diagnosis" + char.ToUpperInvariant(name[0]) + name[1..]] = result["diagnosis"]?[name]?.DeepClone();
                 }
                 arms.Add(arm);
             }

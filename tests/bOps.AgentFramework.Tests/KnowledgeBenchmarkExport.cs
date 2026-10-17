@@ -21,6 +21,8 @@ internal sealed class BenchmarkModelObservation
     internal bool ConditionTimedOut { get; set; }
     internal AgentRunnerOptions RunnerOptions { get; set; } = KnowledgeBenchmark.RunnerOptions;
     internal BenchmarkKnowledgeDiscovery Discovery { get; } = new();
+    // D7: the answer the agent actually produced; fed by the benchmark model wrapper, resolved against the task state at export time.
+    internal DiagnosisCapture Diagnosis { get; } = new();
 }
 
 /// <summary>Test entry-point only. A complete directory is published by a single no-overwrite rename.</summary>
@@ -28,6 +30,12 @@ internal sealed class KnowledgeBenchmarkExport
 {
     internal const string RedactedFreeText = "[redacted: untrusted benchmark text withheld]";
     internal Guid RunId { get; } = Guid.NewGuid();
+    // D7: random, not derived from the condition, the run id or the time; the only handle a reviewer ever sees.
+    internal string DiagnosisId { get; } = OpaqueIds.NewDiagnosis();
+    internal int Repetition { get; set; } = 1;
+    internal string? CorpusAttestationSha256 { get; set; }
+    internal DiagnosisArchiveSettings ArchiveSettings { get; set; } = DiagnosisArchiveSettings.Disabled;
+    internal DiagnosisArchiveOutcome? DiagnosisOutcome { get; private set; }
     internal string? Commit { get; set; }
     internal string? RequestedCommit { get; set; }
     internal string? CorpusSha256 { get; set; }
@@ -104,6 +112,9 @@ internal sealed class KnowledgeBenchmarkExport
                 catch (Exception ex) { recoveryError = SafeExceptionType(ex); }
             }
             timer.Stop();
+            // D7: the diagnosis is sealed into the protected archive while the world (and its temporary directory) still exists, and also
+            // when the task failed or timed out. This step records its own outcome and never throws.
+            export.ArchiveDiagnosis(condition);
             try
             {
                 await export.WriteAsync(staging, condition, failure, recoveryError, started, DateTimeOffset.UtcNow, timer.ElapsedMilliseconds, routing?.Snapshot());
@@ -119,6 +130,37 @@ internal sealed class KnowledgeBenchmarkExport
         {
             routing?.Dispose();
             export.World?.Dispose();
+        }
+    }
+
+    // D7: never throws; any failure becomes a closed code in result.json and the run is reported as quality-not-measurable.
+    private void ArchiveDiagnosis(string condition)
+    {
+        CapturedDiagnosis? diagnosis;
+        try { diagnosis = ModelObservation.Diagnosis.Resolve(State); }
+        catch (Exception)
+        {
+            // Read-only resolution: a defect must neither hide the run nor be reported as "the agent produced nothing".
+            DiagnosisOutcome = new(DiagnosisId, Repetition, DiagnosisArchiveOutcome.Failed, "ResolutionFailed", DiagnosisAvailability.None,
+                DiagnosisSource.None, DiagnosisReason.None, null, null, null);
+            return;
+        }
+
+        if (!ArchiveSettings.IsAuthorized)
+        {
+            DiagnosisOutcome = DiagnosisArchiveOutcome.Unarchived(DiagnosisId, Repetition, ArchiveSettings.Status, diagnosis);
+            return;
+        }
+
+        try
+        {
+            using var archive = DiagnosisArchive.OpenOrCreate(ArchiveSettings.Root!, ArchiveSettings.Protector!);
+            DiagnosisOutcome = archive.Store(DiagnosisId, new DiagnosisRunIdentity(condition, Repetition, RunId, CorpusSha256, CorpusAttestationSha256), diagnosis);
+        }
+        catch (ArchiveException ex)
+        {
+            DiagnosisOutcome = new(DiagnosisId, Repetition, DiagnosisArchiveOutcome.Failed, ex.Code, diagnosis?.Availability ?? DiagnosisAvailability.None,
+                diagnosis?.Source ?? DiagnosisSource.None, diagnosis?.Reason ?? DiagnosisReason.None, null, null, null);
         }
     }
 
@@ -213,6 +255,8 @@ internal sealed class KnowledgeBenchmarkExport
             finalObservation = State is { Status: AgentTaskStatus.Completed, Steps.Count: > 0 }
                 ? WithholdFreeText(State.Steps[^1].Observation) : null,
             freeTextRepresentation = "Non-null final observations and unapproved diagnostic identifiers are explicitly redacted; structured outcomes and metrics retained",
+            // D7: opaque id, SHA-256, availability and storage state of the diagnosis; the text itself is only in the protected archive.
+            diagnosis = (DiagnosisOutcome ?? DiagnosisArchiveOutcome.Unarchived(DiagnosisId, Repetition, DiagnosisArchiveOutcome.NotConfigured, null)).ToResult(),
             accounting = State?.Accounting, llmCalls = ModelObservation.Calls,
             completeAsyncCalls = ModelObservation.Calls,
             completedCompleteAsyncCalls = ModelObservation.Calls is null ? (int?)null : ModelObservation.CompletedCalls,

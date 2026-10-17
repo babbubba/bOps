@@ -46,6 +46,7 @@ public sealed class KnowledgeBenchmarkLiveTests
             Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
             throw new InvalidOperationException("Explicit isolated integrated capture opt-in required; no imports or signing.");
         var options = ReadReadyOptions(); // Fail before native capture or model composition.
+        _ = DiagnosisArchiveEnvironment.RequireAuthorized(Environment.GetEnvironmentVariable); // D7: and before a run whose diagnosis could not be kept
         using var capture = TrustedEventsCapture.Native();
         using var captureWorld = new KnowledgeRunnerWorld();
         await capture.CaptureAsync(captureWorld);
@@ -59,6 +60,7 @@ public sealed class KnowledgeBenchmarkLiveTests
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") != condition)
             throw new InvalidOperationException("Explicit individual benchmark condition required.");
         var options = ReadReadyOptions();
+        _ = DiagnosisArchiveEnvironment.RequireAuthorized(Environment.GetEnvironmentVariable); // D7: refuse a run whose diagnosis could not be kept
         KnowledgeBenchmarkExport? observed = null;
         await KnowledgeBenchmarkExport.RunAsync(Required("BOPS_KNOW_BENCH_RESULTS"), condition, async export =>
         {
@@ -73,6 +75,10 @@ public sealed class KnowledgeBenchmarkLiveTests
         var knowledge = KnowledgeBenchmark.UsesKnowledge(condition);
         export.RequestedCommit = HexInput("BOPS_KNOW_BENCH_COMMIT", 40);
         export.CorpusSha256 = HexInput("BOPS_EVENTS_CORPUS_SHA256", 64);
+        // D7: the operator's explicit local-write authorization and the repetition of the Latin-square plan.
+        export.ArchiveSettings = DiagnosisArchiveEnvironment.Read();
+        export.Repetition = DiagnosisArchiveEnvironment.ReadRepetition(Environment.GetEnvironmentVariable);
+        export.CorpusAttestationSha256 = capture is null ? HexInput("BOPS_EVENTS_CORPUS_ATTESTATION_SHA256", 64) : null;
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_MODE") is not null ||
             Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") is not null)
             throw new InvalidOperationException("A/B replay must be separate from corpus preparation and signing.");
@@ -156,6 +162,8 @@ public sealed class KnowledgeBenchmarkLiveTests
         var hash = export.CorpusSha256;
         Assert.NotNull(state);
         Assert.True(state.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed);
+        // D7: an archive failure is loud. A run with no diagnosis is a legitimate outcome, but it is reported as not measurable, never as zero quality.
+        Assert.Equal(DiagnosisArchiveOutcome.Stored, export.DiagnosisOutcome?.Status);
         Assert.All(world.Events.OfType<ToolCallAuditEvent>(), call => Assert.Equal("system.events", call.Tool));
         Assert.All(world.Events.OfType<ToolCallAuditEvent>().Where(call => call.Outcome == ToolOutcome.Success),
             call => Assert.Equal(hash, call.Summary?["corpusSha256"]?.GetValue<string>()));

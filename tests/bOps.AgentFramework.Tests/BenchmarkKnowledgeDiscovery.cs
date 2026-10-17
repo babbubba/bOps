@@ -23,6 +23,10 @@ internal sealed class BenchmarkKnowledgeDiscovery
     private readonly object gate = new();
     private readonly List<JsonObject> requests = [];
 
+    /// <summary>Whether the request is a planning or replanning call (D7 reuses the same classification to skip plan replies).</summary>
+    internal static bool IsPlanningRequest(ModelRequest request) =>
+        request.SystemPrompt.Contains(PlanningCatalogMarker, StringComparison.Ordinal);
+
     internal void Record(ModelRequest request, ModelResponse? response)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -33,7 +37,7 @@ internal sealed class BenchmarkKnowledgeDiscovery
         var proposed = response?.ToolCalls.Where(call => call.ToolName == KnowledgeReadBridge.PublicToolName).ToArray() ?? [];
         var entry = new JsonObject
         {
-            ["phase"] = request.SystemPrompt.Contains(PlanningCatalogMarker, StringComparison.Ordinal) ? "planning" : "step",
+            ["phase"] = IsPlanningRequest(request) ? "planning" : "step",
             ["knowledgeFunctionOffered"] = request.AvailableTools.Any(tool => tool.Name == KnowledgeReadBridge.PublicToolName),
             ["indexTurns"] = indexTurns.Length,
             ["indexBeforeGoal"] = index.turn is not null && index.position + 1 < request.History.Count
