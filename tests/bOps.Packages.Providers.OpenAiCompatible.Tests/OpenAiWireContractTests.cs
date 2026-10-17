@@ -95,6 +95,28 @@ public sealed class OpenAiWireContractTests
             StrictOpenAiProvider.Validate(incident));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnOutputLimit_IsSentOnlyWhenTheRequestCarriesOne_AndTheRestOfTheRequestIsByteIdentical(bool native)
+    {
+        var reply = native ? TextReply : """{"model":"m","choices":[{"message":{"role":"assistant","content":"{\"final\":\"ok\"}"},"finish_reason":"stop"}]}""";
+        var history = new[] { ChatTurn.FromUser("goal") };
+        var without = new StrictOpenAiProvider(reply);
+        var with = new StrictOpenAiProvider(reply);
+
+        await Model(without, native).CompleteAsync(StepRequest(history, Tool("fs.size")));
+        await Model(with, native).CompleteAsync(StepRequest(history, Tool("fs.size")) with { MaxOutputTokens = 8192 });
+
+        Assert.Equal(0, without.Rejections + with.Rejections);
+        var unlimited = JsonNode.Parse(without.RequestBodies[0])!.AsObject();
+        var limited = JsonNode.Parse(with.RequestBodies[0])!.AsObject();
+        Assert.False(unlimited.ContainsKey("max_tokens")); // nothing is sent: the provider default applies and stays unknown
+        Assert.Equal(8192, limited["max_tokens"]!.GetValue<int>());
+        limited.Remove("max_tokens");
+        Assert.Equal(unlimited.ToJsonString(), limited.ToJsonString());
+    }
+
     [Fact]
     public async Task H1_06_TheIncidentRequestShape_HundredToolsIncludingFsSize_IsAcceptedByAStrictProvider()
     {

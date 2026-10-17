@@ -134,6 +134,18 @@ public sealed record AgentRunnerOptions
     /// </summary>
     public TimeSpan ModelCallBudget { get; init; } = TimeSpan.FromSeconds(300);
 
+    /// <summary>The largest value <see cref="MaxOutputTokens"/> may take: a sanity bound, not a statement about any provider.</summary>
+    public const int MaxOutputTokensCeiling = 1_000_000;
+
+    /// <summary>
+    /// The most output tokens one model reply may be asked to generate. <c>null</c> (the default) requests no limit: nothing is sent,
+    /// the provider's own default applies and bOps does not know it. When set it is sent with every model call that does not carry
+    /// its own limit, and what the provider actually did is recorded beside it (finish reason, token counts, truncation). It is a
+    /// request, not a guarantee: set it to what the provider supports (for llama.cpp it becomes <c>max_tokens</c>) and keep it
+    /// within the output reserve of the model's context profile.
+    /// </summary>
+    public int? MaxOutputTokens { get; init; }
+
     /// <summary>The first backoff delay before retrying a model call; each later retry doubles it, up to <see cref="ModelRetryMaxDelay"/>, with jitter.</summary>
     public TimeSpan ModelRetryBaseDelay { get; init; } = TimeSpan.FromSeconds(1);
 
@@ -227,6 +239,12 @@ public sealed record AgentRunnerOptions
         if (ModelCallBudget <= TimeSpan.Zero)
         {
             throw new InvalidOperationException("'Agent:ModelCallBudget' must be positive.");
+        }
+
+        if (MaxOutputTokens is { } maxOutput && (maxOutput < 1 || maxOutput > MaxOutputTokensCeiling))
+        {
+            throw new InvalidOperationException(
+                $"'Agent:MaxOutputTokens' ({maxOutput}) must be between 1 and {MaxOutputTokensCeiling} when configured.");
         }
 
         if (ModelRetryBaseDelay < TimeSpan.Zero)

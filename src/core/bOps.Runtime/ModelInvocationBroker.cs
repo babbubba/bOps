@@ -235,6 +235,13 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             var budgetExhaustedBeforeAttempt = remaining < MinimumModelAttemptWindow;
             var attemptTimeout = remaining < options.ModelCallAttemptTimeout ? remaining : options.ModelCallAttemptTimeout;
             var attemptRequest = projected?.Request ?? request;
+            // Generation limit: a limit the caller put on the request wins; otherwise the configured one, if any. With neither, nothing
+            // is requested and the provider's own default applies (unknown to bOps); the observation below records which case it was.
+            if (attemptRequest.MaxOutputTokens is null && options.MaxOutputTokens is { } configuredLimit)
+            {
+                attemptRequest = attemptRequest with { MaxOutputTokens = configuredLimit };
+            }
+
             RecordSummaryTelemetry(projected?.Stats, summarizationAccess);
             var fallbackOrdinal = (model as IFallbackChatModelControl)?.FallbackOrdinal
                 ?? pinnedProviderConfiguration?.FallbackOrdinal ?? 0;
@@ -313,6 +320,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 var elapsedMs = (long)timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
                 context.AccountTokens?.Invoke(UsageTokens(response));
 
+                var output = ModelOutputClassifier.Observe(response, attemptRequest.MaxOutputTokens);
+                RecordOutputTelemetry(contextActivity, descriptor, output);
                 var truncated = string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
                 var responseProblem = truncated && !response.ToolCalls.Any(call => call.ToolNameError is null && call.ArgumentsError is null)
                     ? "The model reached its output limit without a complete usable response."
@@ -338,12 +347,13 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                         FallbackOrdinal = fallbackOrdinal,
                         FailureKind = ModelFailureKind.MalformedResponse,
                         RetryDecision = ModelRetryDecision.NotRetryable,
+                        Output = output,
                     });
                     await WriteModelCallAuditAsync(
                         context, ModelCallOutcome.Failure, reason, response.Usage, descriptor,
                         response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                         fallbackOrdinal, ModelFailureKind.MalformedResponse,
-                        ModelRetryDecision.NotRetryable, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct);
+                        ModelRetryDecision.NotRetryable, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output);
                     return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
                 }
 
@@ -354,11 +364,12 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                     ModelAttempt = modelAttempt,
                     ProviderAttempt = providerAttempt,
                     FallbackOrdinal = fallbackOrdinal,
+                    Output = output,
                 });
                 await WriteModelCallAuditAsync(
                     context, ModelCallOutcome.Success, null, response.Usage, descriptor,
                     response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
-                    fallbackOrdinal, null, null, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct);
+                    fallbackOrdinal, null, null, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output);
                 return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
             }
 
@@ -391,6 +402,10 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             }
 
             long? delayMs = delay is { } wait ? (long)wait.TotalMilliseconds : null;
+            // An attempt that never started has no requested limit to speak of; any other failure keeps what was asked for.
+            var failureOutput = budgetExhaustedBeforeAttempt
+                ? null
+                : ModelOutputClassifier.ObserveNoResponse(failure.Details, attemptRequest.MaxOutputTokens);
             context.Calls.Add(BuildCallRecord(
                 descriptor, startedAtUtc, failedMs, ModelCallOutcome.Failure,
                 null, failure.Details, failure.Message) with
@@ -402,11 +417,12 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 RetryDecision = decision,
                 RetryDelayMs = delayMs,
                 ProviderStatusCode = failure.StatusCode,
+                Output = failureOutput,
             });
             await WriteModelCallAuditAsync(
                 context, ModelCallOutcome.Failure, failure.Message, null, descriptor,
                 failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt,
-                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, attemptRequest.History, ct);
+                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, attemptRequest.History, ct, failureOutput);
 
             if (executionBudgetInterrupted)
             {
@@ -622,6 +638,44 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         activity.SetTag("bops.context.dropped_groups", stats.DroppedGroups);
     }
 
+    /// <summary>
+    /// Records the closed, content-free facts of one reply on the model-context activity and the output counters: the requested limit,
+    /// the provider's finish reason, token counts, reasoning length and the classification. Never a reply, reasoning or request text.
+    /// </summary>
+    private static void RecordOutputTelemetry(
+        System.Diagnostics.Activity? activity, ChatModelDescriptor descriptor, ModelOutputObservation output)
+    {
+        var outputClass = output.Class.ToString();
+        BOpsTelemetry.ModelOutputTotal.Add(1,
+            new KeyValuePair<string, object?>("provider", descriptor.ProviderId),
+            new KeyValuePair<string, object?>("model", descriptor.ModelId),
+            new KeyValuePair<string, object?>("output_class", outputClass),
+            new KeyValuePair<string, object?>("finish_reason", output.FinishReason ?? "none"),
+            new KeyValuePair<string, object?>("limit_requested", output.RequestedMaxOutputTokens is not null),
+            new KeyValuePair<string, object?>("limit_evidence", output.LimitEvidence.ToString()));
+        if (output.CompletionTokens is { } completion)
+        {
+            BOpsTelemetry.ModelCompletionTokens.Record(completion,
+                new KeyValuePair<string, object?>("output_class", outputClass),
+                new KeyValuePair<string, object?>("truncated", output.Truncated));
+        }
+
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.SetTag("bops.model.output_class", outputClass);
+        activity.SetTag("bops.model.finish_reason", output.FinishReason);
+        activity.SetTag("bops.model.truncated", output.Truncated);
+        activity.SetTag("bops.model.limit_evidence", output.LimitEvidence.ToString());
+        activity.SetTag("bops.model.requested_max_output_tokens", output.RequestedMaxOutputTokens);
+        activity.SetTag("bops.model.completion_tokens", output.CompletionTokens);
+        activity.SetTag("bops.model.reasoning_tokens", output.ReasoningTokens);
+        activity.SetTag("bops.model.reasoning_characters", output.ReasoningCharacters);
+        activity.SetTag("bops.model.content_characters", output.ContentCharacters);
+    }
+
     private static void RecordProjectionMetrics(ChatModelDescriptor descriptor, ModelContextProjectionStats? stats)
     {
         if (stats is null)
@@ -756,7 +810,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         long? retryDelayMs,
         int? statusCode,
         IReadOnlyList<ChatTurn> history,
-        CancellationToken ct)
+        CancellationToken ct,
+        ModelOutputObservation? output = null)
     {
         AuditEvent evt = new ModelCallAuditEvent
         {
@@ -784,6 +839,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             PrimaryProvider = pinnedProviderConfiguration?.ProviderId,
             PrimaryModel = pinnedProviderConfiguration?.Model,
             ContextProvenance = history.Count == 0 ? null : ContextProvenanceCount.Summarize(history),
+            Output = output,
         };
         if (context.Delegation is not null)
         {

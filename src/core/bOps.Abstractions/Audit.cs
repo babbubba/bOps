@@ -753,6 +753,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     public string? PrimaryModel { get; init; }
 
     /// <summary>
+    /// What was requested and observed about this attempt's generation limits: the requested output limit (or none), the provider's
+    /// finish reason and token counts, the reasoning length, and the runtime's classification. <c>null</c> (and omitted) for an event
+    /// written before it existed and for a call refused before any provider attempt.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelOutputObservation? Output { get; init; }
+
+    /// <summary>
     /// The turns of the request this attempt sent, counted by provenance (ADR-0054 G2-2), in a deterministic order. <c>null</c>
     /// (and omitted) for an event written before provenance existed and for a call that sent no history.
     /// </summary>

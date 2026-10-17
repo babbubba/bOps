@@ -494,6 +494,26 @@ and what is merely history, and never lets the layer change what the runtime exe
   `EvidenceRead/v1` directive) still reads any persisted result exactly; the *evidence index* in the prompt lists, for each
   truncated step, its stable id and its persisted length, and states how any step is addressed.
 
+### Output limit and what is recorded about each reply (`Agent:MaxOutputTokens`)
+
+`Agent:MaxOutputTokens` (integer, 1 to 1,000,000, **unset by default**) is the most output tokens one model reply is asked to generate.
+Unset, bOps sends no limit: the provider's own default applies and bOps does not know it (for llama.cpp the value in `models.ini` is not
+what `/props` exposes: a server can report `n_predict = -1`, that is, "until the context ends"). Set, it is sent as `max_tokens` by every
+OpenAI-compatible provider (OpenAI, OpenRouter, Ollama, DeepSeek, llama.cpp) and replaces the fixed 4096 of the Anthropic adapter. It is
+a request, not a guarantee, and bOps invents no other generation parameter (no reasoning switch, no sampler). Keep it within the
+`ReservedOutputTokens` of the model's context profile, and short enough to finish inside `Agent:ModelCallAttemptTimeout` at the server's
+real speed: a reply that is still reasoning when the attempt timeout fires is retried with the same request.
+
+Every model attempt records, in the task's call record and in the `modelCall` audit event, an `Output` object with **counts and closed
+classes only, never the reply, the reasoning or the request**: `RequestedMaxOutputTokens` (absent = none requested), `FinishReason`,
+`PromptTokens`, `CompletionTokens`, `ReasoningTokens` (only if the provider reports them), `ReasoningCharacters` (a length), `ContentCharacters`,
+`ToolCallCount`, `Truncated`, `Class` and `LimitEvidence`. `Class`: `Complete`, `ToolCall`, `TruncatedBeforeContent` (the budget went into
+reasoning), `TruncatedContent`, `TruncatedToolCall`, `Empty`, `Other`, `NoResponse` (a timeout or transport failure). `LimitEvidence` for a
+truncated reply: `RequestedLimitReached` (completion tokens reached what was requested), `BelowRequestedLimit` (the server or the context
+cut it earlier), `UnrequestedLimit` (nothing was requested; the cut came from a server default or the end of the context), `Unknown`
+(no completion count). The same facts are on the `bops.model_context` activity (`bops.model.*` tags) and in the metrics
+`bops.model.output_total` and `bops.model.completion_tokens`.
+
 ### Context profiles (`Agent:Context:Profiles`)
 
 A **context profile** states how large one exact model's context window is. It is operator knowledge: bOps does not infer a

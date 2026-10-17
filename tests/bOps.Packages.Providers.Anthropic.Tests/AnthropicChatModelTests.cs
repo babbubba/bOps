@@ -42,6 +42,20 @@ public sealed class AnthropicChatModelTests
     }
 #pragma warning restore CA2000
 
+    [Theory]
+    [InlineData(null, 4096)]
+    [InlineData(1024, 1024)]
+    public async Task CompleteAsync_SendsTheFixedDefaultOutputLimit_UnlessTheRequestCarriesItsOwn(int? requested, int expected)
+    {
+        var (model, handler) = CreateModel(
+            [(HttpStatusCode.OK, """{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}""")]);
+
+        await model.CompleteAsync(new ModelRequest("system", [ChatTurn.FromUser("hello")], []) { MaxOutputTokens = requested });
+
+        using var sent = JsonDocument.Parse(handler.RequestBodies[0]);
+        Assert.Equal(expected, sent.RootElement.GetProperty("max_tokens").GetInt32());
+    }
+
     [Fact]
     public async Task CompleteAsync_ParsesATextOnlyResponse_AsAFinalResult()
     {

@@ -184,6 +184,15 @@ public sealed record ModelCallDetails
     /// <summary>The HTTP status received, independently of whether the model reply is usable.</summary>
     public int? ProviderStatusCode { get; init; }
 
+    /// <summary>The length in characters of the content text the provider returned, before the adapter set it aside (a reply cut at the output limit keeps its text only here, in the raw body).</summary>
+    public int? ContentCharacters { get; init; }
+
+    /// <summary>The length in characters of the reasoning the provider returned beside the content, when it returned any. Never the reasoning itself.</summary>
+    public int? ReasoningCharacters { get; init; }
+
+    /// <summary>The reasoning tokens the provider reported separately from the completion total, when it does. Never the reasoning itself.</summary>
+    public int? ReasoningTokens { get; init; }
+
     /// <summary>The request body exactly as sent, without any credential.</summary>
     public string? RequestJson { get; init; }
 
@@ -213,6 +222,13 @@ public sealed record ModelRequest
 
     /// <summary>The manifests of every tool visible on this node right now.</summary>
     public IReadOnlyList<ToolManifest> AvailableTools { get; init; }
+
+    /// <summary>
+    /// The most output tokens the adapter should let the provider generate for this reply. <c>null</c> (the default) asks for no
+    /// limit: nothing is sent and the provider's own default applies, which bOps does not know. An adapter that cannot express the
+    /// limit ignores it; the runtime records what was requested and what was observed, so an ignored limit is visible.
+    /// </summary>
+    public int? MaxOutputTokens { get; init; }
 }
 
 /// <summary>

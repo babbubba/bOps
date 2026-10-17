@@ -160,6 +160,10 @@ public sealed record ModelCallRecord
     /// <summary>The pinned primary model of the execution this call belongs to, when pinned.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PrimaryModel { get; init; }
+
+    /// <summary>What was requested and observed about this reply's generation limits; counts and classifications only, never the reply or reasoning.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelOutputObservation? Output { get; init; }
 }
 
 /// <summary>How an execution call related to its persisted planned step under ADR-0050.</summary>

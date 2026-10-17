@@ -90,4 +90,16 @@ public static class BOpsTelemetry
     /// <summary>Tokens of one logical call split into primary reasoning, summary and all-in.</summary>
     public static Histogram<long> TaskCallTokens { get; } =
         Meter.CreateHistogram<long>("bops.task.call_tokens", unit: "tokens");
+
+    /// <summary>
+    /// One model reply by <c>output_class</c> (<see cref="bOps.Abstractions.ModelOutputClass"/>), the provider's bounded <c>finish_reason</c>,
+    /// whether bOps requested an output limit (<c>limit_requested</c>) and the <c>limit_evidence</c> of a truncated reply. Closed values only;
+    /// never carries a reply, reasoning or request text.
+    /// </summary>
+    public static Counter<long> ModelOutputTotal { get; } =
+        Meter.CreateCounter<long>("bops.model.output_total");
+
+    /// <summary>Completion tokens the provider reported for one reply, tagged by <c>output_class</c> and <c>truncated</c>.</summary>
+    public static Histogram<long> ModelCompletionTokens { get; } =
+        Meter.CreateHistogram<long>("bops.model.completion_tokens", unit: "tokens");
 }

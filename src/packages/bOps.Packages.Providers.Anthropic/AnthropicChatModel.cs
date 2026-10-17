@@ -41,7 +41,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
     /// Anthropic's Messages API requires <c>max_tokens</c> on every request; <see cref="ChatModelOptions"/>
     /// has no such field (it is a provider-agnostic contract in <c>bOps.Abstractions</c>, which stays
     /// dependency- and provider-detail-free — adding an Anthropic-specific field there would need its
-    /// own ADR). A generous fixed budget, not configurable yet.
+    /// own ADR). A generous fixed default, used unless the request itself carries a <see cref="ModelRequest.MaxOutputTokens"/> limit.
     /// </summary>
     private const int MaxTokens = 4096;
 
@@ -66,7 +66,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
         var payload = new MessagesRequest
         {
             Model = options.Model,
-            MaxTokens = MaxTokens,
+            MaxTokens = request.MaxOutputTokens ?? MaxTokens,
             System = request.SystemPrompt,
             Messages = BuildMessages(request.History, wireNames),
             Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(manifest => BuildToolDefinition(manifest, wireNames)).ToList(),
@@ -97,7 +97,7 @@ public sealed class AnthropicChatModel(ChatModelOptions options, HttpClient http
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var payload = new MessagesRequest { Model = options.Model, MaxTokens = MaxTokens, System = system, Messages = messages };
+            var payload = new MessagesRequest { Model = options.Model, MaxTokens = request.MaxOutputTokens ?? MaxTokens, System = system, Messages = messages };
             var completion = await SendAsync(payload, ct);
             var response = completion.Body;
             var text = string.Concat(response.Content.Where(block => block.Type == "text").Select(block => block.Text));

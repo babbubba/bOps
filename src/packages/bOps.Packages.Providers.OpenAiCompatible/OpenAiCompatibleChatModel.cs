@@ -58,6 +58,7 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
             Messages = BuildMessages(request, wireNames),
             Tools = request.AvailableTools.Count == 0 ? null : request.AvailableTools.Select(manifest => BuildToolDefinition(manifest, wireNames)).ToList(),
             ToolChoice = request.AvailableTools.Count == 0 ? null : "auto",
+            MaxTokens = request.MaxOutputTokens,
         };
 
         var completion = await SendAsync(payload, ct);
@@ -86,7 +87,7 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var payload = new ChatCompletionRequest { Model = options.Model, Messages = messages };
+            var payload = new ChatCompletionRequest { Model = options.Model, Messages = messages, MaxTokens = request.MaxOutputTokens };
             var completion = await SendAsync(payload, ct);
             var text = completion.Body.Choices[0].Message.Content ?? string.Empty;
             lastDetails = completion.Details;
@@ -251,9 +252,15 @@ public sealed class OpenAiCompatibleChatModel(ChatModelOptions options, HttpClie
                     options.Provider, $"returned {(body is null ? "an empty response body" : "no choices")}.", status, failedDetails);
             }
 
-            return new Completion(body, new ModelCallDetails(body.Model, body.Choices[0].FinishReason, requestJson, rawBody)
+            var choice = body.Choices[0];
+            var reasoning = choice.Message.ReasoningContent ?? choice.Message.Reasoning;
+            return new Completion(body, new ModelCallDetails(body.Model, choice.FinishReason, requestJson, rawBody)
             {
                 ProviderStatusCode = status,
+                // Lengths and counts only: the reasoning is never copied out of the raw body, and is never sent back.
+                ContentCharacters = choice.Message.Content?.Length ?? 0,
+                ReasoningCharacters = string.IsNullOrEmpty(reasoning) ? null : reasoning.Length,
+                ReasoningTokens = body.Usage?.CompletionTokensDetails?.ReasoningTokens,
             });
         }
     }
