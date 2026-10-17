@@ -56,6 +56,15 @@ an archived plan, specification or task.
 - **Never rewrite historical commits** for identity cleanup; that is a separate operator task. Push, PR
   and merge only when the operator asks. Details: hardening plan §19.
 
+## Before touching a component
+
+1. Find the applicable task (`agentic/_tasks/`, `agentic/_plans/`) and ADR; `HANDOFF.md` has the latest real state.
+2. Check whether the problem is already solved in the current checkout (code, not just the task text).
+3. Prove the remaining gap with concrete evidence (a failing test or trace).
+4. Limit the change to the root cause. No speculative patches.
+5. Add a regression test in the existing suite for that component.
+6. Update the task status and `HANDOFF.md`. Do not create a new ADR, document or test suite where one already fits.
+
 ## Stack
 
 .NET 10 · C# latest · `Nullable` and `TreatWarningsAsErrors` on from the first commit ·

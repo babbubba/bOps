@@ -14,6 +14,19 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- Generation-limit telemetry and an optional output limit. `Agent:MaxOutputTokens` (unset by default: nothing is sent, as before) is passed
+  as `max_tokens` by the OpenAI-compatible providers and overrides the Anthropic adapter's fixed 4096. Every model attempt now records an
+  `Output` object (requested limit, finish reason, token counts, reasoning length, truncation, a closed classification and which limit the
+  usage points to) in the call record and the `modelCall` audit event, never the reply or the reasoning. Reference:
+  `docs/operator-configuration.md`.
+- Knowledge refusal recovery (ADR-0059, Proposed): a refused `runtime.knowledge_read` caused by a mistake no longer ends the task after the
+  fifth refusal; the function is withdrawn for the rest of the attempt (`Withdrawn` on the audit event) and the step continues. Security
+  refusals and calls to a withdrawn function keep their hard stop. The knowledge control sentence of the step prompt now states that a
+  read is never required and never replaces the operational call or the final answer. A failure of the framework function (or of host text
+  normalization) is audited as the new `KnowledgeReadResultCode.InfrastructureFailure` (12), no longer as `IntegrityMismatch`, which now means only
+  "bytes differ from the pin".
+- `scripts/Probe-NativeToolTemplate.ps1`: one operator-run probe of a llama.cpp server's native-tools template and limits (not run by CI).
+
 - Knowledge in the CLI, as an experimental Local Agent pilot (ADR-0058, D-050 proposed). A new opt-in `Knowledge` configuration section
   (disabled by default; unknown keys and unusable values stop the command with exit code 2) binds a task to one signed Knowledge pack that
   the operator installed, trusts and granted. The model receives the pack's index on agentic steps and may read it through

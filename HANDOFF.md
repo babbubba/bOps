@@ -1,8 +1,40 @@
 # Handoff — V1.3 pre-release stabilization
 
-## Current handoff — 2026-10-17 (Knowledge in the CLI: Local Agent pilot, uncommitted)
+## Current handoff — 2026-10-17 (consolidation of the MAF/Knowledge work, nothing committed by this step)
 
-- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, on top of the uncommitted KNOW-BENCH D1–D3/D7 changes (untouched). **Nothing committed or pushed.**
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, HEAD `1ddde56`. The Local Agent pilot (ADR-0058) **is committed** (`cf82502`, `2df1c23`, `1ddde56`); the two entries below that say
+  "nothing committed" describe the moment they were written. Uncommitted now: D1–D3 corpus provenance, D7 protected diagnosis + blind review, `Agent:MaxOutputTokens` and model-output telemetry,
+  ADR-0059 refusal recovery with `InfrastructureFailure`, and documentation. The untracked `docs/benchmarks/bench00-maf-compatibility-report.md` is pre-existing and is not part of any slice.
+- Offline validation of this tree (no live model, no capture): full solution build 0 warnings / 0 errors; `dotnet test bOps.slnx --filter "Category!=LiveModel"`: 37 assemblies, 6158 passed, 166 skipped,
+  **2 failed**, both in `bOps.Runtime.Tests` and both failing identically on pristine `HEAD` (`ToolCallProtocolTests.TheToolCatalog_KeepsTheNameTheRiskAndTheFirstSentenceOfEachTool_…`, `ModelFailureEndToEndTests.ATransientProviderFailure_RecoversWithinBounds_…`): stale expectations, not introduced here and not fixed.
+  The 8 skipped in `bOps.AgentFramework.Tests` are the env-gated live/operator tools (5 `KnowledgeBenchmarkLiveTests`, 2 `KnowledgeDiagnosisReviewTools`, 1 `KnowledgeHostCanaryLiveTests`). `git diff --check` clean. Linux (WSL) and CI not run.
+- State by area (details in the roadmap note of 2026-10-17 and the ADRs): ADR-0057 M1 T1–T7 implemented, **T8 report/gate not closed**, B1/B2 open (status table added to ADR-0057 §E); ADR-0058 and ADR-0059 and D-050 **Proposed**
+  but implemented; CLI pilot opt-in (`Knowledge:Enabled=false`); the API composes no Knowledge; the index is not published to the planner; MAF does not govern planning or tool execution; **no live Knowledge validation has been done**.
+- ADR-0059 text was made self-consistent (it said "no new result code" while introducing `InfrastructureFailure = 12`); no decision was changed.
+- Note: the ADR-0057 M1 gate excluded provider changes; `Agent:MaxOutputTokens` touches the OpenAI-compatible and Anthropic adapters, so it is recorded as a separate, post-M1 change.
+- Next task (one, not started): **KNOW-DISC-01 T8 / M1 gate** — write `docs/architecture/know-disc-01-knowledge-index.md` (§H matrix, §H.3 mutation check) and run the M1 offline gate on Windows **and** Linux (WSL `git archive` copy), after the slices are committed. Done when the report exists, both platforms are green apart from recorded baseline failures, and ADR-0057 §E marks T8 done.
+
+## Previous handoff — 2026-10-17 (realignment + Knowledge infrastructure-error classification, uncommitted)
+
+- Authority: roadmap/gates `agentic/_plans/2026-10-11-maf-knowledge-convergence.md` (ACTIVE; gate table unchanged), tasks `agentic/_tasks/`, decisions
+  `agentic/06-decisions.md` + `docs/architecture/adr/`, current state this file. ADR-0052..0059: 0052/0055/0056/0057 Accepted per their files; **0058 and 0059 and D-050 are Proposed
+  yet implemented** (opt-in CLI pilot, refusal recovery) — implementation done, offline tests done, live validation missing, acceptance is the operator's.
+- Done now (only functional change authorised): `KnowledgeReadResultCode.InfrastructureFailure = 12` (appended). The bridge used to audit a framework-function
+  failure as `IntegrityMismatch` (flag `Infrastructure`), so the benchmark and operators read a host fault as tampering. Now: `InfrastructureFailure` is
+  Recoverable (nothing returned, read is optional, withdrawn after `MaxRejections`); `IntegrityMismatch` = bytes differ from pin, `NotAuthorized`/`SnapshotUnavailable`
+  stay Integrity (hard stop); the benchmark safety check still rejects a run containing any of them. Host text-normalization failure in `discover` is infrastructure too.
+  Tests: `KnowledgeRefusalRecoveryTests` (infra vs integrity) + KnowledgeReadBridge/SnapshotBridge/IndexBridge/Comparison: 72/72 pass. Nothing else run (no full suite, no live).
+- Timeouts (Qwen 32K/8K, ~60 tok/s ≈ 137 s + prefill): API profile 300 s attempt / 360 s HTTP / 660 s budget is coherent. CLI defaults 120/150/300 s are not; operator
+  override documented in `docs/knowledge/local-agent-pilot.md` §6 (no shipped default changed; OpenRouter default stays).
+- Deferred by operator: payload anonymisation, reasoning retention, response redaction, retention. Not blocking.
+- Open gates (none passed): BENCH-00 official 3×3, BENCH-01, AF-EVID-01, AF-05H4-VERIFY, ARCH-01/02/03, KNOW-01/02/03, ADR-0054 acceptance, ADR-0057 B1/B2.
+- Uncommitted KNOW-BENCH D1–D3/D7 work in this worktree was not touched. Nothing committed or pushed.
+- Next task (not started): finish **BENCH-01 prerequisites** — run the full offline suite (`dotnet test`, excluding `Category=LiveModel`) on this tree to confirm the
+  uncommitted set is green, then commit it in reviewed slices; then BENCH-00 3×3 when the operator authorises live runs. Done when the suite is green and the slices are committed.
+
+## Previous handoff — 2026-10-17 (Knowledge in the CLI: Local Agent pilot; since committed as `cf82502`, `2df1c23`, `1ddde56`)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, on top of the uncommitted KNOW-BENCH D1–D3/D7 changes (untouched). *(At the time of writing: nothing committed or pushed; the pilot was committed afterwards, never pushed.)*
 - Operator instruction: a circumscribed revision of D-049 for an opt-in Knowledge integration in the local CLI. Decision text: `docs/architecture/adr/0058-local-agent-knowledge-pilot.md`
   (Proposed) and D-050 (Proposed). The ADR records the gate review: ARCH-01/03 are documentation not in this tree (ADR-0054 is Proposed, not accepted), BENCH-00 3×3 is not run,
   ADR-0057 B1/B2 are open. No gate is declared passed.

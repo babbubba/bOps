@@ -749,6 +749,21 @@ Sequenza: **T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8**. Ogni task è 
 rilevati; nessuna modifica a `ContextGate`, `ToolRegistry`, policy, approval, journal, provider, dipendenze NuGet; richieste legacy e
 di planning/replan byte-identiche.
 
+Stato M1 (2026-10-17, riconciliazione; ricostruito dalla storia git, non da una nuova esecuzione):
+
+| Task | Stato | Evidenza |
+|---|---|---|
+| T1+T2 | **Implementato** | `bfe624f` (KNOW-M1-A) |
+| T3+T4 | **Implementato** | `93f5e3d` (KNOW-M1-B), `2e70927` (normalizzazione Unicode come contratto dell'host, `know-m1-b-fix01-unicode-globalization.md`) |
+| T5 | **Implementato** | `ac935eb` (KNOW-M1-C) |
+| T6 | **Implementato** | `eba1cff` (KNOW-M1-D); wording Parte C e soglie fissati da `a74e1b6` (KNOW-M1-D-VERIFY01) |
+| T7 | **Coperto dallo strumento di benchmark** | `784ac9c` (`BenchmarkKnowledgeDiscovery.cs`, KNOW-DISC-INV01); non è un export separato come descritto in T7 |
+| T8 | **Non chiuso** | il report `docs/architecture/know-disc-01-knowledge-index.md` non esiste; il gate M1 (Windows **e** Linux, mutation check §H.3) non è registrato come superato |
+
+Estensioni successive che **non** fanno parte di M1 e non lo chiudono: il pilota CLI (ADR-0058, Proposed), la ripresa dai rifiuti (ADR-0059,
+Proposed), `Agent:MaxOutputTokens` con la telemetria di output dei provider (tocca gli adapter provider, che il gate M1 escludeva: è un cambio
+separato, tracciato in `docs/operator-configuration.md` e CHANGELOG). B1 e B2 restano aperti; il live non è stato eseguito.
+
 ### M2 — KNOW-DISC-02: applicabilità firmata (manifest v2)
 
 Come rev. 1 (`PackManifest`, `KnowledgePackFormat`, `KnowledgePackVerifier`, `KnowledgeJsonContext`; gating su `platforms`; punteggio

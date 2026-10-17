@@ -31,6 +31,12 @@
 | 12 | **KNOW-03** | A/B/C model-only vs knowledge vs knowledge+playbook su modelli multipli; misurare costo e qualità. |
 | 13 | **V1.4-D adapted** | Coordinator privato come host/adapter (tenant/RBAC, pgvector, memory, entitlement) senza duplicare engine OSS. |
 
+> **Stato Knowledge a 2026-10-17 (riconciliazione; nessun gate cambia).** Implementato e validato **solo offline**: indice Knowledge (ADR-0057 M1 T1–T7, T8/gate
+> M1 non chiuso, B1/B2 aperti), harness KNOW-BENCH con corpus attestato D1–D3 e diagnosi protetta/revisione cieca D7 (`docs/benchmarks/know-bench-*`), pilota CLI
+> (ADR-0058, Proposed), ripresa dai rifiuti con `InfrastructureFailure` (ADR-0059, Proposed), `Agent:MaxOutputTokens` e telemetria di output (strumentazione, non
+> sostituisce AF-05H2-R1). **Nessuna validazione live Knowledge è stata completata**; il Knowledge Index non è pubblicato al planner; l'API non compone Knowledge; MAF non governa
+> planning né esecuzione dei tool. Lo stato per intervento è in `HANDOFF.md`.
+>
 > **Eccezione sperimentale circoscritta (2026-10-17, ADR-0058 / D-050 proposto).** Per istruzione dell'operatore esiste un pilota Knowledge opt-in,
 > **solo CLI e solo Local Agent**, disattivato per impostazione predefinita. Non supera nessun gate di questa tabella (BENCH-00 3×3, BENCH-01, AF-EVID-01,
 > AF-05H4-VERIFY, ARCH-01/02/03, KNOW-01/02/03 restano come sopra), non tocca l'API e non produce alcuna misura di qualità. L'estensione all'API richiede i
