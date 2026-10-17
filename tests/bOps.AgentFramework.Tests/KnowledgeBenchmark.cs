@@ -55,6 +55,25 @@ internal static class KnowledgeBenchmark
         if (requireCaptured) CanaryEventsCorpus.RequireRealCorpus(provenance);
         return new(true, false, path, hash, true, CanaryEventsCorpus.Canonical(provenance), requireCaptured);
     }
+
+    /// <summary>A frozen corpus file approved for the benchmark: the replay activation and the provenance it will be exported with.</summary>
+    internal sealed record FrozenCorpus(CanaryEventsActivation Activation, JsonObject Provenance);
+
+    /// <summary>
+    /// The only replay path for a corpus saved by an earlier capture process (A, B and C all use it). The file must be pinned by SHA-256,
+    /// carry an operator attestation pinned by its own SHA-256, still pass the quality gate and match the scenario request. Nothing
+    /// here is <c>Captured</c>: the best a file reaches is <c>OperatorAttested</c>, and an unattested file is refused, not downgraded.
+    /// </summary>
+    internal static FrozenCorpus ReplayFrozen(string path, string? corpusSha256, string? attestationSha256)
+    {
+        var verified = CanaryEventsCorpus.Read(path, corpusSha256);
+        if (verified.Corpus["arguments"]!.GetValue<string>() != CanaryEventsCorpus.Canonical(Arguments.ToJson()))
+            throw new InvalidOperationException("Benchmark corpus request incompatible.");
+        var attestation = CorpusAttestation.Load(path, verified.Corpus, verified.Hash, attestationSha256);
+        var provenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash, false, attestation);
+        CanaryEventsCorpus.RequireBenchmarkProvenance(provenance);
+        return new(new(true, false, path, verified.Hash, true, CanaryEventsCorpus.Canonical(provenance), false, attestation), provenance);
+    }
     internal static KnowledgeProcess Boot(KnowledgeRunnerWorld world, bool knowledge, RawKnowledgePack? raw = null,
         KnowledgeTrustStore? trust = null, bool grant = true)
     {
@@ -78,10 +97,12 @@ internal static class KnowledgeBenchmark
     // Shared by the manual A/B entry points and the offline probes. No live/capture fallback.
     internal static CanaryRig ComposeReplay(KnowledgeRunnerWorld world, IChatModel model, string condition,
         string path, string hash, RawKnowledgePack? raw = null, KnowledgeTrustStore? trust = null,
-        string? manifestPin = null, string? authorizedGrant = null, BenchmarkModelObservation? observation = null)
+        string? manifestPin = null, string? authorizedGrant = null, BenchmarkModelObservation? observation = null,
+        CanaryEventsActivation? frozen = null)
     {
         ValidateCondition(condition, raw, trust, manifestPin, authorizedGrant);
-        var replay = Replay(path, hash);
+        // frozen: the already verified, operator-attested activation of the live path; absent only in synthetic offline probes.
+        var replay = frozen ?? Replay(path, hash);
         var knowledge = UsesKnowledge(condition);
         var rig = Compose(Boot(world, knowledge, raw, trust), model, knowledge, replay, observation);
         if (observation is not null) observation.Calls = 0;

@@ -13,7 +13,7 @@ namespace bOps.AgentFramework.Tests;
 // One process-local capability, no import constructor, JSON binding or persistent attestation.
 internal sealed class TrustedEventsCapture : IDisposable
 {
-    internal enum RefusalCode { IncompatibleArguments, IdentityMismatch, AlreadyConsumed, IntegrityOrProvenance }
+    internal enum RefusalCode { IncompatibleArguments, IdentityMismatch, AlreadyConsumed, IntegrityOrProvenance, QualityGate }
 
     internal static ToolManifest ReplayManifest(ToolManifest native) => native with
     {
@@ -115,6 +115,9 @@ internal sealed class TrustedEventsCapture : IDisposable
                     var native = owner.source is WindowsSystemEventsTool;
                     var corpus = CanaryEventsCorpus.Build(arguments, result.Output, native ? "windows-capture" : "synthetic",
                         DateTimeOffset.UtcNow, native ? CanaryEventsCorpus.CaptureMetadata(owner.captureId.ToString("D")) : null);
+                    // A native capture that would not pass the corpus quality gate is never retained (a controlled source is Synthetic and exempt).
+                    if (native && !CorpusQualityGate.Evaluate(corpus, CanaryEventsCorpus.Hash(corpus), arguments).Suitable)
+                        return Refuse(RefusalCode.QualityGate);
                     owner.snapshot = CanaryEventsCorpus.Canonical(corpus); // Immutable strings; no mutable corpus escapes.
                     owner.hash = CanaryEventsCorpus.Hash(corpus);
                     var origin = CanaryEventsCorpus.Provenance(corpus, owner.hash, capturedHere: native);

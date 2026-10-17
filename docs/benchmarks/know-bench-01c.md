@@ -21,8 +21,12 @@ Source, text and excludeSources filters are deliberately unsupported to prevent
 free-text query metadata from being retained or audited. Invalid event IDs are
 rejected before native collection. One capture instance can collect at most once.
 
-Before writing, minimization removes message/sampleMessage, provider/source,
-unit, process IDs/names and source/coverage details by setting their values to null.
+Before writing, minimization (version `allowlist-provider-and-structured-details-v2`, see
+[know-bench-corpus-provenance.md](know-bench-corpus-provenance.md)) removes message/sampleMessage,
+unit, process IDs/names and source/coverage details by setting their values to null. The provider is
+kept only when it is on an explicit allowlist of diagnostic providers (any other becomes
+`[redacted-provider-N]`), and a closed set of structured details is kept per provider and event ID.
+Version 1 of this step nulled the provider and all details; it is no longer produced or accepted.
 No substitute records or identifiers are invented. Original counts, severity,
 event IDs, timestamps, coverage, completeness and truncation flags are retained.
 Output includes a benchmarkCorpus marker identifying the original capture or

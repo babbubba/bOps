@@ -14,7 +14,7 @@ namespace bOps.AgentFramework.Tests;
 
 // Internal test-host configuration only. No environment binding in a product host, public provider or dispatch route.
 internal sealed record CanaryEventsActivation(bool Enabled, bool Capture, string Path, string? ExpectedHash,
-    bool AcceptMinimization, string? ExpectedProvenance = null, bool RequireCaptured = false);
+    bool AcceptMinimization, string? ExpectedProvenance = null, bool RequireCaptured = false, OperatorAttestation? Attestation = null);
 
 internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, CanaryEventsActivation activation)
     : IToolAuditSummaryProvider
@@ -33,6 +33,8 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
             CanaryEventsCorpus.ValidateArguments(arguments, DateTimeOffset.UnixEpoch);
             JsonObject corpus;
             string hash;
+            if (activation.Capture && activation.Attestation is not null)
+                return Refuse("A capture cannot carry an operator attestation.");
             if (activation.Capture)
             {
                 // Reserve the file before even considering native collection. CreateNew forbids overwrite/races.
@@ -42,27 +44,36 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
                 var result = await live.ExecuteAsync(arguments, ct);
                 if (!result.Succeeded || result.Output is null) return result;
                 var captureId = Guid.NewGuid().ToString("D");
-                corpus = CanaryEventsCorpus.Build(arguments, result.Output, "windows-capture", DateTimeOffset.UtcNow, CanaryEventsCorpus.CaptureMetadata(captureId));
-                hash = CanaryEventsCorpus.Hash(corpus);
+                CorpusQuality quality;
+                (corpus, hash, quality) = CanaryEventsCorpus.BuildCapture(arguments, result.Output, captureId, DateTimeOffset.UtcNow);
                 var bytes = CanaryEventsCorpus.Encode(corpus, hash);
                 await destination.WriteAsync(bytes, ct);
 #pragma warning disable CA1849 // FlushAsync has no flush-to-disk contract; a captured corpus must be durable before success.
                 destination.Flush(flushToDisk: true);
 #pragma warning restore CA1849
+                // The minimized file is kept for inspection, but an unsuitable capture is a failure and can never be approved.
+                if (!quality.Suitable) return Refuse("Event corpus quality gate failed: " + quality.Describe());
             }
             else
             {
                 (corpus, hash) = CanaryEventsCorpus.Read(activation.Path, activation.ExpectedHash);
                 if (CanaryEventsCorpus.Canonical(arguments.ToJson()) != corpus["arguments"]!.GetValue<string>())
                     return Refuse("The requested arguments do not match the captured request.");
+                // An attested replay is only as good as the file it describes: binding and gate are re-checked on every call.
+                if (activation.Attestation is { } attestation)
+                {
+                    if (attestation.CorpusSha256 != hash || attestation.CaptureId != corpus["capture"]?["captureId"]?.GetValue<string>())
+                        return Refuse("The operator attestation does not describe this corpus.");
+                    CorpusQualityGate.Require(CorpusQualityGate.Evaluate(corpus, hash, KnowledgeBenchmark.Arguments));
+                }
             }
 
-            var provenance = CanaryEventsCorpus.Provenance(corpus, hash, activation.Capture);
+            var provenance = CanaryEventsCorpus.Provenance(corpus, hash, activation.Capture, activation.Attestation);
             if ((activation.ExpectedProvenance is not null && activation.ExpectedProvenance != CanaryEventsCorpus.Canonical(provenance))
                 || (activation.RequireCaptured && provenance["classification"]!.GetValue<string>() != "Captured"))
                 return Refuse("Captured provenance unavailable or changed.");
             var output = JsonNode.Parse(corpus["output"]!.GetValue<string>())!.AsObject();
-            output["benchmarkCorpus"]!["origin"] = provenance["classification"]!.GetValue<string>().ToLowerInvariant();
+            output["benchmarkCorpus"]!["origin"] = CanaryEventsCorpus.OriginLabel(provenance);
             // Keep stored evidence/window, with independently resolved provenance visibly attached.
             // Native facts are deliberately not promoted to fresh observations or replay attestations.
             return ToolCallResult.Success(CanaryEventsCorpus.Canonical(output)) with
@@ -100,7 +111,12 @@ internal sealed class CanaryEventsCorpusTool(WindowsSystemEventsTool live, Canar
 
 internal static class CanaryEventsCorpus
 {
-    internal const string Minimization = "remove-free-text-provider-unit-process-and-source-details-v1";
+    // The label the model-visible output carries; identical for every arm that replays the same file.
+    internal static string OriginLabel(JsonObject provenance) =>
+        provenance["classification"]!.GetValue<string>() is "OperatorAttested"
+            ? "operator-attested" : provenance["classification"]!.GetValue<string>().ToLowerInvariant();
+
+    internal const string Minimization = CorpusMinimizer.Version;
     private const int MaximumSnapshotBytes = 2 * 1024 * 1024;
 
     internal static void ValidatePath(string path)
@@ -146,8 +162,8 @@ internal static class CanaryEventsCorpus
             || DateTimeOffset.Parse(root["window"]!["fromUtc"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture) != query!.FromUtc)
             throw new InvalidOperationException("Output does not match the request.");
 
-        // Remove values, do not substitute invented events, providers, users or machines.
-        Scrub(root);
+        // Keep allowlisted diagnostics and redact the rest; never substitute invented events, providers, users or machines.
+        CorpusMinimizer.Apply(root);
         root["benchmarkCorpus"] = new JsonObject
         {
             ["origin"] = origin, ["minimization"] = Minimization,
@@ -176,6 +192,18 @@ internal static class CanaryEventsCorpus
         return corpus;
     }
 
+    /// <summary>
+    /// Builds the corpus of a native capture and judges it in one step, so a capture is never persisted or approved without a verdict.
+    /// The gate runs on exactly the bytes that will be stored.
+    /// </summary>
+    internal static (JsonObject Corpus, string Hash, CorpusQuality Quality) BuildCapture(
+        ToolArguments arguments, string output, string captureId, DateTimeOffset capturedUtc)
+    {
+        var corpus = Build(arguments, output, "windows-capture", capturedUtc, CaptureMetadata(captureId));
+        var hash = Hash(corpus);
+        return (corpus, hash, CorpusQualityGate.Evaluate(corpus, hash, arguments));
+    }
+
     internal static JsonObject CaptureMetadata(string captureId) => new()
     {
         ["captureId"] = captureId,
@@ -201,25 +229,41 @@ internal static class CanaryEventsCorpus
 
     // A receipt imported from disk is self-asserted: hashes prove integrity, never acquisition.
     // Captured is available only on the successful native call in this adapter, not by JSON declaration.
-    internal static JsonObject Provenance(JsonObject corpus, string hash, bool capturedHere = false) => new()
+    // A file can be OperatorAttested at best, never Captured: that needs a verified attestation of exactly this corpus.
+    internal static JsonObject Provenance(JsonObject corpus, string hash, bool capturedHere = false, OperatorAttestation? attestation = null)
     {
-        ["classification"] = capturedHere ? "Captured" : corpus["origin"]!.GetValue<string>() == "synthetic" ? "Synthetic" : "Unverified",
-        ["guarantee"] = capturedHere ? "observed-local-native-execution; no cryptographic attestation" : "pinned-content-integrity; acquisition-unverified",
-        ["corpusSha256"] = hash,
-        ["captureId"] = corpus["capture"]?["captureId"]?.DeepClone(),
-        ["acquisitionMetadataStatus"] = capturedHere ? "Observed" : "SelfAsserted",
-        ["tool"] = corpus["tool"]!.DeepClone(),
-        ["invokedTool"] = corpus["capture"]?["invokedTool"]?.DeepClone(),
-        ["manifestSha256"] = corpus["capture"]?["manifestSha256"]?.DeepClone(),
-        ["schemaSha256"] = corpus["capture"]?["schemaSha256"]?.DeepClone(),
-        ["recordedUtc"] = corpus["capturedUtc"]!.DeepClone(),
-        ["arguments"] = JsonNode.Parse(corpus["arguments"]!.GetValue<string>()),
-        ["complete"] = corpus["complete"]!.DeepClone(),
-        ["truncated"] = corpus["truncated"]!.DeepClone(),
-        ["completeness"] = corpus["completeness"]!.DeepClone(),
-        ["environment"] = corpus["capture"]?["environment"]?.DeepClone(),
-        ["auditReference"] = corpus["capture"]?["auditReference"]?.DeepClone(),
-    };
+        var attested = attestation is not null && !capturedHere;
+        if (attested && attestation!.CorpusSha256 != hash) throw new InvalidOperationException("The operator attestation does not describe this corpus.");
+        var provenance = new JsonObject
+        {
+            ["classification"] = capturedHere ? "Captured" : attested ? "OperatorAttested" : corpus["origin"]!.GetValue<string>() == "synthetic" ? "Synthetic" : "Unverified",
+            ["guarantee"] = capturedHere ? "observed-local-native-execution; no cryptographic attestation"
+                : attested ? CorpusAttestation.Guarantee : "pinned-content-integrity; acquisition-unverified",
+            ["corpusSha256"] = hash,
+            ["captureId"] = corpus["capture"]?["captureId"]?.DeepClone(),
+            ["acquisitionMetadataStatus"] = capturedHere ? "Observed" : attested ? "OperatorAttested" : "SelfAsserted",
+            ["tool"] = corpus["tool"]!.DeepClone(),
+            ["invokedTool"] = corpus["capture"]?["invokedTool"]?.DeepClone(),
+            ["manifestSha256"] = corpus["capture"]?["manifestSha256"]?.DeepClone(),
+            ["schemaSha256"] = corpus["capture"]?["schemaSha256"]?.DeepClone(),
+            ["recordedUtc"] = corpus["capturedUtc"]!.DeepClone(),
+            ["arguments"] = JsonNode.Parse(corpus["arguments"]!.GetValue<string>()),
+            ["complete"] = corpus["complete"]!.DeepClone(),
+            ["truncated"] = corpus["truncated"]!.DeepClone(),
+            ["completeness"] = corpus["completeness"]!.DeepClone(),
+            ["environment"] = corpus["capture"]?["environment"]?.DeepClone(),
+            ["auditReference"] = corpus["capture"]?["auditReference"]?.DeepClone(),
+        };
+        if (attested)
+        {
+            // The capture's audit reference points into another process's audit; the attestation (by hash) is the link that holds here.
+            provenance.Remove("auditReference");
+            provenance["attestationSha256"] = attestation!.Sha256;
+            provenance["approvedUtc"] = attestation.ApprovedUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return provenance;
+    }
 
     internal static void RequireRealCorpus(JsonObject provenance)
     {
@@ -227,19 +271,14 @@ internal static class CanaryEventsCorpus
             throw new InvalidOperationException("Real Windows benchmark requires independently verified acquisition; imported corpus is Synthetic or Unverified.");
     }
 
-    private static void Scrub(JsonNode node)
+    /// <summary>
+    /// The benchmark replay gate: an in-process <c>Captured</c> corpus, or a saved file with a verified operator attestation.
+    /// Separate from <see cref="RequireRealCorpus"/> on purpose, which keeps refusing everything not observed in this process.
+    /// </summary>
+    internal static void RequireBenchmarkProvenance(JsonObject provenance)
     {
-        if (node is JsonObject obj)
-        {
-            foreach (var key in obj.Select(pair => pair.Key).ToArray())
-            {
-                if (key is "message" or "sampleMessage" or "source" or "unit" or "processId" or "processName" or "detail")
-                    obj[key] = null;
-                else if (obj[key] is { } child) Scrub(child);
-            }
-        }
-        else if (node is JsonArray array)
-            foreach (var child in array.OfType<JsonNode>()) Scrub(child);
+        if (provenance["classification"]!.GetValue<string>() is not ("Captured" or "OperatorAttested"))
+            throw new InvalidOperationException("Benchmark corpus requires an in-process capture or a verified operator attestation; imported corpus is Synthetic or Unverified.");
     }
 
     internal static string Canonical(JsonNode node) => Ordered(node).ToJsonString();

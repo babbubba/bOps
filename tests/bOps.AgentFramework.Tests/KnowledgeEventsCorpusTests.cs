@@ -137,7 +137,7 @@ public sealed class KnowledgeEventsCorpusTests
 
     private static async Task ManualAsync(string mode)
     {
-        if (mode is not ("capture" or "replay")) throw new InvalidOperationException("Unknown corpus mode.");
+        if (mode is not ("capture" or "approve" or "replay")) throw new InvalidOperationException("Unknown corpus mode.");
         var profile = Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_PROFILE");
         if (profile is not (null or "01C" or "01D")) throw new InvalidOperationException("Unknown benchmark corpus profile.");
         if (Environment.GetEnvironmentVariable("BOPS_RUN_KNOW_BENCH_01D") is not null)
@@ -148,12 +148,22 @@ public sealed class KnowledgeEventsCorpusTests
         var hash = Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_SHA256");
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Explicit minimization acknowledgement is required.");
+        if (mode == "approve")
+        {
+            // Operator approval of a frozen benchmark corpus: the operator repeats the exact hash they reviewed; no tool, model or capture runs.
+            if (profile != "01D") throw new InvalidOperationException("Only the 01D benchmark corpus can be approved.");
+            _ = CorpusAttestation.Approve(path, hash ?? throw new InvalidOperationException("Explicit corpus pin required."),
+                Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_APPROVE_SHA256") ?? throw new InvalidOperationException("Explicit operator approval required."),
+                DateTimeOffset.UtcNow);
+            return;
+        }
+
+        var activation = new CanaryEventsActivation(true, mode == "capture", path, hash, true);
         if (mode == "replay" && profile == "01D")
-            _ = KnowledgeBenchmark.Replay(path, hash ?? throw new InvalidOperationException("Explicit corpus pin required."));
+            activation = KnowledgeBenchmark.ReplayFrozen(path, hash, Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ATTESTATION_SHA256")).Activation;
         using var world = new KnowledgeRunnerWorld();
         var process = world.Boot([]);
-        var rig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false, withWindowsSystemEvents: true,
-            eventsCorpus: new CanaryEventsActivation(true, mode == "capture", path, hash, true));
+        var rig = process.ComposeCanary(new ScriptedRunnerModel([]), withHost: false, withWindowsSystemEvents: true, eventsCorpus: activation);
         await ExecuteAsync(rig, arguments, mode);
         var call = Assert.Single(world.Events.OfType<ToolCallAuditEvent>());
         // No event data is printed even on failure. Hash is available in the snapshot's sha256 member.

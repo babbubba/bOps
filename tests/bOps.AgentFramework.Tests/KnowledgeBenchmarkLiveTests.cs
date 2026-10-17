@@ -86,11 +86,12 @@ public sealed class KnowledgeBenchmarkLiveTests
         export.CorpusSha256 = hash;
         if (Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ACCEPT_MINIMIZATION") != "1")
             throw new InvalidOperationException("Minimization acknowledgement required.");
+        KnowledgeBenchmark.FrozenCorpus? frozen = null;
         if (capture is null)
         {
-            var verified = CanaryEventsCorpus.Read(path!, hash);
-            export.CorpusProvenance = CanaryEventsCorpus.Provenance(verified.Corpus, verified.Hash);
-            _ = KnowledgeBenchmark.Replay(path!, hash, requireCaptured: true);
+            // A saved corpus is never "Captured": it must carry the operator attestation pinned out of band (not the in-process guard).
+            frozen = KnowledgeBenchmark.ReplayFrozen(path!, hash, Environment.GetEnvironmentVariable("BOPS_EVENTS_CORPUS_ATTESTATION_SHA256"));
+            export.CorpusProvenance = frozen.Provenance;
         }
         else
         {
@@ -136,7 +137,7 @@ public sealed class KnowledgeBenchmarkLiveTests
         var provider = new LlamaCppProviderPackage(new ClientFactory(client));
         var rig = capture is null
             ? KnowledgeBenchmark.ComposeReplay(world, provider.Create(options), condition, path!, hash,
-                pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation)
+                pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation, frozen!.Activation)
             : capture.Compose(world, provider.Create(options), condition, export.RunId,
                 pack.Raw, pack.Trust, manifestPin, authorizedGrant, export.ModelObservation);
         export.Store = rig.Store;

@@ -295,7 +295,7 @@ internal sealed class KnowledgeBenchmarkExport
 
     private static string? SafeReplayRefusal(JsonObject? summary) =>
         summary?["replayRefusalCode"] is JsonValue value && value.TryGetValue<string>(out var code)
-            && code is "IncompatibleArguments" or "IdentityMismatch" or "AlreadyConsumed" or "IntegrityOrProvenance"
+            && code is "IncompatibleArguments" or "IdentityMismatch" or "AlreadyConsumed" or "IntegrityOrProvenance" or "QualityGate"
                 ? code : null;
 
     // Reuse payload-free projection/minimization, not regex sanitization as proof of safety.
