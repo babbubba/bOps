@@ -1099,6 +1099,12 @@ public sealed partial class AgentRunner(
 
                 var protectedAfter = ReconciliationTurns(steps);
                 protectedAfter.AddRange(ContinuedKnowledgeEvidence(run, stepIndex));
+                // LIVE-05: after a persisted-plan continuation the request must say why the final was rejected and what is owed.
+                if (EarlyFinalRecovery.ContinuationTurn(plan, steps, position.Cursor, stepTools) is { } recoveryControl)
+                {
+                    protectedAfter.Add(ChatTurn.FromUser(recoveryControl, ContextProvenance.Runtime));
+                }
+
                 protectedAfter.AddRange(logicalCall.ContinuationTurns);
                 var goalTurn = ChatTurn.FromUser(aggressive ? ProjectForPrompt(run.Goal, AggressiveGoalMaxCharacters) : run.Goal, ContextProvenance.Task);
                 // ADR-0057 H2: the data turn is protected context before the goal, rebuilt for each request, never persisted or repeated.

@@ -40,6 +40,34 @@ internal static class EarlyFinalRecovery
             && revision.Any(recovery => IsStep(recovery) && recovery.Index > earlier.Index));
     }
 
+    /// <summary>
+    /// LIVE-05: the runtime-authored control turn of the first step request after a persisted-plan continuation. The bookkeeping
+    /// steps of the rejected final and of the continuation carry no tool call and so add nothing to the rebuilt history; without
+    /// this turn that request is byte-identical to the one that drew the premature final. It exists only while the continuation
+    /// is the latest step of the revision at the same cursor, and is a pure function of the persisted plan and steps (identical
+    /// live and on resume). It names the planned step number, the plan size and the offered tool's catalog-validated name only —
+    /// no model text, plan description, argument or tool output — and executes nothing and grants no authority.
+    /// </summary>
+    internal static string? ContinuationTurn(
+        AgentPlan plan, IReadOnlyList<PlanStep> steps, int cursor, IReadOnlyList<ToolManifest> stepTools)
+    {
+        if (steps.LastOrDefault(step => step.PlanRevision == plan.Revision) is not { } latest
+            || !IsStep(latest) || latest.EarlyFinalRecoveryCursor != cursor
+            || cursor < 0 || cursor >= plan.Steps.Count
+            || plan.Steps[cursor].ExpectedTool is not { } expected
+            || stepTools.Count != 1 || !string.Equals(stepTools[0].Name, expected, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var tool = PrematureFinal.ToolLabel(expected);
+        return FormattableString.Invariant(
+            $"Runtime control instruction: your previous final answer was rejected because plan revision {plan.Revision} is incomplete. The next planned step not yet completed is step {cursor + 1} of {plan.Steps.Count}, which uses the operational tool {tool}; that is the operational tool offered in this request. Propose the call to {tool} now, before giving any final answer. {ContinuationAuthority}");
+    }
+
+    private const string ContinuationAuthority =
+        "This instruction executes nothing and grants no authority: the call stays subject to the normal validation, policy and approval.";
+
     /// <summary>The stable audit refusal code of <paramref name="reason"/>, for example <c>unresolved_tool_failure</c>.</summary>
     internal static string RefusalCode(EarlyFinalRecoveryReason reason)
     {

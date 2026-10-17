@@ -254,6 +254,49 @@ public sealed class EarlyFinalReplanTests
 
     }
 
+    // LIVE-05: the request after a persisted-plan continuation was byte-identical to the one that drew the premature final.
+    [Fact]
+    public async Task ARecoveredStepRequest_DiffersFromThePrematureOne_ByARuntimeAuthoredInstructionNamingThePendingTool()
+    {
+        var model = new FakeChatModel(
+            Plan(A, B, C), Call(A), Final(PrematureText), Malformed("length"), Call(B), Call(C), Final());
+        var (runner, _, tools) = Build(model);
+
+        var result = await runner.RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Single(result.Plans);
+        Assert.Equal(1, Assert.Single(result.Steps, EarlyFinalRecovery.IsStep).EarlyFinalRecoveryCursor);
+        Assert.Equal((1, 1, 1), (tools[A].ExecutionCount, tools[B].ExecutionCount, tools[C].ExecutionCount));
+        var prematureRequest = model.Requests[2];
+        var recoveredRequest = model.Requests[4];
+        static IEnumerable<(ChatRole, string?, string?, ContextProvenance?)> Shape(ModelRequest request) =>
+            request.History.Select(turn => (turn.Role, turn.Content, turn.ToolCallId, turn.Provenance));
+
+        // Not the same request: exactly one runtime-authored user turn is appended, nothing else in the context changes.
+        Assert.Equal(prematureRequest.SystemPrompt, recoveredRequest.SystemPrompt);
+        Assert.Equal(prematureRequest.History.Count + 1, recoveredRequest.History.Count);
+        Assert.Equal(Shape(prematureRequest), Shape(recoveredRequest).Take(prematureRequest.History.Count));
+        var control = recoveredRequest.History[^1];
+        Assert.Equal((ChatRole.User, ContextProvenance.Runtime), (control.Role, control.Provenance));
+        Assert.Contains("rejected", control.Content);
+        Assert.Contains("incomplete", control.Content);
+        Assert.Contains("step 2 of 3", control.Content);
+        Assert.Contains($"Propose the call to {B}", control.Content);
+        Assert.Contains("before giving any final answer", control.Content);
+
+        // Built only from the persisted plan: no model text, plan description or tool output enters it, and the offered tools are unchanged.
+        Assert.DoesNotContain(PrematureText, control.Content);
+        Assert.DoesNotContain($"use {B}", control.Content);
+        Assert.DoesNotContain($"{A} ok", control.Content);
+        Assert.Equal([B], Operational(recoveredRequest));
+        Assert.Equal(prematureRequest.AvailableTools.Select(tool => tool.Name), recoveredRequest.AvailableTools.Select(tool => tool.Name));
+
+        // The ordinary request is untouched: no instruction before the recovery, nor after the recovered step has run.
+        Assert.DoesNotContain(model.Requests.Take(4), request => Mentions(request, "Runtime control instruction"));
+        Assert.DoesNotContain(model.Requests.Skip(5), request => Mentions(request, "Runtime control instruction"));
+    }
+
     // 9
     [Fact]
     public async Task RepeatedPrematureFinals_AreBoundedByTheReplanBudget()

@@ -66,7 +66,8 @@ internal static class PrematureFinal
     /// <summary>The protected user turn of the replan triggered by <paramref name="trigger"/>: its observation and the fixed directive.</summary>
     internal static string ReplanTurn(PlanStep trigger) => $"{trigger.Observation}\n{ReplanDirective}";
 
-    private static string ToolLabel(string? tool) =>
+    /// <summary>The tool name when it is a plain catalog-style identifier, otherwise a fixed placeholder; never free text.</summary>
+    internal static string ToolLabel(string? tool) =>
         tool is { Length: > 0 and <= 128 } name && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-')
             ? name
             : "(tool name omitted)";
