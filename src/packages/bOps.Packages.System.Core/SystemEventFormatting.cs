@@ -39,7 +39,15 @@ public static class SystemEventFormatting
     /// rows (<see cref="EvidenceMode.Raw"/>) or groups (<see cref="EvidenceMode.Aggregate"/>), applies the count and UTF-8 byte bounds
     /// and states, explicitly, whether the answer is complete and how far back the logs reach.
     /// </summary>
-    public static string Format(SystemEventSnapshot snapshot, SystemEventQuery query, EvidenceMode mode, int limit, int maxOutputBytes)
+    public static string Format(SystemEventSnapshot snapshot, SystemEventQuery query, EvidenceMode mode, int limit, int maxOutputBytes) =>
+        Format(snapshot, query, mode, limit, maxOutputBytes, describeMessages: true);
+
+    /// <summary>
+    /// <see cref="Format(SystemEventSnapshot, SystemEventQuery, EvidenceMode, int, int)"/> with the message-distribution details switchable:
+    /// with <paramref name="describeMessages"/> false an aggregate carries none (<c>messageDistribution.availability</c> is <c>none</c>),
+    /// which is the reference the group count of the detailed result must never fall below.
+    /// </summary>
+    internal static string Format(SystemEventSnapshot snapshot, SystemEventQuery query, EvidenceMode mode, int limit, int maxOutputBytes, bool describeMessages)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(query);
@@ -81,16 +89,18 @@ public static class SystemEventFormatting
         JsonArray entries;
         string returnedName;
         bool cut;
+        AggregateGroup[] aggregated = [];
         if (mode == EvidenceMode.Aggregate)
         {
             var groups = Aggregate(observed);
-            var selected = groups.Take(limit).ToArray();
-            root["observedGroups"] = groups.Count;
-            root["returnedGroups"] = selected.Length;
+            aggregated = groups.Take(limit).ToArray();
+            root["observedGroups"] = groups.Length;
+            root["returnedGroups"] = aggregated.Length;
             root["sampleMessageSemantics"] = SampleMessageSemantics;
-            root["groups"] = entries = new JsonArray(selected.Select(group => (JsonNode)group).ToArray());
+            root["messageDistribution"] = MessageDistribution(aggregated.Length, 0);
+            root["groups"] = entries = new JsonArray(aggregated.Select(group => (JsonNode)group.Entry).ToArray());
             returnedName = "returnedGroups";
-            cut = selected.Length < groups.Count;
+            cut = aggregated.Length < groups.Length;
         }
         else
         {
@@ -119,7 +129,126 @@ public static class SystemEventFormatting
                 $"Event metadata exceeds the configured {maxOutputBytes}-byte output limit.");
         }
 
-        return output;
+        return mode == EvidenceMode.Aggregate && describeMessages
+            ? DescribeMessages(root, entries, aggregated, maxOutputBytes)
+            : output;
+    }
+
+    /// <summary>One aggregate group: the entry the result carries, and the records it counts (newest first).</summary>
+    private sealed record AggregateGroup(JsonObject Entry, SystemEventRecord[] Members);
+
+    /// <summary>
+    /// Adds, to the groups the result already keeps, how the group's original messages (compared ordinally, in full) are distributed
+    /// (LIVE-04C): <c>distinctMessages</c> for every described group and, when the messages differ, a bounded list of variants with their
+    /// own counts. Groups are described in rank order and only while the details fit both <see cref="SystemEventsLimits.MessageDistributionBytes"/>
+    /// and the output budget; a group is never dropped to make room for them, the groups not described say so in
+    /// <c>messageDistribution</c>, and <c>complete</c>/<c>truncated</c> are not affected.
+    /// </summary>
+    private static string DescribeMessages(JsonObject root, JsonArray entries, AggregateGroup[] groups, int maxOutputBytes)
+    {
+        var details = new List<(int Distinct, JsonObject? Variants)>();
+        var spent = 0;
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var detail = MessageDetail(groups[index].Members);
+            var bytes = 32 + (detail.Variants is null ? 0 : 20 + Encoding.UTF8.GetByteCount(detail.Variants.ToJsonString()));
+            if (spent + bytes > SystemEventsLimits.MessageDistributionBytes)
+            {
+                break;
+            }
+
+            spent += bytes;
+            details.Add(detail);
+        }
+
+        string Apply(int described)
+        {
+            for (var index = 0; index < entries.Count; index++)
+            {
+                var entry = entries[index]!.AsObject();
+                entry.Remove("distinctMessages");
+                entry.Remove("messageVariants");
+                if (index < described)
+                {
+                    entry["distinctMessages"] = details[index].Distinct;
+                    if (details[index].Variants is { } variants)
+                    {
+                        entry["messageVariants"] = variants.DeepClone();
+                    }
+                }
+            }
+
+            root["messageDistribution"] = MessageDistribution(entries.Count, described);
+            return root.ToJsonString();
+        }
+
+        // Details only add bytes, so the largest prefix that fits is found by bisection; zero always fits (it is the result as it stands).
+        var low = 0;
+        var high = details.Count;
+        while (low < high)
+        {
+            var middle = (low + high + 1) / 2;
+            if (Encoding.UTF8.GetByteCount(Apply(middle)) <= maxOutputBytes)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return Apply(low);
+    }
+
+    /// <summary>The top-level statement of how many leading groups carry message-distribution details.</summary>
+    private static JsonObject MessageDistribution(int groups, int described) => new()
+    {
+        ["availability"] = described == groups ? "all" : described == 0 ? "none" : "partial",
+        ["describedGroups"] = described,
+    };
+
+    /// <summary>
+    /// The number of distinct original messages of one group (ordinal, over the full text) and, when there are several, the most frequent
+    /// ones with their own counts — most frequent first, then newest, then ordinal. A variant is a message, not a diagnosis.
+    /// </summary>
+    private static (int Distinct, JsonObject? Variants) MessageDetail(SystemEventRecord[] members)
+    {
+        var variants = members
+            .GroupBy(record => record.Message, StringComparer.Ordinal)
+            .Select(group => (Message: group.Key, Count: group.Count(), Newest: group.Max(record => record.TimestampUtc)))
+            .OrderByDescending(variant => variant.Count)
+            .ThenByDescending(variant => variant.Newest)
+            .ThenBy(variant => variant.Message, StringComparer.Ordinal)
+            .ToArray();
+        if (variants.Length == 1)
+        {
+            return (1, null);
+        }
+
+        var listed = variants.Take(SystemEventsLimits.MaximumMessageVariants).ToArray();
+        var unlisted = members.Length - listed.Sum(variant => variant.Count);
+
+        // A list that accounts for less than half of the events (messages that are almost all unique, e.g. they embed a time or an id)
+        // says little and would spend the allowance meant for groups it can describe: only the distinct count is given, and said so.
+        if (unlisted * 2 > members.Length)
+        {
+            return (variants.Length, new JsonObject { ["distribution"] = "unlisted" });
+        }
+
+        var result = new JsonObject { ["distribution"] = unlisted == 0 ? "complete" : "partial" };
+        if (unlisted > 0)
+        {
+            result["unlistedEvents"] = unlisted;
+        }
+
+        result["variants"] = new JsonArray(listed.Select(variant => (JsonNode)new JsonObject
+        {
+            ["count"] = variant.Count,
+            ["message"] = SystemInventoryFormatting.Bounded(variant.Message, SystemEventsLimits.VariantMessageCharacters),
+            ["messageTruncated"] = variant.Message.Length > SystemEventsLimits.VariantMessageCharacters,
+        }).ToArray());
+        return (variants.Length, result);
     }
 
     /// <summary>
@@ -127,7 +256,7 @@ public static class SystemEventFormatting
     /// orders the groups by count, newest last time, then the key fields (case-insensitive ordinal, then ordinal, <c>null</c> first).
     /// <paramref name="newestFirst"/> must already be in the raw order, so the first member of a group is its sample.
     /// </summary>
-    internal static IReadOnlyList<JsonObject> Aggregate(IReadOnlyList<SystemEventRecord> newestFirst) =>
+    private static AggregateGroup[] Aggregate(IReadOnlyList<SystemEventRecord> newestFirst) =>
         newestFirst
             .GroupBy(record => (record.Channel, record.Source, record.Unit, record.EventId, Severity: ToWireValue(record.Severity)))
             .Select(group => (group.Key, Members: group.ToArray()))
@@ -141,7 +270,7 @@ public static class SystemEventFormatting
             .Select(group =>
             {
                 var sample = group.Members[0];
-                return new JsonObject
+                return new AggregateGroup(new JsonObject
                 {
                     ["channel"] = SystemInventoryFormatting.Bounded(group.Key.Channel, 256),
                     ["source"] = SystemInventoryFormatting.Bounded(group.Key.Source, 256),
@@ -153,7 +282,7 @@ public static class SystemEventFormatting
                     ["lastSeenUtc"] = EvidenceTime.Format(sample.TimestampUtc),
                     ["sampleMessage"] = SystemInventoryFormatting.Bounded(sample.Message, SystemEventsLimits.SampleMessageCharacters),
                     ["sampleMessageTruncated"] = sample.Message.Length > SystemEventsLimits.SampleMessageCharacters,
-                };
+                }, group.Members);
             })
             .ToArray();
 

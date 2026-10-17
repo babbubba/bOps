@@ -139,6 +139,14 @@ public sealed class KnowledgeCorpusMinimizationTests
             {
                 ["channel"] = "Application", ["source"] = "Application Error", ["unit"] = null, ["eventId"] = "1000", ["severity"] = "error", ["count"] = 3,
                 ["sampleMessage"] = CorpusFixtures.AppErrorMessage, ["sampleMessageTruncated"] = false,
+                ["distinctMessages"] = 2,
+                ["messageVariants"] = new JsonObject
+                {
+                    ["distribution"] = "complete",
+                    ["variants"] = new JsonArray(
+                        new JsonObject { ["count"] = 2, ["message"] = "secret /home/someone/a.txt", ["messageTruncated"] = false },
+                        new JsonObject { ["count"] = 1, ["message"] = "secret again", ["messageTruncated"] = false }),
+                },
             }, new JsonObject
             {
                 ["channel"] = "Security", ["source"] = "Private Provider", ["eventId"] = "not-a-number", ["severity"] = "bogus", ["sampleMessage"] = "secret",
@@ -151,6 +159,8 @@ public sealed class KnowledgeCorpusMinimizationTests
         Assert.Equal("Application Error", known["source"]!.GetValue<string>());
         Assert.Equal("0xe0434352", known["details"]!["exceptionCode"]!.GetValue<string>());
         Assert.Null(known["sampleMessage"]);
+        Assert.Null(known["messageVariants"]); // the message-variant examples are free text too (LIVE-04C): none survives
+        Assert.DoesNotContain("secret", root.ToJsonString(), StringComparison.Ordinal);
         var other = root["groups"]![1]!;
         Assert.Equal("[redacted-provider-1]", other["source"]!.GetValue<string>());
         Assert.Null(other["channel"]);

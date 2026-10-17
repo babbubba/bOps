@@ -146,12 +146,36 @@ public static partial class SystemToolConformance
         Assert.Equal(groups.Count, root["returnedGroups"]!.GetValue<int>());
         Assert.InRange(groups.Count, 0, 20);
         Assert.True(root["observedGroups"]!.GetValue<int>() >= groups.Count);
+        var distribution = root["messageDistribution"]!.AsObject();
+        var described = distribution["describedGroups"]!.GetValue<int>();
+        Assert.InRange(described, 0, groups.Count);
+        Assert.Equal(described == groups.Count ? "all" : described == 0 ? "none" : "partial", distribution["availability"]!.GetValue<string>());
         var total = 0;
-        foreach (var group in groups)
+        foreach (var (group, index) in groups.Select((group, index) => (group, index)))
         {
-            Assert.Equal(
-                ["channel", "source", "unit", "eventId", "severity", "count", "firstSeenUtc", "lastSeenUtc", "sampleMessage", "sampleMessageTruncated"],
-                group!.AsObject().Select(pair => pair.Key).ToArray());
+            // The leading groups carry the message distribution (LIVE-04C); the others carry exactly the original fields.
+            string[] baseKeys = ["channel", "source", "unit", "eventId", "severity", "count", "firstSeenUtc", "lastSeenUtc", "sampleMessage", "sampleMessageTruncated"];
+            var keys = group!.AsObject().Select(pair => pair.Key).ToArray();
+            Assert.Equal(baseKeys, keys.Take(baseKeys.Length).ToArray());
+            if (index >= described)
+            {
+                Assert.Equal(baseKeys, keys);
+            }
+            else
+            {
+                var distinct = group["distinctMessages"]!.GetValue<int>();
+                Assert.InRange(distinct, 1, group["count"]!.GetValue<int>());
+                Assert.Equal(distinct > 1, group["messageVariants"] is not null);
+                if (group["messageVariants"] is JsonObject detail && detail["variants"] is JsonArray variants)
+                {
+                    Assert.InRange(variants.Count, 2, 3);
+                    Assert.All(variants, variant => Assert.True(variant!["message"]!.GetValue<string>().Length <= 200));
+                    Assert.Equal(
+                        detail["distribution"]!.GetValue<string>() == "complete" ? group["count"]!.GetValue<int>() : group["count"]!.GetValue<int>() - detail["unlistedEvents"]!.GetValue<int>(),
+                        variants.Sum(variant => variant!["count"]!.GetValue<int>()));
+                }
+            }
+
             Assert.True(group["count"]!.GetValue<int>() >= 1);
             Assert.True(group["sampleMessage"]!.GetValue<string>().Length <= 512);
             Assert.True(DateTimeOffset.Parse(group["firstSeenUtc"]!.GetValue<string>(), CultureInfo.InvariantCulture) <= DateTimeOffset.Parse(group["lastSeenUtc"]!.GetValue<string>(), CultureInfo.InvariantCulture));

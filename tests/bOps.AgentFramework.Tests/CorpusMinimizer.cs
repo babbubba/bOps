@@ -169,6 +169,9 @@ internal static class CorpusMinimizer
         {
             if (record.ContainsKey(key)) record[key] = null;
         }
+
+        // The message variants of an aggregate group (LIVE-04C) are examples of the message: free text, never kept.
+        record.Remove("messageVariants");
     }
 
     private static string? RedactedName(string? provider, Dictionary<string, int> unknownProviders)

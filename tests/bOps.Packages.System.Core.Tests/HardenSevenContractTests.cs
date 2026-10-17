@@ -107,12 +107,13 @@ public sealed class HardenSevenContractTests
         var json = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Aggregate, 50, 32_768))!.AsObject();
 
         Assert.Equal(
-            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "groups"],
+            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "messageDistribution", "groups"],
             json.Select(pair => pair.Key).ToArray());
         Assert.Equal(SystemEventFormatting.SampleMessageSemantics, json["sampleMessageSemantics"]!.GetValue<string>());
         Assert.Equal(2, json["schemaVersion"]!.GetValue<int>());
         var raw = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Raw, 50, 32_768))!.AsObject();
         Assert.Null(raw["sampleMessageSemantics"]); // aggregate-only
+        Assert.Null(raw["messageDistribution"]);
         Assert.Equal(5, json["observedEvents"]!.GetValue<int>());
         Assert.Equal(3, json["observedGroups"]!.GetValue<int>());
         var groups = json["groups"]!.AsArray();
@@ -140,6 +141,227 @@ public sealed class HardenSevenContractTests
         Assert.InRange(json["returnedGroups"]!.GetValue<int>(), 1, 199);
         Assert.True(json["truncated"]!.GetValue<bool>());
         Assert.False(json["complete"]!.GetValue<bool>());
+    }
+
+    // ---- system.events aggregate: how the original messages of a group are distributed (LIVE-04C) ----
+
+    private static readonly SystemEventQuery DayQuery = new(Now.AddDays(-1), Now, null, null, null, null, null, 10_000);
+
+    private static JsonObject Aggregated(IReadOnlyList<SystemEventRecord> events, int maxBytes = 32_768, bool describeMessages = true) =>
+        JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), DayQuery, EvidenceMode.Aggregate, 500, maxBytes, describeMessages))!.AsObject();
+
+    private static SystemEventRecord[] Repeated(string source, string message, int count, int firstMinute) =>
+        [.. Enumerable.Range(0, count).Select(index => Event(firstMinute + index, source, "19", SystemEventSeverity.Warning, message, "System"))];
+
+    private static string Name(int index) => "src" + index.ToString("D2", global::System.Globalization.CultureInfo.InvariantCulture);
+
+    [Fact]
+    public void MessageDistribution_OfAGroupWithIdenticalMessages_IsJustTheDistinctCount()
+    {
+        var json = Aggregated(Repeated("same", "one message", 4, 1));
+        var group = json["groups"]![0]!.AsObject();
+
+        Assert.Equal(1, group["distinctMessages"]!.GetValue<int>());
+        Assert.Null(group["messageVariants"]);
+        Assert.Equal(4, group["count"]!.GetValue<int>());
+        Assert.Equal("all", json["messageDistribution"]!["availability"]!.GetValue<string>());
+        Assert.Equal(1, json["messageDistribution"]!["describedGroups"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void MessageDistribution_OfAGroupWithDifferentMessages_ListsVariantsWithVerifiableCounts()
+    {
+        // 5 x A, 3 x B, 1 x C, interleaved in time; the newest event (1 minute ago) carries C.
+        string[] pattern = ["C", "A", "B", "A", "B", "A", "A", "B", "A"];
+        var events = pattern.Select((message, index) => Event(index + 1, "src", "19", SystemEventSeverity.Warning, "message " + message, "System")).ToArray();
+
+        var group = Aggregated(events)["groups"]![0]!.AsObject();
+        var variants = group["messageVariants"]!["variants"]!.AsArray();
+
+        Assert.Equal(9, group["count"]!.GetValue<int>());
+        Assert.Equal("message C", group["sampleMessage"]!.GetValue<string>()); // unchanged: the newest event's message
+        Assert.Equal(3, group["distinctMessages"]!.GetValue<int>());
+        Assert.Equal("complete", group["messageVariants"]!["distribution"]!.GetValue<string>());
+        Assert.Null(group["messageVariants"]!["unlistedEvents"]);
+        Assert.Equal([("message A", 5), ("message B", 3), ("message C", 1)], variants.Select(variant => (variant!["message"]!.GetValue<string>(), variant["count"]!.GetValue<int>())).ToArray());
+        Assert.All(variants, variant => Assert.False(variant!["messageTruncated"]!.GetValue<bool>()));
+        Assert.Equal(group["count"]!.GetValue<int>(), variants.Sum(variant => variant!["count"]!.GetValue<int>())); // a complete distribution adds up
+        Assert.Equal(
+            ["channel", "source", "unit", "eventId", "severity", "count", "firstSeenUtc", "lastSeenUtc", "sampleMessage", "sampleMessageTruncated", "distinctMessages", "messageVariants"],
+            group.Select(pair => pair.Key).ToArray());
+    }
+
+    [Fact]
+    public void MessageDistribution_BeyondTheVariantLimit_IsPartialAndCountsWhatItDoesNotList()
+    {
+        // 4 x A, 3 x B, 2 x C, 1 x D: three variants are listed, the fourth is counted as unlisted.
+        string[] pattern = ["A", "A", "B", "A", "B", "C", "A", "B", "C", "D"];
+        var events = pattern.Select((message, index) => Event(index + 1, "src", "19", SystemEventSeverity.Warning, "message " + message, "System")).ToArray();
+
+        var group = Aggregated(events)["groups"]![0]!.AsObject();
+        var detail = group["messageVariants"]!;
+
+        Assert.Equal(4, group["distinctMessages"]!.GetValue<int>());
+        Assert.Equal("partial", detail["distribution"]!.GetValue<string>());
+        Assert.Equal(1, detail["unlistedEvents"]!.GetValue<int>());
+        Assert.Equal([4, 3, 2], detail["variants"]!.AsArray().Select(variant => variant!["count"]!.GetValue<int>()).ToArray());
+    }
+
+    [Fact]
+    public void MessageDistribution_OrdersEqualCountsNewestFirst()
+    {
+        var events = new[]
+        {
+            Event(1, "src", "1", SystemEventSeverity.Warning, "b", "System"),
+            Event(2, "src", "1", SystemEventSeverity.Warning, "a", "System"),
+            Event(3, "src", "1", SystemEventSeverity.Warning, "B", "System"), // case differs: another message, compared ordinally
+        };
+
+        var variants = Aggregated(events)["groups"]![0]!["messageVariants"]!["variants"]!.AsArray();
+
+        Assert.Equal(["b", "a", "B"], variants.Select(variant => variant!["message"]!.GetValue<string>()).ToArray());
+    }
+
+    [Fact]
+    public void MessageDistribution_SeesDifferencesBeyondTheSampleLimit_AndSaysTheExampleIsCut()
+    {
+        var shared = new string('x', 600); // longer than the 512-character sample and the 200-character variant example
+        var events = new[]
+        {
+            Event(1, "src", "1", SystemEventSeverity.Warning, shared + "-first", "System"),
+            Event(2, "src", "1", SystemEventSeverity.Warning, shared + "-second", "System"),
+            Event(3, "src", "1", SystemEventSeverity.Warning, shared + "-second", "System"),
+        };
+
+        var group = Aggregated(events)["groups"]![0]!.AsObject();
+        var variants = group["messageVariants"]!["variants"]!.AsArray();
+
+        Assert.True(group["sampleMessageTruncated"]!.GetValue<bool>());
+        Assert.Equal(2, group["distinctMessages"]!.GetValue<int>());
+        Assert.Equal([2, 1], variants.Select(variant => variant!["count"]!.GetValue<int>()).ToArray());
+        Assert.All(variants, variant =>
+        {
+            Assert.Equal(SystemEventsLimits.VariantMessageCharacters, variant!["message"]!.GetValue<string>().Length);
+            Assert.True(variant["messageTruncated"]!.GetValue<bool>());
+        });
+    }
+
+    [Fact]
+    public void MessageDistribution_OfMostlyUniqueMessages_GivesTheDistinctCountAndNoList()
+    {
+        var events = Enumerable.Range(1, 10).Select(index => Event(index, "src", "1", SystemEventSeverity.Warning, "pid " + index, "System")).ToArray();
+
+        var group = Aggregated(events)["groups"]![0]!.AsObject();
+
+        Assert.Equal(10, group["distinctMessages"]!.GetValue<int>());
+        Assert.Equal("unlisted", group["messageVariants"]!["distribution"]!.GetValue<string>());
+        Assert.Null(group["messageVariants"]!["variants"]);
+    }
+
+    [Fact]
+    public void MessageDistribution_WhenTheAllowanceRunsOut_DescribesLeadingGroupsAndSaysSo()
+    {
+        // 40 groups, each with 3 messages of 250 characters: far more detail than the allowance holds.
+        var events = Enumerable.Range(0, 40)
+            .SelectMany(group => Enumerable.Range(0, 3).SelectMany(variant =>
+                Repeated(Name(group), new string((char)('a' + variant), 250), 5 - variant, 1 + (variant * 10))))
+            .ToArray();
+
+        var json = Aggregated(events);
+        var groups = json["groups"]!.AsArray();
+        var described = json["messageDistribution"]!["describedGroups"]!.GetValue<int>();
+
+        Assert.Equal("partial", json["messageDistribution"]!["availability"]!.GetValue<string>());
+        Assert.InRange(described, 1, 39);
+        Assert.Equal(40, groups.Count); // no group was given up for the details
+        Assert.Equal(Enumerable.Range(0, 40).Select(index => index < described).ToArray(), groups.Select(group => group!["distinctMessages"] is not null).ToArray());
+        var plainBytes = Encoding.UTF8.GetByteCount(Aggregated(events, describeMessages: false).ToJsonString());
+        Assert.True(Encoding.UTF8.GetByteCount(json.ToJsonString()) - plainBytes <= SystemEventsLimits.MessageDistributionBytes + 64);
+    }
+
+    [Fact]
+    public void MessageDistribution_WhenTheBudgetLeavesNoRoom_IsUnavailableAndStillKeepsEveryGroup()
+    {
+        var events = Enumerable.Range(0, 12)
+            .SelectMany(group => Repeated(Name(group), "m", 2, 1))
+            .Concat(Repeated(Name(0), "n", 1, 5))
+            .ToArray();
+        var exact = Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(Snapshot(events), DayQuery, EvidenceMode.Aggregate, 500, 32_768, describeMessages: false));
+
+        var json = Aggregated(events, Math.Max(exact, SystemEventsLimits.MinimumOutputBytes));
+
+        Assert.Equal(12, json["returnedGroups"]!.GetValue<int>());
+        Assert.Equal(12, json["groups"]!.AsArray().Count);
+        Assert.True(json["complete"]!.GetValue<bool>());
+        Assert.False(json["truncated"]!.GetValue<bool>());
+
+        // At exactly the size of the result without details nothing more fits: they are declared unavailable, not squeezed in.
+        var tight = Aggregated(events, exact);
+        if (exact >= SystemEventsLimits.MinimumOutputBytes)
+        {
+            Assert.Equal("none", tight["messageDistribution"]!["availability"]!.GetValue<string>());
+            Assert.Equal(0, tight["messageDistribution"]!["describedGroups"]!.GetValue<int>());
+            Assert.All(tight["groups"]!.AsArray(), group => Assert.Null(group!["distinctMessages"]));
+        }
+    }
+
+    [Fact]
+    public void MessageDistribution_NeverCostsAGroup_AtAnyBudgetNearTheLimit()
+    {
+        var events = Enumerable.Range(0, 30)
+            .SelectMany(group => Enumerable.Range(0, 3).SelectMany(variant =>
+                Repeated(Name(group), "variant " + variant + new string('v', 80), 4 - variant, 1 + (variant * 10))))
+            .ToArray();
+        var full = Encoding.UTF8.GetByteCount(Aggregated(events, 65_536, describeMessages: false).ToJsonString());
+        var sawGroupCut = false;
+        var sawPartial = false;
+
+        for (var budget = SystemEventsLimits.MinimumOutputBytes; budget <= full + SystemEventsLimits.MessageDistributionBytes + 512; budget += 97)
+        {
+            var reference = Aggregated(events, budget, describeMessages: false);
+            var detailed = Aggregated(events, budget);
+
+            Assert.Equal(reference["returnedGroups"]!.GetValue<int>(), detailed["returnedGroups"]!.GetValue<int>());
+            Assert.Equal(reference["groups"]!.AsArray().Count, detailed["groups"]!.AsArray().Count);
+            Assert.Equal(reference["complete"]!.GetValue<bool>(), detailed["complete"]!.GetValue<bool>());
+            Assert.Equal(reference["truncated"]!.GetValue<bool>(), detailed["truncated"]!.GetValue<bool>());
+            Assert.True(Encoding.UTF8.GetByteCount(detailed.ToJsonString()) <= budget);
+            sawGroupCut |= reference["truncated"]!.GetValue<bool>();
+            sawPartial |= detailed["messageDistribution"]!["availability"]!.GetValue<string>() == "partial";
+        }
+
+        Assert.True(sawGroupCut); // the sweep did cross the point where groups are cut,
+        Assert.True(sawPartial); // and the one where only part of the details fit.
+    }
+
+    [Fact]
+    public void MessageDistribution_LeavesTheAggregateItself_Unchanged()
+    {
+        var events = Enumerable.Range(0, 6)
+            .SelectMany(group => Repeated("src" + group, "x", 3, 1 + group).Concat(Repeated("src" + group, "y", 2, 20 + group)))
+            .ToArray();
+
+        var plain = Aggregated(events, describeMessages: false);
+        var detailed = Aggregated(events);
+        foreach (var group in detailed["groups"]!.AsArray())
+        {
+            group!.AsObject().Remove("distinctMessages");
+            group.AsObject().Remove("messageVariants");
+        }
+
+        Assert.Equal(plain["groups"]!.ToJsonString(), detailed["groups"]!.ToJsonString());
+        foreach (var key in plain.Select(pair => pair.Key).Where(key => key is not ("messageDistribution" or "groups")))
+        {
+            Assert.Equal(plain[key]!.ToJsonString(), detailed[key]!.ToJsonString());
+        }
+    }
+
+    [Fact]
+    public void MessageDistribution_DoesNotDependOnTheOrderTheCollectorReturnedTheEvents()
+    {
+        var events = Enumerable.Range(0, 8).SelectMany(group => Repeated("s" + group, "p", 3, 1 + group).Concat(Repeated("s" + group, "q", 2, 30 + group))).ToArray();
+
+        Assert.Equal(Aggregated(events).ToJsonString(), Aggregated([.. events.Reverse()]).ToJsonString());
     }
 
     // ---- temporal coverage ----

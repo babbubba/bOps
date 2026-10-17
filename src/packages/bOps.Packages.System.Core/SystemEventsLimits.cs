@@ -18,6 +18,18 @@ public static class SystemEventsLimits
     /// <summary>Longest sample message of an aggregate group.</summary>
     public const int SampleMessageCharacters = 512;
 
+    /// <summary>Most message variants listed for one aggregate group (LIVE-04C); the group states when the list is partial.</summary>
+    public const int MaximumMessageVariants = 3;
+
+    /// <summary>Longest message of one listed variant; a variant whose message is longer is cut and flagged.</summary>
+    public const int VariantMessageCharacters = 200;
+
+    /// <summary>
+    /// Most UTF-8 bytes the message-distribution details (<c>distinctMessages</c> and the variant lists) may add to one aggregate result,
+    /// whatever the output budget: they are an addition to the groups, never a reason to spend the budget on them (LIVE-04C).
+    /// </summary>
+    public const int MessageDistributionBytes = 2_048;
+
     /// <summary>The bound on one call's reads, coverage probes included: shorter than the runner's 30-second tool timeout.</summary>
     public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(20);
 

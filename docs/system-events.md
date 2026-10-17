@@ -129,6 +129,38 @@ An aggregate result also carries a top-level `sampleMessageSemantics` (a fixed t
 `schemaVersion` stays 2) stating that `sampleMessage` belongs only to the group's newest event, that `count` covers every
 event sharing the group key, and that attributes seen in the sample are not necessarily common to the whole group.
 
+**Message distribution of a group.** An aggregate also says how the *original* messages of each group (compared ordinally, in
+full — not the 512-character sample) are distributed. It is additive (`schemaVersion` stays 2), absent in raw mode, and
+purely quantitative: different messages are not necessarily different causes, so nothing here is a subtype or a diagnosis.
+
+```json
+{
+  "channel": "System", "source": "Microsoft-Windows-WHEA-Logger", "unit": null, "eventId": "19", "severity": "warning",
+  "count": 41, "firstSeenUtc": "…", "lastSeenUtc": "…", "sampleMessage": "… Internal parity error … APIC … 1 …", "sampleMessageTruncated": false,
+  "distinctMessages": 5,
+  "messageVariants": {
+    "distribution": "partial", "unlistedEvents": 9,
+    "variants": [
+      { "count": 18, "message": "… Internal parity error … APIC … 1 …", "messageTruncated": false },
+      { "count": 9, "message": "… Translation Lookaside Buffer Error … APIC … 1 …", "messageTruncated": false },
+      { "count": 5, "message": "… Internal parity error … APIC … 9 …", "messageTruncated": false }
+    ]
+  }
+}
+```
+
+- `distinctMessages` is exact for every described group. When it is above 1, `messageVariants` follows:
+  `distribution` is `complete` (the listed variants account for every event of the group), `partial` (only the 3 most frequent
+  variants are listed; `unlistedEvents` counts the events of the others) or `unlisted` (the messages are so dispersed — nearly
+  unique, e.g. they embed a time or an id — that a list covering less than half the events would say little; no list is given).
+  Variants are ordered by `count`, then newest, then ordinally. A variant's `message` is cut to 200 characters and `messageTruncated`
+  says so, so two variants can look identical when they differ only after the cut (or after the 512-character sample).
+- The top-level `messageDistribution` states which groups are described: `describedGroups` leading groups (rank order), with
+  `availability` `all`, `partial` or `none`. Groups after them carry neither field: their distribution is **unknown**, not uniform.
+  The details are bounded to `SystemEventsLimits.MessageDistributionBytes` (2,048 UTF-8 bytes) in total and to the output budget, and are
+  added only to groups the result already keeps — **no group is dropped to make room for them**; with no room left, `availability` is
+  `none`. The groups, `count`, `sampleMessage`, `observedGroups`, `returnedGroups`, `complete` and `truncated` do not depend on them.
+
 **Times are record times.** For some events (Kernel-Power 41, the bugcheck record, Windows Error Reporting reports)
 the record is written later than the incident it describes — often at the next boot or in a later WER processing
 burst. `system.events` does not interpret this; `system.crashes` and `system.stability` label it with
