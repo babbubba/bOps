@@ -110,7 +110,7 @@ internal static class KnowledgeBenchmarkComparison
             events.OfType<KnowledgePackAdmissionAuditEvent>().Any(e => e.Code != KnowledgeAdmissionCode.Admitted || e.TenantId != "tenant-a") ||
             events.OfType<PolicyDecisionAuditEvent>().Any(e => e.Mode != PolicyMode.Automatic) ||
             events.OfType<EntitlementDecisionAuditEvent>().Any(e => e.Result == EntitlementDecisionKind.Denied) ||
-            events.OfType<KnowledgeReadAuditEvent>().Any(e => e.ResultCode is KnowledgeReadResultCode.IntegrityMismatch or
+            events.OfType<KnowledgeReadAuditEvent>().Any(e => e.ResultCode is KnowledgeReadResultCode.IntegrityMismatch or KnowledgeReadResultCode.InfrastructureFailure or
                 KnowledgeReadResultCode.NotAuthorized or KnowledgeReadResultCode.SnapshotUnavailable ||
                 (e.ResultCode == KnowledgeReadResultCode.Success && (e.TenantId != "tenant-a" || e.PackHash != state.KnowledgeBinding?.ManifestHash))) ||
             events.OfType<ToolCallAuditEvent>().Any(e => e.Outcome == ToolOutcome.Denied ||

@@ -204,6 +204,8 @@ public enum KnowledgeReadResultCode
     SnapshotUnavailable = 10,
     /// <summary>A discovery page was requested beyond the last page; nothing was read and no read was spent (ADR-0057).</summary>
     OutOfRange = 11,
+    /// <summary>The framework function failed while reading a snapshot whose integrity was just verified (a fault of the host or the framework, not a hash mismatch); nothing was returned (ADR-0059).</summary>
+    InfrastructureFailure = 12,
 }
 
 /// <summary>
@@ -279,6 +281,14 @@ public sealed record KnowledgeReadAuditEvent : AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Repeat { get; init; }
+
+    /// <summary>
+    /// <c>true</c> on the one refusal after which the session stopped serving reads for the rest of the attempt because the model kept
+    /// sending requests that returned nothing (ADR-0059); <c>null</c> on every other event. The task goes on without knowledge; this is the
+    /// audit record of that state change, not of a task failure.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Withdrawn { get; init; }
 }
 
 /// <summary>Whether the knowledge index was published to the model on a step request (ADR-0057).</summary>

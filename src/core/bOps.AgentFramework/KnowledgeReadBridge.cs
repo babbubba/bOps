@@ -138,6 +138,9 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     private const string CatalogueTemplate = "{skills}";
     private const int MaxPage = 64;
 
+    /// <summary>ADR-0059: calls to a function that is spent, withdrawn or not offered that are tolerated before the task is stopped. Not configurable.</summary>
+    internal const int MaxUnavailableCalls = 2;
+
     private static readonly string[] FrameworkFunctionNames =
         [AgentSkillsProvider.LoadSkillToolName, AgentSkillsProvider.ReadSkillResourceToolName, AgentSkillsProvider.RunSkillScriptToolName];
 
@@ -154,7 +157,10 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     private readonly Func<KnowledgeAdmissionCode?>? currentAuthority;
     private KnowledgeTaskScope? scope;
     private int reads;
-    private int rejections;
+    private int recoverableRefusals;
+    private int unavailableCalls;
+    private int integrityRefusals;
+    private bool withdrawn;
     private readonly Dictionary<ChatTurn, (Guid TaskId, ActorIdentity Actor)> issuedEvidence = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<string> servedItems = new(StringComparer.Ordinal);
 
@@ -421,6 +427,9 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
 
         var result = await ServeAsync(call, authority, ct);
         bool? repeat = null;
+        var refusal = RefusalClass.None;
+        var withdrewNow = false;
+        var boundExceeded = false;
         if (result.Code == KnowledgeReadResultCode.Success)
         {
             reads++;
@@ -432,7 +441,29 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         }
         else
         {
-            rejections++;
+            // ADR-0059: the class decides the consequence. A recoverable refusal ends the reading, never the task; a call to a function
+            // that is already gone, and every integrity or authority refusal, keeps the hard stop.
+            refusal = ClassOf(result);
+            switch (refusal)
+            {
+                case RefusalClass.Recoverable:
+                    recoverableRefusals++;
+                    if (!withdrawn && recoverableRefusals > budget.MaxRejections)
+                    {
+                        withdrawn = true;
+                        withdrewNow = true;
+                    }
+
+                    break;
+                case RefusalClass.Unavailable:
+                    unavailableCalls++;
+                    boundExceeded = unavailableCalls > MaxUnavailableCalls;
+                    break;
+                default:
+                    integrityRefusals++;
+                    boundExceeded = integrityRefusals > budget.MaxRejections;
+                    break;
+            }
         }
 
         await audit.WriteAsync(new KnowledgeReadAuditEvent
@@ -457,6 +488,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             CauseCode = result.Cause,
             Ref = WellFormedRef(call),
             Repeat = repeat,
+            Withdrawn = withdrewNow ? true : null,
         }, ct);
 
         // ADR-0038 first-call-wins, as for the evidence read: the control call is answered and nothing else of the reply runs. Every
@@ -478,11 +510,11 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             }
             else
             {
-                turns.Add(ChatTurn.FromToolResult(other.Id, RejectionReply(result.Code)) with { Provenance = ContextProvenance.Runtime });
+                turns.Add(ChatTurn.FromToolResult(other.Id, RejectionReply(result.Code, refusal, withdrewNow)) with { Provenance = ContextProvenance.Runtime });
             }
         }
 
-        return new KnowledgeReadOutcome(true, result.Code, turns, rejections > budget.MaxRejections);
+        return new KnowledgeReadOutcome(true, result.Code, turns, boundExceeded);
     }
 
     /// <inheritdoc />
@@ -493,7 +525,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     }
 
     /// <inheritdoc />
-    public int? ReadsRemaining => Math.Max(0, budget.MaxReads - reads);
+    public int? ReadsRemaining => withdrawn ? 0 : Math.Max(0, budget.MaxReads - reads);
 
     /// <summary>
     /// Describes the index of what this task may read (ADR-0057, T5). The authority in force is asked first, on every call and before
@@ -578,8 +610,65 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         && context.Delegation is null
         && currentAuthority() is null;
 
-    private static string RejectionReply(KnowledgeReadResultCode code) =>
-        $"Runtime control call rejected: {code}. runtime.knowledge_read returns reference data from the pinned skill pack only.";
+    /// <summary>How a refusal is treated (ADR-0059). Decided from the closed result code, never from text.</summary>
+    private enum RefusalClass
+    {
+        None = 0,
+
+        /// <summary>A mistake about a ref, an argument, a page or a size, or a failure of the framework function itself: ends the reading, not the task.</summary>
+        Recoverable = 1,
+
+        /// <summary>A call to a function that is spent, withdrawn or not offered.</summary>
+        Unavailable = 2,
+
+        /// <summary>A security signal: the authority, the snapshot or the content against the pin. Keeps the hard stop.</summary>
+        Integrity = 3,
+    }
+
+    private static RefusalClass ClassOf(ReadResult result) => result.Code switch
+    {
+        KnowledgeReadResultCode.Malformed or KnowledgeReadResultCode.Unsupported or KnowledgeReadResultCode.UnknownSkill
+            or KnowledgeReadResultCode.UnknownResource or KnowledgeReadResultCode.OutOfRange or KnowledgeReadResultCode.TooLarge
+            => RefusalClass.Recoverable,
+        KnowledgeReadResultCode.LimitExceeded or KnowledgeReadResultCode.NotOffered => RefusalClass.Unavailable,
+        // The framework function failing is an infrastructure fault, audited under its own code; a content that is not the pinned content
+        // is tampering (IntegrityMismatch) and stays an integrity refusal.
+        KnowledgeReadResultCode.InfrastructureFailure => RefusalClass.Recoverable,
+        _ => RefusalClass.Integrity,
+    };
+
+    /// <summary>
+    /// The model-facing answer to a refused call: the stable prefix, then one closed sentence for the class. It names no pack text and no
+    /// model text, says the reading is optional and what to do next, and on the refusal that withdraws the function says it is gone.
+    /// </summary>
+    private static string RejectionReply(KnowledgeReadResultCode code, RefusalClass refusal, bool withdrawnNow)
+    {
+        var prefix = $"Runtime control call rejected: {code}. {PublicToolName} returns reference data from the pinned skill pack only.";
+        const string proceed = "continue with the current step's operational tool, or give your final answer.";
+        if (withdrawnNow)
+        {
+            return $"{prefix} Repeated requests returned nothing, so {PublicToolName} is withdrawn for the rest of this attempt. Do not call it again; {proceed}";
+        }
+
+        return refusal switch
+        {
+            RefusalClass.Recoverable => $"{prefix} {RecoverableAdvice(code)} Reading knowledge is optional: you may {proceed}",
+            RefusalClass.Unavailable => $"{prefix} Reading is not available now (the read budget is spent or the function is withdrawn). Do not call it again; {proceed}",
+            _ => $"{prefix} Nothing was returned and this knowledge may be unavailable. Do not rely on it; {proceed}",
+        };
+    }
+
+    private static string RecoverableAdvice(KnowledgeReadResultCode code) => code switch
+    {
+        KnowledgeReadResultCode.Malformed =>
+            "The arguments did not match: operation is required (discover, load or read_resource), and an item is named either by a ref from the index or by skill and resource, never both.",
+        KnowledgeReadResultCode.UnknownSkill or KnowledgeReadResultCode.UnknownResource =>
+            "No such item is available. Use a ref exactly as it is listed in the knowledge index, or operation discover.",
+        KnowledgeReadResultCode.OutOfRange => "That page does not exist. Ask for a page within the pages the last discover reply reported.",
+        KnowledgeReadResultCode.TooLarge => "That item is too large to return. Choose another item.",
+        KnowledgeReadResultCode.Unsupported => $"Only {PublicToolName} can be called; the framework's own function names are not available.",
+        _ => "That item could not be read now and nothing was returned.",
+    };
 
     private ContextProvenance SkillProvenance(ReadResult result) => new()
     {
@@ -602,7 +691,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             return ReadResult.Refused(null, KnowledgeReadResultCode.Unsupported);
         }
 
-        if (!authority.Eligible || !authority.OfferedTools.Contains(PublicToolName, StringComparer.Ordinal))
+        if (withdrawn || !authority.Eligible || !authority.OfferedTools.Contains(PublicToolName, StringComparer.Ordinal))
         {
             return ReadResult.Refused(null, KnowledgeReadResultCode.NotOffered);
         }
@@ -694,7 +783,12 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             page = KnowledgeIndexRenderer.RenderDiscoverPage(
                 label, candidates, new KnowledgeDiscoverRequest(mode, request.Page, request.Query, referenced?.RefIndex ?? 0), limits);
         }
-        catch (Exception ex) when (ex is ArgumentException or KnowledgeNormalizationUnavailableException)
+        catch (KnowledgeNormalizationUnavailableException)
+        {
+            // The host cannot normalize text (ADR-0057 host contract): an infrastructure fault, nothing is returned.
+            return ReadResult.Refused(Discover, KnowledgeReadResultCode.InfrastructureFailure);
+        }
+        catch (ArgumentException)
         {
             // The candidates come from the admitted pack and the query was validated, so this is an integrity failure: nothing is returned.
             return ReadResult.Refused(Discover, KnowledgeReadResultCode.IntegrityMismatch);
@@ -724,7 +818,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
         {
-            return ReadResult.Refused(operation, KnowledgeReadResultCode.IntegrityMismatch, skill, resource);
+            return ReadResult.Refused(operation, KnowledgeReadResultCode.InfrastructureFailure, skill, resource);
         }
 
         // The hash is of what was actually produced, compared with the one pinned at task start. The catalogue has no per-item pin: it

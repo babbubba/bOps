@@ -88,6 +88,15 @@ existing version, and writes `bops-pack.json` (the signed manifest), `bops-pack.
 
 An unknown or misspelt key under `Knowledge` is an error even when `Enabled` is `false`.
 
+**What a refused read does (ADR-0059, Proposed).** A read is optional, so a refused one ends the *reading*, not the task. Mistakes about
+a ref, an argument, a page or a size, or a failure of the framework function (`Malformed`, `Unsupported`, `UnknownSkill`, `UnknownResource`,
+`OutOfRange`, `TooLarge`, `InfrastructureFailure`) are recoverable: each is audited and answered with an actionable sentence; after more than `MaxRejections` of
+them the function is **withdrawn for the rest of the attempt** (the audit event carries `Withdrawn: true`) and the step goes on with its
+operational tool. Calls to a function that is spent or withdrawn (`LimitExceeded`, `NotOffered`) are tolerated twice and the third ends
+the task. Security refusals (`NotAuthorized`, `SnapshotUnavailable`, a content that differs from the pin) are never recoverable: more than
+`MaxRejections` of them ends the task as before. `InfrastructureFailure` (the framework function threw, nothing was returned) is
+audited apart from `IntegrityMismatch`; it is not a security signal, but nothing is ever served from it. A duplicate read is served and audited with `Repeat`; the read budget bounds the loop.
+
 ## 5. Try it
 
 ```powershell
@@ -121,6 +130,11 @@ On start the CLI logs `Knowledge is enabled for the Local Agent: tasks are bound
   against your model server first; the pilot does not merge the index into the goal.
 * **Revocation is seen at the next resume or admission** (B1), not inside a running attempt, except provider/tenant/snapshot changes.
 * **No quality claim.** Whether the pack improves a diagnosis is not measured here; no benchmark was run for this pilot.
+* **Timeouts for a slow local model.** The CLI ships no model-call overrides: attempt timeout 120 s, HTTP timeout 150 s, call budget 300 s. A
+  reasoning model at ~60 tokens/s needs ~137 s for an 8192-token output plus prefill, so the 120 s attempt timeout can cut a legitimate
+  answer. Minimal operator change (keep 32K/8K): `ModelProvider:RequestTimeout=00:05:00`, `Agent:ModelCallAttemptTimeout=00:04:00`,
+  `Agent:ModelCallBudget=00:08:00` (attempt < HTTP timeout is validated; the budget must cover two attempts at `ModelCallMaxAttempts`
+  as you set it). The API's shipped profile (300 s / 360 s / 660 s) is already coherent. Retry behaviour and token limits are unchanged.
 * The index adds tokens to every step request even if nothing is read.
 
 ## 7. Turning it off, and what is not here

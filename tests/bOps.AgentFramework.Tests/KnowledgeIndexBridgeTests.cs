@@ -359,7 +359,7 @@ public sealed class KnowledgeIndexBridgeTests
     [Fact]
     public async Task ARefIsAPointerIntoThePin_NeverAName_AShortcutOrAnOracle()
     {
-        var (host, opening) = await OpenAsync(new TestPack(), TenantA);
+        var (host, opening) = await OpenAsync(new TestPack(), TenantA, budget: ParserOnlyBudget);
         using var hostScope = host;
         using var bridge = opening.Bridge!;
 
@@ -425,7 +425,7 @@ public sealed class KnowledgeIndexBridgeTests
     [Fact]
     public async Task DiscoverListsPagesQueriesAndResources_FromTheRenderer_WithoutALeak()
     {
-        var (host, opening) = await OpenAsync(ManySkills(), TenantA);
+        var (host, opening) = await OpenAsync(ManySkills(), TenantA, budget: ParserOnlyBudget);
         using var hostScope = host;
         using var bridge = opening.Bridge!;
 
@@ -544,6 +544,10 @@ public sealed class KnowledgeIndexBridgeTests
         files["skill-02/references/notes.md"] = "notes of two";
         return new TestPack { Files = files };
     }
+
+    // These tests exercise the argument parser and the typed refusals, not the refusal bound: a wide allowance keeps the session from
+    // withdrawing the function after its fifth refusal (ADR-0059), which is tested on its own in KnowledgeRefusalRecoveryTests.
+    private static readonly KnowledgeReadBudget ParserOnlyBudget = new(MaxRejections: 64);
 
     private static async Task<(KnowledgeTestHost Host, KnowledgeBridgeOpening Opening)> OpenAsync(
         TestPack pack,

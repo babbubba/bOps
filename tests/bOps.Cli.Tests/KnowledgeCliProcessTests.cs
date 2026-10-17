@@ -5,6 +5,7 @@
 #pragma warning disable CA2000
 
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace bOps.Cli.Tests;
@@ -117,6 +118,130 @@ public sealed class KnowledgeCliProcessTests
         Assert.DoesNotContain(CliKnowledgeWorld.Description, audit, StringComparison.Ordinal);
         var (verifyCode, verifyOutput, _) = await RunCoreAsync(RunDirectory(world), null, [], "audit", "verify", auditFile);
         Assert.True(verifyCode == 0, verifyOutput);
+    }
+
+    // ---- The serialized payload of a Knowledge-enabled step, as a llama.cpp server with a native-tools chat template receives it ----
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("8192")]
+    public async Task TheStepPayload_WithKnowledge_HasTheRolesOrderSchemaAndLimitAStrictNativeToolsServerNeeds(string? maxOutputTokens)
+    {
+        using var world = new CliKnowledgeWorld();
+        using var server = new ScriptedProviderServer(
+        [
+            _ => ScriptedProviderServer.Text("{\"rationale\":\"Look at the CPU.\",\"steps\":[{\"description\":\"cpu\",\"expectedTool\":\"system.cpu\"}]}"),
+            request => ScriptedProviderServer.ToolCall(
+                "call-1", ScriptedProviderServer.WireNameContaining(request, "knowledge_read")!, new JsonObject { ["operation"] = "read_resource", ["ref"] = "K1.R1" }),
+            _ => ScriptedProviderServer.Text("Nothing more to add."),
+        ]);
+        var settings = world.Settings();
+        if (maxOutputTokens is not null)
+        {
+            settings["Agent:MaxOutputTokens"] = maxOutputTokens;
+        }
+
+        // The task is allowed to fail once the script ends (an unscripted request is a 500): only the first three payloads are examined.
+        await RunAsync(world, server, settings, Goal);
+
+        Assert.True(server.Requests.Count >= 3, $"only {server.Requests.Count} requests reached the server");
+        var planning = server.Requests[0];
+        var step = server.Requests[1];
+        var afterRead = server.Requests[2];
+
+        // Planning: no tools, no tool_choice, nothing of the pack.
+        Assert.Null(planning["tools"]);
+        Assert.Null(planning["tool_choice"]);
+        Assert.DoesNotContain("knowledge-index", planning.ToJsonString(), StringComparison.Ordinal);
+
+        // Request members: exactly the OpenAI chat-completions set the adapter owns, and the output limit only when configured.
+        var expectedKeys = new List<string> { "model", "messages", "tools", "tool_choice" };
+        if (maxOutputTokens is not null)
+        {
+            expectedKeys.Add("max_tokens");
+        }
+
+        Assert.Equal(expectedKeys.Order(StringComparer.Ordinal), ((JsonObject)step).Select(pair => pair.Key).Order(StringComparer.Ordinal));
+        Assert.Equal("auto", step["tool_choice"]!.GetValue<string>());
+        foreach (var request in server.Requests.Take(3))
+        {
+            if (maxOutputTokens is null)
+            {
+                Assert.False(((JsonObject)request).ContainsKey("max_tokens")); // nothing is invented: the server default applies
+            }
+            else
+            {
+                Assert.Equal(8192, request["max_tokens"]!.GetValue<int>());
+            }
+
+            AssertStrictShape(request);
+        }
+
+        // Roles and order: one system message first, the index and then the goal as consecutive user messages, nothing else.
+        Assert.Equal(["system", "user", "user"], Roles(step));
+        var messages = step["messages"]!.AsArray();
+        var system = messages[0]!["content"]!.GetValue<string>();
+        Assert.Contains("[knowledge-index-control v1]", system, StringComparison.Ordinal);
+        Assert.Contains("never required", system, StringComparison.Ordinal);
+        Assert.Contains("send the read by itself", system, StringComparison.Ordinal);
+        Assert.StartsWith("[knowledge-index v1", messages[1]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(Goal, messages[2]!["content"]!.GetValue<string>());
+
+        // The tool schema: the operational tool and the control function, in that order, with the closed argument set of the manifest.
+        var tools = step["tools"]!.AsArray();
+        Assert.Equal(["system_cpu", "runtime_knowledge_read"], tools.Select(tool => tool!["function"]!["name"]!.GetValue<string>()));
+        var read = tools[1]!["function"]!;
+        Assert.Equal("function", tools[1]!["type"]!.GetValue<string>());
+        var schema = read["parameters"]!;
+        Assert.Equal("object", schema["type"]!.GetValue<string>());
+        Assert.False(schema["additionalProperties"]!.GetValue<bool>());
+        Assert.Equal(["operation"], schema["required"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["operation", "page", "query", "ref", "resource", "skill"],
+            ((JsonObject)schema["properties"]!).Select(pair => pair.Key).Order(StringComparer.Ordinal));
+        Assert.Equal(["discover", "load", "read_resource"], schema["properties"]!["operation"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal("integer", schema["properties"]!["page"]!["type"]!.GetValue<string>());
+
+        // After the read: system, index, goal, the assistant's tool call, and the one tool result that answers it.
+        Assert.Equal(["system", "user", "user", "assistant", "tool"], Roles(afterRead));
+        var call = afterRead["messages"]![3]!["tool_calls"]!.AsArray().Single()!;
+        Assert.Equal("runtime_knowledge_read", call["function"]!["name"]!.GetValue<string>());
+        Assert.Equal(JsonValueKind.String, call["function"]!["arguments"]!.GetValueKind()); // a JSON string, as the OpenAI schema says
+        Assert.Equal(call["id"]!.GetValue<string>(), afterRead["messages"]![4]!["tool_call_id"]!.GetValue<string>());
+        Assert.Contains(CliKnowledgeWorld.ProcedureMarker, afterRead["messages"]![4]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    private static string[] Roles(JsonNode request) =>
+        [.. request["messages"]!.AsArray().Select(message => message!["role"]!.GetValue<string>())];
+
+    /// <summary>What a strict upstream and a native-tools template reject: explicit nulls, non-string contents, bad function names.</summary>
+    private static void AssertStrictShape(JsonNode request)
+    {
+        Assert.Null(FindNull(request, "$"));
+        foreach (var message in request["messages"]!.AsArray())
+        {
+            Assert.True(message!["content"] is null || message["content"]!.GetValueKind() == JsonValueKind.String, "content must be a string when present");
+        }
+
+        foreach (var tool in request["tools"]?.AsArray() ?? [])
+        {
+            Assert.Matches("^[a-zA-Z0-9_-]{1,64}$", tool!["function"]!["name"]!.GetValue<string>());
+        }
+    }
+
+    private static string? FindNull(JsonNode? node, string path)
+    {
+        switch (node)
+        {
+            case null:
+                return path;
+            case JsonObject obj:
+                return obj.Select(pair => FindNull(pair.Value, $"{path}.{pair.Key}")).FirstOrDefault(found => found is not null);
+            case JsonArray array:
+                return array.Select((item, index) => FindNull(item, $"{path}[{index}]")).FirstOrDefault(found => found is not null);
+            default:
+                return null;
+        }
     }
 
     [Fact]
