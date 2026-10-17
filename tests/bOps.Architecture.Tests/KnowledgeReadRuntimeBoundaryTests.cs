@@ -8,13 +8,17 @@ namespace bOps.Architecture.Tests;
 /// <summary>
 /// KNOW-01B (ADR-0056), the mechanical half: <c>bOps.Runtime</c> learns about knowledge through two small contracts and names neither the
 /// Knowledge engine, nor a pack, nor any skills function; only the runner and the MAF adapter touch the host contract; the concrete
-/// host and policy are internal to the adapter; and nothing in the product builds one, so no production host can have knowledge.
+/// host and policy are internal to the adapter; and nothing in the product builds one except the one composition ADR-0058 authorises
+/// (the Local Agent host of the CLI, opt-in and disabled by default), so no other production host can have knowledge.
 /// </summary>
 public sealed class KnowledgeReadRuntimeBoundaryTests
 {
     private const string Runner = "src/core/bOps.Runtime/AgentRunner.cs";
     private const string Contracts = "src/core/bOps.Runtime/KnowledgeRead.cs";
     private const string HostClass = "src/core/bOps.AgentFramework/KnowledgeTaskHost.cs";
+
+    /// <summary>ADR-0058: the only place in the product that builds the concrete host and its policy.</summary>
+    private const string LocalComposition = "src/core/bOps.AgentFramework/LocalKnowledgeComposition.cs";
 
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
@@ -39,7 +43,7 @@ public sealed class KnowledgeReadRuntimeBoundaryTests
     }
 
     [Fact]
-    public void TheHostContract_IsUsedOnlyByTheRunnerItsOwnFileAndTheMafAdapter_AndNoProductionHostPassesOne()
+    public void TheHostContract_IsUsedOnlyByTheRunnerTheMafAdapterAndTheCliPilotComposition_AndNoOtherProductionHostPassesOne()
     {
         var users = Sources("src/")
             .Where(file => Regex.IsMatch(file.Text, @"\bIKnowledgeTaskHost\b|\bknowledgeHost\b"))
@@ -47,11 +51,18 @@ public sealed class KnowledgeReadRuntimeBoundaryTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal([HostClass, Runner, Contracts], users);
+        // ADR-0058: the CLI composition is the one explicit exception; this list is closed. Adding a host here is a new decision.
+        string[] expected =
+        [
+            HostClass, LocalComposition, "src/core/bOps.Cli/CliKnowledge.cs", "src/core/bOps.Cli/CliRunnerComposition.cs",
+            "src/core/bOps.Cli/Program.cs", Runner, Contracts,
+        ];
+        Assert.Equal(expected.Order(StringComparer.Ordinal), users);
+        Assert.DoesNotContain(users, path => path.StartsWith("src/core/bOps.Api/", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void TheConcreteHostAndItsPolicy_AreInternal_AndNothingInTheProductBuildsOne()
+    public void TheConcreteHostAndItsPolicy_AreInternal_AndOnlyTheLocalAgentCompositionOfAdr0058BuildsOne()
     {
         var host = Sources("src/").Single(file => file.Path == HostClass).Text;
         Assert.Matches(@"internal sealed class KnowledgeTaskHost\b", host);
@@ -62,7 +73,7 @@ public sealed class KnowledgeReadRuntimeBoundaryTests
             .Where(file => Regex.IsMatch(file.Text, @"new\s+KnowledgeTaskHost\s*\(|:\s*IKnowledgeTaskPolicy\b"))
             .Select(file => file.Path)
             .ToArray();
-        Assert.Empty(builders);
+        Assert.Equal([LocalComposition], builders);
     }
 
     [Fact]

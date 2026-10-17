@@ -339,12 +339,24 @@ if (runnerOptions.Summarization is { Enabled: true, IsDedicated: true } summariz
     summarizerBroker = new ModelInvocationBroker(summaryModel, audit, time, logger, runnerOptions);
 }
 
-var broker = new ModelInvocationBroker(
-    model, audit, time, logger, runnerOptions,
-    contextProjector: new MafContextProjector(runnerOptions, logger),
-    dedicatedSummarizer: summarizerBroker);
+// ADR-0058: Knowledge is opt-in and Local Agent only. It is opened for a goal or a resume of this CLI and for nothing else; a
+// delegation, a recovery and a reconciliation never receive a host, and a delegated role would not be given a session even if one did.
+IKnowledgeTaskHost? knowledgeHost = null;
+if (goal is not null || resumeTaskId is not null)
+{
+    try
+    {
+        knowledgeHost = CliKnowledge.CreateHost(builder.Configuration, audit, time, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Knowledge"));
+    }
+    catch (LocalKnowledgeConfigurationException ex)
+    {
+        // Fail closed: running without the knowledge the operator asked for would be a silent degradation.
+        await Console.Error.WriteLineAsync($"Knowledge is enabled but its configuration is not usable: {ex.Message}");
+        return 2;
+    }
+}
 
-var runner = new AgentRunner(
+var runner = CliRunnerComposition.Create(new CliRunnerInputs(
     model,
     toolRegistry,
     policyEngine,
@@ -355,8 +367,9 @@ var runner = new AgentRunner(
     logger,
     runnerOptions,
     skillRegistry,
-    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>(),
-    invocationBroker: broker);
+    host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+    summarizerBroker,
+    knowledgeHost));
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

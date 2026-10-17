@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- ADR-0058: these tests run the CLI's Knowledge composition in this process, and Knowledge discovery needs real Unicode
+         normalization (ADR-0057 section U.5), so this test host runs with full globalization like bOps.Cli itself. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <NoWarn>$(NoWarn);CA1812;CA1308</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,10 +24,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Cli\bOps.Cli.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Policy\bOps.Policy.csproj" />
     <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ADR-0058: signed-pack test support (throw-away in-memory test keys only, never a real credential), shared with bOps.Knowledge.Tests. -->
+    <Compile Include="..\bOps.Knowledge.Tests\Support\*.cs" Link="Support\%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

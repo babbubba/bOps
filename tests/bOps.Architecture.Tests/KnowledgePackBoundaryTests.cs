@@ -8,7 +8,8 @@ namespace bOps.Architecture.Tests;
 /// <summary>
 /// KNOW-01A (ADR-0055), the mechanical half of G2-3, G2-4 and G2-5: the pack contract stays independent of the agent framework, holds no
 /// signing key and no shared cache, the framework's file skills source is built in one place with no script capability, and nothing
-/// composes any of it into a production host.
+/// composes any of it into a production host except through the one Local Agent composition of ADR-0058 (see
+/// <see cref="LocalKnowledgePilotBoundaryTests"/>).
 /// </summary>
 public sealed class KnowledgePackBoundaryTests
 {
@@ -105,9 +106,10 @@ public sealed class KnowledgePackBoundaryTests
     }
 
     [Fact]
-    public void TheKnowledgeContracts_AreComposedByNoProductionHost_AndNoConfigurationCanEnableThem()
+    public void TheKnowledgeEngineTypes_AreNamedByNoHost_AndTheOnlyKnowledgeConfigurationIsTheCliPilotSectionDisabledByDefault()
     {
-        // Admission, the registry, the trust store and the snapshot store are wired by the MAF adapter's internal host (KNOW-01B); no production host builds them.
+        // Admission, the registry, the trust store and the snapshot store are wired by the MAF adapter (KNOW-01B, and for the Local Agent
+        // ADR-0058); no host names them. The CLI asks the adapter for a host and sees none of these types.
         string[] names =
         [
             "KnowledgeAdmissionService", "KnowledgeProviderRegistry", "KnowledgeTrustStore", "KnowledgeSnapshotStore", "KnowledgeGrants",
@@ -131,6 +133,21 @@ public sealed class KnowledgePackBoundaryTests
             .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
             .ToArray();
         Assert.Empty(configuration);
+
+        // ADR-0058: the one configuration the product has for knowledge is the CLI's opt-in section; it ships disabled and holds nothing else.
+        var withKnowledgeSection = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.json", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.EndsWith("packages.lock.json", StringComparison.Ordinal)
+                && !path.EndsWith("launchSettings.json", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(path).Contains("\"Knowledge\"", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+            .ToArray();
+        Assert.Equal(["src/core/bOps.Cli/appsettings.json"], withKnowledgeSection);
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot, "src", "core", "bOps.Cli", "appsettings.json")));
+        var section = document.RootElement.GetProperty("Knowledge");
+        Assert.False(section.GetProperty("Enabled").GetBoolean());
+        Assert.Equal(["Enabled"], section.EnumerateObject().Select(property => property.Name));
     }
 
     [Fact]

@@ -45,6 +45,9 @@ public sealed partial class KnowledgeTrustStore
         }
     }
 
+    /// <summary>How many public keys the store lists, revoked ones included. A host uses it to refuse a store that could never admit a pack.</summary>
+    public int KeyCount => keys.Count;
+
     /// <summary>A store that trusts nothing: every pack is refused as signed by an unknown key.</summary>
     public static KnowledgeTrustStore Empty { get; } = new([]);
 
