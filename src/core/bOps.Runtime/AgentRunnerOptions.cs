@@ -86,9 +86,10 @@ public sealed record AgentRunnerOptions
     public int EffectiveReplanWarningThreshold => ReplanWarningThreshold ?? Math.Min(DefaultReplanWarningThreshold, MaxLifetimeReplans);
 
     /// <summary>
-    /// How many times a model that ends a step with no text and no tool call (an empty final response) is asked
-    /// again before the task fails instead of completing with nothing to show. <c>0</c> fails at the first empty
-    /// reply. Rule S3: an empty reply is never taken as an answer.
+    /// How many times a model that ends a step with no answer content and no tool call (an empty final response, or one of
+    /// only punctuation, symbols or Markdown markers) is asked again before the task fails instead of completing with nothing
+    /// to show. The budget is per step and shared by both kinds. <c>0</c> fails at the first such reply. Rule S3: such a reply
+    /// is never taken as an answer, whatever its finish reason.
     /// </summary>
     public int EmptyFinalResponseRetries { get; init; } = 1;
 

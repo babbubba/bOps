@@ -154,6 +154,10 @@ public sealed partial class AgentRunner(
         "Your last reply was empty: it had no text and no tool call. Either call a tool, or give your final " +
         "answer to the operator's goal in plain text.";
 
+    private const string ContentFreeResponseRetryInstructions =
+        "Your last reply had no answer content: it was only punctuation, symbols or formatting marks, and no tool call. " +
+        "Either call a tool, or give your final answer to the operator's goal in plain text.";
+
     /// <summary>The one correction turn a planned step gets after its tool's arguments failed validation (ADR-0047).</summary>
     private const string ArgumentCorrectionInstructions =
         "The previous call to the offered tool failed argument validation and did not run. Call the same offered " +
@@ -1152,13 +1156,14 @@ public sealed partial class AgentRunner(
                 response = evidenceResolution.Response;
                 request = BuildStepRequest(logicalCall.Aggressive);
 
-                // Rule S3: a model that stops with no text and no tool call has not answered. It is asked again
-                // (with what was wrong said plainly, and without keeping the empty turn in the conversation)
-                // rather than the task being completed with nothing to show.
-                for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsEmptyFinal(response); retry++)
+                // Rule S3: a model that stops with no answer content and no tool call has not answered, whatever its finish
+                // reason. It is asked again (with what was wrong said plainly, and without keeping the unusable turn in the
+                // conversation) rather than the task being completed with nothing to show. LIVE-F1-FIX-01: an empty and a
+                // content-free reply share this one budget per logical call, so a retry already spent on an output-limited
+                // empty reply is not granted again for a content-free one.
+                for (var retry = 0; retry < options.EmptyFinalResponseRetries && IsUnusableFinal(response); retry++)
                 {
-                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(
-                        IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions, ContextProvenance.Runtime));
+                    logicalCall.ContinuationTurns.Add(ChatTurn.FromUser(UnusableFinalRetryInstructions(response), ContextProvenance.Runtime));
                     response = await CallModelWithOverflowRecoveryAsync(
                         taskId, stepIndex, actor, BuildStepRequest, delegation, stepCalls, logicalCall, ct);
                     request = BuildStepRequest(logicalCall.Aggressive);
@@ -1240,10 +1245,12 @@ public sealed partial class AgentRunner(
                 }
             }
 
-            if (IsEmptyFinal(response))
+            // LIVE-F1-FIX-01: checked before the premature-final check and before any disclosure is appended, so neither a replan
+            // nor the runtime-authored limitations section can stand in for an answer the model never gave.
+            if (IsUnusableFinal(response))
             {
-                logger.LogError("Task {TaskId} step {StepIndex}: the model returned an empty final response", taskId, stepIndex);
-                return await FailAsync(run, DescribeEmptyResponse(stepCalls), (TaskTerminalKind.EmptyResponse, null), stepCalls, ct);
+                logger.LogError("Task {TaskId} step {StepIndex}: the model returned an empty or content-free final response", taskId, stepIndex);
+                return await FailAsync(run, DescribeUnusableResponse(response, stepCalls), (TaskTerminalKind.EmptyResponse, null), stepCalls, ct);
             }
 
             if ((response.IsFinal || response.ToolCalls.Count == 0) && PrematureFinal.HasUnresolvedStep(plan, position))
@@ -3726,10 +3733,12 @@ public sealed partial class AgentRunner(
         }
 
         var text = correction.TextResponse;
-        if (correction.ToolCalls.Count == 0 && string.IsNullOrWhiteSpace(text))
+        // LIVE-F1-FIX-01: the correction becomes the persisted final answer, so it must carry answer content like any final.
+        if (correction.ToolCalls.Count == 0 && !FinalAnswerContent.HasContent(text))
         {
+            var problem = string.IsNullOrWhiteSpace(text) ? "The correction was empty." : "The correction had no answer content.";
             return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                ($"{UncorrectedContradictionMessage} The correction was empty.", (TaskTerminalKind.EmptyResponse, null)));
+                ($"{UncorrectedContradictionMessage} {problem}", (TaskTerminalKind.EmptyResponse, null)));
         }
 
         var accepted = correction.ToolCalls.Count == 0
@@ -3746,15 +3755,31 @@ public sealed partial class AgentRunner(
     private static bool IsFinalProtocolArtifact(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0) && TerminalProtocolArtifact.IsArtifact(response.TextResponse);
 
-    private static bool IsEmptyFinal(ModelResponse response) =>
-        (response.IsFinal || response.ToolCalls.Count == 0) && string.IsNullOrWhiteSpace(response.TextResponse);
+    /// <summary>
+    /// A reply that would be taken as the final answer (no tool call) but carries no answer content: empty, whitespace, or only
+    /// punctuation, symbols and Markdown markers (LIVE-F1-FIX-01, <see cref="FinalAnswerContent"/>). A reply with a tool call is
+    /// never unusable here: it is handled as a tool call.
+    /// </summary>
+    private static bool IsUnusableFinal(ModelResponse response) =>
+        (response.IsFinal || response.ToolCalls.Count == 0) && !FinalAnswerContent.HasContent(response.TextResponse);
 
+    /// <summary>The corrective re-ask after an unusable final reply: output-limit, empty, or content-free, in that order.</summary>
+    private static string UnusableFinalRetryInstructions(ModelResponse response) =>
+        string.IsNullOrWhiteSpace(response.TextResponse)
+            ? IsOutputLimited(response) ? OutputLimitedEmptyRetryInstructions : EmptyResponseRetryInstructions
+            : ContentFreeResponseRetryInstructions;
+
+    /// <summary>
+    /// A reply that would be accepted as the final answer as given; under a crossed token budget only such a reply escapes the
+    /// budget stop. It is the complement of <see cref="IsUnusableFinal"/> for a reply that is not a runtime directive, so a
+    /// content-free reply never escapes the budget stop to be retried with paid calls.
+    /// </summary>
     private static bool IsOriginalFinalAnswer(ModelResponse response) =>
         (response.IsFinal || response.ToolCalls.Count == 0)
-        && !string.IsNullOrWhiteSpace(response.TextResponse)
+        && FinalAnswerContent.HasContent(response.TextResponse)
         && EvidenceRead.Recognize(response).Kind == RuntimeDirectiveRecognitionKind.None;
 
-    private static string DescribeEmptyResponse(List<ModelCallRecord> calls)
+    private static string DescribeUnusableResponse(ModelResponse response, List<ModelCallRecord> calls)
     {
         var last = calls[^1];
         var served = last.ActualModel is { } actual && !string.Equals(actual, last.RequestedModel, StringComparison.Ordinal)
@@ -3762,7 +3787,11 @@ public sealed partial class AgentRunner(
             : last.RequestedModel;
         var generated = last.Usage is { } usage ? $", {usage.CompletionTokens} completion tokens generated" : string.Empty;
         var finish = last.FinishReason is { } reason ? $", finish reason '{reason}'" : string.Empty;
-        return $"The model returned an empty final response (no text and no tool call) after {calls.Count} attempt(s) " +
+        // The content-free text itself is not echoed: it is model output, and the recorded reply body already holds it.
+        var what = string.IsNullOrWhiteSpace(response.TextResponse)
+            ? "an empty final response (no text and no tool call)"
+            : "a final response with no answer content (only punctuation, symbols or formatting marks, and no tool call)";
+        return $"The model returned {what} after {calls.Count} attempt(s) " +
                $"(model {served}{finish}{generated}). The recorded request and reply bodies show what it sent.";
     }
 

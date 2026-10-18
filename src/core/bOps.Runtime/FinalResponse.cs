@@ -29,7 +29,7 @@ internal enum LogicalModelCallRole
     /// <summary>The call that produced the step's reply: the final answer of a final step, the tool call of a tool step.</summary>
     Answer,
 
-    /// <summary>A call made after an empty reply (<see cref="AgentRunnerOptions.EmptyFinalResponseRetries"/>).</summary>
+    /// <summary>A call made after an empty or content-free reply (<see cref="AgentRunnerOptions.EmptyFinalResponseRetries"/>).</summary>
     EmptyAnswerRetry,
 
     /// <summary>The evidence-disclosure re-ask of a historical final step whose description carries a re-ask marker (before AF-05H).</summary>

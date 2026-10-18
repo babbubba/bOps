@@ -189,6 +189,21 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal(TaskTerminalKind.EmptyResponse, state.TerminalReason?.Kind);
     }
 
+    // LIVE-F1-FIX-01: the correction becomes the persisted answer, so a content-free one is no correction.
+    [Theory]
+    [InlineData(">")]
+    [InlineData("**")]
+    [InlineData("...")]
+    public async Task G9b_ContentFreeCorrection_FailsAsEmptyResponse_NeverCompleted(string correction)
+    {
+        var (state, _, _) = await RunAsync(Final(ContradictoryAnswer), Flagged, Final(correction));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.EmptyResponse, state.TerminalReason?.Kind);
+        Assert.DoesNotContain(state.Steps, FinalResponse.IsFinalStep);
+        Assert.Contains("The correction had no answer content.", state.Steps[^1].Observation, StringComparison.Ordinal);
+    }
+
     public static TheoryData<object> UnusableChecks => new()
     {
         Final("I think the answer is fine."),

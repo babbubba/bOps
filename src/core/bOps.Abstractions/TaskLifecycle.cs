@@ -51,7 +51,7 @@ public enum TaskTerminalKind
     /// <summary>A model call failed terminally (ADR-0039); <see cref="TaskTerminalReason.FailureKind"/> says how.</summary>
     ModelFailure = 8,
 
-    /// <summary>The model kept returning an empty reply.</summary>
+    /// <summary>The model kept returning an empty reply, or one with no answer content (only punctuation, symbols or formatting marks).</summary>
     EmptyResponse = 9,
 
     /// <summary>A failure that was not a model failure, contained by the runner or by the host's backstop.</summary>
