@@ -14,4 +14,10 @@ public sealed record SystemEventSnapshot(
 {
     /// <summary>The history-bearing stores behind <see cref="Sources"/>, for the temporal coverage of the result.</summary>
     public IReadOnlyList<CoverageStore> Stores { get; init; } = [];
+
+    /// <summary>What the platform's registry says about the requested <c>source</c> name (ADR-0061); <see cref="SourceRegistration.Unknown"/> when it cannot say.</summary>
+    public SourceRegistration SourceRegistration { get; init; } = SourceRegistration.Unknown;
+
+    /// <summary>The result fields the platform compares the requested <c>source</c> with, reported in <c>sourceFilter.matchedFields</c> (ADR-0061).</summary>
+    public IReadOnlyList<string> SourceMatchedFields { get; init; } = ["source"];
 }

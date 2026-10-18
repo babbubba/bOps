@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace bOps.Packages.Sys.Core;
@@ -21,6 +22,14 @@ public static class SystemEventFormatting
         + "count is the number of events that share the group key (channel, source, unit, eventId, severity). "
         + "The other events of the group may have different messages: "
         + "an attribute seen in sampleMessage is not necessarily common to the whole group.";
+
+    /// <summary>
+    /// Longest <c>sources[].detail</c> of a result, in serialized UTF-8 bytes (JSON escapes included), on top of its 256-character bound.
+    /// Host text such as a localized exception message is the one envelope value no argument grammar restricts to ASCII, and the default
+    /// JSON encoder spends up to six bytes on one non-ASCII UTF-16 unit or on a quote, so a bound in characters alone cannot keep the
+    /// envelope inside the smallest output budget (ADR-0032 HARDEN-9 amendment §4, ADR-0061 §2.8).
+    /// </summary>
+    internal const int SourceDetailBytes = 256;
 
     /// <summary>The wire name of a severity.</summary>
     public static string ToWireValue(SystemEventSeverity severity) => severity switch
@@ -81,9 +90,14 @@ public static class SystemEventFormatting
             // ADR-0032 HARDEN-9 amendment §4: always present, part of the envelope the byte budget never cuts, so a reader can see what
             // was left out. An excluded source is not looked at: never evidence that it logged nothing.
             ["excludeSources"] = new JsonArray((query.ExcludeSources ?? []).Select(entry => (JsonNode)JsonValue.Create(entry)!).ToArray()),
+            // ADR-0061: envelope as well, never cut by the byte budget; observedMatch comes from the records observed (before grouping,
+            // the limit and the budget), never from the entries that remain.
+            ["sourceFilter"] = SourceFilterEvidence.ToJson(snapshot, query, observed.Length > 0),
             ["coverage"] = coverage,
             ["observedEvents"] = observed.Length,
-            ["sources"] = Sources(snapshot.Sources),
+            // The details are host text (a localized exception message) and the only envelope value not restricted to ASCII by an argument
+            // grammar: they are bounded in serialized bytes so the envelope fits the smallest budget whatever the host writes.
+            ["sources"] = Sources(snapshot.Sources.Select(source => source with { Detail = BoundedDetail(source.Detail) })),
         };
 
         JsonArray entries;
@@ -285,6 +299,45 @@ public static class SystemEventFormatting
                 }, group.Members);
             })
             .ToArray();
+
+    /// <summary>
+    /// <paramref name="detail"/> within 256 characters and <see cref="SourceDetailBytes"/> serialized UTF-8 bytes, counted with the encoder
+    /// that writes the result. A detail within both bounds, which is every plain ASCII message of ordinary length, is returned unchanged;
+    /// a longer one keeps its beginning (where an error message states its reason), is cut on a code-point boundary and ends with
+    /// <c>...</c>, so the cut is visible.
+    /// </summary>
+    internal static string? BoundedDetail(string? detail)
+    {
+        if (string.IsNullOrEmpty(detail))
+        {
+            return detail;
+        }
+
+        var whole = PrefixWithin(detail, 256, SourceDetailBytes);
+        return whole == detail.Length ? detail : string.Concat(detail.AsSpan(0, PrefixWithin(detail, 256 - CutMarker.Length, SourceDetailBytes - CutMarker.Length)), CutMarker);
+    }
+
+    private const string CutMarker = "...";
+
+    /// <summary>The length, in UTF-16 units and on a code-point boundary, of the longest prefix of <paramref name="text"/> within both bounds.</summary>
+    private static int PrefixWithin(string text, int maximumCharacters, int maximumBytes)
+    {
+        var end = 0;
+        var bytes = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var cost = JsonEncodedText.Encode(rune.ToString()).EncodedUtf8Bytes.Length;
+            if (end + rune.Utf16SequenceLength > maximumCharacters || bytes + cost > maximumBytes)
+            {
+                break;
+            }
+
+            bytes += cost;
+            end += rune.Utf16SequenceLength;
+        }
+
+        return end;
+    }
 
     internal static JsonArray Sources(IEnumerable<InventorySourceResult> sources) =>
         new(sources

@@ -107,7 +107,7 @@ public sealed class HardenSevenContractTests
         var json = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Aggregate, 50, 32_768))!.AsObject();
 
         Assert.Equal(
-            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "messageDistribution", "groups"],
+            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "sourceFilter", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "messageDistribution", "groups"],
             json.Select(pair => pair.Key).ToArray());
         Assert.Equal(SystemEventFormatting.SampleMessageSemantics, json["sampleMessageSemantics"]!.GetValue<string>());
         Assert.Equal(2, json["schemaVersion"]!.GetValue<int>());
@@ -352,7 +352,7 @@ public sealed class HardenSevenContractTests
         Assert.Equal(plain["groups"]!.ToJsonString(), detailed["groups"]!.ToJsonString());
         foreach (var key in plain.Select(pair => pair.Key).Where(key => key is not ("messageDistribution" or "groups")))
         {
-            Assert.Equal(plain[key]!.ToJsonString(), detailed[key]!.ToJsonString());
+            Assert.Equal(plain[key]?.ToJsonString(), detailed[key]?.ToJsonString());
         }
     }
 

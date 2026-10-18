@@ -60,6 +60,25 @@ public sealed class HardenNineManifestTests
         Assert.Equal(["linux"], linux.Platforms);
     }
 
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public void TheEventsManifest_ExplainsTheSourceFilter_WithoutChangingTheSourceConstraints(string platform)
+    {
+        // ADR-0061 §2.9: wording only. The source parameter keeps its type and bounds; both platforms keep one contract.
+        var manifest = SystemToolManifests.Events(platform);
+        var source = manifest.Parameters.Single(parameter => parameter.Name == "source");
+
+        Assert.Contains("sourceFilter", manifest.Description, StringComparison.Ordinal);
+        Assert.Contains("not evidence that nothing was logged", manifest.Description, StringComparison.Ordinal);
+        Assert.Contains("sourceFilter", source.Description, StringComparison.Ordinal);
+        Assert.Contains("abbreviated or guessed name matches nothing", source.Description, StringComparison.Ordinal);
+        Assert.Equal(ToolParameterType.String, source.Type);
+        Assert.Equal(1, source.MinLength);
+        Assert.Equal(SystemEventsLimits.SourceCharacters, source.MaxLength);
+        Assert.False(source.Required);
+    }
+
     [Fact]
     public void TheEventsDescription_StillLabelsRecordTimesAsRecordedLaterThanTheIncident()
     {

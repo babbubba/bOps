@@ -14,6 +14,12 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- `system.events` discloses whether a `source` filter names a real source (ADR-0061). Every result has a `sourceFilter` object right
+  after `excludeSources` (`null` without a `source`): the requested name, `matching`, `matchedFields`, `registrationStatus`
+  (`registered`, `notRegistered`, `unknown` — Windows reads the provider catalog once per call; Linux is always `unknown`),
+  `observedMatch` (derived from the records observed, before grouping, the limit and the byte budget), a deterministic `caution`
+  and a fixed `semantics` sentence. Completeness, `schemaVersion` 2 and every argument are unchanged; no similar-name suggestion.
+  Reference: `docs/system-events.md`.
 - Generation-limit telemetry and an optional output limit. `Agent:MaxOutputTokens` (unset by default: nothing is sent, as before) is passed
   as `max_tokens` by the OpenAI-compatible providers and overrides the Anthropic adapter's fixed 4096. Every model attempt now records an
   `Output` object (requested limit, finish reason, token counts, reasoning length, truncation, a closed classification and which limit the
@@ -100,6 +106,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Fixed
 
+- `system.events`: the `detail` of a source is now also bounded to 256 serialized UTF-8 bytes (it was 256 characters only), counted with the
+  encoder that writes the result, cut on a code-point boundary and ended with `...` so the cut is visible. A localized host error message (every non-ASCII character is a six-byte
+  escape) could push the envelope past the 4,096-byte minimum `maxOutputBytes` and make the call fail; now the largest envelope stays
+  below 3,584 bytes whatever the host writes. Details within both bounds are unchanged. Minimum, default and maximum budget are unchanged.
 - A persisted-plan continuation that follows a rejected premature final now carries a runtime-authored user turn naming the pending step and its tool, so the recovery request no longer repeats the one that drew the
   premature final (LIVE-05). The recovery path was exercised in a live task at cursor 0 that continued to `Completed`; the cursor 1 of the earlier failure was not re-validated; reasoning exhaustion during `Replanning` is not declared solved. Committed on `codex/know-bench-01a` as `e148568`; not released.
 

@@ -28,10 +28,18 @@ Every argument is optional. A value out of range is rejected with the reason, ne
 | `text` | Case-insensitive text the message must contain, up to 256 characters. It is matched against the first 2000 characters of the message, the same part the result can show. |
 | `excludeSources` | Comma-separated sources to leave out (below): at most 8 names of at most 128 characters, 1024 characters in all. Echoed in the result. |
 | `limit` | Events (raw) or groups (aggregate) to return, 1 to 500 (default 50). |
-| `maxOutputBytes` | Size of the result, 4096 to 65536 (default 32768). |
+| `maxOutputBytes` | Size of the result in UTF-8 bytes of the serialized JSON, 4096 to 65536 (default 32768). |
 
-Names (`source`, `eventId`, `channel`, and each entry of `excludeSources`) accept letters, digits and
+Names (`source`, `eventId`, `channel`, and each entry of `excludeSources`) accept ASCII letters, digits and
 ``space _ . @ : / ( ) -`` only, so a value can never carry query syntax.
+
+The byte budget counts the serialized result, in which a character outside ASCII (and a quote) is written as a six-byte escape.
+The envelope (everything but `events`/`groups`) is never cut by it: with the largest echoes it measures about 3,050 bytes
+(raw) and 3,500 (aggregate), so even `4096` leaves room for one or two small rows, and only rows or groups are removed, with
+`truncated: true`. A source's `detail` is host text (a localized error message, for instance), so it is cut at 256 characters
+**and** 256 serialized bytes, keeping its beginning (where an error states its reason) and ending with `...` when cut;
+ordinary messages within both bounds are unaffected. Ask for `8192` or more when aggregates need long
+sample messages.
 
 Two rules involve more than one argument. They are checked first, in this order, and only the first one that fails
 is reported:
@@ -67,6 +75,38 @@ sources before grouping, the `limit` and the byte budget, in both modes, without
 - **An excluded source was not looked at.** `complete: true` then means complete for the filtered question, and the
   absence of a source is never evidence that it logged nothing.
 
+### Checking a source name (`sourceFilter`)
+
+A `source` that names nothing is read in full and returns zero events with `complete: true`, which says nothing about the
+subject the name was meant for ([ADR-0061](architecture/adr/0061-system-events-source-filter-disclosure.md)). Every result
+therefore carries `sourceFilter` right after `excludeSources` — `null` without a `source`, otherwise:
+
+```json
+"sourceFilter": {
+  "requested": "WHEA",
+  "matching": "exactCaseInsensitive",
+  "matchedFields": ["source"],
+  "registrationStatus": "notRegistered",
+  "observedMatch": false,
+  "caution": "noMatchSourceNotRegistered",
+  "semantics": "Only records matching requested in matchedFields were kept. Zero matches does not show that nothing of that kind was logged: no source here may use that name, and other sources and logs were not queried."
+}
+```
+
+- **`registrationStatus`** is what the host's registry says about the *name*, never about events: `registered` (Windows: the
+  provider catalog lists it, ignoring case), `notRegistered` (the catalog was read and does not list it), `unknown` (always on
+  Linux, which has no registry of identifiers or units; on Windows when the catalog could not be read). A registered provider
+  may publish to a log the call did not query, and a name that is not registered may still have historical records.
+- **`observedMatch`** is whether any record the collector read satisfied the whole query, source together with the window and
+  every other filter. It is computed before grouping, `limit` and the byte budget, so it equals `observedEvents > 0` and never
+  depends on what was cut from the output. A `truncated` or partially covered result says nothing about unread records.
+- **`caution`** is `null` when a record confirmed the name or the name is registered; `noMatchSourceNotRegistered` when nothing
+  matched and the name is not registered; `noMatchSourceUnverified` when nothing matched and the name cannot be verified.
+- **`matchedFields`**: Windows `["source"]` (the provider name); Linux `["source","unit"]`.
+- Completeness is untouched: none of these fields changes `status`, `complete`, `truncated` or the typed completeness, and no
+  similar name is ever suggested. Read a zero result together with `complete`, `truncated`, `coverage` and `sourceFilter`: it
+  answers the filtered question only, never "nothing of that kind happened". Use the full, exact name.
+
 ## Result
 
 JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in a fixed order:
@@ -80,6 +120,7 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
   "truncated": false,
   "window": { "fromUtc": "2026-09-21T11:00:00.0000000Z", "toUtc": "2026-09-21T12:00:00.0000000Z" },
   "excludeSources": [],
+  "sourceFilter": null,
   "coverage": {
     "requestedFromUtc": "2026-09-21T11:00:00.0000000Z",
     "requestedToUtc": "2026-09-21T12:00:00.0000000Z",
@@ -107,8 +148,8 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
 ```
 
 The rows are the schema-1 rows, unchanged. Schema 2 adds `mode`, `coverage` and each source's `examinedFromUtc`, and
-makes `complete` stricter (below). The always-present `excludeSources` echo (above) is additive and stays within schema 2:
-an empty array is exactly the behaviour before it existed.
+makes `complete` stricter (below). The always-present `excludeSources` echo and `sourceFilter` object (above) are additive and
+stay within schema 2: an empty array and `null` are exactly the behaviour before they existed.
 
 An aggregate result (`mode: aggregate`) has the same envelope with `observedGroups`, `returnedGroups` and `groups`
 in place of `returnedEvents` and `events`:
@@ -228,5 +269,7 @@ Both are the operator's choice; nothing in bOps changes group membership.
 - "Any disk errors?" `source: disk`, `eventId: 7` (Windows), or `text: I/O error` (Linux).
 - "What went wrong in the last 20 minutes?" `minSeverity: error`, `windowMinutes: 20`.
 - "Which errors have repeated over the last three months?" `mode: aggregate`, `windowDays: 90`, `minSeverity: error`.
+- "Did this provider log anything?" `source` with the exact, full name; if the result says `observedMatch: false` with a
+  `caution`, the name is unconfirmed — say so instead of concluding that nothing happened.
 - "…apart from this host's own noise?" the same, plus `excludeSources: .NET Runtime` — the result echoes the exclusion, and
   that source was not looked at.

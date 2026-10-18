@@ -68,7 +68,9 @@ public sealed partial class LinuxSystemEventsTool : SystemEventsToolBase
         }
 
         var snapshot = await ReadAsync(query, budget, ct);
-        return snapshot with { Stores = [store] };
+        // ADR-0061: journald has no registry of identifiers or units, so the name stays unverifiable (the default); the shared filter
+        // compares it with the canonical source and the unit.
+        return snapshot with { Stores = [store], SourceMatchedFields = ["source", "unit"] };
     }
 
     private async Task<SystemEventSnapshot> ReadAsync(SystemEventQuery query, EvidenceTimeBudget budget, CancellationToken ct)
