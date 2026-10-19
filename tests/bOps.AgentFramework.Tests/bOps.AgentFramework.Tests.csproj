@@ -57,6 +57,8 @@
   <ItemGroup>
     <!-- KNOW-DISC-01 T8-FIX01: the d3da032 request baselines (Golden/d3da032/README.md). -->
     <None Include="Golden\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- PA-1: the Markdown review rendering of each request baseline is compared byte for byte, so it ships with the JSON (Golden/pa1/README.md). -->
+    <None Include="Golden\pa1\*.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
