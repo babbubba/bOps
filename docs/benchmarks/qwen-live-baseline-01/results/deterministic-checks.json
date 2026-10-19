@@ -1,0 +1,163 @@
+{
+ "T02-r1": {
+  "finalChars": 744,
+  "hasAcceptedAnswer": true,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [
+   "system.events"
+  ],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 1,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [],
+  "knowledgeResourceRead": false
+ },
+ "T02-r2": {
+  "finalChars": 224,
+  "hasAcceptedAnswer": false,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 3,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [],
+  "knowledgeResourceRead": false
+ },
+ "T02-r3": {
+  "finalChars": 1462,
+  "hasAcceptedAnswer": true,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [
+   "system.events",
+   "system.stability"
+  ],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 2,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [
+   "load",
+   "read_resource"
+  ],
+  "knowledgeResourceRead": true
+ },
+ "T08-r1": {
+  "finalChars": 1196,
+  "hasAcceptedAnswer": true,
+  "temperatureOrFanNumbersInFinal": [
+   "60-85°C",
+   "85-90°C",
+   "30-50°C",
+   "0%",
+   "100%"
+  ],
+  "toolNamesMentioned": [],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 0,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [
+   "load"
+  ],
+  "knowledgeResourceRead": false,
+  "systemInfoFactsQuoted": {
+   "host": false,
+   "model21N5": false,
+   "uptimeMatchesFixture": false
+  }
+ },
+ "T08-r2": {
+  "finalChars": 723,
+  "hasAcceptedAnswer": true,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [
+   "system.info"
+  ],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 0,
+  "servedReplayCalls": 1,
+  "knowledgeReadEvents": [
+   "read_resource"
+  ],
+  "knowledgeResourceRead": true,
+  "systemInfoFactsQuoted": {
+   "host": true,
+   "model21N5": true,
+   "uptimeMatchesFixture": true
+  }
+ },
+ "T08-r3": {
+  "finalChars": 224,
+  "hasAcceptedAnswer": false,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 1,
+  "servedReplayCalls": 1,
+  "knowledgeReadEvents": [],
+  "knowledgeResourceRead": false,
+  "systemInfoFactsQuoted": {
+   "host": false,
+   "model21N5": false,
+   "uptimeMatchesFixture": false
+  }
+ },
+ "T10-r1": {
+  "finalChars": 182,
+  "hasAcceptedAnswer": false,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [
+   "system.events"
+  ],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 0,
+  "servedReplayCalls": 1,
+  "knowledgeReadEvents": [
+   "load",
+   "read_resource"
+  ],
+  "knowledgeResourceRead": true,
+  "packPointsCited": [],
+  "packPointsCitedExist": true,
+  "citesPackLinksOnlyFromPack": true
+ },
+ "T10-r2": {
+  "finalChars": 3402,
+  "hasAcceptedAnswer": true,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 0,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [
+   "read_resource"
+  ],
+  "knowledgeResourceRead": true,
+  "packPointsCited": [
+   3,
+   4,
+   5,
+   6,
+   7,
+   9,
+   11
+  ],
+  "packPointsCitedExist": true,
+  "citesPackLinksOnlyFromPack": true
+ },
+ "T10-r3": {
+  "finalChars": 78,
+  "hasAcceptedAnswer": false,
+  "temperatureOrFanNumbersInFinal": [],
+  "toolNamesMentioned": [],
+  "toolNamesNotInVisibleSurface": [],
+  "unsupportedReplayCalls": 1,
+  "servedReplayCalls": 0,
+  "knowledgeReadEvents": [
+   "load",
+   "read_resource"
+  ],
+  "knowledgeResourceRead": true,
+  "packPointsCited": [],
+  "packPointsCitedExist": true,
+  "citesPackLinksOnlyFromPack": true
+ }
+}
