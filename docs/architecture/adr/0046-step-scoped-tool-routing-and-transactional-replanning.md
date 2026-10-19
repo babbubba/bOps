@@ -318,3 +318,37 @@ Not changed: provider adapters and `ToolWireNames`, policy, approval, entitlemen
 resume rules, the AF-05H2-R2 and AF-PLAN-01 recoveries, EvidenceRead, the collector. MAF orchestration is not used for
 routing or replanning (ARCH-02 decides). Tests: `ToolRoutingTests`, `ToolRoutingRegressionTests` (B03 on the real adapter and
 MAF projector), `MafContextTests`. Evidence: `agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md`.
+
+## Amendment — prompt routing and finalization (PROMPT-ROUTING-FINALIZATION, 2026-10-19)
+
+**Status: Accepted.** Prompt wording and the lifetime of one temporary instruction only; no routing, budget, policy, approval,
+audit, accounting or tool-surface rule changes. The Qwen campaigns showed four places where a prompt promised or invited something
+the runtime does not do (PRA-R2, PRA-R3, PRA-R4, PRA-P1; `docs/benchmarks/prompt-routing-finalization.md`), and a fifth, PRA-R5,
+found afterwards in the protocol-artifact correction (item 5).
+
+1. **Plan end (PRA-R2).** A completed plan still offers no operational tool (D-043). The instruction no longer promises that a
+   prose proposal makes the runtime ask for a revised plan: text is the final answer and ends the task, an evidence limit is
+   reported in the answer, and the one recognized channel for more work stays a native call of a tool the plan or the task already
+   names (refused, audited `UnknownTool`, answered by the governed replan). Nothing parses prose.
+2. **Pending steps (PRA-R3).** The step prompt no longer says a final answer is a way to proceed while steps remain: a reply without
+   a tool call is not taken as the final answer and only makes the runtime re-evaluate the plan (AF-05H unchanged). The Knowledge
+   control instruction sends the next reply to the step's operational call while one is offered, and to the final answer only when
+   none is; the Knowledge refusal reply names the final answer only as the way on when no operational tool is offered. The
+   early-final replan has its own lead (the final was refused only because steps were unresolved; an empty plan is the answer when
+   nothing more is needed); the lead of a `PlanDeviation` replan, LIVE-05 and the anti-loop bounds are unchanged.
+3. **Recovery (PRA-R4).** RC1 (empty or content-free) and RC2 (output limit) ask for what the request can be answered with: the
+   step's operational call while its tool is offered, the final answer otherwise (plan complete or empty plan). A recovery turn is
+   removed from the logical call as soon as the retry is answered with something usable; an unusable retry keeps it and F1
+   (LIVE-F1-FIX-01) still fails the task. The retry budget is unchanged.
+4. **One tool per step (PRA-P1).** The step prompt says that only the current step's tool is offered, that later steps' tools are
+   offered in the turns of their own steps, and that no other tool, URL or resource is to be invented or assumed.
+5. **Protocol-artifact correction (PRA-R5).** The one terminal correction after a reply that was tool-call or control-protocol markup
+   follows the request's tool surface like the recovery turns: while a planned step's tool is offered it asks for that native call,
+   without text markup; with no operational tool offered (plan complete or empty plan) it asks for a final answer from the collected
+   evidence with its limitations stated. Same budget, same failure after a repeated artifact; the previous text, which offered both
+   ways out whatever the state, is gone.
+
+What the runtime guarantees is exactly what it did before (no execution outside the offered view and plan, no `Completed` with an
+unresolved plan unless formally revised, no content-free final, bounded replans and retries). What a model does with the clearer
+text is probabilistic and is checked only by live reruns. Goldens changed on purpose: `Golden/pa1/*` (10 of 12 scenarios) and
+`Golden/d3da032/*` (the changed sentences only; see its README).
