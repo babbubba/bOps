@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- QWEN-LIVE-BASELINE-01: a test-only console harness (like bOps.Knowledge.InvariantProbe). It is not part of bOps.slnx and never ships.
+       It composes the same runner as bOps.Cli (ModelInvocationBroker + MafContextProjector + AgentRunner) over the real OpenAI-compatible
+       adapter and the real first-party tool manifests, and answers tool calls from captured fixtures (see Program.cs). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.QwenLiveBaseline</RootNamespace>
+    <AssemblyName>bOps.QwenLiveBaseline</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- Full globalization, like bOps.Cli: Knowledge normalizes publisher text with real NFC/NFKC (ADR-0057 section U.5). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- A measurement harness, not product code: analyzer noise must not stop a campaign. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-minimum</AnalysisLevel>
+    <NoWarn>$(NoWarn);CA1812;CA1031;CA1707;CA1062;CA1822;CA1861;CA1859;CA2201;IDE0005</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Hosting\bOps.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Policy\bOps.Policy.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Filesystem\bOps.Packages.Filesystem.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Web\bOps.Packages.Web.csproj" />
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Docker\bOps.Packages.Docker.csproj" />
+  </ItemGroup>
+
+</Project>

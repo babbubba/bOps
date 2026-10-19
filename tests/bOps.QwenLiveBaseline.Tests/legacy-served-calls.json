@@ -1,0 +1,26 @@
+[
+ {
+  "run": "T08-r2",
+  "tool": "system.info",
+  "arguments": {},
+  "fixtureId": "F14-system.info",
+  "rule": "exact",
+  "others": [
+   "F04-system.info",
+   "F07-system.info",
+   "F24-system.info"
+  ]
+ },
+ {
+  "run": "T10-r1",
+  "tool": "system.info",
+  "arguments": {},
+  "fixtureId": "F04-system.info",
+  "rule": "exact",
+  "others": [
+   "F07-system.info",
+   "F14-system.info",
+   "F24-system.info"
+  ]
+ }
+]
