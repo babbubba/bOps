@@ -128,8 +128,27 @@ public sealed class TerminalProtocolArtifactTests
             PlannedStepExecutionClassification.SemanticMismatch or PlannedStepExecutionClassification.ArgumentValidationFailure);
         Assert.Equal((1, 1), (big.ExecutionCount, next.ExecutionCount));
         Assert.Contains(model.Requests[2].History, turn => turn.Role == ChatRole.User
-            && turn.Content!.Contains("markup, not an answer", StringComparison.Ordinal));
+            && turn.Content!.Contains("markup, not an answer", StringComparison.Ordinal)
+            && turn.Content.Contains("native tool call", StringComparison.Ordinal)
+            && !turn.Content.Contains("final answer", StringComparison.Ordinal));
         Assert.Empty(audit.Events.OfType<EvidenceReadAuditEvent>());
+    }
+
+    [Fact]
+    public async Task T4b_ArtifactWithNoOperationalToolOffered_AsksForAFinalAnswer_NotAToolCall()
+    {
+        var model = new FakeChatModel(new ModelResponse("{\"rationale\":\"r\",\"steps\":[]}", [], false, null), Text(QwenArtifact), Text("done"));
+        var (runner, _, _, _) = Build(model);
+
+        var result = await runner.RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, result.Status);
+        Assert.Empty(model.Requests[2].AvailableTools);
+        Assert.Contains(model.Requests[2].History, turn => turn.Role == ChatRole.User
+            && turn.Content!.Contains("markup, not an answer", StringComparison.Ordinal)
+            && turn.Content.Contains("final answer", StringComparison.Ordinal)
+            && turn.Content.Contains("limitations", StringComparison.Ordinal)
+            && !turn.Content.Contains("native tool call", StringComparison.Ordinal));
     }
 
     [Fact]

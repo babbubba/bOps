@@ -644,7 +644,8 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     private static string RejectionReply(KnowledgeReadResultCode code, RefusalClass refusal, bool withdrawnNow)
     {
         var prefix = $"Runtime control call rejected: {code}. {PublicToolName} returns reference data from the pinned skill pack only.";
-        const string proceed = "continue with the current step's operational tool, or give your final answer.";
+        // PRA-R3: this reply does not know the plan; the final answer is only the way on when no operational tool is offered.
+        const string proceed = "continue with the current step's operational tool; give your final answer only if none is offered.";
         if (withdrawnNow)
         {
             return $"{prefix} Repeated requests returned nothing, so {PublicToolName} is withdrawn for the rest of this attempt. Do not call it again; {proceed}";
