@@ -306,7 +306,11 @@ public sealed class ToolCallProtocolTests
         ]);
 
         var lines = catalog.Split('\n').Where(line => line.StartsWith("- ", StringComparison.Ordinal)).ToList();
-        Assert.Equal(["- a.first [Read]: Line one of the description.", "- m.long [High]: " + new string('x', 120) + "…", "- z.last [Read]: Second tool."], lines);
+        // Each line keeps the name, the risk and the bounded first sentence; the planner-facing parameter summary (ADR-0060) follows it.
+        const string NoParameters = " Parameters: none (no execution arguments). Omit expectedArguments or use {}.";
+        Assert.Equal(
+            ["- a.first [Read]: Line one of the description." + NoParameters, "- m.long [High]: " + new string('x', 120) + "…" + NoParameters, "- z.last [Read]: Second tool." + NoParameters],
+            lines);
         Assert.DoesNotContain("second sentence", catalog, StringComparison.Ordinal);
         Assert.Contains("No tools are available", AgentRunner.DescribeToolCatalog([]), StringComparison.Ordinal);
     }
