@@ -58,7 +58,8 @@ internal static partial class PaInvariants
 
             // The conversation starts with the system prompt, carries only the four wire roles, and every tool message answers a call.
             Assert.Equal("system", wire.Role(0));
-            Assert.Equal(request.SystemPrompt, wire.System);
+            // A CRLF source checkout turns the prompt constants' line breaks into \r\n while the wire body carries \n; the text is still compared in full.
+            Assert.Equal(request.SystemPrompt.ReplaceLineEndings("\n"), wire.System?.ReplaceLineEndings("\n"));
             Assert.All(wire.Roles, role => Assert.Contains(role, Roles));
             Assert.Equal(1 + request.History.Count, wire.Messages.Count);
             var calls = new HashSet<string>(StringComparer.Ordinal);

@@ -47,7 +47,9 @@ public sealed class KnowledgeGoldenRequestTests
     public async Task TheRequestsAreByteIdenticalToTheBaseline(string scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
-        var actual = await RunScenarioAsync(scenario);
+        // A CRLF source checkout turns the prompt constants' line breaks into \r\n, which the canonical JSON shows as an escape: the same
+        // single normalization PA-1 applies (PaGolden.Normalize); every other byte is compared as produced.
+        var actual = PromptAssembly.PaGolden.Normalize(await RunScenarioAsync(scenario));
 
         if (Environment.GetEnvironmentVariable(CaptureVariable) is { Length: > 0 } capture)
         {

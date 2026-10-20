@@ -71,7 +71,11 @@ internal sealed class TestPack
     /// <summary>The three parts of the pack, correctly signed: manifest bytes, signature bytes, file bytes.</summary>
     internal (byte[] Manifest, byte[] Signature, Dictionary<string, byte[]> Files) Parts(Func<PackManifest, PackManifest>? mutate = null)
     {
-        var manifestBytes = KnowledgePackFormat.SerializeManifest(Manifest(mutate));
+        // The indented serializer writes Environment.NewLine, so the same manifest has different bytes (and a different hash) on
+        // Windows and Linux. The fixture pins the CRLF form the checked-in PA-1 golden was captured with, so every host signs and
+        // pins identical bytes; the verifier still checks exactly the bytes it is handed.
+        var manifestBytes = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(KnowledgePackFormat.SerializeManifest(Manifest(mutate))).ReplaceLineEndings("\r\n"));
         var signature = Sign(Signer, manifestBytes);
         var files = AllFiles().ToDictionary(file => file.Key, file => file.Value, StringComparer.Ordinal);
         return (manifestBytes, signature, files);
