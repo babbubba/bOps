@@ -669,7 +669,10 @@ class CaptureTests(unittest.TestCase):
             process.stdout.close()
             stream.close()
             saved = log_path.read_bytes()
-            self.assertEqual(b"prefix [REDACTED: credential] suffix\r\n", saved)
+            # The child writes a text-mode "\n": the platform terminator is CRLF on Windows and LF elsewhere. The collector keeps
+            # the original bytes, so the expectation is exact for each platform instead of normalized.
+            terminator = b"\r\n" if os.name == "nt" else b"\n"
+            self.assertEqual(b"prefix [REDACTED: credential] suffix" + terminator, saved)
             self.assertNotIn(secret.encode(), saved)
 
     def test_startup_log_redacts_credentials_found_in_snapshot_configuration(self):
