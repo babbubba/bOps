@@ -50,7 +50,7 @@ public sealed class WindowsSourceRegistrationTests
         Assert.Equal(SourceRegistration.Unknown, WindowsSystemEventsTool.ClassifySource("Disk", []).Registration);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void TheCatalogRead_FailsSoftlyOnTheTwoExpectedExceptions_AndNothingElse()
     {
         Assert.Null(WindowsSystemEventsTool.ReadCatalog(() => throw new EventLogException("denied")));
@@ -61,7 +61,7 @@ public sealed class WindowsSourceRegistrationTests
 
     // ---- through the tool, with a controlled catalog ----
 
-    [Fact]
+    [WindowsOnlyFact]
     public void TheCatalog_IsReadOnce_ForTheSourceAndTheExclusions()
     {
         var reads = 0;
@@ -81,7 +81,7 @@ public sealed class WindowsSourceRegistrationTests
         Assert.Equal("registered", json["sourceFilter"]!["registrationStatus"]!.GetValue<string>());
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void WithoutASourceOrExclusions_TheCatalogIsNotRead_AndTheFilterIsNull()
     {
         var reads = 0;
@@ -97,7 +97,7 @@ public sealed class WindowsSourceRegistrationTests
         Assert.Null(json["sourceFilter"]);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public void AFailedCatalog_IsUnknown_ChangesNoCompleteness_AndNamesTheCautionWhenNothingMatched()
     {
         var name = UnusedName();
@@ -119,7 +119,7 @@ public sealed class WindowsSourceRegistrationTests
 
     // ---- against the real Event Log ----
 
-    [Fact]
+    [WindowsOnlyFact]
     public void ANameTakenFromTheLiveCatalog_IsRegistered_AndAnImpossibleOneIsNot()
     {
         using var session = new EventLogSession();
@@ -142,11 +142,11 @@ public sealed class WindowsSourceRegistrationTests
         Assert.Equal(0, absent["observedEvents"]!.GetValue<int>());
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task TheSourceFilter_ConformsAgainstTheRealEventLog() =>
         SystemToolConformance.AssertSystemEventsSourceFilterConformAsync(new WindowsSystemEventsTool(), "notRegistered", ["source"]);
 
-    [Fact]
+    [WindowsOnlyFact]
     public Task TheLargestEnvelope_FitsTheSmallestBudget_AgainstTheRealEventLog() =>
         SystemToolConformance.AssertSystemEventsEnvelopeFitsTheSmallestBudgetAsync(new WindowsSystemEventsTool());
 }

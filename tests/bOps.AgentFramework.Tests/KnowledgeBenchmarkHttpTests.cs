@@ -68,7 +68,7 @@ public sealed class KnowledgeBenchmarkHttpTests
         await VerifyAuditAsync(output, "BudgetExhausted", 21);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task IndependentConditionsAndDeadlines_ExportBudgetTimeoutProviderAndComparisonCorrectly()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);

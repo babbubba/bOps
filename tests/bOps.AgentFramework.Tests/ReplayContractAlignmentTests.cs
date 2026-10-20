@@ -15,7 +15,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class ReplayContractAlignmentTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task RestrictedContract_PreservesABIdentity_AndAdmitsOneConcurrentRead()
     {
         using var capture = Source();
@@ -84,7 +84,7 @@ public sealed class ReplayContractAlignmentTests
         }
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task RejectedRequests_DoNotConsume_AndExportOnlyAllowlistedDiagnostics()
     {
         const string sensitive = "Artificial private prompt and Windows event";

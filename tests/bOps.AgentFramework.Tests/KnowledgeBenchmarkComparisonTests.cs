@@ -9,7 +9,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class KnowledgeBenchmarkComparisonTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task ModelFailureInA_StillExecutesBAndPreservesBothOutcomes()
     {
         using var temporary = new TempDirectory();
@@ -70,7 +70,7 @@ public sealed class KnowledgeBenchmarkComparisonTests
         Assert.Equal(CanaryEventsCorpus.Encode(corpus, hash), await File.ReadAllBytesAsync(path));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task IntegrityRefusalAfterA_PreservesEvidenceAndStopsBeforeB()
     {
         using var temporary = new TempDirectory();

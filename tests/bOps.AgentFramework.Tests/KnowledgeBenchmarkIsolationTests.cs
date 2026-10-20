@@ -11,7 +11,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class KnowledgeBenchmarkIsolationTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task SameReplay_OnlyAuthorizedBReceivesKnowledgeThroughBroker()
     {
         if (Environment.GetEnvironmentVariable("BOPS_KNOW_BENCH_SIGN") == "1") KnowledgeBenchmark.SignDelivery();
@@ -93,7 +93,7 @@ public sealed class KnowledgeBenchmarkIsolationTests
         Assert.Equal(2, raw.Files.Count);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task MissingGrantRevocationTenantTamperingAndIncompatibleCorpus_FailClosed()
     {
         var (raw, trust) = await KnowledgeBenchmark.LoadAsync();

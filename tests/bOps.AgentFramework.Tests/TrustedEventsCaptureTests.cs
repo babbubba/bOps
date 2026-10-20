@@ -11,7 +11,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class TrustedEventsCaptureTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task SyntheticCapture_OneGovernedRead_IdenticalABAndExport()
     {
         var reads = 0;
@@ -66,7 +66,7 @@ public sealed class TrustedEventsCaptureTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => session.CaptureAsync(captureWorld));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task ImportedClaimsTamperAndIncompatibleRequests_FailClosed()
     {
         using var temp = new TempDirectory();

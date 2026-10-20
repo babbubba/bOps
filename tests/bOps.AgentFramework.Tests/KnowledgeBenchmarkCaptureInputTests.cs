@@ -14,7 +14,7 @@ public sealed class BenchmarkCaptureEnvironmentDefinition;
 [Collection("Benchmark capture environment")]
 public sealed class KnowledgeBenchmarkCaptureInputTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task IntegratedInitialization_UsesCaptureHashWithoutImportedInputs()
     {
         using var environment = new CaptureEnvironment();

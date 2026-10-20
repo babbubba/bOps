@@ -25,7 +25,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
     private const string Skill = "windows-event-triage";
     private const string Description = "Procedure di interpretazione delle evidenze diagnostiche nei log Windows";
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task B_EveryStepRequestPresentsTheIndexAndOffersTheFunction_PlanningSeesNothing_ANonReadingReplyIsOfferedNotSelected()
     {
         using var temporary = new TempDirectory();
@@ -78,7 +78,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
         Assert.Empty(run.World.Events.OfType<KnowledgeReadAuditEvent>());
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task B_TheListedRefAloneReadsTheProcedure_InOneGovernedCall_WithoutTheSkillName()
     {
         using var temporary = new TempDirectory();
@@ -99,7 +99,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
         Assert.False(discovery["reads"]![0]!["byName"]!.GetValue<bool>());
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task B_AnUnlistedRefIsRefusedAndAudited_TheTaskContinues_ReadRefused()
     {
         using var temporary = new TempDirectory();
@@ -112,7 +112,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
         Assert.Equal("ReadRefused", run.Discovery()["readStage"]!.GetValue<string>());
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task A_HasNeitherIndexNorFunction_AndIsClassifiedNotBound()
     {
         using var temporary = new TempDirectory();
@@ -128,7 +128,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
         Assert.Equal(("NotBound", "NotBound"), (discovery["indexStage"]!.GetValue<string>(), discovery["readStage"]!.GetValue<string>()));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task C_DiffersFromBOnlyInTheOperatorGoal_WhichNamesNoSkillPackOrRef()
     {
         Assert.StartsWith(KnowledgeBenchmark.Goal.TrimEnd(), KnowledgeBenchmark.GoalFor("C"), StringComparison.Ordinal);
@@ -173,7 +173,7 @@ public sealed class KnowledgeDiscoveryInvestigationTests
         Assert.Equal("SelectedNotServed", BenchmarkKnowledgeDiscovery.ReadStage(bound: true, offered: 7, proposals: 1, []));
     }
 
-    [Theory]
+    [WindowsOnlyTheory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task OverTheRealAdapter_TheIndexPrecedesTheGoalOnTheWire_ARefReadRoundTrips_AndTheExportCarriesNoPublisherText(bool native)

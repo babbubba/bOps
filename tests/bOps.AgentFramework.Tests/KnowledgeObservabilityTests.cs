@@ -116,7 +116,7 @@ public sealed class KnowledgeObservabilityTests
         }
     }
 
-    [Theory]
+    [WindowsOnlyTheory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task FinalStepKnowledgeRead_RoundTripsOverTheWire_AndIsObservedWithoutFreeText(bool native)

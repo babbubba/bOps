@@ -14,7 +14,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class KnowledgeCorpusProvenanceTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task Synthetic_IdenticalGovernedABReplayWithoutModelCalls()
     {
         using var temporary = new TempDirectory();
@@ -50,7 +50,7 @@ public sealed class KnowledgeCorpusProvenanceTests
         Assert.Throws<InvalidOperationException>(() => KnowledgeBenchmark.Replay(path, hash, requireCaptured: true));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task ForgedCaptureAlteredHashAndInconsistentMetadata_RefusedForRealBenchmark()
     {
         using var temporary = new TempDirectory();

@@ -8,7 +8,7 @@ namespace bOps.AgentFramework.Tests;
 
 public sealed class KnowledgeBenchmarkExportTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task CompletedSyntheticTask_ExportsObservedMetricsAndOrderedAudit()
     {
         using var temporary = new TempDirectory();
@@ -72,7 +72,9 @@ public sealed class KnowledgeBenchmarkExportTests
         var corpus = KnowledgeBenchmark.Synthetic();
         var hash = CanaryEventsCorpus.Hash(corpus);
         var path = KnowledgeBenchmark.WriteSynthetic(temporary, corpus);
-        foreach (var scenario in new[] { "before", "during", "protocol", "timeout", "cancel", "limit" })
+        // ComposeReplay registers the Windows system.events canary, so only the scenarios that never compose it run on other hosts.
+        var scenarios = OperatingSystem.IsWindows() ? new[] { "before", "during", "protocol", "timeout", "cancel", "limit" } : ["before", "limit"];
+        foreach (var scenario in scenarios)
         {
             var output = temporary.Sub(scenario);
             Directory.CreateDirectory(output);

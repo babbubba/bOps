@@ -14,7 +14,7 @@ public sealed class KnowledgeEventsCorpusTests
     private static ToolArguments Request => ToolArguments.FromJson(new JsonObject
         { ["channel"] = "System", ["mode"] = "raw", ["windowMinutes"] = 5, ["limit"] = 10, ["maxOutputBytes"] = 8192 });
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task SyntheticCorpus_TwoGovernedReplaysAreIdentical()
     {
         // No model invocation, no Knowledge admission/signing, no benchmark A/B.
@@ -64,7 +64,7 @@ public sealed class KnowledgeEventsCorpusTests
         });
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task InvalidCorpusOrUnauthorizedTool_FailsClosedThroughGovernedDispatch()
     {
         using var temporary = new TempDirectory();

@@ -170,7 +170,7 @@ public sealed class KnowledgeCorpusAttestationTests
         Assert.Throws<IOException>(() => CorpusAttestation.Approve(path, hash, hash, CorpusFixtures.Now.AddHours(2)));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task ThreeConsecutiveReplays_GiveIdenticalDiagnosticBytes_InA_B_AndC()
     {
         using var temporary = new TempDirectory();
@@ -214,7 +214,7 @@ public sealed class KnowledgeCorpusAttestationTests
         Assert.DoesNotContain("Contoso-Internal-Agent", outputs[0], StringComparison.Ordinal);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task TheGovernedReplayRefusesAnAttestedActivationWhoseCorpusOrAttestationChanged()
     {
         using var temporary = new TempDirectory();
@@ -240,7 +240,7 @@ public sealed class KnowledgeCorpusAttestationTests
         Assert.StartsWith("ERROR", await RunAsync(frozen.Activation with { Capture = true }), StringComparison.Ordinal);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task TheOperatorEntryPoints_ApproveThenReplayOnlyWithTheExplicitPins()
     {
         using var temporary = new TempDirectory();
