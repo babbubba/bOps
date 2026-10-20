@@ -54,6 +54,15 @@ jobs:
       - name: Test
         run: dotnet test bOps.slnx --no-build --configuration Release --filter "Category!=LiveModel" --blame-hang --blame-hang-timeout 5m
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Benchmark collector tests (Python, offline)
+        # scripts/windows/live_benchmark.py is a measurement tool; its unit tests are offline (no live model, no network,
+        # no provider credential) and run on both matrix OSes. The collector itself is never executed here.
+        run: python -m unittest discover -s scripts/windows/tests -p "test_live_benchmark.py" -v
+
       - name: HARDEN-14 scenario gate (.NET, Windows)
         if: runner.os == 'Windows'
         shell: pwsh
