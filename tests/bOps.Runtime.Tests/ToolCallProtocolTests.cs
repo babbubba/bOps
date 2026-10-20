@@ -170,8 +170,10 @@ public sealed class ToolCallProtocolTests
         {
             ToolNameError = "'test.read' is not a tool that was offered in this request.",
         };
+        // AF-TOOLROUTE-01: the first rejected name of a planned step gets one in-step correction; the second replans.
         var model = new FakeChatModel(
-            PlanningTestSupport.PlanResponse(stepCount: 1), Calls(invented), PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1), Final());
+            PlanningTestSupport.PlanResponse(stepCount: 1), Calls(invented), Calls(invented with { Id = "call-2" }),
+            PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1), Final());
 
         var result = await CreateRunner(model, Registry(tool), audit, policy).RunAsync("goal", Actor);
 
@@ -228,6 +230,7 @@ public sealed class ToolCallProtocolTests
             new ModelResponse("not a plan", [], false, null), // the plan retry is tool-free too
             PlanningTestSupport.PlanResponse(stepCount: 1, expectedTool: "fs.size"),
             Calls(invented),
+            Calls(Call("call-2", "does.not.exist")), // AF-TOOLROUTE-01: the one in-step tool-name correction, then the replan
             new ModelResponse("still not a plan", [], false, null),
             PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1, expectedTool: "system.cpu"),
             Final());
@@ -236,7 +239,7 @@ public sealed class ToolCallProtocolTests
         var result = await CreateRunner(model, registry).RunAsync("goal", Actor);
 
         Assert.Equal(2, result.Plans.Count);
-        var planning = new List<ModelRequest> { model.Requests[0], model.Requests[1], model.Requests[3], model.Requests[4] };
+        var planning = new List<ModelRequest> { model.Requests[0], model.Requests[1], model.Requests[4], model.Requests[5] };
         Assert.All(planning, request =>
         {
             Assert.Empty(request.AvailableTools);
@@ -246,6 +249,7 @@ public sealed class ToolCallProtocolTests
         });
 
         Assert.Equal(["fs.size"], model.Requests[2].AvailableTools.Select(t => t.Name));
+        Assert.Equal(["fs.size"], model.Requests[3].AvailableTools.Select(t => t.Name).Where(name => name != EvidenceRead.ControlFunctionName));
     }
 
     [Fact]
@@ -302,7 +306,11 @@ public sealed class ToolCallProtocolTests
         ]);
 
         var lines = catalog.Split('\n').Where(line => line.StartsWith("- ", StringComparison.Ordinal)).ToList();
-        Assert.Equal(["- a.first [Read]: Line one of the description.", "- m.long [High]: " + new string('x', 120) + "…", "- z.last [Read]: Second tool."], lines);
+        // Each line keeps the name, the risk and the bounded first sentence; the planner-facing parameter summary (ADR-0060) follows it.
+        const string NoParameters = " Parameters: none (no execution arguments). Omit expectedArguments or use {}.";
+        Assert.Equal(
+            ["- a.first [Read]: Line one of the description." + NoParameters, "- m.long [High]: " + new string('x', 120) + "…" + NoParameters, "- z.last [Read]: Second tool." + NoParameters],
+            lines);
         Assert.DoesNotContain("second sentence", catalog, StringComparison.Ordinal);
         Assert.Contains("No tools are available", AgentRunner.DescribeToolCatalog([]), StringComparison.Ordinal);
     }

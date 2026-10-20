@@ -137,7 +137,22 @@ Semantic versioning is rigorous from `1.0.0`. Until then the contract is explici
 and the README of the NuGet package says so. Do not publish `1.0.0` before the V1.0
 milestone, and do not promise stability the project cannot yet keep.
 
+### A13 — Microsoft Agent Framework is infrastructure, never operational authority
+
+ADR-0052 makes Microsoft Agent Framework (MAF) the reference implementation for generic agent
+infrastructure. MAF dependencies live behind an isolated implementation boundary; no MAF or
+`Microsoft.Extensions.AI` type may enter `bOps.Abstractions` merely because Runtime uses MAF.
+
+MAF may own model-facing message/context construction, compaction, governed summarization and
+related generic agent plumbing. It may **not** independently choose or execute operational tools,
+authorize an operation, satisfy entitlement/approval, mutate `TaskState`, settle a mutation,
+replace verification/evidence semantics, or bypass bOps model-call audit/budgets. Every model
+inference caused by a task, including a summarizer call, traverses the bOps-governed model
+invocation path.
+
 ---
+
+
 
 ## B. The contract (`bOps.Abstractions`)
 
@@ -596,10 +611,14 @@ inspected. Required behaviour:
 2. **Every `ExecuteAsync` runs under its own timeout** from a linked `CancellationTokenSource`.
    The default is per-tool and configurable; a timeout is `ToolOutcome.Timeout`, distinct from
    failure, and it is audited.
-3. **The history has a budget.** Tool output is truncated to a configured limit before
-   entering the context, with the truncation marked explicitly. `docker.logs` on a chatty
-   container must not be able to blow the context window. Truncation is deterministic
-   (head + tail, never "summarize with another model call" in Phase 1).
+3. **The model context has a budget.** Raw evidence remains persisted by bOps; model-facing
+   history is bounded through the Microsoft Agent Framework context layer (ADR-0052). Generic
+   history compaction may use tool-result compaction, governed LLM summarization, sliding-window
+   compaction and truncation in that order. Current execution authority (system/security rules,
+   current plan/step, exact tool view, correction state, grounding/limitations and reconciliation
+   notices) is protected from generic history compaction. Any summarizer inference is a task model
+   call and must pass through the bOps-governed model invocation path; framework summaries are
+   derived context, never evidence or authority.
 4. **Repeated denials terminate the task.** A `Forbidden` decision produces an audited event
    and an observation; N consecutive denials of the same tool (default 2) end the task as
    `PolicyBlocked`. Without this the model retries a forbidden tool until `MaxSteps`.
@@ -626,21 +645,24 @@ inspected. Required behaviour:
    `AgentRunnerOptions.MaxReplans`; exhausting it ends the task as `ReplanLimitReached`, distinct
    from `PolicyBlocked` (stuck on the *same* tool) and `MaxStepsReached` (no terminal state
    reached at all).
-9. **Evidence limitations are listed by the runtime and disclosed by the model, once** (HARDEN-9,
+9. **Evidence limitations are listed by the runtime and always disclosed in the final answer** (HARDEN-9, AF-05H,
    ADR-0042, D-038). Every call carries a fixed, product-neutral evidence rule. Every step prompt
    carries the `EvidenceLimitations/v2` digest — built only from persisted typed step data (rule 7,
    never package JSON, never tool text, an unresolved tool name shown only as a fixed token), bounded
    to 16 entries and 4,608 characters, deterministic and identical after a resume. An ordinary final answer given
    under a non-empty digest that has no `Evidence limitations` heading (a deterministic line-based
-   check) is restated by **one** tool-free re-ask (`Agent:EvidenceDisclosureRetries`, 0 or 1). A delegated
-   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload without a prose
-   disclosure re-ask; its v2 digest instead instructs qualification of materially affected supported
-   findings without creating findings or changing evidence IDs or severity to carry limitations. The re-ask
-   never executes, authorizes or audits a tool call, creates no step, replan or status change, and never
-   loses the original answer, which stands unless the restatement carries the heading. The final step's
-   `Description` records which of the three fixed markers applies, and every consumer recognizes a final
-   step through the one shared predicate (an exact marker and no tool call). The runtime never rewrites,
-   truncates or annotates the model's text.
+   check) gets the bounded runtime-authored `EvidenceDisclosure/v2` section appended — the heading, a fixed
+   line and the digest's typed entries — with **no model call** (`Agent:EvidenceDisclosureEnabled`, default
+   true; AF-05H replaced the former model re-ask, which could change the answer's facts). A delegated
+   `AgentRoleKind.Diagnostic` structured JSON final answer retains its original payload with nothing
+   appended; its v2 digest instead instructs qualification of materially affected supported
+   findings without creating findings or changing evidence IDs or severity to carry limitations. The
+   disclosure never executes, authorizes or audits a tool call, creates no step, replan or status change,
+   and the original answer is always an exact, unchanged prefix of the persisted one. The final step's
+   `Description` records which fixed marker applies (the two historical re-ask markers stay readable), and
+   every consumer recognizes a final step through the one shared predicate (an exact marker and no tool
+   call). The runtime never rewrites or truncates the model's text; the appended section is its only
+   addition, and it is runtime-authored from typed data.
 
 ## D. Observability
 

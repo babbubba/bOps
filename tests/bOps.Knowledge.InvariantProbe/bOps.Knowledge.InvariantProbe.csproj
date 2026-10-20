@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>bOps.Knowledge.InvariantProbe</RootNamespace>
+    <AssemblyName>bOps.Knowledge.InvariantProbe</AssemblyName>
+    <Description>Test-only process that runs the Knowledge Unicode contract under invariant globalization and prints one line per observation (ADR-0057 section U.5). Never shipped.</Description>
+    <!-- Explicit, not inherited by accident: this process IS the invariant runtime that the host contract must survive. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
+  </ItemGroup>
+
+</Project>

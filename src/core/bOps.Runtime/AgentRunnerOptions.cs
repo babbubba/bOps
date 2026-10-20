@@ -9,6 +9,12 @@ namespace bOps.Runtime;
 /// </summary>
 public sealed record AgentRunnerOptions
 {
+    /// <summary>Model context profiles and deterministic compaction guard-rails.</summary>
+    public ModelContextOptions Context { get; init; } = new();
+
+    /// <summary>Governed MAF summarization of historical context (AF-03). Off unless explicitly enabled.</summary>
+    public SummarizationOptions Summarization { get; init; } = new();
+
     /// <summary>
     /// The per-execution-attempt step budget (ADR-0040 §5): an anti-infinite-loop guard-rail. Exhausting it ends the attempt
     /// as <c>MaxStepsReached</c>; a resume starts a fresh per-attempt budget, capped by <see cref="MaxLifetimeSteps"/>.
@@ -49,9 +55,6 @@ public sealed record AgentRunnerOptions
     /// </summary>
     public int? MaxTotalTokens { get; init; } = 350_000;
 
-    /// <summary>The latest completed tool-call steps retained verbatim in model-facing history (HARDEN-8), from 0 through 15.</summary>
-    public int VerbatimHistorySteps { get; init; } = 3;
-
     /// <summary>
     /// Active work allowed for one execution attempt. Human approval waiting is excluded. <c>null</c> is an explicit
     /// operator opt-out; a non-null value is positive and no longer than 24 hours.
@@ -83,18 +86,29 @@ public sealed record AgentRunnerOptions
     public int EffectiveReplanWarningThreshold => ReplanWarningThreshold ?? Math.Min(DefaultReplanWarningThreshold, MaxLifetimeReplans);
 
     /// <summary>
-    /// How many times a model that ends a step with no text and no tool call (an empty final response) is asked
-    /// again before the task fails instead of completing with nothing to show. <c>0</c> fails at the first empty
-    /// reply. Rule S3: an empty reply is never taken as an answer.
+    /// How many times a model that ends a step with no answer content and no tool call (an empty final response, or one of
+    /// only punctuation, symbols or Markdown markers) is asked again before the task fails instead of completing with nothing
+    /// to show. The budget is per step and shared by both kinds. <c>0</c> fails at the first such reply. Rule S3: such a reply
+    /// is never taken as an answer, whatever its finish reason.
     /// </summary>
     public int EmptyFinalResponseRetries { get; init; } = 1;
 
     /// <summary>
-    /// Whether a final answer given while the runtime lists evidence limitations, and carrying no
-    /// <c>Evidence limitations</c> heading, is asked once more to restate itself with the section (ADR-0042 §6). <c>1</c> (the
-    /// default) allows that one tool-free re-ask; <c>0</c> disables it. No other value is valid: the re-ask never loops.
+    /// Whether a final answer given while the runtime lists evidence limitations, and carrying no <c>Evidence limitations</c>
+    /// heading, gets the deterministic runtime-authored limitations section appended (ADR-0042 §6, AF-05H). No model call is made
+    /// and the answer's own text is never changed. Default <c>true</c>.
     /// </summary>
-    public int EvidenceDisclosureRetries { get; init; } = 1;
+    public bool EvidenceDisclosureEnabled { get; init; } = true;
+
+    /// <summary>
+    /// <b>Deprecated (AF-05H)</b>; use <see cref="EvidenceDisclosureEnabled"/>. It used to count the model re-asks of the disclosure,
+    /// which no longer exist. It is still read so an existing configuration keeps its meaning: <c>0</c> disables the disclosure,
+    /// <c>1</c> leaves <see cref="EvidenceDisclosureEnabled"/> in charge, any other value fails validation. It never causes a model call.
+    /// </summary>
+    public int? EvidenceDisclosureRetries { get; init; }
+
+    /// <summary>Whether the deterministic disclosure is applied: <see cref="EvidenceDisclosureEnabled"/>, unless the deprecated key says 0.</summary>
+    public bool EvidenceDisclosureActive => EvidenceDisclosureEnabled && EvidenceDisclosureRetries is not 0;
 
     /// <summary>
     /// The most characters of each request body and each reply body kept with a recorded model call; a longer body is
@@ -121,6 +135,18 @@ public sealed record AgentRunnerOptions
     /// </summary>
     public TimeSpan ModelCallBudget { get; init; } = TimeSpan.FromSeconds(300);
 
+    /// <summary>The largest value <see cref="MaxOutputTokens"/> may take: a sanity bound, not a statement about any provider.</summary>
+    public const int MaxOutputTokensCeiling = 1_000_000;
+
+    /// <summary>
+    /// The most output tokens one model reply may be asked to generate. <c>null</c> (the default) requests no limit: nothing is sent,
+    /// the provider's own default applies and bOps does not know it. When set it is sent with every model call that does not carry
+    /// its own limit, and what the provider actually did is recorded beside it (finish reason, token counts, truncation). It is a
+    /// request, not a guarantee: set it to what the provider supports (for llama.cpp it becomes <c>max_tokens</c>) and keep it
+    /// within the output reserve of the model's context profile.
+    /// </summary>
+    public int? MaxOutputTokens { get; init; }
+
     /// <summary>The first backoff delay before retrying a model call; each later retry doubles it, up to <see cref="ModelRetryMaxDelay"/>, with jitter.</summary>
     public TimeSpan ModelRetryBaseDelay { get; init; } = TimeSpan.FromSeconds(1);
 
@@ -135,6 +161,10 @@ public sealed record AgentRunnerOptions
     /// <param name="providerRequestTimeout">The provider's effective transport timeout, when the caller knows it.</param>
     public void Validate(TimeSpan? providerRequestTimeout = null)
     {
+        ArgumentNullException.ThrowIfNull(Context);
+        Context.Validate();
+        Summarization.Validate(Context);
+
         if (MaxSteps < 1)
         {
             throw new InvalidOperationException("'Agent:MaxSteps' must be at least 1.");
@@ -167,11 +197,6 @@ public sealed record AgentRunnerOptions
             throw new InvalidOperationException("'Agent:MaxReplans' must not be negative.");
         }
 
-        if (VerbatimHistorySteps is < 0 or > 15)
-        {
-            throw new InvalidOperationException("'Agent:VerbatimHistorySteps' must be between 0 and 15.");
-        }
-
         if (MaxTotalTokens is <= 0)
         {
             throw new InvalidOperationException("'Agent:MaxTotalTokens' must be positive when configured.");
@@ -195,10 +220,11 @@ public sealed record AgentRunnerOptions
                 $"'Agent:ReplanWarningThreshold' ({threshold}) must be at least 1 and not greater than 'Agent:MaxLifetimeReplans' ({MaxLifetimeReplans}).");
         }
 
-        if (EvidenceDisclosureRetries is not (0 or 1))
+        if (EvidenceDisclosureRetries is { } retries and not (0 or 1))
         {
             throw new InvalidOperationException(
-                $"'Agent:EvidenceDisclosureRetries' ({EvidenceDisclosureRetries}) must be 0 (disabled) or 1.");
+                $"'Agent:EvidenceDisclosureRetries' ({retries}) is deprecated; when present it must be 0 (disabled) or 1. "
+                + "Use 'Agent:EvidenceDisclosureEnabled'.");
         }
 
         if (ModelCallMaxAttempts < 1)
@@ -214,6 +240,12 @@ public sealed record AgentRunnerOptions
         if (ModelCallBudget <= TimeSpan.Zero)
         {
             throw new InvalidOperationException("'Agent:ModelCallBudget' must be positive.");
+        }
+
+        if (MaxOutputTokens is { } maxOutput && (maxOutput < 1 || maxOutput > MaxOutputTokensCeiling))
+        {
+            throw new InvalidOperationException(
+                $"'Agent:MaxOutputTokens' ({maxOutput}) must be between 1 and {MaxOutputTokensCeiling} when configured.");
         }
 
         if (ModelRetryBaseDelay < TimeSpan.Zero)

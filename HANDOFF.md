@@ -1,6 +1,140 @@
 # Handoff — V1.3 pre-release stabilization
 
-## Current handoff — 2026-10-10
+## Live smoke follow-ups — 2026-10-17 (tasks `514b91d8-ec82-436b-bb33-2f923ebafdaf`, `e4554137-e709-492e-9590-a35b9c3d4fc6`; LIVE-01B, LIVE-05, LIVE-04A and LIVE-04C touch `src/`, `tests/` and `docs/`; implemented on top of the pre-LIVE baseline `76ac5e4` and committed locally on `codex/know-bench-01a` as `70561e3` (ADR-0060), `8247a4a` (LIVE-01B), `e148568` (LIVE-05), `129b23c` (LIVE-04A) and `c8258a9` (LIVE-04C); **not pushed, not released**)
+
+**Status at a glance (evidence only as documented below; no new live run was made for this reconciliation):**
+
+- **LIVE-01B** — implemented and tested offline; `PlanningGuidance` was received by the planner in the live tasks; the general effectiveness of the guidance is **not shown**; decision record
+  [ADR-0060](docs/architecture/adr/0060-planner-facing-tool-parameter-guidance.md) **Accepted** (operator, 2026-10-17, committed as `70561e3`); code committed as `8247a4a`.
+- **LIVE-05** — implemented and tested offline; the recovery path was exercised live in task `41710469-ac6b-4d89-b744-7733b5eaf46d`, and execution continued to `Completed`; cursor 0 verified, the cursor 1 of the earlier
+  failure (`e4554137`) was not directly re-validated; the general problem of reasoning exhaustion during `Replanning` is **not declared solved**; committed as `e148568`.
+- **LIVE-04A** — implemented and tested offline; adds `sampleMessageSemantics`; validation with a model on the new aggregation is **not shown**; committed as `129b23c`.
+- **LIVE-04C** — implemented and tested offline; adds `distinctMessages`, `messageVariants` and `messageDistribution`; **no live proof** with the updated aggregate output; the Qwen diagnostic validation is still to be run; committed as `c8258a9`.
+- **LIVE-02, LIVE-03, LIVE-04B** remain open with the states documented below. No Proposed decision (ADR-0058, ADR-0059, D-050) is promoted by this note.
+- Consolidation (2026-10-17, REPOSITORY-CONSOLIDATE-EXEC-01): `76ac5e4` is the baseline **preceding** the LIVE work, not the current HEAD. Local commits on top of it: `70561e3` ADR-0060 (Accepted), `8247a4a` LIVE-01B, `e148568` LIVE-05,
+  `129b23c` LIVE-04A, `c8258a9` LIVE-04C, then this documentation commit. Nothing is pushed or released. LIVE-04A and LIVE-04C are not validated live on the new aggregate output.
+
+- **LIVE-01 — truncated evidence, configuration intervention in progress.** The real `system.events` aggregate was 22,254 characters; `AgentRunner.TruncateForHistory` cut the observation to 4,038
+  (`Agent:MaxObservationCharacters = 4000`), so most diagnostic groups never reached the model. Local smoke setting only: `C:\bops-smoke\run\appsettings.json` now has `MaxObservationCharacters = 24000`
+  (previous file kept as `appsettings.json.pre-live01.bak`). Repository defaults, `models.ini`, the 32768 context window, `MaxOutputTokens` 8192, sampling and timeouts are unchanged. Offline check done;
+  the single live re-run is not done yet.
+- **LIVE-01B — `system.events` mode guidance now reaches the planner (implemented, offline-verified; guidance observed reaching the planner in live tasks; ADR-0060 Accepted; committed as `8247a4a`).** Cause: the planning catalog (`AgentRunner.DescribeToolCatalog`) gives the planner only the first
+  sentence of a tool description (≤120 chars) and never parameter descriptions, so raw/aggregate guidance never reached the plan that fixes `mode`. Fix: new optional `ToolParameter.PlanningGuidance`
+  (Abstractions, display-only, not validated), rendered by the catalog as `(guidance)` after the parameter constraints, capped at 320 characters; non-sensitive parameters only. `system.events` `mode` declares it
+  (aggregate preferred for overviews/counts/diagnosis; raw for individual events; raw may be a subset even with full time coverage; `complete=false`/`truncated=true` is not complete evidence). `aggregate` is not forced.
+  `system.events` catalog line 744 → 1052 characters (+308). Test: `PlanningContractVisibilityTests.ScopedCatalog_CarriesBoundedPlanningGuidanceForSystemEventsMode`. Decision record: ADR-0060, Accepted by the operator on 2026-10-17 (written after the code, see its §0). Limit: a description does not deterministically
+  steer Qwen, and the general effectiveness of the guidance is not shown. Pre-existing unrelated `bOps.Runtime.Tests` failures (also at baseline): `ToolCallProtocolTests.TheToolCatalog_Keeps…` and `ModelFailureEndToEndTests.ATransientProviderFailure_…`.
+- **LIVE-05 — the persisted-plan recovery request carried no feedback (implemented, offline-verified, committed as `e148568`; recovery path exercised live, see the `41710469` note below).** Task `e4554137`: plan `system.events` → `system.stability` → `system.crashes`;
+  after `system.events` Qwen answered finally, the runtime rejected it and replanned, the replan ended `finish_reason=length` with no content, and the persisted plan was continued at cursor 1 — with a request byte-identical to the one that had
+  drawn the premature final, so Qwen concluded again and the task failed `RepeatedWithoutProgress`. Cause: the rejected final (`PrematureFinal`) and the continuation (`EarlyFinalRecovery`) are tool-less bookkeeping steps, and
+  `AgentRunner.RebuildHistoricalTurns` skips every step without a `ToolCall`; the step system prompt depends on plan and cursor only, both unchanged. Fix: `EarlyFinalRecovery.ContinuationTurn` (new) returns a runtime-authored user turn
+  (`ContextProvenance.Runtime`), appended by `AgentRunner.BuildStepRequest` after the reconciliation/knowledge turns and before the logical-call continuation turns, only while the continuation is the latest step of the plan revision at the same
+  cursor. Text: the previous final answer was rejected because plan revision R is incomplete; next unfinished step N of M uses the operational tool T, which is the tool offered in this request; propose the call to T before any final
+  answer; it executes nothing and grants no authority. Built from revision, cursor, plan size and the catalog-validated tool name only (`PrematureFinal.ToolLabel`, now `internal`) — no model text, plan description or tool output. Offered tools,
+  system prompt, replan contract and replan/attempt counts are unchanged; after the recovered step runs the turn disappears (ordinary requests are untouched). No `tool_choice=required`. Test:
+  `EarlyFinalReplanTests.ARecoveredStepRequest_DiffersFromThePrematureOne_ByARuntimeAuthoredInstructionNamingThePendingTool` (fails without the hook). Limit: still a textual instruction; Qwen may ignore it, and a second premature final
+  is still bounded by `RepeatedWithoutProgress`. Live: in task `41710469-ac6b-4d89-b744-7733b5eaf46d` the recovery path was exercised and the task continued to `Completed`; cursor 0 was verified, while the cursor 1 of `e4554137` was not directly re-validated. This does not show that reasoning exhaustion in `Replanning` is solved in general. Offline: full solution build 0 warnings/0 errors; `dotnet test --filter "Category!=LiveModel"` fails only the 2 known `bOps.Runtime.Tests` baseline tests and 3 `bOps.Packages.Filesystem.Tests`
+  (`FsSizeTests.FsSize_ReturnsCompleteBoundedSummary_ForNestedTree`, `FsDeleteTreeTests.DeleteTree_FailsClosedBeforeDeleting_WhenTheParentWasReplaced`, `FsDeleteTreeTests.ApprovalBinding_ExpiresWithoutDeleting`), which fail identically on pristine `HEAD` (Windows environment).
+- **LIVE-04A — `system.events` aggregate states what `sampleMessage` means (implemented, offline-verified, committed as `129b23c`; to be validated live, no live run done).** Task `2ccca060-2fdc-455d-a914-226daca7a47e`: Qwen attributed to all 38
+  WHEA-Logger events 19 characteristics present only in the newest event's `sampleMessage`. Fix: aggregate results carry a top-level `sampleMessageSemantics` (fixed text, `SystemEventFormatting.SampleMessageSemantics`, placed right before `groups`):
+  the sample belongs only to the newest event; `count` covers every event sharing the key; other events may have different messages; sample attributes are not necessarily common to the group. Raw mode unchanged (field absent);
+  `schemaVersion` stays 2 (additive, no consumer enumerates top-level keys; the tool output reaches the observation verbatim). Grouping, key, order, `count`, `sampleMessage` and all limits unchanged; no `distinctMessageCount`, no provider-specific logic.
+  Cost: +359 UTF-8 bytes per aggregate result (about +1.6% on the 22,254-character real aggregate). Tests: `HardenSevenContractTests.EventAggregation_…` (key list, text, absent in raw) and `SystemEventsConformance` aggregate. Docs: `docs/system-events.md`.
+  Limit: deterministic tests prove the field is present, not that Qwen reads it correctly — the LLM quality problem is not shown solved until the live re-run.
+- **LIVE-04C — `system.events` aggregate carries the quantitative distribution of the original messages of each group (implemented, offline-verified, committed as `c8258a9`; to be validated live, no live run and no inference done).** Evidence
+  that it is needed: the replay in `C:\bops-smoke\live04a\20261017-173046` kept attributing the single TLB sample to all 38 WHEA events 19. The persisted task holds only the aggregate (one sample per group), so the raw events were
+  read from the local System log (read-only): the same provider/event had **5 distinct messages over 50 events** (27/8/6/5/4 by processor-core id and error type), so the group really is heterogeneous. Each group (in the leading
+  `messageDistribution.describedGroups` groups) now carries `distinctMessages` (exact, ordinal comparison of the full original messages, not of the 512-char sample) and, when > 1, `messageVariants` = `distribution` (`complete` |
+  `partial` + `unlistedEvents` | `unlisted` when the top-3 would cover less than half the events, e.g. messages embedding a time/id) + up to 3 `variants` `{count, message ≤200 chars, messageTruncated}`, most frequent first.
+  Top-level `messageDistribution {availability: all|partial|none, describedGroups}`; groups after `describedGroups` carry neither field (unknown, not uniform). No new instruction text, no "subtype" wording, no provider/OS logic.
+  Budget: details are capped at `SystemEventsLimits.MessageDistributionBytes` = 2,048 B and by `maxOutputBytes`, are added only to groups the result already keeps (bisection on the described prefix); **no group is dropped for them**, `observedGroups`,
+  `returnedGroups`, `count`, `sampleMessage`, `complete` and `truncated` are identical with/without them (tested at every budget of a sweep, via internal `Format(..., describeMessages: false)`). `schemaVersion` stays 2 (additive).
+  Measured on the real local Event Log (windowMinutes 1440, minSeverity warning, same snapshot): 37 groups, 20,276 B → 21,506 B (+1,230 B, +6.1%), 5 of 37 groups described (incl. WHEA 19: `distinctMessages` 5, top-3 = 18/9/5, 9 unlisted);
+  72 h: 27,884 → 29,137 B (+1,253 B), 50 groups both; with a budget of 20,400 B: `availability: none`, 37 groups kept, +66 B (the envelope field alone). On the replayed 22,408-char observation the estimate is ≈ 23.6K chars, under the
+  24,000 smoke `MaxObservationCharacters` by ≈ 0.4K; at the repository default 4,000 nothing changes (already cut). Consumers checked: `CorpusMinimizer` (test support) did not descend into a group's nested object, so `messageVariants` would have been
+  frozen into a corpus unredacted — it now removes it (test `AggregateGroups_AreMinimizedWithTheSameRules`); the corpus quality gate already rejects aggregates; `SystemEventsConformance` asserted the exact group key list — now prefix + optional fields,
+  with the described-prefix invariant; the audit summary and `SystemEventFacts` do not read these fields; no Angular/CLI consumer. Tests (new, `HardenSevenContractTests.MessageDistribution_*`, 11): identical messages; different messages with
+  verifiable counts; beyond the variant limit; tie order; differences only beyond the sample limit; almost-unique messages; allowance exhausted (leading groups only, 40 groups kept); no room at all (`none`, every group kept);
+  no group lost at any budget of a sweep; aggregate unchanged with/without details; input-order independence. Three mutants (ignore budget, case-insensitive grouping, compare the 512-char sample) are killed. Docs: `docs/system-events.md`.
+  Offline: full solution build 0 warnings/0 errors; `dotnet test bOps.slnx --filter "Category!=LiveModel"`: 37 assemblies, 5894 passed, 166 skipped, **5 failed** = the 2 known `bOps.Runtime.Tests` baseline tests + the 3 known
+  `bOps.Packages.Filesystem.Tests` (Windows environment); the passed count is not comparable to the 6158 recorded earlier (not investigated). Linux (WSL) and CI not run.
+  Limits that remain: variant `message` is cut at 200 characters (a discriminator after the cut is invisible; the variant then says `messageTruncated`); a model can still read a count as a cause — the text is neutral but nothing forces
+  the model to use it; groups beyond `describedGroups` have no distribution (the rank order, not importance, decides); the live effect on Qwen is untested.
+- **LIVE-02, LIVE-03, LIVE-04 (remaining scope) — suspended interventions, preserved unchanged** (LIVE-02 degenerative reasoning, LIVE-03 classification; LIVE-04 beyond LIVE-04A/04C not started). The detail below is the original text.
+- **LIVE-02 — degenerative reasoning in the bounded correction**, waiting for the LIVE-01 result. Not started (suspended).
+- **LIVE-03 — `EmptyResponse` instead of `TruncatedBeforeContent` classification**, to be assessed afterwards. Not started (suspended).
+
+## Current handoff — 2026-10-17 (consolidation of the MAF/Knowledge work, nothing committed by this step)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, baseline `76ac5e4` before the LIVE commits (reconciled 2026-10-17; this entry was written at `1ddde56`; the current HEAD is the documentation commit that follows `c8258a9`). The Local Agent pilot (ADR-0058) **is committed** (`cf82502`, `2df1c23`, `1ddde56`), and so is the rest of the work this entry called uncommitted:
+  D1–D3 corpus provenance `c3e395f`, D7 protected diagnosis + blind review `95122fa`, `Agent:MaxOutputTokens` and model-output telemetry `37ef356`, ADR-0059 refusal recovery with `InfrastructureFailure` `e46ac4d`,
+  documentation reconciliation `d0dcfbe`, KNOW-DISC-01 T8-FIX01 `76ac5e4`. The two entries below that say "nothing committed" describe the moment they were written. The LIVE-01B/05/04A/04C changes and ADR-0060 are committed on top of that baseline (`70561e3`, `8247a4a`, `e148568`, `129b23c`, `c8258a9`) and nothing is pushed. The untracked `docs/benchmarks/bench00-maf-compatibility-report.md` is pre-existing and is not part of any slice.
+- Offline validation of this tree (no live model, no capture): full solution build 0 warnings / 0 errors; `dotnet test bOps.slnx --filter "Category!=LiveModel"`: 37 assemblies, 6158 passed, 166 skipped,
+  **2 failed**, both in `bOps.Runtime.Tests` and both failing identically on pristine `HEAD` (`ToolCallProtocolTests.TheToolCatalog_KeepsTheNameTheRiskAndTheFirstSentenceOfEachTool_…`, `ModelFailureEndToEndTests.ATransientProviderFailure_RecoversWithinBounds_…`): stale expectations, not introduced here and not fixed.
+  The 8 skipped in `bOps.AgentFramework.Tests` are the env-gated live/operator tools (5 `KnowledgeBenchmarkLiveTests`, 2 `KnowledgeDiagnosisReviewTools`, 1 `KnowledgeHostCanaryLiveTests`). `git diff --check` clean. Linux (WSL) and CI not run.
+- State by area (details in the roadmap note of 2026-10-17 and the ADRs): ADR-0057 M1 T1–T8 implemented, **offline M1 gate PASS after T8-FIX01** (committed in `76ac5e4`), B1/B2 open (status table added to ADR-0057 §E); ADR-0058 and ADR-0059 and D-050 **Proposed**
+  but implemented; CLI pilot opt-in (`Knowledge:Enabled=false`); the API composes no Knowledge; the index is not published to the planner; MAF does not govern planning or tool execution; **no live Knowledge validation has been done**.
+- ADR-0059 text was made self-consistent (it said "no new result code" while introducing `InfrastructureFailure = 12`); no decision was changed.
+- Note: the ADR-0057 M1 gate excluded provider changes; `Agent:MaxOutputTokens` touches the OpenAI-compatible and Anthropic adapters, so it is recorded as a separate, post-M1 change.
+- T8 / M1 gate: executed 2026-10-17 on `d0dcfbe` = FAIL (defect: `AgentRunner.WrapToolOutput` did not neutralize the knowledge-index markers, ADR-0057 U.2 / S5; four §H.1 tests missing). **KNOW-DISC-01 T8-FIX01** (same day, committed as `76ac5e4`, worktree `bOps-knowbench01a`) fixed it: four `OrdinalIgnoreCase` replacements in `WrapToolOutput`; new tests `ToolOutputKnowledgeIndexMarkerTests` (Runtime), `KnowledgeIndexGovernanceTests` (injection end-to-end, unoffered tool, delegated role), `KnowledgeGoldenRequestTests` (planning/replan/legacy byte-identical to `d3da032`, goldens in `tests/bOps.AgentFramework.Tests/Golden/d3da032/`), `KnowledgeIndexDataTurnBoundaryTests` (Architecture), explicit "no `KnowledgeIndex` event for a refused resume" in `KnowledgeResumeTests`. Report `docs/architecture/know-disc-01-knowledge-index.md`: **M1 offline gate = PASS** (Windows and WSL; 40 distinct mutants: 38 detected, 2 equivalent, 0 undetected). Open and unchanged: historical 2 `bOps.Runtime.Tests` failures; Linux 28 AgentFramework failures from the Windows-only canary fixture (not §H.1 tests, so not gate-blocking, but those canary tests did not run on Linux); B1, B2, live validation, other gates. Committed in `76ac5e4`; nothing pushed.
+- Next task: none prescribed by this gate. The LIVE-01B/05/04A/04C consolidation is done locally; before any push the branch still needs the operator's verification and a decision on publication. LIVE-02, LIVE-03 and LIVE-04B stay open.
+
+## Previous handoff — 2026-10-17 (realignment + Knowledge infrastructure-error classification, uncommitted)
+
+- Authority: roadmap/gates `agentic/_plans/2026-10-11-maf-knowledge-convergence.md` (ACTIVE; gate table unchanged), tasks `agentic/_tasks/`, decisions
+  `agentic/06-decisions.md` + `docs/architecture/adr/`, current state this file. ADR-0052..0059: 0052/0055/0056/0057 Accepted per their files; **0058 and 0059 and D-050 are Proposed
+  yet implemented** (opt-in CLI pilot, refusal recovery) — implementation done, offline tests done, live validation missing, acceptance is the operator's.
+- Done now (only functional change authorised): `KnowledgeReadResultCode.InfrastructureFailure = 12` (appended). The bridge used to audit a framework-function
+  failure as `IntegrityMismatch` (flag `Infrastructure`), so the benchmark and operators read a host fault as tampering. Now: `InfrastructureFailure` is
+  Recoverable (nothing returned, read is optional, withdrawn after `MaxRejections`); `IntegrityMismatch` = bytes differ from pin, `NotAuthorized`/`SnapshotUnavailable`
+  stay Integrity (hard stop); the benchmark safety check still rejects a run containing any of them. Host text-normalization failure in `discover` is infrastructure too.
+  Tests: `KnowledgeRefusalRecoveryTests` (infra vs integrity) + KnowledgeReadBridge/SnapshotBridge/IndexBridge/Comparison: 72/72 pass. Nothing else run (no full suite, no live).
+- Timeouts (Qwen 32K/8K, ~60 tok/s ≈ 137 s + prefill): API profile 300 s attempt / 360 s HTTP / 660 s budget is coherent. CLI defaults 120/150/300 s are not; operator
+  override documented in `docs/knowledge/local-agent-pilot.md` §6 (no shipped default changed; OpenRouter default stays).
+- Deferred by operator: payload anonymisation, reasoning retention, response redaction, retention. Not blocking.
+- Open gates (none passed): BENCH-00 official 3×3, BENCH-01, AF-EVID-01, AF-05H4-VERIFY, ARCH-01/02/03, KNOW-01/02/03, ADR-0054 acceptance, ADR-0057 B1/B2.
+- Uncommitted KNOW-BENCH D1–D3/D7 work in this worktree was not touched. Nothing committed or pushed.
+- Next task (not started): finish **BENCH-01 prerequisites** — run the full offline suite (`dotnet test`, excluding `Category=LiveModel`) on this tree to confirm the
+  uncommitted set is green, then commit it in reviewed slices; then BENCH-00 3×3 when the operator authorises live runs. Done when the suite is green and the slices are committed.
+
+## Previous handoff — 2026-10-17 (Knowledge in the CLI: Local Agent pilot; since committed as `cf82502`, `2df1c23`, `1ddde56`)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, on top of the uncommitted KNOW-BENCH D1–D3/D7 changes (untouched). *(At the time of writing: nothing committed or pushed; the pilot was committed afterwards, never pushed.)*
+- Operator instruction: a circumscribed revision of D-049 for an opt-in Knowledge integration in the local CLI. Decision text: `docs/architecture/adr/0058-local-agent-knowledge-pilot.md`
+  (Proposed) and D-050 (Proposed). The ADR records the gate review: ARCH-01/03 are documentation not in this tree (ADR-0054 is Proposed, not accepted), BENCH-00 3×3 is not run,
+  ADR-0057 B1/B2 are open. No gate is declared passed.
+- Code: `LocalKnowledgeComposition` (AgentFramework), `CliKnowledge` + `CliRunnerComposition` (CLI), `Knowledge:Enabled=false` in the shipped `appsettings.json`,
+  `KnowledgeTrustStore.KeyCount`, publisher scripts `scripts/New-KnowledgeSigningKey.ps1` / `Publish-KnowledgePack.ps1`. API, runtime contracts, policy and audit schema unchanged.
+- Operator guide: `docs/knowledge/local-agent-pilot.md`. Before relying on it, verify ADR-0057 B2 (two consecutive `user` messages) on the model server in use.
+- Not done / designed only: binding by capability or goal, several packs, Experience, a `bops knowledge` command, hot reload of trust and grants, any API composition (ADR-0058 §6–§7).
+
+## Previous handoff — 2026-10-11 (AF-05H, H2 + H4)
+
+- Operator scope decision: only the blockers H2 (a premature final replans, ADR-0046 amendment) and H4 (deterministic evidence disclosure,
+  ADR-0042 amendment) are on `fix/af-05h-live-regression-hardening` (base AF-05G `97507aa`). Packet:
+  `agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`; measurements: benchmark results §9.
+- H1 (context operating range) is isolated on `feat/af-05h-h1-context-operating-range` (one commit on `97507aa`) so it can be left out of a
+  merge while current behaviour is measured and MAF is evaluated as orchestrator. H3 and H5 are implemented only on
+  `backup/af-05h-h1-h5-full` and are not part of this phase.
+- `Agent:EvidenceDisclosureEnabled` replaces `Agent:EvidenceDisclosureRetries` (still read as a deprecated alias). Live runs NOT RUN.
+- Operator note: the local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts, `VerbatimHistorySteps`) is still not committed.
+
+## Previous handoff — 2026-10-11 (AF-05, local, not pushed)
+
+- AF-05 (MAF regression, tuning and legacy cleanup) is implemented locally on `feat/af-05-maf-regression-tuning-cleanup` (base `a723092`, the
+  verified AF-04R branch). The MAF context layer is the only model-facing history path; `BoundedHistory`, `Agent:VerbatimHistorySteps` and the K=0
+  rebuild are removed. All evidence is **deterministic-fixture class**: no local server and no provider credentials were available, so the local
+  (Qwen-like), OpenRouter/external and Anthropic runs are **NOT RUN**. Windows and Linux CI are **NOT RUN** (nothing was pushed).
+- Packet and evidence: `agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md`; measurements:
+  `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`; operator guide: `docs/operator-configuration.md` §13.
+- **Decision requested** (not applied): the ADR-0042 grounding block shows 12 facts, newest steps first, so on the c508 shape `system.events`
+  crowds out the AF-04 facts of `system.stability` and `system.crashes`. A fair-share order raised directly visible facts 1/9 → 7/9 at the same tokens in an
+  uncommitted experiment; it needs its own ADR-0042 amendment.
+- Not done: CLI cross-provider dedicated summarizer (needs the API's provider profiles and vault in the CLI — a new provider/secret framework);
+  caller-cancellation linking in the broker (breaks token accounting of an in-flight response).
+- Before pushing: the committed branch excludes the operator's local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts).
+
+## Previous handoff — 2026-10-10
 
 - F-25B (ADR-0051 durable ordinary-task mutation journal) is implemented on
   `design/v13-f25-ordinary-mutation-journal`. It adds fenced SQLite intent/outcome persistence, atomic outcome plus

@@ -1,0 +1,22 @@
+{
+ "scenarios": {
+  "T02": {
+   "goal": "Analizza gli eventi Windows delle ultime 24 ore, identifica eventuali problemi di stabilità e distingui le evidenze dalle possibili cause.",
+   "originTaskId": "2de44dcd-60f2-4c0e-8def-a13a538b7a81"
+  },
+  "T08": {
+   "goal": "Leggi la temperatura della GPU e la velocità delle ventole del PC e dimmi se sono nella norma.",
+   "originTaskId": "a8a044f6-4933-44aa-9561-a0b30f7797e0"
+  },
+  "T10": {
+   "goal": "Usa la conoscenza disponibile per spiegare come interpretare gli eventi Kernel-Power 41 e quali evidenze servono per distinguerli da un normale spegnimento; leggi le risorse necessarie.",
+   "originTaskId": "8bd07e10-bb96-497d-a7ca-e933fb36787b"
+  }
+ },
+ "order": [
+  "T08",
+  "T10",
+  "T02"
+ ],
+ "repetitions": 3
+}

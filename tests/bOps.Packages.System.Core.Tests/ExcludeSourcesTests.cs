@@ -370,7 +370,8 @@ public sealed class ExcludeSourcesTests
             Assert.Empty(json["excludeSources"]!.AsArray());
             var keys = json.Select(pair => pair.Key).ToList();
             Assert.Equal(keys.IndexOf("window") + 1, keys.IndexOf("excludeSources"));
-            Assert.Equal(keys.IndexOf("excludeSources") + 1, keys.IndexOf("coverage"));
+            Assert.Equal(keys.IndexOf("excludeSources") + 1, keys.IndexOf("sourceFilter"));
+            Assert.Equal(keys.IndexOf("sourceFilter") + 1, keys.IndexOf("coverage"));
         }
     }
 
@@ -433,7 +434,7 @@ public sealed class ExcludeSourcesTests
             ],
         };
 
-        var output = SystemEventFormatting.Format(snapshot, Query(excluded) with { FromUtc = Now.AddDays(-180) }, mode, 500, 4_096);
+        var output = SystemEventFormatting.Format(snapshot, Query(excluded, new string('s', 128)) with { FromUtc = Now.AddDays(-180) }, mode, 500, 4_096);
 
         var bytes = Encoding.UTF8.GetByteCount(output);
         Assert.True(bytes <= 4_096, $"The envelope is {bytes} bytes.");
@@ -463,7 +464,7 @@ public sealed class ExcludeSourcesTests
             ],
         };
 
-        var bytes = Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(snapshot, Query(excluded), EvidenceMode.Raw, 500, 4_096));
+        var bytes = Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(snapshot, Query(excluded, new string('s', 128)), EvidenceMode.Raw, 500, 4_096));
 
         Assert.True(bytes < 4_096 - 512, $"The envelope alone is {bytes} bytes.");
     }

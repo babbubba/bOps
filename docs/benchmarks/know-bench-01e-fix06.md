@@ -1,0 +1,10 @@
+# KNOW-BENCH-01E-FIX06 — HTTP Budget and Timeout Integrity
+Base verificata: codex/know-bench-01a, HEAD 3686a05, worktree inizialmente pulito.
+Contabilizzazione: BenchmarkHttpBudget.SendAsync sul client dedicato, subito prima di SocketsHttpHandler; factory LlamaCpp esistente, adapter OpenAI-compatible invariato; nessun contatore HTTP già disponibile nel provider.
+Limite: 5 dispatch HTTP per condizione A/B; prenotazione atomica, sesto rifiutato prima del trasporto; redirect automatici disabilitati, nessun proxy/cookie/credenziale di trasporto configurato.
+Retry del broker e re-ask JSON dell'adapter attraversano lo stesso hook; budget esaurito non retryable (Unknown nel broker), terminalCause separato HttpBudgetExhausted nell'export.
+Timeout benchmark: tentativo 90 s < trasporto 120 s; chiamata logica 300 s include retry/backoff/fallback, condizione 600 s con deadline e budget attivo; Validate verifica la composizione prima delle richieste.
+Metriche: llmCalls/completeAsyncCalls contano CompleteAsync (inclusi retry), logicalModelCalls usa ModelAttempt=1 nell'audit esistente; completate/fallite separate; HTTP inviati/rifiutati ed esiti headers/trasporto separati dai risultati modello.
+Export schema v2 e pubblicazione atomica conservati; audit persistito payload-free integrato con osservazioni HTTP process-local ordinate; timeout, provider error e HTTP budget distinti; usage assente resta null, nessuna risposta finale attribuita al fallimento.
+Due soli test offline KnowledgeBenchmarkHttpTests superati con --no-restore e filtro dedicato: retry + fallback (3 CompleteAsync, 5 HTTP prima del rifiuto), timeout/provider/budget con export coerente; solo progetto test e dipendenze compilati, nessuna operazione live/capture/benchmark/suite/solution/push/merge.
+Blocker HTTP residui: nessuno. Limite osservativo: dispatch non prova ricezione server; l'adapter omette usage di alcune risposte correttive JSON, quindi i token riportati non attestano il totale HTTP; nessuna contabilizzazione token completa simulata. Runtime produttivo, appsettings e pacchetti invariati.

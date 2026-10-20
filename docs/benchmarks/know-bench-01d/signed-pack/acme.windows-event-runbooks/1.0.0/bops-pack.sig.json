@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "publisher": "acme",
+  "keyId": "acme-2026",
+  "algorithm": "RSA-PSS-SHA256",
+  "signature": "AzgeB2MFn0hJYvxf4MQ9/R3x\u002B1sZxJNsJqQJGL52ppjXXBKta4qy35xVD6w/tl8Me7kSLmj4ECyfdr1PNMZ\u002BM5oVAy9C4\u002BtG2XL2MSiNJzj3s/a4NgUz/MCMiqgfhXS6Vnp90x0khw3K5HLQVp8ImapKugMNWqRbNv099HOU/d406pqgZg\u002B9wUJM98fgv44g3V7SE88Q9oBP4QkBLzI4e1y4GMU1ZdIzkzYbxA931XEBm8enn8X6yL0p3/l\u002B5PoARccAvhrKecpe/QcsZb90pmiLhp\u002BwZs7z2WLjqPm/\u002BcWSFvSgslBk3pDfVRZWZZQGaNMqL0qUEvHpieb0fJI84A=="
+}

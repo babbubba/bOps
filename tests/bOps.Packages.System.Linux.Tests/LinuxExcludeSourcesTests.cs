@@ -253,9 +253,93 @@ public sealed class LinuxExcludeSourcesTests
         Assert.False(File.Exists(fake.ArgsPath));
     }
 
+    // ---- ADR-0061: the source filter on Linux (registration is always unknown; the unit is a matched field) ----
+
+    private static string[] Fields(JsonNode? filter) => [.. filter!["matchedFields"]!.AsArray().Select(field => field!.GetValue<string>())];
+
+    [LinuxOnlyFact]
+    public async Task ASourceThatMatches_ByIdentifierOrByUnit_IsConfirmedByTheRecords_AndNeverRegistered()
+    {
+        using var fake = new FakeJournalctl([Line(1, "x", unit: "x.service"), Line(2, "other")]);
+
+        var byIdentifier = (await RunAsync(ToolFor(fake), j => j["source"] = "X"))["sourceFilter"]!;
+        var byUnit = (await RunAsync(ToolFor(fake), j => j["source"] = "x.service"))["sourceFilter"]!;
+
+        foreach (var filter in new[] { byIdentifier, byUnit })
+        {
+            Assert.Equal(["source", "unit"], Fields(filter));
+            Assert.Equal("unknown", filter["registrationStatus"]!.GetValue<string>());
+            Assert.True(filter["observedMatch"]!.GetValue<bool>());
+            Assert.Null(filter["caution"]);
+        }
+
+        Assert.Equal("X", byIdentifier["requested"]!.GetValue<string>());
+    }
+
+    [LinuxOnlyFact]
+    public async Task ASourceThatMatchesNothing_IsUnverified_WhileTheResultStaysComplete()
+    {
+        using var fake = new FakeJournalctl([Line(1, "x"), Line(2, "y")]);
+
+        var json = await RunAsync(ToolFor(fake), j => j["source"] = "no-such-source");
+
+        Assert.True(json["complete"]!.GetValue<bool>());
+        Assert.False(json["sourceFilter"]!["observedMatch"]!.GetValue<bool>());
+        Assert.Equal("noMatchSourceUnverified", json["sourceFilter"]!["caution"]!.GetValue<string>());
+        Assert.Equal(ToolResultCompleteness.Complete, (await ToolFor(fake).ExecuteAsync(Args(j => j["source"] = "no-such-source"))).Completeness);
+    }
+
+    [LinuxOnlyFact]
+    public async Task ACeilingReachedWithoutAMatch_IsTruncated_AndNotAnAbsence()
+    {
+        var lines = Enumerable.Range(0, SystemEventsLimits.ScanCeiling).Select(_ => Line(1, "noise")).Append(Line(30, "signal")).ToArray();
+        using var fake = new FakeJournalctl(lines);
+
+        var json = await RunAsync(ToolFor(fake), j => j["source"] = "signal");
+
+        Assert.True(json["truncated"]!.GetValue<bool>());
+        Assert.False(json["complete"]!.GetValue<bool>());
+        Assert.False(json["sourceFilter"]!["observedMatch"]!.GetValue<bool>());
+        Assert.Equal("noMatchSourceUnverified", json["sourceFilter"]!["caution"]!.GetValue<string>());
+    }
+
+    [LinuxOnlyFact]
+    public async Task TheJournalctlArguments_AreTheSame_WithAndWithoutASource()
+    {
+        using var fake = new FakeJournalctl([Line(1, "x")]);
+
+        await RunAsync(ToolFor(fake), j => j["source"] = "x");
+        var withSource = fake.RecordedArguments;
+        await RunAsync(ToolFor(fake));
+        var without = fake.RecordedArguments;
+
+        Assert.DoesNotContain(withSource, argument => argument.Equals("x", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(
+            without.Where(argument => !argument.StartsWith("--since", StringComparison.Ordinal) && !argument.StartsWith("--until", StringComparison.Ordinal)),
+            withSource.Where(argument => !argument.StartsWith("--since", StringComparison.Ordinal) && !argument.StartsWith("--until", StringComparison.Ordinal)));
+    }
+
+    [LinuxOnlyFact]
+    public async Task WithoutASource_TheFilterIsNull()
+    {
+        using var fake = new FakeJournalctl([Line(1, "x")]);
+
+        var json = await RunAsync(ToolFor(fake));
+
+        Assert.Null(json["sourceFilter"]);
+    }
+
     // ---- the real journal (Linux hosts) ----
 
     [LinuxOnlyFact]
     public Task ExcludeSources_ConformsInBothModes_AgainstTheRealJournal() =>
         SystemToolConformance.AssertSystemEventsExcludeSourcesConformAsync(new LinuxSystemEventsTool());
+
+    [LinuxOnlyFact]
+    public Task SourceFilter_Conforms_AgainstTheRealJournal() =>
+        SystemToolConformance.AssertSystemEventsSourceFilterConformAsync(new LinuxSystemEventsTool(), "unknown", ["source", "unit"]);
+
+    [LinuxOnlyFact]
+    public Task TheLargestEnvelope_FitsTheSmallestBudget_AgainstTheRealJournal() =>
+        SystemToolConformance.AssertSystemEventsEnvelopeFitsTheSmallestBudgetAsync(new LinuxSystemEventsTool());
 }

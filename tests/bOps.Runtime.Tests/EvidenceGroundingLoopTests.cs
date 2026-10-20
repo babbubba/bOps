@@ -94,6 +94,157 @@ public sealed class EvidenceGroundingLoopTests
     private static string LastUserTurn(ModelRequest request) =>
         request.History[^1].Content ?? string.Empty;
 
+    // T02-GROUNDING-01: sanitized typed values from T02-r3, not a Windows capture.
+    private static ToolCallResult T02Evidence(ToolResultCompleteness completeness = ToolResultCompleteness.Partial) =>
+        ToolCallResult.Success("{}") with
+        {
+            Completeness = completeness,
+            Facts =
+            [
+                new("system.crashes.observed-count", "all", ToolParameterType.Integer, JsonValue.Create(43)),
+                new("system.crashes.group-count", "groups", ToolParameterType.Integer, JsonValue.Create(10)),
+                new("system.crashes.kind-count", "kernel-live-dump", ToolParameterType.Integer, JsonValue.Create(27)),
+                new("system.crashes.kind-count", "kernel-bugcheck", ToolParameterType.Integer, JsonValue.Create(15)),
+                new("system.crashes.kind-count", "wer", ToolParameterType.Integer, JsonValue.Create(1)),
+                new("system.crashes.kernel-code-count", "kind=kernel-live-dump;code=0x193", ToolParameterType.Integer, JsonValue.Create(26)),
+                new("system.crashes.kernel-code-count", "kind=kernel-bugcheck;code=0x1e", ToolParameterType.Integer, JsonValue.Create(7)),
+            ],
+        };
+
+    private const string T02ObservedQuote =
+        "Il codice `0x193` (NTFS_FILE_SYSTEM) è predominante, apparendo in 26 dump live e 7 bugcheck.";
+
+    private const string T02SupportedAnswer =
+        "Osservati 43 elementi: 27 live dump, 15 bugcheck e 1 WER. Sono 42 segnalazioni kernel, non 42 incidenti dimostrati. " +
+        "26 live dump hanno codice 0x193; 7 bugcheck hanno codice 0x1e. La causa resta incerta.\n\n" +
+        "Evidence limitations\nLa raccolta è parziale; i conteggi osservati sono minimi.";
+
+    [Fact]
+    public void T02_LedgerReproduction_ShowsCategorySplitButOmitsDumpReferenceCount()
+    {
+        static EvidenceFact Integer(string type, string key, int value) =>
+            new(type, key, ToolParameterType.Integer, JsonValue.Create(value));
+
+        var crashes = T02Evidence() with
+        {
+            Facts =
+            [
+                .. T02Evidence().Facts,
+                Integer("system.crashes.kernel-code-count", "kind=kernel-bugcheck;code=0x7f", 2),
+                Integer("system.crashes.kernel-code-count", "kind=kernel-bugcheck;code=0xa", 2),
+                Integer("system.crashes.dump-reference-count", "all", 42),
+                // Sanitized: the path's text is immaterial to the selection, and is omitted anyway.
+                new("system.crashes.kernel-dump-path", "newest", ToolParameterType.Path, JsonValue.Create(@"C:\sanitized\dump.dmp")),
+            ],
+        };
+        var stability = Partial() with
+        {
+            Facts =
+            [
+                Integer("system.stability.category-count", "hardwareError", 8),
+                Integer("system.stability.category-count", "displayFault", 26),
+                Integer("system.stability.window-days", "window", 1),
+            ],
+        };
+        var events = Complete() with
+        {
+            Facts =
+            [
+                Integer("system.events.matched-count", "source=.NET Runtime;eventId=1026", 2),
+                Integer("system.events.matched-count", "source=.NET Runtime;eventId=1025", 1),
+            ],
+        };
+        var grounding = EvidenceGroundingLedger.Build(
+        [
+            ToolStep(0, "system.info", Failed(ToolFailureKind.Environment)),
+            ToolStep(1, "system.crashes", crashes),
+            ToolStep(2, "system.stability", stability),
+            ToolStep(3, "system.events", events),
+        ], [])!;
+
+        Assert.Equal(["F1.1", "F1.2", "F1.3", "F1.4", "F1.5", "F1.6", "F1.7",
+            "F2.1", "F2.2", "F2.3", "F3.1", "F3.2"], grounding.Facts.Select(fact => fact.Id));
+        Assert.Equal(4, grounding.OmittedCount);
+        Assert.DoesNotContain("dump-reference-count", grounding.Text, StringComparison.Ordinal);
+        Assert.Contains("(from partial evidence)", grounding.Text, StringComparison.Ordinal);
+        Assert.Contains("Unknown or limited (never zero or absence; see the evidence limitations): steps 0, 1, 2.",
+            grounding.Text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Sono stati osservati 43 dump kernel.", "F0.1")]
+    [InlineData("Sono stati osservati 28 kernel-live-dump.", "F0.3")]
+    [InlineData(T02ObservedQuote, "F0.7")]
+    public async Task T02_CitedCountOrCategoryContradiction_UsesExistingBoundedCorrection(string answer, string factId)
+    {
+        var (state, model, tool) = await RunAsync(T02Evidence(), Options(),
+            Final(answer), Verdict((factId, answer)), Final(T02SupportedAnswer));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(T02SupportedAnswer, state.Steps[^1].Observation);
+        Assert.Equal(EvidenceGroundingOutcome.Corrected, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Equal(5, model.Requests.Count); // plan, tool, final, check, correction; no extra check or tool.
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Theory]
+    [InlineData(T02SupportedAnswer)]
+    [InlineData("Osservati 43 elementi, non 43 dump kernel; 10 gruppi non significano 10 crash effettivi.")]
+    [InlineData("Potrebbero esserci altri crash nelle fonti non leggibili; il totale reale è sconosciuto.")]
+    [InlineData("Se ci fossero 43 bugcheck, occorrerebbe distinguerli dai report; è un esempio ipotetico.")]
+    [InlineData("L'ipotesi storage è da verificare; la correlazione non dimostra una causa.")]
+    public async Task T02_NegativeControls_NoCitationDoesNotRejectLawfulOrUncertainText(string answer)
+    {
+        // Scripted checker: this proves orchestration, not the ability of Qwen to classify these sentences.
+        var (state, model, _) = await RunAsync(T02Evidence(), Options(), Final(answer), Verdict());
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.StartsWith(answer, state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(EvidenceGroundingOutcome.NoContradictionCited, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Equal(4, model.Requests.Count);
+    }
+
+    [Fact]
+    public async Task T02_KnownDefect_PartialCorrectionLeavesWrongCodeAndKernelTotalCompleted()
+    {
+        const string residual = "Osservati 43 dump kernel. Il codice `0x193` (NTFS_FILE_SYSTEM) compare in 26 live dump; " +
+            "7 bugcheck hanno codice 0x1e.\n\nEvidence limitations\nLa raccolta è parziale.";
+        var (state, model, _) = await RunAsync(T02Evidence(), Options(),
+            Final("Osservati 43 dump kernel. " + T02ObservedQuote),
+            Verdict(("F0.7", T02ObservedQuote)), Final(residual));
+
+        // Characterization of the observed defect, explicitly NOT a diagnostic acceptance criterion.
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(residual, state.Steps[^1].Observation);
+        Assert.Equal(EvidenceGroundingOutcome.Corrected, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Equal(5, model.Requests.Count);
+    }
+
+    [Fact]
+    public async Task T02_KnownDefect_DisclosureDoesNotValidateCompletenessClaims()
+    {
+        const string answer = "La raccolta è completa: esattamente 43 crash totali e nessun altro evento possibile.";
+        var (state, _, _) = await RunAsync(T02Evidence(), Options(), Final(answer), Verdict());
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.StartsWith(answer, state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.True(EvidenceDisclosure.HasHeading(state.Steps[^1].Observation));
+        Assert.Equal(EvidenceGroundingOutcome.NoContradictionCited, FinalResponse.GroundingOf(state.Steps[^1]));
+    }
+
+    [Fact]
+    public async Task T02_KnownDefect_ShortenedObservationDoesNotValidateCompletenessClaims()
+    {
+        const string answer = "Tutti i dati sono visibili integralmente; il totale reale è esattamente 43.";
+        var result = T02Evidence(ToolResultCompleteness.Complete) with { Output = new string('x', 9000) };
+        var (state, model, _) = await RunAsync(result, Options(), Final(answer), Verdict());
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.StartsWith(answer, state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.True(EvidenceDisclosure.HasHeading(state.Steps[^1].Observation));
+        Assert.Contains("observation shortened from 9000 characters", model.Requests[3].SystemPrompt, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task G7_WheaStylePositiveFact_ContradictoryFirstAnswer_IsNotPersistedUnchanged()
     {
@@ -189,6 +340,21 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal(TaskTerminalKind.EmptyResponse, state.TerminalReason?.Kind);
     }
 
+    // LIVE-F1-FIX-01: the correction becomes the persisted answer, so a content-free one is no correction.
+    [Theory]
+    [InlineData(">")]
+    [InlineData("**")]
+    [InlineData("...")]
+    public async Task G9b_ContentFreeCorrection_FailsAsEmptyResponse_NeverCompleted(string correction)
+    {
+        var (state, _, _) = await RunAsync(Final(ContradictoryAnswer), Flagged, Final(correction));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.EmptyResponse, state.TerminalReason?.Kind);
+        Assert.DoesNotContain(state.Steps, FinalResponse.IsFinalStep);
+        Assert.Contains("The correction had no answer content.", state.Steps[^1].Observation, StringComparison.Ordinal);
+    }
+
     public static TheoryData<object> UnusableChecks => new()
     {
         Final("I think the answer is fine."),
@@ -259,24 +425,24 @@ public sealed class EvidenceGroundingLoopTests
     }
 
     [Fact]
-    public async Task G12_DisclosureReAskRunsFirst_ThenTheCheck_AndTheCorrectionKeepsTheHeading()
+    public async Task G12_TheDeterministicDisclosureComesFirst_ThenTheCheckSeesTheDisclosedFinal_AndTheCorrectionKeepsTheHeading()
     {
-        const string disclosed = ContradictoryAnswer + "\n\nEvidence limitations\n- test.events returned a partial result.";
+        // AF-05H: no model call between the answer and the check; the check reads the original answer plus the runtime section.
         const string correctedDisclosed = CorrectedAnswer + "\n\nEvidence limitations\n- test.events returned a partial result.";
 
         var (state, model, _) = await RunAsync(Evidence(ToolResultCompleteness.Partial), Options(),
-            Final(ContradictoryAnswer), Final(disclosed), Flagged, Final(correctedDisclosed));
+            Final(ContradictoryAnswer), Flagged, Final(correctedDisclosed));
 
         Assert.Equal(AgentTaskStatus.Completed, state.Status);
         Assert.Equal(correctedDisclosed, state.Steps[^1].Observation);
-        Assert.Equal("Final response; evidence disclosure re-ask accepted; evidence grounding corrected", state.Steps[^1].Description);
-        Assert.Equal(EvidenceDisclosure.Instruction, LastUserTurn(model.Requests[3]));
-        Assert.Equal(EvidenceGroundingLedger.CheckInstruction, LastUserTurn(model.Requests[4]));
-        Assert.Equal(disclosed, model.Requests[4].History[^2].Content);
+        Assert.Equal("Final response; evidence limitations appended by runtime; evidence grounding corrected", state.Steps[^1].Description);
+        Assert.Equal(EvidenceGroundingLedger.CheckInstruction, LastUserTurn(model.Requests[3]));
+        var checkedCandidate = model.Requests[3].History[^2].Content!;
+        Assert.StartsWith(ContradictoryAnswer + "\n\n## Evidence limitations\n" + EvidenceDisclosure.AppendedLead, checkedCandidate, StringComparison.Ordinal);
+        Assert.True(EvidenceDisclosure.HasHeading(checkedCandidate));
         Assert.Contains("(from partial evidence)", model.Requests[2].SystemPrompt, StringComparison.Ordinal);
         Assert.Equal(
-            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceDisclosureReAsk, LogicalModelCallRole.EvidenceGroundingCheck,
-                LogicalModelCallRole.EvidenceGroundingCorrection],
+            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceGroundingCheck, LogicalModelCallRole.EvidenceGroundingCorrection],
             FinalResponse.LogicalCalls(state.Steps[^1]).Select(call => call.Role));
     }
 
@@ -355,6 +521,41 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal(AgentTaskStatus.Completed, resumed.Status);
         Assert.Equal(liveBlock, BlockOf(resumedModel.Requests[0].SystemPrompt));
         Assert.Equal("Final response; evidence grounding check cited no contradiction", resumed.Steps[^1].Description);
+    }
+
+    [Fact]
+    public async Task G2T5_PersistReopenResume_GivesTheSameStepDiverseSelection()
+    {
+        // AF-05G: three dense steps, none referenced. The selection is one fact per step per pass, live and after reopen.
+        ToolCallResult Dense(string prefix) => ToolCallResult.Success("{}") with
+        {
+            Completeness = ToolResultCompleteness.Complete,
+            Facts = [.. Enumerable.Range(0, 8).Select(i => new EvidenceFact(FactType, $"{prefix}{i}", ToolParameterType.Integer, JsonValue.Create(i)))],
+        };
+        ToolRegistry DenseRegistry() => Registry(
+            new ResultTool("test.d1", Dense("a")), new ResultTool("test.d2", Dense("b")), new ResultTool("test.d3", Dense("c")));
+
+        var store = new InMemoryTaskStore();
+        var liveModel = new ScriptedModel(Plan("test.d1", "test.d2", "test.d3"), Call("test.d1", "c1"), Call("test.d2", "c2"), Call("test.d3", "c3"));
+        var interrupted = await Runner(liveModel, DenseRegistry(), new RecordingAuditSink(), Options(), store: store).RunAsync("diagnose", Actor);
+        Assert.Equal(AgentTaskStatus.Failed, interrupted.Status);
+        var liveBlock = BlockOf(liveModel.Requests[4].SystemPrompt);
+        foreach (var step in new[] { 0, 1, 2 })
+        {
+            Assert.Contains($"- F{step}.1 step {step} ", liveBlock, StringComparison.Ordinal);
+        }
+
+        var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(await store.LoadAsync(interrupted.Id)))!;
+        Assert.Equal(liveBlock, EvidenceGroundingLedger.Delimit(EvidenceGroundingLedger.Build(reloaded.Steps, reloaded.Plans)!));
+
+        var resumeStore = new InMemoryTaskStore();
+        resumeStore.Seed(reloaded);
+        var resumedModel = new ScriptedModel(Final(CorrectedAnswer), Verdict());
+        var resumed = await Runner(resumedModel, DenseRegistry(), new RecordingAuditSink(), Options(), store: resumeStore)
+            .ResumeAsync(reloaded, new ActorIdentity("api-user", "resumer", "Resumer"));
+
+        Assert.Equal(AgentTaskStatus.Completed, resumed.Status);
+        Assert.Equal(liveBlock, BlockOf(resumedModel.Requests[0].SystemPrompt));
     }
 
     private static string BlockOf(string systemPrompt)

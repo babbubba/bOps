@@ -16,7 +16,7 @@ import {
 import { ExecutionPlanPanel } from './execution-plan-panel';
 import { I18n } from '../../core/i18n/i18n';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
-import { modelServed } from '../../shared/model-call-format';
+import { modelServed, stepModelCalls } from '../../shared/model-call-format';
 import { StatusBadge } from '../../shared/status-badge';
 import { isInterrupted, lastFailedModelReason } from '../../shared/task-lifecycle';
 import { describeModelFailure, describeRefusal, describeTerminalKind } from '../../state/describe-error';
@@ -35,6 +35,7 @@ export class Dashboard implements OnInit {
   protected readonly goal = signal('');
 
   protected readonly modelServed = modelServed;
+  protected readonly stepModelCalls = stepModelCalls;
   protected readonly modelCallFailed = ModelCallFailed;
   protected readonly isInterrupted = isInterrupted;
 

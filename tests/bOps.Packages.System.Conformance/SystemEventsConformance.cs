@@ -138,6 +138,7 @@ public static partial class SystemToolConformance
         Assert.Equal(2, root["schemaVersion"]!.GetValue<int>());
         Assert.Equal("aggregate", root["mode"]!.GetValue<string>());
         Assert.Null(root["events"]);
+        Assert.False(string.IsNullOrWhiteSpace(root["sampleMessageSemantics"]?.GetValue<string>()));
         var coverageState = AssertCoverage(root);
         var status = root["status"]!.GetValue<string>();
         Assert.Equal(status == "complete" && !root["truncated"]!.GetValue<bool>() && coverageState == "complete", root["complete"]!.GetValue<bool>());
@@ -145,12 +146,36 @@ public static partial class SystemToolConformance
         Assert.Equal(groups.Count, root["returnedGroups"]!.GetValue<int>());
         Assert.InRange(groups.Count, 0, 20);
         Assert.True(root["observedGroups"]!.GetValue<int>() >= groups.Count);
+        var distribution = root["messageDistribution"]!.AsObject();
+        var described = distribution["describedGroups"]!.GetValue<int>();
+        Assert.InRange(described, 0, groups.Count);
+        Assert.Equal(described == groups.Count ? "all" : described == 0 ? "none" : "partial", distribution["availability"]!.GetValue<string>());
         var total = 0;
-        foreach (var group in groups)
+        foreach (var (group, index) in groups.Select((group, index) => (group, index)))
         {
-            Assert.Equal(
-                ["channel", "source", "unit", "eventId", "severity", "count", "firstSeenUtc", "lastSeenUtc", "sampleMessage", "sampleMessageTruncated"],
-                group!.AsObject().Select(pair => pair.Key).ToArray());
+            // The leading groups carry the message distribution (LIVE-04C); the others carry exactly the original fields.
+            string[] baseKeys = ["channel", "source", "unit", "eventId", "severity", "count", "firstSeenUtc", "lastSeenUtc", "sampleMessage", "sampleMessageTruncated"];
+            var keys = group!.AsObject().Select(pair => pair.Key).ToArray();
+            Assert.Equal(baseKeys, keys.Take(baseKeys.Length).ToArray());
+            if (index >= described)
+            {
+                Assert.Equal(baseKeys, keys);
+            }
+            else
+            {
+                var distinct = group["distinctMessages"]!.GetValue<int>();
+                Assert.InRange(distinct, 1, group["count"]!.GetValue<int>());
+                Assert.Equal(distinct > 1, group["messageVariants"] is not null);
+                if (group["messageVariants"] is JsonObject detail && detail["variants"] is JsonArray variants)
+                {
+                    Assert.InRange(variants.Count, 2, 3);
+                    Assert.All(variants, variant => Assert.True(variant!["message"]!.GetValue<string>().Length <= 200));
+                    Assert.Equal(
+                        detail["distribution"]!.GetValue<string>() == "complete" ? group["count"]!.GetValue<int>() : group["count"]!.GetValue<int>() - detail["unlistedEvents"]!.GetValue<int>(),
+                        variants.Sum(variant => variant!["count"]!.GetValue<int>()));
+                }
+            }
+
             Assert.True(group["count"]!.GetValue<int>() >= 1);
             Assert.True(group["sampleMessage"]!.GetValue<string>().Length <= 512);
             Assert.True(DateTimeOffset.Parse(group["firstSeenUtc"]!.GetValue<string>(), CultureInfo.InvariantCulture) <= DateTimeOffset.Parse(group["lastSeenUtc"]!.GetValue<string>(), CultureInfo.InvariantCulture));
@@ -158,6 +183,42 @@ public static partial class SystemToolConformance
         }
 
         Assert.True(root["observedEvents"]!.GetValue<int>() >= total);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="tool"/> against the real operating system at the smallest output budget (4,096 bytes) with every maximum of
+    /// the envelope at once — a 128-character <c>source</c> that names nothing and eight <c>excludeSources</c> entries of 1,024
+    /// characters in all — in both modes (ADR-0032 HARDEN-9 amendment §4, ADR-0061 §2.8): the result is valid JSON whose UTF-8 size is
+    /// within the budget, keeps both echoes whole and never claims to be complete when the budget cut anything.
+    /// </summary>
+    public static async Task AssertSystemEventsEnvelopeFitsTheSmallestBudgetAsync(ITool tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        var source = new string('s', 128);
+        var excluded = Enumerable.Range(0, 7).Select(i => new string((char)('a' + i), 128)).Append(new string('z', 121)).ToArray();
+        foreach (var mode in new[] { "raw", "aggregate" })
+        {
+            var result = await tool.ExecuteAsync(ToolArguments.FromJson(new JsonObject
+            {
+                ["mode"] = mode,
+                ["windowMinutes"] = 60,
+                ["limit"] = 500,
+                ["maxOutputBytes"] = 4_096,
+                ["source"] = source,
+                ["excludeSources"] = string.Join(',', excluded),
+            }));
+
+            Assert.True(result.Succeeded, result.ErrorMessage);
+            Assert.True(Encoding.UTF8.GetByteCount(result.Output!) <= 4_096, $"{mode}: {Encoding.UTF8.GetByteCount(result.Output!)} bytes.");
+            var root = JsonNode.Parse(result.Output!)!.AsObject();
+            Assert.Equal(excluded, root["excludeSources"]!.AsArray().Select(item => item!.GetValue<string>()).ToArray());
+            Assert.Equal(source, root["sourceFilter"]!["requested"]!.GetValue<string>());
+            if (root["truncated"]!.GetValue<bool>())
+            {
+                Assert.False(root["complete"]!.GetValue<bool>());
+            }
+        }
     }
 
     /// <summary>
@@ -222,6 +283,72 @@ public static partial class SystemToolConformance
 
         Assert.True(excludedCount > 0);
         return excludedSource;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="tool"/> against the real operating system with a <c>source</c> filter (ADR-0061): a name read from a first
+    /// result is confirmed by the records (<c>observedMatch</c> true, no caution); a generated name that no source uses is reported
+    /// with the platform's registration status (<paramref name="absentRegistration"/>), no match and the matching caution; and in both
+    /// cases <c>complete</c>, <c>truncated</c> and the status are exactly what the same query without the registry would give.
+    /// Returns the confirmed name, or <c>null</c> when the host logged nothing in the window.
+    /// </summary>
+    public static async Task<string?> AssertSystemEventsSourceFilterConformAsync(ITool tool, string absentRegistration, string[] matchedFields, int windowDays = 7)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        ArgumentNullException.ThrowIfNull(matchedFields);
+
+        async Task<JsonObject> RunAsync(string? source)
+        {
+            var arguments = new JsonObject { ["mode"] = "aggregate", ["windowDays"] = windowDays, ["limit"] = 200, ["maxOutputBytes"] = 65_536 };
+            if (source is not null)
+            {
+                arguments["source"] = source;
+            }
+
+            var result = await tool.ExecuteAsync(ToolArguments.FromJson(arguments));
+            Assert.True(result.Succeeded, result.ErrorMessage);
+            var root = JsonNode.Parse(result.Output!)!.AsObject();
+            var keys = root.Select(pair => pair.Key).ToList();
+            Assert.Equal(keys.IndexOf("excludeSources") + 1, keys.IndexOf("sourceFilter"));
+            return root;
+        }
+
+        Assert.Null((await RunAsync(null))["sourceFilter"]);
+
+        const string absent = "Bops Nonexistent Source (conformance)";
+        var missing = await RunAsync(absent);
+        var missingFilter = missing["sourceFilter"]!.AsObject();
+        Assert.Equal(["requested", "matching", "matchedFields", "registrationStatus", "observedMatch", "caution", "semantics"], missingFilter.Select(pair => pair.Key).ToArray());
+        Assert.Equal(absent, missingFilter["requested"]!.GetValue<string>());
+        Assert.Equal("exactCaseInsensitive", missingFilter["matching"]!.GetValue<string>());
+        Assert.Equal(matchedFields, missingFilter["matchedFields"]!.AsArray().Select(field => field!.GetValue<string>()).ToArray());
+        Assert.Equal(absentRegistration, missingFilter["registrationStatus"]!.GetValue<string>());
+        Assert.False(missingFilter["observedMatch"]!.GetValue<bool>());
+        Assert.Equal(0, missing["observedEvents"]!.GetValue<int>());
+        Assert.Equal(
+            absentRegistration == "notRegistered" ? "noMatchSourceNotRegistered" : "noMatchSourceUnverified",
+            missingFilter["caution"]!.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(missingFilter["semantics"]!.GetValue<string>()));
+
+        var baseline = await RunAsync(null);
+        var groups = baseline["groups"]!.AsArray();
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        var name = groups[0]!["source"]!.GetValue<string>();
+        if (name.Length > 128 || name.Any(character => !(char.IsAsciiLetterOrDigit(character) || " _.@:/()-".Contains(character, StringComparison.Ordinal))))
+        {
+            return null;
+        }
+
+        var confirmed = await RunAsync(name.ToUpperInvariant());
+        var filter = confirmed["sourceFilter"]!.AsObject();
+        Assert.True(filter["observedMatch"]!.GetValue<bool>());
+        Assert.Null(filter["caution"]);
+        Assert.True(confirmed["observedEvents"]!.GetValue<int>() > 0);
+        return name;
     }
 
     /// <summary>Asserts the shared <c>coverage</c> object (ADR-0032 HARDEN-7 amendment §5) and returns its state.</summary>
@@ -296,6 +423,10 @@ public static partial class SystemToolConformance
         var keys = root.Select(pair => pair.Key).ToList();
         Assert.Equal(keys.IndexOf("window") + 1, keys.IndexOf("excludeSources"));
         Assert.Empty(root["excludeSources"]!.AsArray());
+
+        // ADR-0061: the source-filter object is always present, right after the exclusion echo; null without a source argument.
+        Assert.Equal(keys.IndexOf("excludeSources") + 1, keys.IndexOf("sourceFilter"));
+        Assert.Null(root["sourceFilter"]);
 
         var sources = root["sources"]!.AsArray();
         Assert.NotEmpty(sources);

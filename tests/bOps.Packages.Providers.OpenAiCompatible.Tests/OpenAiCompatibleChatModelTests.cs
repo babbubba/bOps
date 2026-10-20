@@ -110,10 +110,13 @@ public sealed class OpenAiCompatibleChatModelTests
 
         var result = await model.CompleteAsync(Request);
 
-        Assert.True(result.IsFinal);
+        // Since 3fee4cb an empty reply is never a final answer (the runner owns the bounded re-ask); the stale expectation was IsFinal.
+        Assert.False(result.IsFinal);
         Assert.True(string.IsNullOrEmpty(result.TextResponse));
         Assert.Equal(788, result.Usage!.CompletionTokens);
         Assert.Contains("memory is at 85%", result.Details!.ResponseJson, StringComparison.Ordinal);
+        // The reasoning is reported as a length only; the content was empty.
+        Assert.Equal(("The PC is slow because memory is at 85%.".Length, 0), (result.Details.ReasoningCharacters, result.Details.ContentCharacters));
     }
 
     [Fact]

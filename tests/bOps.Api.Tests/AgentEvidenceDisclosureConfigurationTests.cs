@@ -7,9 +7,10 @@ using Microsoft.Extensions.Configuration;
 namespace bOps.Api.Tests;
 
 /// <summary>
-/// HARDEN-9 / ADR-0042 §6: <c>Agent:EvidenceDisclosureRetries</c> binds from configuration like the other budget options, the shipped
-/// settings state its default, and any value other than 0 and 1 fails options validation — which both hosts run at start-up, when
-/// they build the runner — instead of enabling an unbounded or undefined number of re-asks.
+/// ADR-0042 §6 (AF-05H amendment): <c>Agent:EvidenceDisclosureEnabled</c> switches the deterministic disclosure section, which
+/// makes no model call. The former <c>Agent:EvidenceDisclosureRetries</c> is deprecated but still read so an existing
+/// configuration keeps its meaning: <c>0</c> disables the disclosure, <c>1</c> changes nothing, any other value fails options
+/// validation — which both hosts run at start-up.
 /// </summary>
 public sealed class AgentEvidenceDisclosureConfigurationTests
 {
@@ -19,40 +20,45 @@ public sealed class AgentEvidenceDisclosureConfigurationTests
     private static IConfigurationRoot Shipped() =>
         new ConfigurationBuilder().AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false).Build();
 
-    private static IConfigurationRoot Overridden(string value) =>
+    private static IConfigurationRoot Overridden(string key, string value) =>
         new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: false)
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Agent:EvidenceDisclosureRetries"] = value })
+            .AddInMemoryCollection(new Dictionary<string, string?> { [key] = value })
             .Build();
 
     [Fact]
-    public void TheShippedSettings_StateTheDefault_AndKeepTheObservationBudgetUnchanged()
+    public void TheShippedSettings_EnableTheDeterministicDisclosure_AndNoLongerShipTheDeprecatedKey()
     {
         var options = Bind(Shipped());
 
-        Assert.Equal("1", Shipped()["Agent:EvidenceDisclosureRetries"]);
-        Assert.Equal(1, options.EvidenceDisclosureRetries);
+        Assert.Equal("true", Shipped()["Agent:EvidenceDisclosureEnabled"], ignoreCase: true);
+        Assert.Null(Shipped()["Agent:EvidenceDisclosureRetries"]);
+        Assert.True(options.EvidenceDisclosureEnabled);
+        Assert.Null(options.EvidenceDisclosureRetries);
+        Assert.True(options.EvidenceDisclosureActive);
         Assert.Equal(4000, options.MaxObservationCharacters);
         options.Validate();
     }
 
     [Fact]
-    public void WithoutTheKey_TheDefaultIsOne()
+    public void WithoutAnyKey_TheDisclosureIsOn()
     {
         var options = Bind(new ConfigurationBuilder().Build());
 
-        Assert.Equal(1, options.EvidenceDisclosureRetries);
+        Assert.True(options.EvidenceDisclosureActive);
         options.Validate();
     }
 
     [Theory]
-    [InlineData("0", 0)]
-    [InlineData("1", 1)]
-    public void ZeroAndOne_BindAndValidate(string value, int expected)
+    [InlineData("Agent:EvidenceDisclosureEnabled", "false", false)]
+    [InlineData("Agent:EvidenceDisclosureEnabled", "true", true)]
+    [InlineData("Agent:EvidenceDisclosureRetries", "0", false)]
+    [InlineData("Agent:EvidenceDisclosureRetries", "1", true)]
+    public void TheSwitchAndTheDeprecatedAlias_BindAndValidate(string key, string value, bool active)
     {
-        var options = Bind(Overridden(value));
+        var options = Bind(Overridden(key, value));
 
-        Assert.Equal(expected, options.EvidenceDisclosureRetries);
+        Assert.Equal(active, options.EvidenceDisclosureActive);
         options.Validate();
     }
 
@@ -60,19 +66,20 @@ public sealed class AgentEvidenceDisclosureConfigurationTests
     [InlineData("-1")]
     [InlineData("2")]
     [InlineData("10")]
-    public void AnyOtherValue_FailsOptionsValidation_NamingTheKey(string value)
+    public void AnyOtherDeprecatedValue_FailsOptionsValidation_NamingBothKeys(string value)
     {
-        var options = Bind(Overridden(value));
+        var options = Bind(Overridden("Agent:EvidenceDisclosureRetries", value));
 
         var failure = Assert.Throws<InvalidOperationException>(() => options.Validate());
         Assert.Contains("'Agent:EvidenceDisclosureRetries'", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("'Agent:EvidenceDisclosureEnabled'", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TheStartUpValidationOfTheApi_RejectsAnInvalidValue_EvenWithAProviderTimeout()
     {
         // The API validates with the provider transport timeout (ADR-0039); the runner validates again in its constructor.
-        var options = Bind(Overridden("2"));
+        var options = Bind(Overridden("Agent:EvidenceDisclosureRetries", "2"));
 
         Assert.Throws<InvalidOperationException>(() => options.Validate(providerRequestTimeout: TimeSpan.FromMinutes(5)));
     }

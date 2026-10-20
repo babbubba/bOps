@@ -83,6 +83,7 @@ export const en = {
   'enum.terminalKind.AttemptDurationBudget': 'Attempt duration budget exhausted',
   'enum.terminalKind.MutationOutcomeUnknown': 'Mutation outcome unknown',
   'enum.terminalKind.ExecutionInterrupted': 'Execution interrupted and recovered',
+  'enum.terminalKind.KnowledgeUnavailable': 'Pinned knowledge could not be admitted again',
   'enum.trust.Unverified': 'Unverified',
   'enum.trust.Community': 'Community',
   'enum.trust.Verified': 'Verified',

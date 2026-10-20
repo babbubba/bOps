@@ -60,15 +60,9 @@ public sealed class WindowsFreezeEvidenceReasoningScenarioTests
         Assert.Contains("- step 3: system.crashes — completeness Partial", rule, StringComparison.Ordinal);
         Assert.Contains("- step 7: storage.health — completeness Partial", rule, StringComparison.Ordinal);
 
-        var observations = string.Join("\n", finalRequest.History.Where(turn => turn.Role == ChatRole.Tool).Select(turn => turn.Content));
-        var bounded = string.Join("\n", finalRequest.History.Where(turn => turn.Role == ChatRole.User).Select(turn => turn.Content));
-        Assert.Contains("BOPS_HISTORY/v1", bounded, StringComparison.Ordinal);
-        Assert.Contains($"ev1:{state.Id:N}:2", bounded, StringComparison.Ordinal);
-        Assert.Contains($"ev1:{state.Id:N}:3", bounded, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"kernelCrash\":3", observations, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"kind\":\"kernel-live-dump\"", observations, StringComparison.Ordinal);
-        Assert.DoesNotContain("pagefile", observations, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("installedDriverVersion", observations, StringComparison.Ordinal);
+        // AF-05: with no context projector composed the history is sent unprojected (every host in this repository composes the MAF
+        // one, measured in bOps.AgentFramework.Tests); the answer is bound by the digest above, not by how history was compacted.
+        Assert.Equal(evidence.Length, finalRequest.History.Count(turn => turn.Role == ChatRole.Tool));
 
         // E8 checks disclosure structure only. An intentionally noncompliant model can still emit this prose.
         Assert.Equal(BadAnswer, state.Steps[^1].Observation);

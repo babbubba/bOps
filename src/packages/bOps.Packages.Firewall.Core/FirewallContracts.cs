@@ -85,7 +85,7 @@ public static class FirewallObservationId
     public static string Create(FirewallRule rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
-        var evidence = string.Join("\n", rule.Source, rule.Name, rule.Direction, rule.Action, rule.Protocol, string.Join(",", rule.LocalAddresses.Order()), string.Join(",", rule.RemoteAddresses.Order()), string.Join(",", rule.LocalPorts.Order()), string.Join(",", rule.RemotePorts.Order()), string.Join(",", rule.Profiles.Order()), rule.Application, rule.Service, rule.Interface, rule.PriorityOrOrder, rule.UnparsedCondition);
+        var evidence = string.Join("\n", rule.Source, rule.Name, rule.Direction, rule.Action, rule.Protocol, string.Join(",", rule.LocalAddresses.Order(StringComparer.Ordinal)), string.Join(",", rule.RemoteAddresses.Order(StringComparer.Ordinal)), string.Join(",", rule.LocalPorts.Order(StringComparer.Ordinal)), string.Join(",", rule.RemotePorts.Order(StringComparer.Ordinal)), string.Join(",", rule.Profiles.Order(StringComparer.Ordinal)), rule.Application, rule.Service, rule.Interface, rule.PriorityOrOrder, rule.UnparsedCondition);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(evidence))).ToLowerInvariant()[..32];
     }
 }

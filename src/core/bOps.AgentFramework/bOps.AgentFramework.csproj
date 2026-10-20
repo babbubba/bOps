@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>bOps.AgentFramework</RootNamespace>
+    <AssemblyName>bOps.AgentFramework</AssemblyName>
+    <Description>Isolated Microsoft Agent Framework integration over the bOps governed model boundary.</Description>
+    <IsPackable>false</IsPackable>
+    <!-- AF-02 intentionally adopts the MAF 1.24.0 compaction preview behind this isolated boundary. -->
+    <NoWarn>$(NoWarn);MAAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="bOps.AgentFramework.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.Knowledge\bOps.Knowledge.csproj" />
+    <ProjectReference Include="..\bOps.Runtime\bOps.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI" Version="[1.24.0]" />
+  </ItemGroup>
+
+</Project>

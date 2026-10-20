@@ -480,8 +480,181 @@ write the message is logged and never fails or changes the task.
   severity (word, glyph and accessible label — never colour alone), source and message, 50 per page with Previous/Next; expand a
   row for code, source, timestamp, severity, task, component and the metadata as escaped JSON text.
 
+## 13. Model context, context profiles and summarization
+
+bOps sends the model a bounded view of the task so far. That view is built by the Microsoft Agent Framework (MAF) context
+layer ([ADR-0052](architecture/adr/0052-microsoft-agent-framework-bops-boundary.md)); bOps decides what is protected
+and what is merely history, and never lets the layer change what the runtime executes.
+
+- **Protected, never compacted:** the standing instructions, the goal, the current plan and step, the offered tool for the
+  current step, evidence grounding, evidence limitations and mutation-reconciliation notices.
+- **Historical, projected for the model that is about to be called:** earlier tool calls and their results.
+- **Never touched by projection:** the persisted task, the raw tool results, the evidence facts, the audit log and the
+  mutation journal. A resumed task rebuilds its model-facing context from them. `runtime.evidence_read` (and the
+  `EvidenceRead/v1` directive) still reads any persisted result exactly; the *evidence index* in the prompt lists, for each
+  truncated step, its stable id and its persisted length, and states how any step is addressed.
+
+### Output limit and what is recorded about each reply (`Agent:MaxOutputTokens`)
+
+`Agent:MaxOutputTokens` (integer, 1 to 1,000,000, **unset by default**) is the most output tokens one model reply is asked to generate.
+Unset, bOps sends no limit: the provider's own default applies and bOps does not know it (for llama.cpp the value in `models.ini` is not
+what `/props` exposes: a server can report `n_predict = -1`, that is, "until the context ends"). Set, it is sent as `max_tokens` by every
+OpenAI-compatible provider (OpenAI, OpenRouter, Ollama, DeepSeek, llama.cpp) and replaces the fixed 4096 of the Anthropic adapter. It is
+a request, not a guarantee, and bOps invents no other generation parameter (no reasoning switch, no sampler). Keep it within the
+`ReservedOutputTokens` of the model's context profile, and short enough to finish inside `Agent:ModelCallAttemptTimeout` at the server's
+real speed: a reply that is still reasoning when the attempt timeout fires is retried with the same request.
+
+Every model attempt records, in the task's call record and in the `modelCall` audit event, an `Output` object with **counts and closed
+classes only, never the reply, the reasoning or the request**: `RequestedMaxOutputTokens` (absent = none requested), `FinishReason`,
+`PromptTokens`, `CompletionTokens`, `ReasoningTokens` (only if the provider reports them), `ReasoningCharacters` (a length), `ContentCharacters`,
+`ToolCallCount`, `Truncated`, `Class` and `LimitEvidence`. `Class`: `Complete`, `ToolCall`, `TruncatedBeforeContent` (the budget went into
+reasoning), `TruncatedContent`, `TruncatedToolCall`, `Empty`, `Other`, `NoResponse` (a timeout or transport failure). `LimitEvidence` for a
+truncated reply: `RequestedLimitReached` (completion tokens reached what was requested), `BelowRequestedLimit` (the server or the context
+cut it earlier), `UnrequestedLimit` (nothing was requested; the cut came from a server default or the end of the context), `Unknown`
+(no completion count). The same facts are on the `bops.model_context` activity (`bops.model.*` tags) and in the metrics
+`bops.model.output_total` and `bops.model.completion_tokens`.
+
+### Context profiles (`Agent:Context:Profiles`)
+
+A **context profile** states how large one exact model's context window is. It is operator knowledge: bOps does not infer a
+window from the provider name, the model name or a family ("Qwen", "Claude"…), and it does not discover one over the network.
+
+```json
+"Agent": {
+  "Context": {
+    "SafetyReserveTokens": 1024,
+    "MinimumPreservedToolGroups": 3,
+    "MinimumPreservedTurns": 1,
+    "Profiles": [
+      { "Provider": "LlamaCpp", "Model": "<exact model id of your local server>",
+        "MaxContextTokens": 32768, "ReservedOutputTokens": 4096 }
+    ]
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `Provider`, `Model` | The provider id and the **exact** model id reported for the call (see the audit `Provider` / `Model`). Matching is exact and case-sensitive; there is no wildcard and no family match. |
+| `MaxContextTokens` | The window your server or provider really gives that model (for a local server, the context size it was started with — not the model's advertised maximum). Required, positive. |
+| `ReservedOutputTokens` | Tokens kept free for the reply. Required, positive, below `MaxContextTokens`. |
+| `SafetyReserveTokens` | Extra input headroom kept after the fixed prompt (default 1,024). |
+| `MinimumPreservedToolGroups` | Recent tool calls (with their result) kept verbatim. Default 3. |
+| `MinimumPreservedTurns` | Recent conversation turns kept when the sliding window runs. Default 1. |
+
+The values above are placeholders: use your own. An invalid, duplicate or impossible profile fails startup validation; nothing
+is clamped. With environment variables: `Agent__Context__Profiles__0__Provider`, `…__Model`, `…__MaxContextTokens`,
+`…__ReservedOutputTokens`.
+
+**Budget.** The history allowance of one call is `MaxContextTokens − ReservedOutputTokens − system prompt − offered tool schema −
+protected context − SafetyReserveTokens`, estimated at about four bytes per token (a provider's reported prompt usage is
+compared with the estimate in telemetry). If the protected part alone does not fit, the call fails as a classified
+`ContextOverflow` before any provider is called; bOps never cuts the protected context to make it fit. Four evidence reads
+(each up to 4,000 characters) are protected context while they are being answered, so a window below roughly 10k tokens
+leaves no history allowance in the AF-05 fixtures and fails safely rather than silently truncating.
+
+**Three kinds of model — what to write**
+
+| Situation | What to configure |
+|---|---|
+| A local model you started yourself (llama.cpp, Ollama…) | One profile with the context size you started it with. |
+| An OpenAI-compatible or hosted model with a known window | One profile with that model id and the window your account is given. |
+| Another exact model used as a **fallback candidate** | Its own profile. Each candidate resolves its own, and a fallback re-projects the context for the new candidate; it does not inherit the primary's. |
+| A **router** such as `openrouter/free` (the shipped default) | Nothing, or a *conservative guaranteed* profile (below). |
+
+**A model without a profile.** Its capacity is unknown, so bOps invents none. It applies only a *structural* bound: tool
+results older than the most recent `MinimumPreservedToolGroups` calls are replaced by a one-line status ("persisted result data
+omitted"), and nothing else is removed. This is the same shape as the HARDEN-8 history it replaces, and the telemetry says so:
+`bops.context.profile_source = unknown-structural`, `bops.context.strategies = ToolResult(structural)`, `bops.context.max_tokens`
+absent. It is **not** a second context engine: it is the MAF tool-result strategy with an always-true trigger. LLM summarization
+is not applied to a call whose task model has no profile (it needs a budget to compare with), whatever `Agent:Summarization` says.
+
+**Routers.** `openrouter/free` may route each call to a different model, so its window can change under you; bOps will not
+attribute any window to it. If you want the budget-driven projection for it, you can state a window that *you* guarantee:
+
+```json
+{ "Provider": "OpenRouter", "Model": "openrouter/free", "MaxContextTokens": 16384, "ReservedOutputTokens": 2048 }
+```
+
+This is your guarantee, not a measurement: use a value that every model the router may pick provides (for example the
+smallest of the models you allow). bOps cannot verify it, and a call routed to a smaller model fails as `ContextOverflow`
+(one aggressive retry, then terminal). Prefer selecting a specific model for serious work (section 4).
+
+**Overflow recovery.** If a provider reports `ContextOverflow` anyway (the estimate was too optimistic), the runtime asks the
+context layer for **one** more aggressive projection of that call: nothing preserved, a halved history allowance, no
+summarization, goal and plan capped. A second overflow ends the call as before. The removed option `Agent:VerbatimHistorySteps`
+is ignored if it is still present in an old configuration.
+
+### Summarization (`Agent:Summarization`)
+
+Off by default. When on, MAF may replace the oldest history with a short summary **only when the history is about to not fit**.
+
+```json
+"Agent": {
+  "Summarization": {
+    "Enabled": true,
+    "TriggerRatio": 0.9,
+    "RecentGroupsToPreserve": 4
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `Enabled` | Default `false`. With it off no summary inference can happen. |
+| `Provider`, `Model` | Both omitted (default) or both set. Omitted: the summarizer is **the task's current candidate** (after a fallback it follows the advanced candidate). Set: a **dedicated summarizer**. |
+| `TriggerRatio` | Summarize only while the estimated history exceeds this fraction of the history allowance (default 0.9; was 0.75). |
+| `RecentGroupsToPreserve` | Most recent tool groups the summarizer leaves verbatim (default 4, 1–64). |
+
+- **A summary is derived, untrusted, non-authoritative context.** It cannot create or change an evidence fact, completeness,
+  verification, policy, approval, a mutation outcome or the tools offered; those keep coming from their owners.
+- **A dedicated summarizer is an explicit data-egress choice.** The older compactable history is sent to that provider and model: the
+  tool calls, and their results only where tool-result compaction kept them verbatim (otherwise a one-line status). bOps never moves summarization to another destination because it is cheaper,
+  faster or reachable, never falls back from it, and never substitutes the task model if the dedicated one is unusable (the call is
+  skipped). The pair needs its own exact profile with a known `MaxContextTokens`; credentials are resolved per call from the same
+  store as every other provider.
+- **Summary calls count.** They are audited like any model call, appear in the task's model-call records, and their tokens (and,
+  when the provider reports one, their estimated cost) are added to the task total checked against `Agent:MaxTotalTokens`.
+- **A summary failure is not a task failure.** The history is kept and the deterministic compaction continues.
+- **Not free.** On the AF-05 fixtures summarization never lowered the all-in tokens (+2 % to +6 %). Enable it for a reason you can
+  measure, with `bops.task.call_tokens{part=primary|summary|all_in}` (see
+  [the benchmark record](../agentic/_tasks/2026-10-11-af-05-benchmark-results.md)).
+- **CLI.** The CLI hosts the single `ModelProvider:Provider`, so a dedicated summarizer there may name another *model* of that
+  provider but not another provider (the API can). Making the CLI cross-provider would need the API's stored provider profiles and
+  vault credentials, which the CLI does not compose; that would be a new provider/secret framework, so it is deliberately not
+  done.
+
+### What the numbers are based on
+
+The defaults above come from deterministic fixtures, not from a live provider. See
+[AF-05 benchmark results](../agentic/_tasks/2026-10-11-af-05-benchmark-results.md) for what was measured, what is a synthetic
+proxy, and what was **not run** (no local server and no provider credentials were available).
+
+## 14. Knowledge for the Local Agent (CLI pilot, opt-in)
+
+The CLI can bind a task to one signed Knowledge pack you installed and granted, give the model an index of it and serve the reads the
+model asks for. It is an experimental pilot ([ADR-0058](architecture/adr/0058-local-agent-knowledge-pilot.md)): **off unless
+`Knowledge:Enabled` is `true`**, CLI only (never the API, the UI or `bops delegate`), one pack per task, `Knowledge` packs only.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Knowledge:Enabled` | `false` | With `false` or no section the CLI behaves exactly as before. With `true` every key below is validated and a bad value stops the command (exit code 2). |
+| `Knowledge:PacksDirectory` | — | Required, must exist. `<packId>/<version>/` per installed pack. Installing authorises nothing. |
+| `Knowledge:SnapshotsDirectory` | — | Required, separate from the packs directory. |
+| `Knowledge:TrustStorePath` | — | Required. Public keys only (`schemaVersion`, `keys[]`, `revokedPublishers[]`); a private key or an empty list is rejected. |
+| `Knowledge:Grants` | — | Required, at least one `{ PackId, Version, Kind: "Knowledge" }`. No tenant key exists; the tenant is always the Local Agent. |
+| `Knowledge:Binding` | — | Required `{ PackId, Version }`: the pack new tasks use. It must also be granted, or the task is refused. |
+| `Knowledge:Budget` | `MaxReads` 4, `MaxRejections` 4, `MaxCharactersPerRead` 8000 | Ceilings 8 / 8 / 16000. |
+
+Unknown or misspelt keys are an error whether or not the section is enabled. The shipped `appsettings.json` contains only
+`"Knowledge": { "Enabled": false }`: no pack path and no key. Never put a signing key anywhere in bOps configuration; packs are signed
+by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
+means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
+
 ## Related documents
 
-[Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
+[Knowledge pilot](knowledge/local-agent-pilot.md) · [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
 [Delegation policy](agents/delegation-policy.md) · [Architecture decisions](architecture/adr/) ·
-[Vault ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md)
+[Vault ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md) ·
+[Model context ADR-0052](architecture/adr/0052-microsoft-agent-framework-bops-boundary.md) ·
+[AF-05 benchmark results](../agentic/_tasks/2026-10-11-af-05-benchmark-results.md)

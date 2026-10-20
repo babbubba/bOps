@@ -369,7 +369,7 @@ internal sealed class FakeReadTool(string name = "test.read", string output = "o
         Task.FromResult(ToolCallResult.Success(output));
 }
 
-internal sealed class RecordingReadTool(string name, IReadOnlyList<ToolParameter> parameters) : ITool
+internal sealed class RecordingReadTool(string name, IReadOnlyList<ToolParameter> parameters, string output = "done") : ITool
 {
     public int ExecutionCount { get; private set; }
 
@@ -386,7 +386,7 @@ internal sealed class RecordingReadTool(string name, IReadOnlyList<ToolParameter
     public Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
         ExecutionCount++;
-        return Task.FromResult(ToolCallResult.Success("done"));
+        return Task.FromResult(ToolCallResult.Success(output));
     }
 }
 

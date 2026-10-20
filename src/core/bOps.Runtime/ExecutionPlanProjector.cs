@@ -185,7 +185,14 @@ public static class ExecutionPlanProjector
         {
             if (position.ReplanRequired)
             {
-                status[cursor] = ProjectedStepStatus.Failed;
+                // A replan owed to a rejected premature final (AF-05H) leaves the step unattempted, not failed: it stays Pending until
+                // the accepted replan supersedes it.
+                var owedToPrematureFinal = all.LastOrDefault(step => step.PlanRevision == plan.Revision) is { } last
+                    && PrematureFinal.IsStep(last);
+                if (!owedToPrematureFinal)
+                {
+                    status[cursor] = ProjectedStepStatus.Failed;
+                }
             }
             else if (running)
             {

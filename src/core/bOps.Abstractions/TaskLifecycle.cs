@@ -51,7 +51,7 @@ public enum TaskTerminalKind
     /// <summary>A model call failed terminally (ADR-0039); <see cref="TaskTerminalReason.FailureKind"/> says how.</summary>
     ModelFailure = 8,
 
-    /// <summary>The model kept returning an empty reply.</summary>
+    /// <summary>The model kept returning an empty reply, or one with no answer content (only punctuation, symbols or formatting marks).</summary>
     EmptyResponse = 9,
 
     /// <summary>A failure that was not a model failure, contained by the runner or by the host's backstop.</summary>
@@ -71,6 +71,13 @@ public enum TaskTerminalKind
 
     /// <summary>An administrator recovered an orphaned <see cref="AgentTaskStatus.Running"/> execution attempt (ADR-0051 §8.3); nothing was executed.</summary>
     ExecutionInterrupted = 15,
+
+    /// <summary>
+    /// The knowledge the task is bound to could not be admitted again under the authority that applies now (ADR-0056): the pack or its
+    /// publisher or key was revoked, the grant was withdrawn, the tenant differs, the content no longer matches its pin, or the source
+    /// or snapshot is unavailable. Nothing ran; the cause code is on the failure step and in the audit trail.
+    /// </summary>
+    KnowledgeUnavailable = 16,
 }
 
 /// <summary>Why the latest execution attempt ended. Carries no free text: the operator-facing failure text stays on the synthetic failure step (ADR-0039).</summary>
@@ -100,7 +107,7 @@ public sealed record TaskAccounting
     /// <summary>Creates an accounting record.</summary>
     /// <param name="TokensUsed">Prompt plus completion tokens of every model reply that reported usage.</param>
     /// <param name="LifetimeSteps">Executable steps taken; synthetic failure steps are never counted.</param>
-    /// <param name="LifetimeReplans">Accepted plan revisions after revision 0.</param>
+    /// <param name="LifetimeReplans">Replan attempts charged to the budget: accepted non-early-final replans plus reserved early-final attempts (including failures), each counted once. A deterministic persisted-plan continuation, and an early final whose output-limited replan is not repeated, charge nothing.</param>
     public TaskAccounting(long TokensUsed, int LifetimeSteps, int LifetimeReplans)
     {
         this.TokensUsed = TokensUsed;
@@ -117,7 +124,7 @@ public sealed record TaskAccounting
     /// <summary>Executable steps taken; synthetic failure steps are never counted.</summary>
     public int LifetimeSteps { get; init; }
 
-    /// <summary>Accepted plan revisions after revision 0.</summary>
+    /// <summary>Replan attempts charged to the budget: accepted non-early-final replans plus reserved early-final attempts, each counted once regardless of acceptance. It is not the number of accepted revisions (plans after revision 0), and deterministic persisted-plan continuations are never charged.</summary>
     public int LifetimeReplans { get; init; }
 }
 

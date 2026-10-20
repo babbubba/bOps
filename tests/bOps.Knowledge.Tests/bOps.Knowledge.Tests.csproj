@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- ADR-0057 section U.5 (D-049): this test host exercises the Unicode contract with real NFC/NFKC. The invariant-globalization
+         behaviour is proved in a separate process (bOps.Knowledge.InvariantProbe). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
+    <!-- Built before this project and copied next to it; run as a child process (never referenced as an assembly). -->
+    <ProjectReference Include="..\bOps.Knowledge.InvariantProbe\bOps.Knowledge.InvariantProbe.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyInvariantProbe" AfterTargets="Build">
+    <ItemGroup>
+      <_InvariantProbeFiles Include="$(MSBuildThisFileDirectory)..\bOps.Knowledge.InvariantProbe\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_InvariantProbeFiles)" DestinationFiles="@(_InvariantProbeFiles->'$(OutDir)InvariantProbe\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

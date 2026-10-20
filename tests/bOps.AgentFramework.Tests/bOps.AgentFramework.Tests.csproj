@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- AF-05: TestDoubles.cs is linked from bOps.Runtime.Tests (most of its doubles are unused here); MAAI001 is the experimental MAF
+         compaction diagnostic, suppressed in the product integration project for the same reason. -->
+    <NoWarn>$(NoWarn);CA1812;MAAI001;CA1308</NoWarn>
+    <!-- ADR-0057 section U.5 (KNOW-M1-C): the bridge validates and ranks publisher text with real NFC/NFKC, so this test host runs with
+         full globalization. The invariant behaviour is proved in a separate process (bOps.Knowledge.InvariantProbe). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <!-- Supplies Configuration and Logging.Abstractions at runtime. Restore after changing this
+         reference: builds that skip restore can omit AspNetCore.App from runtimeconfig.json. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\bOps.Runtime.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+    <Compile Include="..\bOps.Runtime.Tests\TestDoubles.cs" Link="Linked\TestDoubles.cs" />
+    <!-- Reuse the production credential resolver without starting the API host or copying Vault logic. -->
+    <Compile Include="..\..\src\core\bOps.Api\ProviderCredentialResolver.cs" Link="Linked\ProviderCredentialResolver.cs" />
+    <!-- KNOW-01A: the signed-pack test support (throw-away test keys only) is shared with bOps.Knowledge.Tests. -->
+    <Compile Include="..\bOps.Knowledge.Tests\Support\*.cs" Link="Support\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\core\bOps.AgentFramework\bOps.AgentFramework.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Knowledge\bOps.Knowledge.csproj" />
+    <!-- KNOW-01B: the resume tests run against the real task store and the real audit sink. -->
+    <ProjectReference Include="..\..\src\core\bOps.Audit\bOps.Audit.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Memory\bOps.Memory.csproj" />
+    <ProjectReference Include="..\..\src\core\bOps.Runtime\bOps.Runtime.csproj" />
+    <!-- AF-05: the regression fixtures emit EvidenceFacts through the real package fact builders. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Core\bOps.Packages.System.Core.csproj" />
+    <!-- KNOW-BENCH-01B: only the isolated, explicitly selected test composition uses Windows Event Log diagnostics. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.System.Windows\bOps.Packages.System.Windows.csproj" />
+    <!-- AF-TOOLROUTE-01: the B03 reproduction runs the real OpenAI-compatible adapter, which owns the wire names. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.OpenAiCompatible\bOps.Packages.Providers.OpenAiCompatible.csproj" />
+    <!-- HOST-CANARY-01B: the opt-in live canary constructs the existing local llama.cpp package directly. -->
+    <ProjectReference Include="..\..\src\packages\bOps.Packages.Providers.LlamaCpp\bOps.Packages.Providers.LlamaCpp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- KNOW-DISC-01 T8-FIX01: the d3da032 request baselines (Golden/d3da032/README.md). -->
+    <None Include="Golden\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- PA-1: the Markdown review rendering of each request baseline is compared byte for byte, so it ships with the JSON (Golden/pa1/README.md). -->
+    <None Include="Golden\pa1\*.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

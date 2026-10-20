@@ -19,6 +19,10 @@ internal sealed class ChatCompletionRequest
 
     [JsonPropertyName("tool_choice")]
     public string? ToolChoice { get; set; }
+
+    /// <summary>The output limit bOps requested; omitted (so the provider's own default applies) unless the request carried one.</summary>
+    [JsonPropertyName("max_tokens")]
+    public int? MaxTokens { get; set; }
 }
 
 internal sealed class ChatMessageDto
@@ -34,6 +38,15 @@ internal sealed class ChatMessageDto
 
     [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; set; }
+
+    // Reply-only members. Providers that separate reasoning from the answer put it in one of these (llama.cpp and DeepSeek use
+    // reasoning_content, OpenRouter uses reasoning). They are read for their length only and are never sent back: a request message
+    // never sets them, and a null member is omitted.
+    [JsonPropertyName("reasoning_content")]
+    public string? ReasoningContent { get; set; }
+
+    [JsonPropertyName("reasoning")]
+    public string? Reasoning { get; set; }
 }
 
 internal sealed class ToolCallDto
@@ -108,6 +121,15 @@ internal sealed class UsageDto
 
     [JsonPropertyName("completion_tokens")]
     public int CompletionTokens { get; set; }
+
+    [JsonPropertyName("completion_tokens_details")]
+    public CompletionTokensDetailsDto? CompletionTokensDetails { get; set; }
+}
+
+internal sealed class CompletionTokensDetailsDto
+{
+    [JsonPropertyName("reasoning_tokens")]
+    public int? ReasoningTokens { get; set; }
 }
 
 // A semantically absent member is omitted rather than sent as null: strict providers reject explicit nulls (ADR-0038).

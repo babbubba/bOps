@@ -14,6 +14,33 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- `system.events` discloses whether a `source` filter names a real source (ADR-0061). Every result has a `sourceFilter` object right
+  after `excludeSources` (`null` without a `source`): the requested name, `matching`, `matchedFields`, `registrationStatus`
+  (`registered`, `notRegistered`, `unknown` — Windows reads the provider catalog once per call; Linux is always `unknown`),
+  `observedMatch` (derived from the records observed, before grouping, the limit and the byte budget), a deterministic `caution`
+  and a fixed `semantics` sentence. Completeness, `schemaVersion` 2 and every argument are unchanged; no similar-name suggestion.
+  Reference: `docs/system-events.md`.
+- Generation-limit telemetry and an optional output limit. `Agent:MaxOutputTokens` (unset by default: nothing is sent, as before) is passed
+  as `max_tokens` by the OpenAI-compatible providers and overrides the Anthropic adapter's fixed 4096. Every model attempt now records an
+  `Output` object (requested limit, finish reason, token counts, reasoning length, truncation, a closed classification and which limit the
+  usage points to) in the call record and the `modelCall` audit event, never the reply or the reasoning. Reference:
+  `docs/operator-configuration.md`.
+- Knowledge refusal recovery (ADR-0059, Proposed): a refused `runtime.knowledge_read` caused by a mistake no longer ends the task after the
+  fifth refusal; the function is withdrawn for the rest of the attempt (`Withdrawn` on the audit event) and the step continues. Security
+  refusals and calls to a withdrawn function keep their hard stop. The knowledge control sentence of the step prompt now states that a
+  read is never required and never replaces the operational call or the final answer. A failure of the framework function (or of host text
+  normalization) is audited as the new `KnowledgeReadResultCode.InfrastructureFailure` (12), no longer as `IntegrityMismatch`, which now means only
+  "bytes differ from the pin".
+- `scripts/Probe-NativeToolTemplate.ps1`: one operator-run probe of a llama.cpp server's native-tools template and limits (not run by CI).
+
+- Knowledge in the CLI, as an experimental Local Agent pilot (ADR-0058, D-050 proposed). A new opt-in `Knowledge` configuration section
+  (disabled by default; unknown keys and unusable values stop the command with exit code 2) binds a task to one signed Knowledge pack that
+  the operator installed, trusts and granted. The model receives the pack's index on agentic steps and may read it through
+  `runtime.knowledge_read`; admission, the index and every read are audited, and policy, approval and the tool surface are unchanged.
+  CLI only: no API, UI or `bops delegate`. Publisher scripts `scripts/New-KnowledgeSigningKey.ps1` and `scripts/Publish-KnowledgePack.ps1`
+  sign packs outside the runtime, which holds no signing key. Guide: `docs/knowledge/local-agent-pilot.md`. No benchmark was run and no
+  gate is declared passed; ADR-0057 gates B1 and B2 remain open.
+
 - F-25B implements ADR-0051's durable, fenced ordinary-task mutation journal. Every permitted non-`Read` call now
   commits its intent before invocation and records its outcome atomically with its task-history step. Unknown outcomes
   fail closed: resume is blocked until an administrator recovers an orphan and reconciles it (`verify`, accept already
@@ -47,8 +74,48 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
   message: one Warning per task when its lifetime replans reach `Agent:ReplanWarningThreshold` (default 3). Docker, Docker build
   contexts and SearXNG moved onto the new registry with unchanged ids. `bOps.Abstractions` is `1.3.0-preview.3` (additive).
 
+- `system.events` aggregate results carry a top-level `sampleMessageSemantics` text stating that `sampleMessage` belongs only to the newest event of a group (LIVE-04A). Additive, `schemaVersion` stays 2; raw mode is
+  unchanged. Not yet validated with a model on the new aggregation. Committed on `codex/know-bench-01a` as `129b23c`; not released.
+- `system.events` aggregate groups describe the distribution of their original messages (LIVE-04C): `distinctMessages`, `messageVariants` (up to three most frequent variants) and a top-level
+  `messageDistribution`, bounded by `SystemEventsLimits.MessageDistributionBytes` and never dropping a group for them. Additive, `schemaVersion` stays 2. Offline tests only; no live run with the updated
+  output, and the Qwen diagnostic validation is still to be done. Committed on `codex/know-bench-01a` as `c8258a9`; not released.
+- Optional planner-facing `ToolParameter.PlanningGuidance` (LIVE-01B, [ADR-0060](docs/architecture/adr/0060-planner-facing-tool-parameter-guidance.md), Accepted): display-only text rendered in the planning catalog
+  after a non-sensitive parameter's constraints, capped at 320 characters, never validated and never sent to providers; declared for `system.events` `mode`. Additive member of `bOps.Abstractions`.
+  The guidance reached the planner in live tasks; its general effect on plan quality is not shown. Committed on `codex/know-bench-01a` as `8247a4a` (ADR-0060 itself as `70561e3`); not released.
+
+### Changed
+
+- AF-05H (ADR-0042 amendment): the evidence disclosure no longer asks the model to restate its answer. Under listed
+  limitations an answer without the `Evidence limitations` heading gets a bounded runtime-authored section appended from the
+  typed digest; the answer itself is never changed and no model call or token is spent. `Agent:EvidenceDisclosureEnabled`
+  (default true) replaces `Agent:EvidenceDisclosureRetries`, which is still read as a deprecated alias (0 disables).
+- AF-05 (ADR-0052): the Microsoft Agent Framework context layer is now the only model-facing history path. The HARDEN-8
+  `BoundedHistory` request, `Agent:VerbatimHistorySteps` (ignored if still present in a configuration) and the K=0 rebuild are removed. A
+  provider/model with an exact `Agent:Context:Profiles` entry is projected against its budget; an unlisted pair (for example the router
+  `openrouter/free`) gets only a structural tool-result bound and **no invented context capacity** (telemetry:
+  `profile_source = unknown-structural`). A profile entry must now state its `MaxContextTokens`/`ReservedOutputTokens`
+  (the capacity-less `UseLegacySafeProjectionWhenUnknown` entry is gone). `ContextOverflow` is recovered by one bounded aggressive
+  projection. See `docs/operator-configuration.md` §13.
+- A runtime-authored **evidence index** (stable ids and persisted lengths of truncated steps, and the rule that addresses any step) keeps
+  `EvidenceRead/v1` usable without the removed compact records.
+- Defaults measured on deterministic fixtures: `Agent:Context:MinimumPreservedToolGroups` 2 → 3, `Agent:Summarization:TriggerRatio` 0.75 → 0.9.
+  Summarization stays off by default and a dedicated summarizer is never implicit. No live provider was run; see
+  `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`.
+- The all-in estimated cost now includes the cost the provider reported for summary calls (never estimated when absent); the
+  estimate-vs-actual prompt telemetry no longer includes the safety reserve.
+
 ### Fixed
 
+- `system.events`: the `detail` of a source is now also bounded to 256 serialized UTF-8 bytes (it was 256 characters only), counted with the
+  encoder that writes the result, cut on a code-point boundary and ended with `...` so the cut is visible. A localized host error message (every non-ASCII character is a six-byte
+  escape) could push the envelope past the 4,096-byte minimum `maxOutputBytes` and make the call fail; now the largest envelope stays
+  below 3,584 bytes whatever the host writes. Details within both bounds are unchanged. Minimum, default and maximum budget are unchanged.
+- A persisted-plan continuation that follows a rejected premature final now carries a runtime-authored user turn naming the pending step and its tool, so the recovery request no longer repeats the one that drew the
+  premature final (LIVE-05). The recovery path was exercised in a live task at cursor 0 that continued to `Completed`; the cursor 1 of the earlier failure was not re-validated; reasoning exhaustion during `Replanning` is not declared solved. Committed on `codex/know-bench-01a` as `e148568`; not released.
+
+- AF-05H (ADR-0046 amendment): a final answer given while the accepted plan still has unresolved planned steps no longer completes
+  the task. The paid call is kept on a bookkeeping step and the plan is re-evaluated by the normal governed replan; an empty
+  replan lets a new tool-free call give the final answer. The execution plan shows the replaced steps as superseded.
 - An argument-validation failure on the exact tool a planned step expects no longer consumes that step (ADR-0047). The next
   turn offers the same single tool once more, for one correction. A second validation failure replans with zero native
   tools. The cursor and the spent correction are derived from persisted steps, so a resume can neither reset nor skip the

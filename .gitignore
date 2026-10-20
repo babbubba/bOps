@@ -40,3 +40,6 @@ dist/
 # Claude Code local session config — personal, never shared
 .claude/settings.local.json
 /rc-artifacts
+# Sensitive, local-only KNOW-BENCH event corpora; never stage snapshots.
+.bops-event-corpus/
+*.bops-events.snapshot.json

@@ -18,6 +18,9 @@
     <!-- The envelope reduction is the security boundary of V1.2 (ADR-0030, ADR-0031): internal, so nothing
          outside the runtime can call it, and visible to its own tests. -->
     <InternalsVisibleTo Include="bOps.Runtime.Tests" />
+    <!-- AF-05: the MAF regression harness drives the real runner with the real MAF projector and needs the runner's
+         internal control-protocol constants. -->
+    <InternalsVisibleTo Include="bOps.AgentFramework.Tests" />
   </ItemGroup>
 
 </Project>

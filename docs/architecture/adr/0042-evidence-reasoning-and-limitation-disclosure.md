@@ -10,6 +10,11 @@ reply; digest and evidence rule still apply.
 PRE-5 amendment: "Amendment — evidence-grounded final synthesis (PRE-5)" (2026-10-09, at the end of this document) —
 typed-fact grounding block, one bounded check and one correction of a final answer; a cited contradiction is never
 persisted as a completed answer.
+AF-05G amendment: "Amendment — step-diverse grounding selection (AF-05G)" (2026-10-11, at the end of this document) —
+the non-referenced part of the PRE-5 fact selection is a deterministic step-diverse round-robin instead of newest-first
+only; nothing else of the amendment changes.
+AF-05H amendment: "Amendment — deterministic evidence disclosure (AF-05H)" (2026-10-11, at the end of this document) —
+§6's model re-ask is replaced by a deterministic runtime-authored section appended to the unchanged answer; no model call.
 HARDEN-11 gap: addressed by [ADR-0044](0044-request-dependent-delegation-authority-and-operability.md) §16–§17
 (Accepted 2026-10-05, D-041) — typed evidence-limitation metadata in delegation results and the plan approval view;
 strict `FindingsOf` (first-complete-object tolerance rejected)
@@ -919,8 +924,10 @@ so the same persisted state gives a byte-identical block live and after persist 
 
 - **Fact id.** `F<step index>.<1-based position in that step's fact list>` — stable, independent of selection.
 - **Selection (deterministic "high salience").** First the facts an `Activation` of a persisted plan revision refers to
-  (same revision, producer planned-step index, `Type` and `Key`); then the newest steps first, facts in list order. No
-  score, ranking model, embedding or relevance judgement exists. At most **12** facts are shown; the shown facts are
+  (same revision, producer planned-step index, `Type` and `Key`); then, **as refined by the AF-05G amendment below**, a
+  step-diverse round-robin over the remaining facts, newest step first, each step's facts in list order (PRE-5 as first
+  accepted said "then the newest steps first, facts in list order", which let one recent dense step take every free
+  slot). No score, ranking model, embedding or relevance judgement exists. At most **12** facts are shown; the shown facts are
   rendered in ascending (step index, position) order, followed by the fixed line `<N> additional observed fact(s) are
   not shown.` when facts were left out (including facts not representable within the entry bound).
 - **Entry.** `- <id> step <index> <tool>: type <T> key <K> = <ValueType> <value>` plus ` (from partial evidence)` for a
@@ -1137,3 +1144,111 @@ matched once; it does not claim coverage of every rare group.
 | 60 (R4) | Rendered worst case: 128-character tool labels, 10-digit step indexes, escaped content, omission and unknown lines | Every entry ≤ 512, fixed text ≤ 1,024, block ≤ 7,168. |
 | 61 (R5) | Hostile markers, check/correction names, tool-call markup, CR/LF/LS/NEL, quotes, backslashes, non-ASCII | One entry line, escaped; no marker, raw line or non-ASCII character in the block. |
 | 62 (R6) | No operator switch; legacy markers | No grounding option exists; the three pre-PRE-5 markers read back unchanged; near-markers are not final steps. |
+
+## Amendment — step-diverse grounding selection (AF-05G)
+
+Status: Accepted 2026-10-11 as part of the AF-05G fix (operator task AF-05G, "Evidence addressability and grounding
+diversity"). It changes one rule of §3 of the PRE-5 amendment — which observed facts fill the 12 slots — and nothing else.
+
+### Problem
+
+The PRE-5 selection was "activation-referenced facts first, then the newest steps first, facts in list order, at most
+12". With the high-density typed facts the packages now emit (ADR-0050), one recent step can produce enough facts to take
+every slot that no activation claimed. On the c508-equivalent fixture the newest step (`system.events`, many facts) can
+show 12 of 12 while `system.crashes` and `system.stability` — whose counts are the headline authoritative signals — show
+none, so a model that was never given the raw results again (an old group compacted by the context layer) saw almost none of
+the diagnostic facts. AF-05 measured exactly this: the default unknown-profile path exposed only a small part of the nine
+expected facts, and a more distributed selection raised retention without a material token increase. This is a defect of the
+selection rule, not of the context layer.
+
+### Rule
+
+1. **Referenced facts first (unchanged).** The grounding facts an `Activation` of a persisted plan revision refers to are
+   selected first, newest step first, then by position in the step's fact list. They are authority derived from the plan: if
+   12 or more are referenced they take all 12 slots and nothing else is shown.
+2. **Step-diverse round-robin for the rest (new).** With the slots that remain, the non-referenced facts are taken in passes.
+   The steps that still have a non-referenced fact are ordered newest to oldest. Pass 1 takes the first remaining fact of each
+   such step, pass 2 the second, and so on, each step's facts in its package-owned list order, until 12 facts are shown or no
+   candidate is left. Example: `step 9: A1 A2 A3 A4`, `step 8: B1 B2 B3`, `step 7: C1 C2` with seven slots left are taken as
+   `A1 B1 C1 A2 B2 C2 A3`.
+3. **A fact that cannot be shown takes no slot (unchanged in effect).** A fact whose entry would exceed 512 characters is
+   dropped from its step's queue before the passes and still counts as omitted.
+4. **Display order (unchanged).** Whatever the selection order, the shown facts are rendered in ascending (step index, position).
+   The fact id stays `F<step index>.<1-based position in the persisted fact list>`, independent of selection.
+
+The rule uses only the step index, the fact's list position and whether an activation refers to it. `Type` and `Key` stay
+opaque; there is no score, ranking model, embedding or relevance judgement, and the runtime does not know what any fact means.
+It is deterministic, bounded, model-free, package-neutral, tool-neutral and operating-system-neutral, so the same persisted
+state still gives a byte-identical block live and after persist → reopen → resume.
+
+### What does not change
+
+Fact definition and grounding eligibility (§1), completeness semantics, the 12-fact, 512-character-entry and 7,168-character
+block bounds, the omission and unknown lines, the markers, the entry format, the check and correction contracts and the
+contradiction guard, and the authority model (the ledger projects facts; it decides nothing).
+
+### Version decision
+
+`EvidenceGrounding/v1` is **not** bumped. The version names the wire/template format the checker and the model read — the
+marker lines, the fixed paragraph, the entry shape and the fact ids — and all of it is byte-for-byte unchanged. Which facts the
+bounded block selects was never part of that contract (the check cites ids that are shown in the block it was given); this
+amendment records that the v1 selection semantics are refined from newest-first-only to referenced-first plus the step-diverse
+round-robin. The repository has no rule that ties a selection algorithm to a template version, so no `v2` is introduced.
+
+### Tests
+
+| # | Scenario | Expected |
+|---|---|---|
+| G2-T1 | Three steps of eight facts, nothing referenced | Four facts of each step; the exact set is asserted. The documented `A1 B1 C1 A2 B2 C2 A3` example is asserted with five referenced facts leaving seven slots. |
+| G2-T2 | More than 12 candidates with referenced facts | Every referenced fact that fits precedes every unreferenced one; more than 12 referenced facts keep the newest steps and show nothing else. |
+| G2-T3 | Selected facts of a dense step | Ids are the original list positions (`F6.4` is the fourth persisted fact). |
+| G2-T4 | Same persisted state, any input order | Byte-identical block. |
+| G2-T5 | Persist → reopen → resume | Live and resumed requests carry the same block. |
+| G2-T6 | c508-equivalent on the unknown profile, 10,240 and 16,384 | Every expected authoritative signal is directly visible, a grounded typed fact, or exactly readable through `runtime.evidence_read` (ADR-0052); the grounding block covers `system.stability`, `system.crashes` and `system.events`. |
+
+## Amendment — deterministic evidence disclosure (AF-05H)
+
+Status: **Accepted (2026-10-11, AF-05H).** Supersedes the re-ask mechanism of §6 and its bounds; the detector, the digest,
+the evidence rule, the Diagnostic-role exception and PRE-5 grounding are unchanged.
+
+### Problem
+
+A live run's first final answer correctly reported 26 kernel live dumps with one code and one with another. Its heading-less
+answer was re-asked under `EvidenceDisclosure/v1`; the restatement rewrote the whole answer and reported 27 with the first
+code. The grounding check did not catch it (the grounding block carried the total, not the per-code split). A safety phase
+introduced a factual error.
+
+### Rule
+
+1. The disclosure phase never rewrites the final answer and makes no model call.
+2. When the persisted digest is non-empty, the role is not the delegated Diagnostic one, `Agent:EvidenceDisclosureEnabled`
+   is true and the detector of §6 finds no heading, the runtime appends a bounded section:
+   `answer` + (a closing fence line, only when the answer ends inside an unclosed fence) + a blank line + `## Evidence limitations`,
+   the fixed line `Added by bOps from typed tool results (EvidenceDisclosure/v2); the answer above is unchanged. ...`, the
+   digest's listed entry lines exactly as rendered from typed fields (outcome, failure kind, completeness, shortened length,
+   shape-checked tool name or fixed token), and the digest's omission line when entries are not shown. It never contains tool
+   output, error messages, observations, arguments or model text, so evidence cannot forge it, and it is at most the digest
+   bound (4,608 characters).
+3. The original answer is an exact, byte-identical prefix of the persisted final. An answer that already has a valid heading is
+   persisted byte-identical. With no listed limitations nothing is appended.
+4. The section is a pure function of the persisted steps; the final is persisted once and a resume never recomputes it.
+5. The final step's `Description` is `Final response; evidence limitations appended by runtime` (with the PRE-5 grounding
+   suffixes). The two historical re-ask markers stay readable for persisted rows, and only they reconstruct a re-ask logical
+   call; the appended section contributes no logical model call.
+6. PRE-5 grounding, when it applies, checks the original answer plus the appended section; there is no model-generated
+   disclosure in between. A grounding correction must keep the heading, as before.
+7. Configuration: `Agent:EvidenceDisclosureEnabled` (default true). `Agent:EvidenceDisclosureRetries` is deprecated: still read
+   so existing configurations keep their meaning (0 disables, 1 changes nothing, any other value fails validation); it never
+   causes a model call. The shipped settings carry only the new key.
+
+### Residual gap (not solved here)
+
+"Not contradicted" is not "fully supported": a model claim that no typed fact contradicts can still be unsupported. AF-05H only
+guarantees that the disclosure phase itself cannot alter factual claims; a general claim-support/entailment checker is a
+separate task.
+
+### Tests
+
+`DeterministicDisclosureTests` (byte-identical prefix, heading present, no limitations, zero extra calls and tokens, determinism
+and reload, forged evidence, bound, the live 26-versus-27 regression, switch and deprecated alias, budget, delegated roles,
+historical markers), `EvidenceGroundingLoopTests.G12_*`, `TerminalDisclosureFallbackTests`, `EvidenceDisclosureHeadingTests`.

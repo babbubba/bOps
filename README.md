@@ -208,18 +208,22 @@ provider-side routing that `openrouter/free` performs, and it does not make an e
 availability or output deterministic. Each attempt, including the transition to a fallback, is audited.
 Details: [ADR-0045](docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md).
 
-The shipped agent guardrails keep three completed tool steps verbatim, cap cumulative reported usage at
-350,000 tokens, and allow 60 minutes of active work per execution attempt:
+The shipped agent guardrails cap cumulative reported usage (350,000 tokens in the CLI, 450,000 in the API) and allow 60 minutes
+of active work per execution attempt:
 
 ```json
 "Agent": {
-  "VerbatimHistorySteps": 3,
   "MaxTotalTokens": 350000,
   "MaxAttemptDuration": "01:00:00"
 }
 ```
 
-`VerbatimHistorySteps` accepts 0–15. The nullable token and duration budgets can be explicitly disabled;
+The model-facing history is built by the Microsoft Agent Framework context layer. Capacity is operator knowledge: state a
+model's window with an `Agent:Context:Profiles` entry, or leave it out and bOps invents none (it then keeps only the three most
+recent tool results verbatim). Summarization (`Agent:Summarization`) is off by default and a dedicated summarizer is an explicit
+data-egress choice. See [Model context, context profiles and summarization](docs/operator-configuration.md#13-model-context-context-profiles-and-summarization).
+
+The nullable token and duration budgets can be explicitly disabled;
 otherwise tokens must be positive and duration must be greater than zero and no more than 24 hours. Invalid
 values fail startup validation rather than being clamped. Human approval waiting does not consume the active
 attempt-duration budget, and reported tokens remain cumulative across resumes.

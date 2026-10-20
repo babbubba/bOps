@@ -128,9 +128,11 @@ public sealed class EvidenceGroundingLedgerTests
         Assert.Equal(8, first.OmittedCount);
         Assert.Contains("\n8 additional observed fact(s) are not shown.", first.Text, StringComparison.Ordinal);
         Assert.Equal(first.Text, second.Text);
-        // Newest steps first: steps 2, 3 and 4 are shown, in ascending order.
-        Assert.Equal("F2.1", first.Facts[0].Id);
-        Assert.Equal("F4.4", first.Facts[^1].Id);
+        // AF-05G: step-diverse, not newest-only. Three passes over steps 4..0 take 5 + 5 + 2 facts (F4.3 and F3.3 in the third),
+        // shown in ascending (step, position) order.
+        Assert.Equal(
+            ["F0.1", "F0.2", "F1.1", "F1.2", "F2.1", "F2.2", "F3.1", "F3.2", "F3.3", "F4.1", "F4.2", "F4.3"],
+            first.Facts.Select(fact => fact.Id));
         Assert.True(first.Text.Length <= EvidenceGroundingLedger.MaxCharacters);
     }
 
@@ -138,8 +140,9 @@ public sealed class EvidenceGroundingLedgerTests
     public void G4_AFactAConditionalFollowUpRefersTo_IsKeptFirstEvenWhenOld()
     {
         var old = Executed(0, Success(Count("referenced", 1), Count("other", 2)), planned: 0);
-        var newer = Enumerable.Range(1, 4)
-            .Select(step => Executed(step, Success([.. Enumerable.Range(0, 4).Select(fact => Count($"s{step}f{fact}", 1))])))
+        // Twelve newer steps: after the one referenced slot, the round-robin's first pass alone (11 steps, newest first) fills the rest.
+        var newer = Enumerable.Range(1, 12)
+            .Select(step => Executed(step, Success([.. Enumerable.Range(0, 2).Select(fact => Count($"s{step}f{fact}", 1))])))
             .ToArray();
         var plan = new AgentPlan(0, "p",
         [
@@ -151,6 +154,119 @@ public sealed class EvidenceGroundingLedgerTests
 
         Assert.Equal("F0.1", grounding.Facts[0].Id);
         Assert.DoesNotContain(grounding.Facts, fact => fact.Id == "F0.2");
+        Assert.DoesNotContain(grounding.Facts, fact => fact.StepIndex == 1); // the oldest unreferenced step loses the last slot
+        Assert.Equal(EvidenceGroundingLedger.MaxShownFacts, grounding.Facts.Count);
+    }
+
+    // ---- AF-05G G2: referenced facts first, then a deterministic step-diverse round-robin ----
+
+    private static PlanStep DenseStep(int index, int facts, int? planned = null) =>
+        Executed(index, Success([.. Enumerable.Range(0, facts).Select(fact => Count($"s{index}f{fact}", fact + 1))]), planned: planned);
+
+    private static AgentPlan FollowUpsOf(int sourceCount, string key, int firstFollowIndex) =>
+        new(0, "p",
+        [
+            .. Enumerable.Range(0, sourceCount).Select(step => new PlannedStep(step, "discover", Tool)),
+            .. Enumerable.Range(0, sourceCount).Select(step => new PlannedStep(firstFollowIndex + step, "follow", Tool)
+            {
+                Activation = new EvidenceFactExists(step, "events.matched", key),
+            }),
+        ])
+        { SemanticContractVersion = 1 };
+
+    [Fact]
+    public void G2T1_OneDenseStep_CannotMonopolizeTheSlots_AndTheSelectionIsExact()
+    {
+        var grounding = Build(DenseStep(1, 8), DenseStep(2, 8), DenseStep(3, 8));
+
+        // Passes over steps 3, 2, 1: four passes of one fact each, shown in ascending (step, position) order.
+        Assert.Equal(
+            ["F1.1", "F1.2", "F1.3", "F1.4", "F2.1", "F2.2", "F2.3", "F2.4", "F3.1", "F3.2", "F3.3", "F3.4"],
+            grounding.Facts.Select(fact => fact.Id));
+        Assert.Equal(12, grounding.OmittedCount);
+    }
+
+    [Fact]
+    public void G2T1_TheDocumentedExample_TakesA1B1C1A2B2C2A3WithSevenSlotsLeft()
+    {
+        // step 9: A1..A4, step 8: B1..B3, step 7: C1..C2; five referenced facts (steps 0..4) leave exactly seven slots.
+        var referenced = Enumerable.Range(0, 5).Select(step => Executed(step, Success(Count("ref", 1)), planned: step)).ToArray();
+
+        var grounding = EvidenceGroundingLedger.Build(
+            [.. referenced, DenseStep(7, 2), DenseStep(8, 3), DenseStep(9, 4)], [FollowUpsOf(5, "ref", firstFollowIndex: 5)])!;
+
+        // Selection order was F0.1..F4.1 (referenced, newest first), then F9.1 F8.1 F7.1 F9.2 F8.2 F7.2 F9.3; shown ascending.
+        Assert.Equal(
+            ["F0.1", "F1.1", "F2.1", "F3.1", "F4.1", "F7.1", "F7.2", "F8.1", "F8.2", "F9.1", "F9.2", "F9.3"],
+            grounding.Facts.Select(fact => fact.Id));
+    }
+
+    [Fact]
+    public void G2T2_ReferencedFacts_PrecedeEveryUnreferencedFact()
+    {
+        var old = Executed(0, Success(Count("r1", 1), Count("x", 1), Count("r2", 1)), planned: 0);
+        var dense = Enumerable.Range(1, 12).Select(step => DenseStep(step, 5)).ToArray();
+        var plan = new AgentPlan(0, "p",
+        [
+            new PlannedStep(0, "discover", Tool),
+            new PlannedStep(1, "a", Tool) { Activation = new EvidenceFactExists(0, "events.matched", "r1") },
+            new PlannedStep(2, "b", Tool) { Activation = new EvidenceFactExists(0, "events.matched", "r2") },
+        ]) { SemanticContractVersion = 1 };
+
+        var grounding = EvidenceGroundingLedger.Build([old, .. dense], [plan])!;
+
+        Assert.Contains(grounding.Facts, fact => fact.Id == "F0.1");
+        Assert.Contains(grounding.Facts, fact => fact.Id == "F0.3");
+        Assert.DoesNotContain(grounding.Facts, fact => fact.Id == "F0.2"); // unreferenced and the oldest step: last in every pass
+        Assert.Equal(EvidenceGroundingLedger.MaxShownFacts, grounding.Facts.Count);
+        Assert.Equal(10, grounding.Facts.Count(fact => fact.StepIndex >= 3)); // the ten slots left go to steps 12..3, one each
+    }
+
+    [Fact]
+    public void G2T2_MoreReferencedFactsThanSlots_KeepTheNewestStepsFirst_AndShowNothingElse()
+    {
+        var steps = Enumerable.Range(0, 14).Select(step => Executed(step, Success(Count("ref", 1), Count("other", 1)), planned: step)).ToArray();
+
+        var grounding = EvidenceGroundingLedger.Build(steps, [FollowUpsOf(14, "ref", firstFollowIndex: 14)])!;
+
+        Assert.Equal(Enumerable.Range(2, 12).Select(step => $"F{step}.1"), grounding.Facts.Select(fact => fact.Id));
+    }
+
+    [Fact]
+    public void G2T3_FactIdsAreTheOriginalPositionInThePersistedFactList_WhateverIsSelected()
+    {
+        var grounding = Build(DenseStep(5, 8), DenseStep(6, 8), DenseStep(7, 8));
+
+        Assert.All(grounding.Facts, fact => Assert.Contains($"- {fact.Id} step {fact.StepIndex} ", fact.Entry, StringComparison.Ordinal));
+        // The fourth pick of step 6 is its fourth fact, so its id says so and carries that fact's own key and value.
+        Assert.Contains("- F6.4 step 6 test.events: type \"events.matched\" key \"s6f3\" = Integer 4", grounding.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("F6.5", grounding.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void G2T4_TheBlockIsByteIdentical_WhateverTheInputOrder_AndOnRepeat()
+    {
+        var steps = new[] { DenseStep(3, 8), DenseStep(1, 8), DenseStep(2, 8), DenseStep(9, 3) };
+
+        var first = Build(steps);
+
+        Assert.Equal(first.Text, Build(steps).Text);
+        Assert.Equal(first.Text, Build([.. steps.Reverse()]).Text);
+        Assert.True(first.Text.Length <= EvidenceGroundingLedger.MaxCharacters);
+    }
+
+    [Fact]
+    public void G2_AFactThatCannotBeShown_TakesNoSlotAndNoPass()
+    {
+        var wide = Count(new string('é', 128), 1); // escapes past MaxEntryCharacters
+        var short2 = Executed(2, Success(wide, Count("a", 1), Count("b", 2)));
+
+        var grounding = Build(short2, DenseStep(1, 12));
+
+        Assert.Equal(
+            ["F1.1", "F1.2", "F1.3", "F1.4", "F1.5", "F1.6", "F1.7", "F1.8", "F1.9", "F1.10", "F2.2", "F2.3"],
+            grounding.Facts.Select(fact => fact.Id));
+        Assert.Equal(3, grounding.OmittedCount);
     }
 
     [Fact]
@@ -269,7 +385,8 @@ public sealed class EvidenceGroundingLedgerTests
 
         Assert.Equal(live.Text, reloaded.Text);
         Assert.Equal(live.Facts, reloaded.Facts);
-        Assert.Equal((18, "F0.4"), (live.OmittedCount, live.Facts[0].Id));
+        Assert.Equal((18, "F0.1"), (live.OmittedCount, live.Facts[0].Id)); // the step-diverse pass also takes step 0's first fact
+        Assert.Contains(live.Facts, fact => fact.Id == "F0.4"); // the referenced fact is kept
         Assert.Equal(live.OmittedCount, reloaded.OmittedCount);
     }
 
@@ -444,7 +561,7 @@ public sealed class EvidenceGroundingLedgerTests
     }
 
     [Fact]
-    public void Markers_AllTwelveCombinations_AreFinalSteps_AndRoundTripTheirOutcomes()
+    public void Markers_AllSixteenCombinations_AreFinalSteps_AndRoundTripTheirOutcomes()
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var disclosure in Enum.GetValues<EvidenceDisclosureOutcome>())
@@ -462,7 +579,7 @@ public sealed class EvidenceGroundingLedgerTests
             }
         }
 
-        Assert.Equal(12, seen.Count);
+        Assert.Equal(16, seen.Count); // four disclosure outcomes (two historical re-ask ones, AF-05H appended) x four grounding outcomes
         Assert.False(FinalResponse.IsFinalStep(new PlanStep(1, "Final response; evidence grounding", null, null, "answer")));
 
         // The three rows written before PRE-5 read back unchanged, and nothing near a marker is one.

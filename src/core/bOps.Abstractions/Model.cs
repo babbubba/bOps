@@ -1,6 +1,8 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json.Serialization;
+
 namespace bOps.Abstractions;
 
 /// <summary>The role of one turn in a model conversation.</summary>
@@ -78,22 +80,36 @@ public sealed record ChatTurn
     /// <summary>Present on a <see cref="ChatRole.Tool"/> turn, matching the <see cref="ModelToolCall.Id"/> it answers.</summary>
     public string? ToolCallId { get; init; }
 
-    /// <summary>Builds a <see cref="ChatRole.User"/> turn.</summary>
+    /// <summary>
+    /// Where this turn's content comes from (ADR-0054 G2-2), assigned by bOps code when the turn is admitted. <c>null</c>
+    /// means no origin was established — a turn from before provenance existed, or one built without a factory — and is
+    /// never read as trusted; it is omitted from the serialized turn, so such a turn is byte-identical to an older one.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ContextProvenance? Provenance { get; init; }
+
+    /// <summary>Builds a <see cref="ChatRole.User"/> turn with no established origin.</summary>
     public static ChatTurn FromUser(string content) => new() { Role = ChatRole.User, Content = content };
 
-    /// <summary>Builds a <see cref="ChatRole.System"/> turn.</summary>
-    public static ChatTurn FromSystem(string content) => new() { Role = ChatRole.System, Content = content };
+    /// <summary>Builds a <see cref="ChatRole.User"/> turn whose origin the calling bOps code establishes.</summary>
+    public static ChatTurn FromUser(string content, ContextProvenance provenance) =>
+        new() { Role = ChatRole.User, Content = content, Provenance = provenance };
 
-    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn carrying only text, with no tool calls.</summary>
-    public static ChatTurn FromAssistantText(string content) => new() { Role = ChatRole.Assistant, Content = content };
+    /// <summary>Builds a <see cref="ChatRole.System"/> turn. Only bOps code builds one, so it is runtime-authored.</summary>
+    public static ChatTurn FromSystem(string content) =>
+        new() { Role = ChatRole.System, Content = content, Provenance = ContextProvenance.Runtime };
 
-    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn requesting one or more tool calls.</summary>
+    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn carrying only text, with no tool calls. It is the model's output.</summary>
+    public static ChatTurn FromAssistantText(string content) =>
+        new() { Role = ChatRole.Assistant, Content = content, Provenance = ContextProvenance.Model };
+
+    /// <summary>Builds an <see cref="ChatRole.Assistant"/> turn requesting one or more tool calls. It is the model's output.</summary>
     public static ChatTurn FromAssistantToolCalls(IReadOnlyList<ModelToolCall> toolCalls) =>
-        new() { Role = ChatRole.Assistant, ToolCalls = toolCalls };
+        new() { Role = ChatRole.Assistant, ToolCalls = toolCalls, Provenance = ContextProvenance.Model };
 
     /// <summary>Builds a <see cref="ChatRole.Tool"/> turn carrying the result of one call.</summary>
     public static ChatTurn FromToolResult(string toolCallId, string content) =>
-        new() { Role = ChatRole.Tool, ToolCallId = toolCallId, Content = content };
+        new() { Role = ChatRole.Tool, ToolCallId = toolCallId, Content = content, Provenance = ContextProvenance.ToolResult };
 }
 
 /// <summary>Token and cost accounting for one model call, carried into <see cref="ModelCallAuditEvent"/>.</summary>
@@ -142,7 +158,7 @@ public sealed record ChatModelDescriptor
 /// <summary>
 /// What an adapter knows about one call to a provider beyond the content of the reply, kept so a
 /// call can be understood afterwards: which model actually answered, why it stopped, and the exact
-/// request and reply bodies. The runtime stores it; it never acts on it.
+/// request and reply bodies. Finish reason may guide bounded protocol recovery; it grants no tool authority.
 /// </summary>
 public sealed record ModelCallDetails
 {
@@ -164,6 +180,18 @@ public sealed record ModelCallDetails
 
     /// <summary>Why the provider stopped generating, when it says.</summary>
     public string? FinishReason { get; init; }
+
+    /// <summary>The HTTP status received, independently of whether the model reply is usable.</summary>
+    public int? ProviderStatusCode { get; init; }
+
+    /// <summary>The length in characters of the content text the provider returned, before the adapter set it aside (a reply cut at the output limit keeps its text only here, in the raw body).</summary>
+    public int? ContentCharacters { get; init; }
+
+    /// <summary>The length in characters of the reasoning the provider returned beside the content, when it returned any. Never the reasoning itself.</summary>
+    public int? ReasoningCharacters { get; init; }
+
+    /// <summary>The reasoning tokens the provider reported separately from the completion total, when it does. Never the reasoning itself.</summary>
+    public int? ReasoningTokens { get; init; }
 
     /// <summary>The request body exactly as sent, without any credential.</summary>
     public string? RequestJson { get; init; }
@@ -194,6 +222,13 @@ public sealed record ModelRequest
 
     /// <summary>The manifests of every tool visible on this node right now.</summary>
     public IReadOnlyList<ToolManifest> AvailableTools { get; init; }
+
+    /// <summary>
+    /// The most output tokens the adapter should let the provider generate for this reply. <c>null</c> (the default) asks for no
+    /// limit: nothing is sent and the provider's own default applies, which bOps does not know. An adapter that cannot express the
+    /// limit ignores it; the runtime records what was requested and what was observed, so an ignored limit is visible.
+    /// </summary>
+    public int? MaxOutputTokens { get; init; }
 }
 
 /// <summary>

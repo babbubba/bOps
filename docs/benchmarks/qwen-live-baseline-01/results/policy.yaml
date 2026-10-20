@@ -1,0 +1,7 @@
+# bOps smoke: strictly read-only. Only Read-risk tools run; everything above is forbidden (Critical always).
+defaults:
+  read: automatic
+  low: forbidden
+  medium: forbidden
+  high: forbidden
+  critical: forbidden

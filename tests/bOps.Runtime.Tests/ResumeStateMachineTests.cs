@@ -77,6 +77,9 @@ public sealed class ResumeStateMachineTests
 
     private static ModelResponse Final(ModelUsage? usage = null) => new("done", [], true, usage);
 
+    /// <summary>The replan after a premature final (AF-05H) that leaves nothing to do; the stored plans never run out by themselves.</summary>
+    private static ModelResponse EmptyPlan() => PlanningTestSupport.PlanResponse(stepCount: 0);
+
     private static ModelResponse[] Reads(int count) => [.. Enumerable.Range(0, count).Select(_ => Read())];
 
     private static List<TaskLifecycleAuditEvent> Lifecycle(RecordingAuditSink audit) => [.. audit.Events.OfType<TaskLifecycleAuditEvent>()];
@@ -88,7 +91,8 @@ public sealed class ResumeStateMachineTests
     public async Task H3_01_H3_14_AFailedOrdinaryTask_IsResumedUnderTheNextExecutionAttempt_AndProgresses()
     {
         var (store, stored) = Seeded(Stored(AgentTaskStatus.Failed, failureSteps: 1));
-        var model = new FakeChatModel(Read(), Final());
+        // The stored plan is long, so the resumed attempt's first final is re-evaluated (AF-05H) and the empty replan ends it.
+        var model = new FakeChatModel(Read(), Final(), EmptyPlan(), Final());
 
         var result = await Runner(model, store).ResumeAsync(stored, Resumer);
 
@@ -97,8 +101,9 @@ public sealed class ResumeStateMachineTests
         Assert.Equal(Resumer, result.ResumedBy);
         Assert.NotNull(result.ResumedAtUtc);
         Assert.Equal(TaskTerminalKind.Completed, result.TerminalReason!.Kind);
-        Assert.Equal([1, null, 2, 2], result.Steps.Select(step => step.ExecutionAttempt));
-        Assert.Equal([0, 1, 2, 3], result.Steps.Select(step => step.Index));
+        Assert.Equal([1, null, 2, 2, 2], result.Steps.Select(step => step.ExecutionAttempt));
+        Assert.Equal([0, 1, 2, 3, 4], result.Steps.Select(step => step.Index));
+        Assert.True(PrematureFinal.IsStep(result.Steps[3]));
         // Exactly one increment: every write of the resumed attempt carries 2, none carries 3.
         Assert.All(store.Saves, saved => Assert.Equal(2, saved.ExecutionAttempt));
         Assert.Equal(2, (await store.LoadAsync(stored.Id))!.ExecutionAttempt);
@@ -110,7 +115,7 @@ public sealed class ResumeStateMachineTests
     {
         var (store, stored) = Seeded(Stored(AgentTaskStatus.Cancelled));
 
-        var result = await Runner(new FakeChatModel(Final()), store).ResumeAsync(stored, Resumer);
+        var result = await Runner(new FakeChatModel(Final(), EmptyPlan(), Final()), store).ResumeAsync(stored, Resumer);
 
         Assert.Equal((AgentTaskStatus.Completed, 2), (result.Status, result.ExecutionAttempt));
     }
@@ -357,7 +362,7 @@ public sealed class ResumeStateMachineTests
     {
         var (store, stored) = Seeded(Stored(AgentTaskStatus.BudgetExceeded, accounting: new TaskAccounting(1000, 1, 0)));
         var audit = new RecordingAuditSink();
-        var model = new FakeChatModel(Final(new ModelUsage(50, 25, null)));
+        var model = new FakeChatModel(Final(new ModelUsage(50, 25, null)), EmptyPlan(), Final());
 
         var result = await Runner(model, store, audit, new AgentRunnerOptions { MaxTotalTokens = 2000 }).ResumeAsync(stored, Resumer);
 
@@ -513,7 +518,8 @@ public sealed class ResumeStateMachineTests
         Assert.Equal(TaskResumeRefusal.OriginUnknown, TaskResumePolicy.Evaluate(ordinaryWorded, options).Refusal!.Code);
 
         var (store, _) = Seeded(roleWorded);
-        Assert.Equal(AgentTaskStatus.Completed, (await Runner(new FakeChatModel(Final()), store).ResumeAsync(roleWorded, Resumer)).Status);
+        Assert.Equal(AgentTaskStatus.Completed,
+            (await Runner(new FakeChatModel(Final(), EmptyPlan(), Final()), store).ResumeAsync(roleWorded, Resumer)).Status);
     }
 
     [Fact]

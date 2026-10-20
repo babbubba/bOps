@@ -45,6 +45,10 @@ public sealed class CoreNamesNoPackageTests
         "system.dump_analyze", "windows.debugger.kd", "kd.exe", "dumpchk", "!analyze",
         // PRE-5: the grounding guard knows no event vocabulary; facts stay opaque (ADR-0042 PRE-5 amendment §1, §10).
         "whea", "event 19", "eventid=", "matched-count",
+        // ADR-0052 AF-04: the high-density facts are package-owned; the core stays opaque to their types and keys.
+        "system.stability", "system.crashes", "storage.health", "category-count", "kind-count", "kernel-code-count",
+        "kernel-dump-path", "dump-reference-count", "attention-device", "devices-observed", "debugger-attributed",
+        "analysis-status", "bugcheck-code",
     ];
 
     public static TheoryData<string, Type> CoreAssemblyMarkers => new()

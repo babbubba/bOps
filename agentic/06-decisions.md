@@ -5,7 +5,7 @@ alternatives are not re-proposed without new information.
 
 A decision is changed by an ADR that supersedes it, never by an edit to this file.
 
-All entries have status **Accepted**; D-042 was accepted 2026-10-06 and implemented by completed HARDEN-13 (merged via PR #83, `3bed13e3274570a3928ac64706be6246c0d9a978`). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
+All entries have status **Accepted**, except D-050 (**Proposed**, awaiting the operator's formal acceptance); D-042 was accepted 2026-10-06 and implemented by completed HARDEN-13 (merged via PR #83, `3bed13e3274570a3928ac64706be6246c0d9a978`). D-001–D-012 were decided 2026-09-14, D-013–D-015 on
 2026-09-15, D-016–D-020 on 2026-09-16, D-021–D-023 on 2026-09-17, D-024–D-026 on 2026-09-18, and
 D-027 on 2026-09-19.
 
@@ -879,10 +879,12 @@ only partially available: `Partial`/`Unavailable`, non-validation failures (neve
 (`Observation.StartsWith(Output, Ordinal)` false), and validation failures unless a later step on the same resolved
 `ToolCall.ToolName` succeeded — the only supersession rule; unknown-tool rejections appear as `(unknown tool)` and are
 never superseded. Typed metadata only selects fixed runtime-authored text (rules S5, C7). (7) **Disclosure.** When the
-digest is non-empty and a deterministic detector finds no `Evidence limitations` heading, at most one re-ask
-(`EvidenceDisclosure/v1`, `Agent:EvidenceDisclosureRetries` 0–1, default 1) asks for a restatement; it **never executes
-a tool**, adds no step or replan, never changes the task status, and keeps the original answer unless the re-ask
-returns an answer with a valid heading; the final step's `Description` records the outcome. (8) **`excludeSources`.**
+digest is non-empty and a deterministic detector finds no `Evidence limitations` heading, the runtime appends the
+bounded `EvidenceDisclosure/v2` section built from the digest's typed entries (**AF-05H, 2026-10-11**: it replaced the
+`EvidenceDisclosure/v1` model re-ask, whose restatement changed a fact in a live run). It makes **no model call**, never
+executes a tool, adds no step or replan, never changes the task status, and the original answer is always an exact
+prefix of the persisted one (`Agent:EvidenceDisclosureEnabled`, default true; the deprecated
+`Agent:EvidenceDisclosureRetries` 0 still disables it); the final step's `Description` records the outcome. (8) **`excludeSources`.**
 `system.events` gains a comma-separated `String` (≤ 8 entries of ≤ 128 characters, ≤ 1,024 total, `source` character
 set, no duplicates, not equal to `source`), matched case-insensitively on the canonical `source`, excluded natively on
 Windows (`Provider[@Name!=…]`, before the scan ceiling) plus a shared post-filter, post-filtered on Linux, echoed as an
@@ -1138,3 +1140,83 @@ is not reconstructed and reconciliation requires an administrator.
 
 **Consequences.** F-25A is closed as design; F-25B implementation is pending
 (`agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md`). F-25 stays open for PRE-8.
+
+
+---
+
+### D-048 — ACCEPTED — Microsoft Agent Framework as the bOps agent infrastructure boundary (ADR-0052)
+
+**Decision.** Accepted 2026-10-10 by the operator. Microsoft Agent Framework (MAF) is the reference framework for
+generic agent infrastructure in bOps. The project-owned public contracts remain framework-neutral and
+`bOps.Abstractions` stays dependency-free, but runtime implementation may use MAF behind an isolated integration
+assembly. MAF owns generic context/message infrastructure, compaction, governed summarization and related agent
+plumbing; bOps retains operational authority: planning/execution state, exact tool visibility, validation, policy,
+entitlement, human approval, mutation journaling, execution, verification, evidence semantics, task persistence,
+resume/fencing, reconciliation, audit semantics, provider fallback and task/model budgets.
+
+Every inference caused by a task, including MAF summarization, must pass through a bOps-owned governed model invocation
+broker so retry/fallback/timeout/audit/token accounting remain authoritative. Summarization defaults to the task
+provider/model; the operator may explicitly configure a different provider/model used only for summarization. Such a
+configuration is an explicit data-egress choice and is never selected automatically by cost or speed.
+
+HARDEN-8's custom model-facing history implementation becomes migration/reference code, not a permanent parallel agent
+framework. Raw persisted evidence remains authoritative. MAF summaries are derived context only and cannot create
+`EvidenceFact` values, change completeness/verification, satisfy policy/approval, settle mutations or widen the tool
+surface. `runtime.evidence_read` remains an exact raw-evidence drill-down mechanism, but exhausting its local read
+budget no longer terminates the whole task as `RuntimeFailure`.
+
+**Rejected.** Keeping a fully custom agent framework; maintaining MAF and HARDEN-8 as permanent interchangeable context
+engines; replacing the public SDK with MAF types; adopting full Harness authority immediately; solving context pressure
+only by increasing EvidenceRead limits.
+
+**Implementation.** Five ordered packets AF-01 through AF-05 are indexed under `agentic/_tasks/`: MAF foundation and
+governed inference; context/compaction; governed summarization; evidence cleanup; real regression/tuning/legacy cleanup.
+Benchmarks tune MAF and do not decide whether MAF is adopted.
+
+
+---
+
+### D-049 — ACCEPTED — Knowledge Discovery: deterministic runtime-published index (ADR-0057, KNOW-M0.1)
+
+**Decision.** Accepted 2026-10-14 by the operator (rev. 2 of ADR-0057). The runtime publishes a deterministic index of the
+verified knowledge pack a task is bound to, as one `User`-role external-reference-data turn before the goal, in the operational
+and final step phases only; planning and replanning stay byte-identical. The S5 amendment in `agentic/03-security-rules.md`
+(external reference data) is already merged and is the security basis of this decision. Acceptance authorises development of
+Knowledge Discovery M1 (T1–T8) only.
+
+**Not decided / not authorised.** This is not an authorisation for commercial release, for composing the index in a production
+host, or for any live benchmark, and it supersedes no pending gate. M1 CI and the offline gate (ADR-0057 §H) and the live
+conditions (§H.4) remain in force. No new architectural decision is introduced; ADR-0057 is accepted as written.
+
+**Open dependencies preserved.**
+- **B1** — no guarantee of dynamic revocation of grant, key or publisher during an attempt; revocation is seen at resume
+  (ADR-0057 §L.1; ADR-0056 §4 "live trust-store reload" stays undecided).
+- **B2** — compatibility of consecutive `User` messages must be verified on the real server and template before any live
+  benchmark; the ADR does not authorise merging the index into the goal turn.
+- **ADR-0054 reconciliation** — the "Refined by ADR-0057" note on ADR-0054 §5.1/G2-4 and the state of ADR-0054 are to be
+  reconciled on `docs/arch-03-maf-convergence-decision` before the final merge.
+
+**Implementation.** M1 (KNOW-DISC-01) is indexed in ADR-0057 §E and is not started by this decision.
+
+---
+
+### D-050 — PROPOSED (implemented as an experimental pilot under the operator's instruction of 2026-10-17) — Local Agent knowledge pilot in the CLI (ADR-0058)
+
+**Decision (proposed).** D-049 withheld the authorisation to compose the knowledge index in any production host, and ADR-0055/0056/0057
+plus two architecture tests kept every host without a knowledge composition and without a configuration key. D-050 revises that for
+exactly one host: **`bOps.Cli`, for a goal and for `resume`, for the Local Agent tenant, opt-in, off by default**. The host is built by
+one factory in `bOps.AgentFramework` over the existing KNOW-01B `KnowledgeTaskHost`; the CLI reads a strict `Knowledge` section
+(enabled flag, packs directory, snapshots directory, trust-store file, per-version grants, one binding, a bounded read budget) and a
+misconfiguration ends the command (exit 2) instead of running without knowledge. No MAF turn broker, no `ContextGate`/provider
+composition and no new tool are involved; the runtime contracts, policy, approval, journal, audit schema and the API are unchanged.
+Installed, authorised and used are three distinct states; the runtime holds no signing key (publisher scripts sign outside it).
+
+**Not decided / not authorised.** Knowledge in the API, the UI or `bops delegate`; any tenant other than the Local Agent; Experience,
+playbooks or several packs per task; binding by capability or goal; the acceptance of ADR-0054 or the passing of any gate. BENCH-00
+3×3, BENCH-01, AF-EVID-01 and AF-05H4-VERIFY stay open; ADR-0057 B1 and B2 stay open (B2 now matters to whoever turns the pilot on).
+No live benchmark, quality claim or release is authorised by this entry.
+
+**Open dependencies preserved.** ADR-0054 acceptance and reconciliation with ADR-0057; the API-extension criteria of ADR-0058 §6.
+
+**Implementation.** ADR-0058 §4 lists the change; operator guide `docs/knowledge/local-agent-pilot.md`.
+

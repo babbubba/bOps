@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ModelCallFailed, TaskState, TaskStatusRunning } from '../core/api/models';
+import { stepModelCalls } from './model-call-format';
 
 /**
  * What the operator calls "Interrupted": the task is recorded as `Running` and no executor of this host holds it (ADR-0040 §9).
@@ -16,7 +17,10 @@ export function isInterrupted(task: Pick<TaskState, 'status' | 'executing'>): bo
  * server (ADR-0039). The request and reply bodies never reach the UI, so this is the only provider text there is.
  */
 export function lastFailedModelReason(task: TaskState): string | null {
-  const calls = [...task.plans, ...task.steps].flatMap((entry) => entry.modelCalls ?? []);
+  const calls = [
+    ...task.plans.flatMap((plan) => plan.modelCalls ?? []),
+    ...task.steps.flatMap((step) => stepModelCalls(step)),
+  ];
   for (let index = calls.length - 1; index >= 0; index--) {
     if (calls[index].outcome === ModelCallFailed && calls[index].errorMessage) {
       return calls[index].errorMessage;

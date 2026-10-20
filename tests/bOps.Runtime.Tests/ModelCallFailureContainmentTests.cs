@@ -57,7 +57,8 @@ public sealed class ModelCallFailureContainmentTests
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Reply(ModelResponse response) =>
         (_, _) => Task.FromResult(response);
 
-    private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan() => Reply(PlanningTestSupport.PlanResponse());
+    // These scripts never call a planned tool, so the plan is empty: a final is accepted only once no step remains (AF-05H).
+    private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Plan() => Reply(PlanningTestSupport.PlanResponse(stepCount: 0));
 
     private static Func<ModelRequest, CancellationToken, Task<ModelResponse>> Done(string text = "Done.") =>
         Reply(new ModelResponse(text, [], true, null));
@@ -431,22 +432,26 @@ public sealed class ModelCallFailureContainmentTests
     [InlineData("""{"rationale":"r","steps":[{"description":"a"}],"steps":[{"description":"b"}]}""")]
     [InlineData("""{"rationale":"r","steps":[{"description":"a","description":"b"}]}""")]
     [InlineData("""{"rationale":"r","rationale":"s","steps":[]}""")]
-    public async Task APlanWithDuplicateKeys_IsAuditedAsMalformed_ReaskedOnce_ThenDegradesWithoutEscaping(string duplicate)
+    public async Task APlanWithDuplicateKeys_IsAuditedAsMalformed_ReaskedOnce_ThenFailsWithoutEscaping(string duplicate)
     {
+        // AF-PLAN-01: the same problem after a correction is not re-asked again, and no plan-less continuation follows.
         var bad = Reply(new ModelResponse(duplicate, [], false, null));
-        var h = Create(new ScriptedChatModel(bad, bad, Done()));
+        var h = Create(new ScriptedChatModel(bad, bad));
 
         var task = await h.Runner.RunAsync("check", Actor);
 
-        Assert.Equal(AgentTaskStatus.Completed, (await h.StoredAsync(task.Id)).Status);
-        Assert.Equal(3, h.Model.Calls);
-        var planCalls = task.Plans[0].ModelCalls!;
+        var stored = await h.StoredAsync(task.Id);
+        Assert.Equal(AgentTaskStatus.Failed, stored.Status);
+        Assert.Equal((TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse),
+            (stored.TerminalReason!.Kind, stored.TerminalReason.FailureKind!.Value));
+        Assert.Equal(2, h.Model.Calls);
+        Assert.Empty(task.Plans);
+        var planCalls = FailureStep(task).ModelCalls!;
         Assert.Equal(2, planCalls.Count);
         Assert.All(planCalls, c => Assert.Equal(
             (ModelCallOutcome.Failure, ModelFailureKind.MalformedResponse, ModelRetryDecision.NotRetryable, 1),
             (c.Outcome, c.FailureKind!.Value, c.RetryDecision!.Value, c.ModelAttempt!.Value)));
         Assert.All(h.ModelEvents(-1), e => Assert.Equal(ModelFailureKind.MalformedResponse, e.FailureKind));
-        Assert.Empty(task.Plans[0].Steps);
         Assert.Empty(h.Delays);
     }
 
@@ -454,7 +459,9 @@ public sealed class ModelCallFailureContainmentTests
     public async Task AMalformedPlanFollowedByAValidOne_UsesTheValidPlan_AndKeepsTheMalformedAttemptOnRecord()
     {
         var h = Create(new ScriptedChatModel(
-            Reply(new ModelResponse("""{"steps":[],"steps":[]}""", [], false, null)), Plan(), Done()));
+            Reply(new ModelResponse("""{"steps":[],"steps":[]}""", [], false, null)), Reply(PlanningTestSupport.PlanResponse()), Done(),
+            // AF-05H: the valid plan's step is unresolved, so that final is re-evaluated; the replan drops it.
+            Plan(), Done()));
 
         var task = await h.Runner.RunAsync("check", Actor);
 

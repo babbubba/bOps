@@ -115,6 +115,17 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
         }
 
         summary["bySeverity"] = bySeverity;
+        if (root["sourceFilter"] is JsonObject sourceFilter)
+        {
+            // ADR-0061: the verdict only. The requested name is already in the redacted arguments; no message is ever carried.
+            summary["sourceFilter"] = new JsonObject
+            {
+                ["registrationStatus"] = sourceFilter["registrationStatus"]!.GetValue<string>(),
+                ["observedMatch"] = sourceFilter["observedMatch"]!.GetValue<bool>(),
+                ["caution"] = sourceFilter["caution"]?.GetValue<string>(),
+            };
+        }
+
         summary["sources"] = EvidenceAudit.Sources(root);
         EvidenceAudit.AddCoverage(summary, root);
         return summary;

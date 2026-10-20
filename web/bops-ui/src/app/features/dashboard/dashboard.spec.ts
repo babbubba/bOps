@@ -493,6 +493,33 @@ describe('Dashboard', () => {
         expect(text()).toContain('Provider reason: HTTP 401: invalid key');
       });
 
+      it('reads the provider reason from a failed early-final replan call too', () => {
+        const replan = {
+          provider: 'OpenRouter',
+          requestedModel: 'm',
+          actualModel: null,
+          startedAtUtc: '2026-10-12T00:31:28Z',
+          durationMs: 10,
+          outcome: 1,
+          usage: { promptTokens: 17, completionTokens: 4096, estimatedCostUsd: null },
+          finishReason: 'length',
+          errorMessage: 'Provider/model returned a malformed response.',
+          payloadTruncated: false,
+          failureKind: 9 as const,
+        };
+        select(
+          task(6, {
+            executing: false,
+            terminalReason: { kind: 8, failureKind: 9 },
+            steps: [
+              { index: 0, description: 'Premature final response; plan re-evaluation required', toolCall: null, result: null, observation: null, planRevision: 0, earlyFinalReplanCalls: [replan] },
+              { index: 1, description: 'Model protocol failure', toolCall: null, result: null, observation: null, planRevision: null, modelCalls: [] },
+            ],
+          }),
+        );
+        expect(text()).toContain('Provider reason: Provider/model returned a malformed response.');
+      });
+
       it('gives no provider guidance for a failure that was not the provider’s', () => {
         select(task(6, { executing: false, terminalReason: { kind: 10 } }));
         expect(fixture.nativeElement.querySelector('[role="note"]')).toBeNull();
@@ -612,6 +639,26 @@ describe('Dashboard', () => {
       expect(text).toContain('Call 1 of 2');
       expect(text).toContain('Call 2 of 2');
       expect(text).toContain('HTTP 500');
+    });
+
+    it('lists the replan calls that followed a rejected premature final after the step’s own call', () => {
+      withSteps([
+        {
+          ...toolStep,
+          toolCall: null,
+          result: null,
+          earlyFinalReplanCalls: [{ ...modelCall, outcome: 1, finishReason: 'length', errorMessage: 'malformed replan' }],
+        },
+      ]);
+
+      infoButton()!.click();
+      fixture.detectChanges();
+
+      const text = fixture.nativeElement.textContent as string;
+      expect(text).toContain('Call 1 of 2');
+      expect(text).toContain('Call 2 of 2');
+      expect(text).toContain('length');
+      expect(text).toContain('malformed replan');
     });
 
     it('shows a single model name when the provider answered with the one requested', () => {

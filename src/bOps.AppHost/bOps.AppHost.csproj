@@ -22,6 +22,10 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.3" />
     <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.5.3" />
+    <!-- NU1902 / GHSA-qhrr-8q5h-9q3h: Aspire.Hosting.AppHost 13.5.3 -> StreamJsonRpc 2.25.29 pins MessagePack 2.5.302
+         (fixed in 2.5.303). Raise the transitive floor within the same major until Aspire ships a patched dependency,
+         then drop this reference. NuGetAudit and TreatWarningsAsErrors stay on. -->
+    <PackageReference Include="MessagePack" Version="2.5.307" />
   </ItemGroup>
 
   <ItemGroup>

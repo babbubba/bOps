@@ -117,7 +117,7 @@ public sealed class ProviderWireEndToEndTests
             Plan("fs.size", steps: 1),                         // 0 plan: one planned step
             ToolCalls(("call_1", "fs_size", "{}")),            // 1 step 0
             ToolCalls(("call_2", "system_crashes", "{}")),     // 2 step 1: the plan is exhausted, so the run replans
-            Plan("system.cpu"),                                // 3 the replan
+            Plan("system.cpu", steps: 0),                      // 3 the replan: nothing left to do (AF-05H)
             Text("Finished."))                                 // 4 step 2
         {
             ForbidNativeToolsWhen = IsPlanningRequest,
@@ -195,7 +195,8 @@ public sealed class ProviderWireEndToEndTests
     public async Task MalformedArguments_AreAuditedAsAFailedStep_NeverExecuted_AndTheModelSeesWhy(string payload)
     {
         var tool = new RecordingReadTool("system.cpu", []);
-        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", payload)), Text("Finished."));
+        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", payload)), Text("Finished."),
+            Plan("system.cpu", steps: 0), Text("Finished.")); // AF-05H: the owed correction makes the first final a replan
         var audit = new RecordingAuditSink();
         var policy = new RecordingPolicy();
 
@@ -243,9 +244,8 @@ public sealed class ProviderWireEndToEndTests
         var live = new StrictOpenAiProvider(
             Plan("fs.size", steps: 1),                        // 0 plan: one planned step
             ToolCalls(("call_1", invalidRawName, "{}")),       // 1 TURN N: the model returns an invalid tool name
-            Plan("fs.size"),                                   // 2 the replan an UnknownTool deviation triggers
-            ToolCalls(("call_2", "fs_size", "{}")),             // 3 TURN N+1: a legitimate offered tool — must not be blocked
-            Text("Finished."));                                 // 4 final
+            ToolCalls(("call_2", "fs_size", "{}")),             // 2 TURN N+1 (AF-TOOLROUTE-01 in-step correction): the offered tool — must not be blocked
+            Text("Finished."));                                 // 3 final
         var audit = new RecordingAuditSink();
 
         var result = await Runner(Model(live), Registry([tool]), audit).RunAsync("goal", Actor);
@@ -259,7 +259,7 @@ public sealed class ProviderWireEndToEndTests
         // Persist and resume: the rejected call is still in history, and still must not block the next request.
         var stored = result with { Status = AgentTaskStatus.Cancelled, Steps = [.. result.Steps.Select(s => s with { ModelCalls = null })] };
         var reloaded = JsonSerializer.Deserialize<TaskState>(JsonSerializer.Serialize(stored))!;
-        var resumed = new StrictOpenAiProvider(Plan("fs.size"), Text("Finished again."));
+        var resumed = new StrictOpenAiProvider(Plan("fs.size", steps: 0), Text("Finished again."));
 
         var store = new InMemoryTaskStore();
         store.Seed(reloaded);
@@ -273,7 +273,8 @@ public sealed class ProviderWireEndToEndTests
     public async Task M2_05_M2_06_M2_07_DuplicateJsonKeysInArguments_NeverExecute_AndNeverLeaveTheTaskRunning()
     {
         var tool = new RecordingReadTool("system.cpu", []);
-        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")), Text("Finished."));
+        var provider = new StrictOpenAiProvider(Plan("system.cpu"), ToolCalls(("call_1", "system_cpu", """{"a":1,"a":2}""")), Text("Finished."),
+            Plan("system.cpu", steps: 0), Text("Finished.")); // AF-05H: the owed correction makes the first final a replan
         var audit = new RecordingAuditSink();
 
         var result = await Runner(Model(provider), Registry([tool]), audit).RunAsync("goal", Actor);

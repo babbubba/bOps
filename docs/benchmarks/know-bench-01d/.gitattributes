@@ -1,0 +1,2 @@
+# Signed bytes and file hashes must survive Git checkout unchanged.
+signed-pack/** -text whitespace=cr-at-eol

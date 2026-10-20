@@ -13,6 +13,7 @@ namespace bOps.Audit.Tests;
 public sealed class JsonLinesAuditSinkTests : IDisposable
 {
     private static readonly ActorIdentity Actor = new("os-user", "alice", "Alice");
+    private static readonly string[] AdmissionForbiddenWords = ["Signature", "Path", "Pem", "Secret", "Private", "Detail", "Message"];
 
     private readonly string _filePath = Path.Combine(Path.GetTempPath(), $"bops-audit-test-{Guid.NewGuid():N}.jsonl");
 
@@ -186,7 +187,211 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem()
+    public async Task WriteAsync_PersistsTheContextProvenanceOfAModelCall_ThroughTheRealSinkAndChain()
+    {
+        // ADR-0054 G2-2: the typed provenance counts and a context-gate refusal are in the persisted model-call event, and an event
+        // without them is written exactly as before.
+        var withProvenance = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.NewGuid(), StepIndex = 1, Actor = Actor,
+            Provider = "p", Model = "m", Outcome = ModelCallOutcome.Failure, ErrorMessage = "Context gate rejected",
+            ContextGateRejection = "SystemElevation",
+            ContextProvenance =
+            [
+                new ContextProvenanceCount { Provenance = ContextProvenance.Runtime, Turns = 2 },
+                new ContextProvenanceCount
+                {
+                    Provenance = new ContextProvenance { Origin = ContextOrigin.Skill, PackId = "pack", PackVersion = "1.0.0", PackHash = "sha256:ab" },
+                    Turns = 1,
+                },
+                new ContextProvenanceCount { Turns = 3 },
+            ],
+        };
+        var without = withProvenance with { ContextProvenance = null, ContextGateRejection = null };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(withProvenance);
+            await sink.WriteAsync(without);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        var persisted = JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>();
+        var restored = Assert.IsType<ModelCallAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(persisted));
+        Assert.Equal("SystemElevation", restored.ContextGateRejection);
+        Assert.Equal([2, 1, 3], restored.ContextProvenance!.Select(count => count.Turns));
+        Assert.Equal(ContextOrigin.Skill, restored.ContextProvenance![1].Provenance!.Origin);
+        Assert.Equal("sha256:ab", restored.ContextProvenance[1].Provenance!.PackHash);
+        Assert.Null(restored.ContextProvenance[2].Provenance);
+
+        var legacy = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("ContextProvenance", legacy, StringComparison.Ordinal);
+        Assert.DoesNotContain("ContextGateRejection", legacy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WriteAsync_PersistsAKnowledgeReadByNameAndHash_NeverByContent_ThroughTheRealSinkAndChain()
+    {
+        // AF-TURN-01B: a knowledge read and a refusal are chained and round-trip; the event has no field that can carry content.
+        var served = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = Guid.NewGuid(), StepIndex = 2, Actor = Actor,
+            Operation = "read_resource", PackId = "pack", PackVersion = "1.0.0", PackHash = "ph", Skill = "nginx-triage",
+            Resource = "checklist", ContentHash = "ch", ReturnedLength = 120, ResultCode = KnowledgeReadResultCode.Success,
+        };
+        var refused = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = served.TaskId, StepIndex = 2, Actor = Actor,
+            ReturnedLength = 0, ResultCode = KnowledgeReadResultCode.Unsupported,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(served);
+            await sink.WriteAsync(refused);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        var persisted = JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>();
+        var restored = Assert.IsType<KnowledgeReadAuditEvent>(System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(persisted));
+        Assert.Equal("ch", restored.ContentHash);
+        Assert.Equal("checklist", restored.Resource);
+        Assert.Equal(KnowledgeReadResultCode.Success, restored.ResultCode);
+        Assert.Contains("\"eventType\":\"knowledgeRead\"", persisted, StringComparison.Ordinal);
+
+        var bare = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("Skill", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("PackId", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            typeof(KnowledgeReadAuditEvent).GetProperties().Select(property => property.Name),
+            name => name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash");
+    }
+
+    [Fact]
+    public async Task WriteAsync_PersistsAPackAdmissionAndTheTenantOfARead_WithoutContentKeysOrPaths_ThroughTheRealSinkAndChain()
+    {
+        // KNOW-01A: every admission outcome, refusals included, and the tenant and provider of a read round-trip through the chain.
+        var taskId = Guid.NewGuid();
+        var admitted = new KnowledgePackAdmissionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            TenantId = "tenant-a", ProviderId = "kp.files.1", PackId = "acme.runbooks", PackVersion = "1.0.0", PackKind = "Skill",
+            Publisher = "acme", KeyId = "acme-2026", ContentHash = new string('a', 64), Code = KnowledgeAdmissionCode.Admitted,
+        };
+        var refused = new KnowledgePackAdmissionAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            TenantId = "tenant-b", Code = KnowledgeAdmissionCode.ProviderNotAdmitted,
+        };
+        var read = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 1, Actor = Actor,
+            Operation = "discover", PackId = "acme.runbooks", TenantId = "tenant-a", ProviderId = "kp.files.1", ReturnedLength = 10,
+            ResultCode = KnowledgeReadResultCode.Success,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(admitted);
+            await sink.WriteAsync(refused);
+            await sink.WriteAsync(read);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        AuditEvent Restore(int index) => System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(
+            JsonNode.Parse(lines[index])!["EventJson"]!.GetValue<string>())!;
+        Assert.Equal(admitted, Assert.IsType<KnowledgePackAdmissionAuditEvent>(Restore(0)));
+        Assert.Equal(KnowledgeAdmissionCode.ProviderNotAdmitted, Assert.IsType<KnowledgePackAdmissionAuditEvent>(Restore(1)).Code);
+        var restoredRead = Assert.IsType<KnowledgeReadAuditEvent>(Restore(2));
+        Assert.Equal(("tenant-a", "kp.files.1"), (restoredRead.TenantId, restoredRead.ProviderId));
+        Assert.Contains("\"eventType\":\"knowledgePackAdmission\"", JsonNode.Parse(lines[0])!["EventJson"]!.GetValue<string>(), StringComparison.Ordinal);
+        var bare = JsonNode.Parse(lines[1])!["EventJson"]!.GetValue<string>();
+        Assert.DoesNotContain("PackId", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("Publisher", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            typeof(KnowledgePackAdmissionAuditEvent).GetProperties().Select(property => property.Name),
+            name => AdmissionForbiddenWords.Any(word => name.Contains(word, StringComparison.Ordinal))
+                || (name.Contains("Content", StringComparison.Ordinal) && name != "ContentHash"));
+    }
+
+    [Fact]
+    public async Task WriteAsync_PersistsAWithdrawnKnowledgeRead_WithItsCause_AndTheReadLevelProvenance_ThroughTheRealSinkAndChain()
+    {
+        // KNOW-01B: a read refused because the authority now in force no longer covers the pin carries a closed cause code and no content;
+        // the read-level provenance of a served turn round-trips without changing how a model call counts provenance; the new terminal
+        // kind is a terminal lifecycle event like any other.
+        var taskId = Guid.NewGuid();
+        var withdrawn = new KnowledgeReadAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 0, Actor = Actor,
+            Operation = "load", PackId = "acme.runbooks", PackVersion = "1.0.0", PackHash = new string('a', 64),
+            TenantId = "tenant-a", ProviderId = "kp.files.1", ReturnedLength = 0,
+            ResultCode = KnowledgeReadResultCode.NotAuthorized, CauseCode = KnowledgeAdmissionCode.KeyRevoked,
+        };
+        var unavailable = withdrawn with { ResultCode = KnowledgeReadResultCode.SnapshotUnavailable, CauseCode = KnowledgeAdmissionCode.HashMismatch };
+        var served = new ContextProvenance
+        {
+            Origin = ContextOrigin.Skill, PackId = "acme.runbooks", PackVersion = "1.0.0", PackHash = new string('a', 64), TenantId = "tenant-a",
+            Operation = "read_resource", Item = "nginx-triage/references/checklist.md", ContentHash = new string('b', 64),
+        };
+        var counts = ContextProvenanceCount.Summarize(
+        [
+            ChatTurn.FromToolResult("1", "one") with { Provenance = served },
+            ChatTurn.FromToolResult("2", "two") with { Provenance = served with { Operation = "load", Item = "nginx-triage", ContentHash = new string('c', 64) } },
+        ]);
+        var call = new ModelCallAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, StepIndex = 0, Actor = Actor,
+            Provider = "p", Model = "m", Outcome = ModelCallOutcome.Success, ContextProvenance = counts,
+        };
+        var terminal = new TaskLifecycleAuditEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = taskId, Actor = Actor,
+            Stage = TaskLifecycleStage.ExecutionTerminal, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Failed,
+            TerminalKind = TaskTerminalKind.KnowledgeUnavailable, TokensUsed = 0, LifetimeSteps = 1, LifetimeReplans = 0, MaxSteps = 10,
+            MaxLifetimeSteps = 100, MaxReplans = 3, MaxLifetimeReplans = 10,
+        };
+
+        using (var sink = new JsonLinesAuditSink(_filePath))
+        {
+            await sink.WriteAsync(withdrawn);
+            await sink.WriteAsync(unavailable);
+            await sink.WriteAsync(call);
+            await sink.WriteAsync(terminal);
+        }
+
+        Assert.True(AuditChainVerifier.VerifyFile(_filePath).IsValid);
+        var lines = await File.ReadAllLinesAsync(_filePath);
+        AuditEvent Restore(int index) => System.Text.Json.JsonSerializer.Deserialize<AuditEvent>(
+            JsonNode.Parse(lines[index])!["EventJson"]!.GetValue<string>())!;
+        Assert.Equal(withdrawn, Assert.IsType<KnowledgeReadAuditEvent>(Restore(0)));
+        Assert.Equal(
+            (KnowledgeReadResultCode.SnapshotUnavailable, KnowledgeAdmissionCode.HashMismatch),
+            (Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).ResultCode, Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).CauseCode));
+        Assert.Null(Assert.IsType<KnowledgeReadAuditEvent>(Restore(1)).ContentHash);
+
+        // Two reads of different items by the same pack and tenant are one provenance group in the model-call audit, as before.
+        var restoredCall = Assert.IsType<ModelCallAuditEvent>(Restore(2));
+        var group = Assert.Single(restoredCall.ContextProvenance!);
+        Assert.Equal(2, group.Turns);
+        Assert.Null(group.Provenance!.Operation);
+        Assert.Null(group.Provenance.Item);
+        Assert.Null(group.Provenance.ContentHash);
+        Assert.Equal(("tenant-a", "acme.runbooks"), (group.Provenance.TenantId, group.Provenance.PackId));
+        Assert.Equal("nginx-triage/references/checklist.md", served.Item); // the turn itself keeps the read-level members
+
+        var restoredTerminal = Assert.IsType<TaskLifecycleAuditEvent>(Restore(3));
+        Assert.Equal(TaskTerminalKind.KnowledgeUnavailable, restoredTerminal.TerminalKind);
+    }
+
+    [Theory]
+    [InlineData(TaskLifecycleStage.RecoveryRejected)]
+    [InlineData(TaskLifecycleStage.EarlyFinalPlanContinued)]
+    [InlineData(TaskLifecycleStage.EarlyFinalPlanContinuationRefused)]
+    public async Task WriteAsync_ChainsTaskMutationAndRecoveryEvents_AndRoundTripsThem(TaskLifecycleStage stage)
     {
         // ADR-0051 §14.1: the additive journal event and the two recovery lifecycle stages serialize through the real sink into
         // the same chain; the mutation event has no field for arguments, output, error text or credentials.
@@ -201,7 +406,7 @@ public sealed class JsonLinesAuditSinkTests : IDisposable
         var recovery = new TaskLifecycleAuditEvent
         {
             TimestampUtc = DateTimeOffset.UtcNow, Node = NodeId.Local, TaskId = mutation.TaskId, StepIndex = 4, Actor = Actor,
-            Stage = TaskLifecycleStage.RecoveryRejected, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Running,
+            Stage = stage, ExecutionAttempt = 2, Origin = TaskOrigin.Ordinary, Status = AgentTaskStatus.Running,
             RefusalCode = "recovery_conflict", TokensUsed = 0, LifetimeSteps = 0, LifetimeReplans = 0, MaxSteps = 10,
             MaxLifetimeSteps = 100, MaxReplans = 3, MaxLifetimeReplans = 10,
         };

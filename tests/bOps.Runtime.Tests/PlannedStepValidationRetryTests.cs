@@ -55,7 +55,9 @@ public sealed class PlannedStepValidationRetryTests
 
     private static ModelResponse Final() => new("done", [], true, null);
 
-    private static IEnumerable<string> Offered(ModelRequest request) => request.AvailableTools.Select(tool => tool.Name);
+    /// <summary>The operational (package) tools a request offers; the runtime control function is not one (AF-05G offers it beside the step tool).</summary>
+    private static IEnumerable<string> Offered(ModelRequest request) =>
+        request.AvailableTools.Select(tool => tool.Name).Where(name => name != EvidenceRead.ControlFunctionName);
 
     private static bool SeesValidationFailure(ModelRequest request) =>
         request.History.Any(turn => turn.Role == ChatRole.Tool
@@ -77,14 +79,14 @@ public sealed class PlannedStepValidationRetryTests
     public async Task AFirstValidationFailure_KeepsTheCurrentPlannedTool_ForOneCorrectiveTurn()
     {
         var (toolA, toolB) = (Tool(ToolA), Tool(ToolB));
-        var model = new FakeChatModel(PlanningTestSupport.PlanResponseFor(ToolA, ToolB), Invalid(ToolA), Final());
+        var model = new FakeChatModel(PlanningTestSupport.PlanResponseFor(ToolA, ToolB), Invalid(ToolA), Valid(ToolA), Valid(ToolB), Final());
 
         var result = await Runner(model, new InMemoryTaskStore(), toolA, toolB).RunAsync("diagnose", Actor);
 
         var failed = result.Steps[0];
         Assert.Equal(ToolA, failed.ToolCall!.ToolName);
         Assert.Equal((ToolOutcome.Failure, ToolFailureKind.Validation), (failed.Result!.Outcome, failed.Result.FailureKind));
-        Assert.Equal(0, toolA.ExecutionCount);
+        Assert.Equal(1, toolA.ExecutionCount);
 
         var correction = model.Requests[2];
         Assert.Equal([ToolA], Offered(correction));
@@ -140,7 +142,7 @@ public sealed class PlannedStepValidationRetryTests
 
         // The one correction offered the same single tool; the next request is the replan, never a third attempt.
         Assert.Equal([ToolA], Offered(model.Requests[2]));
-        Assert.Empty(model.Requests[3].AvailableTools);
+        Assert.Empty(Offered(model.Requests[3]));
         Assert.Equal([ToolB], Offered(model.Requests[4]));
 
         Assert.Equal(2, result.Plans.Count);
@@ -172,7 +174,7 @@ public sealed class PlannedStepValidationRetryTests
         Assert.Contains(CorrectionInstruction, resumedCorrection.SystemPrompt, StringComparison.Ordinal);
 
         // The resumed attempt's validation failure is the second one for that planned step: it replans.
-        Assert.Empty(model.Requests[1].AvailableTools);
+        Assert.Empty(Offered(model.Requests[1]));
         Assert.Equal([ToolB], Offered(model.Requests[2]));
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(0, toolA.ExecutionCount);
@@ -190,7 +192,7 @@ public sealed class PlannedStepValidationRetryTests
             .RunAsync("diagnose", Actor);
 
         var (resumeStore, persisted) = await PersistedAsync(store, interrupted.Id);
-        var model = new FakeChatModel(Valid(ToolB), Final());
+        var model = new FakeChatModel(Valid(ToolB), Valid(ToolC), Final());
 
         var result = await Runner(model, resumeStore, Tool(ToolA), Tool(ToolB), Tool(ToolC)).ResumeAsync(persisted, Resumer);
 
@@ -229,7 +231,7 @@ public sealed class PlannedStepValidationRetryTests
 
         var result = await Runner(model, resumeStore, Tool(ToolA), toolB).ResumeAsync(persisted, Resumer);
 
-        Assert.Empty(model.Requests[0].AvailableTools);
+        Assert.Empty(Offered(model.Requests[0]));
         Assert.Equal([ToolB], Offered(model.Requests[1]));
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(1, toolB.ExecutionCount);
@@ -269,7 +271,7 @@ public sealed class PlannedStepValidationRetryTests
         var result = await Runner(model, resumeStore, audit, toolA, toolB, toolC).ResumeAsync(persisted, Resumer);
 
         // The first resumed request is the replan: no native tool, so neither A, nor B, nor anything else, before it commits.
-        Assert.Empty(model.Requests[0].AvailableTools);
+        Assert.Empty(Offered(model.Requests[0]));
         Assert.Equal([ToolC], Offered(model.Requests[1]));
         Assert.Equal((0, 0, 1), (toolA.ExecutionCount, toolB.ExecutionCount, toolC.ExecutionCount));
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
@@ -308,7 +310,7 @@ public sealed class PlannedStepValidationRetryTests
 
         var result = await Runner(model, store, Tool(ToolA), Tool(ToolB), Tool(ToolC)).ResumeAsync(stored, Resumer);
 
-        Assert.Empty(model.Requests[0].AvailableTools);
+        Assert.Empty(Offered(model.Requests[0]));
         Assert.Equal([ToolC], Offered(model.Requests[1]));
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(2, result.Plans.Count);
@@ -344,7 +346,7 @@ public sealed class PlannedStepValidationRetryTests
         Assert.Equal(RuntimeStepTokens.Denied, rejected.Description);
         Assert.Equal((0, 0), (toolA.ExecutionCount, toolB.ExecutionCount));
         Assert.Contains(audit.Events, e => e is ToolCallAuditEvent { Authorization: AuthorizationKind.UnknownTool, Outcome: ToolOutcome.Denied });
-        Assert.Empty(model.Requests[3].AvailableTools);
+        Assert.Empty(Offered(model.Requests[3]));
         Assert.Equal(2, result.Plans.Count);
     }
 

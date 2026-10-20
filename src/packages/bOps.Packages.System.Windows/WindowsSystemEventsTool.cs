@@ -23,6 +23,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     private static readonly TimeSpan ProbeCap = TimeSpan.FromSeconds(2);
 
     private readonly TimeSpan timeout;
+    private readonly Func<IReadOnlyList<string>?> providerCatalog;
 
     /// <summary>Creates the tool over the local Event Log.</summary>
     public WindowsSystemEventsTool()
@@ -30,10 +31,11 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     {
     }
 
-    internal WindowsSystemEventsTool(TimeProvider clock, TimeSpan timeout)
+    internal WindowsSystemEventsTool(TimeProvider clock, TimeSpan timeout, Func<IReadOnlyList<string>?>? providerCatalog = null)
         : base("windows", clock)
     {
         this.timeout = timeout;
+        this.providerCatalog = providerCatalog ?? ReadLiveCatalog;
     }
 
     /// <inheritdoc />
@@ -62,8 +64,18 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
         var stores = new List<CoverageStore>();
         var truncated = false;
         var explicitChannel = query.Channel is not null;
-        var providerName = query.Source is { } source ? ResolveProvider(source) : null;
-        var xpath = WindowsEventXPath.Build(query, providerName, ResolveExcludedProviders(query.ExcludeSources));
+
+        // One read of the provider catalog serves the source filter, its registration status (ADR-0061) and the exclusions.
+        var needsCatalog = query.Source is not null || query.ExcludeSources is { Count: > 0 };
+        var catalog = needsCatalog ? providerCatalog() : null;
+        var registration = SourceRegistration.Unknown;
+        string? providerName = null;
+        if (query.Source is { } source)
+        {
+            (registration, providerName) = ClassifySource(source, catalog);
+        }
+
+        var xpath = WindowsEventXPath.Build(query, providerName, ResolveAgainst(query.ExcludeSources ?? [], catalog ?? []));
         string[] channels = query.Channel is { } requested ? [requested] : DefaultChannels;
         var budget = new EvidenceTimeBudget(timeout, Clock);
         var steps = channels.Length * 2;
@@ -83,7 +95,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
             truncated |= channelTruncated;
         }
 
-        return Task.FromResult(new SystemEventSnapshot(events, sources, truncated) { Stores = stores });
+        return Task.FromResult(new SystemEventSnapshot(events, sources, truncated) { Stores = stores, SourceRegistration = registration });
     }
 
     private static InventorySourceResult ReadChannel(
@@ -257,21 +269,45 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
     };
 
     /// <summary>
-    /// A native provider filter is case-sensitive but the tool's <c>source</c> is not, so the name is matched to the spelling the provider
-    /// registered. A provider that is not registered here (or a failure to list them) leaves the filter to the shared, case-insensitive one.
+    /// Classifies <paramref name="source"/> against the provider <paramref name="catalog"/> (ADR-0061): <c>registered</c> with the
+    /// registered spelling (a native provider filter is case-sensitive but the tool's <c>source</c> is not, so the filter uses that
+    /// spelling), <c>notRegistered</c> when a non-empty catalog lists no such name, and <c>unknown</c> when the catalog could not be
+    /// read or is empty. Only a registered name gets a native filter; the others are left to the shared, case-insensitive one.
     /// </summary>
-    private static string? ResolveProvider(string source)
+    internal static (SourceRegistration Registration, string? Registered) ClassifySource(string source, IReadOnlyList<string>? catalog)
+    {
+        if (catalog is not { Count: > 0 })
+        {
+            return (SourceRegistration.Unknown, null);
+        }
+
+        return catalog.FirstOrDefault(name => string.Equals(name, source, StringComparison.OrdinalIgnoreCase)) is { } match
+            ? (SourceRegistration.Registered, match)
+            : (SourceRegistration.NotRegistered, null);
+    }
+
+    /// <summary>
+    /// The provider names from <paramref name="enumerate"/>, or <c>null</c> when the Event Log refuses or cannot list them. Any other
+    /// failure is not swallowed.
+    /// </summary>
+    internal static IReadOnlyList<string>? ReadCatalog(Func<IEnumerable<string>> enumerate)
     {
         try
         {
-            using var session = new EventLogSession();
-            return session.GetProviderNames().FirstOrDefault(name => string.Equals(name, source, StringComparison.OrdinalIgnoreCase));
+            return [.. enumerate()];
         }
         catch (Exception exception) when (exception is EventLogException or UnauthorizedAccessException)
         {
             return null;
         }
     }
+
+    private static IReadOnlyList<string>? ReadLiveCatalog() =>
+        ReadCatalog(() =>
+        {
+            using var session = new EventLogSession();
+            return [.. session.GetProviderNames()];
+        });
 
     /// <summary>
     /// The names for the native exclusion (ADR-0032 HARDEN-9 amendment §2): each validated entry resolved to the spelling its provider
@@ -287,18 +323,7 @@ public sealed class WindowsSystemEventsTool : SystemEventsToolBase
             return [];
         }
 
-        IReadOnlyList<string> registered;
-        try
-        {
-            using var session = new EventLogSession();
-            registered = [.. session.GetProviderNames()];
-        }
-        catch (Exception exception) when (exception is EventLogException or UnauthorizedAccessException)
-        {
-            registered = [];
-        }
-
-        return ResolveAgainst(entries, registered);
+        return ResolveAgainst(entries, ReadLiveCatalog() ?? []);
     }
 
     /// <summary>The pure part of <see cref="ResolveExcludedProviders"/>: <paramref name="entries"/> against the registered provider names.</summary>

@@ -106,7 +106,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "does.not.exist"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1), // the replan an unresolved tool name triggers
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), // the replan an unresolved tool name triggers
             new ModelResponse("Giving up.", [], true, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
@@ -151,7 +151,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.hangs"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.hangs"),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Timed out.", [], true, null));
         var registry = CreateRegistryWith(new HangingTool());
         var audit = new RecordingAuditSink();
@@ -173,7 +173,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
             new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Timed out.", [], true, null));
         var audit = new RecordingAuditSink();
         var options = new AgentRunnerOptions
@@ -246,7 +246,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: tool.Manifest.Name),
             new ModelResponse(null, [call], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Timed out.", [], true, null));
         var audit = new RecordingAuditSink();
         var options = new AgentRunnerOptions
@@ -314,7 +314,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1, expectedTool: "test.highrisk"),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
         var audit = new RecordingAuditSink();
@@ -360,7 +360,7 @@ public sealed class AgentRunnerTests
             new ModelResponse(null, [callB], false, null),
             PlanningTestSupport.PlanResponse(revision: 2, expectedTool: "test.highrisk-a"),
             new ModelResponse(null, [callA], false, null),
-            PlanningTestSupport.PlanResponse(revision: 3, expectedTool: "test.highrisk-a"),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 3),
             new ModelResponse("Giving up.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool("test.highrisk-a"), new FakeHighRiskTool("test.highrisk-b"));
         var audit = new RecordingAuditSink();
@@ -527,7 +527,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
         var audit = new RecordingAuditSink();
@@ -557,7 +557,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
         var registry = CreateRegistryWith(new FakeHighRiskTool());
         var audit = new RecordingAuditSink();
@@ -584,7 +584,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Understood, not executing.", [], true, null));
         var audit = new RecordingAuditSink();
         var policy = new StubPolicyEngine((PolicyMode)undefinedMode, "undefined for test");
@@ -645,7 +645,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.approval-bound"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1),
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Stopped.", [], true, null));
         var tool = new ApprovalBoundHighRiskTool();
         var registry = CreateRegistryWith(tool);
@@ -676,6 +676,8 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.paths"),
             new ModelResponse(null, [toolCall], false, null),
+            new ModelResponse("Done.", [], true, null), // the correction is still owed: AF-05H replans instead of completing
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1),
             new ModelResponse("Done.", [], true, null));
         var tool = new RecordingReadTool(
             "test.paths",
@@ -720,7 +722,7 @@ public sealed class AgentRunnerTests
         var model = new FakeChatModel(
             PlanningTestSupport.PlanResponse(expectedTool: "test.highrisk"),
             new ModelResponse(null, [toolCall], false, null),
-            PlanningTestSupport.PlanResponse(revision: 1), // a refuted verification is a deviation (rule C8)
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), // a refuted verification is a deviation (rule C8)
             new ModelResponse("Trying something else.", [], true, null));
         var tool = new FakeHighRiskTool(verificationOutcome: new VerificationOutcome(VerificationStatus.Refuted, "still stopped"));
         var registry = CreateRegistryWith(tool);
@@ -861,24 +863,24 @@ public sealed class AgentRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_DegradesToAnEmptyPlan_WhenTheModelNeverProducesValidPlanJson()
+    public async Task RunAsync_FailsExplicitly_WhenTheModelNeverProducesValidPlanJson()
     {
-        // Bounded retry (mirroring the JSON-schema fallback in OpenAiCompatibleChatModel, plan
-        // §3.1.1): one malformed reply is retried once; still malformed, the task proceeds
-        // reactively rather than failing outright — rule C1, applied to planning.
+        // Bounded correction (AF-PLAN-01): the same problem twice ends the attempt. A plan-less continuation would offer
+        // no native tool under step-scoped routing (ADR-0046), so it is never entered — rule C1, applied to planning.
         var model = new FakeChatModel(
             new ModelResponse("I'll figure it out as I go.", [], false, null),
-            new ModelResponse("Sure, let me think about that.", [], false, null),
-            new ModelResponse("All good.", [], true, null));
+            new ModelResponse("Sure, let me think about that.", [], false, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
 
         var result = await CreateRunner(model, registry, audit).RunAsync("check things", Actor);
 
-        Assert.Equal(AgentTaskStatus.Completed, result.Status);
-        Assert.Single(result.Plans);
-        Assert.Empty(result.Plans[0].Steps);
-        Assert.Contains("Planning failed", result.Plans[0].Rationale, StringComparison.Ordinal);
+        Assert.Equal(AgentTaskStatus.Failed, result.Status);
+        Assert.Equal(TaskTerminalKind.ModelFailure, result.TerminalReason!.Kind);
+        Assert.Equal(ModelFailureKind.MalformedResponse, result.TerminalReason.FailureKind);
+        Assert.Empty(result.Plans);
+        Assert.StartsWith("Planning failed", Assert.Single(result.Steps).Observation, StringComparison.Ordinal);
+        Assert.Equal(2, model.Requests.Count);
     }
 
     [Fact]
@@ -886,7 +888,7 @@ public sealed class AgentRunnerTests
     {
         var model = new FakeChatModel(
             new ModelResponse("Sure — first I'll check the CPU.", [], false, null), // malformed (prose, no JSON object)
-            PlanningTestSupport.PlanResponse(stepCount: 1, rationale: "Retried and got it right."),
+            PlanningTestSupport.PlanResponse(stepCount: 0, rationale: "Retried and got it right."),
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith();
         var audit = new RecordingAuditSink();
@@ -906,7 +908,7 @@ public sealed class AgentRunnerTests
             PlanningTestSupport.PlanResponse(stepCount: 1), // one planned step
             new ModelResponse(null, [toolCall], false, null), // step 0: satisfies the one planned step
             new ModelResponse(null, [toolCall], false, null), // step 1: model keeps going regardless
-            PlanningTestSupport.PlanResponse(stepCount: 1, revision: 1), // exhaustion triggers a replan
+            PlanningTestSupport.PlanResponse(stepCount: 0, revision: 1), // exhaustion triggers a replan
             new ModelResponse("Done.", [], true, null));
         var registry = CreateRegistryWith(new FakeReadTool());
         var audit = new RecordingAuditSink();

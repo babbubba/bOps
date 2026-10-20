@@ -385,6 +385,49 @@ public sealed class ProviderConfigurationCoordinatorTests
         Assert.Equal(["model-valid"], recreated.Current.Pin.Fallbacks.Select(f => f.Model));
     }
 
+    [Fact]
+    public async Task Summarizer_ResolvesTheCurrentKeyForEachInvocation_FromTheNormalProviderProfile()
+    {
+        using var rig = new Rig();
+        rig.Coordinator.SetProfile("Anthropic", new("https://api.anthropic.test", "sonnet-x", true, null));
+        rig.Coordinator.SetKey("Anthropic", "K1", 0);
+
+        var summarizer = rig.Models.CreateSummarizer("anthropic", "sonnet-small", null);
+        await summarizer.CompleteAsync(Request);
+        rig.Coordinator.SetKey("Anthropic", "K2", 1);
+        await summarizer.CompleteAsync(Request);
+
+        Assert.Equal(new ChatModelDescriptor("Anthropic", "sonnet-small"), summarizer.Descriptor);
+        Assert.Equal([("Anthropic", "sonnet-small", "K1"), ("Anthropic", "sonnet-small", "K2")], rig.Calls.Select(call => call.Identity));
+        Assert.All(rig.Calls, call => Assert.Equal("https://api.anthropic.test", call.BaseUrl));
+        // The task's own pin and fallback chain are not involved in resolving the summarizer.
+        Assert.Equal("OpenRouter", rig.Coordinator.Current.Pin.ProviderId);
+        Assert.Empty(rig.Coordinator.Current.Pin.Fallbacks);
+    }
+
+    [Fact]
+    public async Task Summarizer_WithoutACurrentCredential_FailsAsAuthenticationAndNeverBorrowsAnotherProviderKey()
+    {
+        using var rig = new Rig();
+        rig.Coordinator.SetProfile("Anthropic", new("https://api.anthropic.test", "sonnet-x", true, null));
+
+        var summarizer = rig.Models.CreateSummarizer("Anthropic", "sonnet-small", null);
+        var failure = await Assert.ThrowsAsync<ModelProtocolException>(() => summarizer.CompleteAsync(Request));
+
+        Assert.Equal(ModelFailureKind.Authentication, failure.FailureKind);
+        Assert.Empty(rig.Calls);
+    }
+
+    [Fact]
+    public void Summarizer_RejectsAnUnsupportedProviderAndAProviderWithNoEndpoint()
+    {
+        using var rig = new Rig();
+
+        Assert.Throws<ProviderNotSupportedException>(() => rig.Models.CreateSummarizer("NoSuchProvider", "m", null));
+        Assert.Throws<ArgumentException>(() => rig.Models.CreateSummarizer("Anthropic", "m", null));
+        Assert.Throws<ArgumentException>(() => rig.Models.CreateSummarizer("OpenRouter", " ", null));
+    }
+
     private sealed class Rig : IDisposable
     {
         private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("bops-harden13-");

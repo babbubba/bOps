@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+Amended by: [ADR-0052](0052-microsoft-agent-framework-bops-boundary.md) (Accepted 2026-10-10, D-048) —
+the project-owned, dependency-free public model contract remains; Microsoft Agent Framework is now
+the reference **implementation infrastructure** behind an isolated boundary and must not leak into
+`bOps.Abstractions`.
+
 **Backfill note.** This ADR was written at V0.9.1 to record a decision actually made and acted
 on since V0.1 — `agentic/05-workflow.md` has always listed it as one of "the first ADRs to
 exist," but no file existed until now. Nothing here changes any code or reopens the decision;

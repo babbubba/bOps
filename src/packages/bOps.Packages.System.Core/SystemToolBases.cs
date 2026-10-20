@@ -79,7 +79,7 @@ public abstract class SystemCrashesToolBase(string platform, TimeProvider? clock
 
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(query!, ct).ConfigureAwait(false);
-        return EvidenceCompleteness.Success(SystemCrashFormatting.Format(snapshot, query!));
+        return EvidenceCompleteness.Success(SystemCrashFormatting.Format(snapshot, query!)) with { Facts = SystemCrashFacts.From(snapshot, query!) };
     }
 
     /// <inheritdoc />

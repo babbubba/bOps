@@ -28,10 +28,18 @@ Every argument is optional. A value out of range is rejected with the reason, ne
 | `text` | Case-insensitive text the message must contain, up to 256 characters. It is matched against the first 2000 characters of the message, the same part the result can show. |
 | `excludeSources` | Comma-separated sources to leave out (below): at most 8 names of at most 128 characters, 1024 characters in all. Echoed in the result. |
 | `limit` | Events (raw) or groups (aggregate) to return, 1 to 500 (default 50). |
-| `maxOutputBytes` | Size of the result, 4096 to 65536 (default 32768). |
+| `maxOutputBytes` | Size of the result in UTF-8 bytes of the serialized JSON, 4096 to 65536 (default 32768). |
 
-Names (`source`, `eventId`, `channel`, and each entry of `excludeSources`) accept letters, digits and
+Names (`source`, `eventId`, `channel`, and each entry of `excludeSources`) accept ASCII letters, digits and
 ``space _ . @ : / ( ) -`` only, so a value can never carry query syntax.
+
+The byte budget counts the serialized result, in which a character outside ASCII (and a quote) is written as a six-byte escape.
+The envelope (everything but `events`/`groups`) is never cut by it: with the largest echoes it measures about 3,050 bytes
+(raw) and 3,500 (aggregate), so even `4096` leaves room for one or two small rows, and only rows or groups are removed, with
+`truncated: true`. A source's `detail` is host text (a localized error message, for instance), so it is cut at 256 characters
+**and** 256 serialized bytes, keeping its beginning (where an error states its reason) and ending with `...` when cut;
+ordinary messages within both bounds are unaffected. Ask for `8192` or more when aggregates need long
+sample messages.
 
 Two rules involve more than one argument. They are checked first, in this order, and only the first one that fails
 is reported:
@@ -67,6 +75,38 @@ sources before grouping, the `limit` and the byte budget, in both modes, without
 - **An excluded source was not looked at.** `complete: true` then means complete for the filtered question, and the
   absence of a source is never evidence that it logged nothing.
 
+### Checking a source name (`sourceFilter`)
+
+A `source` that names nothing is read in full and returns zero events with `complete: true`, which says nothing about the
+subject the name was meant for ([ADR-0061](architecture/adr/0061-system-events-source-filter-disclosure.md)). Every result
+therefore carries `sourceFilter` right after `excludeSources` — `null` without a `source`, otherwise:
+
+```json
+"sourceFilter": {
+  "requested": "WHEA",
+  "matching": "exactCaseInsensitive",
+  "matchedFields": ["source"],
+  "registrationStatus": "notRegistered",
+  "observedMatch": false,
+  "caution": "noMatchSourceNotRegistered",
+  "semantics": "Only records matching requested in matchedFields were kept. Zero matches does not show that nothing of that kind was logged: no source here may use that name, and other sources and logs were not queried."
+}
+```
+
+- **`registrationStatus`** is what the host's registry says about the *name*, never about events: `registered` (Windows: the
+  provider catalog lists it, ignoring case), `notRegistered` (the catalog was read and does not list it), `unknown` (always on
+  Linux, which has no registry of identifiers or units; on Windows when the catalog could not be read). A registered provider
+  may publish to a log the call did not query, and a name that is not registered may still have historical records.
+- **`observedMatch`** is whether any record the collector read satisfied the whole query, source together with the window and
+  every other filter. It is computed before grouping, `limit` and the byte budget, so it equals `observedEvents > 0` and never
+  depends on what was cut from the output. A `truncated` or partially covered result says nothing about unread records.
+- **`caution`** is `null` when a record confirmed the name or the name is registered; `noMatchSourceNotRegistered` when nothing
+  matched and the name is not registered; `noMatchSourceUnverified` when nothing matched and the name cannot be verified.
+- **`matchedFields`**: Windows `["source"]` (the provider name); Linux `["source","unit"]`.
+- Completeness is untouched: none of these fields changes `status`, `complete`, `truncated` or the typed completeness, and no
+  similar name is ever suggested. Read a zero result together with `complete`, `truncated`, `coverage` and `sourceFilter`: it
+  answers the filtered question only, never "nothing of that kind happened". Use the full, exact name.
+
 ## Result
 
 JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in a fixed order:
@@ -80,6 +120,7 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
   "truncated": false,
   "window": { "fromUtc": "2026-09-21T11:00:00.0000000Z", "toUtc": "2026-09-21T12:00:00.0000000Z" },
   "excludeSources": [],
+  "sourceFilter": null,
   "coverage": {
     "requestedFromUtc": "2026-09-21T11:00:00.0000000Z",
     "requestedToUtc": "2026-09-21T12:00:00.0000000Z",
@@ -107,8 +148,8 @@ JSON, `schemaVersion` 2. A raw result (the default), newest event first, ties in
 ```
 
 The rows are the schema-1 rows, unchanged. Schema 2 adds `mode`, `coverage` and each source's `examinedFromUtc`, and
-makes `complete` stricter (below). The always-present `excludeSources` echo (above) is additive and stays within schema 2:
-an empty array is exactly the behaviour before it existed.
+makes `complete` stricter (below). The always-present `excludeSources` echo and `sourceFilter` object (above) are additive and
+stay within schema 2: an empty array and `null` are exactly the behaviour before they existed.
 
 An aggregate result (`mode: aggregate`) has the same envelope with `observedGroups`, `returnedGroups` and `groups`
 in place of `returnedEvents` and `events`:
@@ -124,6 +165,42 @@ in place of `returnedEvents` and `events`:
 Groups are ordered by `count`, then the newest `lastSeenUtc`, then the key. `observedEvents` counts the matched
 records in both modes; the sample is the newest record's message, cut to 512 characters. Every filter applies
 before grouping.
+
+An aggregate result also carries a top-level `sampleMessageSemantics` (a fixed text, absent in raw mode; additive,
+`schemaVersion` stays 2) stating that `sampleMessage` belongs only to the group's newest event, that `count` covers every
+event sharing the group key, and that attributes seen in the sample are not necessarily common to the whole group.
+
+**Message distribution of a group.** An aggregate also says how the *original* messages of each group (compared ordinally, in
+full — not the 512-character sample) are distributed. It is additive (`schemaVersion` stays 2), absent in raw mode, and
+purely quantitative: different messages are not necessarily different causes, so nothing here is a subtype or a diagnosis.
+
+```json
+{
+  "channel": "System", "source": "Microsoft-Windows-WHEA-Logger", "unit": null, "eventId": "19", "severity": "warning",
+  "count": 41, "firstSeenUtc": "…", "lastSeenUtc": "…", "sampleMessage": "… Internal parity error … APIC … 1 …", "sampleMessageTruncated": false,
+  "distinctMessages": 5,
+  "messageVariants": {
+    "distribution": "partial", "unlistedEvents": 9,
+    "variants": [
+      { "count": 18, "message": "… Internal parity error … APIC … 1 …", "messageTruncated": false },
+      { "count": 9, "message": "… Translation Lookaside Buffer Error … APIC … 1 …", "messageTruncated": false },
+      { "count": 5, "message": "… Internal parity error … APIC … 9 …", "messageTruncated": false }
+    ]
+  }
+}
+```
+
+- `distinctMessages` is exact for every described group. When it is above 1, `messageVariants` follows:
+  `distribution` is `complete` (the listed variants account for every event of the group), `partial` (only the 3 most frequent
+  variants are listed; `unlistedEvents` counts the events of the others) or `unlisted` (the messages are so dispersed — nearly
+  unique, e.g. they embed a time or an id — that a list covering less than half the events would say little; no list is given).
+  Variants are ordered by `count`, then newest, then ordinally. A variant's `message` is cut to 200 characters and `messageTruncated`
+  says so, so two variants can look identical when they differ only after the cut (or after the 512-character sample).
+- The top-level `messageDistribution` states which groups are described: `describedGroups` leading groups (rank order), with
+  `availability` `all`, `partial` or `none`. Groups after them carry neither field: their distribution is **unknown**, not uniform.
+  The details are bounded to `SystemEventsLimits.MessageDistributionBytes` (2,048 UTF-8 bytes) in total and to the output budget, and are
+  added only to groups the result already keeps — **no group is dropped to make room for them**; with no room left, `availability` is
+  `none`. The groups, `count`, `sampleMessage`, `observedGroups`, `returnedGroups`, `complete` and `truncated` do not depend on them.
 
 **Times are record times.** For some events (Kernel-Power 41, the bugcheck record, Windows Error Reporting reports)
 the record is written later than the incident it describes — often at the next boot or in a later WER processing
@@ -192,5 +269,7 @@ Both are the operator's choice; nothing in bOps changes group membership.
 - "Any disk errors?" `source: disk`, `eventId: 7` (Windows), or `text: I/O error` (Linux).
 - "What went wrong in the last 20 minutes?" `minSeverity: error`, `windowMinutes: 20`.
 - "Which errors have repeated over the last three months?" `mode: aggregate`, `windowDays: 90`, `minSeverity: error`.
+- "Did this provider log anything?" `source` with the exact, full name; if the result says `observedMatch: false` with a
+  `caution`, the name is unconfirmed — say so instead of concluding that nothing happened.
 - "…apart from this host's own noise?" the same, plus `excludeSources: .NET Runtime` — the result echoes the exclusion, and
   that source was not looked at.

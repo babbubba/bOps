@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Api;
 using bOps.Audit;
 using bOps.Memory;
@@ -25,6 +26,10 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+
+// ADR-0057 section U.5: this host runs with full globalization (bOps.Api.csproj) so Knowledge text is really normalized; the culture
+// stays invariant so nothing else changes.
+HostCulture.PinInvariant();
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
@@ -165,18 +170,26 @@ builder.Services.AddSingleton<ExecutionRunnerFactory>();
 builder.Services.AddSingleton(sp =>
 {
     var runnerOptions = builder.Configuration.GetSection("Agent").Get<AgentRunnerOptions>() ?? new AgentRunnerOptions();
+    var executionModel = sp.GetService<IChatModel>() ?? new NoExecutionChatModel();
+    var audit = sp.GetRequiredService<IAuditSink>();
+    var time = sp.GetRequiredService<TimeProvider>();
+    var logger = sp.GetRequiredService<ILogger<AgentRunner>>();
+    var broker = new ModelInvocationBroker(
+        executionModel, audit, time, logger, runnerOptions,
+        contextProjector: new MafContextProjector(runnerOptions, logger));
     return new AgentRunner(
-        sp.GetService<IChatModel>() ?? new NoExecutionChatModel(),
+        executionModel,
         sp.GetRequiredService<IToolRegistry>(),
         sp.GetRequiredService<IPolicyEngine>(),
         sp.GetRequiredService<IApprovalProvider>(),
-        sp.GetRequiredService<IAuditSink>(),
+        audit,
         sp.GetRequiredService<ITaskStore>(),
-        sp.GetRequiredService<TimeProvider>(),
-        sp.GetRequiredService<ILogger<AgentRunner>>(),
+        time,
+        logger,
         runnerOptions,
         sp.GetRequiredService<ISkillRegistry>(),
-        systemMessages: sp.GetRequiredService<ISystemMessageStore>());
+        systemMessages: sp.GetRequiredService<ISystemMessageStore>(),
+        invocationBroker: broker);
 });
 builder.Services.AddSingleton<AgentTaskLauncher>();
 

@@ -51,6 +51,9 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(TaskLifecycleAuditEvent), "taskLifecycle")]
 [JsonDerivedType(typeof(EvidenceReadAuditEvent), "evidenceRead")]
 [JsonDerivedType(typeof(TaskMutationAuditEvent), "taskMutation")]
+[JsonDerivedType(typeof(KnowledgeReadAuditEvent), "knowledgeRead")]
+[JsonDerivedType(typeof(KnowledgePackAdmissionAuditEvent), "knowledgePackAdmission")]
+[JsonDerivedType(typeof(KnowledgeIndexAuditEvent), "knowledgeIndex")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -172,6 +175,321 @@ public sealed record EvidenceReadAuditEvent : AuditEvent
 
     /// <summary>How the attempt ended.</summary>
     public required EvidenceReadResultCode ResultCode { get; init; }
+}
+
+/// <summary>How an attempted <c>runtime.knowledge_read</c> ended (ADR-0054 section 5). The names are stable audit codes.</summary>
+public enum KnowledgeReadResultCode
+{
+    /// <summary>The operation was served and, where content was read, it matched its pin.</summary>
+    Success = 0,
+    /// <summary>The call did not have the exact required shape.</summary>
+    Malformed = 1,
+    /// <summary>The tool was not offered on this turn, or knowledge reads are not eligible for the step.</summary>
+    NotOffered = 2,
+    /// <summary>The call named something that is not the public knowledge-read tool (an internal framework function, a script runner, another runtime function).</summary>
+    Unsupported = 3,
+    /// <summary>The skill is not in the pinned pack.</summary>
+    UnknownSkill = 4,
+    /// <summary>The resource is not in the pinned skill.</summary>
+    UnknownResource = 5,
+    /// <summary>The read budget of the task is exhausted.</summary>
+    LimitExceeded = 6,
+    /// <summary>The content actually produced did not match its pinned hash; nothing was returned.</summary>
+    IntegrityMismatch = 7,
+    /// <summary>The verified content exceeds the per-read size bound; nothing was returned.</summary>
+    TooLarge = 8,
+    /// <summary>The authority that applies now no longer covers the pinned pack (grant withdrawn, tenant, provider, key or publisher revoked); nothing was returned (KNOW-01B).</summary>
+    NotAuthorized = 9,
+    /// <summary>The verified snapshot is no longer intact or available; nothing was returned (KNOW-01B).</summary>
+    SnapshotUnavailable = 10,
+    /// <summary>A discovery page was requested beyond the last page; nothing was read and no read was spent (ADR-0057).</summary>
+    OutOfRange = 11,
+    /// <summary>The framework function failed while reading a snapshot whose integrity was just verified (a fault of the host or the framework, not a hash mismatch); nothing was returned (ADR-0059).</summary>
+    InfrastructureFailure = 12,
+}
+
+/// <summary>
+/// Metadata-only record of an attempted <c>runtime.knowledge_read</c> (ADR-0054 section 5): which pack, skill and resource were
+/// actually read, by name and hash, and how the attempt ended. It never contains the content or any tool arguments, and it is
+/// emitted for denials and rejections too.
+/// </summary>
+public sealed record KnowledgeReadAuditEvent : AuditEvent
+{
+    /// <summary>The operation: <c>discover</c>, <c>load</c> or <c>read_resource</c>, or <c>null</c> when the call could not be read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Operation { get; init; }
+
+    /// <summary>The pack the content came from, when the read resolved to one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackId { get; init; }
+
+    /// <summary>The pack version.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackVersion { get; init; }
+
+    /// <summary>The pinned pack hash.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackHash { get; init; }
+
+    /// <summary>The skill read, only when it resolved to a pinned skill (a model-claimed name is never recorded).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Skill { get; init; }
+
+    /// <summary>The resource read, only when it resolved to a pinned resource.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Resource { get; init; }
+
+    /// <summary>The hash of the content actually read and verified; <c>null</c> when nothing was served.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHash { get; init; }
+
+    /// <summary>
+    /// The tenant scope the host bound to the pack when it was admitted (KNOW-01A), or <c>null</c> for a pack that has none. It is
+    /// host authority, never a value the model proposed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TenantId { get; init; }
+
+    /// <summary>The id the host registry assigned to the provider instance that supplied the pack (KNOW-01A), when there is one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProviderId { get; init; }
+
+    /// <summary>The number of UTF-16 code units returned; zero for a rejection.</summary>
+    public required int ReturnedLength { get; init; }
+
+    /// <summary>How the attempt ended.</summary>
+    public required KnowledgeReadResultCode ResultCode { get; init; }
+
+    /// <summary>
+    /// For <see cref="KnowledgeReadResultCode.NotAuthorized"/> and <see cref="KnowledgeReadResultCode.SnapshotUnavailable"/>, why the
+    /// current authority or the snapshot refused the read (KNOW-01B). A closed code, never text.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public KnowledgeAdmissionCode? CauseCode { get; init; }
+
+    /// <summary>
+    /// The host-generated reference (<c>K1</c>, <c>K1.R1</c>) the call used, when it used one and it was well formed (ADR-0057). It is
+    /// an opaque handle into the pinned pack, never a path and never an authorization; a model-claimed value that is not of that shape
+    /// is never recorded.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ref { get; init; }
+
+    /// <summary>
+    /// <c>true</c> when the same item had already been served in this attempt and was served again (ADR-0057); <c>null</c> when the
+    /// call did not resolve to an item.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Repeat { get; init; }
+
+    /// <summary>
+    /// <c>true</c> on the one refusal after which the session stopped serving reads for the rest of the attempt because the model kept
+    /// sending requests that returned nothing (ADR-0059); <c>null</c> on every other event. The task goes on without knowledge; this is the
+    /// audit record of that state change, not of a task failure.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Withdrawn { get; init; }
+}
+
+/// <summary>Whether the knowledge index was published to the model on a step request (ADR-0057).</summary>
+public enum KnowledgeIndexStatus
+{
+    /// <summary>The runtime computed an index under the authority in force and may show it to the model.</summary>
+    Published = 0,
+    /// <summary>No index is shown for this request; <see cref="KnowledgeIndexAuditEvent.Suppression"/> says why.</summary>
+    Suppressed = 1,
+}
+
+/// <summary>Why a knowledge index was not published (ADR-0057). Closed codes; the names are stable audit codes.</summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design", "CA1008:Enums should have zero value",
+    Justification = "ADR-0057 numbers the closed reasons from 1: an unset (zero) value must never read as a valid reason. 'Not suppressed' is a null Suppression.")]
+public enum KnowledgeIndexSuppression
+{
+    /// <summary>The authority in force no longer covers the pinned pack for a grant, provider, tenant or signer reason; see the cause code.</summary>
+    AuthorityWithdrawn = 1,
+    /// <summary>The authority in force reported that the verified snapshot is no longer intact or available; see the cause code.</summary>
+    SnapshotUnavailable = 2,
+    /// <summary>No authorized entry exists to list. Defensive: an empty pack is not admissible.</summary>
+    NoEntries = 3,
+    /// <summary>The runtime refused the index turn because its provenance did not match the task's persisted binding.</summary>
+    ProvenanceRejected = 4,
+    /// <summary>The session failed while describing the index; the fault was contained and the task continues.</summary>
+    SessionFault = 5,
+    /// <summary>No entry fits the host's limits.</summary>
+    LimitsUnsatisfiable = 6,
+}
+
+/// <summary>
+/// One entry the host listed in the knowledge index (ADR-0057). Every member is host-generated or shape-checked: the reference is
+/// generated by the host, the skill name passes the admission name pattern, the counts are integers. It carries no description.
+/// </summary>
+/// <param name="Ref">The host-generated reference of the skill (<c>K1</c>).</param>
+/// <param name="Skill">The pinned skill name.</param>
+/// <param name="Resources">How many resources the entry lists.</param>
+/// <param name="Score">The deterministic selection score of the entry.</param>
+public sealed record KnowledgeIndexListing(string Ref, string Skill, int Resources, int Score);
+
+/// <summary>
+/// Metadata-only record of one decision to publish or suppress the knowledge index on a step request (ADR-0057), written before the
+/// model call and for every suppression. It separates what the host generated (references, counts, hashes, closed codes) from what a
+/// publisher wrote: no description, goal, query or content is ever carried, and the hashes identify the rendered text without
+/// containing it. The step is the inherited <see cref="AuditEvent.StepIndex"/>.
+/// </summary>
+public sealed record KnowledgeIndexAuditEvent : AuditEvent
+{
+    /// <summary>The execution attempt the request belongs to.</summary>
+    public required int ExecutionAttempt { get; init; }
+
+    /// <summary>Whether the index was published.</summary>
+    public required KnowledgeIndexStatus Status { get; init; }
+
+    /// <summary>Why the index was suppressed; <c>null</c> when it was published.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public KnowledgeIndexSuppression? Suppression { get; init; }
+
+    /// <summary>For an authority or snapshot suppression, the closed cause reported by the authority in force.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public KnowledgeAdmissionCode? CauseCode { get; init; }
+
+    /// <summary>The tenant scope the host bound to the pack.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TenantId { get; init; }
+
+    /// <summary>The id the host registry assigned to the provider instance that supplied the pack.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProviderId { get; init; }
+
+    /// <summary>The pinned pack id.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackId { get; init; }
+
+    /// <summary>The pinned pack version.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackVersion { get; init; }
+
+    /// <summary>The pinned pack hash.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackHash { get; init; }
+
+    /// <summary>The version of the selector that ordered the entries (<c>m1-lexical</c> in the first milestone).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SelectorVersion { get; init; }
+
+    /// <summary>The entries listed, in selection order. Empty when suppressed.</summary>
+    public IReadOnlyList<KnowledgeIndexListing> Listed { get; init; } = [];
+
+    /// <summary>How many entries the current authority covers, listed or not.</summary>
+    public int AuthorizedTotal { get; init; }
+
+    /// <summary>How many authorized entries were not listed.</summary>
+    public int Omitted { get; init; }
+
+    /// <summary>The SHA-256 of the normal rendering of the index data, as lowercase hex.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IndexHash { get; init; }
+
+    /// <summary>The SHA-256 of the aggressive (reduced) rendering of the index data, as lowercase hex.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AggressiveIndexHash { get; init; }
+}
+
+/// <summary>How an attempt to admit a knowledge pack for a task ended (KNOW-01A, ADR-0055). The names are stable audit codes.</summary>
+public enum KnowledgeAdmissionCode
+{
+    /// <summary>The pack was verified, snapshotted and pinned.</summary>
+    Admitted = 0,
+    /// <summary>The source is not a provider instance the host registered, or it was unregistered.</summary>
+    ProviderNotAdmitted = 1,
+    /// <summary>The provider registration does not cover the task's tenant.</summary>
+    TenantNotAllowed = 2,
+    /// <summary>The host holds no grant of this pack, version and kind to the tenant.</summary>
+    NotEntitled = 3,
+    /// <summary>The provider may not serve this kind of pack (an untrusted provider never serves a skill pack).</summary>
+    KindNotAllowed = 4,
+    /// <summary>The source has no such pack, or failed to supply it.</summary>
+    SourceUnavailable = 5,
+    /// <summary>The signing key is not in the trust store.</summary>
+    UnknownKey = 6,
+    /// <summary>The publisher was revoked.</summary>
+    PublisherRevoked = 7,
+    /// <summary>The signing key was revoked.</summary>
+    KeyRevoked = 8,
+    /// <summary>The signature does not verify over the manifest.</summary>
+    InvalidSignature = 9,
+    /// <summary>The signature file is not well formed, or uses an unsupported schema or algorithm.</summary>
+    SignatureMalformed = 10,
+    /// <summary>The manifest is not well formed, uses an unsupported schema, or contradicts the signature.</summary>
+    ManifestInvalid = 11,
+    /// <summary>The pack does not declare compatibility with this engine version.</summary>
+    EngineIncompatible = 12,
+    /// <summary>The signed manifest names another pack or version than the one requested.</summary>
+    IdentityMismatch = 13,
+    /// <summary>A path is absolute, escapes the pack, is ambiguous or is not a plain relative file path.</summary>
+    UnsafePath = 14,
+    /// <summary>The pack contains a symbolic link or reparse point.</summary>
+    LinkNotAllowed = 15,
+    /// <summary>The pack contains a file type, script or executable content that packs may not carry.</summary>
+    ForbiddenContent = 16,
+    /// <summary>A file the manifest lists is missing.</summary>
+    MissingResource = 17,
+    /// <summary>The pack contains a file the manifest does not list.</summary>
+    UnexpectedContent = 18,
+    /// <summary>A file does not match the hash the signed manifest lists.</summary>
+    HashMismatch = 19,
+    /// <summary>A size, count or length limit was exceeded.</summary>
+    LimitExceeded = 20,
+    /// <summary>A text file is not valid UTF-8 text.</summary>
+    InvalidContent = 21,
+    /// <summary>A skill name, description or frontmatter is invalid or asks for a privilege.</summary>
+    SkillInvalid = 22,
+    /// <summary>The verified content is not the content a task's pin names.</summary>
+    PinMismatch = 23,
+    /// <summary>The stored snapshot no longer matches the verified pack.</summary>
+    SnapshotTampered = 24,
+}
+
+/// <summary>
+/// Metadata-only record of an attempt to admit a knowledge pack for a task (KNOW-01A, ADR-0055), written for every outcome,
+/// refusals first. Identifiers are recorded only when they passed a strict shape check; for a refused pack they are therefore never
+/// free text a publisher or a model chose. It carries no content, path, key material or signature. Like the other
+/// non-step events, <see cref="AuditEvent.StepIndex"/> is the documented sentinel <c>-1</c>.
+/// </summary>
+public sealed record KnowledgePackAdmissionAuditEvent : AuditEvent
+{
+    /// <summary>The tenant scope the host derived for the task.</summary>
+    public required string TenantId { get; init; }
+
+    /// <summary>The id the host registry assigned to the provider instance, when the source was a registered provider.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProviderId { get; init; }
+
+    /// <summary>The pack id requested by the host.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackId { get; init; }
+
+    /// <summary>The pack version requested by the host.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackVersion { get; init; }
+
+    /// <summary>The kind the signed manifest declares (<c>Knowledge</c>, <c>Experience</c> or <c>Skill</c>), once the signature verified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackKind { get; init; }
+
+    /// <summary>The publisher named by the signature, if it has the shape of an identifier.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Publisher { get; init; }
+
+    /// <summary>The key id named by the signature, if it has the shape of an identifier.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? KeyId { get; init; }
+
+    /// <summary>The SHA-256 of the manifest bytes as bOps computed it: the content identity of the pack.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHash { get; init; }
+
+    /// <summary>How the attempt ended.</summary>
+    public required KnowledgeAdmissionCode Code { get; init; }
 }
 
 /// <summary>
@@ -443,6 +761,28 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// <summary>The pinned primary model of the execution this call belongs to, when pinned.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PrimaryModel { get; init; }
+
+    /// <summary>
+    /// What was requested and observed about this attempt's generation limits: the requested output limit (or none), the provider's
+    /// finish reason and token counts, the reasoning length, and the runtime's classification. <c>null</c> (and omitted) for an event
+    /// written before it existed and for a call refused before any provider attempt.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelOutputObservation? Output { get; init; }
+
+    /// <summary>
+    /// The turns of the request this attempt sent, counted by provenance (ADR-0054 G2-2), in a deterministic order. <c>null</c>
+    /// (and omitted) for an event written before provenance existed and for a call that sent no history.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ContextProvenanceCount>? ContextProvenance { get; init; }
+
+    /// <summary>
+    /// Set when the context gate refused the request before any model call (ADR-0054 G2-1): the stable rejection code. The
+    /// event then records no provider attempt, because none was made.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContextGateRejection { get; init; }
 }
 
 /// <summary>
@@ -484,6 +824,12 @@ public enum TaskLifecycleStage
 
     /// <summary>A recovery was refused, lost the transition to another writer, or the store cannot perform it.</summary>
     RecoveryRejected = 6,
+
+    /// <summary>A received malformed early-final replan retained the persisted plan and authorized a read-only continuation.</summary>
+    EarlyFinalPlanContinued = 7,
+
+    /// <summary>An early-final replan produced no plan and the persisted-plan continuation was refused; <see cref="TaskLifecycleAuditEvent.RefusalCode"/> says why.</summary>
+    EarlyFinalPlanContinuationRefused = 8,
 }
 
 /// <summary>
@@ -518,7 +864,7 @@ public sealed record TaskLifecycleAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TaskTerminalKind? TerminalKind { get; init; }
 
-    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/> and <see cref="TaskLifecycleStage.RecoveryRejected"/>, the stable refusal code (for example <c>task_running</c>).</summary>
+    /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/>, <see cref="TaskLifecycleStage.RecoveryRejected"/> and <see cref="TaskLifecycleStage.EarlyFinalPlanContinuationRefused"/>, the stable refusal code (for example <c>task_running</c>).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RefusalCode { get; init; }
 

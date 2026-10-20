@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using bOps.Abstractions;
+using bOps.AgentFramework;
 using bOps.Audit;
 using bOps.Cli;
 using bOps.Memory;
@@ -26,6 +27,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+
+// ADR-0057 section U.5: this host runs with full globalization (bOps.Cli.csproj) so Knowledge text is really normalized; the culture
+// stays invariant so nothing else changes.
+HostCulture.PinInvariant();
 
 const string UsageMessage = """
     Usage: bops "<goal>" | bops resume <task-id> | bops recover <task-id> --attempt <N> | bops reconcile <task-id> verify|accept|abandon [--note <text>] | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
@@ -303,19 +308,68 @@ var approvalProvider = new ConsoleApprovalProvider();
 // runs, so `bops resume <task-id>` can continue a task that failed, was cancelled or ran out of a
 // per-attempt budget, under the ADR-0040 resumability rule (never a task still stored Running).
 var taskStore = new SqliteTaskStore(builder.Configuration["Memory:FilePath"] ?? "tasks.db");
+var audit = host.Services.GetRequiredService<IAuditSink>();
+var time = host.Services.GetRequiredService<TimeProvider>();
+var logger = host.Services.GetRequiredService<ILogger<AgentRunner>>();
+// AF-03: the CLI hosts one provider, so an explicit summarizer may only choose another MODEL of that same provider.
+// It is its own governed broker; there is no fallback to any other destination.
+IModelInvocationBroker? summarizerBroker = null;
+if (runnerOptions.Summarization is { Enabled: true, IsDedicated: true } summarization)
+{
+    if (!string.Equals(summarization.Provider, modelOptions.Provider, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "The CLI hosts the single 'ModelProvider:Provider'; 'Agent:Summarization:Provider' must name it (the model may differ).");
+    }
 
-var runner = new AgentRunner(
+    var summaryModel = chatModelRegistry.Create(new ChatModelOptions(
+        modelOptions.Provider, modelOptions.BaseUrl, modelOptions.ApiKeySecret, summarization.Model!,
+        modelOptions.SupportsNativeToolCalling)
+    {
+        ResolvedApiKey = modelOptions.ResolvedApiKey,
+        RequestTimeout = modelOptions.RequestTimeout,
+    });
+    if (runnerOptions.Context.Resolve(summaryModel.Descriptor) is not { MaxContextTokens: not null })
+    {
+        throw new InvalidOperationException(
+            $"'Agent:Summarization' resolves to {summaryModel.Descriptor.ProviderId}/{summaryModel.Descriptor.ModelId}, "
+            + "which has no exact 'Agent:Context:Profiles' entry with a known MaxContextTokens.");
+    }
+
+    summarizerBroker = new ModelInvocationBroker(summaryModel, audit, time, logger, runnerOptions);
+}
+
+// ADR-0058: Knowledge is opt-in and Local Agent only. It is opened for a goal or a resume of this CLI and for nothing else; a
+// delegation, a recovery and a reconciliation never receive a host, and a delegated role would not be given a session even if one did.
+IKnowledgeTaskHost? knowledgeHost = null;
+if (goal is not null || resumeTaskId is not null)
+{
+    try
+    {
+        knowledgeHost = CliKnowledge.CreateHost(builder.Configuration, audit, time, host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("bOps.Cli.Knowledge"));
+    }
+    catch (LocalKnowledgeConfigurationException ex)
+    {
+        // Fail closed: running without the knowledge the operator asked for would be a silent degradation.
+        await Console.Error.WriteLineAsync($"Knowledge is enabled but its configuration is not usable: {ex.Message}");
+        return 2;
+    }
+}
+
+var runner = CliRunnerComposition.Create(new CliRunnerInputs(
     model,
     toolRegistry,
     policyEngine,
     approvalProvider,
-    host.Services.GetRequiredService<IAuditSink>(),
+    audit,
     taskStore,
-    host.Services.GetRequiredService<TimeProvider>(),
-    host.Services.GetRequiredService<ILogger<AgentRunner>>(),
+    time,
+    logger,
     runnerOptions,
     skillRegistry,
-    systemMessages: host.Services.GetRequiredService<SqliteSystemMessageStore>());
+    host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+    summarizerBroker,
+    knowledgeHost));
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

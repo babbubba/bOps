@@ -5,11 +5,19 @@
     <RootNamespace>bOps.Cli</RootNamespace>
     <AssemblyName>bops</AssemblyName>
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+    <!-- ADR-0057 section U.5 (D-049): Knowledge discovery needs real Unicode normalization (NFC/NFKC), which invariant globalization
+         does not provide. This is a Knowledge host, so it opts out of the repository default (Directory.Build.props). The culture itself
+         stays invariant (HostCulture.PinInvariant). On Linux this needs libicu; DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 turns it off and
+         Knowledge then reports itself unavailable instead of running degraded. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- CA1308 is silent under invariant globalization and fires under full globalization; see docs/architecture/suppressions.md. -->
+    <NoWarn>$(NoWarn);CA1308</NoWarn>
     <Description>The bOps CLI — `bops "&lt;goal&gt;"`. The primary interface (agentic/00-project-spec.md, principle 6).</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\bOps.Abstractions\bOps.Abstractions.csproj" />
+    <ProjectReference Include="..\bOps.AgentFramework\bOps.AgentFramework.csproj" />
     <ProjectReference Include="..\bOps.Audit\bOps.Audit.csproj" />
     <ProjectReference Include="..\bOps.Memory\bOps.Memory.csproj" />
     <ProjectReference Include="..\bOps.Hosting\bOps.Hosting.csproj" />

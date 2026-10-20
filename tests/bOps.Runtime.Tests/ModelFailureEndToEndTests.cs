@@ -95,7 +95,7 @@ public sealed class ModelFailureEndToEndTests
         Assert.Equal([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1)], delays);
         var events = audit.Events.OfType<ModelCallAuditEvent>().Where(e => e.StepIndex == 0).ToList();
         Assert.Equal(
-            [(1, (ModelFailureKind?)ModelFailureKind.RateLimited, (int?)429), (2, ModelFailureKind.Transient, 503), (3, null, null)],
+            [(1, (ModelFailureKind?)ModelFailureKind.RateLimited, (int?)429), (2, ModelFailureKind.Transient, 503), (3, null, 200)], // a successful attempt records the provider's status (3fee4cb)
             events.Select(e => (e.ModelAttempt!.Value, e.FailureKind, e.ProviderStatusCode)));
     }
 
