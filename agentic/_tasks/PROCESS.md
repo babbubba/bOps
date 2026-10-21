@@ -118,18 +118,31 @@ python scripts/governance/validate_register.py --summary  # counts, active task,
 ```
 
 The validator covers: unique, contiguous, frozen ids; legacy ids; closed status vocabulary; existing packets;
-dependencies without cycles; `DONE` only with required gates and no open gate; at most one `IN_PROGRESS`; the
+dependencies without cycles; `DONE` only with required gates and no open gate; every `IN_PROGRESS` task authorized and
+on its own branch (parallel tasks allowed, branches distinct); milestone dimensions; recorded divergences; the
 machine-readable block of `HANDOFF.md`. Comparing the register with Issues and Project #6 needs a token with the
 `project` scope and is the job of PROJECT-GOVERNANCE-02 (dry-run first, never creates duplicates, never sets
 `DONE`).
 
 ## 6. Project #6
 
-Owner `babbubba`, <https://github.com/users/babbubba/projects/6>, linked to `babbubba/bOps`. Read-only inspection on 2026-10-21: title `DEV Plan` (not renamed), private,
-no items, one default board view, Status options `Todo / In Progress / Done`, six built-in workflows enabled (including `Item closed` and `Pull request merged`, which
-move items to Done and bypass the gates). Fields wanted:
-`Status` (the seven columns above), `Priority` (P0–P3), `Milestone`, `Area`, `Effort`, `Task ID`, `Legacy ID`,
-`Validation`, `Depends on`, `Packet`, `PR`; views: Kanban (by Status, `SUPERSEDED` and `DONE` older than the
-current milestone hidden), Backlog table (sorted by Priority, Milestone, Task ID), Roadmap grouped by Milestone
-without invented dates. Known divergence: `agentic/_quality/active-milestone.json` still says V1.3-H; it is recorded in `register.json` `known_divergences` (QM-1, BOPS-0117), checked by the validator,
-and neither it nor any historical quality result is altered until reconciled. Only open or relevant tasks get an Issue; completed history stays in the register.
+Owner `babbubba`, <https://github.com/users/babbubba/projects/6>, linked to `babbubba/bOps`, title `DEV Plan` (not renamed), visibility **private**
+(operator decision D11). Configured on 2026-10-21; the Project holds no Issue or item yet.
+
+- **Status** (seven options; the pre-existing option ids were preserved): Backlog, Ready, In Progress, Validation, Blocked, Deferred, Done
+  — the column of each register status is in §3. `SUPERSEDED` has no column.
+- **Custom fields** (five): `Priority` (P0–P3), `Area`, `bOps Milestone` (distinct from GitHub Milestones, which the repository does not use), `Evidence Level`
+  (None / Offline tests / Replay (real model) / Live (real tools)) and `Effort` (text). Native fields are used for the rest: *Linked pull requests*
+  instead of a PR field, Assignees, Labels. There are no Task ID, Legacy ID, Packet or Depends-on fields: the Issue title carries `BOPS-NNNN | LEGACY-ID`,
+  its body links the packet, and native Issue dependencies are used if needed.
+- **Views** (three): `Kanban — Active Development` (board, columns by Status), `Backlog` (table) and `Milestones` (table). The API only sets visible
+  fields, so sorting (Backlog: Priority, then bOps Milestone) and grouping (Milestones: by bOps Milestone) are set in the web UI. There is no Roadmap
+  timeline view; it will be added only when real dates exist.
+- **Workflows.** Built-in workflows must not change the operational status of a task. `Item closed`, `Pull request merged` and `Auto-close issue` are
+  disabled (verified through the API). The operator decided to also disable `Pull request linked to issue` and `Auto-add sub-issues to project`;
+  the register's `remote_sync` records whether that is verified. `Item added to project` stays enabled: its effect on the initial Status must be read
+  back from the first real item before that item counts as synchronized.
+- The register is never derived from the board. Known divergence: `agentic/_quality/active-milestone.json` still says V1.3-H; it is recorded in
+  `register.json` `known_divergences` (QM-1, BOPS-0117), checked by the validator, and neither it nor any historical quality result is altered until reconciled.
+- Only open or relevant tasks get an Issue; completed history stays in the register. Issues in this public repository are public: titles and bodies must
+  not contain local paths, private data or commercial detail; tasks without a publishable spec stay private draft items.
