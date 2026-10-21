@@ -5662,7 +5662,7 @@
    },
    "milestone": "V1.3",
    "area": "Release",
-   "status": "IN_PROGRESS",
+   "status": "VALIDATION",
    "priority": "P1",
    "effort": null,
    "authorized": true,
@@ -5670,29 +5670,44 @@
    "packet": "agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md",
    "spec": null,
    "companion_docs": [],
-   "prs": [],
-   "commits": [],
+   "prs": [
+    123
+   ],
+   "commits": [
+    "99662edf78f53e453cab63cc9dba58d926172cd0",
+    "6bdc5f19d02aae71f404243683f3961eea5310cc"
+   ],
    "validation": {
-    "achieved": [],
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
     "required": [
      "OFFLINE_TESTS",
-     "CI_VERIFIED"
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Implementation in progress; CI of the PR head and merge commit, and the published-artifact smoke test on Windows and Linux."
+     "CI of the merge commit on main (application code, tests, CI workflows changed: post-merge verification kept).",
+     "Real-host verification of the Nginx and IIS sample configurations (not exercised by CI; the IIS sample is unverified).",
+     "Operator approval of the delivery; the release workflow additions (bops-api-<rid>.zip) have not run (tag or dispatch only)."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "PR #123 opened 2026-10-21; CI run 39653049529 on head 6bdc5f1: success on windows-latest and ubuntu-latest, including \"Publish artifact with the SPA\", \"Smoke test the published artifact without Node.js\" and \"Task register validation\", plus dependency-review and quality-aggregate",
+    "Local, Windows 2026-10-21: Api.Tests 559/559 (47 new WebUi tests), Architecture 210/210, Runtime 2301/2301, Memory 101/101, Angular 489/489 + i18n, governance validator and unit tests",
+    "Published win-x64 artifact: Test-PublishedArtifact.ps1 passes (SPA, deep links, assets and cache, API 401/404, reserved files, login/cookie/CSRF/foreign origin/logout, no Node on PATH); two publishes identical (482 files); real browser check of login, deep-link refresh, lazy route, no CSP violation",
+    "Linux artifact first exercised by CI run 39653049529 (WSL has no dotnet)"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Stable V1.3 blocker F-26 (hardening plan section 15): the SPA must be servable without npm start / Angular dev server.",
+   "note": "Implemented; PR #123 open, CI green on Windows and Linux. Open gates: merge-commit CI, real Nginx/IIS verification, operator approval. Windows start at boot is a Scheduled Task (no native service wrapper, out of scope).",
    "issue": 122,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCe0Zo",
    "branch": "feat/bops-0120-f26-spa-hosting",
    "remote_kind": "issue",
    "sync": {
-    "status": "In Progress",
-    "verified_at": "2026-10-21T19:48:41+0200"
+    "status": "Validation",
+    "verified_at": "2026-10-21T20:54:10+0200"
    }
   }
  ],

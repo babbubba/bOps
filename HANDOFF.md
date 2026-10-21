@@ -4,7 +4,7 @@ Last updated: 2026-10-21 · `main` @ `f1cd5e7` (squash merge of PR [#121](https:
 working branch `feat/bops-0120-f26-spa-hosting` (BOPS-0120, F-26 production SPA hosting).
 
 <!-- register-sync:begin -->
-Current task: BOPS-0120 F-26 (IN_PROGRESS)
+Current task: BOPS-0120 F-26 (VALIDATION)
 Branch: feat/bops-0120-f26-spa-hosting
 Ready: BOPS-0111
 Next number: BOPS-0121
