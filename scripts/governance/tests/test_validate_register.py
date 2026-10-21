@@ -32,6 +32,11 @@ class RealRegister(unittest.TestCase):
     def test_no_functional_task_is_in_progress_without_authorization(self):
         self.assertEqual([], [t["id"] for t in REGISTER["tasks"] if t["status"] == "IN_PROGRESS"])
 
+    def test_the_provisional_mapping_distinguishes_verified_from_conventional_order(self):
+        kinds = {t["created"]["order_certainty"] for t in REGISTER["tasks"]}
+        self.assertEqual({"verified", "conventional"}, kinds)
+        self.assertEqual("PROVISIONAL", REGISTER["numbering"]["state"])
+
     def test_every_issue_title_starts_with_the_progressive(self):
         for t in REGISTER["tasks"]:
             self.assertTrue(vr.task_title(t).startswith(f'{t["id"]} | {t["legacy_id"]}'))
@@ -60,9 +65,20 @@ class Mutations(unittest.TestCase):
         self.reg["numbering"]["next"] = 5
         self.assertFlags("numbering.next")
 
-    def test_frozen_mapping_cannot_change(self):
+    def test_provisional_mapping_may_change_but_a_frozen_one_may_not(self):
         task(self.reg, "AF-01")["legacy_id"] = "AF-ONE"
+        self.assertEqual([], self.errors())
+        self.reg["numbering"]["state"] = "FROZEN"
         self.assertFlags("frozen id mapping")
+
+    def test_order_certainty_is_explicit(self):
+        task(self.reg, "AF-01")["created"]["order_certainty"] = "probably"
+        self.assertFlags("order_certainty")
+
+    def test_ids_must_follow_creation_order(self):
+        a, b = task(self.reg, "AF-01"), task(self.reg, "AF-02")
+        a["created"]["at"], b["created"]["at"] = b["created"]["at"], a["created"]["at"]
+        self.assertFlags("precedes an earlier progressive id")
 
     def test_legacy_id_must_be_unique(self):
         task(self.reg, "AF-02")["legacy_id"] = "AF-01"
@@ -115,20 +131,34 @@ class Mutations(unittest.TestCase):
         task(self.reg, "DIAG-ASSURE-01")["depends_on"] = [task(self.reg, "AF-05")["id"]]
         self.assertFlags("READY while dependencies are not DONE")
 
-    def test_in_progress_needs_authorization_and_is_serial(self):
+    def test_parallel_in_progress_tasks_need_authorization_and_distinct_branches(self):
         a = task(self.reg, "DIAG-ASSURE-01")
-        a["status"] = "IN_PROGRESS"
-        a["authorized"] = False
+        a.update(status="IN_PROGRESS", authorized=False, branch="feat/a")
         self.assertFlags("without operator authorization")
         a["authorized"] = True
         b = task(self.reg, "PLAN-FIDELITY-01")
-        b.update(status="IN_PROGRESS", authorized=True)
-        self.assertFlags("more than one IN_PROGRESS")
+        b.update(status="IN_PROGRESS", authorized=True, branch="feat/b", depends_on=[])
+        self.assertEqual([], [e for e in self.errors() if "distinct branches" in e or "without the branch" in e or "authorization" in e])
+        b["branch"] = "feat/a"
+        self.assertFlags("distinct branches")
+        b["branch"] = None
+        self.assertFlags("without the branch/session")
 
     def test_handoff_must_match_the_register(self):
         self.assertFlags("HANDOFF ready list", HANDOFF.replace("Ready: BOPS-0111", "Ready:"))
-        self.assertFlags("HANDOFF active implementation task", HANDOFF.replace("Active implementation task: NO ACTIVE IMPLEMENTATION TASK", "Active implementation task: BOPS-0111"))
+        self.assertFlags("HANDOFF current task", HANDOFF.replace("Current task: NO ACTIVE IMPLEMENTATION TASK", "Current task: BOPS-0111"))
         self.assertFlags("lacks the", "# no block here")
+
+    def test_milestone_done_needs_implementation_validation_and_release(self):
+        m = next(m for m in self.reg["milestones"] if m["id"] == "V1.2")
+        m["validation"] = "PARTIAL"
+        self.assertFlags("DONE requires implementation COMPLETE, validation COMPLETE")
+        m["validation"], m["release"] = "COMPLETE", "NOT_RELEASED"
+        self.assertFlags("DONE requires implementation COMPLETE")
+
+    def test_quality_divergence_record_must_match_the_file(self):
+        self.reg["known_divergences"][0]["recorded_value"] = "V1.3-Z"
+        self.assertFlags("known divergence QM-1")
 
     def test_done_milestone_cannot_contain_open_tasks(self):
         next(m for m in self.reg["milestones"] if m["id"] == "MAF")["status"] = "DONE"

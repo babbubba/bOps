@@ -4,12 +4,13 @@ Last updated: 2026-10-21 · Verified against `main` @ `09902a2` (CI run 39542752
 working branch `docs/project-governance-01` (local, not pushed).
 
 <!-- register-sync:begin -->
-Active implementation task: NO ACTIVE IMPLEMENTATION TASK
+Current task: NO ACTIVE IMPLEMENTATION TASK
+Branch: docs/project-governance-01
 Ready: BOPS-0111
 Next number: BOPS-0120
 <!-- register-sync:end -->
 
-The three lines above are machine-checked against [`register.json`](agentic/_tasks/register.json) by
+The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
 `python scripts/governance/validate_register.py`. Rules: [`agentic/_tasks/PROCESS.md`](agentic/_tasks/PROCESS.md).
 Task state is never copied here; ask the register (`--summary`).
 
@@ -18,7 +19,8 @@ Task state is never copied here; ask the register (`--summary`).
 - Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 119 tasks, BOPS-0001..BOPS-0119.
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md).
 - Reconciliation of the real state (read-only audit, 2026-10-21): [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
-- Kanban: GitHub Project #6 `dev plan` — <https://github.com/users/babbubba/projects/6>. **Not yet configured or populated** (see Blockers).
+- Kanban: GitHub Project #6 (`DEV Plan`) — <https://github.com/users/babbubba/projects/6>. Inspected read-only 2026-10-21: private, empty, default Status `Todo/In Progress/Done`,
+  built-in workflows still on. **Not yet configured or populated**; awaiting the operator's approval of the remote plan.
 - Previous HANDOFF and task index (verbatim): [`docs/handoff-archive/`](docs/handoff-archive/).
 
 ## Milestone and task
@@ -46,14 +48,13 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Blockers
 
-- Project #6 cannot be read or edited with the current `gh` token (scopes: `gist`, `read:org`, `repo`, `workflow`; `read:project` is missing). Operator action:
-  `gh auth refresh -s project` (interactive; credentials were not touched by this session).
+- Remote writes to Project #6 and Issues are not authorized yet (read-only inspection only). Use the `babbubba` keyring account (`env -u GH_TOKEN -u GITHUB_TOKEN gh ...`).
 - BOPS-0095 LIVE-01 (decision D3), BOPS-0074/0075 ARCH-01/ARCH-03 (decision D1).
 
 ## Decisions waiting for the operator
 
 D1 ADR-0053/0054 (MAF B+) · D2 reference model/timeouts · D3 `MaxObservationCharacters` default · D4 ADR-0050 acceptance · D5 Knowledge ADR statuses ·
-D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D9 approve/freeze the id mapping · D10 authorize DIAG-ASSURE-01 ·
+D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D9 approve/freeze the id mapping (currently PROVISIONAL; 82 of 119 progressives are conventional order) · D10 authorize DIAG-ASSURE-01 ·
 D11 Project #6 visibility. Details and recommendations: `register.json` `decisions`. No ADR status was changed.
 
 ## Local state not to touch
@@ -65,6 +66,6 @@ D11 Project #6 visibility. Details and recommendations: `register.json` `decisio
 ## Resume instructions for the next session
 
 1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do.
-2. If the operator approved the proposal: finish the remote step (Project #6 fields/views, wave-1 Issues), record the Issue numbers and Project item ids in
+2. Do not freeze the mapping before D9. If the operator approved the remote plan: finish the remote step (Project #6 fields/views, wave-1 Issues), record the Issue numbers and Project item ids in
    the register, set BOPS-0118 to `DONE` only when its gates are met, and update this file.
 3. Otherwise do nothing functional: no task is authorized. Never start BOPS-0111 without D10.

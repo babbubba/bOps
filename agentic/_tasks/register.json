@@ -45,13 +45,14 @@
  },
  "numbering": {
   "next": 120,
-  "frozen_through": "BOPS-0119",
-  "frozen_mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
-  "rule": "Chronological by first Git introduction of the task packet (first Git mention or document date for tasks without a packet); ties broken by tasks README row order (initial import 00730c3) or packet path; frozen on operator approval."
+  "state": "PROVISIONAL",
+  "through": "BOPS-0119",
+  "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
+  "rule": "Chronological by first Git introduction of the task packet (first Git mention or document date for tasks without a packet); ties broken by tasks README row order (initial import 00730c3) or packet path; frozen on operator approval. order_certainty: 'verified' = distinct, Git-proven creation instant; 'conventional' = order inside one commit/date fixed by the tie-break rule, NOT chronologically proven. The mapping becomes FROZEN (state=FROZEN, hash enforced) only on explicit operator approval."
  },
  "remote_sync": {
-  "state": "NOT_STARTED",
-  "reason": "Project #6 unreadable with the current token (missing project scope); remote setup awaits operator approval",
+  "state": "READ_ONLY_INSPECTED",
+  "reason": "Project #6 inspected read-only on 2026-10-21 (empty, private, default template); no remote write performed; operator approval of the population plan pending",
   "issues_created": 0
  },
  "active_milestone": "V1.3",
@@ -59,72 +60,128 @@
   {
    "id": "V1.0",
    "title": "Formal V1.0 release",
-   "status": "DONE"
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "Formal gate closed via tag v1.1.0-preview.2 (run 35383901325); no stable v1.0.x tag exists or will be created."
   },
   {
    "id": "V1.1",
    "title": "V1.1 public operational platform",
-   "status": "DONE"
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "H gate green on Windows/Linux CI; preview artifacts are workflow artifacts only (no GitHub Release, no NuGet)."
   },
   {
    "id": "V1.2",
    "title": "V1.2 multi-agent orchestration",
-   "status": "DONE"
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "Gate M closed; v1.2.0-preview.8 is a GitHub pre-release, not stable, not on NuGet."
   },
   {
    "id": "V1.3",
    "title": "V1.3 senior-operator diagnostics (stable gate open)",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_RELEASED",
+   "evidence": "A-M merged; pre-release stabilization gate (PRE-1..8) and F-25 validation record open; no V1.3 tag."
   },
   {
    "id": "V1.3.x",
    "title": "V1.3.x reliability hardening train",
-   "status": "DONE"
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "NOT_APPLICABLE",
+   "evidence": "HARDEN-1..14 merged, E2E-1..14 and DoD A-D passed (PR #85); ships with the V1.3 release, no release of its own."
   },
   {
    "id": "V1.3.y",
    "title": "V1.3.y/z operability follow-ups",
-   "status": "DONE"
+   "status": "VALIDATION",
+   "implementation": "COMPLETE",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Merged (PRs #88-#92) but no live re-verification of a real kernel-dump run after the timeout fix (#94) is recorded; rides on the V1.3 release."
   },
   {
    "id": "MAF",
    "title": "Microsoft Agent Framework adoption (ADR-0052 train, ARCH)",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "AF-01..04 done; AF-05/AF-05H live gates open; AF-CONTEXT/TURN not composed; ADR-0053/0054 Proposed."
   },
   {
    "id": "KNOWLEDGE",
    "title": "Trusted Knowledge (KNOW-01, KNOW-DISC, pilot)",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_RELEASED",
+   "evidence": "Opt-in CLI pilot only; ADR-0055/56/58/59 and D-050 Proposed; no benefit measured."
   },
   {
    "id": "DIAG-QUALITY",
    "title": "LIVE, PRA, grounding and diagnostic quality",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Flow fixes merged; diagnostic content correctness neither verified nor measured."
   },
   {
    "id": "BENCH",
    "title": "Benchmarks (BENCH-00, BENCH-01, BENCH-MATRIX)",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Collector merged; official 3x3 never run."
   },
   {
    "id": "V1.4",
    "title": "V1.4 node and Control Plane",
-   "status": "PLANNED"
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started; operator authorization required."
   },
   {
    "id": "V2.0",
    "title": "V2.0 OSS GA",
-   "status": "PLANNED"
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started."
   },
   {
    "id": "POST-V2.0",
    "title": "Post-V2.0",
-   "status": "PLANNED"
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started."
   },
   {
    "id": "GOVERNANCE",
    "title": "Project governance and reconciliation",
-   "status": "VALIDATION"
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Local register/validator done; remote Project #6 and Issues not set up; mapping not approved."
   }
  ],
  "decisions": [
@@ -255,7 +312,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-release-v1.0-formal-gate.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.0",
@@ -291,7 +348,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0002",
@@ -301,7 +359,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-repository-topology-bootstrap.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.0",
@@ -333,7 +391,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0003",
@@ -343,7 +402,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-a-skill-sdk-completion.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -376,7 +435,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0004",
@@ -386,7 +446,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -419,7 +479,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0005",
@@ -429,7 +490,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-c-filesystem-inventory.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -462,7 +523,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0006",
@@ -472,7 +534,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-d-governed-recursive-delete.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -505,7 +567,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0007",
@@ -515,7 +578,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-e-web-capabilities.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -548,7 +611,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0008",
@@ -558,7 +622,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-f-plugin-catalog-ui.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -591,7 +655,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0009",
@@ -601,7 +666,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -634,7 +699,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0010",
@@ -644,7 +710,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.1-h-integration-release.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.1",
@@ -677,7 +743,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0011",
@@ -687,7 +754,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.2-multi-agent.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.2",
@@ -720,7 +787,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0012",
@@ -730,7 +798,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.3",
@@ -766,7 +834,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0013",
@@ -776,7 +845,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V1.4",
@@ -803,7 +872,8 @@
    "reopen_condition": null,
    "note": "Future; explicit operator authorization required before starting.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0014",
@@ -813,7 +883,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-v2.0-oss-ga-readiness.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "V2.0",
@@ -840,7 +910,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0015",
@@ -850,7 +921,7 @@
     "at": "2026-09-16T21:09:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-16-post-v2.0-bilingual-readme.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "00730c356343a7e7faed951f783819ea3f417334"
    },
    "milestone": "POST-V2.0",
@@ -877,7 +948,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0016",
@@ -887,7 +959,7 @@
     "at": "2026-09-17T21:42:51+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-17-agent-task-history-view.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "410855f3ea26c971d1704f2de27c505f8a067daa"
    },
    "milestone": "V1.1",
@@ -918,7 +990,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0017",
@@ -928,7 +1001,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-a-adr-and-plan.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -961,7 +1034,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0018",
@@ -971,7 +1045,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-b-contracts.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1004,7 +1078,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0019",
@@ -1014,7 +1089,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1049,7 +1124,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0020",
@@ -1059,7 +1135,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-d-orchestrator-and-roles.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1092,7 +1168,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0021",
@@ -1102,7 +1179,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-e-budgets-deadlines-cancellation.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1135,7 +1212,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0022",
@@ -1145,7 +1223,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-f-durable-state-and-resume.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1178,7 +1256,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0023",
@@ -1188,7 +1267,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1221,7 +1300,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0024",
@@ -1231,7 +1311,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-h-audit-correlation.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1264,7 +1344,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0025",
@@ -1274,7 +1355,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-i-cli.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1307,7 +1388,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0026",
@@ -1317,7 +1399,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-j-api.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1350,7 +1432,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0027",
@@ -1360,7 +1443,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-k-ui.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1393,7 +1476,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0028",
@@ -1403,7 +1487,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-l-documentation.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1436,7 +1520,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0029",
@@ -1446,7 +1531,7 @@
     "at": "2026-09-18T22:50:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-18-v1.2-m-integration-release.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "a625039efda34f7903dae8033d511b27288556a1"
    },
    "milestone": "V1.2",
@@ -1479,7 +1564,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0030",
@@ -1489,7 +1575,7 @@
     "at": "2026-09-19T22:43:25+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "f59cb4d2c186fcaff6c366f703d5b70e2f9b52ff"
    },
    "milestone": "V1.2",
@@ -1522,7 +1608,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0031",
@@ -1532,7 +1619,7 @@
     "at": "2026-09-21T19:52:37+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-a-system-events.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "2249fbdd25e76e722ac36d6c7494a8dfd36061b6"
    },
    "milestone": "V1.3",
@@ -1565,7 +1652,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0032",
@@ -1575,7 +1663,7 @@
     "at": "2026-09-21T19:52:37+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-b-docker-management.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "2249fbdd25e76e722ac36d6c7494a8dfd36061b6"
    },
    "milestone": "V1.3",
@@ -1608,7 +1696,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0033",
@@ -1618,7 +1707,7 @@
     "at": "2026-09-21T20:43:00+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-c-process-diagnostics.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "caa0f08e89f4d691ce50ebdf483d425436cf248c"
    },
    "milestone": "V1.3",
@@ -1651,7 +1740,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0034",
@@ -1661,7 +1751,7 @@
     "at": "2026-09-21T20:43:02+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-d-network-diagnostics.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "d5e3bebe3151dc4c2ec87e315d93be45491ea877"
    },
    "milestone": "V1.3",
@@ -1694,7 +1784,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0035",
@@ -1704,7 +1795,7 @@
     "at": "2026-09-21T20:43:04+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "f36ef7990d55f222cf68359b9ee0fb433e6e09d4"
    },
    "milestone": "V1.3",
@@ -1737,7 +1828,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0036",
@@ -1747,7 +1839,7 @@
     "at": "2026-09-21T20:43:07+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "a2debf7c8ffef519f219eca7b61a65e20c5a43e6"
    },
    "milestone": "V1.3",
@@ -1780,7 +1872,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0037",
@@ -1790,7 +1883,7 @@
     "at": "2026-09-21T20:43:51+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "eed49153ecebe0a1149d024c2b9601aa0c7bce94"
    },
    "milestone": "V1.3",
@@ -1825,7 +1918,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0038",
@@ -1835,7 +1929,7 @@
     "at": "2026-09-21T20:43:55+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "fffb6b72b0758f6d2da5ab113af7fa470a3f59ba"
    },
    "milestone": "V1.3",
@@ -1871,7 +1965,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0039",
@@ -1881,7 +1976,7 @@
     "at": "2026-09-21T20:43:57+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "4ec10ade73dec4625fbf199e87c1a5357f7be93c"
    },
    "milestone": "V1.3",
@@ -1916,7 +2011,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0040",
@@ -1926,7 +2022,7 @@
     "at": "2026-09-21T20:43:59+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "c857e768c18e9e8a66208144d46fca2040f77267"
    },
    "milestone": "V1.3",
@@ -1961,7 +2057,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0041",
@@ -1971,7 +2068,7 @@
     "at": "2026-09-21T20:44:28+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "6d56f419da5779c1ba586d53f30a1d2eb517bc2c"
    },
    "milestone": "V1.3",
@@ -2006,7 +2103,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0042",
@@ -2016,7 +2114,7 @@
     "at": "2026-09-21T20:44:30+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "06aa914405027fe77c5e12d8aa36f967938079e0"
    },
    "milestone": "V1.3",
@@ -2051,7 +2149,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0043",
@@ -2061,7 +2160,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-01-provider-wire-contract.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2094,7 +2193,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0044",
@@ -2104,7 +2204,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-02-model-failure-containment.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2137,7 +2237,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0045",
@@ -2147,7 +2248,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-03-resume-state-machine.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2180,7 +2281,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0046",
@@ -2190,7 +2292,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2223,7 +2325,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0047",
@@ -2233,7 +2336,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-05-storage-health.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2268,7 +2371,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0048",
@@ -2278,7 +2382,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-06-tool-contract-constraints.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2313,7 +2417,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0049",
@@ -2323,7 +2428,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2358,7 +2463,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0050",
@@ -2368,7 +2474,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2403,7 +2509,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0051",
@@ -2413,7 +2520,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2448,7 +2555,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0052",
@@ -2458,7 +2566,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2493,7 +2601,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0053",
@@ -2503,7 +2612,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2538,7 +2647,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0054",
@@ -2548,7 +2658,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2583,7 +2693,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0055",
@@ -2593,7 +2704,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2628,7 +2739,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0056",
@@ -2638,7 +2750,7 @@
     "at": "2026-09-30T09:21:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-09-25-v1.3x-harden-14-e2e-composition-gate.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
    },
    "milestone": "V1.3.x",
@@ -2673,7 +2785,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0057",
@@ -2683,7 +2796,7 @@
     "at": "2026-10-07T17:29:27+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-07-runtime-step-routing-replan-safety.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "b4819c337bd8eb06299079925df4e9269f9ee56b"
    },
    "milestone": "V1.3.y",
@@ -2716,7 +2829,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0058",
@@ -2726,7 +2840,7 @@
     "at": "2026-10-07T21:37:20+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-07-v1.3y-web-evidence-operability.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "6bdbbc528c69cf090b73b6bcafbb95ac2fde807a"
    },
    "milestone": "V1.3.y",
@@ -2759,7 +2873,8 @@
    "reopen_condition": null,
    "note": "Packet header still says 'implemented locally'; PR #89 is merged (stale packet text).",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0059",
@@ -2769,7 +2884,7 @@
     "at": "2026-10-08T07:53:54Z",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-08-v1.3z-prerequisite-readiness-system-messages.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "b1a909a8da86f56ac5a043ff58a37d2bb3eef05d"
    },
    "milestone": "V1.3.y",
@@ -2806,7 +2921,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0060",
@@ -2816,7 +2932,7 @@
     "at": "2026-10-08T12:54:10+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-08-v1.3z-windows-kernel-dump-analysis.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "6b7379e2587540c8a7db018a96225d9ca0b13467"
    },
    "milestone": "V1.3.y",
@@ -2854,7 +2970,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0061",
@@ -2864,7 +2981,7 @@
     "at": "2026-10-08T21:28:41+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "1baf7923fb62e1353746721589789c41c66a0164"
    },
    "milestone": "V1.3",
@@ -2907,7 +3024,8 @@
    "reopen_condition": null,
    "note": "Implementation PRs #94-#99 are merged; no stable V1.3 tag exists.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0062",
@@ -2917,7 +3035,7 @@
     "at": "2026-10-09T23:45:11+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "107f6673cb8090b649e879f1f793fa48cd8afa6f"
    },
    "milestone": "V1.3",
@@ -2955,7 +3073,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0063",
@@ -2965,7 +3084,7 @@
     "at": "2026-10-10T18:43:22+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-10-af-01-maf-foundation-governed-inference.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "b1aeedbc9ec69d15eab8c675c901b6753ef867e5"
    },
    "milestone": "MAF",
@@ -3000,7 +3119,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0064",
@@ -3010,7 +3130,7 @@
     "at": "2026-10-10T18:43:24+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-10-af-02-maf-context-compaction.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "f34d56913313f26dec44fc3b325c398636e5edc2"
    },
    "milestone": "MAF",
@@ -3043,7 +3163,8 @@
    "reopen_condition": null,
    "note": "Benefit of compaction never isolated (reconciliation 2026-10-21).",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0065",
@@ -3053,7 +3174,7 @@
     "at": "2026-10-10T18:43:26+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-10-af-03-governed-summarization.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "e96a4a983e6e40fe310e829c6cceb75fe52d7f32"
    },
    "milestone": "MAF",
@@ -3086,7 +3207,8 @@
    "reopen_condition": null,
    "note": "No benefit measurement; composed only when configured.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0066",
@@ -3096,7 +3218,7 @@
     "at": "2026-10-10T18:43:29+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-10-af-04-evidence-cleanup.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "273bad9ff156926234920614c5a6752642124862"
    },
    "milestone": "MAF",
@@ -3131,7 +3253,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0067",
@@ -3141,7 +3264,7 @@
     "at": "2026-10-10T18:43:31+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "78715c847bb9ed732d1c48833e56f003400192d3"
    },
    "milestone": "MAF",
@@ -3182,7 +3305,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0068",
@@ -3192,7 +3316,7 @@
     "at": "2026-10-11T18:40:48+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 82ee930",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "82ee930b534d2a27be0181041d1499c64edcafb4"
    },
    "milestone": "MAF",
@@ -3230,7 +3354,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0069",
@@ -3240,7 +3365,7 @@
     "at": "2026-10-11T22:03:48+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
    },
    "milestone": "MAF",
@@ -3280,7 +3405,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0070",
@@ -3290,7 +3416,7 @@
     "at": "2026-10-11T22:03:48+02:00",
     "basis": "packet-subitem",
     "source": "git log first mention/introduction: 474c1cb",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
    },
    "milestone": "MAF",
@@ -3315,7 +3441,8 @@
    "reopen_condition": null,
    "note": "Left out of main by operator decision; backup tags retained.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0071",
@@ -3325,7 +3452,7 @@
     "at": "2026-10-11T22:03:48+02:00",
     "basis": "packet-subitem",
     "source": "git log first mention/introduction: 474c1cb",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
    },
    "milestone": "MAF",
@@ -3350,7 +3477,8 @@
    "reopen_condition": null,
    "note": "Left out of main by operator decision; backup tags retained.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0072",
@@ -3360,7 +3488,7 @@
     "at": "2026-10-11T22:03:48+02:00",
     "basis": "packet-subitem",
     "source": "git log first mention/introduction: 474c1cb",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
    },
    "milestone": "MAF",
@@ -3387,7 +3515,8 @@
    "reopen_condition": "AF-EVID-01 measured and evidence of benefit.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0073",
@@ -3397,7 +3526,7 @@
     "at": "2026-10-11T22:16:06+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-11-bench-00-automatic-full-fidelity.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
    },
    "milestone": "BENCH",
@@ -3433,7 +3562,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0074",
@@ -3443,7 +3573,7 @@
     "at": "2026-10-11T22:16:06+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 07e422a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
    },
    "milestone": "MAF",
@@ -3475,7 +3605,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0075",
@@ -3485,7 +3616,7 @@
     "at": "2026-10-11T22:16:06+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 07e422a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
    },
    "milestone": "MAF",
@@ -3518,7 +3649,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0076",
@@ -3528,7 +3660,7 @@
     "at": "2026-10-11T22:16:06+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 07e422a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
    },
    "milestone": "KNOWLEDGE",
@@ -3555,7 +3687,8 @@
    "reopen_condition": "KNOW-VALUE-01 shows a measured diagnostic benefit of Knowledge.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0077",
@@ -3565,7 +3698,7 @@
     "at": "2026-10-12T02:03:13+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
    },
    "milestone": "MAF",
@@ -3602,7 +3735,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0078",
@@ -3612,7 +3746,7 @@
     "at": "2026-10-12T02:03:13+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-af-05h2-replan-truncation-recovery.md",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
    },
    "milestone": "MAF",
@@ -3649,7 +3783,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0079",
@@ -3659,7 +3794,7 @@
     "at": "2026-10-12T02:03:13+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 3d2afb7",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
    },
    "milestone": "BENCH",
@@ -3686,7 +3821,8 @@
    "reopen_condition": "Live authorization (D6); may be absorbed by LIVE-GATE-01.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0080",
@@ -3696,7 +3832,7 @@
     "at": "2026-10-12T02:03:13+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 3d2afb7",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
    },
    "milestone": "MAF",
@@ -3723,7 +3859,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0081",
@@ -3733,7 +3870,7 @@
     "at": "2026-10-12T10:34:04+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "2dbb7b306cafc926503f6022c76b8d16abde293f"
    },
    "milestone": "MAF",
@@ -3772,7 +3909,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0082",
@@ -3782,7 +3920,7 @@
     "at": "2026-10-12T12:10:00+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "12922661865796efb4cb3bc61b8679f8cab6a2e9"
    },
    "milestone": "MAF",
@@ -3817,7 +3955,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0083",
@@ -3827,7 +3966,7 @@
     "at": "2026-10-12T15:29:08+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "7b01d69ea2285ffa00579ca49fc7227c9adec3bb"
    },
    "milestone": "MAF",
@@ -3862,7 +4001,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0084",
@@ -3872,7 +4012,7 @@
     "at": "2026-10-12T15:53:06+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: c16d97d",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "c16d97d0cd2f8146636b9a10be2f46e56e2da7b9"
    },
    "milestone": "BENCH",
@@ -3897,7 +4037,8 @@
    "reopen_condition": "Redesign on the current main after LIVE-GATE-01.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0085",
@@ -3907,7 +4048,7 @@
     "at": "2026-10-12T17:18:58+02:00",
     "basis": "packet-first-add",
     "source": "agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "e7ffab6ed3d4e2b1ea43672fe6959afd27f1ee92"
    },
    "milestone": "MAF",
@@ -3936,7 +4077,8 @@
    "reopen_condition": null,
    "note": "Spike code lives only in local tags/branches archive/arch-02{a,r,s}-spike; reports under docs/architecture/arch-02*.md.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0086",
@@ -3946,7 +4088,7 @@
     "at": "2026-10-12T20:31:30+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: fd91279",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "fd91279e3fe2404f4659bb94e77c6c2e9d20e945"
    },
    "milestone": "MAF",
@@ -3977,7 +4119,8 @@
    "reopen_condition": "ADR-0054 accepted (D1) and a measured defect that requires hosting the turn in MAF.",
    "note": "Implemented and tested, composed in no host.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0087",
@@ -3987,7 +4130,7 @@
     "at": "2026-10-12T20:31:30+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: fd91279",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "fd91279e3fe2404f4659bb94e77c6c2e9d20e945"
    },
    "milestone": "MAF",
@@ -4020,7 +4163,8 @@
    "reopen_condition": "Same condition as AF-CONTEXT-01.",
    "note": "Constructed only in tests.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0088",
@@ -4030,7 +4174,7 @@
     "at": "2026-10-12T22:41:05+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: ff64ef7",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "ff64ef7d4376bbb2d398006de9aa6ada56c3d81f"
    },
    "milestone": "KNOWLEDGE",
@@ -4067,7 +4211,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0089",
@@ -4077,7 +4222,7 @@
     "at": "2026-10-12T22:41:05+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: ff64ef7",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "ff64ef7d4376bbb2d398006de9aa6ada56c3d81f"
    },
    "milestone": "KNOWLEDGE",
@@ -4117,7 +4262,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0090",
@@ -4127,7 +4273,7 @@
     "at": "2026-10-13T01:46:46+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 9248272",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "924827218dfc9b020003d5863a16170ab1e5f4c0"
    },
    "milestone": "KNOWLEDGE",
@@ -4163,7 +4309,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0091",
@@ -4173,7 +4320,7 @@
     "at": "2026-10-14T11:54:11+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: d3da032",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "d3da032548199ca6a61b7a0cbad9cdd4c2eebdbd"
    },
    "milestone": "KNOWLEDGE",
@@ -4211,7 +4358,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0092",
@@ -4221,7 +4369,7 @@
     "at": "2026-10-14T13:04:20+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: a7709d5",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "a7709d597a7f593d992f4471c805f22b878720af"
    },
    "milestone": "KNOWLEDGE",
@@ -4249,7 +4397,8 @@
    "note": null,
    "issue": null,
    "project_item": null,
-   "legacy_id_assigned_at_migration": true
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
   },
   {
    "id": "BOPS-0093",
@@ -4259,7 +4408,7 @@
     "at": "2026-10-17T07:40:22+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: cf82502",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "cf825028b0fcd70146b8148cf4ed1812a1e8b8ea"
    },
    "milestone": "KNOWLEDGE",
@@ -4300,7 +4449,8 @@
    "note": null,
    "issue": null,
    "project_item": null,
-   "legacy_id_assigned_at_migration": true
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
   },
   {
    "id": "BOPS-0094",
@@ -4310,7 +4460,7 @@
     "at": "2026-10-17T09:11:33+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: e46ac4d",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "e46ac4d5269a17203f0bfb4d1ee6607080cbe347"
    },
    "milestone": "KNOWLEDGE",
@@ -4350,7 +4500,8 @@
    "note": null,
    "issue": null,
    "project_item": null,
-   "legacy_id_assigned_at_migration": true
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
   },
   {
    "id": "BOPS-0095",
@@ -4360,7 +4511,7 @@
     "at": "2026-10-17T22:11:51+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 70561e3",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
    },
    "milestone": "DIAG-QUALITY",
@@ -4389,7 +4540,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0096",
@@ -4399,7 +4551,7 @@
     "at": "2026-10-17T22:11:51+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 70561e3",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
    },
    "milestone": "DIAG-QUALITY",
@@ -4435,7 +4587,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0097",
@@ -4445,7 +4598,7 @@
     "at": "2026-10-17T22:11:51+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 70561e3",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
    },
    "milestone": "DIAG-QUALITY",
@@ -4471,7 +4624,8 @@
    "note": "Handle per risk, not in bulk.",
    "issue": null,
    "project_item": null,
-   "legacy_id_assigned_at_migration": true
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
   },
   {
    "id": "BOPS-0098",
@@ -4481,7 +4635,7 @@
     "at": "2026-10-17T22:11:57+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 129b23c",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "129b23cd12c2cbc9b3d71c0ed24928ae5566b22b"
    },
    "milestone": "DIAG-QUALITY",
@@ -4515,7 +4669,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0099",
@@ -4525,7 +4680,7 @@
     "at": "2026-10-17T22:11:57+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: e148568",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "e148568a2e8b05a54b7a126aa85a762c0037e329"
    },
    "milestone": "DIAG-QUALITY",
@@ -4560,7 +4715,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0100",
@@ -4570,7 +4726,7 @@
     "at": "2026-10-17T22:11:58+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: c8258a9",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "c8258a9be5f4b01716914760b361405a06b4b270"
    },
    "milestone": "DIAG-QUALITY",
@@ -4604,7 +4760,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0101",
@@ -4614,7 +4771,7 @@
     "at": "2026-10-17T22:12:47+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 4589e5a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
    },
    "milestone": "DIAG-QUALITY",
@@ -4639,7 +4796,8 @@
    "reopen_condition": "New evidence (Qwen3.8 shows 0 length stops in 74 requests).",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0102",
@@ -4649,7 +4807,7 @@
     "at": "2026-10-17T22:12:47+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 4589e5a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
    },
    "milestone": "DIAG-QUALITY",
@@ -4676,7 +4834,8 @@
    "reopen_condition": "New evidence from LIVE-GATE-01.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0103",
@@ -4686,7 +4845,7 @@
     "at": "2026-10-17T22:12:47+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 4589e5a",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
    },
    "milestone": "DIAG-QUALITY",
@@ -4711,7 +4870,8 @@
    "reopen_condition": "LIVE-GATE-01 evidence.",
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0104",
@@ -4721,7 +4881,7 @@
     "at": "2026-10-18T19:10:55+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 7053ca0",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "7053ca0c8380f258442903360c44ec0fe1789bae"
    },
    "milestone": "DIAG-QUALITY",
@@ -4759,7 +4919,8 @@
    "note": null,
    "issue": null,
    "project_item": null,
-   "legacy_id_assigned_at_migration": true
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
   },
   {
    "id": "BOPS-0105",
@@ -4769,7 +4930,7 @@
     "at": "2026-10-19T16:44:05+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 2b11068",
-    "order_certainty": "distinct-instant",
+    "order_certainty": "verified",
     "commit": "2b1106862a0f775c75424364c26ee919f348fac6"
    },
    "milestone": "DIAG-QUALITY",
@@ -4804,7 +4965,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0106",
@@ -4814,7 +4976,7 @@
     "at": "2026-10-19T16:44:12+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 374f338",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
    },
    "milestone": "DIAG-QUALITY",
@@ -4845,7 +5007,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0107",
@@ -4855,7 +5018,7 @@
     "at": "2026-10-19T16:44:12+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 374f338",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
    },
    "milestone": "DIAG-QUALITY",
@@ -4888,7 +5051,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0108",
@@ -4898,7 +5062,7 @@
     "at": "2026-10-19T16:44:12+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 374f338",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
    },
    "milestone": "DIAG-QUALITY",
@@ -4931,7 +5095,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0109",
@@ -4941,7 +5106,7 @@
     "at": "2026-10-19T16:44:12+02:00",
     "basis": "first-mention",
     "source": "git log first mention/introduction: 374f338",
-    "order_certainty": "same-commit-tiebreak",
+    "order_certainty": "conventional",
     "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
    },
    "milestone": "DIAG-QUALITY",
@@ -4972,7 +5137,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0110",
@@ -4982,7 +5148,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "GOVERNANCE",
    "area": "Documentation",
@@ -5012,7 +5178,8 @@
    "reopen_condition": null,
    "note": "Read-only audit at main 09902a2.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0111",
@@ -5022,7 +5189,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "DIAG-QUALITY",
    "area": "Runtime",
@@ -5049,7 +5216,8 @@
    "reopen_condition": null,
    "note": "Proposal only: ready (no open dependency) but NOT authorized. Needs a task packet before work starts.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0112",
@@ -5059,7 +5227,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "DIAG-QUALITY",
    "area": "Runtime",
@@ -5083,7 +5251,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0113",
@@ -5093,7 +5262,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "DIAG-QUALITY",
    "area": "Tools",
@@ -5119,7 +5288,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0114",
@@ -5129,7 +5299,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "DIAG-QUALITY",
    "area": "Quality",
@@ -5155,7 +5325,8 @@
    "reopen_condition": null,
    "note": "Needs operator live authorization (D6).",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0115",
@@ -5165,7 +5336,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "DIAG-QUALITY",
    "area": "Quality",
@@ -5192,7 +5363,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0116",
@@ -5202,7 +5374,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "KNOWLEDGE",
    "area": "Quality",
@@ -5228,7 +5400,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0117",
@@ -5238,7 +5411,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "docs/maintenance/roadmap-reconciliation-01.md",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "GOVERNANCE",
    "area": "Quality",
@@ -5262,7 +5435,8 @@
    "reopen_condition": null,
    "note": "active-milestone.json still points at V1.3-H; left untouched by PROJECT-GOVERNANCE-01.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0118",
@@ -5272,7 +5446,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "operator request 2026-10-21",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "GOVERNANCE",
    "area": "Governance",
@@ -5306,7 +5480,8 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
   },
   {
    "id": "BOPS-0119",
@@ -5316,7 +5491,7 @@
     "at": "2026-10-21",
     "basis": "document-date",
     "source": "operator request 2026-10-21",
-    "order_certainty": "same-commit-tiebreak"
+    "order_certainty": "conventional"
    },
    "milestone": "GOVERNANCE",
    "area": "Governance",
@@ -5342,7 +5517,19 @@
    "reopen_condition": null,
    "note": "Idempotent gh-based reconciliation of register <-> Issues <-> Project #6 (dry-run by default); CI wiring of the offline validator is already in PROJECT-GOVERNANCE-01.",
    "issue": null,
-   "project_item": null
+   "project_item": null,
+   "branch": null
+  }
+ ],
+ "known_divergences": [
+  {
+   "id": "QM-1",
+   "file": "agentic/_quality/active-milestone.json",
+   "json_key": "milestone",
+   "recorded_value": "V1.3-H",
+   "state": "OPEN",
+   "tracked_by": "BOPS-0117",
+   "description": "The file still names V1.3-H as the measured quality baseline although the project has moved on; known-failures.json also lists different Filesystem tests than the former HANDOFF did. Neither file nor any historical quality report/result is altered until BOPS-0117 reconciles them. If the file changes, update this record in the same commit."
   }
  ]
 }

@@ -72,8 +72,9 @@ an archived plan, specification or task.
 Every task has a progressive `BOPS-NNNN` id (global, immutable, never reused; the order of creation, not priority). Full rules:
 [`agentic/_tasks/PROCESS.md`](agentic/_tasks/PROCESS.md).
 
-- **Never start a task** that is not `authorized: true` in the register, whose dependencies are not `DONE`, or while another task is `IN_PROGRESS`.
-  Move it to `IN_PROGRESS` only when development really begins, and tell the operator its id and title.
+- **Never start a task** that is not `authorized: true` in the register or whose dependencies are not `DONE`. Several authorized tasks may run in parallel,
+  each on its own branch/session (record `branch` in the register); `HANDOFF.md` names the single current task of its branch. Move a task to `IN_PROGRESS`
+  only when development really begins, and tell the operator its id and title.
 - **Every status change** is reflected in the same session, in this order: (1) `agentic/_tasks/register.json`, (2) the GitHub Issue,
   (3) the Status field of GitHub Project #6 `dev plan`, (4) `HANDOFF.md` when the active task, a blocker or the next step changes.
   Not a periodic chore: part of the work. Link commits and PRs to the task; record blockers and scope changes.

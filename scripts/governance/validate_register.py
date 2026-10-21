@@ -20,6 +20,10 @@ from pathlib import Path
 STATUSES = ["PLANNED", "READY", "IN_PROGRESS", "VALIDATION", "BLOCKED", "DONE", "DEFERRED", "SUPERSEDED"]
 LEVELS = ["OFFLINE_TESTS", "REPLAY_REAL_MODEL", "LIVE_REAL_TOOLS", "CI_VERIFIED", "OPERATOR_GATE"]
 PRIORITIES = ["P0", "P1", "P2", "P3"]
+ORDER_CERTAINTY = ["verified", "conventional"]
+IMPLEMENTATION = ["COMPLETE", "PARTIAL", "NOT_STARTED"]
+VALIDATION_STATE = ["COMPLETE", "PARTIAL", "NONE"]
+RELEASE = ["RELEASED", "PRERELEASED", "NOT_RELEASED", "NOT_APPLICABLE"]
 CREATED_BASES = ["packet-first-add", "first-mention", "packet-subitem", "document-date", "unknown"]
 ID_RE = re.compile(r"^BOPS-(\d{4})$")
 NO_ACTIVE = "NO ACTIVE IMPLEMENTATION TASK"
@@ -38,6 +42,11 @@ def task_title(task: dict) -> str:
     if desc.upper().startswith(task["legacy_id"].upper()):
         desc = desc[len(task["legacy_id"]):].lstrip(" :-—")
     return f'{task["id"]} | {task["legacy_id"]} — {desc}'.rstrip(" —")
+
+
+def _utc(iso: str) -> str:
+    from datetime import datetime, timezone
+    return datetime.fromisoformat(iso).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _find_cycle(graph: dict[str, list[str]]) -> list[str] | None:
@@ -123,6 +132,8 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
         c = t.get("created", {})
         if c.get("basis") not in CREATED_BASES:
             e(f"{tid}: created.basis {c.get('basis')!r} not allowed")
+        if c.get("order_certainty") not in ORDER_CERTAINTY:
+            e(f"{tid}: created.order_certainty must be 'verified' or 'conventional'")
         if not c.get("at") and c.get("basis") != "unknown":
             e(f"{tid}: created.at missing (use basis 'unknown' only with at=null)")
         for field, label in (("issue", "issue"), ("project_item", "project_item")):
@@ -139,14 +150,35 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
     numbering = reg.get("numbering", {})
     if nums and numbering.get("next") != nums[-1] + 1:
         e(f"numbering.next must be {nums[-1] + 1}")
-    through = numbering.get("frozen_through")
-    if through:
-        if through not in by_id:
-            e("numbering.frozen_through is not a task id")
-        elif frozen_digest(tasks, through) != numbering.get("frozen_mapping_sha256"):
-            e("the frozen id mapping (id, legacy_id, creation instant) changed: it is immutable once approved")
+    state = numbering.get("state")
+    if state not in ("PROVISIONAL", "FROZEN"):
+        e("numbering.state must be PROVISIONAL or FROZEN")
+    through = numbering.get("through")
+    if through not in by_id:
+        e("numbering.through is not a task id")
+    elif state == "FROZEN" and frozen_digest(tasks, through) != numbering.get("mapping_sha256"):
+        e("the frozen id mapping (id, legacy_id, creation instant) changed: it is immutable once approved")
+    # progressives must follow the recorded creation order (date part only for date-only entries)
+    last = ""
+    for t in tasks:
+        at = (t.get("created") or {}).get("at") or ""
+        key = at if len(at) > 10 else at + "T99"
+        stamp = _utc(at) if len(at) > 10 else at
+        if stamp and last and stamp < last:
+            e(f'{t.get("id")}: created.at precedes an earlier progressive id')
+        last = max(last, stamp) if stamp else last
 
     milestone_ids = {m["id"] for m in reg.get("milestones", [])}
+    for m in reg.get("milestones", []):
+        mid = m["id"]
+        for field, allowed in (("implementation", IMPLEMENTATION), ("validation", VALIDATION_STATE), ("release", RELEASE), ("status", STATUSES)):
+            if m.get(field) not in allowed:
+                e(f"milestone {mid}: {field} {m.get(field)!r} not allowed")
+        if m.get("status") == "DONE" and not (m.get("implementation") == "COMPLETE" and m.get("validation") == "COMPLETE"
+                                              and m.get("release") in ("RELEASED", "PRERELEASED", "NOT_APPLICABLE")):
+            e(f"milestone {mid}: DONE requires implementation COMPLETE, validation COMPLETE and release RELEASED/PRERELEASED/NOT_APPLICABLE")
+        if not m.get("evidence"):
+            e(f"milestone {mid}: evidence missing")
     if reg.get("active_milestone") not in milestone_ids:
         e("active_milestone is not a declared milestone")
 
@@ -206,6 +238,8 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
                 e(f"{tid}: {st} without a packet or spec reference")
         if st == "IN_PROGRESS" and t.get("authorized") is not True:
             e(f"{tid}: IN_PROGRESS without operator authorization (authorized=true)")
+        if st == "IN_PROGRESS" and not t.get("branch"):
+            e(f"{tid}: IN_PROGRESS without the branch/session that carries it (branch)")
         if st in ("READY", "IN_PROGRESS", "VALIDATION") and t.get("milestone") not in milestone_ids:
             pass  # reported above
         mid = t.get("milestone")
@@ -213,8 +247,20 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
             e(f"{tid}: milestone {mid} is DONE but the task is {st}")
 
     active = [t for t in tasks if t.get("status") == "IN_PROGRESS"]
-    if len(active) > 1:
-        e("serial workflow: more than one IN_PROGRESS task (" + ", ".join(t["id"] for t in active) + ")")
+    branches = [t["branch"] for t in active if t.get("branch")]
+    for b in sorted({b for b in branches if branches.count(b) > 1}):
+        e(f"parallel tasks must use distinct branches/sessions: {b} is used by more than one IN_PROGRESS task")
+
+    for dv in reg.get("known_divergences", []):
+        f = root / dv.get("file", "")
+        if not f.is_file():
+            e(f"known divergence {dv.get('id')}: file {dv.get('file')} not found")
+            continue
+        actual = json.loads(f.read_text(encoding="utf-8")).get(dv.get("json_key"))
+        if actual != dv.get("recorded_value"):
+            e(f"known divergence {dv.get('id')}: {dv['file']} now says {actual!r}, the record says {dv.get('recorded_value')!r}; reconcile and update the record")
+        if dv.get("tracked_by") not in by_id:
+            e(f"known divergence {dv.get('id')}: tracked_by is not a task")
 
     cycle = _find_cycle({i: [d for d in t.get("depends_on", []) if d in by_id] for i, t in by_id.items()})
     if cycle:
@@ -232,10 +278,19 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
         if fields is None:
             e(f"HANDOFF.md lacks the {SYNC_BEGIN} ... {SYNC_END} block")
         else:
-            want = active[0]["id"] if active else NO_ACTIVE
-            got = fields.get("active implementation task", "")
-            if not got.startswith(want):
-                e(f"HANDOFF active implementation task is {got!r}, register says {want!r}")
+            got = fields.get("current task", "")
+            if got.startswith(NO_ACTIVE):
+                pass
+            else:
+                m = re.match(r"^(BOPS-\d{4})", got)
+                if not m or m.group(1) not in by_id:
+                    e(f"HANDOFF current task {got!r} is neither {NO_ACTIVE!r} nor a known BOPS id")
+                elif by_id[m.group(1)].get("status") not in ("IN_PROGRESS", "VALIDATION"):
+                    e(f"HANDOFF current task {m.group(1)} is {by_id[m.group(1)].get('status')}, expected IN_PROGRESS or VALIDATION")
+                elif by_id[m.group(1)].get("status") == "IN_PROGRESS":
+                    hb = fields.get("branch", "")
+                    if hb != by_id[m.group(1)].get("branch"):
+                        e(f"HANDOFF branch {hb!r} differs from the task branch {by_id[m.group(1)].get('branch')!r}")
             ready = sorted(t["id"] for t in tasks if t.get("status") == "READY")
             listed = sorted(re.findall(r"BOPS-\d{4}", fields.get("ready", "")))
             if ready != listed:
@@ -250,7 +305,7 @@ def summary(reg: dict) -> str:
     count = {s: sum(1 for t in tasks if t["status"] == s) for s in STATUSES}
     active = [t for t in tasks if t["status"] == "IN_PROGRESS"]
     out = ["status counts: " + ", ".join(f"{s}={n}" for s, n in count.items() if n),
-           "active: " + (", ".join(f'{t["id"]} {t["legacy_id"]}' for t in active) if active else NO_ACTIVE),
+           "in progress: " + (", ".join(f'{t["id"]} {t["legacy_id"]} [{t.get("branch")}]' for t in active) if active else "none"),
            f'next progressive id: BOPS-{reg["numbering"]["next"]:04d}']
     for s in ("READY", "BLOCKED"):
         for t in tasks:
@@ -259,6 +314,9 @@ def summary(reg: dict) -> str:
                 out.append(f'{s}: {t["id"]} {t["legacy_id"]}{extra}')
     rs = reg.get("remote_sync", {})
     out.append(f'remote sync: {rs.get("state", "UNKNOWN")} — {rs.get("reason", "")}')
+    for dv in reg.get("known_divergences", []):
+        out.append(f'divergence {dv["id"]} ({dv["state"]}): {dv["file"]} — tracked by {dv["tracked_by"]}')
+    out.append(f'numbering: {reg["numbering"]["state"]}')
     out.append("pending decisions: " + ", ".join(d["id"] for d in reg.get("decisions", []) if d.get("status") == "PENDING"))
     return "\n".join(out)
 
