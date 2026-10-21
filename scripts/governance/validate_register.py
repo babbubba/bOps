@@ -20,6 +20,7 @@ from pathlib import Path
 STATUSES = ["PLANNED", "READY", "IN_PROGRESS", "VALIDATION", "BLOCKED", "DONE", "DEFERRED", "SUPERSEDED"]
 LEVELS = ["OFFLINE_TESTS", "REPLAY_REAL_MODEL", "LIVE_REAL_TOOLS", "CI_VERIFIED", "OPERATOR_GATE"]
 PRIORITIES = ["P0", "P1", "P2", "P3"]
+BOARD_STATUSES = ["Backlog", "Ready", "In Progress", "Validation", "Blocked", "Deferred", "Done"]
 ORDER_CERTAINTY = ["verified", "conventional"]
 IMPLEMENTATION = ["COMPLETE", "PARTIAL", "NOT_STARTED"]
 VALIDATION_STATE = ["COMPLETE", "PARTIAL", "NONE"]
@@ -136,6 +137,18 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
             e(f"{tid}: created.order_certainty must be 'verified' or 'conventional'")
         if not c.get("at") and c.get("basis") != "unknown":
             e(f"{tid}: created.at missing (use basis 'unknown' only with at=null)")
+        kind = t.get("remote_kind")
+        if kind not in (None, "issue", "draft"):
+            e(f"{tid}: remote_kind must be 'issue' or 'draft'")
+        if (t.get("issue") is not None or t.get("project_item")) and kind is None:
+            e(f"{tid}: issue/project_item set without remote_kind")
+        if kind == "issue" and (t.get("issue") is None or not t.get("project_item")):
+            e(f"{tid}: an issue-backed task needs both issue and project_item")
+        if kind == "draft" and (t.get("issue") is not None or not t.get("project_item")):
+            e(f"{tid}: a draft task has a project_item and no issue number")
+        sync = t.get("sync")
+        if sync is not None and sync.get("status") not in (None, *BOARD_STATUSES):
+            e(f"{tid}: sync.status {sync.get('status')!r} is not a board column")
         for field, label in (("issue", "issue"), ("project_item", "project_item")):
             v = t.get(field)
             if v is not None:
