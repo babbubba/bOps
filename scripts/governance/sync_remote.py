@@ -122,7 +122,7 @@ def plan(reg: dict, remote: dict, *, close_done: bool = False, now: str = "") ->
             have, w = item.get(key), want.get(key)
             if w is None or have == w:
                 continue
-            if have in (None, ""):
+            if have in (None, "") or (key == "evidence" and have == "None"):  # "None" is the default option, i.e. not yet set
                 out["updates"].append({"task": tid, "item": item["id"], "field": name, "old": have, "new": w})
             else:
                 out["conflicts"].append({"task": tid, "what": name, "detail": f"remote {have!r} differs from register {w!r}; not overwritten"})

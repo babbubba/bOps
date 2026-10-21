@@ -5621,14 +5621,15 @@
      "CI_VERIFIED"
     ],
     "open_gates": [
-     "CI of the PR head and of the merge commit (validator, test and workflow files changed: post-merge verification kept).",
-     "Controlled read-only run against Project #6 not done yet: GitHub refused GraphQL with a secondary rate limit while the primary budget was healthy; the tool classified it correctly and aborted."
+     "CI of the PR head and of the merge commit (validator, test and workflow files changed: post-merge verification kept)."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "Read-only run of sync_remote.py against Project #6 on 2026-10-21 (after a secondary rate limit cleared): 19 items read, 18 in sync, 2 pending updates for BOPS-0119 (Status Backlog->Validation, Evidence Level None->Offline tests), 0 conflicts; no remote write performed"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Implemented: scripts/governance/sync_remote.py with offline tests; PROCESS.md section 4b documents the tool and the closure policy. The remote item is still Backlog until a sync is applied (operator approval needed for remote writes).",
+   "note": "Implemented: scripts/governance/sync_remote.py with offline tests; PROCESS.md section 4b documents the tool and the closure policy. The remote draft item still shows Backlog/None until a sync is applied (needs operator approval for remote writes).",
    "issue": null,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbNw",
    "branch": "feat/bops-0119-project-sync",

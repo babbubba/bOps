@@ -28,8 +28,7 @@ Task state is never copied here; ask the register (`--summary`).
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Active implementation task: **NO ACTIVE IMPLEMENTATION TASK** (BOPS-0119 is implemented and in validation).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
-  [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gates: CI of the PR head and merge commit; a controlled read-only run against Project #6
-  (GitHub's secondary rate limit refused GraphQL when tried; the tool classified it and aborted).
+  [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gate: CI of the PR head and merge commit. Read-only run on Project #6 done: 18 of 19 items in sync, 2 pending updates for BOPS-0119, 0 conflicts (a secondary rate limit refused GraphQL earlier; the tool classified and aborted, then succeeded).
 - In validation: **BOPS-0118 PROJECT-GOVERNANCE-01** (Issue #109) — PRs #108 and #120 merged. Open gate: operator approval to close; DONE is recorded in the BOPS-0119 PR once approved.
 - Last completed: **BOPS-0110 ROADMAP-RECONCILIATION-01** (2026-10-21, read-only audit).
 

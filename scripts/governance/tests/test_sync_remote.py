@@ -98,6 +98,11 @@ class Planner(unittest.TestCase):
         self.assertEqual([("Priority", None, "P2")], [(u["field"], u["old"], u["new"]) for u in p["updates"]])
         self.assertEqual("Area", p["conflicts"][0]["what"])
 
+    def test_the_default_evidence_level_none_is_filled_not_treated_as_a_conflict(self):
+        task(self.reg, "AF-EVID-01")["validation"]["achieved"] = ["OFFLINE_TESTS"]
+        self.assertEqual([("Evidence Level", "None", "Offline tests")], [(u["field"], u["old"], u["new"]) for u in self.plan()["updates"]])
+        self.assertEqual([], self.plan()["conflicts"])
+
     def test_priority_and_milestone_come_from_the_register_only(self):
         t = task(self.reg, "AF-EVID-01")
         t["priority"], t["milestone"] = "P0", "BENCH"
