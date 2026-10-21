@@ -2,10 +2,12 @@
 
 Status: **active and authoritative for roadmap scope, sequencing and delivery gates**
 Consolidated: 2026-09-16
-Current implementation milestone: **V1.3** (V1.2-A through V1.2-M are complete and `v1.2.0-preview.8` is released as a pre-release)
-Current implementation batch: **V1.3.y implemented locally; validation complete, not committed or merged**.
-The operator authorized the web/evidence operability follow-up on 2026-10-07. The V1.3.x reliability hardening train is closed:
-HARDEN-1 through HARDEN-14 are complete and merged, with HARDEN-14 integrated through PR #85
+Formal implementation milestone: **V1.3** (`v1.2.0-preview.8` is released as a pre-release; the stable V1.3 gate is not closed).
+Operational state of every task (status, validation, dependencies, next READY task) is **not** kept here: it lives in
+[`agentic/_tasks/register.json`](../_tasks/register.json) under the rules in [`agentic/_tasks/PROCESS.md`](../_tasks/PROCESS.md)
+(PROJECT-GOVERNANCE-01, 2026-10-21). This file keeps goals, milestones, dependencies and gates. The batch sentences that stood here
+(V1.3.y "implemented locally", MAF/Knowledge state) were stale; see `docs/maintenance/roadmap-reconciliation-01.md`.
+The V1.3.x reliability hardening train is closed: HARDEN-1 through HARDEN-14 are complete and merged, with HARDEN-14 integrated through PR #85
 (`83084fc251b6173cb60bd1473abac635506c8343`). V1.4 remains planned and not started.
 
 ## 1. Authority and precedence

@@ -1,0 +1,112 @@
+# Active task index
+
+This directory contains executable public-repository work. Read the consolidated roadmap first,
+then open only the first task whose dependencies and operator gates are satisfied. Do not use task
+snapshots under `agentic/obsolete/`.
+
+| Order | Task | Status | Effort |
+|---:|---|---|---|
+| independent | [`Formal V1.0 release gate`](2026-09-16-release-v1.0-formal-gate.md) | Done for `v1.1.0-preview.2` | medio |
+| parallel admin | [`Repository topology bootstrap`](2026-09-16-repository-topology-bootstrap.md) | Complete (accepted deviations recorded); gate for V1.3 satisfied | alto |
+| 1 | [`V1.1-A Skill SDK completion`](2026-09-16-v1.1-a-skill-sdk-completion.md) | Complete | molto alto |
+| 2 | [`V1.1-B system inventory`](2026-09-16-v1.1-b-system-inventory.md) | Complete | alto |
+| 3 | [`V1.1-C filesystem inventory`](2026-09-16-v1.1-c-filesystem-inventory.md) | Complete | alto |
+| 4 | [`V1.1-D governed recursive delete`](2026-09-16-v1.1-d-governed-recursive-delete.md) | Complete | molto alto |
+| 5 | [`V1.1-E Web capabilities`](2026-09-16-v1.1-e-web-capabilities.md) | Complete | molto alto |
+| 6 | [`V1.1-F plugin catalog UI`](2026-09-16-v1.1-f-plugin-catalog-ui.md) | Complete | medio |
+| 7 | [`V1.1-G secure Settings`](2026-09-16-v1.1-g-secure-settings.md) | Complete | molto alto |
+| 8 | [`V1.1-H integration/release`](2026-09-16-v1.1-h-integration-release.md) | Complete | alto |
+| 9 | [`V1.2 multi-agent`](2026-09-16-v1.2-multi-agent.md) | Complete — A to M implemented and release gate closed | molto alto, split A–M |
+| 10 | [`V1.3-A system events`](2026-09-21-v1.3-a-system-events.md) | **Complete and merged — PR #32, CI green** | alto |
+| 11 | [`V1.3-B Docker management`](2026-09-21-v1.3-b-docker-management.md) | **Complete and merged — PR #33** | molto alto |
+| 12 | [`V1.3-C process diagnostics`](2026-09-21-v1.3-c-process-diagnostics.md) | **Complete and merged — PR #35** | medio |
+| 13 | [`V1.3-D network diagnostics`](2026-09-21-v1.3-d-network-diagnostics.md) | **Complete and merged — PR #36** | medio |
+| 14 | [`V1.3-E storage diagnostics`](2026-09-21-v1.3-e-storage-diagnostics.md) | **Complete and merged — PR #37, CI green** | medio |
+| 15 | [`V1.3-F filesystem troubleshooting`](2026-09-21-v1.3-f-filesystem-troubleshooting.md) | **Complete and merged — PR #38** | medio |
+| 16 | [`V1.3-G service + scheduler`](2026-09-21-v1.3-g-service-scheduler.md) | **Complete and merged — PR #40** | medio |
+| 17 | [`V1.3-H identity/time/reboot`](2026-09-21-v1.3-h-identity-time-reboot.md) | **Complete and merged — PR #42** | medio |
+| 18 | [`V1.3-I firewall diagnostics`](2026-09-21-v1.3-i-firewall-diagnostics.md) | **Complete and merged — PR #43** | medio |
+| 19 | [`V1.3-J TLS/certificates`](2026-09-21-v1.3-j-tls-certificates.md) | **Complete and merged — PR #44** | medio |
+| 20 | [`V1.3-K updates/crashes/drivers`](2026-09-21-v1.3-k-os-maintenance-crash-drivers.md) | **Complete and merged — PR #45** | medio |
+| 21 | [`V1.3-L ops integration gate`](2026-09-21-v1.3-l-ops-diagnostic-integration.md) | **Complete and merged — PR #47; integration gate complete, Windows/Linux CI green** | medio |
+| 22 | [`V1.3-M OSS entitlement/plugin lifecycle`](2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md) | **Complete and merged — PR #50** | molto alto |
+| 23 | [`V1.3.y web-tool and evidence-read operability`](2026-10-07-v1.3y-web-evidence-operability.md) | **Implemented locally — validation complete; not committed or merged** | alto |
+| 23z | [`V1.3.z Windows kernel dump analysis`](2026-10-08-v1.3z-windows-kernel-dump-analysis.md) | **Merged via PR #91; prerequisite recovery verified live; first real dump execution exposed the global 30 s caller timeout** | alto |
+| 23zz | [`V1.3 pre-release stabilization`](2026-10-08-v1.3-pre-release-stabilization.md) | **Planned — next executable pre-release packet before stable V1.3** | molto alto |
+| AF-01 | [`MAF foundation + governed inference`](2026-10-10-af-01-maf-foundation-governed-inference.md) | **Completed** | medio |
+| AF-02 | [`MAF context + compaction`](2026-10-10-af-02-maf-context-compaction.md) | **Implemented locally — validation complete; not pushed or merged** | medio |
+| AF-03 | [`Governed MAF summarization`](2026-10-10-af-03-governed-summarization.md) | **Implemented locally** | medio |
+| AF-04 | [`Evidence cleanup + high-density facts`](2026-10-10-af-04-evidence-cleanup.md) | **Implemented locally** (+ review fixes R1/R2) | medio |
+| AF-05 | [`MAF regression, tuning + legacy cleanup`](2026-10-10-af-05-maf-regression-tuning-cleanup.md) | **Implemented locally — live-provider runs and Windows/Linux CI NOT RUN; not pushed or merged** (benchmark record: [results](2026-10-11-af-05-benchmark-results.md)) | medio |
+| AF-05H | [`Live regression hardening (H2, H4)`](2026-10-11-af-05h-live-regression-hardening.md) | **H2 + H4 on `fix/af-05h-live-regression-hardening`; H1 isolated on its own branch; H3/H5 deferred** — deterministic fixtures, not merged | medio |
+| 24 | [`V1.4 node/Control Plane protocol`](2026-09-16-v1.4-node-control-plane-protocol.md) | Future — blocked until stable V1.3 gate | molto alto |
+| 25 | [`V2.0 OSS GA readiness`](2026-09-16-v2.0-oss-ga-readiness.md) | Future | molto alto |
+| 26 | [`Post-V2.0 bilingual README`](2026-09-16-post-v2.0-bilingual-readme.md) | Future | medio |
+| independent | [`Multilingual UI (Italian and English)`](2026-09-19-ui-multilanguage-it-en.md) | **Implemented** | medio |
+| completed | [`V1.3.z prerequisite readiness and system messages`](2026-10-08-v1.3z-prerequisite-readiness-system-messages.md) | **Completed and merged via PR #92; live Windows missing→Available recovery verified without restart** | alto |
+| completed | [`V1.3.x reliability hardening train`](../_plans/2026-09-25-v1.3x-reliability-hardening.md) | **Closed — HARDEN-1 through HARDEN-14 completed and merged; HARDEN-14 via PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`) | alto / molto alto per packet |
+
+Private companion implementation from V1.3 onward belongs in `bOps.Commercial`. The private coordination root
+tracks cross-repository sequencing after it exists; it must not duplicate these task bodies.
+
+## Execution rules
+
+- Never start a later ordered task while an earlier dependency remains open.
+- Status checkboxes describe verified work only; do not check them prospectively.
+- A required ADR is written and accepted before the implementation it governs.
+- External mutations — repository creation, push, tag, publication or release — require explicit
+  operator authorization at execution time.
+- Keep README, CHANGELOG, HANDOFF and the selected task aligned with validated results.
+
+## ADR-0052 Microsoft Agent Framework migration train
+
+AF-01 through AF-05 are an ordered architecture migration governed by
+[ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md). MAF adoption
+is already decided (D-048): AF-05 benchmarks tune the implementation and authorize legacy cleanup,
+not a return to a custom agent framework. Execute AF-01 first; AF-04 may overlap AF-03 only after
+AF-02's shared context interfaces are stable. Each packet contains its own stop conditions and
+validation gate.
+
+## V1.3 coding-agent packet map
+
+From V1.3-G onward, use the conservative execution strategy in
+[`../_plans/2026-09-22-v1.3-coding-agent-execution.md`](../_plans/2026-09-22-v1.3-coding-agent-execution.md).
+The functional task remains authoritative for scope; its execution-packet companion removes local
+design/exploration work so a smaller coding model can execute one bounded unit at a time.
+
+| Batch | Execution packets | Default model guidance |
+|---|---|---|
+| G | [G1–G7](2026-09-22-v1.3-g-execution-packets.md) | Luna Medium; Low for bounded shared/docs work |
+| H | [H1–H5](2026-09-22-v1.3-h-execution-packets.md) | Luna Low/Medium |
+| I | [I1–I5](2026-09-22-v1.3-i-execution-packets.md) | Luna Medium |
+| J | [J1–J5](2026-09-22-v1.3-j-execution-packets.md) | Luna Medium; optional Sol Low security review |
+| K | [K1–K8](2026-09-22-v1.3-k-execution-packets.md) | Luna Medium |
+| L | [L0–L9](2026-09-22-v1.3-l-execution-packets.md) | Luna Medium; Sol Low only for final unresolved review |
+| M | [M1–M8](2026-09-22-v1.3-m-execution-packets.md) | Terra Medium while available for ADR design, Luna Medium implementation, Sol Low review |
+
+Model escalation is never automatic. Stop after two reasoned attempts on the same blocker and hand
+off precise evidence rather than consuming the remainder of a usage window.
+
+## V1.3.x reliability hardening packet map
+
+Governed by [`../_plans/2026-09-25-v1.3x-reliability-hardening.md`](../_plans/2026-09-25-v1.3x-reliability-hardening.md),
+which holds the full review, finding IDs, dependency gates and Definition of Done. **One HARDEN packet
+at a time, in this exact order.** A packet with an ADR prerequisite drafts the ADR first and stops for
+operator acceptance. New commits use the identity in the plan's §19 (`Fabio Cavallari`).
+
+| Order | Packet | Priority | Implementation | Review | Status |
+|---:|---|---|---|---|---|
+| 1 | [HARDEN-1 provider wire contract](2026-09-25-v1.3x-harden-01-provider-wire-contract.md) | MUST | Opus High | Opus High | **Completed** |
+| 2 | [HARDEN-2 model-call failure containment](2026-09-25-v1.3x-harden-02-model-failure-containment.md) | MUST | Opus High | Opus High | **Completed** |
+| 3 | [HARDEN-3 resume state machine](2026-09-25-v1.3x-harden-03-resume-state-machine.md) | MUST | Opus High | Opus highest | **Completed** |
+| 4 | [HARDEN-4 task lifecycle UI](2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md) | MUST | Sonnet High | Opus Medium/High | **Completed** |
+| 5 | [HARDEN-5 storage.health fix](2026-09-25-v1.3x-harden-05-storage-health.md) | MUST | Sonnet Medium | Sonnet Medium | **Completed** (PR #61) |
+| 6 | [HARDEN-6 tool contract constraints](2026-09-25-v1.3x-harden-06-tool-contract-constraints.md) | MUST | Opus High | Opus High | **Completed** (PR #62) |
+| 7 | [HARDEN-7 Windows stability evidence](2026-09-25-v1.3x-harden-07-windows-stability-evidence.md) | MUST | Opus High | Opus High | **Completed** (PR #72) |
+| 8 | [HARDEN-9 evidence reasoning](2026-09-25-v1.3x-harden-09-evidence-reasoning.md) | SHOULD | Opus Medium/High | Opus Medium | **Completed — merged via PR #74** |
+| 9 | [HARDEN-8 context and budget economy](2026-09-25-v1.3x-harden-08-context-budget-economy.md) | SHOULD | Opus High | Opus High | **Completed — merged via PR #75** |
+| 10 | [HARDEN-10 browser session](2026-09-25-v1.3x-harden-10-browser-session.md) | MUST | Opus High | Opus highest | **Completed — merged via PR #76** |
+| 11 | [HARDEN-11 delegation operability](2026-09-25-v1.3x-harden-11-delegation-operability.md) | MUST | Opus High | Opus highest | **Completed — PR #77** (`12a03165ef458ecb3b36625d955731e34671c6f8`); independent implementation authority/security review PASS |
+| 12 | [HARDEN-12 UI layout and localization](2026-09-25-v1.3x-harden-12-ui-layout-localization.md) | SHOULD | Sonnet Medium | Sonnet Medium | **Completed — PR #79** (`86bf74857a2435daee6177cd5cf78aae4e6198eb`); independent UI review PASS |
+| 13 | [HARDEN-13 provider defaults and fallback](2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md) | SHOULD | Sonnet High | Opus Medium | **Completed — PR #83** (`3bed13e3274570a3928ac64706be6246c0d9a978`); final independent review PASS |
+| 14 | [HARDEN-14 end-to-end composition gate](2026-09-25-v1.3x-harden-14-e2e-composition-gate.md) | GATE | Sonnet High | Opus Medium/High | **Completed — PR #85** (`83084fc251b6173cb60bd1473abac635506c8343`); E2E-1…14 and DoD A–D passed |

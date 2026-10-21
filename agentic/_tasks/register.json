@@ -1,0 +1,5540 @@
+{
+ "schema_version": 1,
+ "about": "Single authoritative operational state of bOps tasks. Rules: agentic/_tasks/PROCESS.md. Validate: python scripts/governance/validate_register.py",
+ "project": {
+  "owner": "babbubba",
+  "number": 6,
+  "name": "dev plan",
+  "url": "https://github.com/users/babbubba/projects/6",
+  "repository": "babbubba/bOps"
+ },
+ "vocabulary": {
+  "status": [
+   "PLANNED",
+   "READY",
+   "IN_PROGRESS",
+   "VALIDATION",
+   "BLOCKED",
+   "DONE",
+   "DEFERRED",
+   "SUPERSEDED"
+  ],
+  "validation_levels": [
+   "OFFLINE_TESTS",
+   "REPLAY_REAL_MODEL",
+   "LIVE_REAL_TOOLS",
+   "CI_VERIFIED",
+   "OPERATOR_GATE"
+  ],
+  "priority": [
+   "P0",
+   "P1",
+   "P2",
+   "P3"
+  ]
+ },
+ "board_columns": {
+  "PLANNED": "Backlog",
+  "READY": "Ready",
+  "IN_PROGRESS": "In Progress",
+  "VALIDATION": "Validation",
+  "BLOCKED": "Blocked",
+  "DEFERRED": "Deferred",
+  "DONE": "Done",
+  "SUPERSEDED": null
+ },
+ "numbering": {
+  "next": 120,
+  "state": "PROVISIONAL",
+  "through": "BOPS-0119",
+  "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
+  "rule": "Chronological by first Git introduction of the task packet (first Git mention or document date for tasks without a packet); ties broken by tasks README row order (initial import 00730c3) or packet path; frozen on operator approval. order_certainty: 'verified' = distinct, Git-proven creation instant; 'conventional' = order inside one commit/date fixed by the tie-break rule, NOT chronologically proven. The mapping becomes FROZEN (state=FROZEN, hash enforced) only on explicit operator approval."
+ },
+ "remote_sync": {
+  "state": "PROJECT_CONFIGURED_NO_ITEMS",
+  "reason": "Project #6 configured 2026-10-21 (7 Status options, fields Priority/Area/bOps Milestone/Evidence Level/Effort, 3 views, private). Workflows Item closed, Pull request merged, Auto-close issue verified disabled; the operator also decided to disable Pull request linked to issue and Auto-add sub-issues to project (verify via API). No Issues or items created.",
+  "issues_created": 0
+ },
+ "active_milestone": "V1.3",
+ "milestones": [
+  {
+   "id": "V1.0",
+   "title": "Formal V1.0 release",
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "Formal gate closed via tag v1.1.0-preview.2 (run 35383901325); no stable v1.0.x tag exists or will be created."
+  },
+  {
+   "id": "V1.1",
+   "title": "V1.1 public operational platform",
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "H gate green on Windows/Linux CI; preview artifacts are workflow artifacts only (no GitHub Release, no NuGet)."
+  },
+  {
+   "id": "V1.2",
+   "title": "V1.2 multi-agent orchestration",
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "PRERELEASED",
+   "evidence": "Gate M closed; v1.2.0-preview.8 is a GitHub pre-release, not stable, not on NuGet."
+  },
+  {
+   "id": "V1.3",
+   "title": "V1.3 senior-operator diagnostics (stable gate open)",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_RELEASED",
+   "evidence": "A-M merged; pre-release stabilization gate (PRE-1..8) and F-25 validation record open; no V1.3 tag."
+  },
+  {
+   "id": "V1.3.x",
+   "title": "V1.3.x reliability hardening train",
+   "status": "DONE",
+   "implementation": "COMPLETE",
+   "validation": "COMPLETE",
+   "release": "NOT_APPLICABLE",
+   "evidence": "HARDEN-1..14 merged, E2E-1..14 and DoD A-D passed (PR #85); ships with the V1.3 release, no release of its own."
+  },
+  {
+   "id": "V1.3.y",
+   "title": "V1.3.y/z operability follow-ups",
+   "status": "VALIDATION",
+   "implementation": "COMPLETE",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Merged (PRs #88-#92) but no live re-verification of a real kernel-dump run after the timeout fix (#94) is recorded; rides on the V1.3 release."
+  },
+  {
+   "id": "MAF",
+   "title": "Microsoft Agent Framework adoption (ADR-0052 train, ARCH)",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "AF-01..04 done; AF-05/AF-05H live gates open; AF-CONTEXT/TURN not composed; ADR-0053/0054 Proposed."
+  },
+  {
+   "id": "KNOWLEDGE",
+   "title": "Trusted Knowledge (KNOW-01, KNOW-DISC, pilot)",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_RELEASED",
+   "evidence": "Opt-in CLI pilot only; ADR-0055/56/58/59 and D-050 Proposed; no benefit measured."
+  },
+  {
+   "id": "DIAG-QUALITY",
+   "title": "LIVE, PRA, grounding and diagnostic quality",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Flow fixes merged; diagnostic content correctness neither verified nor measured."
+  },
+  {
+   "id": "BENCH",
+   "title": "Benchmarks (BENCH-00, BENCH-01, BENCH-MATRIX)",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Collector merged; official 3x3 never run."
+  },
+  {
+   "id": "V1.4",
+   "title": "V1.4 node and Control Plane",
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started; operator authorization required."
+  },
+  {
+   "id": "V2.0",
+   "title": "V2.0 OSS GA",
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started."
+  },
+  {
+   "id": "POST-V2.0",
+   "title": "Post-V2.0",
+   "status": "PLANNED",
+   "implementation": "NOT_STARTED",
+   "validation": "NONE",
+   "release": "NOT_RELEASED",
+   "evidence": "Not started."
+  },
+  {
+   "id": "GOVERNANCE",
+   "title": "Project governance and reconciliation",
+   "status": "VALIDATION",
+   "implementation": "PARTIAL",
+   "validation": "PARTIAL",
+   "release": "NOT_APPLICABLE",
+   "evidence": "Local register/validator done; remote Project #6 and Issues not set up; mapping not approved."
+  }
+ ],
+ "decisions": [
+  {
+   "id": "D1",
+   "title": "ADR-0053/0054 (MAF B+): keep Proposed, accept conditionally, or archive the unused AF-CONTEXT/AF-TURN code",
+   "tasks": [
+    "BOPS-0074",
+    "BOPS-0075",
+    "BOPS-0086",
+    "BOPS-0087"
+   ],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "keep Proposed (a)",
+   "status": "PENDING"
+  },
+  {
+   "id": "D2",
+   "title": "Reference local model and timeout defaults",
+   "tasks": [
+    "BOPS-0114"
+   ],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "defer to LIVE-GATE-01 (c)",
+   "status": "PENDING"
+  },
+  {
+   "id": "D3",
+   "title": "Distributed Agent:MaxObservationCharacters (4000 vs validated 24000)",
+   "tasks": [
+    "BOPS-0095",
+    "BOPS-0114"
+   ],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "measure in LIVE-GATE-01, then decide (c)",
+   "status": "PENDING"
+  },
+  {
+   "id": "D4",
+   "title": "ADR-0050 is Proposed but implemented: accept formally with a D-number?",
+   "tasks": [],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "accept after review (a)",
+   "status": "PENDING"
+  },
+  {
+   "id": "D5",
+   "title": "ADR-0055/0056/0058/0059 and D-050 (Knowledge) formal status",
+   "tasks": [
+    "BOPS-0088",
+    "BOPS-0089",
+    "BOPS-0093",
+    "BOPS-0094"
+   ],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "leave Proposed until KNOW-VALUE-01 (b)",
+   "status": "PENDING"
+  },
+  {
+   "id": "D6",
+   "title": "Authorize live campaigns for LIVE-GATE-01 (budget, model)",
+   "tasks": [
+    "BOPS-0114"
+   ],
+   "source": "roadmap-reconciliation-01 section 7",
+   "recommendation": "yes, after DIAG-ASSURE-01",
+   "status": "PENDING"
+  },
+  {
+   "id": "D7",
+   "title": "Active milestone: V1.3 (stable gate open, per consolidated roadmap) or DIAG-QUALITY focus",
+   "tasks": [
+    "BOPS-0061",
+    "BOPS-0111"
+   ],
+   "source": "PROJECT-GOVERNANCE-01",
+   "recommendation": "keep V1.3 as the formal milestone; authorize DIAG-ASSURE-01 as next task",
+   "status": "PENDING"
+  },
+  {
+   "id": "D8",
+   "title": "Stable V1.3 gate: reconcile the pre-release stabilization packet (merged PRs, no recorded gate closure) and the F-25 validation record",
+   "tasks": [
+    "BOPS-0061",
+    "BOPS-0062"
+   ],
+   "source": "PROJECT-GOVERNANCE-01",
+   "recommendation": "operator review of PRE-1..PRE-8",
+   "status": "PENDING"
+  },
+  {
+   "id": "D9",
+   "title": "Approve and freeze the retroactive BOPS-0001..BOPS-0119 mapping",
+   "tasks": [
+    "BOPS-0118"
+   ],
+   "source": "PROJECT-GOVERNANCE-01",
+   "recommendation": "approve",
+   "status": "PENDING"
+  },
+  {
+   "id": "D10",
+   "title": "Authorize drafting of the DIAG-ASSURE-01 task packet and, later, its implementation",
+   "tasks": [
+    "BOPS-0111"
+   ],
+   "source": "roadmap-reconciliation-01 section 6",
+   "recommendation": "authorize packet drafting",
+   "status": "PENDING"
+  },
+  {
+   "id": "D11",
+   "title": "Project #6 visibility",
+   "tasks": [
+    "BOPS-0118"
+   ],
+   "source": "PROJECT-GOVERNANCE-01",
+   "recommendation": "keep private until the board is populated",
+   "status": "RESOLVED",
+   "resolution": "PRIVATE, approved by the operator on 2026-10-21"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "BOPS-0001",
+   "legacy_id": "RELEASE-V1.0-GATE",
+   "title": "Formal V1.0 release gate",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-release-v1.0-formal-gate.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.0",
+   "area": "Release",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-release-v1.0-formal-gate.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    1,
+    2
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tag v1.1.0-preview.2 (c81ffab), release workflow run 35383901325"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0002",
+   "legacy_id": "TOPOLOGY-BOOTSTRAP",
+   "title": "Repository topology bootstrap",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-repository-topology-bootstrap.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.0",
+   "area": "Documentation",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-repository-topology-bootstrap.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    4,
+    5
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0003",
+   "legacy_id": "V1.1-A",
+   "title": "V1.1-A Skill SDK completion",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-a-skill-sdk-completion.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-a-skill-sdk-completion.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0004",
+   "legacy_id": "V1.1-B",
+   "title": "V1.1-B System inventory",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0005",
+   "legacy_id": "V1.1-C",
+   "title": "V1.1-C Filesystem inventory",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-c-filesystem-inventory.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-c-filesystem-inventory.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0006",
+   "legacy_id": "V1.1-D",
+   "title": "V1.1-D Governed recursive delete",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-d-governed-recursive-delete.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-d-governed-recursive-delete.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0007",
+   "legacy_id": "V1.1-E",
+   "title": "V1.1-E Web capabilities",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-e-web-capabilities.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-e-web-capabilities.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0008",
+   "legacy_id": "V1.1-F",
+   "title": "V1.1-F Plugin catalog UI",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-f-plugin-catalog-ui.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-f-plugin-catalog-ui.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0009",
+   "legacy_id": "V1.1-G",
+   "title": "V1.1-G Secure settings",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0010",
+   "legacy_id": "V1.1-H",
+   "title": "V1.1-H Integration and release",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.1-h-integration-release.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.1",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.1-h-integration-release.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Complete; V1.1-H gate green on Windows/Linux CI (runs 35365098294, 35372748588)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0011",
+   "legacy_id": "V1.2",
+   "title": "V1.2 multi-agent orchestration (umbrella)",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.2-multi-agent.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.2-multi-agent.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tag v1.2.0-preview.8 (5cd9046), release workflow run 35516050493"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0012",
+   "legacy_id": "V1.3-M",
+   "title": "V1.3-M OSS entitlement and plugin lifecycle",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.3",
+   "area": "Security",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-m-execution-packets.md",
+    "agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md"
+   ],
+   "prs": [
+    50
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0013",
+   "legacy_id": "V1.4",
+   "title": "V1.4 node and Control Plane protocol",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V1.4",
+   "area": "Runtime",
+   "status": "PLANNED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0061"
+   ],
+   "packet": "agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Future; explicit operator authorization required before starting.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0014",
+   "legacy_id": "V2.0",
+   "title": "V2.0 OSS GA readiness",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-v2.0-oss-ga-readiness.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "V2.0",
+   "area": "Release",
+   "status": "PLANNED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0013"
+   ],
+   "packet": "agentic/_tasks/2026-09-16-v2.0-oss-ga-readiness.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0015",
+   "legacy_id": "POST-V2.0-README",
+   "title": "Post-V2.0 bilingual README",
+   "created": {
+    "at": "2026-09-16T21:09:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-16-post-v2.0-bilingual-readme.md",
+    "order_certainty": "conventional",
+    "commit": "00730c356343a7e7faed951f783819ea3f417334"
+   },
+   "milestone": "POST-V2.0",
+   "area": "Documentation",
+   "status": "PLANNED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0014"
+   ],
+   "packet": "agentic/_tasks/2026-09-16-post-v2.0-bilingual-readme.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0016",
+   "legacy_id": "TASK-HISTORY-VIEW",
+   "title": "Agent task history view in the local UI",
+   "created": {
+    "at": "2026-09-17T21:42:51+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-17-agent-task-history-view.md",
+    "order_certainty": "verified",
+    "commit": "410855f3ea26c971d1704f2de27c505f8a067daa"
+   },
+   "milestone": "V1.1",
+   "area": "UI",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-17-agent-task-history-view.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0017",
+   "legacy_id": "V1.2-A",
+   "title": "V1.2-A ADR and plan",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-a-adr-and-plan.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-a-adr-and-plan.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    6
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0018",
+   "legacy_id": "V1.2-B",
+   "title": "V1.2-B Contracts",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-b-contracts.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-b-contracts.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    7
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0019",
+   "legacy_id": "V1.2-C",
+   "title": "V1.2-C Authority reduction",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    9,
+    10,
+    11
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0020",
+   "legacy_id": "V1.2-D",
+   "title": "V1.2-D Orchestrator and roles",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-d-orchestrator-and-roles.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-d-orchestrator-and-roles.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    13
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0021",
+   "legacy_id": "V1.2-E",
+   "title": "V1.2-E Budgets, deadlines and cancellation",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-e-budgets-deadlines-cancellation.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-e-budgets-deadlines-cancellation.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    15
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0022",
+   "legacy_id": "V1.2-F",
+   "title": "V1.2-F Durable state and resume",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-f-durable-state-and-resume.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-f-durable-state-and-resume.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    16
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0023",
+   "legacy_id": "V1.2-G",
+   "title": "V1.2-G Independent verification",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    17
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0024",
+   "legacy_id": "V1.2-H",
+   "title": "V1.2-H Audit correlation",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-h-audit-correlation.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-h-audit-correlation.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    18
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0025",
+   "legacy_id": "V1.2-I",
+   "title": "V1.2-I CLI",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-i-cli.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-i-cli.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    19
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0026",
+   "legacy_id": "V1.2-J",
+   "title": "V1.2-J API",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-j-api.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-j-api.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    20
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0027",
+   "legacy_id": "V1.2-K",
+   "title": "V1.2-K UI",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-k-ui.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "UI",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-k-ui.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    21
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0028",
+   "legacy_id": "V1.2-L",
+   "title": "V1.2-L Documentation",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-l-documentation.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Documentation",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-l-documentation.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    22
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0029",
+   "legacy_id": "V1.2-M",
+   "title": "V1.2-M Integration and release gate",
+   "created": {
+    "at": "2026-09-18T22:50:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-18-v1.2-m-integration-release.md",
+    "order_certainty": "conventional",
+    "commit": "a625039efda34f7903dae8033d511b27288556a1"
+   },
+   "milestone": "V1.2",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-18-v1.2-m-integration-release.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    23
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0030",
+   "legacy_id": "UI-I18N",
+   "title": "Multilingual UI (Italian and English)",
+   "created": {
+    "at": "2026-09-19T22:43:25+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md",
+    "order_certainty": "verified",
+    "commit": "f59cb4d2c186fcaff6c366f703d5b70e2f9b52ff"
+   },
+   "milestone": "V1.2",
+   "area": "UI",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    25
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0031",
+   "legacy_id": "V1.3-A",
+   "title": "V1.3-A System events",
+   "created": {
+    "at": "2026-09-21T19:52:37+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-a-system-events.md",
+    "order_certainty": "conventional",
+    "commit": "2249fbdd25e76e722ac36d6c7494a8dfd36061b6"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-a-system-events.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    32
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0032",
+   "legacy_id": "V1.3-B",
+   "title": "V1.3-B Docker management",
+   "created": {
+    "at": "2026-09-21T19:52:37+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-b-docker-management.md",
+    "order_certainty": "conventional",
+    "commit": "2249fbdd25e76e722ac36d6c7494a8dfd36061b6"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-b-docker-management.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    33
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0033",
+   "legacy_id": "V1.3-C",
+   "title": "V1.3-C Process diagnostics",
+   "created": {
+    "at": "2026-09-21T20:43:00+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-c-process-diagnostics.md",
+    "order_certainty": "verified",
+    "commit": "caa0f08e89f4d691ce50ebdf483d425436cf248c"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-c-process-diagnostics.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    35
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0034",
+   "legacy_id": "V1.3-D",
+   "title": "V1.3-D Network diagnostics",
+   "created": {
+    "at": "2026-09-21T20:43:02+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-d-network-diagnostics.md",
+    "order_certainty": "verified",
+    "commit": "d5e3bebe3151dc4c2ec87e315d93be45491ea877"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-d-network-diagnostics.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    36
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0035",
+   "legacy_id": "V1.3-E",
+   "title": "V1.3-E Storage diagnostics",
+   "created": {
+    "at": "2026-09-21T20:43:04+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md",
+    "order_certainty": "verified",
+    "commit": "f36ef7990d55f222cf68359b9ee0fb433e6e09d4"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    37
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0036",
+   "legacy_id": "V1.3-F",
+   "title": "V1.3-F Filesystem troubleshooting",
+   "created": {
+    "at": "2026-09-21T20:43:07+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+    "order_certainty": "verified",
+    "commit": "a2debf7c8ffef519f219eca7b61a65e20c5a43e6"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    38
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0037",
+   "legacy_id": "V1.3-G",
+   "title": "V1.3-G Service and scheduler",
+   "created": {
+    "at": "2026-09-21T20:43:51+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md",
+    "order_certainty": "verified",
+    "commit": "eed49153ecebe0a1149d024c2b9601aa0c7bce94"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-g-execution-packets.md"
+   ],
+   "prs": [
+    40
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0038",
+   "legacy_id": "V1.3-H",
+   "title": "V1.3-H Identity, time and reboot",
+   "created": {
+    "at": "2026-09-21T20:43:55+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md",
+    "order_certainty": "verified",
+    "commit": "fffb6b72b0758f6d2da5ab113af7fa470a3f59ba"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-h-execution-packets.md",
+    "agentic/_tasks/2026-09-23-v1.3-h-hardening-review.md"
+   ],
+   "prs": [
+    42
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0039",
+   "legacy_id": "V1.3-I",
+   "title": "V1.3-I Firewall diagnostics",
+   "created": {
+    "at": "2026-09-21T20:43:57+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md",
+    "order_certainty": "verified",
+    "commit": "4ec10ade73dec4625fbf199e87c1a5357f7be93c"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-i-execution-packets.md"
+   ],
+   "prs": [
+    43
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0040",
+   "legacy_id": "V1.3-J",
+   "title": "V1.3-J TLS and certificates",
+   "created": {
+    "at": "2026-09-21T20:43:59+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md",
+    "order_certainty": "verified",
+    "commit": "c857e768c18e9e8a66208144d46fca2040f77267"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-j-execution-packets.md"
+   ],
+   "prs": [
+    44
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0041",
+   "legacy_id": "V1.3-K",
+   "title": "V1.3-K OS maintenance, crashes and drivers",
+   "created": {
+    "at": "2026-09-21T20:44:28+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md",
+    "order_certainty": "verified",
+    "commit": "6d56f419da5779c1ba586d53f30a1d2eb517bc2c"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-k-execution-packets.md"
+   ],
+   "prs": [
+    45
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0042",
+   "legacy_id": "V1.3-L",
+   "title": "V1.3-L Ops diagnostic integration gate",
+   "created": {
+    "at": "2026-09-21T20:44:30+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md",
+    "order_certainty": "verified",
+    "commit": "06aa914405027fe77c5e12d8aa36f967938079e0"
+   },
+   "milestone": "V1.3",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-09-22-v1.3-l-execution-packets.md"
+   ],
+   "prs": [
+    47
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0043",
+   "legacy_id": "HARDEN-1",
+   "title": "HARDEN-1 Provider wire contract",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-01-provider-wire-contract.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Providers",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-01-provider-wire-contract.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0044",
+   "legacy_id": "HARDEN-2",
+   "title": "HARDEN-2 Model-call failure containment",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-02-model-failure-containment.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-02-model-failure-containment.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0045",
+   "legacy_id": "HARDEN-3",
+   "title": "HARDEN-3 Resume state machine",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-03-resume-state-machine.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-03-resume-state-machine.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0046",
+   "legacy_id": "HARDEN-4",
+   "title": "HARDEN-4 Task lifecycle UI",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "UI",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0047",
+   "legacy_id": "HARDEN-5",
+   "title": "HARDEN-5 storage.health fix",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-05-storage-health.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-05-storage-health.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    61
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0048",
+   "legacy_id": "HARDEN-6",
+   "title": "HARDEN-6 Tool contract constraints",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-06-tool-contract-constraints.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-06-tool-contract-constraints.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    62
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0049",
+   "legacy_id": "HARDEN-7",
+   "title": "HARDEN-7 Windows stability evidence",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    72
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0050",
+   "legacy_id": "HARDEN-8",
+   "title": "HARDEN-8 Context and budget economy",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    75
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0051",
+   "legacy_id": "HARDEN-9",
+   "title": "HARDEN-9 Evidence reasoning",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    74
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0052",
+   "legacy_id": "HARDEN-10",
+   "title": "HARDEN-10 Browser session",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    76
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0053",
+   "legacy_id": "HARDEN-11",
+   "title": "HARDEN-11 Delegation operability",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    77
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0054",
+   "legacy_id": "HARDEN-12",
+   "title": "HARDEN-12 UI layout and localization",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "UI",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    79
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0055",
+   "legacy_id": "HARDEN-13",
+   "title": "HARDEN-13 Provider defaults and fallback",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Providers",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    83
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0056",
+   "legacy_id": "HARDEN-14",
+   "title": "HARDEN-14 End-to-end composition gate",
+   "created": {
+    "at": "2026-09-30T09:21:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-09-25-v1.3x-harden-14-e2e-composition-gate.md",
+    "order_certainty": "conventional",
+    "commit": "c3ccba074b6db5cc6cd9f6b19804411aad40cb98"
+   },
+   "milestone": "V1.3.x",
+   "area": "Quality",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-09-25-v1.3x-harden-14-e2e-composition-gate.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    85
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: Completed (reliability hardening train closed)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0057",
+   "legacy_id": "RUNTIME-STEP-ROUTING",
+   "title": "Step-scoped tool routing and transactional replanning (ADR-0046)",
+   "created": {
+    "at": "2026-10-07T17:29:27+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-07-runtime-step-routing-replan-safety.md",
+    "order_certainty": "verified",
+    "commit": "b4819c337bd8eb06299079925df4e9269f9ee56b"
+   },
+   "milestone": "V1.3.y",
+   "area": "Runtime",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-07-runtime-step-routing-replan-safety.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    88
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0058",
+   "legacy_id": "V1.3Y-WEB-EVIDENCE",
+   "title": "V1.3.y web-tool and evidence-read operability",
+   "created": {
+    "at": "2026-10-07T21:37:20+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-07-v1.3y-web-evidence-operability.md",
+    "order_certainty": "verified",
+    "commit": "6bdbbc528c69cf090b73b6bcafbb95ac2fde807a"
+   },
+   "milestone": "V1.3.y",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-07-v1.3y-web-evidence-operability.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    89
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Packet header still says 'implemented locally'; PR #89 is merged (stale packet text).",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0059",
+   "legacy_id": "V1.3Z-PREREQ-READINESS",
+   "title": "V1.3.z prerequisite readiness and system messages (ADR-0049)",
+   "created": {
+    "at": "2026-10-08T07:53:54Z",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-08-v1.3z-prerequisite-readiness-system-messages.md",
+    "order_certainty": "verified",
+    "commit": "b1a909a8da86f56ac5a043ff58a37d2bb3eef05d"
+   },
+   "milestone": "V1.3.y",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-08-v1.3z-prerequisite-readiness-system-messages.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    92
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tasks README: live Windows missing->Available recovery verified"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0060",
+   "legacy_id": "V1.3Z-KERNEL-DUMP",
+   "title": "V1.3.z Windows kernel dump analysis (ADR-0048)",
+   "created": {
+    "at": "2026-10-08T12:54:10+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-08-v1.3z-windows-kernel-dump-analysis.md",
+    "order_certainty": "verified",
+    "commit": "6b7379e2587540c8a7db018a96225d9ca0b13467"
+   },
+   "milestone": "V1.3.y",
+   "area": "Tools",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-08-v1.3z-windows-kernel-dump-analysis.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    91,
+    94
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "timeout defect found in the first real run was addressed by the bounded per-tool timeout (PR #94)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0061",
+   "legacy_id": "V1.3-PRE-STABILIZATION",
+   "title": "V1.3 pre-release stabilization and stable-release gate",
+   "created": {
+    "at": "2026-10-08T21:28:41+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md",
+    "order_certainty": "verified",
+    "commit": "1baf7923fb62e1353746721589789c41c66a0164"
+   },
+   "milestone": "V1.3",
+   "area": "Quality",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    90,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Stable V1.3 gate closure (PRE-1..PRE-8) is not recorded anywhere; packet header still says 'Planned'. Operator reconciliation needed."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Implementation PRs #94-#99 are merged; no stable V1.3 tag exists.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0062",
+   "legacy_id": "F-25",
+   "title": "F-25 Durable mutation intent journal for ordinary tasks (ADR-0051)",
+   "created": {
+    "at": "2026-10-09T23:45:11+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md",
+    "order_certainty": "verified",
+    "commit": "107f6673cb8090b649e879f1f793fa48cd8afa6f"
+   },
+   "milestone": "V1.3",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0061"
+   ],
+   "packet": "agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    99
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Manual mutation session M1-M24 recorded as 'to be registered'; final local long-run validation inconclusive (HANDOFF 2026-10-10)."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0063",
+   "legacy_id": "AF-01",
+   "title": "AF-01 MAF foundation and governed inference",
+   "created": {
+    "at": "2026-10-10T18:43:22+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-10-af-01-maf-foundation-governed-inference.md",
+    "order_certainty": "verified",
+    "commit": "b1aeedbc9ec69d15eab8c675c901b6753ef867e5"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-10-af-01-maf-foundation-governed-inference.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0064",
+   "legacy_id": "AF-02",
+   "title": "AF-02 MAF context mapping and compaction",
+   "created": {
+    "at": "2026-10-10T18:43:24+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-10-af-02-maf-context-compaction.md",
+    "order_certainty": "verified",
+    "commit": "f34d56913313f26dec44fc3b325c398636e5edc2"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0063"
+   ],
+   "packet": "agentic/_tasks/2026-10-10-af-02-maf-context-compaction.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Benefit of compaction never isolated (reconciliation 2026-10-21).",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0065",
+   "legacy_id": "AF-03",
+   "title": "AF-03 Governed MAF summarization",
+   "created": {
+    "at": "2026-10-10T18:43:26+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-10-af-03-governed-summarization.md",
+    "order_certainty": "verified",
+    "commit": "e96a4a983e6e40fe310e829c6cceb75fe52d7f32"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0064"
+   ],
+   "packet": "agentic/_tasks/2026-10-10-af-03-governed-summarization.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "No benefit measurement; composed only when configured.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0066",
+   "legacy_id": "AF-04",
+   "title": "AF-04 Evidence cleanup and high-density facts",
+   "created": {
+    "at": "2026-10-10T18:43:29+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-10-af-04-evidence-cleanup.md",
+    "order_certainty": "verified",
+    "commit": "273bad9ff156926234920614c5a6752642124862"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0064"
+   ],
+   "packet": "agentic/_tasks/2026-10-10-af-04-evidence-cleanup.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0067",
+   "legacy_id": "AF-05",
+   "title": "AF-05 MAF regression, tuning and legacy cleanup",
+   "created": {
+    "at": "2026-10-10T18:43:31+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md",
+    "order_certainty": "verified",
+    "commit": "78715c847bb9ed732d1c48833e56f003400192d3"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0063",
+    "BOPS-0064",
+    "BOPS-0065",
+    "BOPS-0066"
+   ],
+   "packet": "agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md",
+   "spec": null,
+   "companion_docs": [
+    "agentic/_tasks/2026-10-11-af-05-benchmark-results.md"
+   ],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Live-provider evaluation for this gate never completed (benchmark results are deterministic-fixture class)."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0068",
+   "legacy_id": "AF-05G",
+   "title": "AF-05G Evidence addressability and grounding diversity",
+   "created": {
+    "at": "2026-10-11T18:40:48+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 82ee930",
+    "order_certainty": "verified",
+    "commit": "82ee930b534d2a27be0181041d1499c64edcafb4"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    100
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Claim-verification objective not met: grounding is the same LLM over <=12 typed facts of 5 tool families (see DIAG-CLAIMS-01)."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0069",
+   "legacy_id": "AF-05H",
+   "title": "AF-05H Live regression hardening (H2 premature-final replan, H4 deterministic disclosure)",
+   "created": {
+    "at": "2026-10-11T22:03:48+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md",
+    "order_certainty": "conventional",
+    "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0067"
+   ],
+   "packet": "agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    101,
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Live evidence partial; premature final (R3) reappeared once in PROMPT-ROUTING-VALIDATION-01."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0070",
+   "legacy_id": "AF-05H1",
+   "title": "AF-05H1 Context operating range",
+   "created": {
+    "at": "2026-10-11T22:03:48+02:00",
+    "basis": "packet-subitem",
+    "source": "git log first mention/introduction: 474c1cb",
+    "order_certainty": "conventional",
+    "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "SUPERSEDED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Left out of main by operator decision; backup tags retained.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0071",
+   "legacy_id": "AF-05H3",
+   "title": "AF-05H3 Correction conflict handling",
+   "created": {
+    "at": "2026-10-11T22:03:48+02:00",
+    "basis": "packet-subitem",
+    "source": "git log first mention/introduction: 474c1cb",
+    "order_certainty": "conventional",
+    "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "SUPERSEDED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Left out of main by operator decision; backup tags retained.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0072",
+   "legacy_id": "AF-05H5",
+   "title": "AF-05H5 Evidence-read guidance",
+   "created": {
+    "at": "2026-10-11T22:03:48+02:00",
+    "basis": "packet-subitem",
+    "source": "git log first mention/introduction: 474c1cb",
+    "order_certainty": "conventional",
+    "commit": "474c1cb9f4a3d44e194d242175d4099c5cdbd8ff"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0080"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "AF-EVID-01 measured and evidence of benefit.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0073",
+   "legacy_id": "BENCH-00",
+   "title": "BENCH-00 Automatic full-fidelity live capture",
+   "created": {
+    "at": "2026-10-11T22:16:06+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-11-bench-00-automatic-full-fidelity.md",
+    "order_certainty": "conventional",
+    "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
+   },
+   "milestone": "BENCH",
+   "area": "Quality",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-11-bench-00-automatic-full-fidelity.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    102
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Official 3x3 never executed; reconciliation proposes the gate as designed is obsolete (both variants now in main). Operator closure needed."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0074",
+   "legacy_id": "ARCH-01",
+   "title": "ARCH-01 MAF convergence ownership matrix (ADR-0053)",
+   "created": {
+    "at": "2026-10-11T22:16:06+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 07e422a",
+    "order_certainty": "conventional",
+    "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "BLOCKED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    104,
+    105
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": "ADR-0053 is Proposed; formal decision pending (D1).",
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0075",
+   "legacy_id": "ARCH-03",
+   "title": "ARCH-03 MAF B+ convergence decision (ADR-0054)",
+   "created": {
+    "at": "2026-10-11T22:16:06+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 07e422a",
+    "order_certainty": "conventional",
+    "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "BLOCKED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0074"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    105
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": "ADR-0054 is Proposed; formal decision pending (D1).",
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0076",
+   "legacy_id": "KNOW-02",
+   "title": "KNOW-02 Diagnostic playbooks and Experience Packs",
+   "created": {
+    "at": "2026-10-11T22:16:06+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 07e422a",
+    "order_certainty": "conventional",
+    "commit": "07e422a4c9c65bd617cafaf209d2352657f1c130"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0116"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "KNOW-VALUE-01 shows a measured diagnostic benefit of Knowledge.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0077",
+   "legacy_id": "AF-05H2-R1",
+   "title": "AF-05H2-R1 Bounded malformed early-final replan recovery",
+   "created": {
+    "at": "2026-10-12T02:03:13+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md",
+    "order_certainty": "conventional",
+    "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0069"
+   ],
+   "packet": "agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Live validation partial; BENCH-01 (1x3 targeted) never run."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0078",
+   "legacy_id": "AF-05H2-REPLAN-TRUNCATION",
+   "title": "AF-05H2 Replan truncation recovery",
+   "created": {
+    "at": "2026-10-12T02:03:13+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-af-05h2-replan-truncation-recovery.md",
+    "order_certainty": "conventional",
+    "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0069"
+   ],
+   "packet": "agentic/_tasks/2026-10-12-af-05h2-replan-truncation-recovery.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Live validation partial."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0079",
+   "legacy_id": "BENCH-01",
+   "title": "BENCH-01 Targeted 1x3 live benchmark",
+   "created": {
+    "at": "2026-10-12T02:03:13+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 3d2afb7",
+    "order_certainty": "conventional",
+    "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
+   },
+   "milestone": "BENCH",
+   "area": "Quality",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0114"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "Live authorization (D6); may be absorbed by LIVE-GATE-01.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0080",
+   "legacy_id": "AF-EVID-01",
+   "title": "AF-EVID-01 Evidence-read duplicates and index visibility",
+   "created": {
+    "at": "2026-10-12T02:03:13+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 3d2afb7",
+    "order_certainty": "conventional",
+    "commit": "3d2afb7fdddd5b06347ed0dc0722877230006789"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "PLANNED",
+   "priority": "P2",
+   "effort": "1.5-2.5 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0111"
+   ],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#5",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0081",
+   "legacy_id": "AF-05H2-R2",
+   "title": "AF-05H2-R2 Corrected validation failures in early-final recovery",
+   "created": {
+    "at": "2026-10-12T10:34:04+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md",
+    "order_certainty": "verified",
+    "commit": "2dbb7b306cafc926503f6022c76b8d16abde293f"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0077"
+   ],
+   "packet": "agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Cursor 1 of the earlier live failure not revalidated."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0082",
+   "legacy_id": "AF-PLAN-01",
+   "title": "AF-PLAN-01 Planning robustness",
+   "created": {
+    "at": "2026-10-12T12:10:00+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md",
+    "order_certainty": "verified",
+    "commit": "12922661865796efb4cb3bc61b8679f8cab6a2e9"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Replay evidence n<=3 per campaign; no live tool run."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0083",
+   "legacy_id": "AF-TOOLROUTE-01",
+   "title": "AF-TOOLROUTE-01 Tool routing coherence",
+   "created": {
+    "at": "2026-10-12T15:29:08+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md",
+    "order_certainty": "verified",
+    "commit": "7b01d69ea2285ffa00579ca49fc7227c9adec3bb"
+   },
+   "milestone": "MAF",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Replay evidence n<=3 per campaign; no live tool run."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0084",
+   "legacy_id": "BENCH-MATRIX-02",
+   "title": "BENCH-MATRIX-02 Benchmark matrix",
+   "created": {
+    "at": "2026-10-12T15:53:06+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: c16d97d",
+    "order_certainty": "verified",
+    "commit": "c16d97d0cd2f8146636b9a10be2f46e56e2da7b9"
+   },
+   "milestone": "BENCH",
+   "area": "Quality",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "Redesign on the current main after LIVE-GATE-01.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0085",
+   "legacy_id": "ARCH-02",
+   "title": "ARCH-02 MAF parity spike (synthetic, offline)",
+   "created": {
+    "at": "2026-10-12T17:18:58+02:00",
+    "basis": "packet-first-add",
+    "source": "agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md",
+    "order_certainty": "verified",
+    "commit": "e7ffab6ed3d4e2b1ea43672fe6959afd27f1ee92"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Spike code lives only in local tags/branches archive/arch-02{a,r,s}-spike; reports under docs/architecture/arch-02*.md.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0086",
+   "legacy_id": "AF-CONTEXT-01",
+   "title": "AF-CONTEXT-01 Context origin, ContextGate and provenance",
+   "created": {
+    "at": "2026-10-12T20:31:30+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: fd91279",
+    "order_certainty": "conventional",
+    "commit": "fd91279e3fe2404f4659bb94e77c6c2e9d20e945"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "ADR-0054 accepted (D1) and a measured defect that requires hosting the turn in MAF.",
+   "note": "Implemented and tested, composed in no host.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0087",
+   "legacy_id": "AF-TURN-01",
+   "title": "AF-TURN-01A/B MafGovernedTurnBroker and BopsContextProvider",
+   "created": {
+    "at": "2026-10-12T20:31:30+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: fd91279",
+    "order_certainty": "conventional",
+    "commit": "fd91279e3fe2404f4659bb94e77c6c2e9d20e945"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0086"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "Same condition as AF-CONTEXT-01.",
+   "note": "Constructed only in tests.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0088",
+   "legacy_id": "KNOW-01A",
+   "title": "KNOW-01A Trusted knowledge packs, verifier, trust and admission (ADR-0055)",
+   "created": {
+    "at": "2026-10-12T22:41:05+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: ff64ef7",
+    "order_certainty": "conventional",
+    "commit": "ff64ef7d4376bbb2d398006de9aa6ada56c3d81f"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "ADR-0055 Proposed; no live validation; no measured benefit."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0089",
+   "legacy_id": "KNOW-01B",
+   "title": "KNOW-01B Governed runtime.knowledge_read (ADR-0056)",
+   "created": {
+    "at": "2026-10-12T22:41:05+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: ff64ef7",
+    "order_certainty": "conventional",
+    "commit": "ff64ef7d4376bbb2d398006de9aa6ada56c3d81f"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0088"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "ADR-0056 Proposed; no live validation."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0090",
+   "legacy_id": "KNOW-BENCH",
+   "title": "KNOW-BENCH A/B/C harness and measurement",
+   "created": {
+    "at": "2026-10-13T01:46:46+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 9248272",
+    "order_certainty": "verified",
+    "commit": "924827218dfc9b020003d5863a16170ab1e5f4c0"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Quality",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "No A/B/C result ever produced; the only attempt ran on a commit without the index."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0091",
+   "legacy_id": "KNOW-DISC-01",
+   "title": "KNOW-DISC-01 Knowledge discovery index M1 (ADR-0057)",
+   "created": {
+    "at": "2026-10-14T11:54:11+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: d3da032",
+    "order_certainty": "verified",
+    "commit": "d3da032548199ca6a61b7a0cbad9cdd4c2eebdbd"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0089"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "B1 (grant/key revocation during a task) open; B2 (consecutive user messages on the real server) unverified."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0092",
+   "legacy_id": "KNOW-DISC-01-NEXT",
+   "title": "KNOW-DISC B1/B2 closure and M2 (manifest v2) / M3 (measurement)",
+   "created": {
+    "at": "2026-10-14T13:04:20+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: a7709d5",
+    "order_certainty": "verified",
+    "commit": "a7709d597a7f593d992f4471c805f22b878720af"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "PLANNED",
+   "priority": "P2",
+   "effort": "3-5 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0116"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0093",
+   "legacy_id": "KNOW-LOCAL-AGENT-PILOT",
+   "title": "Local Agent CLI knowledge pilot (ADR-0058, D-050)",
+   "created": {
+    "at": "2026-10-17T07:40:22+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: cf82502",
+    "order_certainty": "verified",
+    "commit": "cf825028b0fcd70146b8148cf4ed1812a1e8b8ea"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0091"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "ADR-0058 and D-050 Proposed; operator acceptance and live validation missing."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0094",
+   "legacy_id": "KNOW-REFUSAL-RECOVERY",
+   "title": "Knowledge refusal recovery (ADR-0059)",
+   "created": {
+    "at": "2026-10-17T09:11:33+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: e46ac4d",
+    "order_certainty": "verified",
+    "commit": "e46ac4d5269a17203f0bfb4d1ee6607080cbe347"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Knowledge",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0093"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    106
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "ADR-0059 Proposed."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0095",
+   "legacy_id": "LIVE-01",
+   "title": "LIVE-01 Truncated observation evidence and distributed MaxObservationCharacters",
+   "created": {
+    "at": "2026-10-17T22:11:51+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 70561e3",
+    "order_certainty": "conventional",
+    "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "BLOCKED",
+   "priority": "P1",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "REPLAY_REAL_MODEL"
+    ],
+    "required": [
+     "REPLAY_REAL_MODEL"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": "Distributed default (4000) differs from every validated campaign (24000); decision D3 pending, measurement in LIVE-GATE-01.",
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0096",
+   "legacy_id": "LIVE-01B",
+   "title": "LIVE-01B Planner-facing tool-parameter guidance (ADR-0060)",
+   "created": {
+    "at": "2026-10-17T22:11:51+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 70561e3",
+    "order_certainty": "conventional",
+    "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "General effectiveness on the planner not shown."
+    ]
+   },
+   "evidence": [
+    "ADR-0060 Accepted by operator 2026-10-17"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0097",
+   "legacy_id": "TOOL-CONTRACT-RESIDUALS",
+   "title": "TOOL-CONTRACT residual findings P1-P16",
+   "created": {
+    "at": "2026-10-17T22:11:51+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 70561e3",
+    "order_certainty": "conventional",
+    "commit": "70561e384c508db084e2f5e48f714d0d7c89e233"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "PLANNED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": false,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Handle per risk, not in bulk.",
+   "issue": null,
+   "project_item": null,
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0098",
+   "legacy_id": "LIVE-04A",
+   "title": "LIVE-04A sampleMessageSemantics in system.events aggregates",
+   "created": {
+    "at": "2026-10-17T22:11:57+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 129b23c",
+    "order_certainty": "conventional",
+    "commit": "129b23cd12c2cbc9b3d71c0ed24928ae5566b22b"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Only one live case (WHEA in T02)."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0099",
+   "legacy_id": "LIVE-05",
+   "title": "LIVE-05 Runtime-authored continuation turn after a rejected final",
+   "created": {
+    "at": "2026-10-17T22:11:57+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: e148568",
+    "order_certainty": "conventional",
+    "commit": "e148568a2e8b05a54b7a126aa85a762c0037e329"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Cursor 1 of the original failure not directly revalidated; reasoning exhaustion in Replanning not declared solved."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0100",
+   "legacy_id": "LIVE-04C",
+   "title": "LIVE-04C messageDistribution in system.events aggregates",
+   "created": {
+    "at": "2026-10-17T22:11:58+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: c8258a9",
+    "order_certainty": "verified",
+    "commit": "c8258a9be5f4b01716914760b361405a06b4b270"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "No live proof with the updated aggregate."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0101",
+   "legacy_id": "LIVE-02",
+   "title": "LIVE-02 Degenerate reasoning in bounded correction",
+   "created": {
+    "at": "2026-10-17T22:12:47+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 4589e5a",
+    "order_certainty": "conventional",
+    "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "New evidence (Qwen3.8 shows 0 length stops in 74 requests).",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0102",
+   "legacy_id": "LIVE-03",
+   "title": "LIVE-03 TruncatedBeforeContent task-level recovery",
+   "created": {
+    "at": "2026-10-17T22:12:47+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 4589e5a",
+    "order_certainty": "conventional",
+    "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [
+    "BOPS-0114"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "New evidence from LIVE-GATE-01.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0103",
+   "legacy_id": "LIVE-04B",
+   "title": "LIVE-04B Semantic grounding of message content",
+   "created": {
+    "at": "2026-10-17T22:12:47+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 4589e5a",
+    "order_certainty": "conventional",
+    "commit": "4589e5a45383703626d35bea92cc9ecce3086398"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": "LIVE-GATE-01 evidence.",
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0104",
+   "legacy_id": "SYSTEM-EVENTS-SOURCE-MATCH",
+   "title": "system.events source-filter disclosure (ADR-0061)",
+   "created": {
+    "at": "2026-10-18T19:10:55+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 7053ca0",
+    "order_certainty": "verified",
+    "commit": "7053ca0c8380f258442903360c44ec0fe1789bae"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "No live rerun of T03."
+    ]
+   },
+   "evidence": [
+    "ADR-0061 Accepted by operator 2026-10-18",
+    "WSL run recorded in HANDOFF"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "legacy_id_assigned_at_migration": true,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0105",
+   "legacy_id": "PROMPT-ROUTING-FINALIZATION",
+   "title": "PRA-R2..R5, PRA-P1 prompt routing and finalization",
+   "created": {
+    "at": "2026-10-19T16:44:05+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 2b11068",
+    "order_certainty": "verified",
+    "commit": "2b1106862a0f775c75424364c26ee919f348fac6"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "REPLAY_REAL_MODEL",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "R3 not shown effective; RC1/RC2 live path not exercised."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0106",
+   "legacy_id": "PROMPT-RUNTIME-AUDIT-01",
+   "title": "PROMPT-RUNTIME-AUDIT-01 prompt and runtime audit",
+   "created": {
+    "at": "2026-10-19T16:44:12+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 374f338",
+    "order_certainty": "conventional",
+    "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "audit report is outside the repository (cited via the continuity master); open findings flow into PLAN-FIDELITY-01 and HOST-SATURATION-01"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0107",
+   "legacy_id": "PA-1",
+   "title": "PA-1 request-assembly baseline (12 golden scenarios)",
+   "created": {
+    "at": "2026-10-19T16:44:12+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 374f338",
+    "order_certainty": "conventional",
+    "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tests/bOps.AgentFramework.Tests/Golden/pa1/"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0108",
+   "legacy_id": "AE-1",
+   "title": "AE-1 scripted agentic scenarios (13 cases)",
+   "created": {
+    "at": "2026-10-19T16:44:12+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 374f338",
+    "order_certainty": "conventional",
+    "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "tests/bOps.AgentFramework.Tests/ScriptedAgentic/AeCases.cs"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0109",
+   "legacy_id": "RELEASE-VALIDATION-01",
+   "title": "RELEASE-VALIDATION-01 diagnostic release validation campaign",
+   "created": {
+    "at": "2026-10-19T16:44:12+02:00",
+    "basis": "first-mention",
+    "source": "git log first mention/introduction: 374f338",
+    "order_certainty": "conventional",
+    "commit": "374f3389fc337d0b69b7b4d26d66bb0cd10778bb"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "LIVE_REAL_TOOLS"
+    ],
+    "required": [
+     "LIVE_REAL_TOOLS"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "report outside the repository; no scenario reached a full diagnostic PASS (reconciliation 4.2)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0110",
+   "legacy_id": "ROADMAP-RECONCILIATION-01",
+   "title": "Roadmap reconciliation report (read-only)",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "GOVERNANCE",
+   "area": "Documentation",
+   "status": "DONE",
+   "priority": null,
+   "effort": null,
+   "authorized": null,
+   "depends_on": [],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS"
+    ],
+    "open_gates": []
+   },
+   "evidence": [
+    "docs/maintenance/roadmap-reconciliation-01.md"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Read-only audit at main 09902a2.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0111",
+   "legacy_id": "DIAG-ASSURE-01",
+   "title": "DIAG-ASSURE-01 Evidence assurance projection",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "READY",
+   "priority": "P0",
+   "effort": "2.5-4 days",
+   "authorized": false,
+   "depends_on": [],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#6",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Proposal only: ready (no open dependency) but NOT authorized. Needs a task packet before work starts.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0112",
+   "legacy_id": "PLAN-FIDELITY-01",
+   "title": "PLAN-FIDELITY-01 Planning and tool-argument fidelity",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Runtime",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "3-4.5 days",
+   "authorized": false,
+   "depends_on": [],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#5",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0113",
+   "legacy_id": "HOST-SATURATION-01",
+   "title": "HOST-SATURATION-01 Typed host-saturation facts",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "4-6 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0111"
+   ],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#5",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0114",
+   "legacy_id": "LIVE-GATE-01",
+   "title": "LIVE-GATE-01 Live campaign with real tools on the distributed configuration",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "1 day dev + machine time",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0111"
+   ],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#5",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Needs operator live authorization (D6).",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0115",
+   "legacy_id": "DIAG-CLAIMS-01",
+   "title": "DIAG-CLAIMS-01 Claim-ledger experiment on persisted finals",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "2-3 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0111",
+    "BOPS-0114"
+   ],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#6",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0116",
+   "legacy_id": "KNOW-VALUE-01",
+   "title": "KNOW-VALUE-01 Minimal A/B/C measurement of Knowledge benefit",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "KNOWLEDGE",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P2",
+   "effort": "2 days + machine time",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0114"
+   ],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#5",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": null,
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0117",
+   "legacy_id": "QUALITY-GATE-DOCS",
+   "title": "Quality-gate tracking beyond V1.3-H",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "docs/maintenance/roadmap-reconciliation-01.md",
+    "order_certainty": "conventional"
+   },
+   "milestone": "GOVERNANCE",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P2",
+   "effort": "1 day",
+   "authorized": false,
+   "depends_on": [],
+   "packet": null,
+   "spec": "docs/maintenance/roadmap-reconciliation-01.md#8",
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "active-milestone.json still points at V1.3-H; left untouched by PROJECT-GOVERNANCE-01.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0118",
+   "legacy_id": "PROJECT-GOVERNANCE-01",
+   "title": "PROJECT-GOVERNANCE-01 Task register, progressive IDs and Kanban governance",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "operator request 2026-10-21",
+    "order_certainty": "conventional"
+   },
+   "milestone": "GOVERNANCE",
+   "area": "Governance",
+   "status": "VALIDATION",
+   "priority": "P0",
+   "effort": null,
+   "authorized": true,
+   "depends_on": [
+    "BOPS-0110"
+   ],
+   "packet": null,
+   "spec": "agentic/_tasks/PROCESS.md",
+   "companion_docs": [],
+   "prs": [
+    108
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "PR #108 review, merge and CI of the merge commit.",
+     "Operator approval to freeze the id mapping (D9).",
+     "Initial Issue/Project population and linking to the register: not done, awaiting operator approval."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "PR #108 open. Project #6 configured (7 Status options, 5 custom fields, 3 views, private); no Issue or item yet; mapping PROVISIONAL.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  },
+  {
+   "id": "BOPS-0119",
+   "legacy_id": "PROJECT-GOVERNANCE-02",
+   "title": "PROJECT-GOVERNANCE-02 Remote sync script and CI hook",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "operator request 2026-10-21",
+    "order_certainty": "conventional"
+   },
+   "milestone": "GOVERNANCE",
+   "area": "Governance",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": null,
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0118"
+   ],
+   "packet": null,
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Idempotent gh-based reconciliation of register <-> Issues <-> Project #6 (dry-run by default); CI wiring of the offline validator is already in PROJECT-GOVERNANCE-01.",
+   "issue": null,
+   "project_item": null,
+   "branch": null
+  }
+ ],
+ "known_divergences": [
+  {
+   "id": "QM-1",
+   "file": "agentic/_quality/active-milestone.json",
+   "json_key": "milestone",
+   "recorded_value": "V1.3-H",
+   "state": "OPEN",
+   "tracked_by": "BOPS-0117",
+   "description": "The file still names V1.3-H as the measured quality baseline although the project has moved on; known-failures.json also lists different Filesystem tests than the former HANDOFF did. Neither file nor any historical quality report/result is altered until BOPS-0117 reconciles them. If the file changes, update this record in the same commit."
+  }
+ ]
+}
