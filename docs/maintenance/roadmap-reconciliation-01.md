@@ -2,7 +2,7 @@
 
 Data: 2026-10-21 · Base: `main` @ `09902a2` (verificato con `git rev-parse`; nessun commit successivo in locale) · Attività di sola lettura: nessun codice, test, ADR, roadmap o configurazione modificati; nessun branch/commit/push/PR; nessuna chiamata LLM; nessun benchmark live. Il file `src/core/bOps.Api/appsettings.json` ha una modifica locale preesistente (tuning timeout) che non è stata toccata.
 
-Convenzioni: **[CODICE]** verificato leggendo il sorgente di `main` in questa sessione · **[TEST]** eseguito in questa sessione · **[DOC]** riportato da documentazione/benchmark, non riverificato · **[MASTER]** riportato da `bOps_Continuita_Master_2026-10-18.md` (Downloads; il report `PROMPT-RUNTIME-AUDIT-01` citato dal master non è stato riaperto).
+Convenzioni: **[CODICE]** verificato leggendo il sorgente di `main` in questa sessione · **[TEST]** eseguito in questa sessione · **[DOC]** riportato da documentazione/benchmark, non riverificato · **[MASTER]** riportato dal documento di continuità privato dell'operatore, non incluso nel repository ( il report `PROMPT-RUNTIME-AUDIT-01` citato dal master non è stato riaperto).
 
 ---
 
@@ -204,7 +204,7 @@ Priorità: **P0** difetto che invalida la fiducia nelle diagnosi o la sicurezza 
 
 **6.6 Componenti e file presumibilmente interessati.** `src/core/bOps.Abstractions/` (nuovi tipi `DiagnosticAssurance`, `AssuranceReason`; campo opzionale in `Audit.cs` ~r.842-870); `src/core/bOps.Runtime/` (nuovo `DiagnosticAssurance.cs`; uso in `AgentRunner.FinishAsync`, `AgentRunner.cs:2730`); `src/core/bOps.Api/Contracts.cs` e il controller dei task; `src/core/bOps.Cli/` (stampa); `src/core/bOps.Audit/AuditJsonContext.cs` (serializzazione); `docs/` (una sezione in `operator-configuration.md` o `system-stability.md`) — nessun nuovo ADR se resta una proiezione di sola lettura; se si aggiunge un campo persistito va valutato l'emendamento ad ADR-0042 (da decidere in fase di revisione).
 
-**6.7 Dipendenze.** Nessuna sul codice. Per la verifica con stati reali servono i `tasks.db` già conservati in `C:\source\repos\babbubba\bOps-backups\` (fuori repo, sensibili: usare copie minimizzate/fixture sintetiche nei test committati).
+**6.7 Dipendenze.** Nessuna sul codice. Per la verifica con stati reali servono i `tasks.db` già conservati fuori dal repository ( sensibili: usare copie minimizzate/fixture sintetiche nei test committati).
 
 **6.8 Invarianti da preservare.** Nessun tool nel core (regola A1): i motivi dipendono da `Completeness`/`FailureKind`/presenza di `EvidenceFact`, mai da nomi di tool o pacchetti. L'output è dato, mai istruzione, e non entra nel contesto del modello. Nessun effetto su policy, approvazione, journal, resume, budget. L'esito non cambia lo `Status` del task. Audit: solo codici e conteggi. Il campo è opzionale: nessun cambio di schema per i consumatori esistenti.
 
@@ -296,4 +296,4 @@ Priorità: **P0** difetto che invalida la fiducia nelle diagnosi o la sicurezza 
 
 ## Appendice B — Non verificato
 
-CI remota (dichiarata verde dall'operatore); suite completa e Linux/WSL; `PROMPT-RUNTIME-AUDIT-01-report.md` e `RELEASE-VALIDATION-01-report.md` (citati tramite il master); artefatti grezzi delle campagne in `bOps-backups`; qualsiasi comportamento live. Le affermazioni segnate [DOC]/[MASTER] ereditano i limiti dei documenti sorgente (revisore singolo, n piccolo, replay). Le stime di effort sono giudizi, non misure.
+CI remota (dichiarata verde dall'operatore); suite completa e Linux/WSL; `PROMPT-RUNTIME-AUDIT-01-report.md` e `RELEASE-VALIDATION-01-report.md` (citati tramite il master); artefatti grezzi delle campagne in la cartella dei backup privati (fuori repo); qualsiasi comportamento live. Le affermazioni segnate [DOC]/[MASTER] ereditano i limiti dei documenti sorgente (revisore singolo, n piccolo, replay). Le stime di effort sono giudizi, non misure.
