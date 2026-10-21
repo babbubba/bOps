@@ -1,7 +1,7 @@
 # Handoff
 
-Last updated: 2026-10-21 · Verified against `main` @ `6677155` (squash merge of PR [#108](https://github.com/babbubba/bOps/pull/108); its CI run 39568937685 was still running when this was written) ·
-working branch `docs/governance-post-merge` (local, not pushed).
+Last updated: 2026-10-21 · Verified against `main` @ `6677155` (squash merge of PR [#108](https://github.com/babbubba/bOps/pull/108); CI green) ·
+working branch `docs/governance-post-merge`, PR [#120](https://github.com/babbubba/bOps/pull/120) open (not merged).
 
 <!-- register-sync:begin -->
 Current task: NO ACTIVE IMPLEMENTATION TASK
@@ -28,12 +28,12 @@ Task state is never copied here; ask the register (`--summary`).
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Active implementation task: **NO ACTIVE IMPLEMENTATION TASK**.
 - In validation (governance): **BOPS-0118 PROJECT-GOVERNANCE-01** — register, validator, process and documents are on `main`;
-  Issue: #109; PR: #108 (merged). Open gates: CI of the merge commit `6677155`; merge of the realignment PR; operator approval to close.
+  Issue: #109; PR: #108 (merged). Open gates: realignment PR [#120](https://github.com/babbubba/bOps/pull/120) (CI green, merge); operator approval to close.
 - Last completed: **BOPS-0110 ROADMAP-RECONCILIATION-01** (2026-10-21, read-only audit).
 
 ## Quality gates (verified 2026-10-21)
 
-- PR #108 CI (run 39564405749, head `bcd2ab3`): all checks passed on Windows and Linux, including the "Task register validation" step. CI of the merge commit `6677155` on `main`: pending.
+- PR #108 CI (run 39564405749, head `bcd2ab3`): all checks passed on Windows and Linux, including the "Task register validation" step. CI of the merge commit `6677155` on `main`: green (CI run 39568937685, Quality finalize 39571499767).
 - Offline suites run during the reconciliation (Debug, `Category!=LiveModel`): Architecture 210/210, Runtime 2301/2301, Knowledge 308/308,
   AgentFramework 615 passed + 8 ignored (live/operator only), System.Core 481/481. Not run: full suite, Linux/WSL, Packages.* on Windows, Api, UI.
 - Governance validator: run `python scripts/governance/validate_register.py` (tests: `python -m unittest discover -s scripts/governance/tests`).
@@ -67,6 +67,6 @@ Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, acc
 ## Resume instructions for the next session
 
 1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do.
-2. Check the CI of `main` @ `6677155` (run 39568937685) and record `CI_VERIFIED` for BOPS-0118 only if it is green. The id mapping is frozen: never renumber.
-3. After the realignment PR is merged, BOPS-0118 closes only with the operator's approval. Keep register, Issue, Project Status and this file in step (`PROCESS.md` section 4).
+2. `CI_VERIFIED` is recorded for BOPS-0118 (main @ `6677155` green). The id mapping is frozen: never renumber.
+3. After PR #120 is merged, BOPS-0118 closes only with the operator's approval. Keep register, Issue, Project Status and this file in step (`PROCESS.md` section 4).
 4. No task is authorized. Never start BOPS-0111 without D10.

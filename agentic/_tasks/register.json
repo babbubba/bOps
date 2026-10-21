@@ -5557,7 +5557,8 @@
    ],
    "validation": {
     "achieved": [
-     "OFFLINE_TESTS"
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
     ],
     "required": [
      "OFFLINE_TESTS",
@@ -5565,18 +5566,18 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "CI of the merge commit 6677155 on main (run 39568937685): record CI_VERIFIED only if green.",
-     "Realignment PR (Issue/item links, HANDOFF, frozen mapping) reviewed and merged by the operator.",
+     "Realignment PR #120 reviewed, CI green and merged by the operator.",
      "Operator approval to close the task."
     ]
    },
    "evidence": [
     "PR #108 squash-merged 2026-10-21 as 6677155",
-    "PR CI run 39564405749 (head bcd2ab3): Windows and Linux green, including the Task register validation step"
+    "PR CI run 39564405749 (head bcd2ab3): Windows and Linux green, including the Task register validation step",
+    "CI of the merge commit 6677155 on main: CI run 39568937685 and Quality finalize run 39571499767 succeeded"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "PR #108 merged; mapping FROZEN (D9); Project #6 configured and populated with 11 Issues and 8 private drafts (see remote_sync).",
+   "note": "PR #108 merged and CI-verified; mapping FROZEN (D9); Project #6 configured and populated with 11 Issues and 8 private drafts (see remote_sync); PR #120 open.",
    "issue": 109,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbEQ",
    "branch": null,
