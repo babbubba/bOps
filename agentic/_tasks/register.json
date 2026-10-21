@@ -51,8 +51,8 @@
   "rule": "Chronological by first Git introduction of the task packet (first Git mention or document date for tasks without a packet); ties broken by tasks README row order (initial import 00730c3) or packet path; frozen on operator approval. order_certainty: 'verified' = distinct, Git-proven creation instant; 'conventional' = order inside one commit/date fixed by the tie-break rule, NOT chronologically proven. The mapping becomes FROZEN (state=FROZEN, hash enforced) only on explicit operator approval."
  },
  "remote_sync": {
-  "state": "READ_ONLY_INSPECTED",
-  "reason": "Project #6 inspected read-only on 2026-10-21 (empty, private, default template); no remote write performed; operator approval of the population plan pending",
+  "state": "PROJECT_CONFIGURED_NO_ITEMS",
+  "reason": "Project #6 fields and views configured 2026-10-21 (Status options Backlog/Ready/In Progress/Validation/Blocked/Deferred/Done; fields Priority, Area, bOps Milestone, Evidence Level, Effort; views Kanban, Backlog, Milestones). Workflows 'Item closed', 'Pull request merged', 'Auto-close issue' still enabled and must be disabled manually before any item is added. No Issues or items created.",
   "issues_created": 0
  },
  "active_milestone": "V1.3",
