@@ -21,6 +21,13 @@ implementing V0.2, no streaming while implementing V0.1.
 A task that appears to require work from a later version is a signal to stop and ask. It is
 usually a sign that the contract is missing something small, not that the roadmap is wrong.
 
+## Task state and synchronization
+
+Every task has a `BOPS-NNNN` id and one entry in `agentic/_tasks/register.json`; `agentic/_tasks/PROCESS.md` defines the status
+vocabulary, the validation levels and the mandatory synchronization of register, GitHub Issue, Project #6 and `HANDOFF.md` on every
+status change. An unauthorized task is never started; `DONE` requires every gate, not a merge. `python scripts/governance/validate_register.py`
+is part of CI.
+
 ## Branches and commits
 
 Trunk-based. Short-lived branches off `main`, merged quickly.
@@ -125,7 +132,8 @@ around it and mention it afterwards.
 - Push, force-push, or open a PR.
 - Commit a secret, or anything matching a key pattern, even in a test fixture.
 - Add a dependency to `bOps.Abstractions`. It stays dependency-free, permanently.
-- Change a file in `agentic/` as part of a feature task.
+- Change a normative file in `agentic/` (`00`–`07`, accepted ADR text, `PROCESS.md` rules) as part of a feature task. Recording task status
+  in `agentic/_tasks/register.json`, the task packet checklist or `HANDOFF.md` is bookkeeping, not a normative change, and is required.
 - Read or revive files under `agentic/obsolete/` as active scope. Historical research must be
   explicitly requested by an active task.
 - Introduce a framework that hides or takes over the **bOps operational authority state machine**.

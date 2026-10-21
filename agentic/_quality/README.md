@@ -1,5 +1,9 @@
 # Milestone quality measurement
 
+> Quality reports are evidence for a gate. Task and milestone *status* is kept only in `agentic/_tasks/register.json`
+> (`agentic/_tasks/PROCESS.md`). `active-milestone.json` below describes the last measured quality baseline (V1.3-H), not the
+> project's active milestone; realignment is tracked as BOPS-0117.
+
 This directory contains the deterministic quality contract for milestone baselines. The manifest
 describes normative requirements and expected evidence; `Test-MilestoneQuality.ps1` executes local
 build/test evidence, reads TRX outcomes, and projects a JSON report plus Markdown summary.

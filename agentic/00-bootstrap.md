@@ -8,7 +8,7 @@ documents; it does not duplicate or supersede their rules.
 bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
 policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
 decides and executes. V1.2 multi-agent orchestration is complete and released as
-`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged. The V1.3.x reliability hardening
+`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged; the stable V1.3 gate is not closed (see the register). The V1.3.x reliability hardening
 train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`) is closed: HARDEN-1 through
 HARDEN-14 are complete and merged, with the final E2E-1…14/DoD A–D gate integrated through PR #85
 (`83084fc251b6173cb60bd1473abac635506c8343`). There is no next reliability packet. V1.4 remains
@@ -25,8 +25,8 @@ Before changing project state, read:
 4. `agentic/03-security-rules.md`.
 5. The subject-specific files in this directory.
 6. `agentic/06-decisions.md` before proposing an architectural alternative.
-7. `agentic/_plans/2026-09-16-consolidated-roadmap.md` and only the selected active task under
-   `agentic/_tasks/`.
+7. `agentic/_plans/2026-09-16-consolidated-roadmap.md`, then `agentic/_tasks/register.json` (task state; rules in
+   `agentic/_tasks/PROCESS.md`) and only the selected task's packet under `agentic/_tasks/`.
 8. `HANDOFF.md` and the relevant accepted ADRs.
 
 Never include `agentic/obsolete/` in routine discovery or bootstrap. It contains superseded inputs
@@ -45,8 +45,9 @@ and snapshots with no authority.
 
 ## Documentation and workflow
 
-- Non-trivial work requires a plan in `agentic/_plans/` and matching task tracking in
-  `agentic/_tasks/`.
+- Non-trivial work requires a plan in `agentic/_plans/` and a task in `agentic/_tasks/register.json` with a `BOPS-NNNN` id.
+- Task state is kept only in the register and mirrored to the GitHub Issue, Project #6 and `HANDOFF.md` at every status change
+  (`agentic/_tasks/PROCESS.md`); never copy a status into another document.
 - Update task checklists as real work completes, not in advance.
 - Keep README, CHANGELOG, HANDOFF, plans, tasks and code-adjacent documentation aligned.
 - Write an ADR before any change covered by `agentic/05-workflow.md`.

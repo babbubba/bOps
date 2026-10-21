@@ -63,6 +63,12 @@ jobs:
         # no provider credential) and run on both matrix OSes. The collector itself is never executed here.
         run: python -m unittest discover -s scripts/windows/tests -p "test_live_benchmark.py" -v
 
+      - name: Task register validation (Python, offline)
+        # agentic/_tasks/register.json is the authoritative task state; this check needs no network, token or secret.
+        run: |
+          python scripts/governance/validate_register.py
+          python -m unittest discover -s scripts/governance/tests -p "test_validate_register.py" -v
+
       - name: HARDEN-14 scenario gate (.NET, Windows)
         if: runner.os == 'Windows'
         shell: pwsh

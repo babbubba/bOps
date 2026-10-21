@@ -1,0 +1,579 @@
+# Handoff — V1.3 pre-release stabilization
+
+## Live smoke follow-ups — 2026-10-17 (tasks `514b91d8-ec82-436b-bb33-2f923ebafdaf`, `e4554137-e709-492e-9590-a35b9c3d4fc6`; LIVE-01B, LIVE-05, LIVE-04A and LIVE-04C touch `src/`, `tests/` and `docs/`; implemented on top of the pre-LIVE baseline `76ac5e4` and committed locally on `codex/know-bench-01a` as `70561e3` (ADR-0060), `8247a4a` (LIVE-01B), `e148568` (LIVE-05), `129b23c` (LIVE-04A) and `c8258a9` (LIVE-04C); **not pushed, not released**)
+
+**Status at a glance (evidence only as documented below; no new live run was made for this reconciliation):**
+
+- **LIVE-01B** — implemented and tested offline; `PlanningGuidance` was received by the planner in the live tasks; the general effectiveness of the guidance is **not shown**; decision record
+  [ADR-0060](docs/architecture/adr/0060-planner-facing-tool-parameter-guidance.md) **Accepted** (operator, 2026-10-17, committed as `70561e3`); code committed as `8247a4a`.
+- **LIVE-05** — implemented and tested offline; the recovery path was exercised live in task `41710469-ac6b-4d89-b744-7733b5eaf46d`, and execution continued to `Completed`; cursor 0 verified, the cursor 1 of the earlier
+  failure (`e4554137`) was not directly re-validated; the general problem of reasoning exhaustion during `Replanning` is **not declared solved**; committed as `e148568`.
+- **LIVE-04A** — implemented and tested offline; adds `sampleMessageSemantics`; validation with a model on the new aggregation is **not shown**; committed as `129b23c`.
+- **LIVE-04C** — implemented and tested offline; adds `distinctMessages`, `messageVariants` and `messageDistribution`; **no live proof** with the updated aggregate output; the Qwen diagnostic validation is still to be run; committed as `c8258a9`.
+- **LIVE-02, LIVE-03, LIVE-04B** remain open with the states documented below. No Proposed decision (ADR-0058, ADR-0059, D-050) is promoted by this note.
+- Consolidation (2026-10-17, REPOSITORY-CONSOLIDATE-EXEC-01): `76ac5e4` is the baseline **preceding** the LIVE work, not the current HEAD. Local commits on top of it: `70561e3` ADR-0060 (Accepted), `8247a4a` LIVE-01B, `e148568` LIVE-05,
+  `129b23c` LIVE-04A, `c8258a9` LIVE-04C, then this documentation commit. Nothing is pushed or released. LIVE-04A and LIVE-04C are not validated live on the new aggregate output.
+
+- **LIVE-01 — truncated evidence, configuration intervention in progress.** The real `system.events` aggregate was 22,254 characters; `AgentRunner.TruncateForHistory` cut the observation to 4,038
+  (`Agent:MaxObservationCharacters = 4000`), so most diagnostic groups never reached the model. Local smoke setting only: `C:\bops-smoke\run\appsettings.json` now has `MaxObservationCharacters = 24000`
+  (previous file kept as `appsettings.json.pre-live01.bak`). Repository defaults, `models.ini`, the 32768 context window, `MaxOutputTokens` 8192, sampling and timeouts are unchanged. Offline check done;
+  the single live re-run is not done yet.
+- **LIVE-01B — `system.events` mode guidance now reaches the planner (implemented, offline-verified; guidance observed reaching the planner in live tasks; ADR-0060 Accepted; committed as `8247a4a`).** Cause: the planning catalog (`AgentRunner.DescribeToolCatalog`) gives the planner only the first
+  sentence of a tool description (≤120 chars) and never parameter descriptions, so raw/aggregate guidance never reached the plan that fixes `mode`. Fix: new optional `ToolParameter.PlanningGuidance`
+  (Abstractions, display-only, not validated), rendered by the catalog as `(guidance)` after the parameter constraints, capped at 320 characters; non-sensitive parameters only. `system.events` `mode` declares it
+  (aggregate preferred for overviews/counts/diagnosis; raw for individual events; raw may be a subset even with full time coverage; `complete=false`/`truncated=true` is not complete evidence). `aggregate` is not forced.
+  `system.events` catalog line 744 → 1052 characters (+308). Test: `PlanningContractVisibilityTests.ScopedCatalog_CarriesBoundedPlanningGuidanceForSystemEventsMode`. Decision record: ADR-0060, Accepted by the operator on 2026-10-17 (written after the code, see its §0). Limit: a description does not deterministically
+  steer Qwen, and the general effectiveness of the guidance is not shown. Pre-existing unrelated `bOps.Runtime.Tests` failures (also at baseline): `ToolCallProtocolTests.TheToolCatalog_Keeps…` and `ModelFailureEndToEndTests.ATransientProviderFailure_…`.
+- **LIVE-05 — the persisted-plan recovery request carried no feedback (implemented, offline-verified, committed as `e148568`; recovery path exercised live, see the `41710469` note below).** Task `e4554137`: plan `system.events` → `system.stability` → `system.crashes`;
+  after `system.events` Qwen answered finally, the runtime rejected it and replanned, the replan ended `finish_reason=length` with no content, and the persisted plan was continued at cursor 1 — with a request byte-identical to the one that had
+  drawn the premature final, so Qwen concluded again and the task failed `RepeatedWithoutProgress`. Cause: the rejected final (`PrematureFinal`) and the continuation (`EarlyFinalRecovery`) are tool-less bookkeeping steps, and
+  `AgentRunner.RebuildHistoricalTurns` skips every step without a `ToolCall`; the step system prompt depends on plan and cursor only, both unchanged. Fix: `EarlyFinalRecovery.ContinuationTurn` (new) returns a runtime-authored user turn
+  (`ContextProvenance.Runtime`), appended by `AgentRunner.BuildStepRequest` after the reconciliation/knowledge turns and before the logical-call continuation turns, only while the continuation is the latest step of the plan revision at the same
+  cursor. Text: the previous final answer was rejected because plan revision R is incomplete; next unfinished step N of M uses the operational tool T, which is the tool offered in this request; propose the call to T before any final
+  answer; it executes nothing and grants no authority. Built from revision, cursor, plan size and the catalog-validated tool name only (`PrematureFinal.ToolLabel`, now `internal`) — no model text, plan description or tool output. Offered tools,
+  system prompt, replan contract and replan/attempt counts are unchanged; after the recovered step runs the turn disappears (ordinary requests are untouched). No `tool_choice=required`. Test:
+  `EarlyFinalReplanTests.ARecoveredStepRequest_DiffersFromThePrematureOne_ByARuntimeAuthoredInstructionNamingThePendingTool` (fails without the hook). Limit: still a textual instruction; Qwen may ignore it, and a second premature final
+  is still bounded by `RepeatedWithoutProgress`. Live: in task `41710469-ac6b-4d89-b744-7733b5eaf46d` the recovery path was exercised and the task continued to `Completed`; cursor 0 was verified, while the cursor 1 of `e4554137` was not directly re-validated. This does not show that reasoning exhaustion in `Replanning` is solved in general. Offline: full solution build 0 warnings/0 errors; `dotnet test --filter "Category!=LiveModel"` fails only the 2 known `bOps.Runtime.Tests` baseline tests and 3 `bOps.Packages.Filesystem.Tests`
+  (`FsSizeTests.FsSize_ReturnsCompleteBoundedSummary_ForNestedTree`, `FsDeleteTreeTests.DeleteTree_FailsClosedBeforeDeleting_WhenTheParentWasReplaced`, `FsDeleteTreeTests.ApprovalBinding_ExpiresWithoutDeleting`), which fail identically on pristine `HEAD` (Windows environment).
+- **LIVE-04A — `system.events` aggregate states what `sampleMessage` means (implemented, offline-verified, committed as `129b23c`; to be validated live, no live run done).** Task `2ccca060-2fdc-455d-a914-226daca7a47e`: Qwen attributed to all 38
+  WHEA-Logger events 19 characteristics present only in the newest event's `sampleMessage`. Fix: aggregate results carry a top-level `sampleMessageSemantics` (fixed text, `SystemEventFormatting.SampleMessageSemantics`, placed right before `groups`):
+  the sample belongs only to the newest event; `count` covers every event sharing the key; other events may have different messages; sample attributes are not necessarily common to the group. Raw mode unchanged (field absent);
+  `schemaVersion` stays 2 (additive, no consumer enumerates top-level keys; the tool output reaches the observation verbatim). Grouping, key, order, `count`, `sampleMessage` and all limits unchanged; no `distinctMessageCount`, no provider-specific logic.
+  Cost: +359 UTF-8 bytes per aggregate result (about +1.6% on the 22,254-character real aggregate). Tests: `HardenSevenContractTests.EventAggregation_…` (key list, text, absent in raw) and `SystemEventsConformance` aggregate. Docs: `docs/system-events.md`.
+  Limit: deterministic tests prove the field is present, not that Qwen reads it correctly — the LLM quality problem is not shown solved until the live re-run.
+- **LIVE-04C — `system.events` aggregate carries the quantitative distribution of the original messages of each group (implemented, offline-verified, committed as `c8258a9`; to be validated live, no live run and no inference done).** Evidence
+  that it is needed: the replay in `C:\bops-smoke\live04a\20261017-173046` kept attributing the single TLB sample to all 38 WHEA events 19. The persisted task holds only the aggregate (one sample per group), so the raw events were
+  read from the local System log (read-only): the same provider/event had **5 distinct messages over 50 events** (27/8/6/5/4 by processor-core id and error type), so the group really is heterogeneous. Each group (in the leading
+  `messageDistribution.describedGroups` groups) now carries `distinctMessages` (exact, ordinal comparison of the full original messages, not of the 512-char sample) and, when > 1, `messageVariants` = `distribution` (`complete` |
+  `partial` + `unlistedEvents` | `unlisted` when the top-3 would cover less than half the events, e.g. messages embedding a time/id) + up to 3 `variants` `{count, message ≤200 chars, messageTruncated}`, most frequent first.
+  Top-level `messageDistribution {availability: all|partial|none, describedGroups}`; groups after `describedGroups` carry neither field (unknown, not uniform). No new instruction text, no "subtype" wording, no provider/OS logic.
+  Budget: details are capped at `SystemEventsLimits.MessageDistributionBytes` = 2,048 B and by `maxOutputBytes`, are added only to groups the result already keeps (bisection on the described prefix); **no group is dropped for them**, `observedGroups`,
+  `returnedGroups`, `count`, `sampleMessage`, `complete` and `truncated` are identical with/without them (tested at every budget of a sweep, via internal `Format(..., describeMessages: false)`). `schemaVersion` stays 2 (additive).
+  Measured on the real local Event Log (windowMinutes 1440, minSeverity warning, same snapshot): 37 groups, 20,276 B → 21,506 B (+1,230 B, +6.1%), 5 of 37 groups described (incl. WHEA 19: `distinctMessages` 5, top-3 = 18/9/5, 9 unlisted);
+  72 h: 27,884 → 29,137 B (+1,253 B), 50 groups both; with a budget of 20,400 B: `availability: none`, 37 groups kept, +66 B (the envelope field alone). On the replayed 22,408-char observation the estimate is ≈ 23.6K chars, under the
+  24,000 smoke `MaxObservationCharacters` by ≈ 0.4K; at the repository default 4,000 nothing changes (already cut). Consumers checked: `CorpusMinimizer` (test support) did not descend into a group's nested object, so `messageVariants` would have been
+  frozen into a corpus unredacted — it now removes it (test `AggregateGroups_AreMinimizedWithTheSameRules`); the corpus quality gate already rejects aggregates; `SystemEventsConformance` asserted the exact group key list — now prefix + optional fields,
+  with the described-prefix invariant; the audit summary and `SystemEventFacts` do not read these fields; no Angular/CLI consumer. Tests (new, `HardenSevenContractTests.MessageDistribution_*`, 11): identical messages; different messages with
+  verifiable counts; beyond the variant limit; tie order; differences only beyond the sample limit; almost-unique messages; allowance exhausted (leading groups only, 40 groups kept); no room at all (`none`, every group kept);
+  no group lost at any budget of a sweep; aggregate unchanged with/without details; input-order independence. Three mutants (ignore budget, case-insensitive grouping, compare the 512-char sample) are killed. Docs: `docs/system-events.md`.
+  Offline: full solution build 0 warnings/0 errors; `dotnet test bOps.slnx --filter "Category!=LiveModel"`: 37 assemblies, 5894 passed, 166 skipped, **5 failed** = the 2 known `bOps.Runtime.Tests` baseline tests + the 3 known
+  `bOps.Packages.Filesystem.Tests` (Windows environment); the passed count is not comparable to the 6158 recorded earlier (not investigated). Linux (WSL) and CI not run.
+  Limits that remain: variant `message` is cut at 200 characters (a discriminator after the cut is invisible; the variant then says `messageTruncated`); a model can still read a count as a cause — the text is neutral but nothing forces
+  the model to use it; groups beyond `describedGroups` have no distribution (the rank order, not importance, decides); the live effect on Qwen is untested.
+- **LIVE-02, LIVE-03, LIVE-04 (remaining scope) — suspended interventions, preserved unchanged** (LIVE-02 degenerative reasoning, LIVE-03 classification; LIVE-04 beyond LIVE-04A/04C not started). The detail below is the original text.
+- **LIVE-02 — degenerative reasoning in the bounded correction**, waiting for the LIVE-01 result. Not started (suspended).
+- **LIVE-03 — `EmptyResponse` instead of `TruncatedBeforeContent` classification**, to be assessed afterwards. Not started (suspended).
+
+## Current handoff — 2026-10-17 (consolidation of the MAF/Knowledge work, nothing committed by this step)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, baseline `76ac5e4` before the LIVE commits (reconciled 2026-10-17; this entry was written at `1ddde56`; the current HEAD is the documentation commit that follows `c8258a9`). The Local Agent pilot (ADR-0058) **is committed** (`cf82502`, `2df1c23`, `1ddde56`), and so is the rest of the work this entry called uncommitted:
+  D1–D3 corpus provenance `c3e395f`, D7 protected diagnosis + blind review `95122fa`, `Agent:MaxOutputTokens` and model-output telemetry `37ef356`, ADR-0059 refusal recovery with `InfrastructureFailure` `e46ac4d`,
+  documentation reconciliation `d0dcfbe`, KNOW-DISC-01 T8-FIX01 `76ac5e4`. The two entries below that say "nothing committed" describe the moment they were written. The LIVE-01B/05/04A/04C changes and ADR-0060 are committed on top of that baseline (`70561e3`, `8247a4a`, `e148568`, `129b23c`, `c8258a9`) and nothing is pushed. The untracked `docs/benchmarks/bench00-maf-compatibility-report.md` is pre-existing and is not part of any slice.
+- Offline validation of this tree (no live model, no capture): full solution build 0 warnings / 0 errors; `dotnet test bOps.slnx --filter "Category!=LiveModel"`: 37 assemblies, 6158 passed, 166 skipped,
+  **2 failed**, both in `bOps.Runtime.Tests` and both failing identically on pristine `HEAD` (`ToolCallProtocolTests.TheToolCatalog_KeepsTheNameTheRiskAndTheFirstSentenceOfEachTool_…`, `ModelFailureEndToEndTests.ATransientProviderFailure_RecoversWithinBounds_…`): stale expectations, not introduced here and not fixed.
+  The 8 skipped in `bOps.AgentFramework.Tests` are the env-gated live/operator tools (5 `KnowledgeBenchmarkLiveTests`, 2 `KnowledgeDiagnosisReviewTools`, 1 `KnowledgeHostCanaryLiveTests`). `git diff --check` clean. Linux (WSL) and CI not run.
+- State by area (details in the roadmap note of 2026-10-17 and the ADRs): ADR-0057 M1 T1–T8 implemented, **offline M1 gate PASS after T8-FIX01** (committed in `76ac5e4`), B1/B2 open (status table added to ADR-0057 §E); ADR-0058 and ADR-0059 and D-050 **Proposed**
+  but implemented; CLI pilot opt-in (`Knowledge:Enabled=false`); the API composes no Knowledge; the index is not published to the planner; MAF does not govern planning or tool execution; **no live Knowledge validation has been done**.
+- ADR-0059 text was made self-consistent (it said "no new result code" while introducing `InfrastructureFailure = 12`); no decision was changed.
+- Note: the ADR-0057 M1 gate excluded provider changes; `Agent:MaxOutputTokens` touches the OpenAI-compatible and Anthropic adapters, so it is recorded as a separate, post-M1 change.
+- T8 / M1 gate: executed 2026-10-17 on `d0dcfbe` = FAIL (defect: `AgentRunner.WrapToolOutput` did not neutralize the knowledge-index markers, ADR-0057 U.2 / S5; four §H.1 tests missing). **KNOW-DISC-01 T8-FIX01** (same day, committed as `76ac5e4`, worktree `bOps-knowbench01a`) fixed it: four `OrdinalIgnoreCase` replacements in `WrapToolOutput`; new tests `ToolOutputKnowledgeIndexMarkerTests` (Runtime), `KnowledgeIndexGovernanceTests` (injection end-to-end, unoffered tool, delegated role), `KnowledgeGoldenRequestTests` (planning/replan/legacy byte-identical to `d3da032`, goldens in `tests/bOps.AgentFramework.Tests/Golden/d3da032/`), `KnowledgeIndexDataTurnBoundaryTests` (Architecture), explicit "no `KnowledgeIndex` event for a refused resume" in `KnowledgeResumeTests`. Report `docs/architecture/know-disc-01-knowledge-index.md`: **M1 offline gate = PASS** (Windows and WSL; 40 distinct mutants: 38 detected, 2 equivalent, 0 undetected). Open and unchanged: historical 2 `bOps.Runtime.Tests` failures; Linux 28 AgentFramework failures from the Windows-only canary fixture (not §H.1 tests, so not gate-blocking, but those canary tests did not run on Linux); B1, B2, live validation, other gates. Committed in `76ac5e4`; nothing pushed.
+- Next task: none prescribed by this gate. The LIVE-01B/05/04A/04C consolidation is done locally; before any push the branch still needs the operator's verification and a decision on publication. LIVE-02, LIVE-03 and LIVE-04B stay open.
+
+## Previous handoff — 2026-10-17 (realignment + Knowledge infrastructure-error classification, uncommitted)
+
+- Authority: roadmap/gates `agentic/_plans/2026-10-11-maf-knowledge-convergence.md` (ACTIVE; gate table unchanged), tasks `agentic/_tasks/`, decisions
+  `agentic/06-decisions.md` + `docs/architecture/adr/`, current state this file. ADR-0052..0059: 0052/0055/0056/0057 Accepted per their files; **0058 and 0059 and D-050 are Proposed
+  yet implemented** (opt-in CLI pilot, refusal recovery) — implementation done, offline tests done, live validation missing, acceptance is the operator's.
+- Done now (only functional change authorised): `KnowledgeReadResultCode.InfrastructureFailure = 12` (appended). The bridge used to audit a framework-function
+  failure as `IntegrityMismatch` (flag `Infrastructure`), so the benchmark and operators read a host fault as tampering. Now: `InfrastructureFailure` is
+  Recoverable (nothing returned, read is optional, withdrawn after `MaxRejections`); `IntegrityMismatch` = bytes differ from pin, `NotAuthorized`/`SnapshotUnavailable`
+  stay Integrity (hard stop); the benchmark safety check still rejects a run containing any of them. Host text-normalization failure in `discover` is infrastructure too.
+  Tests: `KnowledgeRefusalRecoveryTests` (infra vs integrity) + KnowledgeReadBridge/SnapshotBridge/IndexBridge/Comparison: 72/72 pass. Nothing else run (no full suite, no live).
+- Timeouts (Qwen 32K/8K, ~60 tok/s ≈ 137 s + prefill): API profile 300 s attempt / 360 s HTTP / 660 s budget is coherent. CLI defaults 120/150/300 s are not; operator
+  override documented in `docs/knowledge/local-agent-pilot.md` §6 (no shipped default changed; OpenRouter default stays).
+- Deferred by operator: payload anonymisation, reasoning retention, response redaction, retention. Not blocking.
+- Open gates (none passed): BENCH-00 official 3×3, BENCH-01, AF-EVID-01, AF-05H4-VERIFY, ARCH-01/02/03, KNOW-01/02/03, ADR-0054 acceptance, ADR-0057 B1/B2.
+- Uncommitted KNOW-BENCH D1–D3/D7 work in this worktree was not touched. Nothing committed or pushed.
+- Next task (not started): finish **BENCH-01 prerequisites** — run the full offline suite (`dotnet test`, excluding `Category=LiveModel`) on this tree to confirm the
+  uncommitted set is green, then commit it in reviewed slices; then BENCH-00 3×3 when the operator authorises live runs. Done when the suite is green and the slices are committed.
+
+## Previous handoff — 2026-10-17 (Knowledge in the CLI: Local Agent pilot; since committed as `cf82502`, `2df1c23`, `1ddde56`)
+
+- Worktree `bOps-knowbench01a`, branch `codex/know-bench-01a`, on top of the uncommitted KNOW-BENCH D1–D3/D7 changes (untouched). *(At the time of writing: nothing committed or pushed; the pilot was committed afterwards, never pushed.)*
+- Operator instruction: a circumscribed revision of D-049 for an opt-in Knowledge integration in the local CLI. Decision text: `docs/architecture/adr/0058-local-agent-knowledge-pilot.md`
+  (Proposed) and D-050 (Proposed). The ADR records the gate review: ARCH-01/03 are documentation not in this tree (ADR-0054 is Proposed, not accepted), BENCH-00 3×3 is not run,
+  ADR-0057 B1/B2 are open. No gate is declared passed.
+- Code: `LocalKnowledgeComposition` (AgentFramework), `CliKnowledge` + `CliRunnerComposition` (CLI), `Knowledge:Enabled=false` in the shipped `appsettings.json`,
+  `KnowledgeTrustStore.KeyCount`, publisher scripts `scripts/New-KnowledgeSigningKey.ps1` / `Publish-KnowledgePack.ps1`. API, runtime contracts, policy and audit schema unchanged.
+- Operator guide: `docs/knowledge/local-agent-pilot.md`. Before relying on it, verify ADR-0057 B2 (two consecutive `user` messages) on the model server in use.
+- Not done / designed only: binding by capability or goal, several packs, Experience, a `bops knowledge` command, hot reload of trust and grants, any API composition (ADR-0058 §6–§7).
+
+## Previous handoff — 2026-10-11 (AF-05H, H2 + H4)
+
+- Operator scope decision: only the blockers H2 (a premature final replans, ADR-0046 amendment) and H4 (deterministic evidence disclosure,
+  ADR-0042 amendment) are on `fix/af-05h-live-regression-hardening` (base AF-05G `97507aa`). Packet:
+  `agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md`; measurements: benchmark results §9.
+- H1 (context operating range) is isolated on `feat/af-05h-h1-context-operating-range` (one commit on `97507aa`) so it can be left out of a
+  merge while current behaviour is measured and MAF is evaluated as orchestrator. H3 and H5 are implemented only on
+  `backup/af-05h-h1-h5-full` and are not part of this phase.
+- `Agent:EvidenceDisclosureEnabled` replaces `Agent:EvidenceDisclosureRetries` (still read as a deprecated alias). Live runs NOT RUN.
+- Operator note: the local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts, `VerbatimHistorySteps`) is still not committed.
+
+## Previous handoff — 2026-10-11 (AF-05, local, not pushed)
+
+- AF-05 (MAF regression, tuning and legacy cleanup) is implemented locally on `feat/af-05-maf-regression-tuning-cleanup` (base `a723092`, the
+  verified AF-04R branch). The MAF context layer is the only model-facing history path; `BoundedHistory`, `Agent:VerbatimHistorySteps` and the K=0
+  rebuild are removed. All evidence is **deterministic-fixture class**: no local server and no provider credentials were available, so the local
+  (Qwen-like), OpenRouter/external and Anthropic runs are **NOT RUN**. Windows and Linux CI are **NOT RUN** (nothing was pushed).
+- Packet and evidence: `agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md`; measurements:
+  `agentic/_tasks/2026-10-11-af-05-benchmark-results.md`; operator guide: `docs/operator-configuration.md` §13.
+- **Decision requested** (not applied): the ADR-0042 grounding block shows 12 facts, newest steps first, so on the c508 shape `system.events`
+  crowds out the AF-04 facts of `system.stability` and `system.crashes`. A fair-share order raised directly visible facts 1/9 → 7/9 at the same tokens in an
+  uncommitted experiment; it needs its own ADR-0042 amendment.
+- Not done: CLI cross-provider dedicated summarizer (needs the API's provider profiles and vault in the CLI — a new provider/secret framework);
+  caller-cancellation linking in the broker (breaks token accounting of an in-flight response).
+- Before pushing: the committed branch excludes the operator's local edit of `src/core/bOps.Api/appsettings.json` (model-call timeouts).
+
+## Previous handoff — 2026-10-10
+
+- F-25B (ADR-0051 durable ordinary-task mutation journal) is implemented on
+  `design/v13-f25-ordinary-mutation-journal`. It adds fenced SQLite intent/outcome persistence, atomic outcome plus
+  history-step writes, recovery/reconciliation, journal-aware resume, API/CLI/dashboard surfaces and EN/IT UI.
+  Windows Release build is 0 warnings/0 errors; F-25 runtime evidence is 150/150, Angular is 485/485 and production
+  build/i18n are green. The required M1–M24 manual-mutation session remains to be recorded before completion. The aggregate Windows gate had one unrelated flaky `VaultStoreTests.ConcurrentSets...` result;
+  its isolated retry passed. WSL Ubuntu 24.04 is installed but has no `dotnet`; Linux validation remains CI evidence.
+- F-26 has not been started. Do not merge until PR #99 CI is green and the operator approves.
+
+## Previous handoff — 2026-10-08
+
+- PR #92 (ADR-0049 prerequisite readiness + System Messages) is merged. Real Windows validation passed:
+  bOps started without Microsoft Debugging Tools, reported the missing prerequisite, then while the
+  process remained running detected both `windows.debugger.kd` and `windows.debugger.dumpchk` as
+  Available after installation.
+- PR #91 (`system.dump_analyze`, ADR-0048) is merged with Windows/Linux CI green. The first real
+  execution reached the tool but was cancelled by the generic caller after exactly 30 seconds:
+  `ERROR (timeout): 'system.dump_analyze' did not complete within 00:00:30`. Its own package bounds
+  are longer (DumpChk 60 s, KD 10 min), so the real parser/KD validation is still pending.
+- A second focused run (task `df8ef49b-a5f4-4ea8-85dc-a8021c494d0c`) with a temporary
+  global timeout override successfully executed real KD against
+  `C:\\WINDOWS\\Minidump\\100626-20984-01.dmp`: symbols loaded, bugcheck 0x1E parsed, stack and
+  blackbox data parsed, debugger attribution preserved as evidence rather than root cause, 0 replans. DumpChk was
+  invoked but timed out at its own 60 s bound (`dumpCheckPassed=null`, warning `dumpchk-timeout`).
+  The tool output itself was complete; runtime history compacted the ~6.5K observation to 4K, reinforcing PRE-3.
+  Real KD/parser validation is therefore PASS with caveats; PRE-1 remains required so the normal shipped 30 s caller
+  timeout no longer kills this tool.
+- Real Qwen task `8cc482b5-3ac3-4de5-af07-1d1f334bf80b` exposed additional pre-release gaps:
+  repeated steps sharing `system.events` can advance by ExpectedTool equality while serving the wrong
+  semantic intent; evidence discovered after planning does not reliably activate a useful follow-up;
+  and malformed Qwen `EvidenceRead/v1` control markup can become a candidate final answer if the
+  disclosure re-ask fails.
+- A prior real Qwen run also demonstrated a final-synthesis contradiction against exact persisted WHEA
+  Event 19 evidence.
+- The operator promoted these findings, read-only execution-plan visibility, F-25 (undelegated
+  non-Read intent journal) and F-26 (production SPA hosting) into the stable-V1.3 pre-release queue.
+- Authoritative next packet:
+  [`agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md`](agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md).
+  Canonical order is PRE-1 per-tool timeout, PRE-2 planned-step semantic integrity/evidence follow-up,
+  PRE-3 EvidenceRead/control-plane hardening, PRE-4 plan UI, PRE-5 evidence-grounded synthesis,
+  PRE-6 real-model/KD evidence, PRE-7 install/upgrade/soak, PRE-8 stable release gate.
+- Do not start V1.4 until PRE-8 is closed or the operator explicitly changes this decision.
+
+## Handoff — 2026-10-07 (historical)
+
+- V1.3.y is implemented locally and validated, but not committed, pushed or merged. The development
+  AppHost now provisions pinned SearXNG `2026.10.4-d48c4b555`, mounts JSON-enabled settings
+  read-only, generates its secret, exposes `http://localhost:8081`, waits for `/healthz`, and injects
+  `Web__Search__BaseUrl` into `bops-api`. `Searxng__Enabled=false` omits it; direct API/CLI runs are
+  still Docker-independent.
+- Real AppHost validation passed: health `200`, a JSON search returned 20 results, the live
+  `SearxngClient` test passed, and `/api/tools` exposed `web.search` plus `web.fetch`. The new
+  `bOps.AppHost.Tests` project verifies the image/tag, mount, endpoint, health dependency,
+  environment reference and disabled topology.
+- The `EvidenceRead/v1` incident was model behavior, not provider/runtime translation: the existing
+  fallback-provider regression preserves it as text and runtime recognition is exact. Prompt and
+  web-tool descriptions now state that it is not a URL or tool call; a new core regression covers
+  the wording. A Qwen smoke reached the configured endpoint but stopped at its accurate bounded
+  `401 Invalid API Key` diagnostic because the test process had no usable local-model credential.
+- README Quick start, operator configuration, web network policy, third-party notice, changelog,
+  roadmap and task index are aligned. No ADR was needed: D-002 already assigns dependencies/test
+  targets to Aspire and D-019/ADR-0028 already selects operator-owned SearXNG JSON search.
+- Release solution build passed with zero warnings; the full solution test gate excluding
+  `Category=LiveModel` passed. Focused AppHost, Web and Runtime runs passed 2, 62 and 1,542 tests.
+
+The next action is review/commit/CI for V1.3.y when the operator requests it. V1.4 remains planned
+and requires separate authorization.
+
+## Handoff — 2026-10-06 (historical)
+
+- V1.3-A through V1.3-M are complete and merged; V1.3-M merged through PR #50.
+- V1.3 is implemented and merged, but no new formal V1.3 release tag exists (the latest tag is `v1.2.0-preview.8`); it is not claimed as released.
+- V1.3.x reliability hardening is **closed**. HARDEN-1 through HARDEN-14 are complete and merged; HARDEN-14 passed E2E-1…14 and DoD A–D and merged through PR #85 (`83084fc251b6173cb60bd1473abac635506c8343`).
+- HARDEN-11 (delegation operability): **Completed and merged via PR #77** (`12a03165ef458ecb3b36625d955731e34671c6f8`). [ADR-0044](docs/architecture/adr/0044-request-dependent-delegation-authority-and-operability.md) and D-041 are **Accepted**; the independent implementation authority/security review passed.
+- HARDEN-12 (UI layout/localization): **Completed and merged via PR #79** (`86bf74857a2435daee6177cd5cf78aae4e6198eb`). The independent UI review passed; E2E-12 and the recorded Angular/build/i18n evidence are green.
+- HARDEN-13 (provider lifecycle/default/fallback): **Completed and merged to `main` via PR #83** (`3bed13e3274570a3928ac64706be6246c0d9a978`). [ADR-0045](docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md) and D-042 are **Accepted**. B1 was independently reviewed PASS; B2a (PR #80), B2b (PR #81) and B3 (PR #82, merge commit `3177b5694d962ce3fc56527fa6bfa60f25b268ee`) were independently reviewed PASS and merged. All executable final-review gates passed: API Release build, E2E-4, live Settings A→B, FallbackExecutionTests 8/8, focused backend regressions 34/34, SettingsStore 15/15, Architecture 87/87, Settings UI 43/43, Angular 441/441, production build, i18n and E2E-12. Blockers: 0; non-blockers: 0. The bootstrap remains `OpenRouter` / `openrouter/free`, with a specific model recommended for serious or reproducible work.
+- HARDEN-5 (Windows `storage.health`) merged through PR #61; HARDEN-6 (typed `ToolParameter` constraints, `FailureKind`, `Completeness`, 94 constrained parameters, Windows/Linux validated, CI green) merged through PR #62.
+- The authoritative hardening plan is [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md).
+- The private provider, Account/Coordinator work and every `bOps.Commercial` task remain out of scope for this repository.
+
+There is no next reliability packet. V1.4 remains planned and not started; starting it requires explicit operator authorization.
+
+## Handoff — 2026-09-24 (historical)
+
+V1.3-A through V1.3-L are complete and merged. The V1.3-L senior-operator diagnostic integration
+gate merged through PR #47 with Windows/Linux CI green; canonical first-party tool composition and
+L0–L8 semantic integration coverage are complete. Boundedness evidence remains PARTIAL.
+Repository-topology is complete and remains a satisfied V1.3 gate.
+
+Next action: **V1.3-M1 entitlement ADR architecture gate.** V1.3-M is not implemented, and M1 has
+not started: its prior branch attempt created no artifact.
+
+## V1.3-H local integration gate — 2026-09-23
+
+H1–H5 implement bounded read-only identity, sessions, time and reboot diagnostics for Windows and
+Linux. Local quality evidence is provisional until the required platform tests execute in CI.
+No push, PR or merge was performed by the coding agent.
+
+## V1.3-G local integration gate — 2026-09-23
+
+G1–G6 were implemented in the preceding commits. G7 adds the Scheduler.Windows/Linux composition
+to CLI and API, verifies the existing solution/project references and package locks through restore,
+and closes the local documentation and integration gate. Targeted validation and the full local
+non-live gate passed on Windows; real Windows Task Scheduler lifecycle coverage is explicitly
+skipped unless the host is provisioned, and Linux systemd/cron integration remains platform-gated
+for Linux CI. Windows/Linux CI is required before G is closed definitively.
+
+Historical next action at that time: push the branch, open the PR and wait for Windows/Linux CI.
+Do not start V1.3-H until G is merged and green according to the repository workflow.
+
+## V1.1-H status (2026-09-18) — closed
+
+The V1.1-H integration gate was run locally on Windows 11 and then on GitHub Actions. CI is green on
+Windows and Linux: run `35365098294` for the batch itself and `35372748588` for the follow-up
+dashboard history commit. The latter's first attempt failed on Windows in
+`WindowsProcessActionToolsTests.ProcessStop_Succeeds_ForAProcessWithAMainWindow` ("has no main window
+to close"): an existing race — the test only waits for input idle before `CloseMainWindow()` — in a
+commit that touched no .NET code, and it passed on a rerun of the failed job. It is a known flaky
+test, not a fixed one; harden it by polling for the main window handle if it recurs.
+
+**Finding, resolved.** `src/core/bOps.Api/appsettings.json` had drifted from the documented and CLI
+defaults in `55d9585` (V1.1-F): `Filesystem:ReadPatterns` was `["*","c:\**"]` (read access to the
+whole `C:` drive on a fresh install), `MaximumEntries` `900000` and `MaximumOutputBytes` `131072`.
+The committed file now carries the safe defaults again (no readable paths, `100000`, `32768`). The
+wider values are a local developer setting and live in `src/core/bOps.Api/appsettings.Development.json`,
+which is git-ignored and loaded automatically by the Development launch profile. To use `fs.size`
+and inventory over real paths, set `Filesystem:ReadPatterns` explicitly (in that file or the
+environment); nothing is readable by default.
+
+What the local pass established (details in
+`agentic/_tasks/2026-09-16-v1.1-h-integration-release.md`): zero removed or changed public
+`bOps.Abstractions` members against the V1.0 close-out commit (`891dae2`), additions only; SDK
+packs as `1.1.0-preview.1` (released as `1.1.0-preview.2`, tag `v1.1.0-preview.2`, run `35383901325`); the signed sample plugin validates, installs, enables, disables and
+removes through the built CLI; no credential-shaped strings outside test fixtures; every relative
+Markdown link resolves; and `Add-SpdxHeaders.ps1` was fixed (it would have doubled every header on
+re-run) and now covers `samples/`.
+
+### Validation on 2026-09-18
+
+- `dotnet build bOps.slnx --configuration Release` — 0 warnings, 0 errors.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"` —
+  **548 passed, 32 skipped, 0 failed (580 total)**. Per assembly (passed/skipped): Architecture 4/0,
+  Memory 5/0, Audit 9/0, Policy 23/0, Runtime 186/0, PluginHost 49/0, Api 65/0 (45 before this
+  batch plus 20 new in `V11ReleaseGateTests`), Providers.Anthropic 9/0, Network 10/0, System.Core
+  12/0, System.Windows 22/0, System.Linux 6/16, Service.Windows 7/5, Service.Linux 7/3, Docker 7/3,
+  Web 61/0, Filesystem 66/5.
+- Skipped tests are platform- or environment-gated and are **not** verified on this machine: Docker
+  daemon absent (3), Windows service tests need elevation (5), Linux-only System/Service tests
+  (16 + 3), and Filesystem tests needing Linux or symlink privilege (5). They belong to the CI gate.
+- Angular: `npm ci`, `npm run build` and `ng test --watch=false --browsers=ChromeHeadless` — 50/50.
+- Not exercised: a browser run of the UI in this batch, and any single test chaining a real model,
+  Web and an installed Skill together.
+
+## V1.1-G summary
+
+V1.1-A through V1.1-G are complete on public `bOps` `main`. V1.1-G adds writable Settings: an
+administrator-only encrypted local vault for provider API keys, a separate non-secret store for
+each provider's endpoint/model/tool-calling profile and the active-provider selection, and a
+lazy-loaded Angular **Settings** page that fully manages both. See
+`docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md` for the full design.
+
+Scope grew once during implementation, by explicit operator direction. The task file's "provider
+selection" reads as an id toggle plus key management; exploration surfaced that this cannot work
+alone, because every first-party provider package requires its own operator-supplied `BaseUrl` with
+no built-in default (confirmed via `AnthropicProviderPackage`'s own doc comment) — switching the
+active provider while `BaseUrl`/`Model` stayed pinned to the single `appsettings.json`
+`ModelProvider` block would point the newly selected provider's key at the wrong endpoint. Asked
+how to resolve this, the operator asked for full UI-managed provider configuration — endpoint,
+model, tool-calling support, API key and room for provider-specific extras, all persisted — not
+just the key. `agentic/06-decisions.md` D-025 records the decision and what was deliberately
+deferred (`ExtraParameters` is persisted and returned by the API but not yet wired into
+`ChatModelOptions`; no first-party provider needs it today).
+
+The formal V1.0 release gate remains independently operator-gated. No tag, package publication,
+release workflow or commercial-repository product change was made.
+
+## V1.1-G delivered
+
+- **Vault (`bOps.Runtime`).** `VaultCipher` (AES-256-GCM, `System.Security.Cryptography.AesGcm`, no
+  new package), keyed by an HKDF-SHA256-derived key from an externally supplied master secret
+  (`SecretReference`, resolved through the existing `ISecretProvider` chain). Every sealed value
+  carries additional authenticated data binding it to its provider id and schema version, so an
+  entry cannot be relabeled or swapped for another undetected. Transient plaintext/key-material
+  buffers are zeroed (`CryptographicOperations.ZeroMemory`) after use. `VaultStore` persists entries
+  in one atomically-written JSON file (temp-file-then-rename, `chmod 600` on Linux, the same pattern
+  `PluginStore` already uses), guarded by an in-process `SemaphoreSlim` plus an `expectedVersion`
+  optimistic-concurrency token that every write must echo back — a stale version throws
+  `VaultConcurrencyException` (mapped to HTTP 409) rather than silently overwriting a concurrent
+  change. `VaultSecretProvider` (provider id `vault`) resolves a stored key through the same
+  `ISecretProvider` shape `EnvironmentSecretProvider` already uses.
+- **Fail-closed startup.** `bOps.Api/Program.cs` only activates the vault when
+  `Vault:MasterKeySecret` is configured; if it is configured but does not resolve to a value at
+  least 20 characters, the host refuses to start rather than run with the vault silently
+  unprotected. Absent entirely, the Settings key-management surface (`/api/settings/*`) is not
+  mapped at all — every existing CLI/environment-only deployment is completely unaffected. (A
+  `WebApplicationFactory` testing gotcha surfaced and was fixed along the way: a config value read
+  eagerly from `builder.Configuration` before `Build()` is not guaranteed to reflect a test
+  factory's `ConfigureAppConfiguration` override yet, only reads via the DI-resolved
+  `IConfiguration` — post-`Build()` — are; both the vault-enablement check and the endpoint-mapping
+  guard now read that way.)
+- **Masking.** `SecretMask.Compute`: `first six...last four` for length ≥ 10; for shorter secrets, a
+  formula (`revealed = min(length-1, floor(length*0.4))`, split evenly between prefix/suffix) that
+  always leaves `prefix + suffix < length`. Computed once, from plaintext, at write time, and stored
+  as ordinary display metadata — rendering a mask never reads plaintext back out of the vault.
+- **Non-secret profile (`SettingsStore`/`ProviderProfile`).** Endpoint, model, tool-calling support
+  and extras, kept in a separate plain `settings.json`, joined to the vault only by provider id.
+  Validates `BaseUrl` as an absolute http/https URL and `Model` as non-empty before persisting.
+- **Precedence (`ProviderResolution`).** A real `ModelProvider__Provider` environment variable
+  (checked directly, not through the already-merged `IConfiguration`, which cannot distinguish an
+  explicit override from the shipped default) always wins outright and bypasses Settings entirely.
+  Otherwise, the Settings-selected provider wins over the `appsettings.json` default; for that
+  provider, each of `BaseUrl`/`Model`/`SupportsNativeToolCalling` falls back field-by-field to the
+  `appsettings.json` default for anything the stored profile has not set. For the API key: the
+  existing environment-secret resolution is tried first and wins if non-empty; only then does the
+  vault apply, keyed by the effective provider id. Settings changes originally took effect on next restart; ADR-0045
+  (HARDEN-13) supersedes that: provider/model/profile changes now apply to new executions without a restart and a
+  credential change applies to the next model attempt (see `docs/operator-configuration.md` §4).
+- **Endpoints (`SettingsEndpoints.cs`).** `GET /api/settings`, `PUT /api/settings/active-provider`,
+  `PUT`/`DELETE /api/settings/providers/{id}/key`, `PUT /api/settings/providers/{id}/profile` — all
+  under a new `ApiAuthorization.AdministratorPolicy` (`bops.administrator` role). Every mutation
+  writes a `SettingsChangedAuditEvent` (new `bOps.Abstractions/Audit.cs` type — actor, setting name,
+  operation, provider id, outcome only, never a value; `TaskId`/`StepIndex` use documented sentinels
+  since a Settings mutation is not task-scoped). Activating a provider that has no stored profile and
+  is not the `appsettings.json` default is rejected with a clear message rather than left to produce
+  a broken `BaseUrl`/`Model` combination later.
+- **Angular Settings page.** Per provider: active badge, key mask or "Not set", endpoint/model/
+  tool-calling summary, and an expandable form with a write-only password field (verified live —
+  never prefilled, even for a provider with a stored key), Set/Replace/Clear, endpoint/model/
+  tool-calling inputs (prefilled from the current profile, verified live), and "Make active" (hidden
+  once already active). A 409 conflict refreshes to the latest server state and surfaces a retry
+  prompt instead of silently overwriting.
+- **CLI.** `bops vault rotate-key <new-master-key-environment-variable>` — decrypts every entry
+  under the current master key, re-encrypts under the new one, replaces the file; deliberately not
+  exposed through the API (ADR-0029: the highest-privilege vault operation stays on the surface that
+  already requires direct machine access, the same reasoning as `bops plugin *`).
+
+See `agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md` for the full checklist and
+`docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md` for the complete design,
+including the documented Windows ACL-hardening gap (Linux gets a real, tested `chmod 600`; Windows
+does not get equivalent hardening in this batch).
+
+## Enabling the vault
+
+Opt-in only — see [`docs/operator-configuration.md`](docs/operator-configuration.md) for the `Vault:MasterKeySecret`
+config shape, the `BOPS_VAULT_MASTER_KEY` environment variable, and the `bops vault rotate-key`
+usage. Backup/restore is file-level (copy `vault.dat`); because the master key is deliberately never
+stored beside it, a copied vault file alone is inert, and losing the vault means re-entering keys
+through the UI — the same recovery story `plugins.json` already has.
+
+## Validation on 2026-09-17
+
+- `dotnet build bOps.slnx --configuration Release` — 0 warnings, 0 errors.
+- `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"` — every
+  assembly in the solution passed locally (full-suite regression, not just the touched projects),
+  including new coverage in `bOps.Runtime.Tests` (`VaultCipherTests`, `VaultStoreTests`,
+  `VaultSecretProviderTests`, `SettingsStoreTests`, `SecretMaskTests`, `FakeTimeProvider`) and
+  `bOps.Api.Tests` (`SettingsEndpointsTests`, `ProviderResolutionTests`) — `bOps.Api.Tests` now
+  45/45, `bOps.Runtime.Tests` now 186/186.
+- `npm run build` — Angular production build succeeded; the `settings` route lazy-chunks correctly.
+- `npm test -- --watch=false` — 50/50, including `settings.store.spec.ts` and the rewritten
+  `settings.spec.ts`.
+- Verified end-to-end against a real running `bOps.Api` (real encrypted vault, real master key) and
+  a real Angular dev server: set a key, confirmed the mask rendered and the plaintext never appeared
+  in the API response or the audit log, set a profile, made a provider active, confirmed the
+  precedence source (`Settings`) and the expanded form's endpoint/model fields were correctly
+  prefilled while the key field stayed empty — not only the test suite.
+- GitHub Actions run [35277152220](https://github.com/babbubba/bOps/actions/runs/35277152220) —
+  Windows and Ubuntu restore/build/non-live tests, Angular build/tests, and SBOM generation all
+  passed.
+
+## Next action and boundaries
+
+V1.2-A is complete: ADR-0030 is Accepted (2026-09-18) and the operator's decisions are D-026.
+
+V1.2-B is complete (delegation contracts, SDK `1.2.0-preview.1`, PR #7): the public-surface diff shows
+zero removed or changed members against the V1.0 close-out, the full non-live suite passes locally, the SDK
+packs, and CI run `35399488393` is green on Windows and Linux. Two things to know before C: the diff found
+that V1.1 had renumbered `ToolParameterType` (fixed in B, see its task file), and ADR-0030's "empty
+intersection in any dimension is a denial" needs a per-role clarification before enforcement (the open
+question in `agentic/_tasks/2026-09-18-v1.2-b-contracts.md`).
+
+V1.2-C is in progress. On 2026-09-19 the operator chose a per-role requirement table, a new ADR-0031 to
+record it (an accepted ADR is not edited), and role-profile contracts in `bOps.Abstractions` (D-027).
+ADR-0031 is **Accepted** (2026-09-19). It also states two things beyond the table (grant versus
+exhaustion, and that targets and environments are not matched for plain Read calls).
+
+V1.2-C is delivered in three steps. C1 is implemented: the SDK (`1.2.0-preview.2`) gains `RoleProfile`,
+`DelegationAuthorityRequest` and `IRoleProfileSource`, and the runtime gains an internal `EnvelopeReducer`
+that derives the root envelope and each role's envelope under the per-role table. Nothing calls it yet, so
+no runtime behaviour changed; `agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md` records the ten
+interpretations C1 made where the ADRs leave a detail open.
+
+C2 is implemented: `ExecuteStepAsync` checks every step of a delegated agent against its envelope before
+argument validation and before policy (`EnvelopeEnforcer`), the delegated entry points `RunDelegatedAsync`,
+`PrepareDelegatedSkillAsync` and `ExecuteDelegatedPreparedSkillAsync` carry the scope on all three paths a
+delegated agent can take, `PolicyContext` gains `Delegation` and `Envelope` (SDK `1.2.0-preview.3`), and every
+audit event the runner writes for a delegated role carries the correlation block. The entry points are internal
+and nothing calls them until V1.2-D, so a run that is not delegated is unchanged. The task file lists what C2
+interpreted (where a step becomes delegated, why a refusal is a Forbidden decision, why budgets are left to E).
+C3 is implemented: the optional `delegation` section of `policy.yaml` configures one profile per role and is read
+strictly (an unknown key, a number where a name belongs, a bare duration, an instant without a zone or a grant a
+role cannot use is an error with the line and key); a malformed section fails the load, so the hosts fall back to
+`AllForbidden`, which has no profile and denies delegation. `bOps.Policy` gains `PolicyRoleProfileSource`, an
+`IRoleProfileSource` over the loaded profiles. It is not wired into Cli or Api until D builds the orchestrator, and
+the SDK is unchanged. C3 also found that the older sections parse a number or a comma list as an undefined
+`PolicyMode` that `AgentRunner` would run unattended; that is recorded in the C task file and left for a separate
+fix, since made (PR #12). V1.2-C is complete.
+
+V1.2-D is implemented (PR #13): `DelegationRunner` runs the fixed pipeline over the existing paths, with a fake model
+and fake tools in its tests. The SDK moves to `1.2.0-preview.4` for `IPlanApprovalProvider` (a human approves a plan by
+its hash) and a `PlanDecided` audit stage. It is in memory, checks only the deadline before a role, and is not wired into
+Cli or Api: registering the runner, the profile source and a human approval channel belongs to V1.2-I and V1.2-J. The
+task file lists the sixteen interpretations D made.
+
+Found by running a real task against `openrouter/free`: a model can end a step with no text (the last call generated
+788 tokens and returned no `content`), and the task was recorded as `Completed` with an empty "Final response". The
+runner now asks again once and then fails the task (rule S3), and every model call is kept for troubleshooting: the
+task store holds, per step, plan and replan, the model asked for and the one that answered, the duration, the tokens
+and the exact request and reply bodies (bounded by `Agent:MaxModelPayloadCharacters`); the API and the dashboard show
+the first three (a "?" on each step) and never the bodies, which stay in `tasks.db` (SDK `1.2.0-preview.5`). To read a
+call's bodies, query `tasks.db`: `state_json` of the task, `Steps[n].ModelCalls[m].RequestJson` / `.ResponseJson`.
+The multilingual UI (Italian and English, `agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md`) is implemented; see `web/bops-ui/README.md`.
+V1.2-E is implemented: each role's steps and tokens are counted while it runs and reconciled at its end, its budget is
+reserved from what the run has left, it stops at its own deadline, and a cancelled or expired run ends as `Cancelled` or
+`DeadlineExceeded` (a run under way returns, it no longer throws), all audited. A side-effecting step cancelled while it
+runs is audited as an unknown outcome, not a failed one; the durable journal and resume are V1.2-F. No SDK change. The
+task file lists the interpretations E made.
+V1.2-F is implemented: `SqliteDelegationStore`, the step journal, `DelegationRunner.ResumeAsync` and `ReconcileAsync`, and an
+idempotent `StartAsync`, proven with a store that dies at a chosen write so a resume finds exactly what was durable then. The
+SDK moves to `1.2.0-preview.6`. A run is durable only when the runner is given a store; nothing is wired into Cli or Api yet
+(V1.2-I, V1.2-J), which is also where the administrator role for `ReconcileAsync` is enforced: the runtime checks only that
+the decider is a human identity. A run that ends `Cancelled` or `DeadlineExceeded` with a step of unknown outcome is not
+resumed (it is an end, and a retry is a new objective); its journal and its error say the outcome is unknown. The task file
+lists the interpretations F made.
+V1.2-G is implemented: `SeparationOfDuties` is the one rule for who may approve (not an agent, not the runtime, not a claimed
+agent id of the run) and for distinct agent identities; a step approval in a delegated run is now checked like the plan
+approval; a run that shares an identity between roles is invalid when it runs and when it is read back from a store;
+`VerifyPlanAsync` no longer skips a step it cannot verify. Verification takes only the approved plan and reads the system
+through its own envelope, and that is now a test of its signature as well as of its behaviour. No SDK change. Open for the
+operator (agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md, "For the operator"): the runtime accepts the operator
+who started a run as the approver of its plan; requiring a second person is a policy decision, not built.
+V1.2-H is implemented, and found the audit trail already nearly complete: C2, D, E and F had stamped the correlation block on
+every event and emitted every event type of ADR-0030 section 8. What it added is the one thing missing to rebuild the chain of
+provenance from the log, the ids of the evidence each role gathered (`EvidenceIds`, SDK `1.2.0-preview.7`), and the tests that
+prove the section end to end (`DelegationRunnerAuditTests`). `bops audit verify` needed no change. `bOps.Runtime.Tests` now
+references `bOps.Audit` to run a delegated run through the real hash-chained sink.
+V1.2-I is implemented: `bops delegate` (start, status, resume, cancel, reconcile), a console plan approval that shows the hash,
+the steps, the findings and the authority the change will run under, and one exit code per end. The role profiles come from the
+same loaded policy the engine does. `DelegationRunner.CancelAsync` and `PlanApprovalRequest.Authority` are new (SDK
+`1.2.0-preview.8`). The new `bOps.Cli.Tests` project drives the parser, the console approval, the command over a real SQLite
+store and the real `bops` executable as a process; it found two defects that are fixed (provenance could not be stored in
+SQLite, and a resume of a journal without a plan). The administrator role for `reconcile` is not enforced by the CLI: a person at
+the terminal is the trust anchor, as for `bops vault rotate-key`; the API (V1.2-J) enforces the role. `cancel` reaches a stored
+run only; a run executing in a live process is cancelled with Ctrl+C in it.
+V1.2-J is implemented: `/api/delegations` (start, list, read, cancel, resume, reconcile, plan approval), role-gated as ADR-0030 section 9
+asks, with `docs/agents/delegations-api.md` and a threat-model section. The API host builds `PolicyRoleProfileSource` over the same loaded
+`PolicyConfig` as its engine (`LoadedPolicy`). Two things to know: the runtime never writes `DelegationStatus.AwaitingApproval` (a run
+waiting for its plan is `Running`; the API adds `awaitingPlanApproval`), and four-eyes approval is not built (an identity holding both
+`operator` and `approver` can approve its own plan; documented as residual risk).
+V1.2-K is implemented: the Delegations view in `web/bops-ui` (`features/delegations`, `state/delegations.store.ts`, models and client
+methods for `/api/delegations`, a route and a nav entry with a badge for plans waiting). It polls every two seconds like the approval
+queue; buttons follow the role, the API decides. Its strings were migrated to the translation catalogues by the multilingual UI task.
+V1.2-L is implemented: `docs/agents/delegation.md`, `docs/agents/delegation-policy.md` (its yaml example is loaded by
+`DelegationPolicyGuideTests`, so it cannot drift from the loader), the threat-model section on the limits of the envelope, and the
+README, roadmap, bootstrap and task index aligned to "V1.2 A–L implemented, M open". Nothing is claimed as released.
+V1.2-M is implemented: `V12ReleaseGateTests` (real tools, real policy, real store, over HTTP, plus a host killed between a write and its
+outcome and resumed by a new one) and `PublicSurfaceSnapshotTests` (the frozen 1.0 surface, permanently). The local gate is closed: Release
+build with 0 warnings, 1521 non-live tests passed (32 skipped, named in the M task), the Angular build and 91 tests, and the SDK packed as
+`1.2.0-preview.8`. The operator authorized the tag and the release once the gate was green: `v1.2.0-preview.8` (`5cd9046`) passed the release workflow on Windows and Linux (run `35516050493`), its artifacts were checked (checksums and attestations) and it is published as a GitHub pre-release. No NuGet publication.
+V1.3-A is implemented (2026-09-21): `system.events` on Windows (Event Log) and Linux (journald), ADR-0032, decision D-028 and
+`docs/system-events.md`. The pull request is merged only when the operator asks; the Linux real-journald tests were verified in a
+container, so the hosted CI run is the remaining evidence.
+V1.3-B is implemented (2026-09-21): nine typed Docker tools for image inspect, pull, tag and removal, bounded local builds and
+volumes, ADR-0033, decision D-029 and `docs/docker-management.md`. `docker.build` is off until `Docker:Build:Contexts` lists a
+directory; the runner tool timeout (30 seconds) is short for a pull or a build and is the operator's to raise.
+V1.3-C is implemented (2026-09-22): `process.inspect` extended additively with ten nullable fields plus three read-only tools,
+`process.metrics`, `process.tree` and `process.modules`, on both systems — ADR-0034, decision D-030 and
+`docs/process-diagnostics.md`. Windows reads `Win32_Process` through `System.Management` (a new Windows-only dependency) and
+three kernel32 counters; Linux reads `/proc` directly. There is still no `process.start` and no way to read a process
+environment, and a new `NoGenericExecutionToolTests` in `bOps.Architecture.Tests` now enforces both over the whole source tree.
+This is a Windows development machine, so the Linux tools' 55 platform-gated tests skip here and the `ubuntu-latest` CI job is
+their evidence; the `/proc` parsers they depend on are covered by 8 platform-independent tests that do run everywhere.
+V1.3-D is implemented (2026-09-22): `network.sockets`, `network.routes`, `network.neighbors`,
+`network.interface_stats`, `network.dns_query`, `network.traceroute` and `network.ntp_probe` on both
+systems -- ADR-0035, decision D-031 and `docs/network-diagnostics.md`. The existing
+`bOps.Packages.Network` package and its six tools are unchanged; a new `bOps.Packages.Network.Native.{Core,Windows,Linux}`
+family is registered alongside it. Windows reads `GetExtendedTcpTable`/`GetExtendedUdpTable` (owner-PID
+sockets) and `GetIpForwardTable2`/`GetIpNetTable2` (routes/neighbors) via `iphlpapi.dll`, parsed by fixed
+byte offset because both route and neighbor rows embed a `SOCKADDR_INET` union with no single C#
+`StructLayout`; interface counters use `NetworkInterface.GetIPStatistics()`. Linux reads `/proc/net/*`
+directly and runs exactly two fixed, argument-listed `ip -j route|neighbor show[/-6]` invocations, no
+shell, no model-supplied argument. `network.dns_query`, `network.traceroute` and `network.ntp_probe`
+need no OS-specific collection at all (system resolver / a minimal typed UDP DNS client, `Ping` with
+increasing TTL, a minimal SNTP client) and are concrete classes shared by both platform packages. Real
+loopback TCP/UDP sockets proved exact PID/port ownership on this Windows machine (2206 tests, 0
+failures, 88 skipped -- the 11 new Linux-only tests, skipped visibly here, are the `ubuntu-latest` CI
+job's evidence).
+V1.3-E is implemented in PR #37 (2026-09-22): the new
+`bOps.Packages.Storage.{Core,Windows,Linux}` family contributes `storage.disks`,
+`storage.partitions`, `storage.mounts`, `storage.io` and `storage.health`. Windows uses WMI/CIM
+disk, partition, logical-disk, raw performance and physical-disk health classes; an ambiguous
+performance instance is never guessed. Linux reads sysfs, mountinfo, statvfs and diskstats, and
+optionally runs fixed `smartctl -j -a -- <enumerated-device>` arguments with bounded JSON capture.
+Every tool is read-only, output is bounded, unavailable health stays unknown, and raw SMART/WMI
+payloads never leave the package. Local Release build is clean and the complete non-live suite is
+green (2,133 passed, 90 skipped). CI run `35752253682` is green on both Ubuntu and Windows,
+including Linux real-source sysfs/procfs/statvfs coverage and the Windows WMI/CIM source test.
+
+V1.3-F is implemented locally on `feat/v13-F_partial` (2026-09-22), extending the existing
+`bOps.Packages.Filesystem` family with `fs.grep`, `fs.tail`, `fs.permissions`, `fs.locks`,
+`fs.copy`/`fs.copy.verify` and `fs.mkdir`. All seven never bypass `FilesystemPathPolicy`
+(S11): `fs.grep`/`fs.tail` never follow symlinks or reparse points, `fs.copy` re-resolves both
+endpoints immediately before I/O and stages through an invocation-owned temporary sibling, and
+`fs.mkdir`'s `fs.stat` verification confirms the path is actually a directory, not merely that
+something exists there. `fs.locks` and `fs.permissions` report `complete:false` whenever the
+underlying diagnostic source failed, was restricted, or was truncated by a row/entry cap, rather
+than ever presenting a partial scan as trustworthy evidence — this closed three review findings:
+Windows `fs.locks` previously folded a Restart Manager API failure into the same empty result as
+"no holders", Linux `fs.locks` did not flag truncation at the process/descriptor ceilings or the
+row limit, and Windows `fs.permissions` read a directory's ACL through the file API instead of
+`DirectorySecurity`, plus its 200-entry cap did not flag truncation. `fs.tail` also moved from a
+non-strict `Encoding.UTF8.GetString` (which silently replaces invalid bytes) to a strict decoder
+that rejects malformed UTF-8, correctly drops a partial first line when a `maxBytes` window starts
+mid multi-byte character, and strips a BOM only at the true start of the file. Local Release build
+is clean (0 warnings, 0 errors) and the Filesystem test project is green, including new limits/
+encoding/binary/timeout, real Windows ACL and Restart Manager, and copy/mkdir coverage; see the
+task file's local validation evidence for exact counts. PR not yet opened; Linux-specific paths
+(`fs.locks`/`fs.permissions` real sources) are exercised by this suite's Linux-only tests but were
+only verified by inspection here, not executed, since this machine is Windows.
+
+Historical next action at that time: open the V1.3-F pull request and get Windows/Linux CI green, then V1.3-G,
+service/scheduler. V1.3 has an ordered
+A–L operational-completeness chain: events, Docker, process, network, storage, filesystem,
+service/scheduler, identity/time/reboot, firewall, TLS/certificates, updates/crashes/drivers, then
+a senior-operator integration gate. V1.3-M follows with entitlement/plugin lifecycle. The intent
+is that V1.4 transports an already-complete local diagnostic surface and future PostgreSQL/
+SQL Server Skills add only domain-specific evidence/remediation.
+(`agentic/_tasks/2026-09-16-v1.2-multi-agent.md` lists the completed V1.2 sub-tasks A–M).
+The formal release gate is closed via `v1.1.0-preview.2`.
+
+Do not create a release tag or publish packages without separate operator authorization. The private commercial repository remains product-gated and
+unchanged; only the workspace submodule pin advances after this public closure.
