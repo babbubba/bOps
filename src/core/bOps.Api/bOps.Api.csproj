@@ -69,4 +69,40 @@
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- F-26: the Web SDK publishes every **/*.json as Content. Runtime state and local development files can sit in this folder on a
+       developer machine (all are git-ignored); none may ever reach a published artifact. Test-PublishedArtifact.ps1 re-checks this. -->
+  <ItemGroup>
+    <Content Remove="settings.json;plugins.json;publisher-trust.json;secrets.json;appsettings.Development.json;appsettings.Local.json" />
+  </ItemGroup>
+
+  <!-- F-26 (BOPS-0120): production hosting of the Angular SPA.
+       A normal `dotnet build` never touches Node or Angular. `dotnet publish` of this project ships the compiled SPA beside the binaries
+       in wwwroot-ui/ and FAILS when it is missing or incomplete, so a frontend is never dropped silently. Build the SPA first with
+       `npm ci && npm run build` in web/bops-ui (scripts/Publish-Bops.ps1 does both), or publish a backend-only artifact on purpose with
+       -p:BopsWebUi=false. The published appsettings.Production.json (Content, publish only) binds Kestrel to http://localhost:5080 and
+       trusts exactly that browser origin; the host serves the SPA when wwwroot-ui/ exists (WebUiSettings). -->
+  <PropertyGroup>
+    <BopsWebUi Condition="'$(BopsWebUi)' == ''">true</BopsWebUi>
+    <BopsWebUiDir Condition="'$(BopsWebUiDir)' == ''">$(MSBuildProjectDirectory)/../../../web/bops-ui/dist/bops-ui/browser</BopsWebUiDir>
+  </PropertyGroup>
+
+  <Target Name="BopsValidateWebUi" BeforeTargets="PrepareForPublish" Condition="'$(BopsWebUi)' != 'false'">
+    <ItemGroup>
+      <_BopsUiMain Include="$(BopsWebUiDir)\main-*.js" />
+      <_BopsUiPolyfills Include="$(BopsWebUiDir)\polyfills-*.js" />
+      <_BopsUiStyles Include="$(BopsWebUiDir)\styles-*.css" />
+    </ItemGroup>
+    <Error Condition="!Exists('$(BopsWebUiDir)\index.html')"
+           Text="bOps.Api publish needs the compiled Angular SPA, but '$(BopsWebUiDir)\index.html' does not exist. Run 'npm ci &amp;&amp; npm run build' in web/bops-ui (or scripts/Publish-Bops.ps1), or pass -p:BopsWebUi=false for a deliberate backend-only artifact." />
+    <Error Condition="'@(_BopsUiMain)' == '' Or '@(_BopsUiPolyfills)' == '' Or '@(_BopsUiStyles)' == ''"
+           Text="The Angular build in '$(BopsWebUiDir)' is incomplete (main-*.js, polyfills-*.js or styles-*.css is missing). Rebuild it with 'npm run build' in web/bops-ui." />
+  </Target>
+
+  <Target Name="BopsIncludeWebUi" AfterTargets="ComputeResolvedFilesToPublishList" DependsOnTargets="BopsValidateWebUi" Condition="'$(BopsWebUi)' != 'false'">
+    <ItemGroup>
+      <_BopsUiFile Include="$(BopsWebUiDir)\**\*" />
+      <ResolvedFileToPublish Include="@(_BopsUiFile)" RelativePath="wwwroot-ui\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
 </Project>

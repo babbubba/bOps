@@ -46,6 +46,11 @@ builder.Services.AddSingleton(sp => BrowserSessionSettings.Load(sp.GetRequiredSe
 builder.Services.AddSingleton<IBrowserSessionStore>(sp => new SqliteBrowserSessionStore(sp.GetRequiredService<BrowserSessionSettings>().FilePath));
 builder.Services.AddSingleton<BrowserSessionService>();
 
+// F-26: the compiled SPA is hosted by this process when the published artifact carries it (WebUi), and forwarded headers from a TLS
+// reverse proxy are honoured only from the proxies listed in ReverseProxy. Both sections are validated eagerly below.
+builder.Services.AddSingleton(sp => WebUiSettings.Load(sp.GetRequiredService<IConfiguration>(), AppContext.BaseDirectory));
+builder.Services.AddSingleton(sp => ReverseProxySettings.Load(sp.GetRequiredService<IConfiguration>()));
+
 // ADR-0043 §8: "bops" is a policy scheme with fixed precedence — any Authorization header selects Bearer (never a downgrade to the
 // cookie), else a presented session cookie selects the browser session, else Bearer (unchanged anonymous behaviour).
 builder.Services
@@ -317,12 +322,25 @@ var app = builder.Build();
 // ADR-0043 §5, §12: fail startup on an invalid BrowserSession section or an unsupported sessions.db, then the bounded startup sweep.
 app.Services.GetRequiredService<IBrowserSessionStore>();
 app.Services.GetRequiredService<SqliteSystemMessageStore>();
+var webUi = app.Services.GetRequiredService<WebUiSettings>();
+var reverseProxy = app.Services.GetRequiredService<ReverseProxySettings>();
 await app.Services.GetRequiredService<BrowserSessionService>().StartupCleanupAsync(CancellationToken.None);
 
 // ADR-0044 section 4: the policy is read once, at start, which logs its absolute path and load state (never its contents).
 app.Services.GetRequiredService<LoadedPolicy>();
 
 // ADR-0043 §8 pipeline order.
+// F-26: forwarded headers first (only from configured proxies), then the UI's response hardening, so every later response carries them.
+if (reverseProxy.Enabled)
+{
+    app.UseForwardedHeaders(reverseProxy.ToOptions());
+}
+
+if (webUi.Enabled)
+{
+    app.UseWebUiSecurityHeaders();
+}
+
 // A framework request error (malformed JSON, oversized body) keeps its own 4xx status; everything else is a 500. No request data is echoed.
 app.UseExceptionHandler(new ExceptionHandlerOptions
 {
@@ -330,6 +348,11 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
         ? badRequest.StatusCode
         : StatusCodes.Status500InternalServerError,
 });
+if (webUi.Enabled)
+{
+    app.UseWebUiStaticFiles(webUi);
+}
+
 app.UseAuthentication();
 app.UseBrowserSessionCsrf();
 app.UseRateLimiter();
@@ -394,6 +417,7 @@ chatModelRegistry.Register(new PackageId("bops.packages.providers.openai"), app.
 chatModelRegistry.Register(new PackageId("bops.packages.providers.deepseek"), app.Services.GetRequiredService<DeepSeekProviderPackage>());
 chatModelRegistry.Register(new PackageId("bops.packages.providers.anthropic"), app.Services.GetRequiredService<AnthropicProviderPackage>());
 
+app.MapHealthEndpoints();
 app.MapAgentsEndpoints();
 app.MapApprovalsEndpoints();
 app.MapDelegationsEndpoints();
@@ -410,6 +434,12 @@ app.MapPluginLifecycleEndpoints();
 if (app.Services.GetService<VaultStore>() is not null)
 {
     app.MapSettingsEndpoints();
+}
+
+// F-26: registered last; the fallback has the lowest route priority, so it never shadows an endpoint above.
+if (webUi.Enabled)
+{
+    app.MapWebUiFallback(webUi);
 }
 
 await app.RunAsync();
