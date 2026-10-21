@@ -5464,7 +5464,9 @@
    "prs": [
     108
    ],
-   "commits": [],
+   "commits": [
+    "6677155f3f9ce55e53b81002afa633181d59b310"
+   ],
    "validation": {
     "achieved": [
      "OFFLINE_TESTS"
@@ -5475,15 +5477,18 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "PR #108 review, merge and CI of the merge commit.",
+     "CI of the merge commit 6677155 on main (run 39568937685) not yet recorded.",
      "Operator approval to freeze the id mapping (D9).",
      "Initial Issue/Project population and linking to the register: not done, awaiting operator approval."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "PR #108 squash-merged 2026-10-21 as 6677155",
+    "PR CI run 39564405749 (head bcd2ab3): Windows and Linux green, including the Task register validation step"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "PR #108 open. Project #6 configured (7 Status options, 5 custom fields, 3 views, private); no Issue or item yet; mapping PROVISIONAL.",
+   "note": "PR #108 merged. Project #6 configured (7 Status options, 5 custom fields, 3 views, private, five status-moving workflows disabled); no Issue or item yet; mapping PROVISIONAL.",
    "issue": null,
    "project_item": null,
    "branch": null
