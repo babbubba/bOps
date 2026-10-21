@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 120,
+  "next": 121,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -2994,7 +2994,9 @@
    "priority": "P1",
    "effort": null,
    "authorized": null,
-   "depends_on": [],
+   "depends_on": [
+    "BOPS-0062"
+   ],
    "packet": "agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md",
    "spec": null,
    "companion_docs": [],
@@ -3053,9 +3055,7 @@
    "priority": "P2",
    "effort": null,
    "authorized": null,
-   "depends_on": [
-    "BOPS-0061"
-   ],
+   "depends_on": [],
    "packet": "agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md",
    "spec": null,
    "companion_docs": [],
@@ -3077,7 +3077,13 @@
      "Manual mutation session M1-M24 recorded as 'to be registered'; final local long-run validation inconclusive (HANDOFF 2026-10-10)."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "PR #99 squash-merged 2026-10-10 as 2f961f7493c7ed94f96dd07ff173fcfdf0d140c9",
+    "CI of the PR head ecb51a8 (run 38041415777) and of the merge commit 2f961f7 (run 38042857409, Quality finalize 38043991696): success on Windows and Linux (verified read-only 2026-10-21)",
+    "Targeted suites re-run 2026-10-21: Runtime 2301/2301 (OrdinaryMutation 151/151), Memory 101/101, Api 559/559, Architecture 210/210",
+    "Integrative mutations M2-M5, M9, M11, M12, M16, M17, M20, M24 all caught (M16 re-run 2026-10-21; the others transcribed from a session scratchpad log that is not durable: limit stated in the packet)",
+    "Real process-kill persistence test of the SQLite journal re-run 2026-10-21: 25 random kills, 2298 tasks, 0 violations (harness source in the packet appendix)"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
@@ -5610,8 +5616,12 @@
    "packet": "agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md",
    "spec": null,
    "companion_docs": [],
-   "prs": [],
-   "commits": [],
+   "prs": [
+    121
+   ],
+   "commits": [
+    "f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3"
+   ],
    "validation": {
     "achieved": [
      "OFFLINE_TESTS"
@@ -5625,7 +5635,8 @@
     ]
    },
    "evidence": [
-    "Read-only run of sync_remote.py against Project #6 on 2026-10-21 (after a secondary rate limit cleared): 19 items read, 18 in sync, 2 pending updates for BOPS-0119 (Status Backlog->Validation, Evidence Level None->Offline tests), 0 conflicts; no remote write performed"
+    "Read-only run of sync_remote.py against Project #6 on 2026-10-21 (after a secondary rate limit cleared): 19 items read, 18 in sync, 2 pending updates for BOPS-0119 (Status Backlog->Validation, Evidence Level None->Offline tests), 0 conflicts; no remote write performed",
+    "PR #121 squash-merged 2026-10-21 as f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3; remote Project #6 draft item verified at Validation 2026-10-21T19:02:47+0200 (baseline recorded here)"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -5635,8 +5646,53 @@
    "branch": "feat/bops-0119-project-sync",
    "remote_kind": "draft",
    "sync": {
-    "status": "Backlog",
-    "verified_at": "2026-10-21T10:34:40+0200"
+    "status": "Validation",
+    "verified_at": "2026-10-21T19:02:47+0200"
+   }
+  },
+  {
+   "id": "BOPS-0120",
+   "legacy_id": "F-26",
+   "title": "F-26 Production SPA hosting (single-host ASP.NET Core + Angular)",
+   "created": {
+    "at": "2026-10-21",
+    "basis": "document-date",
+    "source": "operator request 2026-10-21",
+    "order_certainty": "conventional"
+   },
+   "milestone": "V1.3",
+   "area": "Release",
+   "status": "IN_PROGRESS",
+   "priority": "P1",
+   "effort": null,
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Implementation in progress; CI of the PR head and merge commit, and the published-artifact smoke test on Windows and Linux."
+    ]
+   },
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Stable V1.3 blocker F-26 (hardening plan section 15): the SPA must be servable without npm start / Angular dev server.",
+   "issue": 122,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCe0Zo",
+   "branch": "feat/bops-0120-f26-spa-hosting",
+   "remote_kind": "issue",
+   "sync": {
+    "status": "In Progress",
+    "verified_at": "2026-10-21T19:48:41+0200"
    }
   }
  ],

@@ -103,10 +103,16 @@ both hosts load the same file and plugins. Nothing creates or changes this file 
 
 ## 3. Web UI
 
-The Angular UI in `web/bops-ui` is a client of the local API. `npm start` serves it on
-`http://localhost:4200` and proxies `/api` to `http://localhost:5080` (`proxy.conf.json`), so start the
-API first. The dev server with this same-origin proxy is the only supported browser topology: bOps does
-not host the built SPA itself (production SPA hosting is deferred, F-26), and no CORS policy exists.
+The Angular UI in `web/bops-ui` is a client of the API. There are two topologies, both same-origin, and no CORS
+policy exists in either:
+
+- **Installed (production).** The published `bOps.Api` serves the compiled UI and the API on one endpoint
+  (`http://localhost:5080` for a local install, or your HTTPS origin behind a reverse proxy). Nothing else
+  runs: no Node.js, no dev server. Build, install, proxy samples and service setup:
+  [Installing and running bOps](deployment.md) (F-26).
+- **Development.** `npm start` serves the UI on `http://localhost:4200` and proxies `/api` to
+  `http://localhost:5080` (`proxy.conf.json`), so start the API first. A development build of the API has
+  no `wwwroot-ui/` and stays API-only.
 
 **Signing in (ADR-0043).** On the sign-in screen enter the value of `BOPS_API_KEY`. The UI sends it once
 to `POST /api/session` and receives a browser session in the cookie `__Host-bops_session` (`HttpOnly`,
@@ -124,8 +130,9 @@ The key needs the `viewer` role to open the UI.
   request, as does any change that makes the key resolve to a different configured credential. Role
   changes apply to existing sessions at the next start, exactly as for Bearer.
 - **Open the UI at exactly a configured origin.** Cookie-authenticated changes (and sign-in itself) are
-  accepted only from `BrowserSession:Origins` (default `http://localhost:4200`); `http://127.0.0.1:4200`
-  is a different origin and is refused unless you add it.
+  accepted only from `BrowserSession:Origins` (default `http://localhost:4200`; the published artifact's
+  `appsettings.Production.json` sets `http://localhost:5080`, and behind HTTPS it is your public origin);
+  `http://127.0.0.1:4200` is a different origin and is refused unless you add it.
 - **Revoke every browser session:** stop the API and delete `sessions.db` (`BrowserSession:FilePath`);
   browsers simply sign in again. The file holds no key and no usable token.
 - **Sign-in attempts** are limited to 10 per minute per client address.
@@ -369,8 +376,10 @@ network-namespace guidance are in [the web network policy](security/web-network-
 
 ## 11. Production notes
 
-- Bind the API to loopback, or put TLS and an authenticated reverse proxy in front of it. The launch
-  profile's `localhost:5080` is a development setting only.
+- Bind the API to loopback, or put TLS and a reverse proxy in front of it
+  ([deployment guide](deployment.md): Kestrel binding, TLS termination, `BrowserSession:Origins`,
+  `ReverseProxy:KnownProxies`, data directory, start at boot). `X-Forwarded-*` headers are ignored unless the
+  proxy is listed in `ReverseProxy`.
 - The API and CLI run with the privileges of their host account; bOps does not elevate.
 - Credentials travel only in the `Authorization: Bearer` header or, for the web UI, once in the
   `POST /api/session` JSON body and then as the `HttpOnly` session cookie; never in a query string.

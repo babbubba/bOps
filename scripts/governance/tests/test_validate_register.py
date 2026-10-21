@@ -31,7 +31,11 @@ class RealRegister(unittest.TestCase):
         self.assertEqual(sorted(stamps), stamps)
 
     def test_no_functional_task_is_in_progress_without_authorization(self):
-        self.assertEqual([], [t["id"] for t in REGISTER["tasks"] if t["status"] == "IN_PROGRESS"])
+        # PROCESS.md section 3 allows several tasks in progress, each authorized and on its own branch.
+        active = [t for t in REGISTER["tasks"] if t["status"] == "IN_PROGRESS"]
+        self.assertEqual([], [t["id"] for t in active if t.get("authorized") is not True or not t.get("branch")])
+        branches = [t["branch"] for t in active]
+        self.assertEqual(len(branches), len(set(branches)))
 
     def test_the_frozen_mapping_keeps_verified_and_conventional_order_apart(self):
         kinds = {t["created"]["order_certainty"] for t in REGISTER["tasks"]}
