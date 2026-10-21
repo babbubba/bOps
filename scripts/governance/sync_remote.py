@@ -31,6 +31,8 @@ STATUS_LINE = re.compile(r"\*\*Status in the register:\*\* (\w[\w ]*?) \(`(\w+)`
 RATE_RE = re.compile(r"secondary rate limit|already exceeded|abuse detection|rate limit", re.I)
 # remote snapshot key -> Project field name; every field except Status is fill-only
 FIELDS = {"priority": "Priority", "area": "Area", "milestone": "bOps Milestone", "evidence": "Evidence Level", "effort": "Effort"}
+FIELD_KEY = {"Status": "status", **{v: k for k, v in FIELDS.items()}}
+BLOCKING = {"kind", "title", "identity", "Status"}  # a conflict of these kinds forbids every mutation for the task
 ITEM_KEYS = {"status": "status", "priority": "priority", "area": "area", "bOps Milestone": "milestone", "evidence Level": "evidence", "effort": "effort"}
 
 
@@ -86,22 +88,34 @@ def plan(reg: dict, remote: dict, *, close_done: bool = False, now: str = "") ->
         if c > 1:
             out["reports"].append({"kind": "duplicate", "task": tid, "detail": f"{c} Issues share the prefix {tid}"})
 
-    for tid, t in sorted(tasks.items()):
-        if not t.get("project_item"):
-            continue
+    def one(tid: str, t: dict) -> None:
         item = items.get(t["project_item"])
         if item is None:
             out["reports"].append({"kind": "vanished", "task": tid, "detail": f"project item {t['project_item']} not found"})
-            continue
+            return
         want = desired(t, reg)
         if t["status"] == "SUPERSEDED":
             out["reports"].append({"kind": "superseded-on-board", "task": tid, "detail": "SUPERSEDED tasks have no board column; remove manually"})
-            continue
+            return
         # kind
         is_issue = item.get("kind") == "Issue"
         if is_issue != (t.get("remote_kind") == "issue"):
             out["conflicts"].append({"task": tid, "what": "kind", "detail": f"register says {t.get('remote_kind')}, remote item is {item.get('kind')}"})
-            continue
+            return
+        # identity: the item must carry this task's Issue; never repaired automatically
+        iss = None
+        if is_issue:
+            if item.get("issue") != t.get("issue"):
+                out["conflicts"].append({"task": tid, "what": "identity", "detail": f"project item {item['id']} is linked to Issue #{item.get('issue')}, register says #{t.get('issue')}"})
+                return
+            iss = issues.get(t.get("issue"))
+            if iss is None:
+                out["reports"].append({"kind": "vanished", "task": tid, "detail": f"Issue #{t.get('issue')} not found"})
+                return
+            m = PREFIX.match(iss.get("title", ""))
+            if iss.get("title") != vr.task_title(t) or not m or m.group(1) != tid:
+                out["conflicts"].append({"task": tid, "what": "identity", "detail": f"Issue #{iss['number']} title {iss.get('title')!r} does not match the task {vr.task_title(t)!r}"})
+                return
         # title
         wt = vr.task_title(t)
         if item.get("title") != wt:
@@ -109,11 +123,13 @@ def plan(reg: dict, remote: dict, *, close_done: bool = False, now: str = "") ->
         # status: three-way
         base = (t.get("sync") or {}).get("status")
         cur = item.get("status")
+        will_be_done = cur == "Done"
         if cur == want.get("status"):
             if base != cur:
                 out["pending_register"].append({"task": tid, "sync": {"status": cur, "verified_at": now}})
         elif cur == base and base is not None:
             out["updates"].append({"task": tid, "item": item["id"], "field": "Status", "old": cur, "new": want["status"]})
+            will_be_done = want["status"] == "Done"
         else:
             why = "no baseline" if base is None else f"remote changed since the last sync (baseline {base!r})"
             out["conflicts"].append({"task": tid, "what": "Status", "detail": f"remote {cur!r}, register wants {want['status']!r}: {why}"})
@@ -128,13 +144,13 @@ def plan(reg: dict, remote: dict, *, close_done: bool = False, now: str = "") ->
                 out["conflicts"].append({"task": tid, "what": name, "detail": f"remote {have!r} differs from register {w!r}; not overwritten"})
         # issue state and body
         if is_issue:
-            iss = issues.get(t.get("issue"))
-            if iss is None:
-                out["reports"].append({"kind": "vanished", "task": tid, "detail": f"Issue #{t.get('issue')} not found"})
-                continue
             if t["status"] == "DONE" and iss["state"] == "open":
                 if close_done:
-                    out["updates"].append({"task": tid, "issue": iss["number"], "field": "IssueState", "old": "open", "new": "closed"})
+                    # closing is deferred to the write phase, which re-reads the remote Status and the Issue first
+                    if will_be_done and gates_met(t):
+                        out["updates"].append({"task": tid, "item": item["id"], "issue": iss["number"], "title": wt, "field": "IssueState", "old": "open", "new": "closed"})
+                    else:
+                        out["reports"].append({"kind": "close-blocked", "task": tid, "detail": f"Issue #{iss['number']} not closed: gates or remote Status are not Done"})
                 else:
                     out["reports"].append({"kind": "pending-close", "task": tid, "detail": f"Issue #{iss['number']} open while the task is DONE (use --close-done)"})
             elif t["status"] != "DONE" and iss["state"] != "open":
@@ -142,7 +158,25 @@ def plan(reg: dict, remote: dict, *, close_done: bool = False, now: str = "") ->
             m = STATUS_LINE.search(iss.get("body") or "")
             if m and m.group(2) != t["status"]:
                 out["reports"].append({"kind": "body-stale", "task": tid, "detail": f"Issue #{iss['number']} body says {m.group(2)}, register {t['status']}"})
+
+    for tid, t in sorted(tasks.items()):
+        if not t.get("project_item"):
+            continue
+        n_up, n_pr, n_c = len(out["updates"]), len(out["pending_register"]), len(out["conflicts"])
+        one(tid, t)
+        mine = out["conflicts"][n_c:]
+        if any(c["what"] in BLOCKING for c in mine):
+            # an identity, title, kind or Status conflict: no mutation and no baseline for this task
+            del out["updates"][n_up:], out["pending_register"][n_pr:]
+        elif mine:
+            # any other conflict still forbids closing the Issue
+            out["updates"][n_up:] = [u for u in out["updates"][n_up:] if u["field"] != "IssueState"]
     return out
+
+
+def gates_met(task: dict) -> bool:
+    v = task.get("validation") or {}
+    return not v.get("open_gates") and set(v.get("required", [])) <= set(v.get("achieved", []))
 
 
 def is_clean(p: dict) -> bool:
@@ -155,6 +189,27 @@ def default_runner(args: list[str]) -> tuple[int, str, str]:
     env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
     r = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     return r.returncode, r.stdout, r.stderr
+
+
+def parse_pages(text: str) -> list[dict]:
+    """Decode `gh api --paginate [--slurp]` output: one array of pages, or concatenated arrays; returns the flat list of objects."""
+    dec, pos, docs = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while pos < len(text):
+        doc, pos = dec.raw_decode(text, pos)
+        docs.append(doc)
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+    flat: list = []
+
+    def walk(d):
+        if isinstance(d, list):
+            for x in d:
+                walk(x)
+        else:
+            flat.append(d)
+    walk(docs)
+    return flat
 
 
 class GhClient:
@@ -198,7 +253,7 @@ class GhClient:
                 raise RateLimited(f"GraphQL budget low ({rl['remaining']} left, resets at {rl['reset']}); use --wait or retry later")
             self.sleep(max(0, rl["reset"] - self.clock()) + 5)
 
-    def fetch(self) -> dict:
+    def _items(self) -> list[dict]:
         raw = json.loads(self.call(["project", "item-list", str(self.project), "--owner", self.owner, "--limit", "200", "--format", "json"]))
         items = []
         for i in raw["items"]:
@@ -207,10 +262,24 @@ class GhClient:
             for k, v in ITEM_KEYS.items():
                 row[v] = i.get(k)
             items.append(row)
-        pages = self.call(["api", f"repos/{self.repo}/issues?state=all&per_page=100", "--paginate"])
+        return items
+
+    def fetch(self) -> dict:
+        pages = self.call(["api", f"repos/{self.repo}/issues?state=all&per_page=100", "--paginate", "--slurp"])
         issues = [{"number": x["number"], "title": x["title"], "state": x["state"], "body": x.get("body")}
-                  for x in json.loads("[" + pages.replace("][", ",").strip()[1:-1] + "]") if "pull_request" not in x]
-        return {"items": items, "issues": issues}
+                  for x in parse_pages(pages) if "pull_request" not in x]
+        return {"items": self._items(), "issues": issues}
+
+    def read_item(self, item: str) -> dict:
+        """Fresh value of one Project item (gh has no cheaper single-item read)."""
+        row = next((i for i in self._items() if i["id"] == item), None)
+        if row is None:
+            raise SyncAbort(f"project item {item} not found on re-read")
+        return row
+
+    def read_issue(self, number: int) -> dict:
+        x = json.loads(self.call(["api", f"repos/{self.repo}/issues/{number}"]))
+        return {"number": x["number"], "title": x["title"], "state": x["state"]}
 
     def fields(self) -> dict:
         if self._fields is None:
@@ -235,13 +304,72 @@ class GhClient:
         self.call(["api", "-X", "PATCH", f"repos/{self.repo}/issues/{number}", "-f", "state=closed"])
 
 
-def apply_updates(client, p: dict) -> None:
-    for u in p["updates"]:
+def describe(u: dict) -> str:
+    if u["field"] == "IssueState":
+        return f'{u["task"]} close Issue #{u["issue"]}'
+    return f'{u["task"]} {u["field"]}: {u["old"]!r} -> {u["new"]!r}'
+
+
+def _unset(v) -> bool:
+    return v in (None, "", "None")
+
+
+def _write(entry: dict, fn) -> None:
+    """Run one remote write. If it raises, the outcome is unknown (the server may have applied it): never assume it did not."""
+    try:
+        fn()
+    except Exception as x:
+        entry.update(state="unknown", error=str(x)[:160])
+        raise (x if isinstance(x, SyncAbort) else SyncAbort(f"write failed: {x}")) from None
+    entry["state"] = "done"
+
+
+def apply_updates(client, p: dict, ledger: list[dict]) -> list[dict]:
+    """Apply the planned updates one by one, re-reading the remote value right before each write. Fills `ledger` as it goes
+    (states: pending, done, already-satisfied, conflict, deferred, unknown) and returns the conflicts found at write time."""
+    late: list[dict] = []
+
+    def conflict(u, e, what, detail):
+        late.append({"task": u["task"], "what": what, "detail": detail})
+        e.update(state="conflict", error=detail)
+
+    for u, e in zip(p["updates"], ledger):
         if u["field"] == "IssueState":
-            client.close_issue(u["issue"])
+            cur = client.read_item(u["item"])
+            if cur.get("status") != "Done":
+                e.update(state="deferred", error=f"remote Status is {cur.get('status')!r}, not 'Done': Issue not closed")
+            elif cur.get("issue") != u["issue"]:
+                conflict(u, e, "identity", f"project item is linked to Issue #{cur.get('issue')}, expected #{u['issue']}")
+            else:
+                iss = client.read_issue(u["issue"])
+                if iss["title"] != u["title"]:
+                    conflict(u, e, "identity", f"Issue #{u['issue']} was renamed to {iss['title']!r}")
+                elif iss["state"] == "closed":
+                    e["state"] = "already-satisfied"
+                elif iss["state"] != "open":
+                    conflict(u, e, "IssueState", f"Issue #{u['issue']} is {iss['state']!r} at write time")
+                else:
+                    _write(e, lambda u=u: client.close_issue(u["issue"]))
         else:
-            client.edit_field(u["item"], u["field"], u["new"])
+            cur = client.read_item(u["item"]).get(FIELD_KEY[u["field"]])
+            if cur == u["new"]:
+                e["state"] = "already-satisfied"
+            elif cur != u["old"] and not (_unset(cur) and _unset(u["old"])):
+                conflict(u, e, u["field"], f"remote changed since the plan: expected {u['old']!r}, found {cur!r}; not overwritten")
+            else:
+                _write(e, lambda u=u: client.edit_field(u["item"], u["field"], u["new"]))
         client.sleep(client.delay)
+    return late
+
+
+def render_ledger(ledger: list[dict]) -> str:
+    label = {"done": "WRITTEN  ", "already-satisfied": "SATISFIED", "conflict": "CONFLICT ", "deferred": "DEFERRED ",
+             "unknown": "UNCERTAIN", "pending": "NOT RUN  "}
+    lines = ["apply summary:"]
+    for e in ledger:
+        extra = " -- outcome unknown, verify on GitHub (a dry-run re-run reconciles it)" if e["state"] == "unknown" else ""
+        lines.append(f'  {label[e["state"]]} {e["op"]}{extra}' + (f' [{e["error"]}]' if e.get("error") else ""))
+    return "\n".join(lines)
 
 
 # ----------------------------------------------------------------------------------------------------------------------- CLI
@@ -291,6 +419,7 @@ def main(argv=None, client=None) -> int:
         print("register invalid, refusing to synchronize:\n  " + "\n  ".join(errs))
         return 3
     client = client or GhClient(retries=a.retries, backoff=a.backoff, delay=a.delay, min_graphql=a.min_graphql, wait=a.wait)
+    ledger: list[dict] = []
     now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     try:
         client.guard_account()
@@ -301,12 +430,21 @@ def main(argv=None, client=None) -> int:
         if a.apply and p["updates"]:
             if p["conflicts"]:
                 print("conflicts present: applying only the non-conflicting updates")
-            apply_updates(client, p)
+            ledger = [{"op": describe(u), "state": "pending"} for u in p["updates"]]
+            try:
+                late = apply_updates(client, p, ledger)
+            finally:
+                print(render_ledger(ledger))  # shown even when a write fails and the run exits with code 3
             after = plan(reg, client.fetch(), close_done=a.close_done, now=now)
-            left = [u for u in after["updates"]]
-            if left:
+            known = {(x["task"], x["what"]) for x in after["conflicts"]}
+            after["conflicts"] += [c for c in late if (c["task"], c["what"]) not in known]
+            left = after["updates"]
+            incomplete = [e for e in ledger if e["state"] not in ("done", "already-satisfied")]
+            if left or incomplete:
                 failed = True
-                print("NOT synchronized after re-read:\n" + "\n".join(f'  {u["task"]} {u["field"]}' for u in left))
+                print("NOT synchronized: the batch was not fully applied and verified")
+                for u in left:
+                    print(f'  still to write: {describe(u)}')
             else:
                 print("re-read after apply: all updates verified")
             p = after
@@ -316,6 +454,8 @@ def main(argv=None, client=None) -> int:
             print(f"patched {patch_register(regpath, p['pending_register'])} register entries locally (commit them with the next substantive PR)")
     except SyncAbort as e:
         print("ABORT:", e)
+        if any(x["state"] != "pending" for x in ledger):
+            print("NOT synchronized: the batch was partially executed; re-run without --apply to reconcile the real state")
         return 3
     if p["conflicts"]:
         return 2

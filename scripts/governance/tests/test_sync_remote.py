@@ -1,5 +1,7 @@
 """Offline tests for scripts/governance/sync_remote.py. No network, no GitHub token, no secret: gh is replaced by fakes."""
+import contextlib
 import copy
+import io
 import json
 import sys
 import tempfile
@@ -42,7 +44,7 @@ def remote_of(reg):
     return {"items": items, "issues": issues}
 
 
-class Planner(unittest.TestCase):
+class PlannerBase(unittest.TestCase):
     def setUp(self):
         self.reg = baselined(REG)
         self.remote = remote_of(self.reg)
@@ -54,6 +56,8 @@ class Planner(unittest.TestCase):
     def plan(self, **kw):
         return sr.plan(self.reg, self.remote, **kw)
 
+
+class Planner(PlannerBase):
     def test_a_register_matching_the_remote_is_clean(self):
         p = self.plan()
         self.assertEqual({"updates": [], "conflicts": [], "reports": [], "pending_register": []}, p)
@@ -151,10 +155,11 @@ class Planner(unittest.TestCase):
 
 class FakeClient:
     """In-memory GitHub: records every write; edits change the remote like GitHub would."""
-    def __init__(self, remote, login="babbubba", graphql_left=5000):
+    def __init__(self, remote, login="babbubba", graphql_left=5000, between=None, fail_at=None, fail_applied=False):
         self.remote, self.login, self.left = remote, login, graphql_left
         self.writes, self.sleeps, self.delay = [], [], 0
         self.sleep = self.sleeps.append
+        self.between, self.fail_at, self.fail_applied, self.attempts = between, fail_at, fail_applied, 0
 
     def guard_account(self):
         if self.login != "babbubba":
@@ -165,19 +170,37 @@ class FakeClient:
             raise sr.RateLimited("low")
 
     def fetch(self):
-        return copy.deepcopy(self.remote)
+        snap = copy.deepcopy(self.remote)
+        if self.between:  # someone edits GitHub after the plan's snapshot and before the writes
+            hook, self.between = self.between, None
+            hook(self.remote)
+        return snap
+
+    def read_item(self, item):
+        return copy.deepcopy(next(i for i in self.remote["items"] if i["id"] == item))
+
+    def read_issue(self, number):
+        return copy.deepcopy(next(i for i in self.remote["issues"] if i["number"] == number))
+
+    def _write(self, record, apply):
+        self.attempts += 1
+        failing = self.attempts == self.fail_at
+        if failing and not self.fail_applied:
+            raise sr.SyncAbort("transport lost")
+        self.writes.append(record)
+        apply()
+        if failing:
+            raise sr.SyncAbort("transport lost after the server applied it")
 
     def edit_field(self, item, name, value):
-        self.writes.append((item, name, value))
         key = {v: k for k, v in sr.FIELDS.items()}.get(name, "status")
-        next(i for i in self.remote["items"] if i["id"] == item)[key] = value
+        self._write((item, name, value), lambda: next(i for i in self.remote["items"] if i["id"] == item).__setitem__(key, value))
 
     def close_issue(self, number):
-        self.writes.append(("issue", number))
-        next(i for i in self.remote["issues"] if i["number"] == number)["state"] = "closed"
+        self._write(("issue", number), lambda: next(i for i in self.remote["issues"] if i["number"] == number).__setitem__("state", "closed"))
 
 
-class Runs(unittest.TestCase):
+class RunsBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -205,6 +228,8 @@ class Runs(unittest.TestCase):
     def run_main(self, client, *args):
         return sr.main(["--root", str(self.root), *args], client=client)
 
+
+class Runs(RunsBase):
     def test_dry_run_writes_nothing_and_reports_differences(self):
         c = FakeClient(self.remote)
         self.assertEqual(1, self.run_main(c))
@@ -247,7 +272,136 @@ class Runs(unittest.TestCase):
         self.assertEqual("BLOCKED", task(saved, "AF-EVID-01")["status"])
 
 
+class Hardening(RunsBase):
+    LEGACY = ("AF-EVID-01", "PLAN-FIDELITY-01", "HOST-SATURATION-01")
+
+    def setUp(self):
+        super().setUp()
+        for legacy in self.LEGACY:
+            task(self.reg, legacy).update(status="BLOCKED", blocked_reason="waiting")
+        self.write_register()
+        self.ids = [task(self.reg, legacy)["project_item"] for legacy in self.LEGACY]
+
+    def status(self, item_id):
+        return next(i for i in self.remote["items"] if i["id"] == item_id)["status"]
+
+    def run_captured(self, client, *args):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.run_main(client, *args)
+        return rc, buf.getvalue()
+
+    def test_a_failure_after_a_successful_write_reports_written_uncertain_and_not_run(self):
+        c = FakeClient(self.remote, fail_at=2)
+        rc, out = self.run_captured(c, "--apply")
+        self.assertEqual(3, rc)
+        self.assertEqual(1, len(c.writes))
+        self.assertIn("WRITTEN", out)
+        self.assertIn("UNCERTAIN", out)
+        self.assertIn("NOT RUN", out)
+        self.assertIn("NOT synchronized", out)
+        self.assertNotIn("all updates verified", out)
+
+    def test_a_concurrent_change_between_plan_and_write_is_a_conflict_and_not_overwritten(self):
+        target = self.ids[0]
+        c = FakeClient(self.remote, between=lambda r: next(i for i in r["items"] if i["id"] == target).update(status="Deferred"))
+        rc, out = self.run_captured(c, "--apply")
+        self.assertEqual(2, rc)
+        self.assertNotIn(target, [w[0] for w in c.writes])
+        self.assertEqual("Deferred", self.status(target))
+        self.assertIn("CONFLICT", out)
+
+    def test_a_remote_value_already_equal_to_the_desired_one_is_not_written(self):
+        target = self.ids[0]
+        c = FakeClient(self.remote, between=lambda r: next(i for i in r["items"] if i["id"] == target).update(status="Blocked"))
+        rc, out = self.run_captured(c, "--apply")
+        self.assertNotIn(target, [w[0] for w in c.writes])
+        self.assertIn("SATISFIED", out)
+        self.assertEqual(2, len(c.writes))
+
+    def test_a_rerun_after_a_partial_apply_reconciles_without_duplicating_writes(self):
+        c = FakeClient(self.remote, fail_at=2, fail_applied=True)  # the 2nd write lands but the caller sees an error
+        self.assertEqual(3, self.run_captured(c, "--apply")[0])
+        self.assertEqual(2, len(c.writes))
+        rc, out = self.run_captured(c)  # dry-run: sees the real state
+        self.assertEqual(2, len(c.writes))
+        self.assertEqual(1, out.count("UPDATE"))  # only the third write is still owed
+        self.run_captured(c, "--apply")
+        self.assertEqual(3, len(c.writes))
+        self.assertEqual(3, len({w[0] for w in c.writes}))
+        self.assertEqual(["Blocked"] * 3, [self.status(i) for i in self.ids])
+
+
+class Identity(PlannerBase):
+    def setUp(self):
+        super().setUp()
+        self.t = task(self.reg, "PROJECT-GOVERNANCE-01")
+        self.t.update(status="DONE")
+        self.t["validation"].update(achieved=self.t["validation"]["required"], open_gates=[])
+        self.item("PROJECT-GOVERNANCE-01")["status"] = "Validation"
+
+    def mine(self, p):
+        return [u for u in p["updates"] if u["task"] == self.t["id"]]
+
+    def test_a_project_item_linked_to_a_different_issue_blocks_every_mutation_for_the_task(self):
+        self.item("PROJECT-GOVERNANCE-01")["issue"] = 9999
+        p = self.plan(close_done=True)
+        self.assertEqual("identity", p["conflicts"][0]["what"])
+        self.assertEqual([], self.mine(p))
+
+    def test_an_issue_with_another_title_blocks_every_mutation_for_the_task(self):
+        next(i for i in self.remote["issues"] if i["number"] == self.t["issue"])["title"] = "BOPS-0001 | someone else"
+        p = self.plan(close_done=True)
+        self.assertEqual("identity", p["conflicts"][0]["what"])
+        self.assertEqual([], self.mine(p))
+
+    def test_closing_is_never_planned_when_the_remote_status_conflicts(self):
+        self.item("PROJECT-GOVERNANCE-01")["status"] = "Deferred"
+        p = self.plan(close_done=True)
+        self.assertEqual("Status", p["conflicts"][0]["what"])
+        self.assertNotIn("IssueState", [u["field"] for u in p["updates"]])
+
+    def test_closing_is_planned_only_when_the_gates_are_met(self):
+        self.assertIn("IssueState", [u["field"] for u in self.plan(close_done=True)["updates"]])
+        self.t["validation"]["achieved"] = []
+        self.assertNotIn("IssueState", [u["field"] for u in self.plan(close_done=True)["updates"]])
+
+    def test_at_write_time_the_issue_is_not_closed_while_the_remote_status_is_not_done(self):
+        c = FakeClient(self.remote)
+        u = {"task": self.t["id"], "item": self.t["project_item"], "issue": self.t["issue"], "title": vr.task_title(self.t),
+             "field": "IssueState", "old": "open", "new": "closed"}
+        ledger = [{"op": "close", "state": "pending"}]
+        sr.apply_updates(c, {"updates": [u]}, ledger)
+        self.assertEqual("deferred", ledger[0]["state"])
+        self.assertEqual([], c.writes)
+        self.item("PROJECT-GOVERNANCE-01")["status"] = "Done"
+        ledger = [{"op": "close", "state": "pending"}]
+        sr.apply_updates(c, {"updates": [u]}, ledger)
+        self.assertEqual("done", ledger[0]["state"])
+        self.assertEqual([("issue", self.t["issue"])], c.writes)
+
+
 class Transport(unittest.TestCase):
+    def test_issues_are_read_across_two_slurped_pages_without_pull_requests(self):
+        def issue(n):
+            return {"number": n, "title": f"t{n}", "state": "open", "body": None}
+        page1 = [issue(n) for n in range(1, 101)]
+        page2 = [issue(n) for n in range(101, 121)] + [{**issue(500), "pull_request": {}}]
+        seen = []
+
+        def runner(args):
+            seen.append(args)
+            if args[0] == "project":
+                return 0, json.dumps({"items": []}), ""
+            return 0, json.dumps([page1, page2]), ""
+        issues = sr.GhClient(runner=runner, delay=0).fetch()["issues"]
+        self.assertEqual(list(range(1, 121)), [i["number"] for i in issues])
+        self.assertIn("--slurp", next(a for a in seen if a[0] == "api"))
+
+    def test_concatenated_pages_without_slurp_are_decoded_too(self):
+        text = json.dumps([{"number": 1}]) + "\n" + json.dumps([{"number": 2}, {"number": 3}])
+        self.assertEqual([1, 2, 3], [x["number"] for x in sr.parse_pages(text)])
+
     def client(self, replies, sleeps):
         it = iter(replies)
         return sr.GhClient(runner=lambda a: next(it), sleep=sleeps.append, retries=3, backoff=10, delay=0)
