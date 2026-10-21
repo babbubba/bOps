@@ -251,8 +251,8 @@ simplest way to allow a path is an environment variable, for example
 | Surface | What it is |
 |---|---|
 | **CLI** (`bOps.Cli`) | The primary interface: `bops "<goal>"`, `bops resume`, `bops delegate`, `bops audit verify`, `bops plugin ...`, `bops vault rotate-key` |
-| **Local API** (`bOps.Api`) | Authenticated minimal HTTP API, bearer-key only, listening on `http://localhost:5080` in development |
-| **Web UI** (`web/bops-ui`) | Local Angular app in English and Italian: Dashboard (live task activity), Approvals, Delegations, Plugins, Settings |
+| **Local API** (`bOps.Api`) | Authenticated minimal HTTP API (bearer key, or the browser session of the web UI), listening on `http://localhost:5080` |
+| **Web UI** (`web/bops-ui`) | Angular app in English and Italian: Dashboard (live task activity), Approvals, Delegations, Plugins, Settings. Served by the published `bOps.Api` itself; `npm start` is only the development topology |
 
 The API and UI run on the same runtime, policy and audit path as the CLI; they are not a second,
 more permissive door. To try them:
@@ -268,6 +268,12 @@ cd web/bops-ui && npm ci && npm start           # terminal 2 → http://localhos
 Start the API from `src/core/bOps.Api` (not the repository root) so its shipped configuration
 is loaded; its launch profile supplies the Development setup and the `localhost:5080` URL.
 Run terminal 2 from the repository root.
+
+**Installing instead of developing.** `./scripts/Publish-Bops.ps1 -Runtime win-x64` (or `linux-x64`) builds one
+self-contained `bOps.Api` that serves the web UI and the API on the same endpoint
+(`http://localhost:5080` for a local install): no Node.js, Angular dev server, proxy, IIS, Nginx or Docker
+needed to run it. Local install, HTTPS behind a reverse proxy, data directory, start at boot and the sample
+configurations: [docs/deployment.md](docs/deployment.md).
 
 `BOPS_VAULT_MASTER_KEY` protects the encrypted local vault behind the Settings page; the API
 refuses to start without it unless you remove `Vault:MasterKeySecret` from its configuration

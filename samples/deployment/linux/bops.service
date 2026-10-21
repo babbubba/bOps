@@ -1,0 +1,37 @@
+# /etc/systemd/system/bops.service   (F-26 sample; adapt the paths and the account)
+#
+#   sudo useradd --system --home-dir /var/lib/bops --shell /usr/sbin/nologin bops
+#   sudo mkdir -p /opt/bops /var/lib/bops /etc/bops
+#   sudo unzip bops-api-linux-x64.zip -d /opt/bops && sudo chmod +x /opt/bops/bOps.Api
+#   sudo install -m 640 -o root -g bops bops.env.example /etc/bops/bops.env     # then edit it
+#   sudo chown -R bops:bops /var/lib/bops
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bops
+#
+# The working directory is the DATA directory: every relative state file (sessions.db, tasks.db, audit.jsonl, vault.dat,
+# settings.json, policy.yaml, plugins/ ...) is created there. ASPNETCORE_CONTENTROOT points at the INSTALL directory so that the
+# shipped appsettings.json / appsettings.Production.json are found. Upgrading replaces /opt/bops only; the data stays.
+#
+# bOps does not elevate: what its tools can do is decided by the account in User=. Running as root lets service/firewall tools act, and
+# widens what a compromised API could do, so policy.yaml (Medium/High need approval) is the control to rely on, not the unit file.
+# Sandboxing directives (ProtectSystem, PrivateTmp, ...) are deliberately not set: they would silently remove what tools can see.
+[Unit]
+Description=bOps API and web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bops
+Group=bops
+WorkingDirectory=/var/lib/bops
+Environment=ASPNETCORE_CONTENTROOT=/opt/bops
+EnvironmentFile=/etc/bops/bops.env
+ExecStart=/opt/bops/bOps.Api
+# Starts at boot (WantedBy) and again after a crash; a clean `systemctl stop` stays stopped.
+Restart=on-failure
+RestartSec=5
+# Orderly shutdown: the host finishes in-flight requests first.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

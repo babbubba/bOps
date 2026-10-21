@@ -32,8 +32,10 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
+            rid: linux-x64
           - os: windows-latest
             platform: windows
+            rid: win-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -92,6 +94,18 @@ jobs:
       - name: UI build
         run: npm run build
         working-directory: web/bops-ui
+
+      - name: Publish artifact with the SPA (F-26)
+        # The full-artifact path: self-contained bOps.Api for this OS with the compiled Angular SPA in wwwroot-ui/. It fails when the SPA is
+        # missing or incomplete. The UI build above is reused (-SkipUiBuild, still checked). A plain `dotnet build` never needs Node.
+        shell: pwsh
+        run: ./scripts/Publish-Bops.ps1 -Runtime ${{ matrix.rid }} -SkipUiBuild -Output artifacts/bops-${{ matrix.rid }}
+
+      - name: Smoke test the published artifact without Node.js (F-26)
+        # Starts the published bOps.Api (not a WebApplicationFactory) with Node.js removed from its PATH and drives it over HTTP:
+        # SPA shell, deep link, assets and cache headers, API 401/404, reserved files, login/cookie/CSRF/foreign origin/logout.
+        shell: pwsh
+        run: ./scripts/Test-PublishedArtifact.ps1 -ArtifactDirectory artifacts/bops-${{ matrix.rid }}
 
       - name: UI translation check
         # Fails when a template holds text that does not go through the translation (see web/bops-ui/README.md).

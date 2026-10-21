@@ -64,6 +64,22 @@ jobs:
         run: npm ci
         working-directory: web/bops-ui
 
+      - name: UI build
+        run: npm run build
+        working-directory: web/bops-ui
+
+      - name: Publish the API with the SPA twice (F-26)
+        # The operator artifact: one self-contained bOps.Api per OS with the compiled SPA in wwwroot-ui/ (fails when the SPA is missing).
+        shell: pwsh
+        run: |
+          ./scripts/Publish-Bops.ps1 -Runtime ${{ matrix.rid }} -SkipUiBuild -Output artifacts/api-publish-1
+          ./scripts/Publish-Bops.ps1 -Runtime ${{ matrix.rid }} -SkipUiBuild -Output artifacts/api-publish-2
+          ./scripts/Compare-ReproducibleTrees.ps1 -FirstDirectory artifacts/api-publish-1 -SecondDirectory artifacts/api-publish-2
+
+      - name: Smoke test the published API artifact without Node.js (F-26)
+        shell: pwsh
+        run: ./scripts/Test-PublishedArtifact.ps1 -ArtifactDirectory artifacts/api-publish-1
+
       - name: Generate SBOM
         shell: pwsh
         run: |
@@ -75,8 +91,10 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/New-ReproducibleZip.ps1 -SourceDirectory artifacts/publish-1 -DestinationFile artifacts/bops-${{ matrix.rid }}.zip
+          ./scripts/New-ReproducibleZip.ps1 -SourceDirectory artifacts/api-publish-1 -DestinationFile artifacts/bops-api-${{ matrix.rid }}.zip
           $releaseFiles = @(
             Get-Item artifacts/bops-${{ matrix.rid }}.zip
+            Get-Item artifacts/bops-api-${{ matrix.rid }}.zip
             Get-ChildItem artifacts/packages -File
             Get-ChildItem artifacts/sbom -File
           )
@@ -92,6 +110,7 @@ jobs:
         with:
           subject-path: |
             artifacts/bops-${{ matrix.rid }}.zip
+            artifacts/bops-api-${{ matrix.rid }}.zip
             artifacts/packages/*.nupkg
             artifacts/SHA256SUMS-${{ matrix.rid }}.txt
 
@@ -101,6 +120,7 @@ jobs:
           name: bops-${{ matrix.rid }}
           path: |
             artifacts/bops-${{ matrix.rid }}.zip
+            artifacts/bops-api-${{ matrix.rid }}.zip
             artifacts/packages/*
             artifacts/sbom/*.json
             artifacts/SHA256SUMS-${{ matrix.rid }}.txt

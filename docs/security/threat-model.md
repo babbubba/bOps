@@ -353,6 +353,10 @@ currently authenticated approver. This is safer than making an old approval repl
 ## Deployment assumptions
 
 - Bind the API to loopback unless it is behind TLS and an authenticated local reverse proxy.
+- When the API hosts the web UI (F-26), only the `wwwroot-ui/` directory is served as static files; configuration, databases, the audit
+  log, the vault and policy files are not reachable that way, `/api/*` is never answered with the UI, and the protected API keeps its own
+  authorization. `X-Forwarded-*` is ignored unless the proxy is listed in `ReverseProxy`; the browser-session origin check never reads it.
+  Details: [deployment guide](../deployment.md).
 - Run under a dedicated account with access only to approved paths/services.
 - Keep runtime state and publisher trust-store files owned by that account.
 - Use separate read-only and action-capable instances/accounts when operationally possible.

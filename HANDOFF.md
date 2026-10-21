@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-21 · `main` @ `9aa2a70` (squash merge of PR [#120](https://github.com/babbubba/bOps/pull/120); CI of the PR head green, CI of the merge commit still running when written) ·
-working branch `feat/bops-0119-project-sync` (local, not pushed).
+Last updated: 2026-10-21 · `main` @ `f1cd5e7` (squash merge of PR [#121](https://github.com/babbubba/bOps/pull/121), BOPS-0119) ·
+working branch `feat/bops-0120-f26-spa-hosting` (BOPS-0120, F-26 production SPA hosting).
 
 <!-- register-sync:begin -->
-Current task: BOPS-0119 PROJECT-GOVERNANCE-02 (VALIDATION)
-Branch: feat/bops-0119-project-sync
+Current task: BOPS-0120 F-26 (VALIDATION)
+Branch: feat/bops-0120-f26-spa-hosting
 Ready: BOPS-0111
-Next number: BOPS-0120
+Next number: BOPS-0121
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -26,7 +26,8 @@ Task state is never copied here; ask the register (`--summary`).
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Active implementation task: **NO ACTIVE IMPLEMENTATION TASK** (BOPS-0119 is implemented and in validation).
+- Active implementation task: **BOPS-0120 F-26** (Issue #122) — the published `bOps.Api` serves the compiled Angular SPA; packet
+  [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
   [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gate: CI of the PR head and merge commit. Read-only run on Project #6 done: 18 of 19 items in sync, 2 pending updates for BOPS-0119, 0 conflicts (a secondary rate limit refused GraphQL earlier; the tool classified and aborted, then succeeded).
 - In validation: **BOPS-0118 PROJECT-GOVERNANCE-01** (Issue #109) — PRs #108 and #120 merged. Open gate: operator approval to close; DONE is recorded in the BOPS-0119 PR once approved.

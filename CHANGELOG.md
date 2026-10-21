@@ -14,6 +14,16 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- Production hosting of the web UI (F-26, BOPS-0120). The published `bOps.Api` serves the compiled Angular app and the API from one
+  process with the native ASP.NET Core static files and a client-route fallback (`WebUi` section; automatic when `wwwroot-ui/` exists,
+  start-up fails on an incomplete one). `/api/*` and the new anonymous `GET /healthz` are never served from it; an unknown API path is 404;
+  only `wwwroot-ui/` is exposed. `index.html` is `no-cache`, hashed bundles are immutable; UI responses carry a Content-Security-Policy and
+  hardening headers (the Angular production build no longer inlines critical CSS, which needed an inline handler). `ReverseProxy:KnownProxies`
+  / `KnownNetworks` opt in to `X-Forwarded-For`/`-Proto` from listed proxies only. `scripts/Publish-Bops.ps1` builds the full artifact for
+  `win-x64`/`linux-x64` (publish fails when the SPA is missing or incomplete; a plain `dotnet build` never needs Node.js),
+  `scripts/Test-PublishedArtifact.ps1` smoke-tests the published artifact without Node.js on its PATH, CI runs both on Windows and Linux, and
+  the release workflow attaches `bops-api-<rid>.zip`. Sessions, cookie, CSRF and origin checks are unchanged. Guide and samples (systemd,
+  Nginx, IIS, Windows start script): `docs/deployment.md`, `samples/deployment/`.
 - `system.events` discloses whether a `source` filter names a real source (ADR-0061). Every result has a `sourceFilter` object right
   after `excludeSources` (`null` without a `source`): the requested name, `matching`, `matchedFields`, `registrationStatus`
   (`registered`, `notRegistered`, `unknown` — Windows reads the provider catalog once per call; Linux is always `unknown`),
