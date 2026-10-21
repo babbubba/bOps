@@ -32,10 +32,10 @@ class RealRegister(unittest.TestCase):
     def test_no_functional_task_is_in_progress_without_authorization(self):
         self.assertEqual([], [t["id"] for t in REGISTER["tasks"] if t["status"] == "IN_PROGRESS"])
 
-    def test_the_provisional_mapping_distinguishes_verified_from_conventional_order(self):
+    def test_the_frozen_mapping_keeps_verified_and_conventional_order_apart(self):
         kinds = {t["created"]["order_certainty"] for t in REGISTER["tasks"]}
         self.assertEqual({"verified", "conventional"}, kinds)
-        self.assertEqual("PROVISIONAL", REGISTER["numbering"]["state"])
+        self.assertEqual("FROZEN", REGISTER["numbering"]["state"])
 
     def test_every_issue_title_starts_with_the_progressive(self):
         for t in REGISTER["tasks"]:
@@ -65,11 +65,15 @@ class Mutations(unittest.TestCase):
         self.reg["numbering"]["next"] = 5
         self.assertFlags("numbering.next")
 
-    def test_provisional_mapping_may_change_but_a_frozen_one_may_not(self):
+    def test_a_frozen_mapping_cannot_be_renumbered_or_renamed(self):
+        self.assertEqual("FROZEN", self.reg["numbering"]["state"])
+        task(self.reg, "AF-01")["legacy_id"] = "AF-ONE"
+        self.assertFlags("frozen id mapping")
+
+    def test_a_provisional_mapping_is_not_hash_checked(self):
+        self.reg["numbering"]["state"] = "PROVISIONAL"
         task(self.reg, "AF-01")["legacy_id"] = "AF-ONE"
         self.assertEqual([], self.errors())
-        self.reg["numbering"]["state"] = "FROZEN"
-        self.assertFlags("frozen id mapping")
 
     def test_order_certainty_is_explicit(self):
         task(self.reg, "AF-01")["created"]["order_certainty"] = "probably"
@@ -163,6 +167,17 @@ class Mutations(unittest.TestCase):
     def test_done_milestone_cannot_contain_open_tasks(self):
         next(m for m in self.reg["milestones"] if m["id"] == "MAF")["status"] = "DONE"
         self.assertFlags("milestone MAF is DONE")
+
+    def test_remote_links_need_a_kind_and_drafts_have_no_issue_number(self):
+        t = task(self.reg, "AF-01")
+        t.update(issue=12, project_item="PVTI_x")
+        self.assertFlags("without remote_kind")
+        t["remote_kind"] = "draft"
+        self.assertFlags("a draft task has a project_item and no issue number")
+        t.update(remote_kind="issue", project_item=None)
+        self.assertFlags("needs both issue and project_item")
+        t.update(project_item="PVTI_x", sync={"status": "Finished"})
+        self.assertFlags("not a board column")
 
     def test_issue_and_project_item_are_not_shared(self):
         task(self.reg, "AF-01")["issue"] = 7
