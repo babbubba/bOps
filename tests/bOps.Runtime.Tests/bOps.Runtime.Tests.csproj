@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="Fixtures\diagnostic-assurance-metadata.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -140,6 +140,68 @@ public sealed class EvidenceAddressabilityTests
         Assert.Contains(Marker, string.Join('\n', model.Requests[4].History.Select(turn => turn.Content)), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LongEvidence_IsAddressableButOnlyActualReadsReturnItsHiddenContent(bool readOutput)
+    {
+        const string hidden = "ONLY-IN-THE-UNSHORTENED-RESULT";
+        var output = new string('a', 5_000) + hidden + new string('b', 4_000 - hidden.Length);
+        var reads = readOutput ? new[] { Read(0, 4_000), Read(4_000, 4_000), Read(8_000, 1_000) } : [];
+        var model = new FakeChatModel([Plan(First), Call(First), .. reads, Final("done")]);
+        var (first, _, registry) = Tools(Complete(output));
+        var audit = new RecordingAuditSink();
+
+        var state = await Runner(model, registry, audit).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(1, first.ExecutionCount);
+        Assert.Equal(output, state.Steps[0].Result!.Output);
+        Assert.DoesNotContain(hidden, state.Steps[0].Observation, StringComparison.Ordinal);
+        Assert.Contains("result 9000 chars", IndexBlock(model.Requests[2].SystemPrompt), StringComparison.Ordinal);
+        Assert.DoesNotContain(hidden, string.Join('\n', model.Requests[2].History.Select(turn => turn.Content)), StringComparison.Ordinal);
+        var served = audit.Events.OfType<EvidenceReadAuditEvent>().ToList();
+        Assert.Equal(readOutput ? 3 : 0, served.Count);
+        Assert.Equal(readOutput ? 9_000 : 0, served.Sum(read => read.ReturnedLength));
+        Assert.All(served, read => Assert.Equal(EvidenceReadResultCode.Success, read.ResultCode));
+        if (readOutput)
+        {
+            Assert.True(ReplyMentions(model.Requests[4], hidden));
+            Assert.True(ReplyMentions(model.Requests[5], "endOfSource=true"));
+        }
+
+        // Persisted observations remain shortened even when audit proves all raw fragments were served.
+        // Disclosure cannot infer whether the model used or understood any fragment from addressability alone.
+        Assert.Contains("observation shortened from 9000 characters", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(readOutput ? 6 : 3, model.Requests.Count);
+    }
+
+    [Fact]
+    public async Task LongEvidence_AReplanReadsTheHiddenRawFragment_WithoutRepeatingTheTool()
+    {
+        var taskId = Guid.Parse("0b0b0b0b-1234-1234-1234-123456789abc");
+        const string hidden = "REPLAN-HIDDEN-EVIDENCE";
+        var output = new string('x', 5_000) + hidden + new string('y', 4_000);
+        var directive = new ModelResponse(
+            $"{{\"runtime\":\"EvidenceRead/v1\",\"evidenceId\":\"{EvidenceRead.EvidenceId(taskId, 0)}\",\"source\":\"result\",\"offset\":5000,\"length\":{hidden.Length}}}",
+            [], false, null);
+        var model = new FakeChatModel(Plan(First), Call(First, "c0"), Call(First, "c1"), directive, Plan(), Final("done"));
+        var (first, _, registry) = Tools(Complete(output));
+        var audit = new RecordingAuditSink();
+
+        var state = await Runner(model, registry, audit).RunAsync("diagnose", Actor, taskId);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(1, first.ExecutionCount); // the second call was outside the exhausted plan; EvidenceRead executes nothing.
+        Assert.Equal(2, state.Plans.Count);
+        Assert.DoesNotContain(hidden, state.Steps[0].Observation, StringComparison.Ordinal);
+        Assert.DoesNotContain(hidden, string.Join('\n', model.Requests[3].History.Select(turn => turn.Content)), StringComparison.Ordinal);
+        Assert.Contains(hidden, string.Join('\n', model.Requests[4].History.Select(turn => turn.Content)), StringComparison.Ordinal);
+        var read = Assert.Single(audit.Events.OfType<EvidenceReadAuditEvent>());
+        Assert.Equal((EvidenceReadResultCode.Success, hidden.Length), (read.ResultCode, read.ReturnedLength));
+        Assert.Equal(6, model.Requests.Count);
+    }
+
     // G1-T6. Persist, reopen, resume: the same ids, the same index, the same raw drill-down.
     [Fact]
     public async Task G1T6_PersistReopenResume_GivesTheSameIndexAndTheSameDrillDown()

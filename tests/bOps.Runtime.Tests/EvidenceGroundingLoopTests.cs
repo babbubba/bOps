@@ -245,6 +245,65 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Contains("observation shortened from 9000 characters", model.Requests[3].SystemPrompt, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PRE6_Synthetic14Versus34_IsCorrectedOnlyWhenTheCheckerCitesIt(bool citesCount)
+    {
+        const string wrong = "Sono stati osservati 14 report.";
+        const string supported = "Sono stati osservati 34 report; il totale reale resta sconosciuto.";
+        var result = Partial() with
+        {
+            Facts = [new EvidenceFact("test.observed-count", "requested-window", ToolParameterType.Integer, JsonValue.Create(34))],
+        };
+        var correction = supported + "\n\nEvidence limitations\nLe fonti sono parziali.";
+        var (state, model, _) = await RunAsync(result, Options(), Final(wrong),
+            citesCount ? Verdict(("F0.1", wrong)) : Verdict(), Final(correction));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Contains("= Integer 34 (from partial evidence)", model.Requests[3].SystemPrompt, StringComparison.Ordinal);
+        if (citesCount)
+        {
+            Assert.Equal(correction, state.Steps[^1].Observation);
+            Assert.Equal(EvidenceGroundingOutcome.Corrected, FinalResponse.GroundingOf(state.Steps[^1]));
+        }
+        else
+        {
+            // Characterizes an unresolved semantic gap; a valid empty verdict certifies no arithmetic or prose claim.
+            Assert.StartsWith(wrong, state.Steps[^1].Observation, StringComparison.Ordinal);
+            Assert.Equal(EvidenceGroundingOutcome.NoContradictionCited, FinalResponse.GroundingOf(state.Steps[^1]));
+        }
+
+        Assert.Equal(citesCount ? 5 : 4, model.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("Osservati 27 live dump e 26 displayFault; possono descrivere gli stessi problemi, non un totale indipendente.")]
+    [InlineData("L'esempio ipotetico ‘14 report’ non descrive i 34 report osservati.")]
+    [InlineData("Non risultano 43 bugcheck: i report includono categorie diverse.")]
+    [InlineData("8 hardwareError più 26 displayFault più 27 live dump dimostrano 61 guasti indipendenti.")]
+    public async Task T02_OverlappingCategories_RemainOpaqueWithoutAStructuredClaimContract(string answer)
+    {
+        var result = T02Evidence() with
+        {
+            Facts =
+            [
+                .. T02Evidence().Facts,
+                new("system.stability.category-count", "hardwareError", ToolParameterType.Integer, JsonValue.Create(8)),
+                new("system.stability.category-count", "displayFault", ToolParameterType.Integer, JsonValue.Create(26)),
+            ],
+        };
+        var (state, model, _) = await RunAsync(result, Options(), Final(answer), Verdict());
+
+        // The last input intentionally characterizes an unsupported sum, not an acceptable diagnostic result.
+        // The runtime cannot distinguish it from negation/quotation/hypothesis by matching numeric prose.
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.StartsWith(answer, state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(EvidenceGroundingOutcome.NoContradictionCited, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Contains("key \"hardwareError\" = Integer 8", model.Requests[3].SystemPrompt, StringComparison.Ordinal);
+        Assert.Contains("key \"displayFault\" = Integer 26", model.Requests[3].SystemPrompt, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task G7_WheaStylePositiveFact_ContradictoryFirstAnswer_IsNotPersistedUnchanged()
     {
@@ -470,6 +529,26 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal(3, model.Requests.Count);
         Assert.Equal(FinalResponse.Marker, state.Steps[^1].Description);
         Assert.DoesNotContain(model.Requests, request => request.SystemPrompt.Contains(EvidenceGroundingLedger.OpenMarker, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(10, 3, false)]
+    [InlineData(11, 4, true)]
+    public async Task Grounding_RequiresRemainingTokens_AfterTheFinalAnswer(
+        int tokenCap, int expectedCalls, bool checkedAnswer)
+    {
+        var expectedOutcome = checkedAnswer ? EvidenceGroundingOutcome.NoContradictionCited : EvidenceGroundingOutcome.NotChecked;
+        var options = Options() with { MaxTotalTokens = tokenCap };
+        var (state, model, _) = await RunAsync(Evidence(), options,
+            Final(CorrectedAnswer, new ModelUsage(10, 0, null)), Verdict());
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(CorrectedAnswer, state.Steps[^1].Observation);
+        Assert.Equal(10, state.Accounting!.TokensUsed);
+        Assert.Equal(expectedCalls, model.Requests.Count);
+        Assert.Equal(expectedOutcome, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Equal(expectedOutcome == EvidenceGroundingOutcome.NotChecked ? 0 : 1,
+            FinalResponse.LogicalCalls(state.Steps[^1]).Count(call => call.Role == LogicalModelCallRole.EvidenceGroundingCheck));
     }
 
     [Fact]

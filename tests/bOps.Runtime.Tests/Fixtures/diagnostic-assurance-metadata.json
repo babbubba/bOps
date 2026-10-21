@@ -1,0 +1,5468 @@
+[
+  {
+    "case": "T02-C-r1",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "86e8327af917b8268d7da864210578f2ffb4918cc5b630e0bfbeb88ff32e667f",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 1,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "id36f1863982b1",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id493c7788bda6",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id9d7b6aed992c",
+                "valueType": 1,
+                "value": 24
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id39712e3f799f",
+                "valueType": 1,
+                "value": 16
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id94266ada7c1e",
+                "valueType": 1,
+                "value": 12
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id53064c587f2d",
+                "valueType": 1,
+                "value": 12
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idaae28f04a2db",
+                "valueType": 1,
+                "value": 12
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idf12fa37289ff",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id15a537191164",
+                "key": "ide9207622df3c",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id13dcc60bf8b0",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idde518db78f2d",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id5d534b88c487",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id900a826586fd",
+                "valueType": 1,
+                "value": 14
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id1a6aee287e93",
+                "valueType": 1,
+                "value": 3
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 119
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 7
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding corrected",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 5554,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 97,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 5474,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "T02-C-r2",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "54adc57201aba4410b3ea46da86bcb87c8bd34c714288b24a4f1cd6fa0e2049d",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 43
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 42
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 153,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 5,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 8117,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 4,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 5,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "T02-C-r3",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "cf201f8fcfe74e3602146d6a90d8b424466935f4e2f30fdb9ca8341695b3d2a9",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 43
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 42
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 98,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 1,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "id36f1863982b1",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id493c7788bda6",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding corrected",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 1,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 6,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 4333,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 139,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 4886,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "Qwen38-T02-r1",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "aa3c72d5ff5cc916bb21470a5821895ecede5aa6f54505d887d9a3e4e7dbbb42",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 119,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 43
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 42
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 5,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 8231,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 4,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 5,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "Qwen38-T02-r2",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "3f88b23db6274c22291a43f6f9a2f6774d9356f4d3e1a8fcbf249bf7189fc9d2",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 1,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 1,
+            "completeness": 0,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 5,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 43
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 42
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 6,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 8663,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 4,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 5,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 6,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "Qwen38-T02-r3",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "19ba33da274104184e5066b5ef80e4e75d0ed1b9055fc78b9851c83a58537338",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 43
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 42
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 8
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 1,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 1,
+            "completeness": 0,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 5,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 6,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 2,
+            "completeness": 3,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 8540,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 4,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 5,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 6,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T01",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "cf48a4e225df8261411a213b8e58321a5dcafe933df0bbc6427bf30e24a03775",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 4,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 5,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 6,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 3473,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 4,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 5,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 6,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T03",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "269f1e661a5f4d366db78f5ae1365826b2f9d257ecb5528f93317650ab6229f6",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 74
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 28
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "idedfec74d4f50",
+                "valueType": 1,
+                "value": 19
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 13
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 7
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 44
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 1,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 1,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 6,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 2250,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T04",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "e67d22c48b69ef3b5b44cc47e428803d79adca17e7245da671d9517caff8ecb4",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 3,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "id9d7b6aed992c",
+                "valueType": 1,
+                "value": 40
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idf12fa37289ff",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id94266ada7c1e",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 168,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 4155,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T05",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "2369314ed02ec9f382a7eb15460715c3ff9720ea3aad396dc16a70a86220211a",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 206,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 1,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 0,
+                "truncated": true,
+                "class": 3,
+                "limitEvidence": 3
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 1,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T06",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "843d18a9e0a62c22aa0653e089827487fd3b85f85ff08b72700dc9a567edea92",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 2,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id36432f087e42",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id6f1a91679e55",
+                "key": "id87695fdac817",
+                "valueType": 1,
+                "value": 1
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 3613,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "RV01-T10",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "9fe56bbbb59fde6222734493d8a241e314791cafc8f10caa511aca3b1fc44b73",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "earlyFinalReplanFailed": true,
+          "description": "Premature final response; plan re-evaluation required",
+          "toolCall": null,
+          "observation": "sanitized",
+          "earlyFinalRecoveryDecision": {
+            "accepted": true,
+            "reason": 0,
+            "planRevision": 0,
+            "cursor": 0
+          },
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 3521,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "earlyFinalRecoveryCursor": 0,
+          "description": "Malformed early-final replan; persisted plan continuation",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 1,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "idc97e99447600",
+                "valueType": 1,
+                "value": 8
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Premature final response; plan re-evaluation required",
+          "toolCall": null,
+          "observation": "sanitized",
+          "earlyFinalRecoveryDecision": {
+            "accepted": true,
+            "reason": 0,
+            "planRevision": 0,
+            "cursor": 1,
+            "paidReplanSkipped": true
+          },
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 4982,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "earlyFinalRecoveryCursor": 1,
+          "description": "Malformed early-final replan; persisted plan continuation",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null
+        },
+        {
+          "index": 5,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "raw",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id900a826586fd",
+                "valueType": 1,
+                "value": 16
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id1a6aee287e93",
+                "valueType": 1,
+                "value": 3
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 126
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 7
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Premature final response; plan re-evaluation required",
+          "toolCall": null,
+          "observation": "sanitized",
+          "earlyFinalRecoveryDecision": {
+            "accepted": true,
+            "reason": 0,
+            "planRevision": 0,
+            "cursor": 2,
+            "paidReplanSkipped": true
+          },
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 6976,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "earlyFinalRecoveryCursor": 2,
+          "description": "Malformed early-final replan; persisted plan continuation",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null
+        },
+        {
+          "index": 8,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 0,
+            "completeness": 0,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 4614,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 22,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "PRE6-Qwen",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "5bafb41beb968319346189596dd93fa83ad9db8d0d9c9a44946c701a8e89736a",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "idc97e99447600",
+                "valueType": 1,
+                "value": 3
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id4739b5a41c4e",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idcc182c5909b2",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id11c6a379f927",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id15a537191164",
+                "key": "ida6ee2f509c30",
+                "valueType": 1,
+                "value": 3
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id551ce5cbcdd1",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id2b8cf4857954",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idb4bedf37bb3c",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id39712e3f799f",
+                "valueType": 1,
+                "value": 80
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idbbfa16cd514b",
+                "valueType": 1,
+                "value": 61
+              },
+              {
+                "type": "id15a537191164",
+                "key": "ide9207622df3c",
+                "valueType": 1,
+                "value": 31
+              },
+              {
+                "type": "id06f9c0ebb610",
+                "key": "ide6ac7d34a2ca",
+                "valueType": 1,
+                "value": 139
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 128,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 1,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 1,
+            "completeness": 0,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 1,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "sanitized",
+          "result": {
+            "outcome": 1,
+            "failureKind": 1,
+            "completeness": 0,
+            "output": null,
+            "errorMessage": null,
+            "facts": []
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "planRevision": 1,
+          "executionAttempt": 1,
+          "description": "Premature final response; plan re-evaluation required",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 5158,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "planRevision": 2,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id15a537191164",
+                "key": "id9d7b6aed992c",
+                "valueType": 1,
+                "value": 526
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id61443af37e31",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id45aafae4ab0f",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id36f1863982b1",
+                "valueType": 1,
+                "value": 4
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id70bdd70e386d",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id67ce06a47a9a",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id15a537191164",
+                "key": "idaae28f04a2db",
+                "valueType": 1,
+                "value": 17
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id53064c587f2d",
+                "valueType": 1,
+                "value": 16
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id01787299311e",
+                "valueType": 1,
+                "value": 15
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id983f5ad0be70",
+                "valueType": 1,
+                "value": 14
+              },
+              {
+                "type": "id15a537191164",
+                "key": "id15f164a6cd0c",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id06f9c0ebb610",
+                "key": "ide6ac7d34a2ca",
+                "valueType": 1,
+                "value": 57
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "planRevision": 2,
+          "executionAttempt": 1,
+          "plannedStepIndex": 1,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id548d5114171d",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 69
+              },
+              {
+                "type": "idf0b6e8930142",
+                "key": "id4ed379d418bb",
+                "valueType": 1,
+                "value": 24
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id9e429558d531",
+                "valueType": 1,
+                "value": 27
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id32f5f863b737",
+                "valueType": 1,
+                "value": 17
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "idedfec74d4f50",
+                "valueType": 1,
+                "value": 14
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "ide797c0013811",
+                "valueType": 1,
+                "value": 10
+              },
+              {
+                "type": "id7f24ff40c76a",
+                "key": "id04a72d8770e6",
+                "valueType": 1,
+                "value": 1
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id48c83983dace",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id200fe027179d",
+                "valueType": 1,
+                "value": 9
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "id01a8cdbd1b73",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "id0c6ba74d0ee6",
+                "key": "idba707658aef4",
+                "valueType": 1,
+                "value": 2
+              },
+              {
+                "type": "idf5ee16e0c864",
+                "key": "id5ef5ef0364b6",
+                "valueType": 1,
+                "value": 47
+              },
+              {
+                "type": "idfff26df76bdb",
+                "key": "id1871d953530d",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 4,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "planRevision": 2,
+          "executionAttempt": 1,
+          "plannedStepIndex": 2,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 2,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id900a826586fd",
+                "valueType": 1,
+                "value": 22
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id1a6aee287e93",
+                "valueType": 1,
+                "value": 5
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "id698a7d155adc",
+                "valueType": 1,
+                "value": 99
+              },
+              {
+                "type": "id1df40ac91bc8",
+                "key": "idfcee8b75cfeb",
+                "valueType": 1,
+                "value": 26
+              },
+              {
+                "type": "id8ce370b7949d",
+                "key": "id44ff7b02c80d",
+                "valueType": 1,
+                "value": 7
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "planRevision": 2,
+          "executionAttempt": 1,
+          "description": "Final response",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 5854,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        },
+        {
+          "revision": 1,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 3,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        },
+        {
+          "revision": 2,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 1,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            },
+            {
+              "index": 2,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  },
+  {
+    "case": "PRE6-KD",
+    "expectedLevel": "Qualified",
+    "sourceSha256": "0f6c2f04761ee0ec602a7feb489c9631faf749a9e21b6dbe8c7a7b44f6d8de73",
+    "state": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "node": "local",
+      "goal": "sanitized",
+      "status": 1,
+      "steps": [
+        {
+          "index": 0,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "plannedStepIndex": 0,
+          "executionClassification": 0,
+          "description": "sanitized",
+          "toolCall": {
+            "id": "c",
+            "toolName": "sample.collect",
+            "arguments": {}
+          },
+          "observation": "omitted",
+          "result": {
+            "outcome": 0,
+            "failureKind": 0,
+            "completeness": 1,
+            "output": "raw",
+            "errorMessage": null,
+            "facts": [
+              {
+                "type": "id754a35dbd748",
+                "key": "id073c1634c496",
+                "valueType": 0,
+                "value": "xxxxxxxx"
+              },
+              {
+                "type": "id61f39c9cc7f7",
+                "key": "id8db72550fce2",
+                "valueType": 4,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "type": "id7c636b1bb042",
+                "key": "id224ef0a45a9d",
+                "valueType": 0,
+                "value": "xxxx"
+              },
+              {
+                "type": "id66ed41d8c6ca",
+                "key": "id120970d81283",
+                "valueType": 0,
+                "value": "xx"
+              },
+              {
+                "type": "idbf20aebac02e",
+                "key": "id335a1d6e33d6",
+                "valueType": 0,
+                "value": "xxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "type": "id36ddcc622f99",
+                "key": "id1ea50a8caf60",
+                "valueType": 0,
+                "value": "xxxxxx"
+              }
+            ]
+          },
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 0,
+                "toolCallCount": 1,
+                "truncated": false,
+                "class": 2,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "planRevision": 0,
+          "executionAttempt": 1,
+          "description": "Final response; evidence limitations appended by runtime; evidence grounding check cited no contradiction",
+          "toolCall": null,
+          "observation": "sanitized",
+          "result": null,
+          "modelCalls": [
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 6429,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            },
+            {
+              "provider": "sanitized",
+              "requestedModel": "sanitized",
+              "actualModel": "sanitized",
+              "duration": "00:00:00",
+              "usage": {
+                "inputTokens": 0,
+                "outputTokens": 0
+              },
+              "modelAttempt": 1,
+              "outcome": 0,
+              "output": {
+                "contentCharacters": 21,
+                "toolCallCount": 0,
+                "truncated": false,
+                "class": 1,
+                "limitEvidence": 0
+              }
+            }
+          ]
+        }
+      ],
+      "plans": [
+        {
+          "revision": 0,
+          "rationale": "sanitized",
+          "steps": [
+            {
+              "index": 0,
+              "description": "sanitized",
+              "expectedTool": "sample.collect"
+            }
+          ],
+          "semanticContractVersion": 1
+        }
+      ],
+      "createdAtUtc": "2026-10-21T00:00:00Z",
+      "executionAttempt": 1
+    }
+  }
+]

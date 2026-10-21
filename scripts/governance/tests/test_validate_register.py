@@ -137,6 +137,7 @@ class Mutations(unittest.TestCase):
             self.assertIn(fragment, errs)
 
     def test_ready_needs_done_dependencies(self):
+        task(self.reg, "DIAG-ASSURE-01")["status"] = "READY"
         task(self.reg, "DIAG-ASSURE-01")["depends_on"] = [task(self.reg, "AF-05")["id"]]
         self.assertFlags("READY while dependencies are not DONE")
 
@@ -155,9 +156,10 @@ class Mutations(unittest.TestCase):
 
     def test_handoff_must_match_the_register(self):
         cur = re.search(r"^Current task: .*$", HANDOFF, re.M).group(0)
-        self.assertFlags("HANDOFF ready list", HANDOFF.replace("Ready: BOPS-0111", "Ready:"))
+        self.assertFlags("HANDOFF ready list", re.sub(r"^Ready:.*$", "Ready: BOPS-9999", HANDOFF, flags=re.M))
         self.assertFlags("HANDOFF current task", HANDOFF.replace(cur, "Current task: nonsense"))
-        self.assertFlags("expected IN_PROGRESS or VALIDATION", HANDOFF.replace(cur, "Current task: BOPS-0111"))
+        done = next(t["id"] for t in self.reg["tasks"] if t["status"] == "DONE")
+        self.assertFlags("expected IN_PROGRESS or VALIDATION", HANDOFF.replace(cur, f"Current task: {done}"))
         self.assertFlags("lacks the", "# no block here")
 
     def test_milestone_done_needs_implementation_validation_and_release(self):

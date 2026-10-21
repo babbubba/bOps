@@ -293,7 +293,8 @@
    ],
    "source": "roadmap-reconciliation-01 section 6",
    "recommendation": "authorize packet drafting",
-   "status": "PENDING"
+   "status": "RESOLVED",
+   "resolution": "Explicit operator mandate 2026-10-21 authorizes BOPS-0111 packet and implementation plus bounded compatible PRE-5/PRE-6 corrections; no authorization for the rest of DIAG-QUALITY."
   },
   {
    "id": "D11",
@@ -2993,7 +2994,7 @@
    "status": "VALIDATION",
    "priority": "P1",
    "effort": null,
-   "authorized": null,
+   "authorized": true,
    "depends_on": [
     "BOPS-0062"
    ],
@@ -3022,20 +3023,29 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Stable V1.3 gate closure (PRE-1..PRE-8) is not recorded anywhere; packet header still says 'Planned'. Operator reconciliation needed."
+     "Stable V1.3 gate closure (PRE-1..PRE-8) is not recorded anywhere; packet header still says 'Planned'. Operator reconciliation needed.",
+     "PRE-6: DumpChk timeout/integrity, remaining symbol-cache evidence, live EvidenceRead continuation, full authenticated/mobile plan UI and authorized cloud run remain unverified; local Qwen diagnostic run contains a material false count. PRE-7/PRE-8 remain open."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "PRE-6 explicitly authorized by the operator on 2026-10-21; active work only, existing required/open gates remain unchanged. Operator superseded the instruction to retain VALIDATION during this campaign.",
+    "PRE-6 2026-10-21: published main e0e9de7a74b8bb33e07c7b1f8c92ab87832986de; authenticated llama.cpp Qwen3.6-35B, actual context 32768, build b10703-0b5be7e4a. Test host used a separate empty vault and environment credentials, isolated databases/audit, localhost-only binding, one task and bounded resource limits; operator appsettings hash unchanged.",
+    "PRE-6 task 30410464-923e-4163-ad7c-3754727dc258: 420.8 s, 13 model calls, 82683 input + 23676 output = 106359 tokens; 4 executed read tools, 2 refused same-tool semantic mismatches, 2 replans, 3 plan revisions, 1 refused premature final, active plan completed, 0 EvidenceRead calls. Independent persisted-fact comparison: application-crash count 14 versus final 34; diagnostic FAIL despite Completed. Grounding NOT CHECKED after test token cap 100000 exceeded; this does not establish checker sensitivity or behaviour at operator cap 450000. Private evidence and claim ledger retained outside the repository.",
+    "PRE-6 historical baseline df8ef49b-a5f4-4ea8-85dc-a8021c494d0c re-read through SQLite mode=ro: symbols loaded, bugcheck 0x1e, complete, dumpchk-timeout. Historical T02-r3 state SHA256 cf201f8fcfe74e3602146d6a90d8b424466935f4e2f30fdb9ca8341695b3d2a9 verified unchanged; known wrong final claims remain. Neither historical result is promoted to a new PASS.",
+    "PRE-6 runtime timeout configuration observed: default 30 s, dump tool declaration 12 min, host ceiling 15 min; KD/DumpChk prerequisites Available. Real KD/DumpChk execution NOT TESTED: WinError 5 enumerating C:/Windows/Minidump; dump presence/readability requires manual verification. No elevation, ACL change or dump copy after the operator restriction; initial test-vault copy removed and initial test API stopped. Second supervised test host stopped and ports rechecked after campaign.",
+    "PRE-6 campaign no longer active: Project #6 BOPS-0061 re-read as Validation, Issue #110 still OPEN at 2026-10-21T20:00:35+00:00; PRE-7/PRE-8 and existing release/operator gates remain open.",
+    "Subsequent PRE-6 KD evidence inspected read-only during BOPS-0111: archived task 3fc98548-59df-4678-8d36-6aa57027626b actually executed KD successfully with bugcheck 0x1e and loaded symbols, approximately 80 seconds under tool-specific timeout despite default 30s; DumpChk timed out, raw output shortened, no EvidenceRead, final grounding cited no contradiction but process-context causal claim is not verified. Supersedes earlier not-yet-run KD statement only; PRE-6 as a whole and release gates remain open. No new live run performed."
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Implementation PRs #94-#99 are merged; no stable V1.3 tag exists.",
+   "note": "PRE-6 bounded local campaign concluded 2026-10-21 on e0e9de7. One Qwen3.6-35B real-tool task Completed but diagnostic FAIL (34 application crashes in final versus typed fact 14); grounding skipped after isolated 100000-token budget was exceeded by the final call (106359). KD remains untested because this identity cannot enumerate the approved dump directory. Manual supervised KD runner prepared outside the repository; cloud and authenticated/mobile plan UI untested. No runtime/prompt change, PR, push, CI rerun or PRE-7/PRE-8 work. Subsequent archived supervised KD run inspected during BOPS-0111: tool-specific timeout worked; prior KD-not-run statement is superseded. DumpChk timed out and diagnostic attribution/EvidenceRead/UI/cloud gates remain open.",
    "issue": 110,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWb1M",
-   "branch": null,
+   "branch": "codex/pre6-real-validation",
    "remote_kind": "issue",
    "sync": {
     "status": "Validation",
-    "verified_at": "2026-10-21T10:34:40+0200"
+    "verified_at": "2026-10-21T20:00:35+00:00"
    }
   },
   {
@@ -3051,7 +3061,7 @@
    },
    "milestone": "V1.3",
    "area": "Runtime",
-   "status": "VALIDATION",
+   "status": "DONE",
    "priority": "P2",
    "effort": null,
    "authorized": null,
@@ -3060,40 +3070,49 @@
    "spec": null,
    "companion_docs": [],
    "prs": [
-    99
+    99,
+    123
    ],
-   "commits": [],
+   "commits": [
+    "2f961f7493c7ed94f96dd07ff173fcfdf0d140c9",
+    "e0e9de7a74b8bb33e07c7b1f8c92ab87832986de"
+   ],
    "validation": {
     "achieved": [
      "OFFLINE_TESTS",
-     "CI_VERIFIED"
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
     ],
     "required": [
      "OFFLINE_TESTS",
      "CI_VERIFIED",
      "OPERATOR_GATE"
     ],
-    "open_gates": [
-     "Manual mutation session M1-M24 recorded as 'to be registered'; final local long-run validation inconclusive (HANDOFF 2026-10-10)."
-    ]
+    "open_gates": []
    },
    "evidence": [
     "PR #99 squash-merged 2026-10-10 as 2f961f7493c7ed94f96dd07ff173fcfdf0d140c9",
     "CI of the PR head ecb51a8 (run 38041415777) and of the merge commit 2f961f7 (run 38042857409, Quality finalize 38043991696): success on Windows and Linux (verified read-only 2026-10-21)",
     "Targeted suites re-run 2026-10-21: Runtime 2301/2301 (OrdinaryMutation 151/151), Memory 101/101, Api 559/559, Architecture 210/210",
     "Integrative mutations M2-M5, M9, M11, M12, M16, M17, M20, M24 all caught (M16 re-run 2026-10-21; the others transcribed from a session scratchpad log that is not durable: limit stated in the packet)",
-    "Real process-kill persistence test of the SQLite journal re-run 2026-10-21: 25 random kills, 2298 tasks, 0 violations (harness source in the packet appendix)"
+    "Real process-kill persistence test of the SQLite journal re-run 2026-10-21: 25 random kills, 2298 tasks, 0 violations (harness source in the packet appendix)",
+    "OPERATOR_GATE: explicit operator authorization on 2026-10-21 to close this task as DONE; reconciliation requested before PRE-6.",
+    "GitHub re-verified at 2026-10-21T19:41:25+00:00 as babbubba: Project #6 item PVTI_lAHOAP3b6c4BoBRpzhCWcCI is Done. Issue #111 re-read via REST and Project GraphQL: Closed/Completed.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/38041415777 (CI, commit ecb51a87d359d4a923d9812f6fd124cdd7987261) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/38042857409 (CI, commit 2f961f7493c7ed94f96dd07ff173fcfdf0d140c9) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/38043991696 (Quality finalize, commit 2f961f7493c7ed94f96dd07ff173fcfdf0d140c9) completed/success.",
+    "PR #123 https://github.com/babbubba/bOps/pull/123 merged as e0e9de7a74b8bb33e07c7b1f8c92ab87832986de; F-25 integrative evidence packet read from this merge and verified identical to local packet at 2026-10-21T19:41:25+00:00. Final PR-head CI https://github.com/babbubba/bOps/actions/runs/39657641650 on 50f74c867f62be83e92670775ee682c70d362294 completed/success, Windows/Linux jobs success. Historical scratchpad provenance and uncaptured 2026-10-10 long-run summaries remain explicitly limited in the packet; no new local test run is claimed."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": null,
+   "note": "Operator-approved closure accepts the integrative evidence delivered in PR #123, including the documented historical provenance limits. The previous open-gate text about missing M1-M24 registration is superseded by that packet and this explicit approval. Project Done and Issue #111 Closed/Completed re-read; main register temporarily remains VALIDATION until the next substantive PRE-6 PR merges.",
    "issue": 111,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcCI",
    "branch": null,
    "remote_kind": "issue",
    "sync": {
-    "status": "Validation",
-    "verified_at": "2026-10-21T10:34:40+0200"
+    "status": "Done",
+    "verified_at": "2026-10-21T19:41:25+00:00"
    }
   },
   {
@@ -5253,35 +5272,52 @@
    },
    "milestone": "DIAG-QUALITY",
    "area": "Runtime",
-   "status": "READY",
+   "status": "VALIDATION",
    "priority": "P0",
    "effort": "2.5-4 days",
-   "authorized": false,
+   "authorized": true,
    "depends_on": [],
-   "packet": null,
+   "packet": "agentic/_tasks/2026-10-21-bops-0111-diag-assure-01.md",
    "spec": "docs/maintenance/roadmap-reconciliation-01.md#6",
    "companion_docs": [],
    "prs": [],
    "commits": [],
    "validation": {
-    "achieved": [],
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
     "required": [
      "OFFLINE_TESTS",
      "CI_VERIFIED"
     ],
-    "open_gates": []
+    "open_gates": [
+     "Final PR-head Windows/Linux CI verification (pending delivery PR).",
+     "Operator review and merge of the substantive delivery PR; no automatic merge authorized.",
+     "CI_VERIFIED requires the merged application commit CI; PR-head CI is a separate delivery check."
+    ]
    },
-   "evidence": [],
+   "evidence": [
+    "Operator mandate 2026-10-21 resolves D10 for BOPS-0111 packet and implementation; work started on codex/bops-0111-diagnostic-assurance from main e0e9de7, preserving pre-existing local register/HANDOFF changes and operator appsettings.",
+    "Start transition verified 2026-10-21: Issue #112 OPEN with IN_PROGRESS body/comment (issuecomment-6326199284); Project #6 item PVTI_lAHOAP3b6c4BoBRpzhCWcOc re-read In Progress after conflict-free sync_remote.py --apply --apply-register.",
+    "Offline archive inspection: metadata minimized from T02-C r1/r2/r3, Qwen3.8 T02 r1/r2/r3, RV-01 T01/T03/T04/T05/T06/T10 plus PRE-6 Qwen/KD. Expected Qualified for all 14 fixed before test; 14/14 match with zero Checked and identical serialized-state roundtrip projections. Original payloads excluded; source hashes in committed minimized fixture.",
+    "Prior manual closures BOPS-0118/BOPS-0119/BOPS-0062 re-read by three-way sync; no conflicts or status changes. Stale Issue bodies #109/#111 reconciled to DONE without reopening or re-closing Issues; main register remains behind until this substantive PR merges.",
+    "Release solution build: 0 warnings, 0 errors. Final Runtime 2394/2394; assurance49/49 includes 14 archived evidence shapes. Original private states and minimized fixture projection compared via stdin-only local harness: identical closed level/reason/count output for 14/14, no raw payload written or logged.",
+    "Local solution run: 6880 total, 6706 passed, 173 platform/live/infrastructure skips, one VaultStore concurrent file-move UnauthorizedAccessException. Vault-only recheck14/14 and final complete Runtime2394/2394 passed; vault code unchanged. Api562/562, Cli193/193, AgentFramework615 passed/8 skipped, Architecture210/210, Audit32/32, System.Core495/495. Final CLI process test1/1 verifies actual output and terminal audit projection.",
+    "UI production build succeeded; ChromeHeadless489/489; governance70/70 and register validator0 errors. Three targeted production mutants killed: ignore Partial7 failures; ignore GroundingCorrected4; unconditional Checked from NoContradiction13. Prompt/golden/terminal-state contracts unchanged.",
+    "ECC independent final code/security review: false recovery from evidence continuation calls, hidden ledger values, unnamed planned steps and inconclusive verification regression-tested and corrected; no remaining actionable P1/P2 or new sensitive-data exposure in changed surface.",
+    "EvidenceRead raw9000-character output flow:3 bounded reads return full source; hidden middle unavailable before read, no redundant tool execution, replan read works; no-read branch produces no read audit. Grounding exact-cap boundary skips optional call, retains Completed; no new inference for assurance. Numeric claim errors remain characterized;33 test-only feasibility cases do not implement production DIAG-CLAIMS.",
+    "Validation transition verified 2026-10-21: Issue #112 OPEN at VALIDATION (issuecomment-6326524723); Project #6 re-read Validation / Offline tests after sync_remote.py --apply --apply-register. Final candidate API full suite562/562; earlier approved BOPS-0118/#109 and BOPS-0062/#111 re-read Closed/Done; BOPS-0119 private draft remained Done in conflict-free sync."
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Proposal only: ready (no open dependency) but NOT authorized. Needs a task packet before work starts.",
+   "note": "Implementation ready for review; additive deterministic API/CLI/audit projection and bounded production diagnostic fixes delivered with persistent AGENTS instructions. See packet for tests, corpus provenance and residual semantic limits. PR-head CI, operator merge and merge-commit CI remain distinct open gates. Main register is temporarily behind the working branch; no merge/release authorized.",
    "issue": 112,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcOc",
-   "branch": null,
+   "branch": "codex/bops-0111-diagnostic-assurance",
    "remote_kind": "issue",
    "sync": {
-    "status": "Ready",
-    "verified_at": "2026-10-21T10:34:40+0200"
+    "status": "Validation",
+    "verified_at": "2026-10-21T23:04:47+0200"
    }
   },
   {
@@ -5545,7 +5581,7 @@
    },
    "milestone": "GOVERNANCE",
    "area": "Governance",
-   "status": "VALIDATION",
+   "status": "DONE",
    "priority": "P0",
    "effort": null,
    "authorized": true,
@@ -5556,7 +5592,8 @@
    "spec": "agentic/_tasks/PROCESS.md",
    "companion_docs": [],
    "prs": [
-    108
+    108,
+    120
    ],
    "commits": [
     "6677155f3f9ce55e53b81002afa633181d59b310",
@@ -5565,33 +5602,40 @@
    "validation": {
     "achieved": [
      "OFFLINE_TESTS",
-     "CI_VERIFIED"
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
     ],
     "required": [
      "OFFLINE_TESTS",
      "CI_VERIFIED",
      "OPERATOR_GATE"
     ],
-    "open_gates": [
-     "Operator approval to close the task (OPERATOR_GATE); closure is recorded in the first substantive PR after approval."
-    ]
+    "open_gates": []
    },
    "evidence": [
     "PR #108 squash-merged 2026-10-21 as 6677155",
     "PR CI run 39564405749 (head bcd2ab3): Windows and Linux green, including the Task register validation step",
     "CI of the merge commit 6677155 on main: CI run 39568937685 and Quality finalize run 39571499767 succeeded",
-    "PR #120 squash-merged as 9aa2a70 (CI of the PR head green on Windows and Linux); CI of the merge commit 9aa2a70 on main was still running when recorded"
+    "PR #120 squash-merged as 9aa2a70 (CI of the PR head green on Windows and Linux); CI of the merge commit 9aa2a70 on main was still running when recorded",
+    "OPERATOR_GATE: explicit operator authorization on 2026-10-21 to close this task as DONE; reconciliation requested before PRE-6.",
+    "GitHub re-verified at 2026-10-21T19:41:25+00:00 as babbubba: Project #6 item PVTI_lAHOAP3b6c4BoBRpzhCWbEQ is Done. Issue #109 re-read via REST and Project GraphQL: Closed/Completed.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39564405749 (CI, commit bcd2ab3913f10835af8e397d68344597345049ba) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39568937685 (CI, commit 6677155f3f9ce55e53b81002afa633181d59b310) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39571499767 (Quality finalize, commit 6677155f3f9ce55e53b81002afa633181d59b310) completed/success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39571748185 (CI, commit 793ca96266f5d820dcf94eb39e4a6c7e863820be) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39575282174 (CI, commit 9aa2a7050136f88ad5b8139fe249bc65c7a48b09) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39577778108 (Quality finalize, commit 9aa2a7050136f88ad5b8139fe249bc65c7a48b09) completed/success."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "PR #108 and #120 merged; mapping FROZEN (D9); Project #6 populated with 11 Issues and 8 private drafts; ready to close on operator approval.",
+   "note": "Operator-approved closure recorded locally for the next substantive PRE-6 PR; PRs #108/#120 merged, merge CI verified, mapping FROZEN (D9). Project Done and Issue #109 Closed/Completed re-read. Main register temporarily remains VALIDATION until this bookkeeping is merged.",
    "issue": 109,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbEQ",
    "branch": null,
    "remote_kind": "issue",
    "sync": {
-    "status": "Validation",
-    "verified_at": "2026-10-21T10:34:40+0200"
+    "status": "Done",
+    "verified_at": "2026-10-21T19:41:25+00:00"
    }
   },
   {
@@ -5606,7 +5650,7 @@
    },
    "milestone": "GOVERNANCE",
    "area": "Governance",
-   "status": "VALIDATION",
+   "status": "DONE",
    "priority": "P1",
    "effort": null,
    "authorized": true,
@@ -5624,30 +5668,35 @@
    ],
    "validation": {
     "achieved": [
-     "OFFLINE_TESTS"
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
     ],
     "required": [
      "OFFLINE_TESTS",
      "CI_VERIFIED"
     ],
-    "open_gates": [
-     "CI of the PR head and of the merge commit (validator, test and workflow files changed: post-merge verification kept)."
-    ]
+    "open_gates": []
    },
    "evidence": [
     "Read-only run of sync_remote.py against Project #6 on 2026-10-21 (after a secondary rate limit cleared): 19 items read, 18 in sync, 2 pending updates for BOPS-0119 (Status Backlog->Validation, Evidence Level None->Offline tests), 0 conflicts; no remote write performed",
-    "PR #121 squash-merged 2026-10-21 as f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3; remote Project #6 draft item verified at Validation 2026-10-21T19:02:47+0200 (baseline recorded here)"
+    "PR #121 squash-merged 2026-10-21 as f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3; remote Project #6 draft item verified at Validation 2026-10-21T19:02:47+0200 (baseline recorded here)",
+    "OPERATOR_GATE: explicit operator authorization on 2026-10-21 to close this task as DONE; reconciliation requested before PRE-6.",
+    "GitHub re-verified at 2026-10-21T19:41:25+00:00 as babbubba: Project #6 item PVTI_lAHOAP3b6c4BoBRpzhCWbNw is Done. DraftIssue type and task title re-read via Project GraphQL; no Issue to close.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39635965148 (CI, commit 0a840f6e909f2fd28714e08e0894fa3fce89f9f9) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39639740804 (CI, commit f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3) completed/success; build-and-test on ubuntu-latest and windows-latest both success.",
+    "Verified at 2026-10-21T19:41:25+00:00: https://github.com/babbubba/bOps/actions/runs/39642799523 (Quality finalize, commit f1cd5e70cbb97d7e31d996b09fd6150ac64dfbc3) completed/success."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Implemented: scripts/governance/sync_remote.py with offline tests; PROCESS.md section 4b documents the tool and the closure policy. The remote draft item still shows Backlog/None until a sync is applied (needs operator approval for remote writes).",
+   "note": "PR #121 merged; PR-head and merge-commit CI verified on Windows/Linux, operator closure approved. Project draft re-read at Done. Main register temporarily remains VALIDATION until the next substantive PRE-6 PR merges.",
    "issue": null,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbNw",
    "branch": "feat/bops-0119-project-sync",
    "remote_kind": "draft",
    "sync": {
-    "status": "Validation",
-    "verified_at": "2026-10-21T19:02:47+0200"
+    "status": "Done",
+    "verified_at": "2026-10-21T19:41:25+00:00"
    }
   },
   {

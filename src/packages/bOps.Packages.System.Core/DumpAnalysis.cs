@@ -112,6 +112,7 @@ public sealed record DumpBugcheck(string? Code, string? Name, IReadOnlyList<stri
 
 /// <summary>
 /// The debugger's own automated attribution. Every field is debugger output, a heuristic, never a proven root cause.
+/// <c>ProcessName</c> is the debugger's current process context, not an attribution of the failure to that process.
 /// </summary>
 public sealed record DumpDebuggerAttribution(
     string? ProcessName,

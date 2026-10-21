@@ -234,6 +234,48 @@ public sealed class HighDensityFactsTests
     }
 
     [Theory]
+    [InlineData(true, true, "passed")]
+    [InlineData(true, false, "failed")]
+    [InlineData(true, null, "inconclusive")]
+    [InlineData(false, null, "not-used")]
+    public void DumpAnalysis_IntegrityPreflightRemainsIndependentFromCompletedDebuggerAnalysis(bool used, bool? passed, string expected)
+    {
+        var result = SystemDumpAnalyzeToolBase.ToResult(new DumpAnalysisReport
+        {
+            Status = passed == false ? DumpAnalysisStatus.Partial : DumpAnalysisStatus.Complete,
+            Debugger = new DumpDebuggerDescription("kd", "synthetic", used, passed),
+            SymbolsStatus = "loaded",
+            Warnings = passed is null && used ? ["dumpchk-timeout"] : [],
+        });
+
+        Assert.Equal(passed == false ? ToolResultCompleteness.Partial : ToolResultCompleteness.Complete, result.Completeness);
+        var fact = Assert.Single(result.Facts, candidate => candidate.Type == "system.dump_analyze.integrity-preflight-status");
+        Assert.Equal("integrity-preflight", fact.Key);
+        Assert.Equal(expected, fact.Value.GetValue<string>());
+        if (used && passed is null)
+        {
+            Assert.Contains("dumpchk-timeout", JsonNode.Parse(result.Output!)!["warnings"]!.AsArray().Select(value => value!.GetValue<string>()));
+        }
+        AssertBoundedAndRoundTrips(result.Facts);
+    }
+
+    [Fact]
+    public void DumpAnalysis_ProcessNameIsCurrentContextAndDoesNotBecomeCausalAttribution()
+    {
+        var result = SystemDumpAnalyzeToolBase.ToResult(new DumpAnalysisReport
+        {
+            Status = DumpAnalysisStatus.Complete,
+            Attribution = new DumpDebuggerAttribution("synthetic-process.exe", "nt", null, null, null, null, null, null),
+        });
+
+        var json = JsonNode.Parse(result.Output!)!;
+        Assert.Equal("synthetic-process.exe", json["analysis"]!["processName"]!.GetValue<string>());
+        Assert.Contains("current process context", json["interpretation"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Facts, fact => fact.Value is JsonValue value
+            && value.TryGetValue<string>(out var text) && text == "synthetic-process.exe");
+    }
+
+    [Theory]
     [InlineData(DumpAnalysisStatus.Unavailable, DumpAnalysisFailure.AccessDenied)]
     [InlineData(DumpAnalysisStatus.Unavailable, DumpAnalysisFailure.DebuggerUnavailable)]
     [InlineData(DumpAnalysisStatus.Unavailable, DumpAnalysisFailure.Timeout)]

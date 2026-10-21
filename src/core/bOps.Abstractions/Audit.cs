@@ -864,6 +864,13 @@ public sealed record TaskLifecycleAuditEvent : AuditEvent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TaskTerminalKind? TerminalKind { get; init; }
 
+    /// <summary>
+    /// Optional deterministic evidence coverage at execution completion, never a certification of diagnostic truth.
+    /// Absent on historical events and on stages without a completed diagnostic projection. Only closed codes and counts.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DiagnosticAssuranceResult? Assurance { get; init; }
+
     /// <summary>For <see cref="TaskLifecycleStage.ResumeRejected"/>, <see cref="TaskLifecycleStage.RecoveryRejected"/> and <see cref="TaskLifecycleStage.EarlyFinalPlanContinuationRefused"/>, the stable refusal code (for example <c>task_running</c>).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RefusalCode { get; init; }

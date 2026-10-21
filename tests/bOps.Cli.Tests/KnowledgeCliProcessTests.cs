@@ -85,6 +85,8 @@ public sealed class KnowledgeCliProcessTests
         Assert.True(code == 0, $"exit {code}\n{output}\n{error}");
         Assert.Contains("Completed", output, StringComparison.Ordinal);
         Assert.Contains("possible causes", output, StringComparison.Ordinal);
+        Assert.Contains("Evidence assurance: NotApplicable", output, StringComparison.Ordinal);
+        Assert.Contains("does not certify diagnostic truth", output, StringComparison.Ordinal);
         Assert.Equal(3, server.Requests.Count);
 
         // Planning carries nothing of the pack.
@@ -114,6 +116,8 @@ public sealed class KnowledgeCliProcessTests
         Assert.Contains("KnowledgePackAdmission", audit, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("KnowledgeIndex", audit, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("KnowledgeRead", audit, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Assurance", audit, StringComparison.Ordinal);
+        Assert.Contains("NotApplicable", audit, StringComparison.Ordinal);
         Assert.DoesNotContain(CliKnowledgeWorld.ProcedureMarker, audit, StringComparison.Ordinal);
         Assert.DoesNotContain(CliKnowledgeWorld.Description, audit, StringComparison.Ordinal);
         var (verifyCode, verifyOutput, _) = await RunCoreAsync(RunDirectory(world), null, [], "audit", "verify", auditFile);

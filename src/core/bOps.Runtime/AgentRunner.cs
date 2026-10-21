@@ -2893,6 +2893,7 @@ public sealed partial class AgentRunner(
             Origin = state.Origin,
             Status = state.Status,
             TerminalKind = stage == TaskLifecycleStage.ExecutionTerminal ? state.TerminalReason?.Kind : null,
+            Assurance = stage == TaskLifecycleStage.ExecutionTerminal ? DiagnosticAssurance.From(state) : null,
             TokensUsed = accounting.TokensUsed,
             LifetimeSteps = accounting.LifetimeSteps,
             LifetimeReplans = accounting.LifetimeReplans,
@@ -3737,7 +3738,7 @@ public sealed partial class AgentRunner(
     /// costs no model call since AF-05H.)
     /// </summary>
     private bool DisclosureBudgetRemains(ExecutionRun run, DelegatedExecutionScope? delegation) =>
-        !(options.MaxTotalTokens is { } tokenCap && run.TokensUsed > tokenCap)
+        !(options.MaxTotalTokens is { } tokenCap && run.TokensUsed >= tokenCap)
         && delegation?.Meter?.IsExhausted(timeProvider.GetUtcNow()) != true;
 
     /// <summary>What the grounding guard settled: the answer to persist and its outcome, or a failure that ends the attempt.</summary>

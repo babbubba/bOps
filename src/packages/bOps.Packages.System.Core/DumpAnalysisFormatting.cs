@@ -21,7 +21,9 @@ public static class DumpAnalysisFormatting
         "Debugger evidence, not a diagnosis. analysis fields are the debugger's automated attribution: they say where the debugger "
         + "found the failure, not that the named module caused it. Correlate with the bugcheck, stack, hardware (WHEA), PnP, "
         + "driver versions and timing before stating a cause. Missing data from a small dump or unresolved symbols is not evidence "
-        + "that a component is healthy.";
+        + "that a component is healthy. processName is the debugger's current process context, not a causal attribution. "
+        + "A complete debugger analysis or loaded symbols does not establish that the optional DumpChk integrity preflight "
+        + "passed; inspect debugger.dumpCheckPassed and warnings independently.";
 
     /// <summary>The stable warning added when the formatter had to drop data.</summary>
     public const string TruncatedWarning = "output-truncated";
@@ -41,7 +43,7 @@ public static class DumpAnalysisFormatting
         var truncated = report.Stack.Count > stack.Count || report.Modules.Count > modules.Count
             || report.Warnings.Distinct(StringComparer.Ordinal).Count() > warnings.Count
             || (report.RawAnalysisExcerpt?.Length ?? 0) > DumpAnalysisLimits.RawExcerptCharacters
-            || pnp.Truncated || bsd.Truncated;
+            || pnp.Truncated || bsd.Truncated || HasTruncatedFields(report);
 
         string output;
         while (true)
@@ -168,10 +170,31 @@ public static class DumpAnalysisFormatting
         var lines = box.Lines.Take(DumpAnalysisLimits.MaximumBlackboxLines)
             .Select(line => Bounded(line, DumpAnalysisLimits.BlackboxLineCharacters)!).ToArray();
         var truncated = box.DeviceIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() > ids.Length
+            || box.DeviceIds.Any(id => Exceeds(id, DumpAnalysisLimits.BlackboxLineCharacters))
             || box.Lines.Count > lines.Length
             || box.Lines.Any(line => line.Length > DumpAnalysisLimits.BlackboxLineCharacters);
         return (new DumpBlackbox(box.Available, ids, lines), truncated);
     }
+
+    private static bool HasTruncatedFields(DumpAnalysisReport report) =>
+        Exceeds(report.Dump?.Path, DumpAnalysisLimits.PathCharacters)
+        || Exceeds(report.Dump?.FileName, DumpAnalysisLimits.PathCharacters)
+        || Exceeds(report.Debugger?.Version, 64)
+        || Exceeds(report.Bugcheck?.Code, 32)
+        || Exceeds(report.Bugcheck?.Name, DumpAnalysisLimits.FieldCharacters)
+        || report.Bugcheck is { } bugcheck && (bugcheck.Parameters.Count > 4 || bugcheck.Parameters.Any(parameter => Exceeds(parameter, 32)))
+        || report.Attribution is { } attribution && new[]
+        {
+            attribution.ProcessName, attribution.ModuleName, attribution.ImageName, attribution.SymbolName,
+            attribution.ExceptionCode, attribution.FailureBucketId, attribution.FailureIdHash, attribution.BucketId,
+        }.Any(value => Exceeds(value, DumpAnalysisLimits.TextCharacters))
+        || report.Stack.Any(frame => Exceeds(frame.Module, DumpAnalysisLimits.FieldCharacters)
+            || Exceeds(frame.Symbol, DumpAnalysisLimits.FieldCharacters) || Exceeds(frame.Offset, 32) || Exceeds(frame.Address, 32))
+        || report.Modules.Any(module => Exceeds(module.Name, DumpAnalysisLimits.FieldCharacters)
+            || Exceeds(module.Start, 32) || Exceeds(module.End, 32) || Exceeds(module.SymbolState, 64))
+        || report.Warnings.Any(warning => Exceeds(warning, 128));
+
+    private static bool Exceeds(string? value, int maximumCharacters) => value?.Length > maximumCharacters;
 
     private static string? Text(string? value) => Bounded(value, DumpAnalysisLimits.TextCharacters);
 

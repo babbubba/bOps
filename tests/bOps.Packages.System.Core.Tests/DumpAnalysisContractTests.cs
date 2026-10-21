@@ -98,6 +98,59 @@ public sealed class DumpAnalysisContractTests
         Assert.Equal("0x0", parameters[2]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData("attribution")]
+    [InlineData("stack")]
+    [InlineData("module")]
+    [InlineData("bugcheck")]
+    [InlineData("debugger")]
+    [InlineData("file")]
+    [InlineData("warning")]
+    [InlineData("blackbox-device")]
+    public void Format_ScalarEvidenceCutsDeclarePartialCompleteness(string field)
+    {
+        var overlong = new string('x', DumpAnalysisLimits.TextCharacters + 1);
+        var report = new DumpAnalysisReport { Status = DumpAnalysisStatus.Complete };
+        report = field switch
+        {
+            "attribution" => report with { Attribution = new DumpDebuggerAttribution(overlong, "module", null, null, null, null, null, null) },
+            "stack" => report with { Stack = [new DumpStackFrame(0, "module", overlong, null, null)] },
+            "module" => report with { Modules = [new DumpModule(overlong, null, null, null, true)] },
+            "bugcheck" => report with { Bugcheck = new DumpBugcheck("0x1e", overlong, []) },
+            "debugger" => report with { Debugger = new DumpDebuggerDescription("kd", overlong, true, true) },
+            "file" => report with { Dump = new DumpFileDescription(overlong, "synthetic.dmp", 1, null, "kernel-small") },
+            "warning" => report with { Warnings = [overlong] },
+            "blackbox-device" => report with { PnpBlackbox = new DumpBlackbox(true, [overlong], []) },
+            _ => throw new InvalidOperationException(),
+        };
+
+        var result = SystemDumpAnalyzeToolBase.ToResult(report);
+        var json = JsonNode.Parse(result.Output!)!;
+
+        Assert.True(json["truncated"]!.GetValue<bool>());
+        Assert.False(json["complete"]!.GetValue<bool>());
+        Assert.Equal(ToolResultCompleteness.Partial, result.Completeness);
+        Assert.Contains(DumpAnalysisFormatting.TruncatedWarning, json["warnings"]!.AsArray().Select(value => value!.GetValue<string>()));
+        Assert.Contains(result.Facts, fact => fact.Type == DumpAnalysisFacts.AnalysisStatusType && fact.Value.GetValue<string>() == "partial");
+    }
+
+    [Fact]
+    public void Format_ValuesExactlyAtTheirBoundsRetainCompleteEvidence()
+    {
+        var result = SystemDumpAnalyzeToolBase.ToResult(new DumpAnalysisReport
+        {
+            Status = DumpAnalysisStatus.Complete,
+            Attribution = new DumpDebuggerAttribution(new string('p', DumpAnalysisLimits.TextCharacters), "nt", null, null, null, null, null, null),
+            Bugcheck = new DumpBugcheck("0x1e", new string('b', DumpAnalysisLimits.FieldCharacters), [new string('1', 32), null, null, null]),
+            Debugger = new DumpDebuggerDescription("kd", new string('v', 64), true, true),
+            Stack = [new DumpStackFrame(0, "nt", new string('s', DumpAnalysisLimits.FieldCharacters), null, null)],
+            PnpBlackbox = new DumpBlackbox(true, [new string('d', DumpAnalysisLimits.BlackboxLineCharacters)], []),
+        });
+
+        Assert.Equal(ToolResultCompleteness.Complete, result.Completeness);
+        Assert.False(JsonNode.Parse(result.Output!)!["truncated"]!.GetValue<bool>());
+    }
+
     [Fact]
     public void Format_CutsListsAndStrings_AndAReportThatWasCompleteBecomesPartial()
     {

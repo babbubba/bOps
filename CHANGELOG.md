@@ -14,6 +14,10 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ### Added
 
+- Deterministic evidence assurance for completed tasks (BOPS-0111): additive API `assurance`, CLI summary and optional terminal
+  audit field with closed reasons/counts. Coverage and model check status never certify diagnostic truth; historical records
+  remain readable. Dump scalar clipping now reports Partial, integrity preflight status is distinct from KD/symbol status,
+  and the optional grounding call is skipped when the token budget is exactly exhausted.
 - Production hosting of the web UI (F-26, BOPS-0120). The published `bOps.Api` serves the compiled Angular app and the API from one
   process with the native ASP.NET Core static files and a client-route fallback (`WebUi` section; automatic when `wwwroot-ui/` exists,
   start-up fails on an incomplete one). `/api/*` and the new anonymous `GET /healthz` are never served from it; an unknown API path is 404;

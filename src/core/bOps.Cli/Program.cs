@@ -474,6 +474,10 @@ return result.Status == AgentTaskStatus.Completed ? 0 : 1;
 static void PrintTranscript(TaskState task)
 {
     Console.WriteLine($"Task {task.Id} — {task.Status}");
+    if (DiagnosticAssurance.From(task) is { } assurance)
+    {
+        Console.WriteLine(DiagnosticAssuranceText.Format(assurance));
+    }
     foreach (var step in task.Steps)
     {
         Console.WriteLine($"[{step.Index}] {step.Description}");

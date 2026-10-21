@@ -33,6 +33,9 @@ public static class DumpAnalysisFacts
     /// <summary>The fact type: the debugger's symbol resolution status. The key is <see cref="SymbolsKey"/>.</summary>
     public const string SymbolsStatusType = "system.dump_analyze.symbols-status";
 
+    /// <summary>The fact type: the optional integrity preflight's own verdict, independent of debugger and symbol completeness.</summary>
+    public const string IntegrityPreflightStatusType = "system.dump_analyze.integrity-preflight-status";
+
     /// <summary>The key of <see cref="AnalysisStatusType"/>.</summary>
     public const string StatusKey = "status";
 
@@ -50,6 +53,9 @@ public static class DumpAnalysisFacts
 
     /// <summary>The key of <see cref="SymbolsStatusType"/>.</summary>
     public const string SymbolsKey = "symbols";
+
+    /// <summary>The key of <see cref="IntegrityPreflightStatusType"/>.</summary>
+    public const string IntegrityPreflightKey = "integrity-preflight";
 
     /// <summary>The facts of one call: <paramref name="output"/> is the JSON <see cref="DumpAnalysisFormatting.Format(DumpAnalysisReport)"/> produced.</summary>
     public static IReadOnlyList<EvidenceFact> From(string output)
@@ -71,12 +77,30 @@ public static class DumpAnalysisFacts
         }
 
         var facts = new List<EvidenceFact> { Fact(AnalysisStatusType, StatusKey, status, ToolParameterType.String)! };
+        AddIfPresent(facts, Fact(IntegrityPreflightStatusType, IntegrityPreflightKey, PreflightStatus(root["debugger"]), ToolParameterType.String, 32));
         AddIfPresent(facts, Fact(DumpPathType, AnalyzedKey, Text(root["dump"]?["path"]), ToolParameterType.Path, DumpAnalysisLimits.PathCharacters));
         AddIfPresent(facts, Fact(BugcheckCodeType, BugcheckKey, Text(root["bugcheck"]?["code"]), ToolParameterType.String, 32));
         AddIfPresent(facts, Fact(AttributedModuleType, ModuleKey, Text(root["analysis"]?["moduleName"]), ToolParameterType.String));
         AddIfPresent(facts, Fact(AttributedFailureBucketType, FailureBucketKey, Text(root["analysis"]?["failureBucketId"]), ToolParameterType.String));
         AddIfPresent(facts, Fact(SymbolsStatusType, SymbolsKey, Text(root["symbols"]?["status"]), ToolParameterType.String, 32));
         return EvidenceFactBounds.Fit(facts);
+    }
+
+    private static string? PreflightStatus(JsonNode? debugger)
+    {
+        if (debugger?["dumpCheckUsed"] is not JsonValue used || !used.TryGetValue<bool>(out var didRun))
+        {
+            return null;
+        }
+
+        if (!didRun)
+        {
+            return "not-used";
+        }
+
+        return debugger["dumpCheckPassed"] is JsonValue passed && passed.TryGetValue<bool>(out var verdict)
+            ? verdict ? "passed" : "failed"
+            : "inconclusive";
     }
 
     private static void AddIfPresent(List<EvidenceFact> facts, EvidenceFact? fact)

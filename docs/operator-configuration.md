@@ -660,6 +660,42 @@ Unknown or misspelt keys are an error whether or not the section is enabled. The
 by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
 means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
 
+## 15. Diagnostic evidence assurance
+
+Completed tasks expose an additive `assurance` object in task GET/list/event views,
+an `Evidence assurance` line in the CLI, and optional `Assurance` in the
+`ExecutionTerminal` audit event. Other task outcomes have no projection. Historical
+audit events omit the field; historical task state can be projected without migration.
+
+| Level | Meaning |
+|---|---|
+| `Checked` | No runtime-detected evidence qualification; usable typed facts were shown and the model check cited no contradiction. This does **not** establish diagnostic truth. |
+| `Unchecked` | No qualifying evidence failure, but completeness or typed/check coverage cannot be established. |
+| `Qualified` | Failed/unexecuted work, partial/unavailable evidence, shortened observations with no durable full-read coverage, or a grounding correction. |
+| `NotApplicable` | No operational diagnostic evidence, such as Knowledge-only or policy-denied work. |
+
+Reasons are closed codes with counts, ordered deterministically. They include planned
+failures/unexecuted steps, partial/unavailable evidence, shortened observations,
+missing typed facts, grounding not checked/unavailable/corrected, and recovery.
+`GroundingNoContradictionCited` is explicitly a **model judgement**. Conservative
+coverage reasons refine the specification: `GroundingFactsOmitted` includes facts
+or oversized values hidden by the bounded ledger; `EvidenceCompletenessUnspecified`
+keeps older unclassified results from being called Checked. `VerificationInconclusive`
+qualifies unresolved typed post-action verification. None is a prose checker.
+
+`ObservationShortenedNotRead` means full raw-output coverage **cannot be established
+from task state**. EvidenceRead calls and ranges are audited separately; the projection
+does not claim that no read occurred, or that one read covered every omitted range.
+Use `EvidenceReadAuditEvent` to inspect served ranges. Retrieval remains on demand and
+bounded; it adds no automatic tool/model calls. `FinalAfterRecovery` uses explicit
+checkpoints or typed empty-response metadata, never the number of evidence continuations.
+
+All levels leave `Completed` and budget/recovery authority unchanged. Assurance is a
+pure projection and makes zero model calls. It cannot prove free-text numeric claims,
+disjoint categories, chronology or causal attributions. A debugger's current process is
+context, and successful KD/symbol loading does not imply a successful DumpChk preflight.
+DumpChk's independent `integrity-preflight-status` fact exposes that distinction.
+
 ## Related documents
 
 [Knowledge pilot](knowledge/local-agent-pilot.md) · [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·

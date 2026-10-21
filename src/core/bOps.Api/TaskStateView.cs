@@ -54,6 +54,7 @@ internal static class TaskStateView
         var view = JsonSerializer.SerializeToNode(WithoutModelPayloads(task), ViewJsonOptions)!.AsObject();
         view["accounting"] = JsonSerializer.SerializeToNode(TaskResumePolicy.EffectiveAccounting(task), ViewJsonOptions);
         view["executionPlan"] = JsonSerializer.SerializeToNode(executionPlan, ViewJsonOptions);
+        view["assurance"] = JsonSerializer.SerializeToNode(DiagnosticAssurance.From(task), ViewJsonOptions);
         view["executing"] = executing;
         view["resumable"] = resume.Resumable;
         view["resumeBlockedReason"] = resume.Refusal is { } refusal

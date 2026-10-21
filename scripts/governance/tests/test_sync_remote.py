@@ -39,7 +39,7 @@ def remote_of(reg):
         items.append({"id": t["project_item"], "title": vr.task_title(t), "kind": "Issue" if t["remote_kind"] == "issue" else "DraftIssue",
                       "issue": t["issue"], **{k: want.get(k) for k in ("status", "priority", "area", "milestone", "evidence", "effort")}})
         if t["remote_kind"] == "issue":
-            issues.append({"number": t["issue"], "title": vr.task_title(t), "state": "open",
+            issues.append({"number": t["issue"], "title": vr.task_title(t), "state": "closed" if t["status"] == "DONE" else "open",
                            "body": f"**Status in the register:** X (`{t['status']}`)"})
     return {"items": items, "issues": issues}
 
@@ -117,6 +117,8 @@ class Planner(PlannerBase):
     def test_a_done_task_is_closed_only_when_asked(self):
         t = task(self.reg, "PROJECT-GOVERNANCE-01")
         t.update(status="DONE")
+        t["sync"]["status"] = "Validation"
+        next(i for i in self.remote["issues"] if i["number"] == t["issue"])["state"] = "open"
         t["validation"].update(achieved=t["validation"]["required"], open_gates=[])
         self.item("PROJECT-GOVERNANCE-01")["status"] = "Validation"
         p = self.plan()
@@ -337,6 +339,8 @@ class Identity(PlannerBase):
         super().setUp()
         self.t = task(self.reg, "PROJECT-GOVERNANCE-01")
         self.t.update(status="DONE")
+        self.t["sync"]["status"] = "Validation"
+        next(i for i in self.remote["issues"] if i["number"] == self.t["issue"])["state"] = "open"
         self.t["validation"].update(achieved=self.t["validation"]["required"], open_gates=[])
         self.item("PROJECT-GOVERNANCE-01")["status"] = "Validation"
 
