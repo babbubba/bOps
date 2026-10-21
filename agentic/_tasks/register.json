@@ -52,9 +52,10 @@
   "frozen_by": "operator approval D9, 2026-10-21; 82 of 119 progressives have conventional (not chronologically proven) order, accepted explicitly"
  },
  "remote_sync": {
-  "state": "PROJECT_CONFIGURED_NO_ITEMS",
-  "reason": "Project #6 configured 2026-10-21 (7 Status options, fields Priority/Area/bOps Milestone/Evidence Level/Effort, 3 views, private). Workflows Item closed, Pull request merged, Auto-close issue, Pull request linked to issue and Auto-add sub-issues to project verified disabled through the API; only Item added to project remains enabled (its effect on the initial Status is to be read back from the first real item). No Issues or items created.",
-  "issues_created": 0
+  "state": "POPULATED_VERIFIED",
+  "reason": "Project #6 populated 2026-10-21: 11 public Issues and 8 private draft items; Status and the five fields were read back and match the register. Workflows Item closed, Pull request merged, Auto-close issue, Pull request linked to issue and Auto-add sub-issues to project are disabled; Item added to project is enabled and did not override the Status.",
+  "issues_created": 11,
+  "drafts_created": 8
  },
  "active_milestone": "V1.3",
  "milestones": [
@@ -3026,9 +3027,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": "Implementation PRs #94-#99 are merged; no stable V1.3 tag exists.",
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 110,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWb1M",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0062",
@@ -3075,9 +3081,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 111,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcCI",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0063",
@@ -3518,8 +3529,13 @@
    "reopen_condition": "AF-EVID-01 measured and evidence of benefit.",
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWenM",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0073",
@@ -3652,8 +3668,13 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWeMg",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Blocked",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0076",
@@ -3690,8 +3711,13 @@
    "reopen_condition": "KNOW-VALUE-01 shows a measured diagnostic benefit of Knowledge.",
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWe0w",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0077",
@@ -3861,9 +3887,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 118,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWdsQ",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0081",
@@ -4543,8 +4574,13 @@
    "reopen_condition": null,
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWeZY",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Blocked",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0096",
@@ -4799,8 +4835,13 @@
    "reopen_condition": "New evidence (Qwen3.8 shows 0 length stops in 74 requests).",
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWfA8",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0102",
@@ -4837,8 +4878,13 @@
    "reopen_condition": "New evidence from LIVE-GATE-01.",
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWfLg",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0103",
@@ -4873,8 +4919,13 @@
    "reopen_condition": "LIVE-GATE-01 evidence.",
    "note": null,
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWfW4",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0104",
@@ -5218,9 +5269,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": "Proposal only: ready (no open dependency) but NOT authorized. Needs a task packet before work starts.",
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 112,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcOc",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Ready",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0112",
@@ -5253,9 +5309,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 113,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcbY",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0113",
@@ -5290,9 +5351,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 114,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWcoo",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0114",
@@ -5327,9 +5393,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": "Needs operator live authorization (D6).",
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 115,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWc3M",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0115",
@@ -5365,9 +5436,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 116,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWdFk",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0116",
@@ -5402,9 +5478,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": null,
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 117,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWdZE",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0117",
@@ -5437,9 +5518,14 @@
    "blocked_reason": null,
    "reopen_condition": null,
    "note": "active-milestone.json still points at V1.3-H; left untouched by PROJECT-GOVERNANCE-01.",
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "issue": 119,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWeAE",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0118",
@@ -5479,9 +5565,9 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "CI of the merge commit 6677155 on main (run 39568937685) not yet recorded.",
-     "Operator approval to freeze the id mapping (D9).",
-     "Initial Issue/Project population and linking to the register: not done, awaiting operator approval."
+     "CI of the merge commit 6677155 on main (run 39568937685): record CI_VERIFIED only if green.",
+     "Realignment PR (Issue/item links, HANDOFF, frozen mapping) reviewed and merged by the operator.",
+     "Operator approval to close the task."
     ]
    },
    "evidence": [
@@ -5490,10 +5576,15 @@
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "PR #108 merged. Project #6 configured (7 Status options, 5 custom fields, 3 views, private, five status-moving workflows disabled); no Issue or item yet; mapping PROVISIONAL.",
-   "issue": null,
-   "project_item": null,
-   "branch": null
+   "note": "PR #108 merged; mapping FROZEN (D9); Project #6 configured and populated with 11 Issues and 8 private drafts (see remote_sync).",
+   "issue": 109,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbEQ",
+   "branch": null,
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   },
   {
    "id": "BOPS-0119",
@@ -5529,8 +5620,13 @@
    "reopen_condition": null,
    "note": "Idempotent gh-based reconciliation of register <-> Issues <-> Project #6 (dry-run by default); CI wiring of the offline validator is already in PROJECT-GOVERNANCE-01.",
    "issue": null,
-   "project_item": null,
-   "branch": null
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbNw",
+   "branch": null,
+   "remote_kind": "draft",
+   "sync": {
+    "status": "Backlog",
+    "verified_at": "2026-10-21T10:34:40+0200"
+   }
   }
  ],
  "known_divergences": [

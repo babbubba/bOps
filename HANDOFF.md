@@ -20,16 +20,15 @@ Task state is never copied here; ask the register (`--summary`).
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md).
 - Reconciliation of the real state (read-only audit, 2026-10-21): [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
 - Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>. Configured: 7 Status options, 5 custom fields (Priority, Area,
-  bOps Milestone, Evidence Level, Effort), 3 views (Kanban, Backlog, Milestones). **No Issue or Project item exists yet.** Sorting/grouping of the table views is set in the web UI.
+  bOps Milestone, Evidence Level, Effort), 3 views (Kanban, Backlog, Milestones). **Populated (19 items):** 11 public Issues (#109–#119) and 8 private draft items, each read back and matching the register (`remote_sync`, per-task `sync`). Sorting/grouping of the table views is set in the web UI.
 - Previous HANDOFF and task index (verbatim): [`docs/handoff-archive/`](docs/handoff-archive/).
 
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Active implementation task: **NO ACTIVE IMPLEMENTATION TASK**.
-- In validation (governance): **BOPS-0118 PROJECT-GOVERNANCE-01** — register, validator, process and documents are done locally;
-  Issue: none yet; PR: #108 (merged). Open gates: CI of the merge commit `6677155`; operator approval to freeze the mapping (D9);
-  Issue/Project population and linking (awaiting approval).
+- In validation (governance): **BOPS-0118 PROJECT-GOVERNANCE-01** — register, validator, process and documents are on `main`;
+  Issue: #109; PR: #108 (merged). Open gates: CI of the merge commit `6677155`; merge of the realignment PR; operator approval to close.
 - Last completed: **BOPS-0110 ROADMAP-RECONCILIATION-01** (2026-10-21, read-only audit).
 
 ## Quality gates (verified 2026-10-21)
@@ -56,8 +55,8 @@ Task state is never copied here; ask the register (`--summary`).
 ## Decisions waiting for the operator
 
 D1 ADR-0053/0054 (MAF B+) · D2 reference model/timeouts · D3 `MaxObservationCharacters` default · D4 ADR-0050 acceptance · D5 Knowledge ADR statuses ·
-D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D9 approve/freeze the id mapping (**PROVISIONAL**; 82 of 119 progressives are conventional order) · D10 authorize DIAG-ASSURE-01 .
-Resolved: D11 (Project #6 is PRIVATE). Details and recommendations: `register.json` `decisions`. No ADR status was changed.
+D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D10 authorize DIAG-ASSURE-01.
+Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, accepted) and D11 (Project #6 is PRIVATE). Details and recommendations: `register.json` `decisions`. No ADR status was changed.
 
 ## Local state not to touch
 
@@ -68,7 +67,6 @@ Resolved: D11 (Project #6 is PRIVATE). Details and recommendations: `register.js
 ## Resume instructions for the next session
 
 1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do.
-2. Check the CI of `main` @ `6677155` and record `CI_VERIFIED` for BOPS-0118 only if it is green. Do not freeze the mapping before D9.
-3. On the operator's approval only (the governance files are now on `main`, so packet/spec links resolve): split the 19 candidate Issues into public Issues and private draft items, create them, read back each
-   item's Status (check the effect of `Item added to project`), record Issue numbers/item ids in the register.
+2. Check the CI of `main` @ `6677155` (run 39568937685) and record `CI_VERIFIED` for BOPS-0118 only if it is green. The id mapping is frozen: never renumber.
+3. After the realignment PR is merged, BOPS-0118 closes only with the operator's approval. Keep register, Issue, Project Status and this file in step (`PROCESS.md` section 4).
 4. No task is authorized. Never start BOPS-0111 without D10.
