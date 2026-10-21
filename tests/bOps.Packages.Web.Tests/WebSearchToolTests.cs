@@ -180,7 +180,7 @@ public sealed class WebSearchToolTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_PropagatesCancellation_WhenTheRequestExceedsTheConfiguredTimeout()
     {
-        var handler = new DelayingHandler(TimeSpan.FromMilliseconds(500));
+        var handler = new BlockingHandler();
         var options = Options();
         options.Timeout = TimeSpan.FromMilliseconds(20);
         var client = new SearxngClient(options, handler);
@@ -188,15 +188,18 @@ public sealed class WebSearchToolTests : IDisposable
         _disposables.Add(client);
         var tool = new WebSearchTool(client);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => tool.ExecuteAsync(Args(new { query = "x" })));
+        // No external token is passed: only the configured timeout can cancel the request. The handler never completes on its own,
+        // so the outcome does not depend on runner speed; the watchdog only bounds the wait if the timeout were ever not honoured.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => tool.ExecuteAsync(Args(new { query = "x" })).WaitAsync(TimeSpan.FromSeconds(30)));
     }
 
-    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    private sealed class BlockingHandler : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            await Task.Delay(delay, ct);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new InvalidOperationException("unreachable: the delay only ends by cancellation");
         }
     }
 }

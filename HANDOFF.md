@@ -1,11 +1,11 @@
 # Handoff
 
-Last updated: 2026-10-21 · Verified against `main` @ `6677155` (squash merge of PR [#108](https://github.com/babbubba/bOps/pull/108); CI green) ·
-working branch `docs/governance-post-merge`, PR [#120](https://github.com/babbubba/bOps/pull/120) open (not merged).
+Last updated: 2026-10-21 · `main` @ `9aa2a70` (squash merge of PR [#120](https://github.com/babbubba/bOps/pull/120); CI of the PR head green, CI of the merge commit still running when written) ·
+working branch `feat/bops-0119-project-sync` (local, not pushed).
 
 <!-- register-sync:begin -->
-Current task: NO ACTIVE IMPLEMENTATION TASK
-Branch: docs/governance-post-merge
+Current task: BOPS-0119 PROJECT-GOVERNANCE-02 (VALIDATION)
+Branch: feat/bops-0119-project-sync
 Ready: BOPS-0111
 Next number: BOPS-0120
 <!-- register-sync:end -->
@@ -26,17 +26,19 @@ Task state is never copied here; ask the register (`--summary`).
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Active implementation task: **NO ACTIVE IMPLEMENTATION TASK**.
-- In validation (governance): **BOPS-0118 PROJECT-GOVERNANCE-01** — register, validator, process and documents are on `main`;
-  Issue: #109; PR: #108 (merged). Open gates: realignment PR [#120](https://github.com/babbubba/bOps/pull/120) (CI green, merge); operator approval to close.
+- Active implementation task: **NO ACTIVE IMPLEMENTATION TASK** (BOPS-0119 is implemented and in validation).
+- In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
+  [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gate: CI of the PR head and merge commit. Read-only run on Project #6 done: 18 of 19 items in sync, 2 pending updates for BOPS-0119, 0 conflicts (a secondary rate limit refused GraphQL earlier; the tool classified and aborted, then succeeded).
+- In validation: **BOPS-0118 PROJECT-GOVERNANCE-01** (Issue #109) — PRs #108 and #120 merged. Open gate: operator approval to close; DONE is recorded in the BOPS-0119 PR once approved.
 - Last completed: **BOPS-0110 ROADMAP-RECONCILIATION-01** (2026-10-21, read-only audit).
 
 ## Quality gates (verified 2026-10-21)
 
-- PR #108 CI (run 39564405749, head `bcd2ab3`): all checks passed on Windows and Linux, including the "Task register validation" step. CI of the merge commit `6677155` on `main`: green (CI run 39568937685, Quality finalize 39571499767).
+- CI: PRs #108 and #120 heads were green on Windows and Linux including "Task register validation". CI of `main` @ `9aa2a70`: running when written.
 - Offline suites run during the reconciliation (Debug, `Category!=LiveModel`): Architecture 210/210, Runtime 2301/2301, Knowledge 308/308,
   AgentFramework 615 passed + 8 ignored (live/operator only), System.Core 481/481. Not run: full suite, Linux/WSL, Packages.* on Windows, Api, UI.
-- Governance validator: run `python scripts/governance/validate_register.py` (tests: `python -m unittest discover -s scripts/governance/tests`).
+- Governance: `python scripts/governance/validate_register.py` and `python -m unittest discover -s scripts/governance/tests` (validator and synchronizer tests, offline).
+- Remote sync (read-only by default): `python scripts/governance/sync_remote.py`; remote writes need `--apply` and operator approval.
 - `agentic/_quality/active-milestone.json` still points at V1.3-H, and `known-failures.json` lists different Filesystem tests than the old HANDOFF did
   (BOPS-0117 QUALITY-GATE-DOCS).
 
@@ -67,6 +69,6 @@ Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, acc
 ## Resume instructions for the next session
 
 1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do.
-2. `CI_VERIFIED` is recorded for BOPS-0118 (main @ `6677155` green). The id mapping is frozen: never renumber.
-3. After PR #120 is merged, BOPS-0118 closes only with the operator's approval. Keep register, Issue, Project Status and this file in step (`PROCESS.md` section 4).
-4. No task is authorized. Never start BOPS-0111 without D10.
+2. The id mapping is frozen: never renumber. Check the CI of `main` @ `9aa2a70`; the BOPS-0119 PR keeps the post-merge CI gate (it changes validators and CI).
+3. Remote Project #6 is behind the register for BOPS-0119 (draft still Backlog): run `sync_remote.py` (dry-run), then `--apply` only with the operator's approval. If GitHub answers with a secondary rate limit, wait; never switch tokens.
+4. BOPS-0118 closes only with the operator's approval, recorded in the BOPS-0119 PR (no bookkeeping-only PR). No other task is authorized; never start BOPS-0111 without D10.

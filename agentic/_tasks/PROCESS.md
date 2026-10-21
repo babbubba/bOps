@@ -98,17 +98,46 @@ the operator, and retry later. A task is not administratively closed while its r
 unless the operator authorizes the exception. Every remote operation must be idempotent: look the Issue up by
 the `BOPS-NNNN` title prefix before creating anything, and the Project item by Issue URL.
 
-## 4b. Remote reconciliation: idempotent and conflict-detecting (PROJECT-GOVERNANCE-02)
+## 4b. Remote reconciliation: `scripts/governance/sync_remote.py` (BOPS-0119)
 
-The register leads, but a person may legitimately edit an Issue or drag a card. The synchronizer therefore never overwrites silently:
+The register leads, but a person may legitimately edit an Issue or drag a card. The tool never overwrites silently. Spec:
+[`2026-10-21-bops-0119-project-governance-02-sync.md`](2026-10-21-bops-0119-project-governance-02-sync.md).
 
-- Each synchronized task stores the last state it pushed (`sync`: Issue state/title, Project Status, timestamps). Reconciliation is three-way:
-  register vs remote vs `sync`.
-- Only the register changed → push it. Only the remote changed (Status dragged, Issue closed/edited by a person) → report a **conflict** and stop for that task;
-  the operator decides whether the register or the remote wins. Both changed → conflict. Nothing changed → no-op.
-- Dry-run is the default; writes need an explicit flag. Lookup precedes create (Issue by the `BOPS-NNNN` title prefix, Project item by Issue URL), so reruns
-  create nothing new. The synchronizer never sets `DONE`, never closes an Issue by itself, never changes priority, milestone or dependencies.
-- Status is the only field it may move automatically, and only along register-permitted transitions.
+```bash
+python scripts/governance/sync_remote.py                        # read-only plan (default)
+python scripts/governance/sync_remote.py --apply                # write Status/field updates, re-read, verify
+python scripts/governance/sync_remote.py --apply --close-done   # also close Issues of DONE tasks
+python scripts/governance/sync_remote.py --report r.json --apply-register   # patch the local register baseline
+```
+
+- **Three-way Status.** register-desired vs remote vs `sync.status` (the baseline of the last verified sync). Only the register moved →
+  update. Remote differs from the baseline (a person moved it, or both did, or there is no baseline) → conflict, nothing written.
+- **Other fields and titles.** Fill-only: an empty remote value is filled, a differing one is a conflict. Priority, milestone,
+  dependencies and authorization come from the register and are never invented.
+- **Guards.** Only the `babbubba` account (tokens are stripped from the environment); the register must pass the validator; `DONE`
+  reaches the board only if the register is `DONE`; an Issue is closed only with `--close-done`; a closed Issue of an unfinished task is a
+  conflict and is not reopened; duplicates, unknown prefixes and vanished items are reported, never created or deleted.
+- **Rate limits.** `gh api rate_limit` (REST) is read first; a GraphQL refusal while the budget is healthy is a *secondary* limit
+  (retry later, exponential backoff, then exit 3), a low `remaining` is the *primary* limit (`--wait` sleeps until reset). No other token is
+  ever used to get around a limit.
+- **Idempotent.** Reruns after a verified apply produce an empty plan; "synchronized" is only claimed after a re-read.
+- Exit codes: 0 in sync · 1 differences or pending register updates · 2 conflicts · 3 environment.
+
+### Closure without bookkeeping-only PRs
+
+- A delivery PR may set `DONE` when every gate is verifiable **before** the merge and the validator does not count a future event as
+  achieved. Otherwise the task stays `VALIDATION` and its closure is recorded by the first later PR that changes the register for
+  substantive reasons. No PR exists only to move a task from `VALIDATION` to `DONE`.
+- **CI by category.** Documentation-only changes need the green CI of the PR head, with the branch up to date with `main` and no
+  incompatible change since. Changes to application code, tests, validators, CI workflows or infrastructure keep the post-merge CI gate.
+  Live or operator-validated work keeps its specific gates. Gates already achieved are never rewritten retroactively.
+- **Operator approval.** The operator's merge accepts the delivery of the PR; it is an `OPERATOR_GATE` only when the task's acceptance
+  criteria say so.
+- **Late events.** If an event after the merge completes a gate before `main` can be updated: record the verifiable evidence (run ids,
+  SHAs) in the Issue/Project and in the tool report, report the divergence as temporary and pending, never state that the register on
+  `main` is updated, and reconcile it in the first useful PR. Pending register updates are never written to `main` without a commit: the
+  tool lists them (`--report`) and `--apply-register` stages them in the working tree for that next PR.
+- Until register and Project agree, do not declare the synchronization complete.
 
 ## 5. Checks
 
@@ -121,8 +150,7 @@ The validator covers: unique, contiguous, frozen ids; legacy ids; closed status 
 dependencies without cycles; `DONE` only with required gates and no open gate; every `IN_PROGRESS` task authorized and
 on its own branch (parallel tasks allowed, branches distinct); milestone dimensions; recorded divergences; the
 machine-readable block of `HANDOFF.md`. Comparing the register with Issues and Project #6 needs a token with the
-`project` scope and is the job of PROJECT-GOVERNANCE-02 (dry-run first, never creates duplicates, never sets
-`DONE`).
+`project` scope and is done by `sync_remote.py` (section 4b).
 
 ## 6. Project #6
 

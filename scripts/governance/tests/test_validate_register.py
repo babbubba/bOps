@@ -1,6 +1,7 @@
 """Offline tests for scripts/governance/validate_register.py. No network, no GitHub token, no secret."""
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -149,8 +150,10 @@ class Mutations(unittest.TestCase):
         self.assertFlags("without the branch/session")
 
     def test_handoff_must_match_the_register(self):
+        cur = re.search(r"^Current task: .*$", HANDOFF, re.M).group(0)
         self.assertFlags("HANDOFF ready list", HANDOFF.replace("Ready: BOPS-0111", "Ready:"))
-        self.assertFlags("HANDOFF current task", HANDOFF.replace("Current task: NO ACTIVE IMPLEMENTATION TASK", "Current task: BOPS-0111"))
+        self.assertFlags("HANDOFF current task", HANDOFF.replace(cur, "Current task: nonsense"))
+        self.assertFlags("expected IN_PROGRESS or VALIDATION", HANDOFF.replace(cur, "Current task: BOPS-0111"))
         self.assertFlags("lacks the", "# no block here")
 
     def test_milestone_done_needs_implementation_validation_and_release(self):

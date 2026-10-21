@@ -295,7 +295,7 @@ def validate(reg: dict, root: Path, handoff_text: str | None) -> list[str]:
             if got.startswith(NO_ACTIVE):
                 pass
             else:
-                m = re.match(r"^(BOPS-\d{4})", got)
+                m = re.match(r"^(BOPS-\d{4})", got)
                 if not m or m.group(1) not in by_id:
                     e(f"HANDOFF current task {got!r} is neither {NO_ACTIVE!r} nor a known BOPS id")
                 elif by_id[m.group(1)].get("status") not in ("IN_PROGRESS", "VALIDATION"):

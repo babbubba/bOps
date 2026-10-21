@@ -5553,7 +5553,8 @@
     108
    ],
    "commits": [
-    "6677155f3f9ce55e53b81002afa633181d59b310"
+    "6677155f3f9ce55e53b81002afa633181d59b310",
+    "9aa2a7050136f88ad5b8139fe249bc65c7a48b09"
    ],
    "validation": {
     "achieved": [
@@ -5566,18 +5567,18 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Realignment PR #120 reviewed, CI green and merged by the operator.",
-     "Operator approval to close the task."
+     "Operator approval to close the task (OPERATOR_GATE); closure is recorded in the first substantive PR after approval."
     ]
    },
    "evidence": [
     "PR #108 squash-merged 2026-10-21 as 6677155",
     "PR CI run 39564405749 (head bcd2ab3): Windows and Linux green, including the Task register validation step",
-    "CI of the merge commit 6677155 on main: CI run 39568937685 and Quality finalize run 39571499767 succeeded"
+    "CI of the merge commit 6677155 on main: CI run 39568937685 and Quality finalize run 39571499767 succeeded",
+    "PR #120 squash-merged as 9aa2a70 (CI of the PR head green on Windows and Linux); CI of the merge commit 9aa2a70 on main was still running when recorded"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "PR #108 merged and CI-verified; mapping FROZEN (D9); Project #6 configured and populated with 11 Issues and 8 private drafts (see remote_sync); PR #120 open.",
+   "note": "PR #108 and #120 merged; mapping FROZEN (D9); Project #6 populated with 11 Issues and 8 private drafts; ready to close on operator approval.",
    "issue": 109,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbEQ",
    "branch": null,
@@ -5599,30 +5600,39 @@
    },
    "milestone": "GOVERNANCE",
    "area": "Governance",
-   "status": "PLANNED",
+   "status": "VALIDATION",
    "priority": "P1",
    "effort": null,
-   "authorized": false,
+   "authorized": true,
    "depends_on": [
     "BOPS-0118"
    ],
-   "packet": null,
+   "packet": "agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md",
    "spec": null,
    "companion_docs": [],
    "prs": [],
    "commits": [],
    "validation": {
-    "achieved": [],
-    "required": [],
-    "open_gates": []
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "CI of the PR head and of the merge commit (validator, test and workflow files changed: post-merge verification kept)."
+    ]
    },
-   "evidence": [],
+   "evidence": [
+    "Read-only run of sync_remote.py against Project #6 on 2026-10-21 (after a secondary rate limit cleared): 19 items read, 18 in sync, 2 pending updates for BOPS-0119 (Status Backlog->Validation, Evidence Level None->Offline tests), 0 conflicts; no remote write performed"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Idempotent gh-based reconciliation of register <-> Issues <-> Project #6 (dry-run by default); CI wiring of the offline validator is already in PROJECT-GOVERNANCE-01.",
+   "note": "Implemented: scripts/governance/sync_remote.py with offline tests; PROCESS.md section 4b documents the tool and the closure policy. The remote draft item still shows Backlog/None until a sync is applied (needs operator approval for remote writes).",
    "issue": null,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCWbNw",
-   "branch": null,
+   "branch": "feat/bops-0119-project-sync",
    "remote_kind": "draft",
    "sync": {
     "status": "Backlog",
