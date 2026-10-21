@@ -259,6 +259,23 @@ public sealed class WebUiHostingTests : IDisposable
     }
 
     [Fact]
+    public async Task Healthz_IsNotRateLimited_SoAProxyProbeCannotStarveSignIn()
+    {
+        using var factory = new TestAppFactory();
+        using var client = factory.CreateAnonymousClient();
+
+        // The anonymous bucket holds 120 tokens; 200 probes would exhaust it if /healthz drew on it.
+        for (var i = 0; i < 200; i++)
+        {
+            using var response = await GetAsync(client, "/healthz");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        using var login = await BrowserSession.LoginAsync(factory.CreateSessionClient(), factory.ApiKey);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+    }
+
+    [Fact]
     public async Task WithoutTheWebUiSection_TheHostIsApiOnly()
     {
         using var factory = new TestAppFactory();

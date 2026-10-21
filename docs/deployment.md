@@ -30,6 +30,10 @@ database, audit log, vault, policy or settings file (the publish and the smoke t
 CI runs the publish and the smoke test on Windows and Linux for every change; the release workflow also attaches
 `bops-api-win-x64.zip` and `bops-api-linux-x64.zip`. A zip does not carry the Unix execute bit: run `chmod +x bOps.Api` after unzipping.
 
+**Linux prerequisite.** `bOps.Api` runs with full globalization (Knowledge needs Unicode normalization), so the target needs the ICU
+library (`libicu`, for example `apt install libicu74` on Ubuntu 24.04; it is not bundled in the self-contained artifact). Without
+ICU the host fails at start-up; `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` lets it start with Knowledge reported as unavailable.
+
 ## 2. Configuration that matters
 
 Configuration comes from `appsettings.json`, `appsettings.Production.json` (published; the default environment is `Production`) and

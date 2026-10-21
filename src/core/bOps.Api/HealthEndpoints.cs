@@ -1,6 +1,7 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Net.Http.Headers;
 
 namespace bOps.Api;
@@ -16,5 +17,5 @@ internal static class HealthEndpoints
         {
             response.Headers[HeaderNames.CacheControl] = "no-store";
             return Results.Text("ok", "text/plain");
-        }).AllowAnonymous();
+        }).AllowAnonymous().DisableRateLimiting(); // A proxy's frequent probe must not use up the address bucket that sign-in attempts share.
 }
