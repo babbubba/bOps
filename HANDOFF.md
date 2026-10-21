@@ -50,8 +50,8 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Blockers
 
-- None for governance. Project #6 workflows `Item closed`, `Pull request merged`, `Auto-close issue` are disabled; the operator also decided to disable `Pull request linked to issue`
-  and `Auto-add sub-issues to project` (see `register.json` `remote_sync` for the verified state). Remote writes beyond configuration (Issues, items) are not authorized yet.
+- None for governance. Project #6: the five workflows that could move task status (`Item closed`, `Pull request merged`, `Auto-close issue`, `Pull request linked to issue`,
+  `Auto-add sub-issues to project`) are disabled (verified via API); only `Item added to project` is on. Remote writes beyond configuration (Issues, items) are not authorized yet.
 - BOPS-0095 LIVE-01 (decision D3), BOPS-0074/0075 ARCH-01/ARCH-03 (decision D1).
 
 ## Decisions waiting for the operator

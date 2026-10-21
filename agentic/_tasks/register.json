@@ -52,7 +52,7 @@
  },
  "remote_sync": {
   "state": "PROJECT_CONFIGURED_NO_ITEMS",
-  "reason": "Project #6 configured 2026-10-21 (7 Status options, fields Priority/Area/bOps Milestone/Evidence Level/Effort, 3 views, private). Workflows Item closed, Pull request merged, Auto-close issue verified disabled; the operator also decided to disable Pull request linked to issue and Auto-add sub-issues to project (verify via API). No Issues or items created.",
+  "reason": "Project #6 configured 2026-10-21 (7 Status options, fields Priority/Area/bOps Milestone/Evidence Level/Effort, 3 views, private). Workflows Item closed, Pull request merged, Auto-close issue, Pull request linked to issue and Auto-add sub-issues to project verified disabled through the API; only Item added to project remains enabled (its effect on the initial Status is to be read back from the first real item). No Issues or items created.",
   "issues_created": 0
  },
  "active_milestone": "V1.3",
