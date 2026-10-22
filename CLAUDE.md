@@ -7,7 +7,8 @@ planning and post-action verification. **The LLM proposes; the runtime decides a
 
 Read [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md). It is the single bootstrap: it defines the precedence of sources, how to find
 your current task, which of the five architecture contracts in [`docs/architecture/current/`](docs/architecture/current/) to read for it, and when to stop.
-This file is only a router and adds no normative layer; `AGENTS.md` routes to the same place.
+This file is a router and adds no architectural authority: the reminders below restate rules whose binding text is in the contracts, the bootstrap and
+`PROCESS.md`; `AGENTS.md` routes to the same place.
 
 Authoritative task state is [`agentic/_tasks/register.json`](agentic/_tasks/register.json) (rules: [`agentic/_tasks/PROCESS.md`](agentic/_tasks/PROCESS.md));
 the current session state is [`HANDOFF.md`](HANDOFF.md). Everything under `agentic/obsolete/` is history, not a specification: ignore it unless an active task
@@ -44,7 +45,8 @@ Short reminders; the binding text is in [Contract 02](docs/architecture/current/
   `env -u GH_TOKEN -u GITHUB_TOKEN gh …`), confirm `gh auth status --hostname github.com` shows
   `babbubba`, and stop if it cannot be verified. Never print, delete or permanently change tokens.
 - **Never rewrite historical commits** for identity cleanup; that is a separate operator task. Push, PR
-  and merge only when the operator asks. Details: hardening plan §19.
+  and merge only when the operator asks. The PowerShell variant of the `gh` token handling is kept in §19 of the closed hardening plan
+  (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`) as provenance only; this section prevails.
 
 ## Before touching a component
 

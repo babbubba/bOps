@@ -20,10 +20,20 @@ Repository and branch correct; working tree clean; `origin/docs/adr-consolidatio
 
 Build: a deterministic Python script wrote `docs/architecture/archive/legacy-adr-and-decisions-2026-10-22.zip` from `git cat-file blob e0e9de7…:<path>` (fixed timestamps, deflate level 9), then the external `MANIFEST.csv`, `MANIFEST.md`, `.sha256` and `README.md`. Archive size 526,229 bytes; 1,358,451 bytes uncompressed. The check ran **before** any original was removed (the removal of the ADR files happened afterwards) and was re-run on the final tree.
 
-Reproduce (from the repository root; the script is reproduced in Appendix A):
+Reproduce (from the repository root). `cp03a.py` and `cp03b.py` are **not versioned files**: they exist only as the code blocks of Appendix A and Appendix B of this report.
+Recreate them in a scratch directory outside the repository (for example by copying each fenced `python` block into `cp03a.py` / `cp03b.py`, or with the extractor
+shown below) and run them with the repository root as the current directory. Both scripts read only versioned inputs (the ZIP, manifests, DOC-02 artifacts, tracked files and baseline blobs via `git cat-file`).
 
 ```bash
-python3 -I cp03a.py                                  # exit 0 = PASS
+SCRATCH=$(mktemp -d)
+python3 -I - "$SCRATCH" <<'PY'
+import re,sys
+t=open('agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md').read()
+for name,ap in (('cp03a','Appendix A'),('cp03b','Appendix B')):
+    i=t.index('## '+ap); m=re.search(r'```python\n(.*?)\n```',t[i:],re.S)
+    open(sys.argv[1]+'/'+name+'.py','w').write(m.group(1)+'\n')
+PY
+python3 -I "$SCRATCH/cp03a.py"                       # exit 0 = PASS
 (cd docs/architecture/archive && sha256sum -c legacy-adr-and-decisions-2026-10-22.zip.sha256)
 git cat-file blob e0e9de7a74b8bb33e07c7b1f8c92ab87832986de:agentic/06-decisions.md | sha256sum   # compare with MANIFEST.csv
 ```
@@ -52,8 +62,8 @@ PASS 7 consistent with DOC-02 ledger (sha256,status) and id-coverage (55 ADRs)
 Method (script in Appendix B): (1) the identifiers resolvable **before** are derived from the baseline blobs (55 ADR files, D-001…D-050 headings of `06`, A/B/C/D rules of `01`, S1–S11 of `03`); those resolvable **after** are the rows of the four compatibility indexes; every index row must carry a destination whose file and anchor exist. (2) Every `ADR-NNNN` (also `ADR NNNN`, `adr/NNNN-…` paths, `ADR-NNNN/NNNN` lists), `D-NNN`, `rule A/B/C/D…` and `rule Sn` occurrence in all tracked text files outside the indexes, the contracts, the archive and the migration artifacts is classified as *ok-before-and-after*, *PRE-EXISTING-ANOMALY* (never resolvable) or *NEWLY-BROKEN* (resolvable before, not after: not acceptable). (3) All Markdown links of the current-docs set are resolved, including `#anchor` (GitHub slug rules and `<a id>`), and compared with the baseline. Negative controls were run: removing `ADR-0045` and `S5` from the "after" sets gave 72 NEWLY-BROKEN and FAIL; appending a broken file link and a broken anchor link to `README.md` gave 2 newly broken links and FAIL (file restored).
 
 ```bash
-python3 -I cp03b.py          # exit 0 = PASS
-NEG=1 python3 -I cp03b.py    # negative control: must FAIL
+python3 -I "$SCRATCH/cp03b.py"          # exit 0 = PASS
+NEG=1 python3 -I "$SCRATCH/cp03b.py"    # negative control: must FAIL
 ```
 
 Output:

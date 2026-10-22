@@ -1,7 +1,7 @@
 # bOps — Razionalizzazione documentale e consolidamento architetturale
 
 **Piano operativo — revisione GATE-02, 22 ottobre 2026**  
-**Stato generale:** **DOC-03 eseguito (CP-03a e CP-03b PASS) — next phase DOC-04.** GATE-01 e GATE-02 approvati dall'operatore il 2026-10-22 (decisioni al §2 e al §7.3). DOC-01, DOC-02 e DOC-03 completati (report: `_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md`); DOC-04 **ancora da eseguire** e richiede un'autorizzazione separata dell'operatore.  
+**Stato generale:** **DOC-04 eseguito (verdetto `PASS`, report `DOC-04-static-acceptance.md`) — next step: revisione dell'operatore e preparazione della PR.** GATE-01 e GATE-02 approvati dall'operatore il 2026-10-22 (decisioni al §2 e al §7.3). DOC-01, DOC-02, DOC-03 e DOC-04 completati (report in `_migration-work/ADR-consolidation-2026-10-22/`). La PR, il merge, CI e l'approvazione finale **non sono stati richiesti né ottenuti** e richiedono autorizzazioni separate dell'operatore.  
 **Task:** `BOPS-0121` `DOC-CONSOL-01` — `IN_PROGRESS`, `authorized: true` (register: `agentic/_tasks/register.json`; Issue pubblica #125).  
 **Repository:** `babbubba/bOps` · **Branch:** `docs/adr-consolidation-2026-10-22` (solo questo; nessun altro branch)  
 **Baseline di `main`:** `e0e9de7a74b8bb33e07c7b1f8c92ab87832986de`  
@@ -12,13 +12,15 @@
 
 ## 0. Avvio rapido per una nuova sessione
 
-Fase da eseguire: **DOC-03** (§7.4), solo se l'operatore la autorizza espressamente nel prompt di avvio. **DOC-02 e GATE-02 sono chiusi: non vanno rieseguiti né riaperti.** Non si rifà l'inventario DOC-01 né la lettura integrale delle 55 ADR.
+Fase da eseguire: **nessuna fase di migrazione.** DOC-01, DOC-02, DOC-03 e DOC-04 sono conclusi e **non vanno rieseguiti né riaperti** (DOC-01/02/03 non si ripetono mai; le decisioni G1/G2 restano approvate e invariate). Resta soltanto la revisione dell'operatore e, dopo sua autorizzazione esplicita e separata, la PR docs-only. Se una sessione deve ripetere i controlli DOC-04 sul commit finale, vale quanto segue.
 
-1. **Git.** Verificare branch `docs/adr-consolidation-2026-10-22`, working tree pulito, `git fetch origin docs/adr-consolidation-2026-10-22` e allineamento solo per fast-forward (`git merge --ff-only`). Mai rebase, reset, force-push o merge di altri branch. Il commit sorgente di DOC-03 è l'HEAD verificato a inizio sessione: annotarne lo SHA (già esistente) per il manifest (§5.2).
+1. **Git.** Verificare branch `docs/adr-consolidation-2026-10-22`, working tree pulito, `git fetch origin docs/adr-consolidation-2026-10-22` e allineamento solo per fast-forward (`git merge --ff-only`). Mai rebase, reset, force-push o merge di altri branch.
 2. **Identità.** `git config --local user.name "Fabio Cavallari"` e `git config --local user.email "fcavallari@bsoftsolutions.it"`; mai `--global`. Dopo ogni commit: `git show -s --format="Author: %an <%ae>%nCommitter: %cn <%ce>" HEAD`. **Nessun trailer `Co-Authored-By`.**
-3. **Governance.** `python scripts/governance/validate_register.py --summary`: BOPS-0121 deve risultare `IN_PROGRESS` su questo branch. Leggere l'entry BOPS-0121 (inclusi `sync_pending` e `open_gates`) e `HANDOFF.md`.
-4. **Letture obbligatorie per DOC-03:** questo piano per intero (in particolare §2, §3.1, §5, §6, §7.3, §7.4); `DOC-02-GATE-02-report.md` e `DOC-02-GATE-02-corrections.md`; `DOC-02-id-coverage.tsv` (base delle mappe e degli indici); `DOC-02-checks.md`; i cinque contratti `docs/architecture/current/0N-*.md` (da promuovere a `Current`); `DOC-02-traceability-matrix.tsv` come riferimento per la mappa ADR-ID → contratto. Le ADR si leggono solo come blob da archiviare (CP-03a), non per riderivare le regole. Tutti gli artefatti sono in `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/`.
-5. **Eseguire solo la fase indicata** dall'operatore. DOC-04 richiede DOC-03 concluso e una propria autorizzazione. La PR finale e il merge richiedono autorizzazioni esplicite e separate.
+3. **Governance.** `python scripts/governance/validate_register.py --summary`: BOPS-0121 deve restare `IN_PROGRESS` su questo branch (non `VALIDATION`, `CI_VERIFIED`, `OPERATOR_GATE` o `DONE` prima che l'operatore lo autorizzi). Issue #125 e Project #6 restano `sync_pending` finché non c'è una sincronizzazione verificata e autorizzata.
+4. **Letture necessarie per DOC-04** (solo per ripetere i controlli): questo piano (§7.5, §8, §9); `DOC-04-static-acceptance.md` e `DOC-03-verification-report.md` (le appendici A/B contengono `cp03a.py` e `cp03b.py`, che **non sono file versionati** e si ricreano dalle appendici come descritto nel report DOC-03); i cinque contratti `docs/architecture/current/0N-*.md`; `agentic/00-bootstrap.md`, `CLAUDE.md`, `AGENTS.md`. Le ADR non si rileggono.
+5. **Controlli.** **CP-03a** (ZIP: 57 entry, identità con i blob della baseline, SHA-256, manifest, sidecar, estrazione); **CP-03b** (ID e link, anomalie preesistenti contabilizzate a parte); **CP-04** (smoke documentale con due scenari: nessuna lettura ordinaria di ADR, ZIP, `06`, indici storici o artefatti di migrazione). Equivalenza P5 dei nove paragrafi riformattati: confronto del testo normalizzato contro `f5a3909`.
+6. **Requisiti della futura PR** (non autorizzata): docs-only verso `main`, corpo con `Refs #125` e mai `Closes`; nessun merge automatico; nessuna modifica a `src/`, `tests/`, `web/`, `scripts/`, CI, configurazioni di produzione o manifest di package; nessun contenuto di PR #124; CI da verificare sull'head e sul merge commit; approvazione dell'operatore.
+7. **Autorizzazioni ancora mancanti:** creazione della PR, merge, passaggio di BOPS-0121 a `VALIDATION`/`DONE`, sincronizzazione di Issue #125 e Project #6, risoluzione delle decisioni D1/D4/D5.
 
 ## 1. Problema, obiettivo e limiti
 
@@ -405,16 +407,16 @@ La convergenza MAF resta un task separato, dopo il merge.
 - [x] GATE-01: decisioni approvate e registrate (§2). BOPS-0121 autorizzato.
 - [x] CP-02a…CP-02e PASS e GATE-02 approvato il 2026-10-22 (decisioni G2-01…G2-05, §7.3). Resta valido il divieto di rimuovere qualunque originale prima di CP-03a.
 - [x] **DOC-03** eseguito (§7.4) il 2026-10-22 in una sola sessione: ZIP, manifest, indici, promozione a `Current`, bootstrap e router; CP-03a e CP-03b PASS.
-- [ ] **DOC-04** eseguito (§7.5): accettazione statica, leggibilità P5, report `PASS`. *Da eseguire.*
-- [ ] Esattamente cinque contratti correnti in inglese; nessuna sesta autorità; `01`, `03` e `06` ridotti a indici o redirect non normativi.
-- [ ] Ogni regola dei contratti ha uno stato decisionale e uno implementativo distinti; nessuna ADR Proposed promossa.
-- [ ] Le specifiche tecniche indispensabili hanno una sede tecnica corrente.
-- [ ] ZIP con esattamente 57 originali e nessun file in più; `MANIFEST.md` e `MANIFEST.csv` esterni, SHA-256 del contenuto coerenti (CP-03a); ID storici risolvibili (CP-03b).
-- [ ] Leggibilità dei contratti: paragrafi di regola superiori a 4.000 caratteri riformattati (elenchi/capoversi) senza alterarne il significato, prima della PR finale (attività residua, vedi §7.5 punto 9).
-- [ ] Un solo bootstrap (`agentic/00-bootstrap.md`); `CLAUDE.md` e `AGENTS.md` sono router; nessuna istruzione impone la lettura di ADR, `06` o archivi.
-- [ ] Register, `PROCESS.md`, HANDOFF, Issue #125 e Project #6 coerenti con il loro ruolo.
-- [ ] Nessuna modifica a codice, test, CI, script, package o commenti nel codice; nessuna importazione da PR #124.
-- [ ] Smoke CP-04 superato; PR docs-only mai mergiata automaticamente.
+- [x] **DOC-04** eseguito (§7.5) il 2026-10-22: accettazione statica, leggibilità P5, report `PASS` (`DOC-04-static-acceptance.md`).
+- [x] Esattamente cinque contratti correnti in inglese; nessuna sesta autorità; `01`, `03` e `06` ridotti a indici o redirect non normativi.
+- [x] Ogni regola dei contratti ha uno stato decisionale e uno implementativo distinti; nessuna ADR Proposed promossa.
+- [x] Le specifiche tecniche indispensabili hanno una sede tecnica corrente.
+- [x] ZIP con esattamente 57 originali e nessun file in più; `MANIFEST.md` e `MANIFEST.csv` esterni, SHA-256 del contenuto coerenti (CP-03a); ID storici risolvibili (CP-03b).
+- [x] Leggibilità dei contratti: nove paragrafi superiori a 4.000 caratteri riformattati (elenchi) senza alterarne il testo (confronto normalizzato e per token contro `f5a3909`: identico).
+- [x] Un solo bootstrap (`agentic/00-bootstrap.md`); `CLAUDE.md` e `AGENTS.md` sono router; nessuna istruzione impone la lettura di ADR, `06` o archivi.
+- [ ] Register, `PROCESS.md`, HANDOFF, Issue #125 e Project #6 coerenti con il loro ruolo. *(register, `PROCESS.md` e HANDOFF verificati in DOC-04; Issue #125 e Project #6 restano `sync_pending`.)*
+- [x] Nessuna modifica a codice, test, CI, script, package o commenti nel codice; nessuna importazione da PR #124.
+- [x] Smoke CP-04 superato (DOC-04). [ ] PR docs-only: non ancora autorizzata né aperta; mai mergiata automaticamente.
 
 ## 9. Anomalie note e follow-up fuori perimetro
 

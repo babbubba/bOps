@@ -31,8 +31,9 @@ Task state is never copied here; ask the register (`--summary`).
   **DOC-03 (executed 2026-10-22 in one session, CP-03a and CP-03b PASS)** are done: the five contracts (105 binding rules) in `docs/architecture/current/` are **Current**; the 55 ADRs and the original `01`/`06`
   are in `docs/architecture/archive/` (ZIP of 57 originals + external `MANIFEST.md`/`MANIFEST.csv`/`.sha256`); `docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md` and `agentic/06-decisions.md`
   are non-normative compatibility indexes; the single bootstrap is `agentic/00-bootstrap.md` (`CLAUDE.md` and `AGENTS.md` are routers). Evidence: `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md`.
-  **Next step: DOC-04** (plan §7.5: static acceptance, CP-04 smoke, P5 readability pass of nine rule paragraphs, then — only on explicit operator authorization — the docs-only PR with `Refs #125`), in a new session with its own operator authorization. Not started: DOC-04.
-  Still open: ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5), CI of the PR head, operator approval of the delivery PR. No PR yet; no merge.
+  **DOC-04 (static acceptance, CP-04 smoke, P5 readability of nine rule paragraphs) was executed on 2026-10-22: verdict PASS** (`DOC-04-static-acceptance.md`, same folder). CI and the operator's final approval are **not** claimed.
+  **Next step: operator review of the branch and, only on explicit operator authorization, preparation of the docs-only PR with `Refs #125`.** No PR yet; no merge; BOPS-0121 stays `IN_PROGRESS`.
+  Still open: ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5), CI of the PR head, operator approval of the delivery PR.
 - BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
   [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
@@ -79,5 +80,5 @@ Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, acc
 ## Resume instructions for the next session
 
 1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do. On this branch: BOPS-0121 —
-   DOC-02, GATE-02 and DOC-03 are closed, do not redo them. Verify branch/HEAD/working tree (fast-forward only), set the local Git identity, then execute **DOC-04** exactly as plan §0 and §7.5 say,
-   only if the operator authorizes it explicitly in the starting prompt. Start from `agentic/00-bootstrap.md`; do not read the archive or the migration artifacts except those the plan names.
+   DOC-01…DOC-04 and both gates are closed, do not redo them. Verify branch/HEAD/working tree (fast-forward only) and set the local Git identity. The only open step is the operator's
+   review and, if the operator explicitly authorizes it, the docs-only PR (`Refs #125`, never `Closes`; no merge). Start from `agentic/00-bootstrap.md`; do not read the archive or the migration artifacts except those the plan names.

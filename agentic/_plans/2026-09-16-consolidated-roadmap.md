@@ -321,7 +321,7 @@ the host through an environment/service secret and is never stored beside the va
 plaintext fallback. The implementation uses a standard authenticated-encryption primitive through
 .NET cryptography, random nonces, atomic replacement, restrictive permissions, corruption detection,
 schema migration and an explicit rotation/recovery procedure. Cryptographic format and concurrency
-semantics require an ADR before code.
+semantics require an operator-approved change to a current contract before code (ADRs are no longer written).
 
 The API never returns the full secret. It returns only presence, update metadata and the required
 mask `first six characters...last four characters`, stored as non-secret display metadata when the
@@ -528,7 +528,7 @@ data-driven but initially grants one active Coordinator installation, at most th
 cannot self-assert `Local`; node removal/revocation immediately releases a remote slot. Agents
 receive Coordinator-signed leases that cannot amplify the vendor-signed entitlement.
 
-Coordinator packaging and update delivery require their own ADRs. Aspire remains dev/test only.
+Coordinator packaging and update delivery require their own operator-approved contract changes (ADRs are no longer written). Aspire remains dev/test only.
 The first official distribution evaluates a native bootstrapper managing Coordinator containers or
 native services plus PostgreSQL/pgvector on Linux x64 and Windows 10/11 x64; it must not silently
 install a container runtime. Agent updates are approved by an administrator, downloaded and
