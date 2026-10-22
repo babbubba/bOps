@@ -4,7 +4,7 @@ Last updated: 2026-10-22 · `main` @ `e0e9de7` (squash merge of PR [#123](https:
 working branch `docs/adr-consolidation-2026-10-22` (BOPS-0121, DOC-CONSOL-01 docs-only consolidation).
 
 <!-- register-sync:begin -->
-Current task: BOPS-0121 DOC-CONSOL-01 (IN_PROGRESS)
+Current task: BOPS-0121 DOC-CONSOL-01 (VALIDATION)
 Branch: docs/adr-consolidation-2026-10-22
 Ready: BOPS-0111
 Next number: BOPS-0122
@@ -32,8 +32,10 @@ Task state is never copied here; ask the register (`--summary`).
   are in `docs/architecture/archive/` (ZIP of 57 originals + external `MANIFEST.md`/`MANIFEST.csv`/`.sha256`); `docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md` and `agentic/06-decisions.md`
   are non-normative compatibility indexes; the single bootstrap is `agentic/00-bootstrap.md` (`CLAUDE.md` and `AGENTS.md` are routers). Evidence: `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md`.
   **DOC-04 (static acceptance, CP-04 smoke, P5 readability of nine rule paragraphs) was executed on 2026-10-22: verdict PASS** (`DOC-04-static-acceptance.md`, same folder). CI and the operator's final approval are **not** claimed.
-  **Next step: operator review of the branch and, only on explicit operator authorization, preparation of the docs-only PR with `Refs #125`.** No PR yet; no merge; BOPS-0121 stays `IN_PROGRESS`.
-  Still open: ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5), CI of the PR head, operator approval of the delivery PR.
+  **Draft PR [#126](https://github.com/babbubba/bOps/pull/126) opened 2026-10-22** (base `main`, head this branch, `Refs #125`, no auto-merge); the operator-authorized one-sentence correction of `PROCESS.md` is commit `05e0678`. Final pre-PR checks re-ran CP-03a and CP-03b (PASS) and the register validator.
+  **Next step: operator review of PR #126; merge only on separate explicit operator authorization.** BOPS-0121 is `VALIDATION`.
+  Open gates: CI of the PR head (not yet verified), operator approval of the delivery PR, Issue #125 / Project #6 synchronization (`sync_pending` in the register: the Project item is not yet created, so `issue`/`project_item` stay unset).
+  ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5 open).
 - BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
   [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec

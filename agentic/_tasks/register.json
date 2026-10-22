@@ -5722,7 +5722,7 @@
    },
    "milestone": "GOVERNANCE",
    "area": "Documentation",
-   "status": "IN_PROGRESS",
+   "status": "VALIDATION",
    "priority": null,
    "effort": null,
    "authorized": true,
@@ -5732,11 +5732,16 @@
    "companion_docs": [
     "agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-01-report.md"
    ],
-   "prs": [],
+   "prs": [
+    126
+   ],
    "commits": [
     "f5ae9749276bb183300f19398dd205c64decee50",
     "6f6c870dab406f0dedc1f679e5bd4cf339bc7562",
-    "9137043dfc688313a88cc458f87b8440950e3b96"
+    "9137043dfc688313a88cc458f87b8440950e3b96",
+    "f5a390980f56334c7f2407c8b2bc84ac46f53336",
+    "2cb98f6fb52864bcc43e47b19ab1aca0ebd19daf",
+    "05e0678dc70e2e2acfc4dd5b7c66aa0499c34ac8"
    ],
    "validation": {
     "achieved": [],
@@ -5745,13 +5750,18 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "DOC-04 static acceptance and green CI of the docs-only PR head (branch up to date with main).",
-     "Operator approval of the delivery PR (no automatic merge)."
+     "CI of the head of draft PR #126 (docs-only; branch up to date with main): not yet verified.",
+     "Operator review and approval of draft PR #126 (no automatic merge; PR is a draft).",
+     "Issue #125 / Project #6 synchronization (see sync_pending)."
     ]
    },
    "evidence": [
     "DOC-01 read-only inventory and report committed on the branch as 9137043 (288 of 288 paths under agentic/ and docs/ inventoried; 46 of 55 ADRs not yet read in full)",
     "GATE-01 approved by the operator on 2026-10-22 (decisions G1-01..G1-15, recorded in the plan)",
+    "DOC-04 static acceptance executed 2026-10-22: verdict PASS (CP-03a, CP-03b, CP-04, P5 equivalence), report agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-04-static-acceptance.md (commit 2cb98f6)",
+    "Final pre-PR verification 2026-10-22: CP-03a (12/12) and CP-03b re-run from the recorded reproduction instructions, both PASS; validate_register.py 121 tasks, 0 errors; no executable code, test, script, CI or production configuration change vs main e0e9de7; five Current contracts, 105 binding rules; seven Proposed ADRs unchanged; D1/D4/D5 PENDING",
+    "PROCESS.md normative-change sentence aligned with current architecture contracts under explicit operator authorization, commit 05e0678",
+    "Draft PR #126 (base main, head docs/adr-consolidation-2026-10-22) opened 2026-10-22 with Refs #125; no auto-merge; no CI result verified yet",
     "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
    ],
    "blocked_reason": null,
