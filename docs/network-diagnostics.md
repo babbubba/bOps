@@ -161,3 +161,25 @@ adjusts this host's clock.
 - "Resolve example.com against 1.1.1.1." → `network.dns_query` with `server: 1.1.1.1`.
 - "Where does the path to example.com break down?" → `network.traceroute`.
 - "How far off is this host's clock from pool.ntp.org?" → `network.ntp_probe`.
+
+## Collection details (technical specification)
+
+*Consolidated from ADR-0035 during the architecture consolidation (DOC-02); binding rules: `docs/architecture/current/02-tools-safety-authority.md`
+(C02-R19, C02-R20).*
+
+- `network.sockets` — arguments `protocol` (`all`/`tcp`/`udp`, default `all`), `state` (exact, case-insensitive TCP state), `pid`, `localPort` (1–65535) and `limit` (1–5000,
+  default 500). Rows: `protocol, addressFamily, localAddress, localPort, remoteAddress, remotePort, state, pid, processName`; UDP rows report `remoteAddress`, `remotePort`
+  and `state` as `null`. `pidMappingComplete` is a top-level envelope fact. Windows reads `GetExtendedTcpTable`/`GetExtendedUdpTable` with the owner-PID table class (no
+  separate mapping step, no elevated privilege). Linux reads `/proc/net/{tcp,tcp6,udp,udp6}` (which gives a socket inode) and maps the inode to a PID by a bounded scan of every
+  visible `/proc/<pid>/fd`, matching a `socket:[<inode>]` symlink target; a process directory this identity cannot list leaves that process's sockets unmapped and sets
+  `pidMappingComplete: false` with a detail.
+- `network.routes` — rows `destination, prefixLength, gateway, interfaceName, interfaceIndex, metric, addressFamily, protocol`. Windows: `GetIpForwardTable2(AF_UNSPEC)` in one
+  call for both families, parsed by fixed byte offset (the row embeds a `SOCKADDR_INET` union that does not map onto one C# `StructLayout`). Linux: the fixed `ip -j route show`
+  / `ip -j -6 route show` invocations. `network.route` (the default-gateway summary) is untouched and not deprecated.
+- `network.neighbors` — rows `ip, mac, interfaceName, state, addressFamily`. Windows: `GetIpNetTable2(AF_UNSPEC)` with the same byte-offset parsing. Linux: `ip -j neighbor show` /
+  `ip -j -6 neighbor show`, the second and last fixed `ip` invocation permitted.
+- `network.interface_stats` — arguments `interfaceName` (exact, case-insensitive; omit for all) and `sampleMilliseconds` (100–5000, default 500). Rows: `interfaceName,
+  bytesReceivedPerSec, bytesSentPerSec, packetsReceivedPerSec, packetsSentPerSec, receiveErrorsPerSec, sendErrorsPerSec, receiveDropsPerSec, sendDropsPerSec, speedMbps,
+  operationalStatus`. Two samples and one difference with the shared rate arithmetic; a counter the platform does not report is `null`, never zero. Windows uses
+  `NetworkInterface.GetIPStatistics()` (no second native struct family); Linux reads `/proc/net/dev` for the counters and `/sys/class/net/<iface>/{speed,operstate}` for link speed
+  and operational status.

@@ -660,6 +660,50 @@ Unknown or misspelt keys are an error whether or not the section is enabled. The
 by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
 means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
 
+## 15. Model-call timeouts, retry and failure reasons, and resuming from the CLI
+
+*Technical specification consolidated from ADR-0039 (§7, §10) and ADR-0017 during the architecture consolidation (DOC-02). The binding
+rules are in `docs/architecture/current/01-maf-agent-infrastructure.md` (C01-R12 to C01-R14); this section is the operator-facing detail.*
+
+Model-call retry and timeout keys (all additive; defaults shown):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Agent:ModelCallMaxAttempts` | 3 | Attempts per logical model call (1 disables retry). |
+| `Agent:ModelCallAttemptTimeout` | `00:02:00` | Runtime timeout of one attempt. |
+| `Agent:ModelCallBudget` | `00:05:00` | Wall-clock cap for one logical call, attempts and waits included; it always wins. |
+| `Agent:ModelRetryBaseDelay` | `00:00:01` | Backoff base (doubles per retry, jittered). |
+| `Agent:ModelRetryMaxDelay` | `00:00:30` | Backoff cap and the largest `Retry-After` honoured. |
+| `ModelProvider:RequestTimeout` (`ChatModelOptions.RequestTimeout`) | `00:02:30` | Outer transport guard the adapter sets on its `HttpClient`, replacing the implicit 100 s. |
+
+`AgentRunnerOptions.Validate` rejects incoherent values (attempts below 1; a non-positive attempt timeout or budget; a negative base
+delay; a maximum delay below the base delay) when the runner is built, and the hosts additionally require
+`ModelCallAttemptTimeout < RequestTimeout`, failing fast with a message naming the keys, so the runtime attempt timeout normally fires
+first. The CLI validates while it starts. The API resolves the chat model lazily, so it validates on the first model resolution (the first
+task or delegation request), before any task is persisted. In both hosts an incoherent configuration fails closed; the API does not
+validate at process start.
+
+When a logical model call fails for good, the task ends `Failed` through the synthetic step `Model protocol failure`, with every
+attempt's `ModelCalls` attached; its observation is a provider-neutral operator reason chosen by failure kind, then the attempt count, then
+the sanitized safe reason:
+
+| Failure kind | Operator reason |
+|---|---|
+| `Authentication` | Provider authentication failed. Check the configured provider credential. |
+| `QuotaExceeded` | Provider account quota or credit is unavailable. |
+| `RateLimited` | Provider rate limit exceeded. |
+| `Timeout` | Provider/model call timed out. |
+| `Unreachable` | Provider could not be reached. Check the provider URL and the network. |
+| `Transient` | Provider is temporarily unavailable. |
+| `InvalidRequest` | Provider rejected the model request. |
+| `ContextOverflow` | Model context limit exceeded. |
+| `MalformedResponse` | Provider/model returned a malformed response. |
+| `Unknown` | Model call failed unexpectedly. |
+
+Resuming a task from the CLI: `bops resume <task-id>` is a CLI subcommand; `bops "<goal>"` keeps working unchanged
+(the entry point checks for a first argument of `resume` before treating every argument as the goal). It applies the same resume policy
+and refusal codes as the API and exits non-zero on a refusal.
+
 ## Related documents
 
 [Knowledge pilot](knowledge/local-agent-pilot.md) · [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·

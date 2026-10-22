@@ -262,6 +262,33 @@ Both are the operator's choice; nothing in bOps changes group membership.
 - No shell, no `PowerShell`, no `wevtutil`; on Linux every `journalctl` switch is fixed in code and every value
   is a separate argument.
 
+## Technical specification: schema versions, envelope budget (consolidated)
+
+*Consolidated from ADR-0032 (HARDEN-7 §3, §9; HARDEN-9 §6) and ADR-0061 §2.8 during the architecture consolidation (DOC-02); binding rules:
+`docs/architecture/current/04-evidence-and-diagnosis.md` (C04-R06 to C04-R08).*
+
+- Schema versions: `system.events` is `schemaVersion: 2` (before: 1). Defaults are preserved: `mode` defaults to `raw`, whose rows are the schema-1 rows; additive fields
+  are `mode`, `coverage` and `sources[].examinedFromUtc`; aggregate mode has its own shape (`groups` instead of `events`) and the aggregate-only `windowDays` (1–180);
+  `complete` now also requires complete coverage. Schema 2 added `excludeSources` and `sourceFilter` without a version change (both additive and always present; the empty
+  value of `excludeSources` and a `null` `sourceFilter` mean exactly the previous behaviour).
+- Time bounds: one call shares a single 20-second budget divided into bounded per-operation slices; each Windows Event Log read is capped at 10 seconds within its slice
+  (`EventLogReadCap`), and the coverage probe is one more read that consumes the same shared budget, not an independent one.
+- Manifests: Windows and Linux manifests stay identical apart from `Platforms`; the constrained `excludeSources` parameter is projected by both provider adapters as
+  `minLength`/`maxLength`. Audit: the redacted arguments already carry the values (not `Sensitive`); the audit summary never carries a message and, when `sourceFilter`
+  is not `null`, adds `sourceFilter {registrationStatus, observedMatch, caution}` without the requested name.
+- Envelope budget of `sourceFilter` (measured at the 4,096-byte minimum `maxOutputBytes` with the largest legal values: eight `excludeSources` entries of 1,024 characters in
+  total, a 128-character `source`, two default Windows channels with 256-character details, two coverage stores with the largest `logMaximumBytes`, no rows,
+  `registrationStatus: notRegistered`, the longest caution code):
+
+  | Mode | Envelope before | `"sourceFilter": null` | Worst-case `sourceFilter` object | Worst-case envelope | Left for rows or groups |
+  |---|---|---|---|---|---|
+  | raw | 2,514 B | 2,534 B (+20) | 528 B | 3,058 B | 1,038 B |
+  | aggregate | 2,966 B | 2,986 B (+20) | 528 B | 3,510 B | 586 B |
+
+  A typical `sourceFilter` is about 390 bytes. If the worst-case envelope exceeds 3,584 bytes, or any combination reaches 4,096, the implementation stops and returns to the
+  architecture owner rather than shortening the field. At the 4,096 floor with every maximum present at once, 586 bytes remain in aggregate mode, so a group carrying a
+  512-character sample message may not fit; the budget then removes it, sets `truncated: true`, and `observedEvents`/`observedMatch` still report that records were found.
+
 ## Examples of what to ask
 
 - "Why did nginx stop?" `source: nginx.service`, `minSeverity: error`, `windowMinutes: 30`.

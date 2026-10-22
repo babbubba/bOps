@@ -142,3 +142,20 @@ On start the CLI logs `Knowledge is enabled for the Local Agent: tasks are bound
 Set `Knowledge:Enabled` to `false` (or remove the section). Installed packs, snapshots and the trust store are left alone.
 Not implemented: binding a pack by capability or goal, several packs per task, Experience packs, a `bops knowledge` command, hot reload
 of grants and trust, and any API or UI composition (ADR-0058 §6–§7).
+
+## Globalization requirement (technical specification)
+
+*From ADR-0057 §U.5 (consolidated during the architecture consolidation, DOC-02; the knowledge-index mechanism is a pending decision, see
+`docs/architecture/current/05-interfaces-knowledge-and-hosts.md`).*
+
+Unicode normalization (NFC check of descriptions, NFKC fold of the forbidden-content test and of the lexical scoring) needs the .NET normalization
+support, which does not exist under `InvariantGlobalization=true` (`Normalize` returns the text unchanged and `IsNormalized` answers `true` even for
+non-normalized text). Availability is decided by the hosting process (runtimeconfig), not by the `bOps.Knowledge` library. The repository default
+(`Directory.Build.props`) stays invariant; `InvariantGlobalization=false` is set only in the hosts that run discovery (`bOps.Api`, `bOps.Cli`,
+`bOps.Knowledge.Tests`), with the invariant culture pinned so nothing else changes. On Linux the process needs `libicu`, and
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` overrides the runtimeconfig and returns the process to invariant mode. In invariant mode the policy
+closes safely: `KnowledgeTextPolicy.NormalizationAvailable` (probed once by normalizing U+212B and U+FF21) is `false`, every non-ASCII description or
+query is refused (`NormalizationUnavailable`), ASCII text is judged exactly, and the selector and the `discover` query raise
+`KnowledgeNormalizationUnavailableException` (code `KNOW-NORM-UNAVAILABLE`, a fixed message without text) before scoring; no fallback accepts
+unverified metadata and no degraded score is produced. The `sha256=` value in the index marker is the first 12 hex characters of the SHA-256 of the
+entry lines only, while `IndexHash` is the SHA-256 of the whole index text.

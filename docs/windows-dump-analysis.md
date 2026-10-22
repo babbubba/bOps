@@ -228,3 +228,11 @@ The parser was written from Microsoft's documented `!analyze -v` fields and test
 output from a real Debugging Tools release or a real kernel dump. Black-box output layouts are undocumented, so only
 availability, excerpts and device identifiers are reported. A follow-up will add sanitized real captures and decide
 whether to parse `!analyze -xml` instead.
+
+## Timeout conflict (recorded)
+
+*From ADR-0048 §10 (consolidated during DOC-02).* Every tool runs under the runner's single `Agent:DefaultToolTimeout` (30 s by default) and no manifest can declare its own
+timeout. Analysis with symbols already cached usually fits; the first download of kernel symbols often does not. The default is not raised and no per-manifest timeout exists
+(it would be an Abstractions change needing its own decision). When the runner's token fires, the tool kills the debugger's process tree and the runner reports `Timeout`.
+Following the Docker-build precedent, operators who use dump analysis should raise `Agent:DefaultToolTimeout` (for example to `00:05:00`); a retry also benefits from symbols
+already cached. A per-tool timeout declaration is a candidate follow-up.

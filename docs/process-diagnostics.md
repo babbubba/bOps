@@ -138,3 +138,20 @@ other users' processes invisible entirely; they are then counted in `process.tre
 - "Is this worker leaking?" — `process.metrics` now and again in a minute; compare `privateMemoryMb`.
 - "What did the deployment agent spawn?" — `process.tree` with its PID as `rootPid`.
 - "Why is this service loading the old library?" — `process.modules` and look at the paths.
+
+## Collection details (technical specification)
+
+*Consolidated from ADR-0034 during the architecture consolidation (DOC-02); binding rules: `docs/architecture/current/02-tools-safety-authority.md`
+(C02-R19, C02-R20).*
+
+Linux reads, per process: `/proc/<pid>/stat` for the parent PID, CPU ticks, page faults, threads and virtual size (the executable name is not escaped by the
+kernel and may contain spaces and parentheses, so fields are read after the **last** `)`); `/proc/<pid>/status` for the real UID, `VmSize`, `VmRSS`, `RssAnon` and
+`Threads`; `/proc/<pid>/cmdline` (NUL-separated), `/proc/<pid>/exe` (a symbolic link), `/proc/<pid>/io` and a count of `/proc/<pid>/fd`; and `/proc/<pid>/maps` for
+modules, coalescing the several mappings of one path into one module (the lowest mapped address and the sum of the mapped sizes; anonymous mappings and the kernel's
+pseudo-regions `[heap]`, `[stack]`, `[vdso]` are not modules). UIDs are resolved from the local `/etc/passwd` only; a UID with no local entry stays a number. `ENOENT`
+(the exit race) and `EACCES` (partial visibility) both answer `null` for the field concerned; the caller distinguishes them by whether the process directory still exists.
+Clock ticks per second is taken as 100 (the value `sysconf(_SC_CLK_TCK)` and the kernel documentation give on every targeted architecture). I/O uses `rchar`/`wchar`
+rather than `read_bytes`/`write_bytes` because they count every byte moved through read and write, cached or not, which is what Windows's
+`ReadTransferCount`/`WriteTransferCount` counts: two platforms reporting the same field name must mean the same thing. Linux records no version metadata for a mapped
+image, so `version` is `null` there; a version is never guessed from the file name of a symlinked `.so`. A process that exits between the two `process.metrics`
+samples is reported `exists: false, partial: true`.

@@ -78,3 +78,13 @@ tool outcome and verification status. They intentionally do not contain thousand
 the exact retained list stays behind the scoped paged/download endpoints.
 
 See ADR-0027 for the canonical state machine, hash encoding, TOCTOU rules and residual guarantees.
+
+## Bounds, freshness and retention (technical specification)
+
+*Consolidated from ADR-0027 during the architecture consolidation (DOC-02); binding rules: `docs/architecture/current/02-tools-safety-authority.md` (C02-R17).*
+
+Defaults are 10,000 entries, 32 roots, depth 32, a 30-second build budget and a 10-minute approval window. Hard ceilings are 100,000 entries, 64 roots, depth 128 and two
+minutes; operators may lower defaults and ceilings. Exceeding any ceiling, incomplete enumeration, inaccessible metadata, overflow, cancellation or detected mutation produces
+the `rejected` or `incomplete` state and no approval-ready manifest. Expiry is checked when approval is bound and again when execution begins; it does not interrupt an execution
+that has already atomically entered `executing`. Terminal summaries and results are retained for a configurable seven days, after which opportunistic cleanup removes them;
+unconsumed manifests expire at the approval deadline.

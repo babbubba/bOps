@@ -108,3 +108,110 @@ No PowerShell, `wevtutil`, WMI or shell; Windows uses `EventLogReader` with XPat
 the window; Linux starts `journalctl` directly with fixed switches. The audit summary holds status, completeness,
 `windowDays`, per-category applicability, status and count, the boot-context counts, each source's status and the
 coverage — never a component, a file name, a directory or any native field.
+
+## Source tables, rules and aggregation (technical specification)
+
+*Consolidated from ADR-0041 (§3, §8) during the architecture consolidation (DOC-02). The binding rules are in
+`docs/architecture/current/04-evidence-and-diagnosis.md` (C04-R10); adding a category, provider tuple, Linux rule or bucket width needs an
+amendment of that contract and a `schemaVersion` bump when the shape changes.*
+
+### Windows sources
+
+All Event Log sources are read through `EventLogReader` with an XPath built only from package constants and the window; event data is
+read by field name from the record's own XML inside the package and no XML leaves the package.
+
+| Category | Source name | Channel | Provider | Event ids | `code` | `component` | `severityClass` | `timestampKind` |
+|---|---|---|---|---|---|---|---|---|
+| `unexpectedShutdown` | `windows.stability.unexpectedShutdown` | System | `Microsoft-Windows-Kernel-Power` | 41 | `BugcheckCode` (a decimal field) as canonical hex (`0x0` when zero) | `powerButton` when `PowerButtonTimestamp` is non-zero, else `null` | `null` | `reported` |
+| | (same source) | System | `EventLog` | 6008 | `null` | `null` | `null` | `reported` |
+| `kernelCrash` | `windows.stability.kernelCrash` | System | `Microsoft-Windows-WER-SystemErrorReporting` | 1001 | leading `0x…` token of `param1`, canonical hex | `null` | `null` | `reported` |
+| `kernelFault` | — (`notCollected`) | | | | | | | |
+| `hardwareError` | `windows.stability.hardwareError` | System | `Microsoft-Windows-WHEA-Logger` | all | `null` | `null` | `corrected` (level 3, warning), `uncorrected` (level 1 or 2), else `unknown` | `occurred` when `corrected`, else `reported` |
+| `displayFault` | `windows.stability.displayFault.system` | System | `Display` | 4101 | `null` | first data value when it matches `^[A-Za-z0-9_.-]{1,64}$` (the driver), else `null` | `null` | `occurred` |
+| | `windows.stability.displayFault.wer` | Application | `Windows Error Reporting` | 1001 with `EventName` = `LiveKernelEvent` and `P1` (hex) in {`117`, `141`, `193`} | canonical hex of `P1` (`0x117`, `0x141`, `0x193`) | `null` | `null` | `reported` |
+| `storageError` | `windows.stability.storageError` | System | `disk` (7, 11, 51, 153); `stornvme` (129); `storahci` (129) | as listed | `null` | first data value when it matches `^[A-Za-z0-9_.\\-]{1,128}$` (the device or port), else `null` | `null` | `occurred` |
+| `memoryExhaustion` | — (`notCollected`) | | | | | | | |
+| `minidump` | `windows.minidump` | — | — | — | `null` | `null` | `null` | `reported` |
+
+- The XPath of each source filters natively on channel, provider, event id and the window. For `windows.stability.displayFault.wer` the
+  `EventName` and `P1` conditions are tested after reading, so its 5,000-record ceiling counts every WER 1001 record of the window.
+- `displayFault` means graphics-stack fault evidence, not proof of a reset: Display 4101 and LiveKernelEvent `0x117`
+  (VIDEO_TDR_TIMEOUT_DETECTED) and `0x141` (VIDEO_ENGINE_TIMEOUT_DETECTED) record a timeout detection and recovery (TDR); `0x193`
+  (VIDEO_DXGKRNL_LIVEDUMP) records a live dump taken by the display kernel (`dxgkrnl`), which shows a graphics-stack problem but does not by
+  itself prove an adapter reset. LiveKernelEvent `0x1a1` (WIN32K_CALLOUT_WATCHDOG_LIVEDUMP, a win32k callout watchdog hang signature) is
+  not display evidence: like every other non-display LiveKernelEvent it is listed by `system.crashes` as `kind: kernel-live-dump` and
+  `system.stability` does not count it.
+- `kernelFault` is `notCollected` on Windows: "Non-display LiveKernelEvent reports (for example 0x1a1) are listed by system.crashes as
+  kernel-live-dump." `memoryExhaustion` is `notCollected` on Windows: "Windows low-memory diagnostics are not collected by this version; use
+  system.events."
+- Boot context (not a category): source `windows.stability.bootContext`, System channel, provider `EventLog`, event 6005 (event log service
+  started — a boot) and 6006 (event log service stopped — a clean shutdown), `occurred`; reported only in `context`, never counted as
+  instability.
+- Minidump inventory: the directory `%SystemRoot%\Minidump` (resolved from the Windows folder, never from an argument or environment
+  variable), top level only, entries whose name matches `^[A-Za-z0-9_.-]{1,128}$` and ends in `.dmp` (case-insensitive); reparse points are
+  not followed and other entries are counted as skipped (source `partial`). Only the name, the size in bytes and the last-write time (UTC) are
+  read; the file is never opened. A file belongs to the window by its last-write time. `fileNameLocalDate` is the date encoded in a name of the
+  form `MMDDYY-<digits>-<digits>.dmp`, as `20YY-MM-DD`, when that is a valid date, else `null`; it is descriptive file metadata, never an
+  occurrence time. A missing directory is `notApplicable` ("The minidump directory does not exist."); an unreadable one is `unavailable`
+  ("The minidump directory is not readable by this identity; it usually requires elevation."), which makes the result `partial`.
+
+### Linux source
+
+One source, `linux.journald.kernel`, collected by one `journalctl` invocation started directly (`UseShellExecute = false`, fixed environment
+`LC_ALL=C`, `TZ=UTC`, no pager, no colours, every value its own `ArgumentList` item): `--no-pager --output=json --reverse --utc --since=<from>
+--until=<to> --lines=10000 --output-fields=MESSAGE,_TRANSPORT _TRANSPORT=kernel`. `_TRANSPORT=kernel` is used rather than `--dmesg`, which
+would restrict the read to the current boot. Each record's `MESSAGE` is matched against the fixed rules below in this order, first match wins;
+records matching no rule are ignored. "Starts with" is an ordinal, case-sensitive prefix test on the message as journald returns it.
+
+| Category | Rule | `code` | `component` | `severityClass` |
+|---|---|---|---|---|
+| `kernelCrash` | starts with `Kernel panic - not syncing` | `panic` | `null` | `null` |
+| `kernelFault` | starts with `Oops:` | `oops` | `null` | `null` |
+| | starts with `BUG: unable to handle` or `kernel BUG at` | `bug` | `null` | `null` |
+| | starts with `general protection fault` | `general-protection-fault` | `null` | `null` |
+| `hardwareError` | starts with `mce: [Hardware Error]: Machine check events logged` | `mce` | `null` | `corrected` |
+| | starts with `mce: [Hardware Error]:` | `mce` | `null` | `unknown` |
+| | starts with `EDAC ` and contains ` CE ` | `edac` | `null` | `corrected` |
+| | starts with `EDAC ` and contains ` UE ` | `edac` | `null` | `uncorrected` |
+| `memoryExhaustion` | starts with `Out of memory: Killed process` | `oom-kill` | the process name in `Killed process <pid> (<name>)`, 1–64 characters without control characters, else `null` | `null` |
+| | starts with `Memory cgroup out of memory: Killed process` | `cgroup-oom-kill` | as above | `null` |
+
+Every Linux kernel-transport record is `occurred`. The other categories on Linux: `unexpectedShutdown` is `notApplicable` ("journald has no
+typed record of an unclean shutdown; bOps does not infer one from missing shutdown messages."); `displayFault` is `notCollected` ("GPU fault and
+reset messages are driver-specific and are not collected by this version."); `storageError` is `notCollected` ("Kernel block-layer and
+controller errors are not collected by this version; use system.events with channel kernel."); `minidump` is `notCollected` ("Kernel crash dumps
+(kdump) are not inventoried by this version."); `kernelCrash` carries the detail "A panic is visible only if it reached the persistent journal
+before the machine stopped." and boot `context` is `notCollected`. An identity outside the `adm` and `systemd-journal` groups cannot see kernel
+records: the source is then `partial` with that reason, so every Linux count of 0 is untrustworthy and the result is not `complete`.
+
+### Result byte budget and envelope
+
+The whole result is at most 32,768 UTF-8 bytes. When it would exceed the budget, groups are removed from the end and then minidump files; the
+envelope always fits (a formatter that cannot fit it is an internal error caught by tests, never a silently shortened envelope).
+
+### Aggregation and time buckets
+
+- Group key: (`category`, `provider`, `eventId`, `code`, `component`, `severityClass`, `timestampKind`), compared ordinally (`null` is a value
+  of its own). One group per distinct key with `count`, `firstSeenUtc` and `lastSeenUtc` (oldest and newest record time of the group, all of the
+  group's kind). The `minidump` category forms one group (`provider`, `eventId`, `code`, `component`, `severityClass` all `null`,
+  `timestampKind: reported`).
+- Group order: category in the fixed order above, then `count` descending, then `lastSeenUtc` descending, then `provider`, `eventId`, `code`,
+  `component`, `severityClass`, `timestampKind` (case-insensitive ordinal, then ordinal, `null` first). `observedGroups` is the number of
+  distinct keys; `limit` and the byte budget cut from the end.
+- Bucket width is derived deterministically from `windowDays`, never chosen by the implementation or the caller:
+
+  | `windowDays` | `bucket.width` | Alignment of bucket starts | Maximum `bucket.count` |
+  |---|---|---|---|
+  | 1–2 | `hour` | the start of a UTC hour | 49 |
+  | 3–31 | `day` | 00:00 UTC | 32 |
+  | 32–180 | `week` | Monday 00:00 UTC | 27 |
+
+  `bucket.firstStartUtc` is `window.fromUtc` rounded down to the alignment; bucket *i* is `[firstStartUtc + i × width, firstStartUtc + (i + 1) ×
+  width)`; `bucket.count` is the number of buckets up to and including the one containing `window.toUtc`. The first and last buckets may extend
+  outside the window; they count only records inside it.
+- Timeline: one row per (`category`, `timestampKind`) with at least one record, ordered by category order and then `occurred` before
+  `reported`; `counts` has exactly `bucket.count` integers, entry *i* being the number of the category's records of that kind whose time falls in
+  bucket *i*. Boot `context` is not in the timeline. With at most 8 categories and 2 kinds the timeline has at most 16 rows.
+
+The result is therefore deterministic for a given set of native records and a given `now`, comparable between calls with the same `windowDays`,
+and bounded independently of how many records the logs hold.
