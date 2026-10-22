@@ -2,8 +2,8 @@
 
 Introduced by PROJECT-GOVERNANCE-01 (BOPS-0118). This file defines how task state is kept; it is a
 process document, not a product rule. Updating a task's status, `HANDOFF.md` or the register is
-bookkeeping and is part of every task. Changing the *rules* in this file, in `agentic/0*.md` or in an
-accepted ADR is a normative change and needs operator approval.
+bookkeeping and is part of every task. Changing the rules in this file, in `agentic/0*.md`, or in a
+current architecture contract is a normative change and requires operator approval.
 
 ## 1. Authoritative source per fact
 
