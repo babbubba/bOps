@@ -1,7 +1,7 @@
 # bOps — Razionalizzazione documentale e consolidamento architetturale
 
-**Piano operativo — revisione GATE-01, 22 ottobre 2026**  
-**Stato:** GATE-01 **approvato dall'operatore il 2026-10-22**. Prossima fase: **DOC-02**, in un'unica sessione (§7.2). Nessuna ADR va archiviata o rimossa prima di GATE-02.  
+**Piano operativo — revisione GATE-02, 22 ottobre 2026**  
+**Stato generale:** **GATE-02 APPROVED — next phase DOC-03.** GATE-01 e GATE-02 approvati dall'operatore il 2026-10-22 (decisioni al §2 e al §7.3). DOC-01 e DOC-02 completati; DOC-03 e DOC-04 **ancora da eseguire**. DOC-03 richiede una nuova sessione e un'autorizzazione separata dell'operatore.  
 **Task:** `BOPS-0121` `DOC-CONSOL-01` — `IN_PROGRESS`, `authorized: true` (register: `agentic/_tasks/register.json`; Issue pubblica #125).  
 **Repository:** `babbubba/bOps` · **Branch:** `docs/adr-consolidation-2026-10-22` (solo questo; nessun altro branch)  
 **Baseline di `main`:** `e0e9de7a74b8bb33e07c7b1f8c92ab87832986de`  
@@ -12,11 +12,13 @@
 
 ## 0. Avvio rapido per una nuova sessione
 
-1. **Git.** Verificare branch `docs/adr-consolidation-2026-10-22`, working tree pulito, `git fetch origin docs/adr-consolidation-2026-10-22` e allineamento solo per fast-forward (`git merge --ff-only`). Mai rebase, reset, force-push o merge di altri branch.
+Fase da eseguire: **DOC-03** (§7.4), solo se l'operatore la autorizza espressamente nel prompt di avvio. **DOC-02 e GATE-02 sono chiusi: non vanno rieseguiti né riaperti.** Non si rifà l'inventario DOC-01 né la lettura integrale delle 55 ADR.
+
+1. **Git.** Verificare branch `docs/adr-consolidation-2026-10-22`, working tree pulito, `git fetch origin docs/adr-consolidation-2026-10-22` e allineamento solo per fast-forward (`git merge --ff-only`). Mai rebase, reset, force-push o merge di altri branch. Il commit sorgente di DOC-03 è l'HEAD verificato a inizio sessione: annotarne lo SHA (già esistente) per il manifest (§5.2).
 2. **Identità.** `git config --local user.name "Fabio Cavallari"` e `git config --local user.email "fcavallari@bsoftsolutions.it"`; mai `--global`. Dopo ogni commit: `git show -s --format="Author: %an <%ae>%nCommitter: %cn <%ce>" HEAD`. **Nessun trailer `Co-Authored-By`.**
 3. **Governance.** `python scripts/governance/validate_register.py --summary`: BOPS-0121 deve risultare `IN_PROGRESS` su questo branch. Leggere l'entry BOPS-0121 (inclusi `sync_pending` e `open_gates`) e `HANDOFF.md`.
-4. **Letture obbligatorie per DOC-02:** questo piano per intero; il report DOC-01 (§5 contraddizioni, §8 riparto provvisorio, §9 matrice delle invarianti critiche); il TSV DOC-01 come indice dei percorsi; poi **le 55 ADR per intero** (§7.2). Non rifare l'inventario DOC-01.
-5. **Eseguire solo la fase indicata** dall'operatore: oggi DOC-02 (§7.2). DOC-03 e DOC-04 richiedono GATE-02 approvato.
+4. **Letture obbligatorie per DOC-03:** questo piano per intero (in particolare §2, §3.1, §5, §6, §7.3, §7.4); `DOC-02-GATE-02-report.md` e `DOC-02-GATE-02-corrections.md`; `DOC-02-id-coverage.tsv` (base delle mappe e degli indici); `DOC-02-checks.md`; i cinque contratti `docs/architecture/current/0N-*.md` (da promuovere a `Current`); `DOC-02-traceability-matrix.tsv` come riferimento per la mappa ADR-ID → contratto. Le ADR si leggono solo come blob da archiviare (CP-03a), non per riderivare le regole. Tutti gli artefatti sono in `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/`.
+5. **Eseguire solo la fase indicata** dall'operatore. DOC-04 richiede DOC-03 concluso e una propria autorizzazione. La PR finale e il merge richiedono autorizzazioni esplicite e separate.
 
 ## 1. Problema, obiettivo e limiti
 
@@ -181,7 +183,7 @@ Nessun altro file: **nessun `MANIFEST.md`, nessun CSV, nessun hash dentro lo ZIP
 
 `MANIFEST.md` e `MANIFEST.csv` sono file **esterni** allo ZIP, nella stessa directory `docs/architecture/archive/`. Un sidecar esterno `legacy-adr-and-decisions-2026-10-22.zip.sha256` può registrare l'hash SHA-256 dell'archivio. Il manifest **non contiene il proprio hash** (né quello del CSV o dello ZIP, che sta nel solo sidecar). Contenuto del manifest:
 
-- SHA completo della baseline `main` e del commit della migrazione;
+- SHA completo della baseline approvata `main` (`e0e9de7a74b8bb33e07c7b1f8c92ab87832986de`) e SHA completo del **commit sorgente verificato all'inizio di DOC-03** (l'HEAD già esistente da cui si leggono i blob). Il manifest **non dichiara** lo SHA del commit che lo incorpora: sarebbe una dipendenza circolare, perché quello SHA dipende dal contenuto del manifest stesso. Il commit che lo contiene si identifica a posteriori con `git log` sul percorso del manifest;
 - per ognuno dei 57 originali: percorso, dimensione in byte, **SHA-256 del contenuto** originale (distinto dal Git blob SHA, che può essere riportato in una colonna a parte), categoria, motivo del ritiro e destinazione delle regole (`contract §`, `technical reference`, `pending-Dn`, `historical-only`);
 - la mappa ADR-ID → contratto/sezione, ricavata dalla matrice DOC-02 senza inventare corrispondenze;
 - le anomalie note (G1-10, `bench00`).
@@ -213,6 +215,8 @@ Le ADR Markdown escono da `docs/architecture/adr/` **solo** dopo GATE-02 e dopo 
 
 - **DOC-01:** inventario in sola lettura; evidenza nel commit `9137043`.
 - **GATE-01:** approvato il 2026-10-22. Le decisioni sono al §2. Bookkeeping BOPS-0121 nel commit `1156b72`; revisione di questo piano nel commit successivo.
+- **DOC-02:** completato (commit `79fac1d`), con le correzioni GATE-02 P1–P4 nel commit `207ad7d`.
+- **GATE-02:** approvato il 2026-10-22 (§7.3, decisioni G2-01…G2-05).
 
 ### 7.2 DOC-02 — Consolidamento canonico e matrice di copertura (**un'unica sessione**)
 
@@ -330,9 +334,19 @@ Ogni contenuto rilevante va classificato come `CONTRACT`, `TECH-REF`, `PENDING` 
   - il verdetto `READY FOR GATE-02 APPROVAL` oppure `BLOCKED`.
 - **Stato del task:** BOPS-0121 resta `IN_PROGRESS`. HANDOFF indica come prossimo passo GATE-02.
 
-### 7.3 GATE-02 — Approvazione obbligatoria dell'operatore
+### 7.3 GATE-02 — Approvazione dell'operatore (**APPROVATO il 2026-10-22**)
 
-L'operatore esamina contratti, matrice, ledger e report. **Nessuna ADR può essere rimossa, spostata o archiviata prima del superamento di GATE-02.** L'esito si registra in questo piano, nella stessa forma del §2 (decisioni G2-xx).
+L'operatore ha esaminato contratti, matrice, ledger e report, comprese le correzioni P1–P4 pubblicate nel commit `207ad7d` (P5 resta come attività di DOC-04). GATE-02 è un gate **intermedio** della migrazione documentale, distinto dal livello finale `OPERATOR_GATE` del register. La sua approvazione riguarda **esclusivamente la completezza e la coerenza documentale necessarie per procedere a DOC-03**. Non costituisce: certificazione dell'implementazione applicativa; approvazione delle ADR ancora Proposed; autorizzazione al rilascio commerciale di Knowledge; superamento dei gate CI o dell'approvazione finale della PR; autorizzazione al merge.
+
+| ID | Decisione approvata | Precisazioni vincolanti dell'operatore |
+|---|---|---|
+| G2-01 | **Contratti approvati:** i cinque contratti `Candidate` di DOC-02, corretti successivamente, con **105 regole vincolanti**; approvati anche matrice di tracciabilità, read-ledger, mappe degli identificativi e destinazioni tecniche | La promozione allo stato `Current` avviene in DOC-03, **dopo CP-03a**. Non introdurre ulteriori contratti normativi. |
+| G2-02 | **Knowledge e ADR Proposed:** C05-R13 approvata nel solo ambito dello sviluppo e test M1 autorizzato da ADR-0057/D-049 | C02-R12 resta l'autorità dell'invariante S5 sui dati esterni. Le ADR 0050, 0053, 0054, 0055, 0056, 0058 e 0059 **restano Proposed**; D1, D4 e D5 **restano aperte**. B1 e B2 restano limiti espliciti; nessuna autorizzazione implicita a composizione in produzione, benchmark live o rilascio commerciale. |
+| G2-03 | **REVIEW residue:** approvato il trattamento documentale di REVIEW-01…05 e REVIEW-07, nei limiti degli artefatti corretti | REVIEW-06 è **risolta** (supporto effettivo dei timeout per manifest). Non si modificano riferimenti storici né commenti nel codice: gli identificativi obsoleti devono essere risolvibili tramite le mappe documentali. Le lacune applicative residue richiedono task separati. |
+| G2-04 | **Archivio storico:** DOC-03 produce uno ZIP con **esattamente 57 originali**, byte-identici al contenuto dei rispettivi blob Git della baseline approvata (55 ADR, `agentic/01-architecture-rules.md`, `agentic/06-decisions.md`) | `MANIFEST.md`, `MANIFEST.csv` e l'eventuale sidecar SHA-256 restano **fuori** dallo ZIP. Il manifest riporta lo SHA della baseline e lo SHA del commit sorgente verificato all'inizio di DOC-03; non pretende di contenere lo SHA del commit che lo incorpora (§5.2). **CP-03a deve essere completato prima di rimuovere qualunque originale.** |
+| G2-05 | **Rischi e leggibilità:** i rischi residui dichiarati nei report DOC-02 sono accettati come limitazioni documentate, non come prove di correttezza del codice | Il miglioramento di leggibilità P5 (§7.5, punto 9) si realizza **durante DOC-04, prima della PR finale**, senza modificare la semantica delle regole. Non si riapre DOC-02; nessun nuovo refactoring architetturale. |
+
+Da DOC-03 in poi, l'unica prescrizione che resta aperta su questo gate è il divieto già in vigore: **nessuna ADR può essere rimossa, spostata o archiviata prima di CP-03a** (§7.4).
 
 ### 7.4 DOC-03 — Archiviazione, bootstrap e riferimenti (dopo GATE-02)
 
@@ -389,7 +403,9 @@ La convergenza MAF resta un task separato, dopo il merge.
 
 - [x] DOC-01: inventario completo dei percorsi e dei punti di ingresso istruzionali (288 su 288).
 - [x] GATE-01: decisioni approvate e registrate (§2). BOPS-0121 autorizzato.
-- [ ] CP-02a…CP-02e PASS e GATE-02 approvato prima di qualunque archiviazione.
+- [x] CP-02a…CP-02e PASS e GATE-02 approvato il 2026-10-22 (decisioni G2-01…G2-05, §7.3). Resta valido il divieto di rimuovere qualunque originale prima di CP-03a.
+- [ ] **DOC-03** eseguito (§7.4): ZIP, manifest, indici, promozione a `Current`, bootstrap e router. *Da eseguire, in una nuova sessione con autorizzazione separata.*
+- [ ] **DOC-04** eseguito (§7.5): accettazione statica, leggibilità P5, report `PASS`. *Da eseguire.*
 - [ ] Esattamente cinque contratti correnti in inglese; nessuna sesta autorità; `01`, `03` e `06` ridotti a indici o redirect non normativi.
 - [ ] Ogni regola dei contratti ha uno stato decisionale e uno implementativo distinti; nessuna ADR Proposed promossa.
 - [ ] Le specifiche tecniche indispensabili hanno una sede tecnica corrente.
