@@ -130,36 +130,36 @@ For each dense ADR of plan §7.2.3, every heading (levels 1–4, bold sub-headin
 | 127 | A.4 Motivazioni | A0057-007 | HISTORICAL | historical-only |
 | 138 | A.5 Conseguenze | A0057-008 | PENDING | C05#pending-D5 |
 | 149 | A.6 Quando si calcola e cosa contiene ogni richiesta | A0057-009 | PENDING | C05#pending-D5 |
-| 174 | A.7 `knowledgeRefs` nel piano | A0057-010 | PENDING | C05#pending-D5 |
+| 174 | A.7 `knowledgeRefs` nel piano | A0057-010 | CONTRACT | C05-R13 |
 | 180 | A.8 Compatibilità futura (non implementata in M1) | A0057-011 | HISTORICAL | historical-only |
 | 195 | B. Percorso runtime → discovery → MAF → provider → read | A0057-012 | PENDING | C05#pending-D5 |
 | 225 | B.4 Budget e limiti dell'indice | A0057-012 | PENDING | C05#pending-D5 |
 | 241 | C. Contratto dati | A0057-013 | PENDING | C05#pending-D5 |
 | 243 | C.1 Tipi in `bOps.Abstractions` (additivi; servono all'audit) | A0057-013 | PENDING | C05#pending-D5 |
 | 281 | C.2 Tipi in `bOps.Runtime/KnowledgeRead.cs` (additivi; nessun tipo Knowledge o MAF) | A0057-013 | PENDING | C05#pending-D5 |
-| 315 | C.3 Argomenti di `runtime.knowledge_read` (set chiuso esteso) | A0057-014 | PENDING | C05#pending-D5 |
+| 315 | C.3 Argomenti di `runtime.knowledge_read` (set chiuso esteso) | A0057-014 | CONTRACT | C05-R13 |
 | 328 | C.4 Parte D — testo del turno `User` | A0057-015 | PENDING | C05#pending-D5 |
 | 350 | C.5 Parte C — coda del `SystemPrompt` | A0057-016 | PENDING | C05#pending-D5 |
 | 373 | C.6 Manifest v2 (M2) | A0057-017 | HISTORICAL | historical-only |
 | 378 | C.7 Codici e comportamento tipizzato | A0057-018 | PENDING | C05#pending-D5 |
-| 397 | D. Trust boundary del catalogo | A0057-019 | PENDING | C05#pending-D5 |
-| 399 | D.1 Autorità per sorgente | A0057-019 | PENDING | C05#pending-D5 |
+| 397 | D. Trust boundary del catalogo | A0057-019 | CONTRACT | C05-R13 |
+| 399 | D.1 Autorità per sorgente | A0057-019 | CONTRACT | C05-R13 |
 | 409 | D.2 Perché `User` (H1) | A0057-020 | HISTORICAL | historical-only |
 | 428 | D.3 Threat model | A0057-021 | HISTORICAL | historical-only |
-| 441 | D.4 Invarianti che rendono `User` accettabile (verificati da test e mutation check §H) | A0057-022 | PENDING | C05#pending-D5 |
-| 450 | D.5 Limitazioni dichiarate | A0057-023 | PENDING | C05#pending-D5 |
-| 459 | R. Ref, revoche e isolamento | A0057-024 | PENDING | C05#pending-D5 |
-| 461 | R.1 Proprietà dei ref | A0057-024 | PENDING | C05#pending-D5 |
-| 472 | R.2 Revoca: che cosa è dimostrato | A0057-025 | PENDING | C05#pending-D5 |
-| 487 | R.4 Requisito di estensibilità: authorization epoch/revision (non implementato) | A0057-026 | PENDING | C05#pending-D5 |
-| 496 | R.5 Lettura per ref: autorità e integrità al momento dell'accesso | A0057-027 | PENDING | C05#pending-D5 |
-| 505 | R.3 Resume, cache e stato persistito | A0057-028 | PENDING | C05#pending-D5 |
+| 441 | D.4 Invarianti che rendono `User` accettabile (verificati da test e mutation check §H) | A0057-022 | CONTRACT | C05-R13 |
+| 450 | D.5 Limitazioni dichiarate | A0057-023 | CONTRACT | C05-R13 |
+| 459 | R. Ref, revoche e isolamento | A0057-024 | CONTRACT | C05-R13 |
+| 461 | R.1 Proprietà dei ref | A0057-024 | CONTRACT | C05-R13 |
+| 472 | R.2 Revoca: che cosa è dimostrato | A0057-025 | CONTRACT | C05-R13 |
+| 487 | R.4 Requisito di estensibilità: authorization epoch/revision (non implementato) | A0057-026 | CONTRACT | C05-R13 |
+| 496 | R.5 Lettura per ref: autorità e integrità al momento dell'accesso | A0057-027 | CONTRACT | C05-R13 |
+| 505 | R.3 Resume, cache e stato persistito | A0057-028 | CONTRACT | C05-R13 |
 | 519 | S. Completezza della discovery | A0057-029 | PENDING | C05#pending-D5 |
-| 543 | U. Validazione di nomi, descrizioni e identificatori | A0057-030 | PENDING | C05#pending-D5 |
-| 545 | U.1 Vincoli di ammissione (deterministici, rifiuto e mai riscrittura) | A0057-030 | PENDING | C05#pending-D5 |
-| 566 | U.2 Neutralizzazione dei marker (altrove) | A0057-031 | PENDING | C05#pending-D5 |
+| 543 | U. Validazione di nomi, descrizioni e identificatori | A0057-030 | CONTRACT | C05-R13 |
+| 545 | U.1 Vincoli di ammissione (deterministici, rifiuto e mai riscrittura) | A0057-030 | CONTRACT | C05-R13 |
+| 566 | U.2 Neutralizzazione dei marker (altrove) | A0057-031 | CONTRACT | C05-R13 |
 | 572 | U.3 Validazione ≠ istruzione al modello | A0057-032 | HISTORICAL | historical-only |
-| 582 | U.4 Limiti accettati | A0057-033 | PENDING | C05#pending-D5 |
+| 582 | U.4 Limiti accettati | A0057-033 | CONTRACT | C05-R13 |
 | 589 | U.5 Runtime di globalizzazione (nota di implementazione, KNOW-M1-B-FIX01) | A0057-034 | TECH-REF | docs/knowledge/local-agent-pilot.md |
 | 615 | E. Piano di implementazione | A0057-035 | HISTORICAL | historical-only |
 | 619 | M0 — Governance (documentale, operatore) | A0057-035 | HISTORICAL | historical-only |
@@ -186,9 +186,9 @@ For each dense ADR of plan §7.2.3, every heading (levels 1–4, bold sub-headin
 | 891 | H.3 Mutation check (ognuno deve far fallire almeno un test) | A0057-043 | HISTORICAL | historical-only |
 | 899 | H.4 Condizioni per un test live successivo (non eseguito) | A0057-043 | HISTORICAL | historical-only |
 | 913 | I. Fuori da M1 | A0057-044 | HISTORICAL | historical-only |
-| 932 | L. Blocchi e ipotesi | A0057-045 | PENDING | C05#pending-D5 |
-| 934 | L.1 Blocchi | A0057-045 | PENDING | C05#pending-D5 |
-| 942 | L.2 Ipotesi | A0057-045 | PENDING | C05#pending-D5 |
+| 932 | L. Blocchi e ipotesi | A0057-045 | CONTRACT | C05-R13 |
+| 934 | L.1 Blocchi | A0057-045 | CONTRACT | C05-R13 |
+| 942 | L.2 Ipotesi | A0057-045 | CONTRACT | C05-R13 |
 
 ## ADR-0043 — browser-web-session (941 lines)
 

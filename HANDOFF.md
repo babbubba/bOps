@@ -29,7 +29,7 @@ Task state is never copied here; ask the register (`--summary`).
 - Current task of this branch: **BOPS-0121 DOC-CONSOL-01** (Issue #125, authorized at GATE-01 on 2026-10-22) — documentation-only consolidation of the ADRs,
   `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01 and DOC-02 done: the five candidate contracts are in `docs/architecture/current/` and the evidence in
   `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*` (start with `DOC-02-GATE-02-report.md`);
-  **next step: GATE-02** (operator approval, plan §7.3). DOC-03 and DOC-04 are not started. No ADR is archived or removed before GATE-02.
+  **next step: GATE-02** (operator approval, plan §7.3). GATE-02 corrections P1–P5 applied after the independent review (`DOC-02-GATE-02-corrections.md`; one corrective commit). DOC-03 and DOC-04 are not started. No ADR is archived or removed before GATE-02.
 - BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
   [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec

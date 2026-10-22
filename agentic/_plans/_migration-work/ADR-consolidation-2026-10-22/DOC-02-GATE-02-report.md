@@ -4,6 +4,8 @@ Non-normative working artifact of the DOC-02 phase of `agentic/_plans/ADR-consol
 
 **Verdict: READY FOR GATE-02 APPROVAL**
 
+> **Corrected after the independent review (P1–P5):** see `DOC-02-GATE-02-corrections.md`. Figures below are the corrected ones (105 rules; C05-R13 added; REVIEW-06 resolved).
+
 | | |
 |---|---|
 | Task | `BOPS-0121` / `DOC-CONSOL-01` (stays `IN_PROGRESS`) |
@@ -20,7 +22,7 @@ Non-normative working artifact of the DOC-02 phase of `agentic/_plans/ADR-consol
 | CP-02b | PASS | 2,619 normative statements extracted from the 55 ADRs and `00`/`01`/`03`/`06`/`07`, all linked to a matrix row with a disposition, 0 orphans; semantic token comparison in `DOC-02-uncovered-normative-content.md` |
 | CP-02c | PASS | 149 IDs (A1–A13, B1–B10, C1–C9, D, S1–S11, D-001…D-050, 55 ADRs): 0 missing, 0 duplicates (plus the block ID `P1-P7` of `00-project-spec`) |
 | CP-02d | PASS | 12 dense ADRs: every heading of level 1–4 has a disposition; every technical-detail seat exists |
-| CP-02e | PASS | No Proposed rule in a binding section; 0057 and 0060 as in plan §3.4; every `Implemented` rule has verified `file:line` anchors; S1–S11 and the other invariants of CP-02e(3) are checked rule by rule; no rule without a source row |
+| CP-02e | PASS | No Proposed rule in a binding section; 0057 (C02-R12 and, limited to M1 development, C05-R13) and 0060 as in plan §3.4; every `Implemented` rule has verified `file:line` anchors; S1–S11 and the other invariants of CP-02e(3) are checked rule by rule; no rule without a source row |
 | Additional | PASS | Contract structure, technical references, git scope (no ADR, `01`/`03`/`06`, bootstrap/router, code, test, CI or script touched), `validate_register.py` green |
 
 ## 2. The five contracts (all `Candidate — pending GATE-02`)
@@ -31,9 +33,9 @@ Non-normative working artifact of the DOC-02 phase of `agentic/_plans/ADR-consol
 | `docs/architecture/current/02-tools-safety-authority.md` | 29 | {'Implemented': 27, 'Not implemented / target in the product composition': 1, 'Not verified': 1} | none | — |
 | `docs/architecture/current/03-task-state-resume-mutations.md` | 24 | {'Implemented': 24} | C03-P01 (ADR-0050), C03-P02 (ADR-0060 note) | D4 |
 | `docs/architecture/current/04-evidence-and-diagnosis.md` | 18 | {'Implemented': 18} | C04-P01 (ADR-0050 §5) | D4 |
-| `docs/architecture/current/05-interfaces-knowledge-and-hosts.md` | 12 | {'Implemented': 10, 'Partially implemented': 1, 'Not verified': 1} | C05-P01 (ADR-0053 §4.5, 0054 §4–§5), C05-P02 (ADR-0055), C05-P03 (ADR-0056), C05-P04 (ADR-0057 mechanism), C05-P05 (ADR-0058, D-050), C05-P06 (ADR-0059) | D5 |
+| `docs/architecture/current/05-interfaces-knowledge-and-hosts.md` | 13 | {'Implemented': 10, 'Partially implemented': 2, 'Not verified': 1} | C05-P01 (ADR-0053 §4.5, 0054 §4–§5), C05-P02 (ADR-0055), C05-P03 (ADR-0056), C05-P04 (ADR-0057 index mechanism not carried by C05-R13), C05-P05 (ADR-0058, D-050), C05-P06 (ADR-0059) | D5 |
 
-Total 104 binding rules. Matrix: 928 rows ({'CONTRACT': 624, 'HISTORICAL': 175, 'TECH-REF': 41, 'PENDING': 88}), 55 ADRs plus `01`, `03`, `06`, `00-project-spec`, `07`. Contract 02 contains S1–S11 (invariant map at the end of the file). Contract lengths exceed the 60–120 line guidance because the plan forbids shortening safety and governance invariants (G1-04) and the contracts must carry the rule text that the archived ADRs held.
+Total 105 binding rules (104 at DOC-02, +1 `C05-R13` in the GATE-02 corrections). Matrix: 928 rows ({'CONTRACT': 640, 'HISTORICAL': 176, 'TECH-REF': 40, 'PENDING': 72}), 55 ADRs plus `01`, `03`, `06`, `00-project-spec`, `07`. Contract 02 contains S1–S11 (invariant map at the end of the file). Contract lengths exceed the 60–120 line guidance because the plan forbids shortening safety and governance invariants (G1-04) and the contracts must carry the rule text that the archived ADRs held.
 
 **Placement decisions made in DOC-02 (plan §3.2 left them open or provisional):**
 
@@ -86,7 +88,7 @@ Total 104 binding rules. Matrix: 928 rows ({'CONTRACT': 624, 'HISTORICAL': 175, 
 | 0045 | Accepted | C01:16 | — | — | 2 |
 | 0046 | Accepted | C01:1, C03:10, C04:2 | — | — | 3 |
 | 0047 | Accepted | C03:6 | — | — | 2 |
-| 0048 | Accepted | C02:8, C04:1 | — | 1 | 2 |
+| 0048 | Accepted | C02:8, C04:1 | — | — | 3 |
 | 0049 | Accepted | C02:6, C05:6 | — | 1 | 1 |
 | 0050 | Proposed | — | 13 | — | — |
 | 0051 | Accepted | C03:35, C05:3 | — | 1 | 6 |
@@ -95,7 +97,7 @@ Total 104 binding rules. Matrix: 928 rows ({'CONTRACT': 624, 'HISTORICAL': 175, 
 | 0054 | Proposed | — | 6 | — | 3 |
 | 0055 | Proposed | — | 9 | — | 2 |
 | 0056 | Proposed | — | 8 | — | 2 |
-| 0057 | Accepted | C02:1 | 26 | 1 | 17 |
+| 0057 | Accepted | C02:1, C05:15 | 11 | 1 | 17 |
 | 0058 | Proposed | — | 11 | — | 5 |
 | 0059 | Proposed | — | 4 | — | 3 |
 | 0060 | Accepted | C03:9 | — | — | 7 |
@@ -109,13 +111,13 @@ Appended technical sections: `docs/operator-configuration.md` (§15), `docs/syst
 
 - 22 amendment chains reconstructed; 7 contradictions found while reading, all resolved by evidence (explicit supersession in a later Accepted ADR, or the code): retry location, `EvidenceRead` exhaustion, disclosure re-ask, empty-plan degradation, restart-to-apply, no-authentication statement, `0.x until V1.0`.
 - REVIEW-01: Accepted ADR-0042 (PRE-5, AF-05G) and ADR-0046 (AF-05H) borrow vocabulary from the Proposed ADR-0050 (`Matched`, `Activation`, conditional steps). C04-R14 carries the behaviour with an explicit dependency note; if D4 rejects ADR-0050 those phrases need re-expression.
-- REVIEW-02: ADR-0057 is Accepted but its mechanism depends on Proposed ADRs; only the S5 amendment is binding (C02-R12).
-- REVIEW-03…07: implemented-but-Proposed code; names in ADR text absent from code; rules not verifiable here; the ADR-0048 timeout conflict (recorded, not resolved); the open Knowledge limits B1/B2.
+- REVIEW-02: ADR-0057 is Accepted but its mechanism depends on Proposed ADRs; binding are the S5 amendment (C02-R12) and, in the M1 development scope only, the guarantees of C05-R13 (corrected after the independent review: DOC-02 had classified them Pending); the rest of the index mechanism stays Pending (C05-P04).
+- REVIEW-03…07: implemented-but-Proposed code; names in ADR text absent from code; rules not verifiable here; the ADR-0048 timeout wording (REVIEW-06, RESOLVED in the GATE-02 corrections: superseded by the implemented manifest timeout); the open Knowledge limits B1/B2.
 
 ## 5. Divergences between decision and implementation
 
 - Implemented in code but not accepted: ADR-0050 (`ExpectedArguments`, `SemanticMismatch`, `EvidenceFact`), ADR-0054 (`MafGovernedTurn`), ADR-0055/0056/0058/0059 (Knowledge). Recorded as pending; the code is not treated as acceptance.
-- Accepted but not (or only partly) in the product: C02-R12 (S5 amendment: the index exists only in an opt-in pilot), C01-R21 (bootstrap default: partially implemented, disclosure wording not re-verified), C05-R11 (SDK 1.x preview; stable 1.0 not verified), C01-R03 (the optional streaming interface is a stated future addition).
+- Accepted but not (or only partly) in the product: C02-R12 (S5 amendment: the index exists only in an opt-in pilot), C05-R13 (M1 guarantees: partially implemented, composed only by the pilot, B1/B2 open), C01-R21 (bootstrap default: partially implemented, disclosure wording not re-verified), C05-R11 (SDK 1.x preview; stable 1.0 not verified), C01-R03 (the optional streaming interface is a stated future addition).
 - Not verifiable by code: C02-R15 (documentation wording for in-process trust) and C05-R12 (open-core topology, CLA, licensing).
 - ADR wording stale against later Accepted ADRs or code: retry in `AgentRunner` (ADR-0039/0045) versus the broker (ADR-0052 §5); HARDEN-8 history mechanism and `Agent:VerbatimHistorySteps` removed by AF-05; names in `DOC-02-uncovered-normative-content.md` part C.
 
@@ -124,7 +126,7 @@ Appended technical sections: `docs/operator-configuration.md` (§15), `docs/syst
 1. **GATE-02:** approve, amend or reject the five candidate contracts, the matrix, the id-coverage map and the placement decisions above; record G2-xx in plan §7.3.
 2. **D1, D4, D5** remain open in the register. Their positions decide whether the pending entries C01-P01/P02, C03-P01, C04-P01 and C05-P01…P06 become binding rules. Note the REVIEW-01 consequence of rejecting D4.
 3. Whether DOC-03 should keep ADR-number comments in code resolvable through `DOC-02-id-coverage.tsv` only, and how to treat the dead symbol names of REVIEW-04.
-4. Whether to resolve the ADR-0048 timeout conflict (REVIEW-06) or keep it recorded.
+4. (Removed: REVIEW-06 is resolved; see `DOC-02-GATE-02-corrections.md`.)
 
 ## 7. Remaining risks
 

@@ -36,7 +36,7 @@
 2. **Un solo bootstrap per gli agenti:** `agentic/00-bootstrap.md`. Lettura selettiva del task attivo e dei contratti pertinenti; nessuna scansione ordinaria di ADR o registri storici.
 3. **Governance operativa intatta:** register, stati, handoff, Issue e Project, workflow e gate restano riconoscibili.
 4. **Documentazione tecnica e funzionale utile preservata.** Le specifiche tecniche indispensabili, se non rappresentate altrove, restano in documentazione tecnica corrente.
-5. **Storia consultabile ma senza autorità corrente:** uno ZIP dei 57 originali ritirati, con manifest; storia Git non riscritta.
+5. **Storia consultabile ma senza autorità corrente:** uno ZIP dei 57 originali ritirati, con `MANIFEST.md` e `MANIFEST.csv` esterni accanto allo ZIP; storia Git non riscritta.
 6. **Nessuna perdita semantica,** dimostrata dai controlli CP-02 prima di qualunque archiviazione.
 
 **Non è un obiettivo** ridurre `docs/` e `agentic/` a pochi file, eliminare tutta la documentazione storica o completare la convergenza a Microsoft Agent Framework (MAF).
@@ -175,16 +175,18 @@ Percorso: `docs/architecture/archive/legacy-adr-and-decisions-2026-10-22.zip`. *
 - le 55 ADR `docs/architecture/adr/*.md`;
 - `agentic/01-architecture-rules.md` e `agentic/06-decisions.md`, nella versione **precedente** alla riduzione a indice.
 
-Nessun altro file. Stima di DOC-01: 1,36 MB grezzi, circa 526 KB compressi.
+Nessun altro file: **nessun `MANIFEST.md`, nessun CSV, nessun hash dentro lo ZIP**. Ogni entry è l'originale non modificato, byte per byte, come nel blob Git della baseline. Stima di DOC-01: 1,36 MB grezzi, circa 526 KB compressi.
 
 ### 5.2 Manifest, mappe e accesso
 
-Dentro lo ZIP va un `MANIFEST.md`, più un elenco meccanico CSV non normativo, con:
+`MANIFEST.md` e `MANIFEST.csv` sono file **esterni** allo ZIP, nella stessa directory `docs/architecture/archive/`. Un sidecar esterno `legacy-adr-and-decisions-2026-10-22.zip.sha256` può registrare l'hash SHA-256 dell'archivio. Il manifest **non contiene il proprio hash** (né quello del CSV o dello ZIP, che sta nel solo sidecar). Contenuto del manifest:
 
 - SHA completo della baseline `main` e del commit della migrazione;
-- per ogni originale: percorso, SHA-256, dimensione, categoria, motivo del ritiro e destinazione delle regole (`contract §`, `technical reference`, `pending-Dn`, `historical-only`);
+- per ognuno dei 57 originali: percorso, dimensione in byte, **SHA-256 del contenuto** originale (distinto dal Git blob SHA, che può essere riportato in una colonna a parte), categoria, motivo del ritiro e destinazione delle regole (`contract §`, `technical reference`, `pending-Dn`, `historical-only`);
 - la mappa ADR-ID → contratto/sezione, ricavata dalla matrice DOC-02 senza inventare corrispondenze;
 - le anomalie note (G1-10, `bench00`).
+
+`MANIFEST.csv` è l'elenco meccanico non normativo delle stesse 57 righe.
 
 **Mappe di risolvibilità fuori dallo ZIP** (DOC-03), tutte non normative e senza testo di regola:
 
@@ -192,7 +194,7 @@ Dentro lo ZIP va un `MANIFEST.md`, più un elenco meccanico CSV non normativo, c
 - lo stub di `06`: D-ID → destinazione;
 - gli indici `01` e `03`: ID → regola `Cn-Rmm`.
 
-L'indice esterno `docs/architecture/archive/README.md` è breve: dichiara che lo ZIP non ha autorità e spiega come recuperare un originale solo su richiesta esplicita.
+L'indice esterno `docs/architecture/archive/README.md` è breve: dichiara che lo ZIP e i manifest non hanno autorità e spiega come recuperare un originale solo su richiesta esplicita.
 
 Le ADR Markdown escono da `docs/architecture/adr/` **solo** dopo GATE-02 e dopo CP-03a. Storia Git mai riscritta.
 
@@ -336,7 +338,7 @@ L'operatore esamina contratti, matrice, ledger e report. **Nessuna ADR può esse
 
 Passi, nell'ordine:
 
-1. **Congelare gli originali.** Generare ZIP e manifest con i 57 file del §5.1 e verificare **CP-03a**.
+1. **Congelare gli originali.** Generare lo ZIP con i soli 57 file del §5.1 e, **fuori dallo ZIP**, `MANIFEST.md`, `MANIFEST.csv` e il sidecar `.sha256` (§5.2); verificare **CP-03a**.
 2. **Rimuovere** le 55 ADR Markdown da `docs/architecture/adr/` e creare `docs/architecture/adr/README.md` con la mappa (§5.2).
 3. **Ridurre** `01` e `03` a indici di compatibilità e `06` a stub con tabella D-ID, a partire da `DOC-02-id-coverage.tsv`.
 4. **Promuovere** i contratti a `Current`.
@@ -354,12 +356,12 @@ Passi, nell'ordine:
 
 | ID | Controllo | Criterio |
 |---|---|---|
-| **CP-03a** | Integrità dello ZIP | 57 file; percorsi originali; SHA-256 e dimensioni identici al manifest e ai file della baseline; estrazione di prova identica byte per byte; nessun file in più. |
+| **CP-03a** | Integrità dello ZIP | (1) Esattamente 57 entry nello ZIP, nessuna entry extra (in particolare nessun manifest, CSV o hash). (2) Percorsi relativi originali. (3) Ogni entry è identica al contenuto del blob Git della baseline (verifica per `git cat-file`/`git show <baseline>:<path>`, non solo per hash). (4) SHA-256 del contenuto e dimensione di ogni entry identici al manifest e al CSV esterni; lo SHA-256 del contenuto è distinto dal Git blob SHA. (5) Estrazione di prova in una directory vuota, identica byte per byte ai 57 originali. (6) `MANIFEST.md` e `MANIFEST.csv` coerenti tra loro e con tutti i 57 originali (57 righe, nessuna in più o in meno); nessuno dei due contiene il proprio hash; il sidecar `.sha256`, se presente, corrisponde all'archivio. |
 | **CP-03b** | Risolvibilità degli ID | Ogni `ADR-NNNN`, `D-NNN` e ID di `01`/`03` citato in `src/`, `tests/`, `web/`, `scripts/`, nei documenti correnti e nei packet si risolve in una riga di mappa (adr README, stub `06`, indici `01`/`03`). Verifica meccanica, zero ID non risolti; i riferimenti già rotti in origine (es. `Audit.cs:673`) vanno elencati a parte. |
 
 **Gate DOC-03:**
 
-- ZIP integro;
+- ZIP integro (CP-03a: 57 entry, manifest esterni);
 - nessun documento ritirato prima della copertura;
 - nessun link normativo attivo ambiguo;
 - bootstrap minimo;
@@ -377,6 +379,7 @@ Se uno script o il codice caricassero file storici: stop e task separato.
 6. **Governance:** `validate_register.py` verde; `PROCESS.md` cambiato solo nella riga autorizzata; register, HANDOFF, Issue e Project coerenti, oppure `sync_pending` dichiarato.
 7. **Unicità:** nessun documento strutturale concorrente in `agentic/`, `docs/` o nelle istruzioni.
 8. **CP-04, smoke documentale:** si simulano un task ordinario e un task architetturale e si registrano i file che verrebbero letti. Nessuna lettura ordinaria di ZIP, ADR storiche, `06` o indici.
+9. **Leggibilità (residua, non bloccante per GATE-02):** riformattare in capoversi o elenchi le regole dei contratti con un paragrafo superiore a 4.000 caratteri (nove regole alla correzione GATE-02), con vincolo di non modificarne il significato (confronto del testo normalizzato prima/dopo). Non è un progetto di refactoring dei contratti. Da eseguire prima della PR finale.
 
 Esito: report `PASS` o `BLOCKED`. Dopo l'autorizzazione esplicita dell'operatore, commit e PR docs-only verso `main`, con `Refs #125` e mai `Closes`; nessun merge automatico. A quel punto BOPS-0121 passa a `VALIDATION` con il bookkeeping previsto (register, Issue, Project, HANDOFF).
 
@@ -390,7 +393,8 @@ La convergenza MAF resta un task separato, dopo il merge.
 - [ ] Esattamente cinque contratti correnti in inglese; nessuna sesta autorità; `01`, `03` e `06` ridotti a indici o redirect non normativi.
 - [ ] Ogni regola dei contratti ha uno stato decisionale e uno implementativo distinti; nessuna ADR Proposed promossa.
 - [ ] Le specifiche tecniche indispensabili hanno una sede tecnica corrente.
-- [ ] ZIP con esattamente 57 originali, SHA e manifest coerenti (CP-03a); ID storici risolvibili (CP-03b).
+- [ ] ZIP con esattamente 57 originali e nessun file in più; `MANIFEST.md` e `MANIFEST.csv` esterni, SHA-256 del contenuto coerenti (CP-03a); ID storici risolvibili (CP-03b).
+- [ ] Leggibilità dei contratti: paragrafi di regola superiori a 4.000 caratteri riformattati (elenchi/capoversi) senza alterarne il significato, prima della PR finale (attività residua, vedi §7.5 punto 9).
 - [ ] Un solo bootstrap (`agentic/00-bootstrap.md`); `CLAUDE.md` e `AGENTS.md` sono router; nessuna istruzione impone la lettura di ADR, `06` o archivi.
 - [ ] Register, `PROCESS.md`, HANDOFF, Issue #125 e Project #6 coerenti con il loro ruolo.
 - [ ] Nessuna modifica a codice, test, CI, script, package o commenti nel codice; nessuna importazione da PR #124.

@@ -2060,7 +2060,7 @@ ADR-0057	119	solo	| T7 | Solo metadati tipizzati (ref, dimensioni), nessun testo
 ADR-0057	125	solo	| **T13** | **C in System (tipizzata) + D `User` di dati prima del goal, solo negli step** | **Scelta** | §D. |	A0057-006	HISTORICAL	historical-only
 ADR-0057	133	mai	identità (S5, ADR-0052): vero per costruzione, perché il runner non legge mai D per decidere (§D.4).	A0057-007	HISTORICAL	historical-only
 ADR-0057	167	obbligatoria	**[DEC] Nessuna lettura obbligatoria.** L'indice non crea step, non è un `expectedTool`, non condiziona finalizzazione o grounding; la	A0057-009	PENDING	C05#pending-D5
-ADR-0057	176	solo	**[DEC]** Non introdotti in M1–M3. Contratto riservato a M4, solo con evidenza M3: `PlannedStep.KnowledgeRefs` additivo, ≤ 2 ref,	A0057-010	PENDING	C05#pending-D5
+ADR-0057	176	solo	**[DEC]** Non introdotti in M1–M3. Contratto riservato a M4, solo con evidenza M3: `PlannedStep.KnowledgeRefs` additivo, ≤ 2 ref,	A0057-010	CONTRACT	C05-R13
 ADR-0057	185	mai	| Top-K | `KnowledgeIndexLimits` è parametro host, mai del pack. |	A0057-011	HISTORICAL	historical-only
 ADR-0057	189	solo	| **Authorization epoch/revision** (requisito di estensibilità, **non implementato in M1**) | `currentAuthority()` è già invocata a ogni refresh e a ogni lettura (§B, §R.1): è il solo punto di aggancio. Vedi §R.4. |	A0057-011	HISTORICAL	historical-only
 ADR-0057	213	mai	ModelInvocationBroker ─ MafContextProjector (protetto mai compattato) ─► [opz. MafGovernedTurnBroker → BopsContextProvider → ContextGate]	A0057-012	PENDING	C05#pending-D5
@@ -2070,10 +2070,10 @@ ADR-0057	261	required	public required int ExecutionAttempt { get; init; }	A0057-
 ADR-0057	262	required	public required KnowledgeIndexStatus Status { get; init; }	A0057-013	PENDING	C05#pending-D5
 ADR-0057	284	solo	/// Segnali del task per la selezione. M1: solo il goal. M2 aggiunge campi opzionali.	A0057-013	PENDING	C05#pending-D5
 ADR-0057	306	mai	/// null = la sessione non supporta l'indice ⇒ richieste identiche a oggi. Mai null per KnowledgeReadBridge.	A0057-013	PENDING	C05#pending-D5
-ADR-0057	319	obbligatorio	| `operation` | enum `discover` \| `load` \| `read_resource` | invariato, obbligatorio |	A0057-014	PENDING	C05#pending-D5
-ADR-0057	321	solo	| `ref` | string | `^K[1-9][0-9]{0,2}(\.R[1-9][0-9]{0,2})?$`. `load`: solo `Kn`. `read_resource`: solo `Kn.Rm`. `discover`: solo `Kn` (elenco completo delle risorse di quella skill). Mutuamente esclusivo con `skill`/`resource`. |	A0057-014	PENDING	C05#pending-D5
-ADR-0057	322	deve,solo	| `query` | string 1–128 | solo con `discover`; mutuamente esclusivo con `ref`; deve superare U1–U3 e contenere solo lettere, cifre, U+0020, `-`; altrimenti `Malformed` |	A0057-014	PENDING	C05#pending-D5
-ADR-0057	323	solo	| `page` | intero JSON 1–64 | solo con `discover`; default 1; stringa, decimale o fuori intervallo ⇒ `Malformed`; oltre l'ultima pagina ⇒ `OutOfRange` |	A0057-014	PENDING	C05#pending-D5
+ADR-0057	319	obbligatorio	| `operation` | enum `discover` \| `load` \| `read_resource` | invariato, obbligatorio |	A0057-014	CONTRACT	C05-R13
+ADR-0057	321	solo	| `ref` | string | `^K[1-9][0-9]{0,2}(\.R[1-9][0-9]{0,2})?$`. `load`: solo `Kn`. `read_resource`: solo `Kn.Rm`. `discover`: solo `Kn` (elenco completo delle risorse di quella skill). Mutuamente esclusivo con `skill`/`resource`. |	A0057-014	CONTRACT	C05-R13
+ADR-0057	322	deve,solo	| `query` | string 1–128 | solo con `discover`; mutuamente esclusivo con `ref`; deve superare U1–U3 e contenere solo lettere, cifre, U+0020, `-`; altrimenti `Malformed` |	A0057-014	CONTRACT	C05-R13
+ADR-0057	323	solo	| `page` | intero JSON 1–64 | solo con `discover`; default 1; stringa, decimale o fuori intervallo ⇒ `Malformed`; oltre l'ultima pagina ⇒ `OutOfRange` |	A0057-014	CONTRACT	C05-R13
 ADR-0057	338	mai	`"`, `\`, caratteri HTML-sensibili; **mai** `UnsafeRelaxedJsonEscaping`); proprietà in ordine fisso; `chars` dal manifest firmato	A0057-015	PENDING	C05#pending-D5
 ADR-0057	356	only	budget. Only the goal states the operator's intent. Listed: 1 of 1 authorized entries (K1); 0 not listed.	A0057-016	PENDING	C05#pending-D5
 ADR-0057	357	only	runtime.knowledge_read may be called, only if useful, with the "call" arguments of a listed ref; one call reads that item.	A0057-016	PENDING	C05#pending-D5
@@ -2082,29 +2082,29 @@ ADR-0057	433	vietato	| TM2 | Stesso: impersonazione di ruolo ("System:", token d
 ADR-0057	434	obbligatoria	| TM3 | Stesso: caratteri invisibili o bidi per nascondere testo all'operatore che revisiona il pack | iniezione non visibile in revisione | allow-list di categorie Unicode, NFC obbligatoria | — | confusabili fra script (§U.4) |	A0057-021	HISTORICAL	historical-only
 ADR-0057	437	solo	| TM6 | Ref riusato da altro task/tenant o suggerito da output di tool | leggere dati non autorizzati | risoluzione solo contro il pin della sessione dopo nuova autorizzazione (§R) | — | nessuno: lo spazio dei ref è l'insieme autorizzato |	A0057-021	HISTORICAL	historical-only
 ADR-0057	438	solo	| TM7 | Keyword stuffing nel nome/descrizione | salire nella shortlist | ranking solo dentro i grant; ordine = preferenza, non permesso | — | **[RIS]** visibilità, non autorità |	A0057-021	HISTORICAL	historical-only
-ADR-0057	443	mai	1. Il runner **non legge mai** `DataTurn.Content` per decidere alcunché: lo verifica (hash, provenienza) e lo inserisce. Arch test:	A0057-022	PENDING	C05#pending-D5
-ADR-0057	467	solo	| **Non riutilizzabile fuori contesto** | Un ref di un altro task risolve solo contro il pin *di questo* task, che è autorizzato per questo tenant; non può nominare un pack diverso. Non esiste argomento tenant/pack/versione (ADR-0055 §2.6).	A0057-024	PENDING	C05#pending-D5
-ADR-0057	468	deve,solo	| **Opaco quanto basta** | `Kn` rivela solo la posizione ordinale nel pin; non contiene id, path, tenant, hash. Non è segreto e non deve esserlo: l'enumerazione dà accesso solo all'insieme autorizzato. **[DEC]** nessun HMAC: costerebbe toke	A0057-024	PENDING	C05#pending-D5
-ADR-0057	469	solo	| **Stabile** | `refIndex` = posizione 1-based della skill nell'ordine ordinale dei nomi del pin; `Rm` = posizione della risorsa nell'ordine ordinale dei path della skill nel pin. Dipende solo dal pin ⇒ identico fra step, logical call e res	A0057-024	PENDING	C05#pending-D5
-ADR-0057	470	solo	| **Non persistito** | I ref compaiono solo nel contesto della logical call, negli eventi di audit e, come argomenti del modello, nei turni di continuazione (non persistiti, ADR-0056 §3). | `AgentRunner.cs:5426`–`:5445` |	A0057-024	PENDING	C05#pending-D5
-ADR-0057	479	solo	| Grant ritirato, chiave o publisher revocati | **non visto nello stesso attempt** | **non visto nello stesso attempt** | rifiutato (nuovo servizio con nuovi grant/trust store) | **Solo al resume** — **[BLK] B1** |	A0057-025	PENDING	C05#pending-D5
-ADR-0057	490	mai	un *authorization epoch/revision* monotono, tale che: (a) sia fornito dall'host, mai dal pack; (b) l'attempt ne catturi il valore	A0057-026	PENDING	C05#pending-D5
-ADR-0057	492	mai	soppressione/rifiuto tipizzato di una revoca; (d) non sia mai persistito nel pin né reso visibile al modello. M1 **non** lo	A0057-026	PENDING	C05#pending-D5
-ADR-0057	494	solo	a ogni lettura, senza memoizzarne l'esito (§R.3), così che l'epoch si agganci in un solo punto senza modificare indice, ref o audit.	A0057-026	PENDING	C05#pending-D5
-ADR-0057	500	solo	del ref **solo contro il pin** → lettura MAF → confronto dell'hash con il pin → limite di dimensione → frame e neutralizzazione →	A0057-027	PENDING	C05#pending-D5
-ADR-0057	501	mai	audit. Il ref non porta autorità, non è mai risolto prima dell'autorità e non è memorizzato; un ref inesistente e uno non autorizzato	A0057-027	PENDING	C05#pending-D5
-ADR-0057	502	deve	danno lo stesso codice (nessun oracolo, H.1 #2b). Un test dei task T5/T8 deve fallire se la risoluzione precede l'autorità (mutation	A0057-027	PENDING	C05#pending-D5
-ADR-0057	509	mai	(`AgentRunner.cs:755`–`:766`), quindi nessun indice viene mai costruito. `KnowledgeEvidence` è stato in memoria e riparte vuoto.	A0057-028	PENDING	C05#pending-D5
-ADR-0057	511	mai,solo	memoizzazione è solo del calcolo *selezione + render* per pin e goal (immutabili nell'attempt), mai dell'esito di autorità.	A0057-028	PENDING	C05#pending-D5
-ADR-0057	514	solo	- **Catalogo senza pack non autorizzati:** i candidati sono costruiti solo dalle skill che il source offre *e* che coincidono con il pin	A0057-028	PENDING	C05#pending-D5
+ADR-0057	443	mai	1. Il runner **non legge mai** `DataTurn.Content` per decidere alcunché: lo verifica (hash, provenienza) e lo inserisce. Arch test:	A0057-022	CONTRACT	C05-R13
+ADR-0057	467	solo	| **Non riutilizzabile fuori contesto** | Un ref di un altro task risolve solo contro il pin *di questo* task, che è autorizzato per questo tenant; non può nominare un pack diverso. Non esiste argomento tenant/pack/versione (ADR-0055 §2.6).	A0057-024	CONTRACT	C05-R13
+ADR-0057	468	deve,solo	| **Opaco quanto basta** | `Kn` rivela solo la posizione ordinale nel pin; non contiene id, path, tenant, hash. Non è segreto e non deve esserlo: l'enumerazione dà accesso solo all'insieme autorizzato. **[DEC]** nessun HMAC: costerebbe toke	A0057-024	CONTRACT	C05-R13
+ADR-0057	469	solo	| **Stabile** | `refIndex` = posizione 1-based della skill nell'ordine ordinale dei nomi del pin; `Rm` = posizione della risorsa nell'ordine ordinale dei path della skill nel pin. Dipende solo dal pin ⇒ identico fra step, logical call e res	A0057-024	CONTRACT	C05-R13
+ADR-0057	470	solo	| **Non persistito** | I ref compaiono solo nel contesto della logical call, negli eventi di audit e, come argomenti del modello, nei turni di continuazione (non persistiti, ADR-0056 §3). | `AgentRunner.cs:5426`–`:5445` |	A0057-024	CONTRACT	C05-R13
+ADR-0057	479	solo	| Grant ritirato, chiave o publisher revocati | **non visto nello stesso attempt** | **non visto nello stesso attempt** | rifiutato (nuovo servizio con nuovi grant/trust store) | **Solo al resume** — **[BLK] B1** |	A0057-025	CONTRACT	C05-R13
+ADR-0057	490	mai	un *authorization epoch/revision* monotono, tale che: (a) sia fornito dall'host, mai dal pack; (b) l'attempt ne catturi il valore	A0057-026	CONTRACT	C05-R13
+ADR-0057	492	mai	soppressione/rifiuto tipizzato di una revoca; (d) non sia mai persistito nel pin né reso visibile al modello. M1 **non** lo	A0057-026	CONTRACT	C05-R13
+ADR-0057	494	solo	a ogni lettura, senza memoizzarne l'esito (§R.3), così che l'epoch si agganci in un solo punto senza modificare indice, ref o audit.	A0057-026	CONTRACT	C05-R13
+ADR-0057	500	solo	del ref **solo contro il pin** → lettura MAF → confronto dell'hash con il pin → limite di dimensione → frame e neutralizzazione →	A0057-027	CONTRACT	C05-R13
+ADR-0057	501	mai	audit. Il ref non porta autorità, non è mai risolto prima dell'autorità e non è memorizzato; un ref inesistente e uno non autorizzato	A0057-027	CONTRACT	C05-R13
+ADR-0057	502	deve	danno lo stesso codice (nessun oracolo, H.1 #2b). Un test dei task T5/T8 deve fallire se la risoluzione precede l'autorità (mutation	A0057-027	CONTRACT	C05-R13
+ADR-0057	509	mai	(`AgentRunner.cs:755`–`:766`), quindi nessun indice viene mai costruito. `KnowledgeEvidence` è stato in memoria e riparte vuoto.	A0057-028	CONTRACT	C05-R13
+ADR-0057	511	mai,solo	memoizzazione è solo del calcolo *selezione + render* per pin e goal (immutabili nell'attempt), mai dell'esito di autorità.	A0057-028	CONTRACT	C05-R13
+ADR-0057	514	solo	- **Catalogo senza pack non autorizzati:** i candidati sono costruiti solo dalle skill che il source offre *e* che coincidono con il pin	A0057-028	CONTRACT	C05-R13
 ADR-0057	521	solo	1. **Shortlist** (indice): fino a `K = 8` voci per punteggio M1; le altre contate in `omitted` e annunciate dalla parte C con il solo	A0057-029	PENDING	C05#pending-D5
 ADR-0057	531	solo	- `query`: stesso punteggio del §S.2 calcolato sulla query, solo `score > 0`, ordinate come §S.3, a pagine;	A0057-029	PENDING	C05#pending-D5
-ADR-0057	545	mai	### U.1 Vincoli di ammissione (deterministici, rifiuto e mai riscrittura)	A0057-030	PENDING	C05#pending-D5
-ADR-0057	555	solo	| U3 | Allow-list di categorie (`Rune.GetUnicodeCategory`, tabelle interne .NET, non ICU) | ammesse: `Lu Ll Lt Lm Lo Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So` e **solo U+0020** fra gli `Zs`. Rifiutate tutte le altre: `Cc` (incl. TAB, CR, L	A0057-030	PENDING	C05#pending-D5
-ADR-0057	556	vietato	| U4 | ASCII vietato | `<` `>` `[` `]` `{` `}` `` ` `` `\|` `\` `"` |	A0057-030	PENDING	C05#pending-D5
-ADR-0057	558	vietato	| U6 | Contenuto vietato (sulla forma piegata NFKC + `ToLowerInvariant`) | sottostringhe `runtime.`, `load_skill`, `read_skill_resource`, `run_skill_script`, `knowledge-index`, `skill-data`, `bops_tool_output`, `im_start`, `im_end`, `endoft	A0057-030	PENDING	C05#pending-D5
-ADR-0057	560	mai,solo	| U8 | Path di risorsa | invariato `PackPathPolicy` in ammissione: segmenti `^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$` (niente `..`, niente segmenti vuoti), ≤ 128, nomi di dispositivo riservati, link e reparse point rifiutati. Nel D è sol	A0057-030	PENDING	C05#pending-D5
-ADR-0057	562	mai	| U10 | Altri campi del frontmatter | invariati (`FrontmatterWithinBounds`, `:744`); **non** sono mai renderizzati in D, C o `discover` |	A0057-030	PENDING	C05#pending-D5
+ADR-0057	545	mai	### U.1 Vincoli di ammissione (deterministici, rifiuto e mai riscrittura)	A0057-030	CONTRACT	C05-R13
+ADR-0057	555	solo	| U3 | Allow-list di categorie (`Rune.GetUnicodeCategory`, tabelle interne .NET, non ICU) | ammesse: `Lu Ll Lt Lm Lo Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So` e **solo U+0020** fra gli `Zs`. Rifiutate tutte le altre: `Cc` (incl. TAB, CR, L	A0057-030	CONTRACT	C05-R13
+ADR-0057	556	vietato	| U4 | ASCII vietato | `<` `>` `[` `]` `{` `}` `` ` `` `\|` `\` `"` |	A0057-030	CONTRACT	C05-R13
+ADR-0057	558	vietato	| U6 | Contenuto vietato (sulla forma piegata NFKC + `ToLowerInvariant`) | sottostringhe `runtime.`, `load_skill`, `read_skill_resource`, `run_skill_script`, `knowledge-index`, `skill-data`, `bops_tool_output`, `im_start`, `im_end`, `endoft	A0057-030	CONTRACT	C05-R13
+ADR-0057	560	mai,solo	| U8 | Path di risorsa | invariato `PackPathPolicy` in ammissione: segmenti `^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$` (niente `..`, niente segmenti vuoti), ≤ 128, nomi di dispositivo riservati, link e reparse point rifiutati. Nel D è sol	A0057-030	CONTRACT	C05-R13
+ADR-0057	562	mai	| U10 | Altri campi del frontmatter | invariati (`FrontmatterWithinBounds`, `:744`); **non** sono mai renderizzati in D, C o `discover` |	A0057-030	CONTRACT	C05-R13
 ADR-0057	597	solo	- **Configurazione.** Default del repository invariato (`Directory.Build.props`: invariant). `InvariantGlobalization=false` solo negli host che eseguono	A0057-034	TECH-REF	docs/knowledge/local-agent-pilot.md
 ADR-0057	606	solo	- **Hash.** Il marker `sha256=` di §C.4 è il prefisso di 12 hex dello SHA-256 del **solo corpo** (righe di voce, senza marker, chiusura e trailer);	A0057-034	TECH-REF	docs/knowledge/local-agent-pilot.md
 ADR-0057	610	solo	nessun testo del publisher è un suo input. Il testo del publisher esiste solo nella Parte D, come dato quotato.	A0057-034	TECH-REF	docs/knowledge/local-agent-pilot.md
@@ -2140,7 +2140,7 @@ ADR-0057	887	solo	Solo `bOps.AgentFramework.Tests`, `bOps.Knowledge.Tests`, `bOp
 ADR-0057	891	deve	### H.3 Mutation check (ognuno deve far fallire almeno un test)	A0057-043	HISTORICAL	historical-only
 ADR-0057	895	solo	dall'autorità; 10 marker non neutralizzati (anche solo in maiuscolo); 11 un'esclusione di U3 rimossa (per categoria); 12 U2 rimosso;	A0057-043	HISTORICAL	historical-only
 ADR-0057	925	solo	> **Refined by [ADR-0058](0058-local-agent-knowledge-pilot.md) (2026-10-17, Proposed, D-050):** per un solo host, la CLI, per un goal e per `resume`, per il Local Agent,	A0057-044	HISTORICAL	historical-only
-ADR-0057	939	obbligatoria	| **B2** | Accettazione di due messaggi `user` consecutivi (D, goal) da server OpenAI-compatible con template ad alternanza stretta: non dimostrabile nel repository. | La compatibilità **non è ancora dimostrata**. **Blocca il live (M3)**, n	A0057-045	PENDING	C05#pending-D5
+ADR-0057	939	obbligatoria	| **B2** | Accettazione di due messaggi `user` consecutivi (D, goal) da server OpenAI-compatible con template ad alternanza stretta: non dimostrabile nel repository. | La compatibilità **non è ancora dimostrata**. **Blocca il live (M3)**, n	A0057-045	CONTRACT	C05-R13
 ADR-0058	4	only	propose and implement a *circumscribed revision of D-049*, for an opt-in Knowledge integration in the local CLI only. The operator's	A0058-001	PENDING	C05#pending-D5
 ADR-0058	18	never	The earlier decisions never *forbade* composing knowledge; they withheld the authorisation, and an architecture test turned the	A0058-002	HISTORICAL	historical-only
 ADR-0058	27	only	| Architecture tests | `KnowledgeReadRuntimeBoundaryTests` (the host contract is used by the runner and the adapter only; nothing builds `KnowledgeTaskHost`), `KnowledgePackBoundaryTests` (no configuration key can enable knowledge). |	A0058-002	HISTORICAL	historical-only
@@ -2584,9 +2584,9 @@ agentic/06-decisions.md	1159	only	provider/model; the operator may explicitly co
 agentic/06-decisions.md	1160	never	configuration is an explicit data-egress choice and is never selected automatically by cost or speed.	06-D-048	CONTRACT	C01-R01,C01-R02,C01-R05,C01-R06,C01-R08,C04-R16
 agentic/06-decisions.md	1163	only	framework. Raw persisted evidence remains authoritative. MAF summaries are derived context only and cannot create	06-D-048	CONTRACT	C01-R01,C01-R02,C01-R05,C01-R06,C01-R08,C04-R16
 agentic/06-decisions.md	1170	only	only by increasing EvidenceRead limits.	06-D-048	CONTRACT	C01-R01,C01-R02,C01-R05,C01-R06,C01-R08,C04-R16
-agentic/06-decisions.md	1183	only	and final step phases only; planning and replanning stay byte-identical. The S5 amendment in `agentic/03-security-rules.md`	06-D-049	PENDING	C05#pending-D5
-agentic/06-decisions.md	1185	only	Knowledge Discovery M1 (T1–T8) only.	06-D-049	PENDING	C05#pending-D5
-agentic/06-decisions.md	1194	must	- **B2** — compatibility of consecutive `User` messages must be verified on the real server and template before any live	06-D-049	PENDING	C05#pending-D5
+agentic/06-decisions.md	1183	only	and final step phases only; planning and replanning stay byte-identical. The S5 amendment in `agentic/03-security-rules.md`	06-D-049	CONTRACT	C05-R13
+agentic/06-decisions.md	1185	only	Knowledge Discovery M1 (T1–T8) only.	06-D-049	CONTRACT	C05-R13
+agentic/06-decisions.md	1194	must	- **B2** — compatibility of consecutive `User` messages must be verified on the real server and template before any live	06-D-049	CONTRACT	C05-R13
 agentic/00-project-spec.md	15	never	tool, and there never will be — see [`03-security-rules.md`](03-security-rules.md).	00-hdr11	CONTRACT	C02-R19,C01-R01
 agentic/00-project-spec.md	22	must not	and must not be hidden behind framework behavior (ADR-0052, D-048).	00-hdr11	CONTRACT	C02-R19,C01-R01
 agentic/00-project-spec.md	26	never	1. **The LLM never touches the machine.** It returns a structured intent; the runtime decides	00-P1-P7	CONTRACT	C02-R05,C02-R09,C02-R14,C02-R01,C05-R01,C02-R03,C01-R01

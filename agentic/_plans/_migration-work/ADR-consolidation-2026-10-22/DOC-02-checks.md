@@ -12,6 +12,8 @@ Scripts: the mechanical checks were run by session-local scripts kept in the ses
 | CP-02d | PASS |
 | CP-02e | PASS |
 
+The figures in the sections below are those of the original DOC-02 run. The section **Re-run after the GATE-02 corrections** at the end supersedes them (105 rules, 640/176/40/72 rows) and records the method of the re-run.
+
 
 ## CP-02a — Full reading (55/55) and section coverage
 
@@ -133,3 +135,30 @@ Each invariant is checked against the text of the one rule that carries it (not 
 - `python scripts/governance/validate_register.py` → exit 0: `register: 121 tasks, 0 error(s)`
 
 **Result: PASS**
+
+## Re-run after the GATE-02 corrections (CP-02a…CP-02e)
+
+Corrections: `DOC-02-GATE-02-corrections.md`. The ADRs, `01`, `03`, `06`, code, tests, CI and scripts are unchanged (`git diff HEAD` empty for them). The original read-ledger (55/55) is unchanged and was not redone. Method: the same checks as above, re-run by a session-local script (scratchpad, not added to `scripts/`) on the corrected evidence only; no process was redone from scratch.
+
+| Check | Result | Method and numbers on the corrected tree |
+|---|---|---|
+| CP-02a | PASS | Ledger: 55 rows, SHA-256 of all 55 ADRs equal to the files on disk; 401 headings of level 1–2 outside code fences, 0 outside a matrix row; 818 ADR rows, 55 ADRs with rows. |
+| CP-02b | PASS | Extraction: 2619 statements, 0 orphans, 0 whose disposition/destination differs from the matrix row (30 updated: ADR-0057 rows moved to C05-R13, ADR-0048 §10 to HISTORICAL); extraction by disposition {'CONTRACT': 1984, 'HISTORICAL': 389, 'PENDING': 179, 'TECH-REF': 67}; matrix 928 rows {'CONTRACT': 640, 'HISTORICAL': 176, 'TECH-REF': 40, 'PENDING': 72}; rows with empty disposition or destination: 0; destinations that do not exist (rule id, file, pending pattern, historical-only): 0. Semantic read of the moved rows against C05-R13 point by point (§D.4 five invariants, §R.1/§R.3/§R.5, §R.2/B1/§R.4, D-049 restrictions, §D.1/§D.5, §C.3, §U.1–§U.2, §U.4, §L) and of the ADR-0042 PRE-5 check parsing against `EvidenceGrounding.ParseVerdict` for C04-R14. |
+| CP-02c | PASS | Coverage file: 150 rows (149 required + `P1-P7`), 0 duplicated, 0 without a destination; ADR-0057, ADR-0048 and D-049 rows recomputed from the matrix. |
+| CP-02d | PASS | Dense coverage: 465 heading rows (the 12 dense ADRs), 0 inconsistent with the matrix (19 rows of ADR-0057 updated); 0 headings without disposition. |
+| CP-02e | PASS | (1) every one of the 105 rules has an Accepted/Operator decision status; CONTRACT rows from the seven Proposed ADRs: none; CONTRACT rows from ADR-0057: 16 (A0057-040 → C02-R12; 15 → C05-R13, M1 development scope only); the 72 PENDING rows all have a `C0n#pending-Dn` destination. (2) Implementation status {'Implemented': 99, 'Partially implemented': 3, 'Not implemented / target in the product composition': 1, 'Not verified': 2}; 218 `file:line` anchors, each file exists and the line is within it; Implemented/Partially rules without anchors: none. (3) S1–S11 map unchanged (S7 → C02-R10, whose text now carries the manifest timeout). (4) no rule without a source row; C05-R13 lists its sources. |
+
+Additional checks after the corrections:
+
+| Contract | Rules | IDs sequential | Header count equals rules | Technical references exist |
+|---|---:|---|---|---|
+| 01 | 21 | yes | yes | yes |
+| 02 | 29 | yes | yes | yes |
+| 03 | 24 | yes | yes | yes |
+| 04 | 18 | yes | yes | yes |
+| 05 | 13 | yes | yes | yes |
+
+- Targeted checks: C04-R14 states the three cases (empty originally, valid citation, non-empty without a valid citation = check unavailable) and that check unavailable is never a positive verification; C02-R10 states manifest timeout, host default and the `Agent:MaxToolTimeout` ceiling; C05-R13 states B1, B2, the enumeration-oracle guarantee, `ref`/`query`/`page`, `knowledgeRefs` as a non-argument, the production-host, live-benchmark, goal-merge and commercial-release restrictions; no document outside ADR history keeps the "Timeout conflict (recorded)" section or says the conflict is open.
+- Readability (P5, not blocking): nine rule paragraphs above 4,000 characters (C02-R20, R21, R22, R25, R27, R28, C04-R14, C05-R04, C05-R07); C05-R13 has none. Recorded as a residual task in the plan §7.5.
+- `python scripts/governance/validate_register.py` → `register: 121 tasks, 0 error(s)`.
+- Changed paths: only the files listed in `DOC-02-GATE-02-corrections.md`; none outside the permitted set.
