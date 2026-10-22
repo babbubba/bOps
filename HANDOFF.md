@@ -27,9 +27,9 @@ Task state is never copied here; ask the register (`--summary`).
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Current task of this branch: **BOPS-0121 DOC-CONSOL-01** (Issue #125, authorized at GATE-01 on 2026-10-22) — documentation-only consolidation of the ADRs,
-  `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01 and DOC-02 done: the five candidate contracts are in `docs/architecture/current/` and the evidence in
-  `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*` (start with `DOC-02-GATE-02-report.md`);
-  **next step: GATE-02** (operator approval, plan §7.3). GATE-02 corrections P1–P5 applied after the independent review (`DOC-02-GATE-02-corrections.md`; one corrective commit). DOC-03 and DOC-04 are not started. No ADR is archived or removed before GATE-02.
+  `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01, DOC-02 and **GATE-02 (approved by the operator on 2026-10-22, decisions G2-01..G2-05 in plan §7.3, verified commit `207ad7d`)** are done: the five contracts (105 binding rules, still `Candidate`) are in `docs/architecture/current/` and the evidence in
+  `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*` (see `DOC-02-GATE-02-report.md`, `DOC-02-GATE-02-corrections.md`).
+  **Next step: DOC-03** (plan §7.4: ZIP of exactly 57 originals + external manifests, CP-03a, then ADR removal, compatibility indexes, promotion to `Current`, bootstrap/router, CP-03b), to run in a **new session with its own operator authorization**. DOC-04 follows (includes the P5 readability pass before the final PR). Not started: DOC-03, DOC-04. Still open: ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5), CI of the PR head, operator approval of the delivery PR. No PR yet; no merge. No ADR may be archived or removed before CP-03a.
 - BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
   [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
@@ -75,8 +75,9 @@ Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, acc
 
 ## Resume instructions for the next session
 
-1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do. On this branch: BOPS-0121,
-   execute DOC-02 exactly as the plan §7 says.
+1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do. On this branch: BOPS-0121 —
+   DOC-02 and GATE-02 are closed, do not redo them. Verify branch/HEAD/working tree (fast-forward only), set the local Git identity, then execute **DOC-03** exactly as plan §0 and §7.4 say,
+   only if the operator authorizes it explicitly in the starting prompt. The plan alone, plus the documents it lists in §0 step 4, is enough to resume.
 2. The id mapping is frozen: never renumber. Check the CI of `main` @ `9aa2a70`; the BOPS-0119 PR keeps the post-merge CI gate (it changes validators and CI).
 3. Remote Project #6 is behind the register for BOPS-0119 (draft still Backlog): run `sync_remote.py` (dry-run), then `--apply` only with the operator's approval. If GitHub answers with a secondary rate limit, wait; never switch tokens.
 4. BOPS-0118 closes only with the operator's approval, recorded in the BOPS-0119 PR (no bookkeeping-only PR). No other task is authorized; never start BOPS-0111 without D10.

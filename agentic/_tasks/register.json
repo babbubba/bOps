@@ -5745,14 +5745,14 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "GATE-02: operator approval of the DOC-02 contracts, coverage matrix and read-ledger before any ADR is archived or removed.",
      "DOC-04 static acceptance and green CI of the docs-only PR head (branch up to date with main).",
      "Operator approval of the delivery PR (no automatic merge)."
     ]
    },
    "evidence": [
     "DOC-01 read-only inventory and report committed on the branch as 9137043 (288 of 288 paths under agentic/ and docs/ inventoried; 46 of 55 ADRs not yet read in full)",
-    "GATE-01 approved by the operator on 2026-10-22 (decisions G1-01..G1-15, recorded in the plan)"
+    "GATE-01 approved by the operator on 2026-10-22 (decisions G1-01..G1-15, recorded in the plan)",
+    "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
