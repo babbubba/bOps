@@ -5741,16 +5741,19 @@
     "9137043dfc688313a88cc458f87b8440950e3b96",
     "f5a390980f56334c7f2407c8b2bc84ac46f53336",
     "2cb98f6fb52864bcc43e47b19ab1aca0ebd19daf",
-    "05e0678dc70e2e2acfc4dd5b7c66aa0499c34ac8"
+    "05e0678dc70e2e2acfc4dd5b7c66aa0499c34ac8",
+      "7665b3083de63049f3011f95cef984f49da9c794"
    ],
    "validation": {
-    "achieved": [],
+    "achieved": [
+        "CI_VERIFIED"
+      ],
     "required": [
      "CI_VERIFIED",
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "CI of the head of draft PR #126 (docs-only; branch up to date with main): not yet verified.",
+     "Recheck of the PR checks on the final head after the bookkeeping commit that records CI_VERIFIED (the register does not record its own head: read the PR checks; this is not a new CI_VERIFIED claim).",
      "Operator review and approval of draft PR #126 (no automatic merge; PR is a draft).",
      "Issue #125 / Project #6 synchronization (see sync_pending)."
     ]
@@ -5761,8 +5764,11 @@
     "DOC-04 static acceptance executed 2026-10-22: verdict PASS (CP-03a, CP-03b, CP-04, P5 equivalence), report agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-04-static-acceptance.md (commit 2cb98f6)",
     "Final pre-PR verification 2026-10-22: CP-03a (12/12) and CP-03b re-run from the recorded reproduction instructions, both PASS; validate_register.py 121 tasks, 0 errors; no executable code, test, script, CI or production configuration change vs main e0e9de7; five Current contracts, 105 binding rules; seven Proposed ADRs unchanged; D1/D4/D5 PENDING",
     "PROCESS.md normative-change sentence aligned with current architecture contracts under explicit operator authorization, commit 05e0678",
-    "Draft PR #126 (base main, head docs/adr-consolidation-2026-10-22) opened 2026-10-22 with Refs #125; no auto-merge; no CI result verified yet",
-    "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
+    "Draft PR #126 (base main, head docs/adr-consolidation-2026-10-22) opened 2026-10-22 with Refs #125; no auto-merge; CI verified on 7665b30 (run 39851813804)",
+    "CI_VERIFIED (docs-only, PROCESS.md section 4 'CI by category'): workflow CI run 39851813804 (run number 306, attempt 1, event pull_request) on PR head 7665b3083de63049f3011f95cef984f49da9c794, conclusion success, re-read from GitHub 2026-10-22; jobs build-and-test (ubuntu-latest) success, build-and-test (windows-latest) success, dependency-review success, quality-aggregate success; branch up to date with main e0e9de7 (unchanged), no incompatible change since. The operator's merge decision (OPERATOR_GATE) is NOT achieved",
+        "Accepted exception, limited to PR #126: commits 05e0678 and 7665b30 carry a 'Co-Authored-By: Claude Sonnet 5.5' trailer contrary to the commit instructions (author and committer are Fabio Cavallari); published history is not rewritten; the exception does not apply to future commits",
+        "Formatting exception: git diff --check origin/main...HEAD reports 910 trailing-whitespace lines (not PASS): 893 are empty trailing TSV fields (kept to preserve column counts), 6 are Markdown hard breaks (two spaces), 11 are single trailing spaces in migration-work reports (cosmetic, no functional effect); nothing normalized",
+        "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
