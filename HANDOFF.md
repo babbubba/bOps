@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-21 · `main` @ `f1cd5e7` (squash merge of PR [#121](https://github.com/babbubba/bOps/pull/121), BOPS-0119) ·
-working branch `feat/bops-0120-f26-spa-hosting` (BOPS-0120, F-26 production SPA hosting).
+Last updated: 2026-10-22 · `main` @ `e0e9de7` (squash merge of PR [#123](https://github.com/babbubba/bOps/pull/123), BOPS-0120) ·
+working branch `docs/adr-consolidation-2026-10-22` (BOPS-0121, DOC-CONSOL-01 docs-only consolidation).
 
 <!-- register-sync:begin -->
-Current task: BOPS-0120 F-26 (VALIDATION)
-Branch: feat/bops-0120-f26-spa-hosting
+Current task: BOPS-0121 DOC-CONSOL-01 (IN_PROGRESS)
+Branch: docs/adr-consolidation-2026-10-22
 Ready: BOPS-0111
-Next number: BOPS-0121
+Next number: BOPS-0122
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -16,7 +16,7 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Where things are
 
-- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 119 tasks, BOPS-0001..BOPS-0119.
+- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 121 tasks, BOPS-0001..BOPS-0121.
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md).
 - Reconciliation of the real state (read-only audit, 2026-10-21): [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
 - Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>. Configured: 7 Status options, 5 custom fields (Priority, Area,
@@ -26,7 +26,10 @@ Task state is never copied here; ask the register (`--summary`).
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Active implementation task: **BOPS-0120 F-26** (Issue #122) — the published `bOps.Api` serves the compiled Angular SPA; packet
+- Current task of this branch: **BOPS-0121 DOC-CONSOL-01** (Issue #125, authorized at GATE-01 on 2026-10-22) — documentation-only consolidation of the ADRs,
+  `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01 and GATE-01 done;
+  **next step: DOC-02** in one session, per the plan §7. No ADR is archived or removed before GATE-02.
+- BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
   [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
 - In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
   [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gate: CI of the PR head and merge commit. Read-only run on Project #6 done: 18 of 19 items in sync, 2 pending updates for BOPS-0119, 0 conflicts (a secondary rate limit refused GraphQL earlier; the tool classified and aborted, then succeeded).
@@ -51,7 +54,9 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Blockers
 
-- None for governance. Project #6: the five workflows that could move task status (`Item closed`, `Pull request merged`, `Auto-close issue`, `Pull request linked to issue`,
+- BOPS-0121 remote sync owed: Issue #125 exists but is not yet a Project #6 item (no Project access from the session that created it); see `sync_pending`
+  in the register. Run `sync_remote.py` or add it in the web UI, then record `issue`/`project_item`.
+- No other governance blocker. Project #6: the five workflows that could move task status (`Item closed`, `Pull request merged`, `Auto-close issue`, `Pull request linked to issue`,
   `Auto-add sub-issues to project`) are disabled (verified via API); only `Item added to project` is on. Remote writes beyond configuration (Issues, items) are not authorized yet.
 - BOPS-0095 LIVE-01 (decision D3), BOPS-0074/0075 ARCH-01/ARCH-03 (decision D1).
 
@@ -69,7 +74,8 @@ Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, acc
 
 ## Resume instructions for the next session
 
-1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do.
+1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do. On this branch: BOPS-0121,
+   execute DOC-02 exactly as the plan §7 says.
 2. The id mapping is frozen: never renumber. Check the CI of `main` @ `9aa2a70`; the BOPS-0119 PR keeps the post-merge CI gate (it changes validators and CI).
 3. Remote Project #6 is behind the register for BOPS-0119 (draft still Backlog): run `sync_remote.py` (dry-run), then `--apply` only with the operator's approval. If GitHub answers with a secondary rate limit, wait; never switch tokens.
 4. BOPS-0118 closes only with the operator's approval, recorded in the BOPS-0119 PR (no bookkeeping-only PR). No other task is authorized; never start BOPS-0111 without D10.

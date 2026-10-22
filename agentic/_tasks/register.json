@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 121,
+  "next": 122,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -5709,6 +5709,63 @@
     "status": "Validation",
     "verified_at": "2026-10-21T20:54:10+0200"
    }
+  },
+  {
+   "id": "BOPS-0121",
+   "legacy_id": "DOC-CONSOL-01",
+   "title": "DOC-CONSOL-01 ADR and decision-log consolidation (docs-only)",
+   "created": {
+    "at": "2026-10-22",
+    "basis": "document-date",
+    "source": "operator decision GATE-01 2026-10-22",
+    "order_certainty": "conventional"
+   },
+   "milestone": "GOVERNANCE",
+   "area": "Documentation",
+   "status": "IN_PROGRESS",
+   "priority": null,
+   "effort": null,
+   "authorized": true,
+   "depends_on": [],
+   "packet": null,
+   "spec": "agentic/_plans/ADR-consolidation-2026-10-22.md",
+   "companion_docs": [
+    "agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-01-report.md"
+   ],
+   "prs": [],
+   "commits": [
+    "f5ae9749276bb183300f19398dd205c64decee50",
+    "6f6c870dab406f0dedc1f679e5bd4cf339bc7562",
+    "9137043dfc688313a88cc458f87b8440950e3b96"
+   ],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "GATE-02: operator approval of the DOC-02 contracts, coverage matrix and read-ledger before any ADR is archived or removed.",
+     "DOC-04 static acceptance and green CI of the docs-only PR head (branch up to date with main).",
+     "Operator approval of the delivery PR (no automatic merge)."
+    ]
+   },
+   "evidence": [
+    "DOC-01 read-only inventory and report committed on the branch as 9137043 (288 of 288 paths under agentic/ and docs/ inventoried; 46 of 55 ADRs not yet read in full)",
+    "GATE-01 approved by the operator on 2026-10-22 (decisions G1-01..G1-15, recorded in the plan)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Docs-only migration on branch docs/adr-consolidation-2026-10-22; priority not set by the operator. Public Issue #125 created 2026-10-22; it is not yet recorded in issue/project_item because the Project #6 item could not be created from this session (see sync_pending).",
+   "issue": null,
+   "project_item": null,
+   "branch": "docs/adr-consolidation-2026-10-22",
+   "remote_kind": null,
+   "sync_pending": [
+    "Add Issue #125 to Project #6 and read back the item id; then set issue=125, project_item and remote_kind=issue in this entry",
+    "Set Project #6 fields for Issue #125: Status In Progress, Area Documentation, bOps Milestone GOVERNANCE, Evidence Level None; Priority stays empty until the operator sets one",
+    "Record the verified baseline in sync.status/verified_at after the read-back"
+   ]
   }
  ],
  "known_divergences": [
