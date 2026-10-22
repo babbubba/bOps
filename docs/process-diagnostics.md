@@ -5,7 +5,7 @@ senior operator actually asks about a misbehaving process: who started it and as
 worse, what it is part of, and what it loaded.
 
 It does this without adding a `process.start`, a shell, or any way to read a process's environment
-variables. Those are permanent non-goals, not gaps — see [ADR-0034](architecture/adr/0034-advanced-process-diagnostics.md)
+variables. Those are permanent non-goals, not gaps — see [C02-R19 (was ADR-0034)](architecture/current/02-tools-safety-authority.md#c02-r19--no-generic-execution-tool-fixed-process-invocations)
 and rule S1 in `agentic/03-security-rules.md`.
 
 All four tools are `Read` risk and run automatically under the shipped policy. All four behave identically

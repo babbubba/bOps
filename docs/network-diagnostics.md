@@ -2,7 +2,7 @@
 
 V1.3-D adds senior network-troubleshooting evidence: which process owns a socket, the full routing and
 neighbor tables, interface throughput as live rates, a deliberate DNS query, a hop-by-hop path trace and
-a clock-offset probe. See [ADR-0035](architecture/adr/0035-sockets-routes-and-network-diagnostics.md)
+a clock-offset probe. See [C02-R20 (was ADR-0035)](architecture/current/02-tools-safety-authority.md#c02-r20--network-process-and-dump-analysis-tool-boundaries)
 for the full design and rationale.
 
 This is additive. The existing `network.route` (default gateway and directly connected subnets),

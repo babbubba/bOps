@@ -21,8 +21,8 @@ are fixed and direct; caller-controlled executables, arguments, shells and raw e
 
 ## `system.crashes` (schema 2)
 
-Design: [ADR-0032 HARDEN-7 amendment](architecture/adr/0032-bounded-cross-platform-system-events.md) §4 and
-[ADR-0041](architecture/adr/0041-typed-cross-platform-stability-evidence.md) §6–§7.
+Design: [C04-R06 (was ADR-0032 HARDEN-7 amendment)](architecture/current/04-evidence-and-diagnosis.md#c04-r06--typed-results-completeness-and-failure-kinds) §4 and
+[C04-R04 (was ADR-0041)](architecture/current/04-evidence-and-diagnosis.md#c04-r04--evidence-time-semantics) §6–§7.
 
 | Argument | Meaning |
 |---|---|

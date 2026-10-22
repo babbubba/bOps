@@ -3,7 +3,7 @@
 bOps ships as **one ASP.NET Core process** that serves the web UI and the API on the same endpoint. You need neither Node.js,
 the Angular CLI, `npm start`, a development proxy, IIS, Nginx nor Docker to run it; a reverse proxy is only needed when you want
 HTTPS for other machines. (Task BOPS-0120, finding F-26; the session design is
-[ADR-0043](architecture/adr/0043-browser-web-session.md).)
+[C05-R04 (was ADR-0043)](architecture/current/05-interfaces-knowledge-and-hosts.md#c05-r04--browser-session-trust-boundary-token-store-and-binding).)
 
 ```text
 browser ──► http(s)://host ──► bOps.Api ─┬─ /            the Angular app (wwwroot-ui/, static files + index.html for client routes)
@@ -154,7 +154,7 @@ the task's restart settings apply). A native Windows service wrapper (for exampl
 Third-party wrappers (NSSM, WinSW) can host the same executable with the same working directory and environment, but are not tested here.
 
 After a restart nothing needs to be redone: state is on disk, the policy file is read at start (restart after changing it), and
-unfinished tasks follow the normal resume rules ([ADR-0017](architecture/adr/0017-persistent-resumable-tasks.md)).
+unfinished tasks follow the normal resume rules ([C03-R02 (was ADR-0017)](architecture/current/03-task-state-resume-mutations.md#c03-r02--task-persistence)).
 
 The service account decides what bOps's tools can do (bOps does not elevate); `policy.yaml` decides what needs approval. See the
 comments in `bops.service`.

@@ -3,31 +3,19 @@
 An agent runtime that operates Windows and Linux machines through declarative tools, policies,
 planning and post-action verification. **The LLM proposes; the runtime decides and executes.**
 
-## Read these before writing code
+## Start here
 
-The binding rules live in [`agentic/`](agentic/). They are not suggestions.
+Read [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md). It is the single bootstrap: it defines the precedence of sources, how to find
+your current task, which of the five architecture contracts in [`docs/architecture/current/`](docs/architecture/current/) to read for it, and when to stop.
+This file is only a router and adds no normative layer; `AGENTS.md` routes to the same place.
 
-| | |
-|---|---|
-| [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md) | Stable bootstrap and required read order |
-| [`agentic/00-project-spec.md`](agentic/00-project-spec.md) | What bOps is, current roadmap version, what is out of scope |
-| [`agentic/01-architecture-rules.md`](agentic/01-architecture-rules.md) | Structural invariants and the authoritative contract |
-| [`agentic/03-security-rules.md`](agentic/03-security-rules.md) | Non-negotiable runtime safety behaviour |
-| [`agentic/02-coding-standards.md`](agentic/02-coding-standards.md) | C# rules, error model, forbidden patterns |
-| [`agentic/04-testing-rules.md`](agentic/04-testing-rules.md) | TDD on the core, real targets for packages |
-| [`agentic/05-workflow.md`](agentic/05-workflow.md) | Commits, ADRs, definition of done |
-| [`agentic/06-decisions.md`](agentic/06-decisions.md) | Settled questions — check before proposing alternatives |
-| [`agentic/07-plan-corrections.md`](agentic/07-plan-corrections.md) | Historical-plan corrections retained for provenance |
-| [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md) | Single active roadmap, milestone gates and task routing |
-| [`agentic/_tasks/register.json`](agentic/_tasks/register.json) | **Authoritative task state** (`BOPS-NNNN` ids, status, gates, links). Rules: [`agentic/_tasks/PROCESS.md`](agentic/_tasks/PROCESS.md) |
-| [`HANDOFF.md`](HANDOFF.md) | Current session state, ≤ ~100 lines; history in `docs/handoff-archive/` |
-| [`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`](agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md) | Active V1.3.x hardening train: findings, order, gates; packets in `agentic/_tasks/2026-09-25-v1.3x-harden-NN-*.md`, one at a time |
-
-Everything under `agentic/obsolete/` is a historical archive, not a specification. Coding agents
-must ignore it unless an active task explicitly requests historical research. Never implement from
-an archived plan, specification or task.
+Authoritative task state is [`agentic/_tasks/register.json`](agentic/_tasks/register.json) (rules: [`agentic/_tasks/PROCESS.md`](agentic/_tasks/PROCESS.md));
+the current session state is [`HANDOFF.md`](HANDOFF.md). Everything under `agentic/obsolete/` is history, not a specification: ignore it unless an active task
+explicitly requests historical research, and never implement from an archived plan, specification or task.
 
 ## The rules most often broken
+
+Short reminders; the binding text is in [Contract 02](docs/architecture/current/02-tools-safety-authority.md) and the other contracts.
 
 1. **The core names no package, tool or provider.** No `"docker.restart"`, no `/proc`, no
    `"OpenRouter"` anywhere in `bOps.Runtime`, `bOps.Policy`, `bOps.Memory` or `bOps.Audit`.
@@ -60,12 +48,12 @@ an archived plan, specification or task.
 
 ## Before touching a component
 
-1. Run `python scripts/governance/validate_register.py --summary`; find the task by its `BOPS-NNNN` id in the register, then its packet (`agentic/_tasks/`), plan and ADR; `HANDOFF.md` has the latest session state.
+1. Run `python scripts/governance/validate_register.py --summary`; find the task by its `BOPS-NNNN` id in the register, then its packet (`agentic/_tasks/`), its plan and the architecture contracts the bootstrap routes you to; `HANDOFF.md` has the latest session state.
 2. Check whether the problem is already solved in the current checkout (code, not just the task text).
 3. Prove the remaining gap with concrete evidence (a failing test or trace).
 4. Limit the change to the root cause. No speculative patches.
 5. Add a regression test in the existing suite for that component.
-6. Update the task through the synchronization rule below. Do not create a new ADR, document or test suite where one already fits.
+6. Update the task through the synchronization rule below. Do not create a new document or test suite where one already fits. A structural decision is a change to a current contract and needs the operator.
 
 ## Task governance (mandatory, part of every task)
 
@@ -85,7 +73,7 @@ Every task has a progressive `BOPS-NNNN` id (global, immutable, never reused; th
 - If GitHub is unreachable or a scope is missing, never report a remote update as done: record what is owed, say so, retry idempotently
   (look up by `BOPS-NNNN` before creating anything), and do not close the task administratively until reconciled.
 - Before pushing a change that touches the register, run `python scripts/governance/validate_register.py` (CI runs it too).
-- Updating status/bookkeeping is not a normative change; changing the rules in `agentic/0*.md`, `PROCESS.md` or an accepted ADR is, and needs the operator.
+- Updating status/bookkeeping is not a normative change; changing the rules in `agentic/0*.md`, `PROCESS.md` or a current architecture contract is, and needs the operator.
 
 ## Stack
 

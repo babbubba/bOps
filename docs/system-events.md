@@ -2,7 +2,7 @@
 
 `system.events` reads operating-system events for the agent, so a diagnosis can say why a service failed
 and not only that it did. It is one read-only tool with the same arguments and the same result on both systems
-(design: [ADR-0032](architecture/adr/0032-bounded-cross-platform-system-events.md) and its HARDEN-7 amendment):
+(design: [C04-R06 (was ADR-0032)](architecture/current/04-evidence-and-diagnosis.md#c04-r06--typed-results-completeness-and-failure-kinds) and its HARDEN-7 amendment):
 
 - **Windows:** the Event Log, through `EventLogReader` (channels `System` and `Application` by default).
 - **Linux:** journald, through `journalctl` run directly (no shell).
@@ -78,7 +78,7 @@ sources before grouping, the `limit` and the byte budget, in both modes, without
 ### Checking a source name (`sourceFilter`)
 
 A `source` that names nothing is read in full and returns zero events with `complete: true`, which says nothing about the
-subject the name was meant for ([ADR-0061](architecture/adr/0061-system-events-source-filter-disclosure.md)). Every result
+subject the name was meant for ([C04-R08 (was ADR-0061)](architecture/current/04-evidence-and-diagnosis.md#c04-r08--source-filtering-is-disclosed-excludesources-and-sourcefilter)). Every result
 therefore carries `sourceFilter` right after `excludeSources` — `null` without a `source`, otherwise:
 
 ```json

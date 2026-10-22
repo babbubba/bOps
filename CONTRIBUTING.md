@@ -7,12 +7,10 @@ request.
 
 ## Before you write code
 
-1. Read [`agentic/00-project-spec.md`](agentic/00-project-spec.md),
-   [`agentic/01-architecture-rules.md`](agentic/01-architecture-rules.md) and
-   [`agentic/03-security-rules.md`](agentic/03-security-rules.md).
-2. Check [`agentic/06-decisions.md`](agentic/06-decisions.md) — a settled question is not
-   re-opened by a new PR without new information; propose a change via an ADR that supersedes
-   the existing decision, not a silent diff.
+1. Read [`agentic/00-bootstrap.md`](agentic/00-bootstrap.md) and [`agentic/00-project-spec.md`](agentic/00-project-spec.md), then the
+   [architecture contracts](docs/architecture/current/) your change touches (always Contract 02 before adding or changing a tool).
+2. Check the binding rules and pending decisions of those contracts — a settled rule is not
+   re-opened by a new PR without new information; propose a change to a contract and discuss it with the maintainer, not a silent diff.
 3. Check the [consolidated roadmap](agentic/_plans/2026-09-16-consolidated-roadmap.md) and the
    dependency-ready task under `agentic/_tasks/` for which version a change belongs to. A PR that
    anticipates a later version than the one currently
@@ -26,7 +24,7 @@ request.
 **No external contribution is merged before the CLA process is operational and your CLA is on
 file.** This project uses a CLA rather than a bare `Signed-off-by` (Developer Certificate of
 Origin) line, so that contributions can be relied on across the project's Apache-2.0 public
-repository and, per the open-core decision recorded in `agentic/06-decisions.md` (D-013, D-015),
+repository and, per the open-core decision recorded in [Contract 05](docs/architecture/current/05-interfaces-knowledge-and-hosts.md) (C05-R12; historical D-013, D-015),
 its commercial offerings — without a separate negotiation for every accepted contribution.
 
 What the CLA does **not** change: the license the public repository grants everyone downstream

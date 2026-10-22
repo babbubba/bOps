@@ -13,7 +13,7 @@ accepted ADR is a normative change and needs operator approval.
 | Executable specification of a task | the task packet (`packet`), or the `spec` reference until one exists | the Issue body links to it, never copies it |
 | Goals, milestones, delivery gates, sequencing | [consolidated roadmap](../_plans/2026-09-16-consolidated-roadmap.md) and the active plans | no status tables elsewhere |
 | Current session state (active task, blockers, next step) | [`HANDOFF.md`](../../HANDOFF.md), at most ~100 lines | history goes to `docs/handoff-archive/` |
-| Architectural decisions | ADRs and [`06-decisions.md`](../06-decisions.md); pending operator decisions are listed in `register.json` `decisions` | an ADR becomes Accepted only by the operator, never by merging |
+| Architectural decisions | the five current contracts in [`docs/architecture/current/`](../../docs/architecture/current/); pending operator decisions are listed in `register.json` `decisions` | a decision becomes binding only by the operator, never by merging |
 | Milestone quality evidence | `agentic/_quality/` | a milestone report is evidence for a gate, not a status |
 
 Do not copy a status into any other document. Link to the register instead.

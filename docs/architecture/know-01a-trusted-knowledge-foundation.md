@@ -1,6 +1,6 @@
 # KNOW-01A — Trusted Knowledge Packs and provider isolation
 
-Base: AF-TURN-01B `851ef31` (MAF `Microsoft.Agents.AI` pinned `[1.24.0]`, unchanged). Decision: [ADR-0055](adr/0055-trusted-knowledge-packs-and-provider-isolation.md)
+Base: AF-TURN-01B `851ef31` (MAF `Microsoft.Agents.AI` pinned `[1.24.0]`, unchanged). Decision: [ADR-0055](adr/README.md#adr-0055)
 (Proposed), implementing G2-3, G2-4 and G2-5 of ADR-0054 (Proposed on `docs/arch-03-maf-convergence-decision`). Offline only: no live model, no
 MAF upgrade, no subagent, nothing composed by a production host, no configuration key.
 

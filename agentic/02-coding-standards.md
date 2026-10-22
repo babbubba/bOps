@@ -6,28 +6,9 @@ Rules that a compiler can enforce are enforced by the compiler. Everything below
 setting can express lives in `Directory.Build.props` at the repository root, and applies to
 every project without exception.
 
-```xml
-<Project>
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest-all</AnalysisLevel>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <Deterministic>true</Deterministic>
-    <!-- Noise, not signal, on a greenfield codebase. Revisit at V0.3. -->
-    <NoWarn>$(NoWarn);CA1303;CA1304;CA1305;CA1310;CA1848</NoWarn>
-    <!-- CA2007 (ConfigureAwait(false)) is a library-authoring guideline for code that might run
-         under a capturing SynchronizationContext. bOps has no such context anywhere in the
-         solution — see docs/architecture/suppressions.md. -->
-    <NoWarn>$(NoWarn);CA2007</NoWarn>
-  </PropertyGroup>
-</Project>
-```
+The file is the single source: [`Directory.Build.props`](../Directory.Build.props) sets `Nullable`, `TreatWarningsAsErrors`, `EnforceCodeStyleInBuild`,
+`AnalysisLevel` `latest-all`, deterministic builds and the documented `NoWarn` suppressions (the reasons are in the file and in
+[`docs/architecture/suppressions.md`](../docs/architecture/suppressions.md)). Do not copy its content into documents.
 
 `bOps.Abstractions` additionally sets `GenerateDocumentationFile=true` and does **not**
 suppress `CS1591`: it is a published SDK, so every public member carries XML documentation.

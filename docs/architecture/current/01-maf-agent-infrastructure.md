@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Candidate — pending GATE-02 (not in force until the operator approves GATE-02 and DOC-03 completes) |
+| **Status** | **Current** — in force since DOC-03 (`BOPS-0121`); GATE-02 approved by the operator on 2026-10-22. Entries under *Pending decisions* stay non-binding. |
 | **Date** | 2026-10-22 |
-| **Git base** | `21c10f6ef806bbb9ab649468197090aef77e64a9` on `docs/adr-consolidation-2026-10-22` |
-| **Task** | `BOPS-0121` / `DOC-CONSOL-01` (phase DOC-02), plan `agentic/_plans/ADR-consolidation-2026-10-22.md` |
+| **Git base** | Consolidated at `21c10f6ef806bbb9ab649468197090aef77e64a9` (DOC-02, corrected at `207ad7d`); activated by DOC-03 from source commit `57990d26f362676624d203064b69d3ced9c3448f` on `docs/adr-consolidation-2026-10-22` |
+| **Task** | `BOPS-0121` / `DOC-CONSOL-01` (phases DOC-02 and DOC-03), plan `agentic/_plans/ADR-consolidation-2026-10-22.md` |
 | **Binding rules** | 21 (`C01-R01`…`C01-R21`) |
 | **Language** | English |
 
@@ -234,6 +234,8 @@ Level-C documents that carry the detail behind these rules. They are bound by th
 - `docs/architecture/arch-02s-maf-bplus-conformance.md`
 
 ## 5. Sources
+
+The original ADRs and the previous full text of `01-architecture-rules.md` and `06-decisions.md` are preserved unmodified in `docs/architecture/archive/` (provenance only, not an authority); historical identifiers resolve through [`docs/architecture/adr/README.md`](../adr/README.md) and the compatibility indexes in `agentic/`.
 
 Consolidated from (derived from the DOC-02 traceability matrix, `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-traceability-matrix.tsv`):
 

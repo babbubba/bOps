@@ -1,6 +1,6 @@
 # Windows kernel dump analysis (`system.dump_analyze`)
 
-Design: [ADR-0048](architecture/adr/0048-bounded-windows-kernel-dump-analysis.md) · [D-045](../agentic/06-decisions.md).
+Design: [C02-R20 (was ADR-0048)](architecture/current/02-tools-safety-authority.md#c02-r20--network-process-and-dump-analysis-tool-boundaries) · [D-045](../agentic/06-decisions.md).
 
 `system.dump_analyze` analyzes **one** Windows kernel crash dump with Microsoft's `kd.exe` and returns bounded JSON
 (`schemaVersion` 1). The JSON describes the bugcheck, the debugger's automated attribution and failure bucket, the

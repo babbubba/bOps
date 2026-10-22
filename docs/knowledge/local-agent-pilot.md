@@ -1,6 +1,6 @@
 # Knowledge in the CLI — Local Agent pilot
 
-Status: **experimental pilot, opt-in, off by default** ([ADR-0058](../architecture/adr/0058-local-agent-knowledge-pilot.md), proposed as D-050).
+Status: **experimental pilot, opt-in, off by default** ([ADR-0058](../architecture/adr/README.md#adr-0058), proposed as D-050).
 Scope: `bops "<goal>"` and `bops resume` on one machine, for the operating-system user running it. Not the API, not the UI, not `bops delegate`.
 
 ## 1. What it does

@@ -33,7 +33,7 @@ timeline with the reporter before any public write-up.
 | Anything pre-`V0.9` | No — treated as historical; upgrade to `main` before reporting |
 
 There is no long-term-support branch yet. This will be revisited once `V1.0` ships a frozen
-`bOps.Abstractions` surface (`agentic/06-decisions.md`, D-012).
+`bOps.Abstractions` surface (the former `0.x` rule D-012 has expired; see [Contract 05](docs/architecture/current/05-interfaces-knowledge-and-hosts.md), C05-R11).
 
 ## Scope
 
@@ -46,7 +46,7 @@ own, separate disclosure process — do not use this channel for it.
 
 **Known, structural limitations that are not themselves vulnerabilities** — reported findings
 that restate these will be closed as expected behavior, documented in
-`agentic/03-security-rules.md`:
+[Contract 02](docs/architecture/current/02-tools-safety-authority.md) (the safety invariants S1–S11):
 
 - An installed package runs with the host process's full privileges. `AssemblyLoadContext`
   isolation (used by the plugin loader from V0.10) isolates dependencies, not permissions — see

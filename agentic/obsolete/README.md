@@ -6,7 +6,7 @@ these files.** The active source of truth is:
 
 - `agentic/_plans/2026-09-16-consolidated-roadmap.md` for roadmap, status and gates;
 - `agentic/_tasks/` for executable work;
-- `agentic/00-*.md` through `agentic/07-*.md` and accepted ADRs for binding rules.
+- `agentic/00-bootstrap.md` and the architecture contracts in `docs/architecture/current/` for binding rules.
 
 An agent may read an archived file only when an active task explicitly asks for historical research.
 If an archived statement conflicts with active material, the archived statement has no authority.

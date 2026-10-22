@@ -1,49 +1,34 @@
-# agentic/ — binding rules for AI coding agents
+# agentic/ — index
 
-These documents are **normative**. An agent working on this repository starts with
-[`00-bootstrap.md`](00-bootstrap.md), then reads [`00-project-spec.md`](00-project-spec.md),
-[`01-architecture-rules.md`](01-architecture-rules.md) and
-[`03-security-rules.md`](03-security-rules.md) before writing code, and consults the others when
-the task touches their subject.
+Rules, plans and task state for AI coding agents. **This file is a folder index, not a reading order and not a rule set.** The one entry point is
+[`00-bootstrap.md`](00-bootstrap.md) (reached through `CLAUDE.md` or `AGENTS.md`); it defines the precedence of sources and what to read for a task.
+Architectural decisions and safety invariants are in the five contracts in [`docs/architecture/current/`](../docs/architecture/current/), not here.
 
-They are written in English because they are parsed alongside the code, and the codebase —
-identifiers, comments, commit messages and ADRs — is English.
+These files are written in English because they are parsed alongside the code.
 
-## Files
-
-| File | Read it when |
+| Path | What it is |
 |---|---|
-| [`00-bootstrap.md`](00-bootstrap.md) | Always first. Stable routing, active milestone and validation baseline. |
-| [`00-project-spec.md`](00-project-spec.md) | Always. What bOps is, what it is not, what is in scope for the current version. |
-| [`01-architecture-rules.md`](01-architecture-rules.md) | Always. Structural invariants and the authoritative contract definitions. |
-| [`02-coding-standards.md`](02-coding-standards.md) | Writing or reviewing any C#. |
-| [`03-security-rules.md`](03-security-rules.md) | Always. Non-negotiable safety behaviour of the runtime. |
-| [`04-testing-rules.md`](04-testing-rules.md) | Writing tests, or any code that needs them (all of it). |
-| [`05-workflow.md`](05-workflow.md) | Committing, opening a PR, deciding whether an ADR is required. |
-| [`06-decisions.md`](06-decisions.md) | Before proposing an architectural alternative. Settled questions live here. |
-| [`07-plan-corrections.md`](07-plan-corrections.md) | Historical corrections retained for provenance; not active scope. |
-| [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md) | The single active roadmap, status, sequencing and gates. |
-| [`_tasks/README.md`](_tasks/README.md) | Executable task index; select only the first dependency-ready task. |
+| [`00-bootstrap.md`](00-bootstrap.md) | The single bootstrap: precedence, task identification, contract routing, stop conditions |
+| [`00-project-spec.md`](00-project-spec.md) | Product scope: what bOps is and is not, version discipline |
+| [`02-coding-standards.md`](02-coding-standards.md) | Engineering rules for C# (scope: code) |
+| [`04-testing-rules.md`](04-testing-rules.md) | Engineering rules for tests (scope: tests) |
+| [`05-workflow.md`](05-workflow.md) | Commits, change control, definition of done (scope: workflow) |
+| [`_tasks/PROCESS.md`](_tasks/PROCESS.md) | Task state and synchronization rules; [`_tasks/register.json`](_tasks/register.json) is the authoritative task state |
+| [`_tasks/`](_tasks/README.md) | Task packets and the executable task index |
+| [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md) | The single active roadmap: scope, sequencing and gates (other files in `_plans/` are plans for specific work) |
+| [`_quality/`](_quality/) | Milestone quality evidence |
+| `01-architecture-rules.md`, `03-security-rules.md`, `06-decisions.md` | Non-normative compatibility indexes: they only resolve historical identifiers (A/B/C/D, S1–S11, D-NNN) to the contracts |
+| [`07-plan-corrections.md`](07-plan-corrections.md) | Historical corrections retained for provenance; not active scope |
+| `obsolete/` | History, outside every precedence chain; ignore unless an active task requests historical research |
 
-## Precedence
+## Selecting a task
 
-When active sources conflict, the later entry wins:
+Authoritative rules: [`_tasks/PROCESS.md`](_tasks/PROCESS.md). In short, a task may start only if it is `authorized: true` in the register and its
+dependencies are `DONE`; `READY` is not permission to start. `HANDOFF.md` names the current task of the branch.
 
-1. The active consolidated roadmap and task file establish scope and execution detail.
-2. These normative documents override a plan or task.
-3. `docs/architecture/adr/` — an accepted ADR supersedes everything above it on its subject.
-
-`obsolete/` is outside this precedence chain. It contains migrated history only and must be ignored
-unless an active task explicitly requests historical research.
-
-## Rules for agents about these rules
+## Rules for agents about these files
 
 - **Never silently deviate.** If a rule blocks the task, stop and say which rule and why.
-  Do not work around it and mention it afterwards.
-- **Never bootstrap from `obsolete/`.** Archived plans, specifications and tasks cannot authorize
-  work or reopen a completed milestone.
-- **Never edit these files as part of a feature task.** Changing a rule is its own change,
-  with its own justification.
-- **Never re-open a settled decision** without new information. `06-decisions.md` records
-  what was considered and rejected; re-proposing a rejected option without addressing the
-  recorded reason is wasted work.
+- **Never bootstrap from `obsolete/`.** Archived plans, specifications and tasks cannot authorize work or reopen a completed milestone.
+- **Never edit these files as part of a feature task.** Changing a rule is its own change, with its own justification and, for architecture, the operator's approval.
+- **Never re-open a settled rule** without new information; re-proposing a rejected option without addressing the recorded reason is wasted work.

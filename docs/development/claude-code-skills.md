@@ -42,20 +42,20 @@ Read what you are about to install: a skill is instructions that your coding age
 
 ## What these skills do not override
 
-External skills never take precedence over the project's binding rules in [`agentic/`](../../agentic/) and `CLAUDE.md`.
+External skills never take precedence over the project's binding rules: the [architecture contracts](../architecture/current/), the engineering rules in [`agentic/`](../../agentic/) and the router files (`CLAUDE.md`, `AGENTS.md`).
 
 - **Microsoft Agent Framework.** The `microsoft-agent-framework` skill gives generic guidance (for example autonomous agents,
-  tool use by agents, a preference for specific cloud services). In bOps the ADRs win, in particular
-  [ADR-0052](../architecture/adr/0052-microsoft-agent-framework-bops-boundary.md) and
-  [ADR-0054](../architecture/adr/0054-maf-bplus-convergence-decision.md) (still *Proposed*) on the MAF boundary. Tool execution,
+  tool use by agents, a preference for specific cloud services). In bOps the architecture contracts win, in particular
+  [C01-R01 (was ADR-0052)](../architecture/current/01-maf-agent-infrastructure.md#c01-r01--maf-is-infrastructure-never-operational-authority) and
+  [ADR-0054](../architecture/adr/README.md#adr-0054) (still *Proposed*, decision D1 open) on the MAF boundary. Tool execution,
   policy and agent authority stay with the bOps runtime: the model proposes, the runtime decides and executes. No generic
   execution tool, no tool loop owned by MAF, and the core names no provider.
 - **Governed prompts.** Changes to prompts or to the requests the runtime builds must respect
-  [ADR-0046](../architecture/adr/0046-step-scoped-tool-routing-and-transactional-replanning.md), the PA-1 golden requests
+  [C03-R05 (was ADR-0046)](../architecture/current/03-task-state-resume-mutations.md#c03-r05--step-scoped-tool-routing), the PA-1 golden requests
   (`tests/bOps.AgentFramework.Tests/Golden/`) and their tests. A prompt-engineering suggestion is not a reason to regenerate a
   golden file.
-- **Authority of the documents.** The skills are support tools, not project specifications. When a skill and an ADR disagree, follow
-  the ADR and, if the ADR looks wrong, propose a change through the normal decision process.
+- **Authority of the documents.** The skills are support tools, not project specifications. When a skill and a contract disagree, follow
+  the contract and, if the contract looks wrong, propose a change to the operator.
 
 ## What must not be committed
 

@@ -16,14 +16,16 @@ This is the single active bOps development plan. It consolidates the original ro
 V0.9.1–V2.0 evolutionary plan, the 2026-09-16 consolidation, the pending-specification register,
 the repository's implemented state, and the operator decisions recorded on 2026-09-16.
 
-When sources disagree, use this order from highest to lowest authority:
+When sources disagree, use the single chain defined in [`agentic/00-bootstrap.md`](../00-bootstrap.md), from highest to lowest authority:
 
-1. an accepted ADR for its subject;
-2. `agentic/00-*.md` through `agentic/07-*.md`;
-3. this consolidated roadmap;
+1. the five current architecture contracts in [`docs/architecture/current/`](../../docs/architecture/current/);
+2. the engineering and governance rules (`agentic/02`, `04`, `05`, `_tasks/PROCESS.md`, `00-project-spec.md`), each within its own scope;
+3. this consolidated roadmap and the active plan;
 4. the active task file for the current batch, which may add execution detail but may not widen
    scope or weaken a gate;
-5. code-adjacent documentation.
+5. technical references and code-adjacent documentation, within their scope.
+
+History (`agentic/obsolete/`, the ADR archive, closed plans) is never an authority.
 
 Everything under `agentic/obsolete/` is historical and non-normative. Coding agents must not read
 or implement from it unless an active task explicitly requests historical research.
@@ -672,13 +674,13 @@ structural drift.
 | Original V0.1–V1.0 plan | Baseline/status sections | Implemented history retained without obsolete code snippets. |
 | Evolutionary V1.1–V2.0 plan | Sections 8–13 | Preserved and updated to actual repository state. |
 
-## 16. Required ADRs before code
+## 16. Operator-approved architecture decisions required before code
 
-At minimum, new ADRs are required before:
+Architectural decisions are recorded as changes to the current contracts in `docs/architecture/current/`, never as new ADRs, and only with operator approval. At minimum, such a decision (or an explicit confirmation that a contract rule already covers it) is required before:
 
 - Skill execution interfaces and restricted invocation (V1.1-A);
-- exact filesystem inventory, hash-bound destructive preflight and retention (V1.1-C/D; one or two
-  ADRs depending on the chosen public contract boundary);
+- exact filesystem inventory, hash-bound destructive preflight and retention (V1.1-C/D, depending on the
+  chosen public contract boundary);
 - Web package network/SSRF trust boundary (V1.1-E);
 - encrypted vault format, master-key handling, precedence and rotation (V1.1-G);
 - mutating plugin lifecycle and upload (V1.3);
@@ -692,18 +694,18 @@ At minimum, new ADRs are required before:
 - Coordinator-mediated Agent update distribution (V1.4);
 - Account Portal/Operations Portal data boundary (V1.4/V1.9).
 
-Accepted ADRs are never edited to retrofit these decisions.
+The archived ADRs are never edited to retrofit these decisions; a contract is changed only with operator approval.
 
 ## 17. Session protocol
 
 Before implementation, an agent:
 
-1. reads `CLAUDE.md`, bootstrap, project specification, architecture and security rules;
+1. reads the router (`CLAUDE.md` or `AGENTS.md`) and `agentic/00-bootstrap.md`, then the project specification and only the architecture contracts the bootstrap routes to;
 2. reads this roadmap and only the selected active task file;
-3. checks `agentic/06-decisions.md` and relevant accepted ADRs;
+3. checks the relevant contract rules and their pending decisions (not the historical decision log);
 4. verifies repository/branch/working-tree state and preserves unrelated changes;
 5. stops at the first unmet dependency or operator authorization gate;
-6. writes any required ADR and failing tests before implementation;
+6. obtains operator approval for any required contract change and writes failing tests before implementation;
 7. keeps code, tests, README, CHANGELOG, HANDOFF and task evidence synchronized;
 8. never commits, pushes, tags, publishes or creates a remote repository without explicit operator
    authorization for that operation.

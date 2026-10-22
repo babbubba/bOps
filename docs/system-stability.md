@@ -1,7 +1,7 @@
 # Machine stability evidence (`system.stability`)
 
 `system.stability` answers "is this machine stable, and what kind of instability happened when?" with typed, bounded,
-read-only evidence over up to 180 days (design: [ADR-0041](architecture/adr/0041-typed-cross-platform-stability-evidence.md)).
+read-only evidence over up to 180 days (design: [C04-R04 (was ADR-0041)](architecture/current/04-evidence-and-diagnosis.md#c04-r04--evidence-time-semantics)).
 It is `Read` risk, needs no approval, changes nothing and asks for no extra privilege. There is no query language: no
 argument names a provider, event id, channel, journal field, message pattern or path.
 

@@ -1,7 +1,7 @@
 # bOps — Razionalizzazione documentale e consolidamento architetturale
 
 **Piano operativo — revisione GATE-02, 22 ottobre 2026**  
-**Stato generale:** **GATE-02 APPROVED — next phase DOC-03.** GATE-01 e GATE-02 approvati dall'operatore il 2026-10-22 (decisioni al §2 e al §7.3). DOC-01 e DOC-02 completati; DOC-03 e DOC-04 **ancora da eseguire**. DOC-03 richiede una nuova sessione e un'autorizzazione separata dell'operatore.  
+**Stato generale:** **DOC-03 eseguito (CP-03a e CP-03b PASS) — next phase DOC-04.** GATE-01 e GATE-02 approvati dall'operatore il 2026-10-22 (decisioni al §2 e al §7.3). DOC-01, DOC-02 e DOC-03 completati (report: `_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md`); DOC-04 **ancora da eseguire** e richiede un'autorizzazione separata dell'operatore.  
 **Task:** `BOPS-0121` `DOC-CONSOL-01` — `IN_PROGRESS`, `authorized: true` (register: `agentic/_tasks/register.json`; Issue pubblica #125).  
 **Repository:** `babbubba/bOps` · **Branch:** `docs/adr-consolidation-2026-10-22` (solo questo; nessun altro branch)  
 **Baseline di `main`:** `e0e9de7a74b8bb33e07c7b1f8c92ab87832986de`  
@@ -404,7 +404,7 @@ La convergenza MAF resta un task separato, dopo il merge.
 - [x] DOC-01: inventario completo dei percorsi e dei punti di ingresso istruzionali (288 su 288).
 - [x] GATE-01: decisioni approvate e registrate (§2). BOPS-0121 autorizzato.
 - [x] CP-02a…CP-02e PASS e GATE-02 approvato il 2026-10-22 (decisioni G2-01…G2-05, §7.3). Resta valido il divieto di rimuovere qualunque originale prima di CP-03a.
-- [ ] **DOC-03** eseguito (§7.4): ZIP, manifest, indici, promozione a `Current`, bootstrap e router. *Da eseguire, in una nuova sessione con autorizzazione separata.*
+- [x] **DOC-03** eseguito (§7.4) il 2026-10-22 in una sola sessione: ZIP, manifest, indici, promozione a `Current`, bootstrap e router; CP-03a e CP-03b PASS.
 - [ ] **DOC-04** eseguito (§7.5): accettazione statica, leggibilità P5, report `PASS`. *Da eseguire.*
 - [ ] Esattamente cinque contratti correnti in inglese; nessuna sesta autorità; `01`, `03` e `06` ridotti a indici o redirect non normativi.
 - [ ] Ogni regola dei contratti ha uno stato decisionale e uno implementativo distinti; nessuna ADR Proposed promossa.
