@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-22 · `main` @ `e0e9de7` (squash merge of PR [#123](https://github.com/babbubba/bOps/pull/123), BOPS-0120) ·
-working branch `docs/adr-consolidation-2026-10-22` (BOPS-0121, DOC-CONSOL-01 docs-only consolidation).
+Last updated: 2026-10-23 · `main` @ `2b54880` (squash merge of PR [#126](https://github.com/babbubba/bOps/pull/126), BOPS-0121) ·
+working branch `codex/bops-0122-af-turn-02` (local, worktree `bOps-turn02`; BOPS-0122 AF-TURN-02). The earlier documentation reconciliation lives on a different local branch (`codex/maf-resume-2026-10-23`) and is deliberately not mixed in.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0121 DOC-CONSOL-01 (VALIDATION)
-Branch: docs/adr-consolidation-2026-10-22
+Current task: BOPS-0122 AF-TURN-02 (IN_PROGRESS)
+Branch: codex/bops-0122-af-turn-02
 Ready: BOPS-0111
-Next number: BOPS-0122
+Next number: BOPS-0123
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -26,7 +26,11 @@ Task state is never copied here; ask the register (`--summary`).
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Current task of this branch: **BOPS-0121 DOC-CONSOL-01** (Issue #125, authorized at GATE-01 on 2026-10-22) — documentation-only consolidation of the ADRs,
+- Current task of this branch: **BOPS-0122 AF-TURN-02** (P1, medium; operator decision D12 of 2026-10-23) — CLI opt-in, default-off MAF governed turn host
+  (`MafGovernedTurnBroker` over the existing broker; Contract 01 rule C01-R22; CLI goal and resume only; refused with Knowledge). Authority stays in `AgentRunner`/bOps. Packet
+  [`agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md`](agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md). D1 (general convergence, ADR-0053/0054) stays deferred; BOPS-0086/0087 stay `DEFERRED`.
+  Excluded: PR #124 / BOPS-0111, API host, live benchmarks, push/PR/merge (need separate authorization). Local commits only.
+- BOPS-0121 DOC-CONSOL-01 (Issue #125, authorized at GATE-01 on 2026-10-22; PR #126 merged 2026-10-23, still `VALIDATION` in the register; its reconciliation is on the other local branch) — documentation-only consolidation of the ADRs,
   `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01, DOC-02, GATE-02 (approved 2026-10-22) and
   **DOC-03 (executed 2026-10-22 in one session, CP-03a and CP-03b PASS)** are done: the five contracts (105 binding rules) in `docs/architecture/current/` are **Current**; the 55 ADRs and the original `01`/`06`
   are in `docs/architecture/archive/` (ZIP of 57 originals + external `MANIFEST.md`/`MANIFEST.csv`/`.sha256`); `docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md` and `agentic/06-decisions.md`
