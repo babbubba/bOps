@@ -221,8 +221,8 @@ A host may run each governed model call as one turn of a stateless Microsoft Age
 
 - **Supersedes / consolidates:** nothing (new rule; scoped carve-out from C01-P02)
 - **Decision status:** Accepted for experiment (operator decision D12, 2026-10-23)
-- **Implementation status:** Not implemented yet (`BOPS-0122` in progress)
-- **Evidence:** to be filled with `file:line` anchors when `BOPS-0122` is implemented
+- **Implementation status:** Implemented in the CLI (`BOPS-0122`, offline parity and mode-switch tests; not yet merged or CI-verified) — evidence below
+- **Evidence:** `src/core/bOps.Cli/CliRunnerComposition.cs:65` (the one composition, behind the switch); `src/core/bOps.Cli/CliRunnerComposition.cs:53` (refused with Knowledge); `src/core/bOps.Cli/CliRunnerComposition.cs:28` (strict switch); `tests/bOps.Cli.Tests/MafGovernedTurnHostTests.cs` (parity and mode switching); `tests/bOps.Architecture.Tests/AgentFrameworkBoundaryTests.cs` (single composition, no shipped configuration)
 
 ## 3. Pending decisions — non-binding
 

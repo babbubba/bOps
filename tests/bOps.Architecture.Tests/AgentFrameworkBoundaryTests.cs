@@ -145,16 +145,27 @@ public sealed class AgentFrameworkBoundaryTests
     }
 
     [Fact]
-    public void TheMafTurnPath_IsNotComposedByAnyProductionHost_UntilItIsDeliberatelyActivated()
+    public void TheMafTurnPath_IsComposedOnlyByTheCliOptIn_AndNoShippedConfigurationEnablesIt()
     {
-        // AF-TURN-01A keeps the path off in production configurations until the equivalence suite is accepted. Activating it is a
-        // deliberate change that updates this test together with its host wiring and decision record.
+        // C01-R22 (BOPS-0122, decision D12): the one production composition of the MAF governed turn host is the CLI's, built once and only
+        // behind the operator's switch. No other host (the API in particular) composes it, and no shipped configuration turns it on.
         var composed = ProductionSources()
             .Where(file => !file.Path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
             .Where(file => file.Text.Contains("MafGovernedTurnBroker", StringComparison.Ordinal))
-            .Select(file => file.Path)
             .ToArray();
-        Assert.Empty(composed);
+        Assert.Equal(["src/core/bOps.Cli/CliRunnerComposition.cs"], composed.Select(file => file.Path).ToArray());
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(composed[0].Text, @"new\s+MafGovernedTurnBroker\("));
+        Assert.Contains("inputs.MafGovernedTurn", composed[0].Text, StringComparison.Ordinal);
+        Assert.Contains("inputs.MafGovernedTurn && inputs.Knowledge is not null", composed[0].Text, StringComparison.Ordinal);
+
+        var configuration = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.json", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.EndsWith("packages.lock.json", StringComparison.Ordinal))
+            .Where(path => File.ReadAllText(path).Contains("MafGovernedTurn", StringComparison.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+            .ToArray();
+        Assert.Empty(configuration);
     }
 
     [Fact]
@@ -190,7 +201,11 @@ public sealed class AgentFrameworkBoundaryTests
         var composed = ProductionSources()
             .Where(file => !file.Path.StartsWith("src/core/bOps.AgentFramework/", StringComparison.Ordinal))
             .Where(file => file.Path != "src/core/bOps.Abstractions/Audit.cs" && file.Path != "src/core/bOps.Audit/AuditJsonContext.cs")
-            .SelectMany(file => names.Where(name => file.Text.Contains(name, StringComparison.Ordinal)).Select(name => $"{file.Path}: {name}"))
+            // C01-R22: the CLI composition names the assembly mode of the MAF turn host (BopsProvider) and nothing else of this list.
+            .SelectMany(file => names
+                .Where(name => file.Text.Contains(name, StringComparison.Ordinal))
+                .Where(name => !(file.Path == "src/core/bOps.Cli/CliRunnerComposition.cs" && name == "MafContextAssembly"))
+                .Select(name => $"{file.Path}: {name}"))
             .ToArray();
         Assert.Empty(composed);
 

@@ -29,7 +29,7 @@ The model proposes, bOps decides and executes. MAF executes nothing (declaration
 - A3 mode switch: a task started in one mode and resumed in the other (also after a process restart, after a failure and after an approval wait) resumes with the same request and the same persisted state, and records nothing mode-specific that the other mode cannot read.
 - A4 refusal: switch on with Knowledge enabled fails closed with an explicit message; delegation, recovery and reconciliation ignore the switch.
 - A5 safety: exactly one broker call per turn, no extra LLM call, no extra tool execution; MAF-side violations are controlled model failures that execute nothing; architecture and boundary tests unchanged and green.
-- A6 visibility: the active turn host is reported at startup and in telemetry.
+- A6 visibility: the active turn host is reported at startup (an `EXPERIMENTAL` line on standard error). No telemetry tag was added: it would need a change to `AgentRunner` or the broker, which this task does not touch; the MAF turn is observable in the audit/records only as the identical default-path events.
 - A7 Release build and the `Category!=LiveModel` suites green locally; Windows and Linux CI are gates of the PR (not requested yet).
 
 Scenarios: planning and replanning (incl. early-final recovery); single tool step; several proposed calls (first-call-wins); denied tool, bad arguments, approval granted/denied; mutation unknown outcome and reconciliation; resume from persisted state; prompt/messages/tools order; accounting, audit, timeout, cancellation, provider failure, retry and fallback; EvidenceRead, compaction and disclosure.

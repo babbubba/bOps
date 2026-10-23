@@ -52,9 +52,11 @@ public sealed class LocalKnowledgePilotBoundaryTests
     }
 
     [Fact]
-    public void TheCliComposesNoMafTurnBroker_NoContextProvider_AndNamesNoKnowledgeEngineType()
+    public void TheCliNamesTheMafTurnBrokerOnlyInItsOptInComposition_NoContextProvider_AndNamesNoKnowledgeEngineType()
     {
         // ADR-0058 section 3: the knowledge path rides on the broker and projector the CLI already used; the experimental MAF turn broker is not a prerequisite.
+        // C01-R22 (BOPS-0122): the opt-in MAF turn host is the one exception, confined to CliRunnerComposition.cs (MafGovernedTurnBroker and the
+        // assembly mode only; never the context provider, the leaf, the agent or any Knowledge type).
         string[] forbidden =
         [
             "MafGovernedTurnBroker", "MafContextAssembly", "BopsContextProvider", "AIContextProvider", "GovernedChatClient", "ChatClientAgent",
@@ -62,7 +64,10 @@ public sealed class LocalKnowledgePilotBoundaryTests
             "IKnowledgePackSource", "DirectoryKnowledgePackSource", "PackGrant",
         ];
         var offenders = Sources("src/core/bOps.Cli/")
-            .SelectMany(file => forbidden.Where(name => file.Text.Contains(name, StringComparison.Ordinal)).Select(name => $"{file.Path}: {name}"))
+            .SelectMany(file => forbidden
+                .Where(name => file.Text.Contains(name, StringComparison.Ordinal))
+                .Where(name => !(file.Path == "src/core/bOps.Cli/CliRunnerComposition.cs" && name is "MafGovernedTurnBroker" or "MafContextAssembly"))
+                .Select(name => $"{file.Path}: {name}"))
             .ToArray();
 
         Assert.Empty(offenders);
