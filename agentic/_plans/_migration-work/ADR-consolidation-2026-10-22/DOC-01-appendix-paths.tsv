@@ -1,0 +1,300 @@
+path	lines	bytes	class	action	note
+.claude/launch.json	11	208	-	KEEP (no doc authority)	no instruction content
+.github/dependabot.yml	62	1637	-	KEEP (no doc authority)	no instruction content
+.github/workflows/ci.yml	230	9414	-	KEEP (no doc authority)	no instruction content
+.github/workflows/quality-finalize.yml	151	7191	-	KEEP (no doc authority)	no instruction content
+.github/workflows/release.yml	127	5081	-	KEEP (no doc authority)	no instruction content
+CHANGELOG.md	622	63164	C	KEEP	historical ADR ids
+CLAUDE.md	98	7399	E	UPDATE	router; fix hardening-train "active", precedence
+CONTRIBUTING.md	69	4124	E	UPDATE	entry points to ADRs/06-decisions
+HANDOFF.md	75	6723	E	KEEP (bookkeeping; stale vs register)	not touched by this migration
+README.md	418	23914	E	UPDATE	entry points to ADRs/06-decisions
+SECURITY.md	61	3399	D	UPDATE-minor	cites 06-decisions D-012
+agentic/00-bootstrap.md	86	4657	E	UPDATE	read order step 6/8 (06-decisions, ADRs), "write an ADR"
+agentic/00-project-spec.md	123	8093	A/E	UPDATE	stale V1.3-M "not merged"; D-xxx pointers
+agentic/01-architecture-rules.md	679	33215	F	REVIEW: reduce to rule-ID index (51 code files cite it) + ZIP original	B-section drifted from code
+agentic/02-coding-standards.md	181	9516	D	KEEP/UPDATE-minor	Directory.Build.props copy drifted
+agentic/03-security-rules.md	191	11707	A	KEEP (security anchor S1-S11; cited by 25 code files)	S5 cites ADR-0057 -> update pointer only
+agentic/04-testing-rules.md	105	5479	D	KEEP/UPDATE-minor	stale examples/ dir; cited by 53 code files
+agentic/05-workflow.md	143	7312	E	UPDATE	ADR-required section; stale ADR backlog tables
+agentic/06-decisions.md	1222	94259	B/F	REPLACE (redirect stub) + ZIP original	D-ids cited by 12 code files, SECURITY.md, CONTRIBUTING
+agentic/07-plan-corrections.md	66	9314	C	KEEP or ARCHIVE (optional ZIP candidate)	needs operator decision
+agentic/README.md	49	3033	E	UPDATE	precedence chain (ADR>...) , _tasks/README wording
+agentic/_plans/2026-09-16-consolidated-roadmap.md	709	45907	E	UPDATE (§1 precedence, §16, §17)	precedence order places ADR first
+agentic/_plans/2026-09-21-v1.4-d-semantic-knowledge-operational-memory.md	833	28541	E	KEEP	
+agentic/_plans/2026-09-22-v1.3-coding-agent-execution.md	172	8113	E	KEEP	
+agentic/_plans/2026-09-22-v1.3-f-filesystem-troubleshooting.md	42	1944	C	KEEP (plans excluded); archive candidate only on explicit decision	orphan, task done
+agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md	869	75673	C/E	KEEP (closed; excluded from archive)	9 ADR links
+agentic/_plans/2026-10-11-maf-knowledge-convergence.md	65	9960	E	KEEP; REVIEW stale status table	Italian; status table vs PROCESS §1
+agentic/_plans/ADR-consolidation-2026-10-22.md	258	27854	E	KEEP; update at GATE-01	temporary migration spec
+agentic/_quality/README.md	45	2857	E	KEEP	read by CI/scripts
+agentic/_quality/active-milestone.json	6	167	E	KEEP	read by CI/scripts
+agentic/_quality/known-failures.json	29	1407	E	KEEP	read by CI/scripts
+agentic/_quality/manifests/v1.3-g.json	51	11081	E	KEEP	read by CI/scripts
+agentic/_quality/manifests/v1.3-h.json	35	10691	E	KEEP	read by CI/scripts
+agentic/_quality/milestone-quality.schema.json	31	1250	E	KEEP	read by CI/scripts
+agentic/_quality/reports/index.json	4	49	E	KEEP	read by CI/scripts
+agentic/_quality/reports/v1-3-g.local.json	593	20641	E	KEEP	read by CI/scripts
+agentic/_quality/reports/v1-3-g.local.md	53	1649	E	KEEP	read by CI/scripts
+agentic/_quality/reports/v1-3-h.local.json	568	21174	E	KEEP	read by CI/scripts
+agentic/_quality/reports/v1-3-h.local.md	43	1081	E	KEEP	read by CI/scripts
+agentic/_tasks/2026-09-16-post-v2.0-bilingual-readme.md	34	1573	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-release-v1.0-formal-gate.md	77	4760	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-repository-topology-bootstrap.md	84	5336	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-a-skill-sdk-completion.md	90	5044	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-b-system-inventory.md	52	2961	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-c-filesystem-inventory.md	54	2990	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-d-governed-recursive-delete.md	74	4119	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-e-web-capabilities.md	66	3732	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-f-plugin-catalog-ui.md	58	3484	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-g-secure-settings.md	119	7939	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.1-h-integration-release.md	110	8062	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.2-multi-agent.md	49	3339	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.3-oss-entitlement-plugin-lifecycle.md	88	5469	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v1.4-node-control-plane-protocol.md	93	6333	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-16-v2.0-oss-ga-readiness.md	48	2510	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-17-agent-task-history-view.md	70	4213	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-a-adr-and-plan.md	23	795	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-b-contracts.md	135	9346	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-c-authority-reduction.md	289	29107	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-d-orchestrator-and-roles.md	105	13633	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-e-budgets-deadlines-cancellation.md	69	7964	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-f-durable-state-and-resume.md	76	8394	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-g-independent-verification.md	66	6828	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-h-audit-correlation.md	53	5894	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-i-cli.md	58	8091	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-j-api.md	54	5106	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-k-ui.md	51	4566	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-l-documentation.md	44	4847	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-18-v1.2-m-integration-release.md	66	8302	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-19-ui-multilanguage-it-en.md	124	8777	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-a-system-events.md	130	8991	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-b-docker-management.md	172	12239	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-c-process-diagnostics.md	150	11905	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-d-network-diagnostics.md	172	12194	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-e-storage-diagnostics.md	90	4686	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-f-filesystem-troubleshooting.md	87	5825	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-g-service-scheduler.md	99	5725	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-h-identity-time-reboot.md	71	3858	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-i-firewall-diagnostics.md	51	2987	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-j-tls-certificates.md	54	3265	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-k-os-maintenance-crash-drivers.md	56	3094	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-21-v1.3-l-ops-diagnostic-integration.md	62	4428	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-g-execution-packets.md	303	11234	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-h-execution-packets.md	158	5348	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-i-execution-packets.md	171	5240	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-j-execution-packets.md	151	4481	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-k-execution-packets.md	253	11190	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-l-execution-packets.md	203	6448	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-22-v1.3-m-execution-packets.md	291	10399	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-23-v1.3-h-hardening-review.md	37	4421	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3-m8-release-gate-record.md	111	14211	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-01-provider-wire-contract.md	189	10345	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-02-model-failure-containment.md	188	10101	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-03-resume-state-machine.md	200	10582	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-04-task-lifecycle-ui.md	159	7670	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-05-storage-health.md	141	5589	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-06-tool-contract-constraints.md	214	11028	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-07-windows-stability-evidence.md	382	27444	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-08-context-budget-economy.md	294	19508	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-09-evidence-reasoning.md	608	50746	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-10-browser-session.md	268	18979	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-11-delegation-operability.md	682	37516	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-12-ui-layout-localization.md	154	7125	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-13-provider-defaults-fallback.md	241	14451	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-09-25-v1.3x-harden-14-e2e-composition-gate.md	228	12823	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-07-runtime-step-routing-replan-safety.md	121	5287	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-07-v1.3y-web-evidence-operability.md	163	10642	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-08-v1.3-pre-release-stabilization.md	372	24965	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-08-v1.3z-prerequisite-readiness-system-messages.md	195	17637	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-08-v1.3z-windows-kernel-dump-analysis.md	89	4714	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-09-v1.3-f25-durable-ordinary-mutation-journal.md	588	52620	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-10-af-01-maf-foundation-governed-inference.md	237	13394	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-10-af-02-maf-context-compaction.md	310	15017	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-10-af-03-governed-summarization.md	295	18626	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-10-af-04-evidence-cleanup.md	253	21663	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-10-af-05-maf-regression-tuning-cleanup.md	425	34994	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-11-af-05-benchmark-results.md	422	61841	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-11-af-05h-live-regression-hardening.md	107	10018	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-11-bench-00-automatic-full-fidelity.md	88	11985	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-af-05h2-r1-implementation.md	112	9018	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-af-05h2-r2-implementation.md	145	10628	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-af-05h2-replan-truncation-recovery.md	56	7677	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-af-plan-01-planning-robustness.md	97	7484	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-af-toolroute-01-tool-routing.md	125	10419	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-12-arch-02-maf-parity-spike.md	53	6623	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md	79	6267	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md	49	3693	E	KEEP	historical ADR links left as deliberate refs
+agentic/_tasks/PROCESS.md	176	14502	E	UPDATE (authority row only)	§1 "Architectural decisions" row
+agentic/_tasks/README.md	83	6035	E	KEEP/UPDATE-minor	2 ADR links, packet maps
+agentic/_tasks/register.json	5725	142593	E	KEEP (untouched)	validator-bound
+agentic/obsolete/README.md	21	1034	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/plans/2026-09-16-v1.0-security-hardening.md	102	5411	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/plans/2026-09-16-v1.1-skill-capability-sdk.md	107	5783	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/plans/piano-bops-v0.9.1-v2.0.md	695	39607	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/plans/piano-bops.md	1417	92971	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/specifications/consolidamento-2026-09-16.md	219	14551	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/specifications/specifiche-pendenti.md	479	36933	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/tasks/2026-09-16-v1.0-security-hardening.md	64	3437	C	KEEP (already archive; Git history)	no ZIP needed
+agentic/obsolete/tasks/2026-09-16-v1.1-skill-capability-sdk.md	63	3021	C	KEEP (already archive; Git history)	no ZIP needed
+docs/agents/delegation-policy.md	154	10278	D	KEEP (TEST-BOUND)	DelegationPolicyGuideTests parses its YAML
+docs/agents/delegation.md	152	11800	D	KEEP / UPDATE links if they point to ADR files	
+docs/agents/delegations-api.md	197	13158	D	KEEP / UPDATE links if they point to ADR files	
+docs/architecture/adr/0001-project-owned-chat-model.md	53	3368	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0002-five-risk-levels-critical-unbypassable.md	54	3632	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0005-shared-openai-compatible-adapter.md	48	3006	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0006-tools-os-providers-are-packages.md	53	3510	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0011-local-only-remote-capable-contract.md	48	3083	A	CONSOLIDATE+ARCHIVE	-> 05-interfaces-knowledge-and-hosts
+docs/architecture/adr/0012-dynamic-loading-over-native-aot.md	45	2599	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0013-model-call-audit-outcome.md	66	4311	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0014-explicit-planning-and-replanning.md	437	34813	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0015-policy-engine-approval-flow-and-audit-hash-chaining.md	157	11728	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0016-post-action-verification.md	143	10466	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0017-persistent-resumable-tasks.md	94	6724	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0018-bops-api-minimal-surface.md	130	10056	A	CONSOLIDATE+ARCHIVE	-> 05-interfaces-knowledge-and-hosts
+docs/architecture/adr/0019-providers-listing-endpoint.md	62	3828	A	CONSOLIDATE+ARCHIVE	-> 05-interfaces-knowledge-and-hosts
+docs/architecture/adr/0020-plugin-loader-manifest-and-activation-boundary.md	148	9607	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0021-service-package-windows-linux-strategy.md	100	7200	A	CONSOLIDATE+ARCHIVE	-> historical-only (tool spec lives in docs/*.md) + 02 for invariants
+docs/architecture/adr/0022-bops-abstractions-1.0-security-boundaries.md	127	7387	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0023-skill-capability-evidence-execution-plan.md	221	13855	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0024-execution-plan-orchestration.md	109	7245	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0025-skill-provider-and-restricted-invocation.md	124	6826	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0026-bounded-filesystem-inventory-manifests.md	107	6703	A	CONSOLIDATE+ARCHIVE	-> 02 + tool reference docs/
+docs/architecture/adr/0027-governed-recursive-deletion-manifests.md	170	10916	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0028-outbound-web-search-and-fetch.md	179	12375	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md	287	20375	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0030-privilege-reducing-multi-agent-delegation.md	236	15082	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0031-per-role-envelope-requirements.md	162	10446	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0032-bounded-cross-platform-system-events.md	764	56619	A	CONSOLIDATE+ARCHIVE	-> 04-evidence-and-diagnosis
+docs/architecture/adr/0033-governed-docker-image-build-and-volume-management.md	177	12417	A	CONSOLIDATE+ARCHIVE	-> 02 + tool reference docs/
+docs/architecture/adr/0034-advanced-process-diagnostics.md	209	13605	A	CONSOLIDATE+ARCHIVE	-> historical-only (tool spec lives in docs/*.md) + 02 for invariants
+docs/architecture/adr/0035-sockets-routes-and-network-diagnostics.md	249	17118	A	CONSOLIDATE+ARCHIVE	-> historical-only (tool spec lives in docs/*.md) + 02 for invariants
+docs/architecture/adr/0036-product-neutral-entitlement-applicability-and-execution-time-enforcement.md	327	24035	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0037-safe-local-plugin-lifecycle.md	398	26440	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0038-provider-wire-contract.md	218	15965	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0039-model-call-failure-containment.md	323	26107	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0040-resume-state-machine.md	428	35321	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0041-typed-cross-platform-stability-evidence.md	557	44421	A	CONSOLIDATE+ARCHIVE	-> 04-evidence-and-diagnosis
+docs/architecture/adr/0042-evidence-reasoning-and-limitation-disclosure.md	1254	108219	A	CONSOLIDATE+ARCHIVE	-> 04-evidence-and-diagnosis
+docs/architecture/adr/0043-browser-web-session.md	941	72285	A	CONSOLIDATE+ARCHIVE	-> 05-interfaces-knowledge-and-hosts
+docs/architecture/adr/0044-request-dependent-delegation-authority-and-operability.md	1171	101256	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md	664	44951	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0046-step-scoped-tool-routing-and-transactional-replanning.md	354	28954	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0047-bounded-planned-step-argument-correction.md	116	7884	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0048-bounded-windows-kernel-dump-analysis.md	196	13024	A	CONSOLIDATE+ARCHIVE	-> historical-only (tool spec lives in docs/*.md) + 02 for invariants
+docs/architecture/adr/0049-unified-prerequisite-readiness-and-system-messages.md	233	19429	A	CONSOLIDATE+ARCHIVE	-> 02-tools-safety-authority
+docs/architecture/adr/0050-semantic-planned-step-execution-and-conditional-follow-ups.md	338	19294	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 03 (pending-operator-decision D4: non-binding)
+docs/architecture/adr/0051-durable-ordinary-task-mutation-intent-journal.md	807	66849	A	CONSOLIDATE+ARCHIVE	-> 03-task-state-resume-mutations
+docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md	642	28944	A	CONSOLIDATE+ARCHIVE	-> 01-maf-agent-infrastructure
+docs/architecture/adr/0053-maf-convergence-architecture-boundaries.md	190	18278	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 01 (pending-operator-decision D1: non-binding)
+docs/architecture/adr/0054-maf-bplus-convergence-decision.md	132	15786	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 01 (pending-operator-decision D1: non-binding)
+docs/architecture/adr/0055-trusted-knowledge-packs-and-provider-isolation.md	81	8067	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 05 (pending-operator-decision D5: non-binding)
+docs/architecture/adr/0056-governed-knowledge-read-and-durable-resume.md	89	8832	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 05 (pending-operator-decision D5: non-binding)
+docs/architecture/adr/0057-knowledge-discovery-index.md	950	83376	A	CONSOLIDATE+ARCHIVE	-> 05-interfaces-knowledge-and-hosts
+docs/architecture/adr/0058-local-agent-knowledge-pilot.md	166	17718	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 05 (pending-operator-decision D5: non-binding)
+docs/architecture/adr/0059-knowledge-refusal-recovery.md	92	8980	F	REVIEW(pending-decision)+ARCHIVE(historical)	-> 05 (pending-operator-decision D5: non-binding)
+docs/architecture/adr/0060-planner-facing-tool-parameter-guidance.md	192	19143	A	CONSOLIDATE+ARCHIVE	-> 03/04 (refines Proposed ADR-0050; confirm in DOC-02)
+docs/architecture/adr/0061-system-events-source-filter-disclosure.md	277	38519	A	CONSOLIDATE+ARCHIVE	-> 04-evidence-and-diagnosis
+docs/architecture/af-turn-01b-context-skills-bridge.md	40	3961	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/arch-02a-maf-parity-report.md	44	4996	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/arch-02r-maf-deep-reassessment.md	267	35700	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/arch-02s-maf-bplus-conformance.md	111	10277	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/know-01a-trusted-knowledge-foundation.md	69	10784	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/know-01b-runtime-knowledge-read.md	74	12103	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/know-disc-01-knowledge-index.md	161	20589	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/know-m1-b-fix01-unicode-globalization.md	120	11844	C/F	KEEP; fate tied to D1/D5 (companion evidence of ADR-0054/55/56/57)	optional ZIP candidates only after decision
+docs/architecture/suppressions.md	15	4167	D	KEEP	cited by csproj comments
+docs/benchmarks/PRIVATE-FIXTURES.md	21	1703	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/ae-1-scripted-runtime-baseline.md	381	35005	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01a/README.md	75	12804	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01a/pack-source/windows-event-triage/SKILL.md	5	205	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01a/pack-source/windows-event-triage/references/interpretation.md	20	3776	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01a/scenario-c-addendum.txt	1	275	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01a/scenario.txt	1	413	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01c.md	121	7883	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01d/.gitattributes	2	110	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/README.md	12	1165	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/SPEC.md	158	10506	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/signed-pack/acme.windows-event-runbooks/1.0.0/bops-pack.json	25	690	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/signed-pack/acme.windows-event-runbooks/1.0.0/bops-pack.sig.json	7	508	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/signed-pack/acme.windows-event-runbooks/1.0.0/windows-event-triage/SKILL.md	5	205	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/signed-pack/acme.windows-event-runbooks/1.0.0/windows-event-triage/references/interpretation.md	20	3776	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01d/test-trust.json	12	663	D	KEEP (TEST FIXTURE)	read by tests/scripts
+docs/benchmarks/know-bench-01e-fix01.md	10	4878	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix02.md	9	2216	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix03.md	73	4670	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix04.md	12	8385	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix05.md	23	4008	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix06.md	10	2087	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix07.md	10	2789	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix08.md	10	1937	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix10.md	11	2932	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-fix12.md	40	2878	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-ops01.md	312	18058	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-01e-precheck.md	12	5738	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-corpus-provenance.md	175	14575	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-bench-diagnosis-review.md	229	21076	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/know-fix-01-observability.md	23	2138	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/knowledge-discovery-investigation.md	387	29796	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/pa-1-request-assembly-baseline.md	212	25257	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/prompt-routing-finalization.md	134	18310	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/prompt-routing-validation-01.md	60	8656	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01.md	273	25708	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/Run-Campaign.ps1	34	2557	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/analyze.py	163	9971	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/checks.py	34	2665	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/integrity.py	25	1559	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/campaign-config.json	127	9859	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/campaign.log	10	681	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/deterministic-checks.json	163	3776	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/metrics.md	11	2098	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/policy.yaml	7	215	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/runs-manifest.json	272	23961	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/results/scenario-stats.md	5	572	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-live-baseline-01/scenarios.json	22	789	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen-t02c-live-01.md	293	29701	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/qwen38-direct-comparison-01.md	243	28466	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-capture-t02b-01.md	166	20419	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-capture-t02c-01.md	145	12865	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01.md	253	23185	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/Run-T02.ps1	32	2248	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/campaign.log	4	231	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/metrics.md	5	938	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/runs-manifest.json	86	7417	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/runs/T02-r1.harness-result.json	142	3366	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/runs/T02-r2.harness-result.json	170	4059	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/runs/T02-r3.harness-result.json	171	4087	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/replay-default-equivalence-01/results/scenario-stats.md	3	283	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/benchmarks/t02-grounding-01.md	140	17366	C	KEEP	evidence reports; some replay/capture paths used by tooling
+docs/deployment.md	178	14148	D	KEEP / UPDATE links if they point to ADR files	
+docs/development/claude-code-skills.md	64	4389	E	UPDATE	says "the ADRs win"; links ADR-0052/0054/0046
+docs/docker-management.md	119	7631	D	KEEP / UPDATE links if they point to ADR files	
+docs/filesystem-inventory.md	72	3254	D	KEEP / UPDATE links if they point to ADR files	
+docs/filesystem-troubleshooting.md	46	3405	D	KEEP / UPDATE links if they point to ADR files	
+docs/firewall-diagnostics.md	15	990	D	KEEP / UPDATE links if they point to ADR files	
+docs/governed-recursive-deletion.md	80	4442	D	KEEP / UPDATE links if they point to ADR files	
+docs/handoff-archive/HANDOFF-until-2026-10-21.md	579	64071	C	KEEP	verbatim history created 2026-10-21
+docs/handoff-archive/README.md	12	911	C	KEEP	verbatim history created 2026-10-21
+docs/handoff-archive/tasks-README-until-2026-10-21.md	112	11679	C	KEEP	verbatim history created 2026-10-21
+docs/knowledge/examples/windows-event-triage-skills/windows-event-triage/SKILL.md	5	205	D	KEEP (TEST FIXTURE)	Publish-KnowledgePack tests
+docs/knowledge/examples/windows-event-triage-skills/windows-event-triage/references/interpretation.md	20	3776	D	KEEP (TEST FIXTURE)	Publish-KnowledgePack tests
+docs/knowledge/experience-pack-authoring.md	285	11417	D	KEEP / UPDATE links if they point to ADR files	
+docs/knowledge/knowledge-pack-format.md	174	6847	D	KEEP / UPDATE links if they point to ADR files	
+docs/knowledge/local-agent-pilot.md	144	10556	D	KEEP / UPDATE links if they point to ADR files	
+docs/licensing.md	346	18595	D	KEEP / UPDATE links if they point to ADR files	
+docs/maintenance/roadmap-reconciliation-01.md	299	45535	C	KEEP	cited by HANDOFF/roadmap; 36 ADR refs
+docs/network-diagnostics.md	163	7746	D	KEEP / UPDATE links if they point to ADR files	
+docs/operations/diagnostic-capabilities.md	34	2409	D	KEEP / UPDATE links if they point to ADR files	
+docs/operations/troubleshooting-playbook.md	364	25530	D	KEEP / UPDATE links if they point to ADR files	
+docs/operator-configuration.md	669	44129	D	KEEP / UPDATE links if they point to ADR files	
+docs/plugins/getting-started.md	300	15769	D	KEEP / UPDATE links if they point to ADR files	
+docs/process-diagnostics.md	140	7580	D	KEEP / UPDATE links if they point to ADR files	
+docs/security/threat-model.md	372	27626	D	KEEP / UPDATE links if they point to ADR files	
+docs/security/web-network-policy.md	150	8103	D	KEEP / UPDATE links if they point to ADR files	
+docs/storage-diagnostics.md	72	4914	D	KEEP / UPDATE links if they point to ADR files	
+docs/system-events.md	275	19083	D	KEEP / UPDATE links if they point to ADR files	
+docs/system-inventory.md	61	3757	D	KEEP / UPDATE links if they point to ADR files	
+docs/system-maintenance.md	103	8011	D	KEEP / UPDATE links if they point to ADR files	
+docs/system-stability.md	110	7056	D	KEEP / UPDATE links if they point to ADR files	
+docs/tls-certificate-diagnostics.md	17	1212	D	KEEP / UPDATE links if they point to ADR files	
+docs/windows-dump-analysis.md	230	11791	D	KEEP / UPDATE links if they point to ADR files	

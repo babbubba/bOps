@@ -1,86 +1,91 @@
 # 00 — Agent bootstrap
 
-This file is the stable entry point for coding agents. It routes to the existing normative
-documents; it does not duplicate or supersede their rules.
+The single entry point for coding agents. `CLAUDE.md` and `AGENTS.md` are short routers that point here.
+This file says what to read and in which order of authority; it does not restate the rules it points to.
 
-## Project context
+## What bOps is
 
-bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools,
-policy, approval, post-action verification and complete audit. The LLM proposes; the runtime
-decides and executes. V1.2 multi-agent orchestration is complete and released as
-`v1.2.0-preview.8`. V1.3 senior-operator local diagnostics is merged; the stable V1.3 gate is not closed (see the register). The V1.3.x reliability hardening
-train (`agentic/_plans/2026-09-25-v1.3x-reliability-hardening.md`) is closed: HARDEN-1 through
-HARDEN-14 are complete and merged, with the final E2E-1…14/DoD A–D gate integrated through PR #85
-(`83084fc251b6173cb60bd1473abac635506c8343`). There is no next reliability packet. V1.4 remains
-planned and not started; explicit operator authorization is required before beginning it. All gates
-are defined only by the consolidated roadmap.
+bOps is a .NET 10 runtime that operates Windows and Linux machines through declarative tools, policy,
+approval, post-action verification and complete audit. The LLM proposes; the runtime decides and executes.
+Current milestone, scope and gates live in the [consolidated roadmap](_plans/2026-09-16-consolidated-roadmap.md),
+the task register and `HANDOFF.md`, never in this file. Build the current roadmap version, not the next one.
 
-## Required read order
+## Precedence (the only chain)
 
-Before changing project state, read:
+When two sources disagree, the earlier one wins. Do not choose by date or by file name.
 
-1. `CLAUDE.md`.
-2. `agentic/00-project-spec.md`.
-3. `agentic/01-architecture-rules.md`.
-4. `agentic/03-security-rules.md`.
-5. The subject-specific files in this directory.
-6. `agentic/06-decisions.md` before proposing an architectural alternative.
-7. `agentic/_plans/2026-09-16-consolidated-roadmap.md`, then `agentic/_tasks/register.json` (task state; rules in
-   `agentic/_tasks/PROCESS.md`) and only the selected task's packet under `agentic/_tasks/`.
-8. `HANDOFF.md` and the relevant accepted ADRs.
+1. **Current architecture contracts** — exactly five files in [`docs/architecture/current/`](../docs/architecture/current/). They are the only source of
+   approved structural decisions and safety invariants. Two contracts that conflict are a blocker: stop and ask the operator.
+2. **Engineering and governance rules, each within its own scope** — [`02-coding-standards.md`](02-coding-standards.md) (code),
+   [`04-testing-rules.md`](04-testing-rules.md) (tests), [`05-workflow.md`](05-workflow.md) (commits, PRs, change control),
+   [`_tasks/PROCESS.md`](_tasks/PROCESS.md) (task state), [`00-project-spec.md`](00-project-spec.md) (product scope). They never create architecture decisions.
+3. **Roadmap and the active plan.**
+4. **The task packet.** It details execution; it cannot contradict a contract.
+5. **Technical references** (`docs/*.md`, `docs/architecture/reference/`, `docs/security/`, `docs/knowledge/`) within their scope, subordinate to the contracts.
+6. **History** — never an authority and not read by this bootstrap.
 
-Never include `agentic/obsolete/` in routine discovery or bootstrap. It contains superseded inputs
-and snapshots with no authority.
+Decisions of the operator change a contract; until they do, a pending decision stays pending. A rule that appears only in a
+*Pending decisions — non-binding* section of a contract is **not** a rule, even if the code already implements it.
 
-## Stack and architecture
+## What to read
 
-- .NET 10 and latest C#.
-- Nullable, analyzers and warnings-as-errors are enforced.
-- The dependency-free public contract lives in `bOps.Abstractions`.
-- Runtime, Policy, Memory and Audit never name a package, provider or concrete tool.
-- Packages depend only on `bOps.Abstractions` and load through the package boundary.
-- There is no generic execution tool, arbitrary SQL path or unfiltered environment dump.
-- Policy is enforced where execution happens; every side effect is verified; every outcome is
-  audited.
+1. This file and the router you came from.
+2. **The current task.** Run `python scripts/governance/validate_register.py --summary`; `HANDOFF.md` names the current task of this branch.
+   Find it by its `BOPS-NNNN` id in [`_tasks/register.json`](_tasks/register.json) (`authorized: true`, dependencies `DONE`), then its packet under
+   [`_tasks/`](_tasks/) and the plan it links. Read `_tasks/PROCESS.md` only when you change a task status.
+3. **Only the contracts the task touches** (not all five by default):
 
-## Documentation and workflow
+   | If the task touches | Read |
+   |---|---|
+   | Model calls, MAF boundary, context, providers, fallback | [Contract 01](../docs/architecture/current/01-maf-agent-infrastructure.md) |
+   | Tools, packages, policy, approval, secrets, audit, entitlement, delegation, plugins, filesystem/network safety — **always before adding or changing a tool** | [Contract 02](../docs/architecture/current/02-tools-safety-authority.md) |
+   | `TaskState`, planning, resume, mutation journal, budgets, retry | [Contract 03](../docs/architecture/current/03-task-state-resume-mutations.md) |
+   | Evidence, diagnosis, disclosure, grounding | [Contract 04](../docs/architecture/current/04-evidence-and-diagnosis.md) |
+   | SDK, API, CLI, browser sessions, Knowledge, open-core | [Contract 05](../docs/architecture/current/05-interfaces-knowledge-and-hosts.md) |
 
-- Non-trivial work requires a plan in `agentic/_plans/` and a task in `agentic/_tasks/register.json` with a `BOPS-NNNN` id.
-- Task state is kept only in the register and mirrored to the GitHub Issue, Project #6 and `HANDOFF.md` at every status change
-  (`agentic/_tasks/PROCESS.md`); never copy a status into another document.
-- Update task checklists as real work completes, not in advance.
-- Keep README, CHANGELOG, HANDOFF, plans, tasks and code-adjacent documentation aligned.
-- Write an ADR before any change covered by `agentic/05-workflow.md`.
-- Use short-lived branches and Conventional Commits in English; never rewrite shared history to
-  cosmetically repair old commit messages.
+   Each contract lists its binding rules (`Cn-Rmm`), their decision and implementation status, and the technical references that carry detail.
+4. The engineering rule files of precedence level 2 that match the work (C# → `02`, tests → `04`, commit/PR → `05`).
+5. **Technical references** only when the task touches that tool or area (the contract points to them).
+
+Do **not** read, unless the operator asks for historical research: `agentic/obsolete/`, `docs/architecture/archive/`,
+`docs/handoff-archive/`, `agentic/_plans/_migration-work/`, closed plans and reports. The compatibility indexes
+(`docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md`, `agentic/06-decisions.md`) are lookup tables
+for resolving an old identifier (`ADR-NNNN`, `A1`, `S5`, `D-029`) found in code or old documents; they are not part of the reading order.
+
+## Stop and ask when
+
+- The task is not `authorized: true` in the register, or a dependency is not `DONE`.
+- Two contracts conflict, or a contract conflicts with the code or the task, and the evidence does not settle it.
+- The change would alter a structural decision or a safety invariant. That is a change to a contract and needs operator approval; do not write an ADR and do not
+  edit a contract as part of a feature task.
+- A rule blocks the task: say which rule, what the task needed and what you propose. Never work around it and mention it afterwards.
+- A needed change would touch something outside the task (another milestone, a Proposed decision such as D1, D4 or D5).
+
+## Workflow
+
+- Non-trivial work needs a plan under `agentic/_plans/` and a register task with a `BOPS-NNNN` id. Task state is kept only in the register and mirrored to the
+  GitHub Issue, Project #6 and `HANDOFF.md` at every status change ([`_tasks/PROCESS.md`](_tasks/PROCESS.md)); never copy a status into another document.
+- Update task checklists as real work completes, not in advance. Keep README, CHANGELOG, HANDOFF, plans, tasks and documentation aligned.
+- Short-lived branches, Conventional Commits in English; never rewrite shared history to repair old commit messages.
 - Never push, create a release tag or open a PR unless the operator explicitly asks.
+- Core Runtime, Policy, Audit and verification changes are test-first; follow [`04-testing-rules.md`](04-testing-rules.md).
+- Diagnose the root cause before changing behavior; keep application, infrastructure, configuration and documentation causes distinct.
+  Developer credentials and machine configuration must not influence deterministic tests.
 
-## Testing and debugging
+## Validation
 
-- Core Runtime, Policy, Audit and verification changes are test-first.
-- Platform packages use real target tests; provider packages use recorded HTTP contracts and
-  opt-in live smoke tests.
-- Diagnose root cause before changing behavior. Keep application, infrastructure,
-  configuration and documentation causes distinct.
-- Developer credentials and machine configuration must not influence deterministic tests.
-
-## Final validation
-
-Validate the affected surface and, for a milestone closeout, run at minimum:
+Validate the affected surface and, for a milestone closeout, at minimum:
 
 - `dotnet build bOps.slnx --configuration Release`
 - `dotnet test bOps.slnx --configuration Release --no-build --filter "Category!=LiveModel"`
 - Angular production build and headless tests when API/UI behavior changes
+- `python scripts/governance/validate_register.py` when the register changes
 - the relevant architecture, secret and documentation-alignment checks
 
-Windows and Linux CI are authoritative for real-platform behavior. A release milestone also
-requires its tag, release workflow, reproducible artifacts, SBOMs, checksums and attestations.
+Windows and Linux CI are authoritative for real-platform behavior.
 
-## Naming and file discipline
+## File discipline
 
-- Code, identifiers, comments, commit messages and normative `agentic/` files are English.
-- Namespaces use `bOps.*`; tools use lowercase dotted names.
-- One top-level type per file; no `Helper`, `Manager`, `Util` or `Common` dumping grounds.
-- Do not create temporary copies, backup files, placeholder documents or unused scaffolding.
-- Treat everything under `agentic/obsolete/` as historical and non-normative. Do not read it unless
-  the active task explicitly requests historical research.
+- Code, identifiers, comments, commit messages and normative `agentic/` and contract files are English.
+- Namespaces use `bOps.*`; tools use lowercase dotted names. One top-level type per file; no `Helper`, `Manager`, `Util` or `Common` dumping grounds.
+- No temporary copies, backups, placeholder documents or unused scaffolding.

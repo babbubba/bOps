@@ -77,8 +77,8 @@ Never call a live model in a CI test. `FakeChatModel` replays a recorded sequenc
 `ModelResponse` values, which makes the loop fully deterministic and lets a test assert the
 exact sequence of policy decisions, executions and verifications.
 
-Recorded end-to-end scenarios live in `examples/` and double as planner regression tests: a
-goal, the recorded model responses, the expected tool sequence, the expected audit trail. When
+Recorded model-response scenarios live beside the test suites that replay them (for example the golden and replay fixtures under `tests/`) and double as planner
+regression tests: a goal, the recorded model responses, the expected tool sequence, the expected audit trail. When
 the loop changes, these tell you what changed in behaviour.
 
 Live-model tests exist, are marked `[Trait("Category","LiveModel")]`, and are excluded from

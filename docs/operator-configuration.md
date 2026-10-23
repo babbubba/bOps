@@ -156,10 +156,10 @@ The Settings page is visible to administrators only and needs the vault.
 The `ModelProvider` section names the provider id, `BaseUrl`, `Model`, and the `ApiKeySecret` reference.
 Supported providers and their status are listed in the README's
 [Providers](../README.md#providers) section; the wire contract is in
-[ADR-0038](architecture/adr/0038-provider-wire-contract.md).
+[C01-R10 (was ADR-0038)](architecture/current/01-maf-agent-infrastructure.md#c01-r10--provider-wire-contract-closed-alias-map).
 
 On the API there are three distinct states
-([ADR-0045](architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md)):
+([C01-R17 (was ADR-0045)](architecture/current/01-maf-agent-infrastructure.md#c01-r17--execution-scoped-pinning-and-late-bound-credentials)):
 
 - **Persisted** configuration is what Settings stores (`settings.json`, the vault). A persisted value can be
   *shadowed* by the host and then is not in use.
@@ -218,7 +218,7 @@ configuration generation and a `Fallback` retry decision at each transition.
 
 ## 5. Encrypted vault
 
-The vault (`vault.dat`, [ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md))
+The vault (`vault.dat`, [C02-R13 (was ADR-0029)](architecture/current/02-tools-safety-authority.md#c02-r13--secrets-never-reach-a-log-secret-resolution-and-the-encrypted-vault))
 stores the provider API keys entered on the Settings page, encrypted with AES-256-GCM. Provider profiles
 and the active provider are stored, unencrypted, in `settings.json`. Stored keys are never returned by
 an endpoint; responses carry only a masked prefix/suffix.
@@ -402,7 +402,7 @@ CI runner skips it. Windows CI runs elevated. See
 
 Some tools and Skill Capabilities need something outside bOps: the Docker daemon, a SearXNG endpoint, a debugger executable,
 a plugin's own service. bOps tells you — in the **System messages** page, `GET /api/system-messages` and nowhere else you
-have to dig — when one of those is missing, why, and how to fix it ([ADR-0049](architecture/adr/0049-unified-prerequisite-readiness-and-system-messages.md)).
+have to dig — when one of those is missing, why, and how to fix it ([C02-R28 (was ADR-0049)](architecture/current/02-tools-safety-authority.md#c02-r28--prerequisite-readiness-registered-is-not-available)).
 
 **Registered versus available.** A tool or Capability bOps loaded and validated is *registered*. It is *available* only
 while its **required** prerequisites are satisfied. A registered component that is not available is never offered to a
@@ -492,7 +492,7 @@ write the message is logged and never fails or changes the task.
 ## 13. Model context, context profiles and summarization
 
 bOps sends the model a bounded view of the task so far. That view is built by the Microsoft Agent Framework (MAF) context
-layer ([ADR-0052](architecture/adr/0052-microsoft-agent-framework-bops-boundary.md)); bOps decides what is protected
+layer ([C01-R06 (was ADR-0052)](architecture/current/01-maf-agent-infrastructure.md#c01-r06--model-facing-context-is-derived-protected-context-is-never-compacted)); bOps decides what is protected
 and what is merely history, and never lets the layer change what the runtime executes.
 
 - **Protected, never compacted:** the standing instructions, the goal, the current plan and step, the offered tool for the
@@ -642,7 +642,7 @@ proxy, and what was **not run** (no local server and no provider credentials wer
 ## 14. Knowledge for the Local Agent (CLI pilot, opt-in)
 
 The CLI can bind a task to one signed Knowledge pack you installed and granted, give the model an index of it and serve the reads the
-model asks for. It is an experimental pilot ([ADR-0058](architecture/adr/0058-local-agent-knowledge-pilot.md)): **off unless
+model asks for. It is an experimental pilot ([ADR-0058](architecture/adr/README.md#adr-0058)): **off unless
 `Knowledge:Enabled` is `true`**, CLI only (never the API, the UI or `bops delegate`), one pack per task, `Knowledge` packs only.
 
 | Key | Default | Notes |
@@ -660,10 +660,54 @@ Unknown or misspelt keys are an error whether or not the section is enabled. The
 by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
 means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
 
+## 15. Model-call timeouts, retry and failure reasons, and resuming from the CLI
+
+*Technical specification consolidated from ADR-0039 (§7, §10) and ADR-0017 during the architecture consolidation (DOC-02). The binding
+rules are in `docs/architecture/current/01-maf-agent-infrastructure.md` (C01-R12 to C01-R14); this section is the operator-facing detail.*
+
+Model-call retry and timeout keys (all additive; defaults shown):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Agent:ModelCallMaxAttempts` | 3 | Attempts per logical model call (1 disables retry). |
+| `Agent:ModelCallAttemptTimeout` | `00:02:00` | Runtime timeout of one attempt. |
+| `Agent:ModelCallBudget` | `00:05:00` | Wall-clock cap for one logical call, attempts and waits included; it always wins. |
+| `Agent:ModelRetryBaseDelay` | `00:00:01` | Backoff base (doubles per retry, jittered). |
+| `Agent:ModelRetryMaxDelay` | `00:00:30` | Backoff cap and the largest `Retry-After` honoured. |
+| `ModelProvider:RequestTimeout` (`ChatModelOptions.RequestTimeout`) | `00:02:30` | Outer transport guard the adapter sets on its `HttpClient`, replacing the implicit 100 s. |
+
+`AgentRunnerOptions.Validate` rejects incoherent values (attempts below 1; a non-positive attempt timeout or budget; a negative base
+delay; a maximum delay below the base delay) when the runner is built, and the hosts additionally require
+`ModelCallAttemptTimeout < RequestTimeout`, failing fast with a message naming the keys, so the runtime attempt timeout normally fires
+first. The CLI validates while it starts. The API resolves the chat model lazily, so it validates on the first model resolution (the first
+task or delegation request), before any task is persisted. In both hosts an incoherent configuration fails closed; the API does not
+validate at process start.
+
+When a logical model call fails for good, the task ends `Failed` through the synthetic step `Model protocol failure`, with every
+attempt's `ModelCalls` attached; its observation is a provider-neutral operator reason chosen by failure kind, then the attempt count, then
+the sanitized safe reason:
+
+| Failure kind | Operator reason |
+|---|---|
+| `Authentication` | Provider authentication failed. Check the configured provider credential. |
+| `QuotaExceeded` | Provider account quota or credit is unavailable. |
+| `RateLimited` | Provider rate limit exceeded. |
+| `Timeout` | Provider/model call timed out. |
+| `Unreachable` | Provider could not be reached. Check the provider URL and the network. |
+| `Transient` | Provider is temporarily unavailable. |
+| `InvalidRequest` | Provider rejected the model request. |
+| `ContextOverflow` | Model context limit exceeded. |
+| `MalformedResponse` | Provider/model returned a malformed response. |
+| `Unknown` | Model call failed unexpectedly. |
+
+Resuming a task from the CLI: `bops resume <task-id>` is a CLI subcommand; `bops "<goal>"` keeps working unchanged
+(the entry point checks for a first argument of `resume` before treating every argument as the goal). It applies the same resume policy
+and refusal codes as the API and exits non-zero on a refusal.
+
 ## Related documents
 
 [Knowledge pilot](knowledge/local-agent-pilot.md) · [Plugins](plugins/getting-started.md) · [Delegation](agents/delegation.md) ·
-[Delegation policy](agents/delegation-policy.md) · [Architecture decisions](architecture/adr/) ·
-[Vault ADR-0029](architecture/adr/0029-encrypted-local-vault-and-master-key.md) ·
-[Model context ADR-0052](architecture/adr/0052-microsoft-agent-framework-bops-boundary.md) ·
+[Delegation policy](agents/delegation-policy.md) · [Architecture contracts](architecture/current/) ·
+[C02-R13 (was Vault ADR-0029)](architecture/current/02-tools-safety-authority.md#c02-r13--secrets-never-reach-a-log-secret-resolution-and-the-encrypted-vault) ·
+[C01-R06 (was Model context ADR-0052)](architecture/current/01-maf-agent-infrastructure.md#c01-r06--model-facing-context-is-derived-protected-context-is-never-compacted) ·
 [AF-05 benchmark results](../agentic/_tasks/2026-10-11-af-05-benchmark-results.md)

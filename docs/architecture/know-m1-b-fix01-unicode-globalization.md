@@ -1,6 +1,6 @@
 # KNOW-M1-B-FIX01 — Unicode globalization runtime compatibility
 
-Decision: [ADR-0057](adr/0057-knowledge-discovery-index.md) section U.5 (D-049, **Accepted**; this note adds no decision and changes no status).
+Decision: [ADR-0057](adr/README.md#adr-0057) section U.5 (D-049, **Accepted**; this note adds no decision and changes no status).
 Scope: documentation, the host runtime configuration, a typed failure and its tests. Offline only: no model, no benchmark, no pack change, no T5–T8.
 
 ## The defect

@@ -1,6 +1,6 @@
 # KNOW-DISC-01 T8 — Knowledge Index M1 gate report
 
-Decision: [ADR-0057](adr/0057-knowledge-discovery-index.md) §E (T8), §H.1, §H.2, §H.3. This report adds no decision and changes no status other than the T8 row.
+Decision: [ADR-0057](adr/README.md#adr-0057) §E (T8), §H.1, §H.2, §H.3. This report adds no decision and changes no status other than the T8 row.
 Scope: offline only. No live inference, no capture, no DGX, no prompt / pack / provider / governance change. No commit.
 History: first run on `d0dcfbe` = **FAIL** (one defect, four missing tests). T8-FIX01 (2026-10-17, same worktree, uncommitted) corrected the defect and added the tests; sections marked *(T8-FIX01)* are the update.
 

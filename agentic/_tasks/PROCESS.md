@@ -2,8 +2,8 @@
 
 Introduced by PROJECT-GOVERNANCE-01 (BOPS-0118). This file defines how task state is kept; it is a
 process document, not a product rule. Updating a task's status, `HANDOFF.md` or the register is
-bookkeeping and is part of every task. Changing the *rules* in this file, in `agentic/0*.md` or in an
-accepted ADR is a normative change and needs operator approval.
+bookkeeping and is part of every task. Changing the rules in this file, in `agentic/0*.md`, or in a
+current architecture contract is a normative change and requires operator approval.
 
 ## 1. Authoritative source per fact
 
@@ -13,7 +13,7 @@ accepted ADR is a normative change and needs operator approval.
 | Executable specification of a task | the task packet (`packet`), or the `spec` reference until one exists | the Issue body links to it, never copies it |
 | Goals, milestones, delivery gates, sequencing | [consolidated roadmap](../_plans/2026-09-16-consolidated-roadmap.md) and the active plans | no status tables elsewhere |
 | Current session state (active task, blockers, next step) | [`HANDOFF.md`](../../HANDOFF.md), at most ~100 lines | history goes to `docs/handoff-archive/` |
-| Architectural decisions | ADRs and [`06-decisions.md`](../06-decisions.md); pending operator decisions are listed in `register.json` `decisions` | an ADR becomes Accepted only by the operator, never by merging |
+| Architectural decisions | the five current contracts in [`docs/architecture/current/`](../../docs/architecture/current/); pending operator decisions are listed in `register.json` `decisions` | a decision becomes binding only by the operator, never by merging |
 | Milestone quality evidence | `agentic/_quality/` | a milestone report is evidence for a gate, not a status |
 
 Do not copy a status into any other document. Link to the register instead.

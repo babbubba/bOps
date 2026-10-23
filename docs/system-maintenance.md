@@ -21,8 +21,8 @@ are fixed and direct; caller-controlled executables, arguments, shells and raw e
 
 ## `system.crashes` (schema 2)
 
-Design: [ADR-0032 HARDEN-7 amendment](architecture/adr/0032-bounded-cross-platform-system-events.md) §4 and
-[ADR-0041](architecture/adr/0041-typed-cross-platform-stability-evidence.md) §6–§7.
+Design: [C04-R06 (was ADR-0032 HARDEN-7 amendment)](architecture/current/04-evidence-and-diagnosis.md#c04-r06--typed-results-completeness-and-failure-kinds) §4 and
+[C04-R04 (was ADR-0041)](architecture/current/04-evidence-and-diagnosis.md#c04-r04--evidence-time-semantics) §6–§7.
 
 | Argument | Meaning |
 |---|---|
@@ -87,6 +87,11 @@ both modes.
 journal where core dumps are recorded) with its oldest record and size, and each WER directory with `state: unknown`.
 `complete` is true only when every source was read, nothing was cut and the log reaches back to the start of the
 request.
+
+Additional bounds and source names (technical specification, ADR-0032 HARDEN-7 §4): the ceiling of 2,048 normalized crash records applies to the merged
+set before formatting; the Event Log sources keep the names `windows-event-application-error` and `windows-event-wer`; the Linux sources keep `linux-coredumpctl` and
+`linux-core-pattern`. Schema versions: `system.events` and `system.crashes` moved from 1 to 2 (events keeps `mode: raw` as its default; crashes intentionally defaults to
+`aggregate` — a reader needing the schema-1 row shape passes `mode: raw`); `system.stability` is schema 1; the other maintenance tools stay at schema 1.
 
 ## Platform evidence matrix
 

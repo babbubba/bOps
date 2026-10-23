@@ -190,7 +190,7 @@ plan.
 
 If your tool or Capability needs something outside bOps (a daemon, a client binary, a licence file), declare it instead of
 failing at execution. Name the prerequisite by a lowercase dotted id and implement a **read-only** check
-([ADR-0049](../architecture/adr/0049-unified-prerequisite-readiness-and-system-messages.md)):
+([C02-R28 (was ADR-0049)](../architecture/current/02-tools-safety-authority.md#c02-r28--prerequisite-readiness-registered-is-not-available)):
 
 ```csharp
 using bOps.Abstractions;

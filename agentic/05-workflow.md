@@ -2,19 +2,19 @@
 
 ## Before writing code
 
-1. Read [`00-project-spec.md`](00-project-spec.md), [`01-architecture-rules.md`](01-architecture-rules.md)
-   and [`03-security-rules.md`](03-security-rules.md).
+1. Follow [`00-bootstrap.md`](00-bootstrap.md): read [`00-project-spec.md`](00-project-spec.md) for scope and, for the task, the architecture
+   contracts in [`docs/architecture/current/`](../docs/architecture/current/) that the bootstrap routes you to.
 2. Identify which roadmap version the task belongs to. If it belongs to a later one, stop and
    say so (see *Scope discipline* below).
-3. Check [`06-decisions.md`](06-decisions.md) before proposing any architectural alternative.
+3. Check the current contracts (binding rules and *Pending decisions*) before proposing any architectural alternative; do not re-open a settled rule without new information.
 4. If the task touches the core, write the failing test first.
 
 ## Scope discipline
 
 Build the current version. Not the next one.
 
-The contract may accommodate future versions — that is what
-[`01-architecture-rules.md`](01-architecture-rules.md) is for. The implementation must not
+The contract may accommodate future versions — that is what the architecture contracts in
+[`docs/architecture/current/`](../docs/architecture/current/) are for. The implementation must not
 anticipate them. Concretely: no plugin loader while implementing V0.5, no approval flow while
 implementing V0.2, no streaming while implementing V0.1.
 
@@ -35,7 +35,7 @@ Trunk-based. Short-lived branches off `main`, merged quickly.
 ```
 feat/v0.3-policy-engine
 fix/registry-platform-filter
-docs/adr-0006-packages
+docs/operator-configuration-update
 ```
 
 Conventional Commits, imperative mood, in English:
@@ -44,7 +44,7 @@ Conventional Commits, imperative mood, in English:
 feat(policy): reject Critical configured as anything but forbidden
 fix(runtime): treat tool timeout as a distinct outcome
 test(packages): add /proc/meminfo parsing against a real container
-docs(adr): record the decision to drop Native AOT
+docs(architecture): clarify the package loading boundary
 refactor(abstractions): replace object? arguments with ToolArguments
 ```
 
@@ -53,55 +53,22 @@ Scopes follow the project layout: `abstractions`, `runtime`, `policy`, `memory`,
 
 The body explains *why*. The diff already explains what.
 
-## When an ADR is required
+## When a structural decision is needed
 
-Write one in `docs/architecture/adr/NNNN-title.md` before the code, for any change that:
+Architectural decisions are no longer written as ADRs. A change to a structural decision or a safety invariant is a change to a current
+architecture contract in [`docs/architecture/current/`](../docs/architecture/current/), and it is made **only with the operator's approval**,
+never as a side effect of a feature task. Stop and ask before any change that:
 
 - alters a type in `bOps.Abstractions`;
 - changes how packages are loaded, isolated, trusted or identified;
 - changes the risk model, the policy semantics, or the verification semantics;
 - adds a dependency to the core;
 - changes the execution topology or the audit schema;
-- reverses or amends an entry in [`06-decisions.md`](06-decisions.md).
+- reverses or amends a binding rule of a contract.
 
-Everything else does not need one. An ADR that records an obvious choice is noise; the ones
-that matter are the ones with a real alternative that was rejected for a reason worth
-remembering.
-
-Format: context, decision, alternatives considered, consequences. Status is
-`Proposed` → `Accepted` → possibly `Superseded by ADR-NNNN`. An accepted ADR is never edited
-to change its meaning — it is superseded by a new one.
-
-The first ADRs to exist, per the plan and the decisions taken (still unwritten as of V0.9 — a
-real, tracked backlog item, not a rule violation to fix silently as a side effect of unrelated
-work):
-
-| | |
-|---|---|
-| ADR-0001 | A project-owned `IChatModel` rather than depending on `Microsoft.Extensions.AI` throughout the runtime |
-| ADR-0002 | Five risk levels, and `Forbidden` as an unbypassable invariant |
-| ADR-0005 | One shared OpenAI-compatible adapter, with Anthropic as the only native adapter |
-| ADR-0006 | Tools, operating systems and LLM providers are all packages behind the same contract |
-| ADR-0011 | Local-only execution now, with a contract shaped for remote agents later |
-| ADR-0012 | Dynamic package loading over Native AOT |
-
-ADR-0013 and later records already exist under `docs/architecture/adr/`. The consolidated roadmap
-pre-commits the following remaining ADR subjects. Assign a number only when an ADR is written:
-
-| | |
-|---|---|
-| Open-core, two repositories, and the public/private boundary | Due at V0.9.1 |
-| Package loader, manifest shape, and the activation boundary/trust model | Due at V0.10 |
-| Freezing the `bOps.Abstractions` 1.0 surface | Due at V1.0 |
-| Skill/capability/evidence contracts and the immutable execution plan | Due at V1.1 |
-| Skill execution interfaces and restricted same-package invocation | Due at V1.1-A |
-| Exact filesystem inventory and hash-bound destructive preflight | Due at V1.1-C/D |
-| Web package outbound-network and SSRF boundary | Due at V1.1-E |
-| Encrypted local vault, master-key handling and rotation | Due at V1.1-G |
-| Multi-agent orchestration and privilege-reducing delegation | Due at V1.2 |
-| Entitlement, evaluated locally and remotely at the execution point | Due at V1.3 |
-| Mutating plugin lifecycle and upload | Due at V1.3 |
-| Node–Control Plane transport and the multi-tenant model | Due at V1.4 |
+Everything else does not need a contract change. A decision that depends on an open operator decision (see `register.json` `decisions` and the
+*Pending decisions — non-binding* section of each contract) stays pending; the code is not proof of acceptance. Task scope and due dates for planned
+work are in the [consolidated roadmap](_plans/2026-09-16-consolidated-roadmap.md), not here.
 
 ## Definition of done
 
@@ -114,7 +81,7 @@ A change is done when all of the following are true:
 - Every new tool has a manifest, a risk level, and — if not `Read` — a `VerificationSpec` and
   an `IVerifiableTool` implementation.
 - Every new outcome path emits an audit event.
-- An ADR exists if the list above required one.
+- If the change was structural (the list above), the operator approved the matching contract change.
 - The public surface of `bOps.Abstractions` is documented if it changed.
 - Nothing dead was left behind: no unused code, no compatibility shim, no commented-out block.
 
@@ -132,12 +99,12 @@ around it and mention it afterwards.
 - Push, force-push, or open a PR.
 - Commit a secret, or anything matching a key pattern, even in a test fixture.
 - Add a dependency to `bOps.Abstractions`. It stays dependency-free, permanently.
-- Change a normative file in `agentic/` (`00`–`07`, accepted ADR text, `PROCESS.md` rules) as part of a feature task. Recording task status
+- Change a normative file in `agentic/` (`00`–`07`, the current architecture contracts, `PROCESS.md` rules) as part of a feature task. Recording task status
   in `agentic/_tasks/register.json`, the task packet checklist or `HANDOFF.md` is bookkeeping, not a normative change, and is required.
 - Read or revive files under `agentic/obsolete/` as active scope. Historical research must be
   explicitly requested by an active task.
 - Introduce a framework that hides or takes over the **bOps operational authority state machine**.
-  Microsoft Agent Framework is the reference framework for generic agent infrastructure (ADR-0052);
+  Microsoft Agent Framework is the reference framework for generic agent infrastructure ([Contract 01](../docs/architecture/current/01-maf-agent-infrastructure.md));
   using its context/history/compaction/model plumbing is expected. Planning/execution state, exact
   tool authority, policy, entitlement, mutation safety, verification, evidence semantics and recovery
-  remain explicit bOps responsibilities unless a later accepted ADR moves a named boundary.
+  remain explicit bOps responsibilities unless an operator-approved contract change moves a named boundary.

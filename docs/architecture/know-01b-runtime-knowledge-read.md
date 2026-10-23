@@ -1,7 +1,7 @@
 # KNOW-01B — Governed knowledge read and durable resume
 
-Base: KNOW-01A docs commit `b027459` (MAF `Microsoft.Agents.AI` pinned `[1.24.0]`, unchanged; no NuGet upgrade). Decision: [ADR-0056](adr/0056-governed-knowledge-read-and-durable-resume.md)
-(Proposed), continuing [ADR-0055](adr/0055-trusted-knowledge-packs-and-provider-isolation.md). Offline only: scripted model, temporary data, no benchmark, no remote
+Base: KNOW-01A docs commit `b027459` (MAF `Microsoft.Agents.AI` pinned `[1.24.0]`, unchanged; no NuGet upgrade). Decision: [ADR-0056](adr/README.md#adr-0056)
+(Proposed), continuing [ADR-0055](adr/README.md#adr-0055). Offline only: scripted model, temporary data, no benchmark, no remote
 call, no subagent, nothing composed by a production host, no configuration key.
 
 ## What exists

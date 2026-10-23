@@ -206,7 +206,7 @@ deadline. It never reacts to authentication, quota, invalid-request, context-ove
 failures, and an empty list (the default) disables it. It is a recovery policy you control, **not** the
 provider-side routing that `openrouter/free` performs, and it does not make an external provider's
 availability or output deterministic. Each attempt, including the transition to a fallback, is audited.
-Details: [ADR-0045](docs/architecture/adr/0045-execution-pinned-provider-configuration-and-fallback-chain.md).
+Details: [C01-R17 (was ADR-0045)](docs/architecture/current/01-maf-agent-infrastructure.md#c01-r17--execution-scoped-pinning-and-late-bound-credentials).
 
 The shipped agent guardrails cap cumulative reported usage (350,000 tokens in the CLI, 450,000 in the API) and allow 60 minutes
 of active work per execution attempt:
@@ -279,7 +279,7 @@ configurations: [docs/deployment.md](docs/deployment.md).
 refuses to start without it unless you remove `Vault:MasterKeySecret` from its configuration
 (then the Settings page is simply unavailable). Bind the API to loopback, or put TLS and an
 authenticated reverse proxy in front of it. Vault design:
-[ADR-0029](docs/architecture/adr/0029-encrypted-local-vault-and-master-key.md).
+[C02-R13 (was ADR-0029)](docs/architecture/current/02-tools-safety-authority.md#c02-r13--secrets-never-reach-a-log-secret-resolution-and-the-encrypted-vault).
 
 ### Aspire and optional web search
 
@@ -357,7 +357,7 @@ systems are packages too — each OS package declares the platforms it serves an
 picks by platform. The only difference between a first-party and a third-party package is where
 it is loaded from, never how it is built.
 
-Decisions and rationale: [`docs/architecture/adr/`](docs/architecture/adr/).
+Binding architecture contracts: [`docs/architecture/current/`](docs/architecture/current/); historical ADR identifiers: [ADR index](docs/architecture/adr/README.md).
 
 ## Extending bOps
 
@@ -399,7 +399,7 @@ Plan and progress: [consolidated roadmap](agentic/_plans/2026-09-16-consolidated
 
 | Topic | Read |
 |---|---|
-| Architecture | [ADR index](docs/architecture/adr/) · [decision register](agentic/06-decisions.md) |
+| Architecture | [architecture contracts](docs/architecture/current/) · [historical ADR index](docs/architecture/adr/README.md) |
 | Operator configuration | [credentials, vault, key rotation, filesystem policy](docs/operator-configuration.md) |
 | Security | [threat model](docs/security/threat-model.md) · [web network policy](docs/security/web-network-policy.md) · [security policy](SECURITY.md) |
 | Plugins and Skills | [getting started](docs/plugins/getting-started.md) · [sample plugin](samples/bops-sample-plugin/) |

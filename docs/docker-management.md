@@ -3,7 +3,7 @@
 The Docker package lists and inspects containers, reads their logs, and starts, stops and restarts them
 (`docker.containers`, `docker.images`, `docker.networks`, `docker.inspect`, `docker.logs`, `docker.start`,
 `docker.stop`, `docker.restart`). V1.3-B adds nine typed tools for images, builds and volumes
-([ADR-0033](architecture/adr/0033-governed-docker-image-build-and-volume-management.md)).
+([C02-R20 (was ADR-0033)](architecture/current/02-tools-safety-authority.md#c02-r20--network-process-and-dump-analysis-tool-boundaries)).
 
 All of them talk to the local daemon through `Docker.DotNet`, over the named pipe (Windows) or the Unix socket
 (Linux) or the endpoint in `Docker:Endpoint`. None of them accepts an Engine API path, a raw JSON body, a shell

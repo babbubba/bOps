@@ -152,3 +152,37 @@ shows it next to the start form.
 If a delegation still ends `Denied`, `Refused on Profile` names the role whose profile is missing or not usable; `bops` and the
 API also log why a `policy.yaml` failed to load (the API never returns the loader's message over HTTP). Envelope refusals during
 a run are audited as `Forbidden` policy decisions with a reason that starts with "Authority envelope:".
+
+## Readiness examples and CLI contract (technical specification)
+
+*Consolidated from ADR-0044 (§7, §12) during the architecture consolidation (DOC-02); binding rules: `docs/architecture/current/02-tools-safety-authority.md` (C02-R25) and
+`docs/architecture/current/05-interfaces-knowledge-and-hosts.md` (C05-R07).*
+
+Deterministic readiness examples (`D/D` = Discovery and Diagnostic; a profile is "valid" when it reduces):
+
+| # | Configuration | `remediation` | Discovery | Diagnostic | Remediation | Verification | `ready` |
+|---|---|---|---|---|---|---|---|
+| M1 | Fresh installation, no `policy.yaml` | false | `missing` | `missing` | `notRequired` | `notRequired` | false |
+| M2 | Fresh installation, no `policy.yaml` | true | `missing` | `missing` | `missing` | `missing` | false |
+| M3 | Read-only setup: valid D/D only (`profiles init --read-only`) | false | `ready` | `ready` | `notRequired` | `notRequired` | true |
+| M4 | Same read-only setup | true | `ready` | `ready` | `missing` | `missing` | false |
+| M5 | All four valid | false | `ready` | `ready` | `notRequired` | `notRequired` | true |
+| M6 | All four valid | true | `ready` | `ready` | `ready` | `ready` | true |
+| M7 | `policy.yaml` fails to load (any section malformed) | false | `malformed` (`Profile`, `policy_load_failed`) | `malformed` (same) | `notRequired` | `notRequired` | false |
+| M8 | Same | true | `malformed` | `malformed` | `malformed` | `malformed` | false |
+| M9 | D/D valid except Diagnostic `maxTokens: 0` | false | `ready` | `malformed` (`Tokens`, `reduction_denied`) | `notRequired` | `notRequired` | false |
+| M10 | D/D valid, Remediation `maxRisk: read`, Verification valid | false | `ready` | `ready` | `notRequired` | `notRequired` | true |
+| M11 | Same as M10 | true | `ready` | `ready` | `malformed` (`Risk`, `reduction_denied`) | `ready` | false |
+| M12 | D/D valid, Discovery `tools: []` | false | `malformed` (`Tools`, `reduction_denied`) | `ready` | `notRequired` | `notRequired` | false |
+
+M7/M8 are the file-level "malformed required profile" cases; M9, M11 and M12 are well-formed profiles the reducer refuses. In every row the real start of that shape is `Denied` on
+the first non-ready role in pipeline order, with the same dimension and, except for `policy_load_failed`, the same reason.
+
+| Command | Output | Exit codes |
+|---|---|---|
+| `bops delegate readiness [--remediation]` | Four lines in pipeline order, `<Role>: <state> [<dimension>] — <reason>`, then `Ready: yes\|no`, `Policy: <path> (<noFile\|loaded\|loadFailed>)`, `Profile drift: <n>`. On `loadFailed` the loader's message is printed (local operator). | `0` ready; `2` not ready; `1` usage or composition error |
+| `bops delegate profiles init --read-only [--write [--overwrite]]` | the generated policy (see the policy guide) | `0` printed or written; `1` usage error, refusal (existing file, failed `--overwrite` condition, no Read tool) or I/O error |
+| `bops delegate profiles check` | First `Policy: <absolute resolved path> (<noFile\|loaded\|loadFailed>)`, then one line per item `<Role>: <kind> <subject>`, then `Profile drift: <n>` | `0` no item; `2` any `policy_load_failed` or `unusable_profile` item (delegation is blocked for some shape); `8` only informational items; `1` usage or composition error |
+
+Output is human-readable only: no CLI command has a machine-readable mode (the API is the machine-readable surface). `readiness` and `profiles` are reserved verbs of `bops delegate`,
+like `status` and `resume`; an objective that is literally one of these words is quoted with other text. Exit code `8` is used only by `profiles check`.

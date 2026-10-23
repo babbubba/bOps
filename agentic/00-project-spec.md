@@ -12,14 +12,14 @@ executes, policies authorize, verification confirms, the audit log records.**
 
 - Not a chatbot with shell access.
 - Not a wrapper that hands model output to a shell. There is no generic "run this command"
-  tool, and there never will be — see [`03-security-rules.md`](03-security-rules.md).
+  tool, and there never will be — see [Contract 02](../docs/architecture/current/02-tools-safety-authority.md) (C02-R19).
 - Not a configuration-management system. bOps diagnoses and acts on a live machine; it does
   not converge a machine towards a declared desired state.
 - Not a thin wrapper around an agent framework. bOps uses **Microsoft Agent Framework (MAF)**
   for generic agent infrastructure, while bOps explicitly owns the operational authority boundary:
   planning/execution state, exact tool authorization, policy, entitlement, mutation safety,
   execution verification, evidence semantics and recovery remain observable and testable bOps code
-  and must not be hidden behind framework behavior (ADR-0052, D-048).
+  and must not be hidden behind framework behavior ([Contract 01](../docs/architecture/current/01-maf-agent-infrastructure.md), C01-R01).
 
 ## Non-negotiable principles
 
@@ -43,28 +43,28 @@ executes, policies authorize, verification confirms, the audit log records.**
 The **product authority core** is Runtime (state machine and governed execution), Policy, Memory,
 Audit and Abstractions (the public contract), composed by the hosts (CLI, API, Worker). Generic
 agent infrastructure may live in isolated implementation assemblies — notably the Microsoft Agent
-Framework integration defined by ADR-0052 — but such assemblies do not become part of the public
+Framework integration defined in Contract 01 — but such assemblies do not become part of the public
 package contract and cannot take ownership of the authority responsibilities listed above.
 
 ## Confirmed decisions
 
-Recorded in full, with rationale, in [`06-decisions.md`](06-decisions.md). Summary:
+Binding in the [current architecture contracts](../docs/architecture/current/) (rule ids in brackets); the historical decision log `06-decisions.md` is only a redirect. Summary:
 
 | Subject | Decision |
 |---|---|
 | Runtime | .NET 10, C# latest |
-| Topology | Local-only execution now, designed so remote agents can be added without rewriting (D-001) |
+| Topology | Local-only execution now, designed so remote agents can be added without rewriting (C05-R01, C02-R02) |
 | Target platforms | Windows and Linux. macOS is possible later **as a package**, never as a core change |
-| OS model | Each OS is its own package contributing its own tools; no `ISystemProvider`, no `IServiceProvider2` (D-005) |
-| Native AOT | Dropped. Dynamic package loading wins (D-003) |
-| Dev orchestration | .NET Aspire from V0.5, for dependencies and test targets only — never to host bOps in production (D-002) |
-| Verification | Declared in the manifest, evaluated by the package (D-006) |
-| Model contract | `tool_call_id` and multiple tool calls per turn from V0.1; streaming later as a separate optional interface (D-007) |
-| Agent infrastructure | Microsoft Agent Framework is the reference framework; bOps keeps operational authority and the public SDK framework-neutral (ADR-0052, D-048) |
-| Audit | Actor identity, secret redaction, `NodeId` and model-call events from V0.1 (D-008) |
-| Observability | OpenTelemetry from V0.1, OTLP exporter (D-009) |
-| Testing | TDD on the core, real integration targets for packages (D-010) |
-| License | Apache-2.0 |
+| OS model | Each OS is its own package contributing its own tools; no `ISystemProvider`, no `IServiceProvider2` (C02-R03) |
+| Native AOT | Dropped. Dynamic package loading wins (C05-R01) |
+| Dev orchestration | .NET Aspire from V0.5, for dependencies and test targets only — never to host bOps in production (C05-R01) |
+| Verification | Declared in the manifest, evaluated by the package (C02-R09) |
+| Model contract | `tool_call_id` and multiple tool calls per turn from V0.1; streaming later as a separate optional interface (C01-R03) |
+| Agent infrastructure | Microsoft Agent Framework is the reference framework; bOps keeps operational authority and the public SDK framework-neutral (C01-R01) |
+| Audit | Actor identity, secret redaction, `NodeId` and model-call events from V0.1 (C02-R14) |
+| Observability | OpenTelemetry from V0.1, OTLP exporter (C02-R14) |
+| Testing | TDD on the core, real integration targets for packages ([`04-testing-rules.md`](04-testing-rules.md)) |
+| License | Apache-2.0 (C05-R12) |
 
 ## Roadmap and scope discipline
 
@@ -91,12 +91,11 @@ release-candidate workflow has not run from a tag.
 
 **The authoritative backlog and actual status are in
 [`_plans/2026-09-16-consolidated-roadmap.md`](_plans/2026-09-16-consolidated-roadmap.md).** This
-file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone: V1.3-A through V1.3-L are complete and merged.
+file remains authoritative for product rules. V1.2 is complete. V1.3 is the current milestone: V1.3-A through V1.3-M are complete and merged; the stable V1.3 gate is not closed (see the register).
 A–L complete the local senior-system-administrator evidence surface before remote transport:
 events, Docker, process, network, storage, filesystem, service/scheduler, identity/time/reboot,
 firewall, TLS/certificates, updates/crashes/drivers and an integration gate. V1.3-M adds the
-neutral entitlement and local plugin-lifecycle boundary; it is implemented on a feature branch that passed its local M8 gate and
-is not yet merged, with Windows/Linux CI evidence pending. V1.4–V2.0 retain remote transport,
+neutral entitlement and local plugin-lifecycle boundary and is merged. V1.4–V2.0 retain remote transport,
 private Control Plane/Portal and commercial PostgreSQL/SQL Server delivery behind the open-core
 boundary.
 The public `bOps` repository never contains commercial Skills, knowledge, entitlement providers,

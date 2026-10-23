@@ -1,6 +1,6 @@
 # Knowledge in the CLI — Local Agent pilot
 
-Status: **experimental pilot, opt-in, off by default** ([ADR-0058](../architecture/adr/0058-local-agent-knowledge-pilot.md), proposed as D-050).
+Status: **experimental pilot, opt-in, off by default** ([ADR-0058](../architecture/adr/README.md#adr-0058), proposed as D-050).
 Scope: `bops "<goal>"` and `bops resume` on one machine, for the operating-system user running it. Not the API, not the UI, not `bops delegate`.
 
 ## 1. What it does
@@ -142,3 +142,57 @@ On start the CLI logs `Knowledge is enabled for the Local Agent: tasks are bound
 Set `Knowledge:Enabled` to `false` (or remove the section). Installed packs, snapshots and the trust store are left alone.
 Not implemented: binding a pack by capability or goal, several packs per task, Experience packs, a `bops knowledge` command, hot reload
 of grants and trust, and any API or UI composition (ADR-0058 §6–§7).
+
+## Admission contract and marker neutralization (technical specification)
+
+*From ADR-0057 §U.1 and §U.2 (restated in full during the GATE-02 corrections of the architecture consolidation). This section is the technical detail that rule
+`C05-R13` of `docs/architecture/current/05-interfaces-knowledge-and-hosts.md` needs for its Knowledge Discovery M1 scope (ADR-0057 rev. 2, D-049). It is not a
+new architectural authority: it carries no decision beyond that rule, and it does not make ADR-0054/0055/0056/0058/0059 Accepted.*
+
+### Admission constraints on names, descriptions and identifiers (U1–U10)
+
+Applied in `KnowledgeTextPolicy.ValidateDescription` (`bOps.Knowledge`, pure), called by `KnowledgeReadBridge.ValidateAdvertisement` in place of the earlier
+conditions on `description`. A violation raises `KnowledgePackIntegrityException(SkillInvalid)`, so the **whole pack is refused** and audited. The checks are
+deterministic, reject and **never rewrite**.
+
+| # | Rule | Detail |
+|---|---|---|
+| U1 | Well-formed UTF-16 | enumeration with `Rune.DecodeFromUtf16`; an unpaired surrogate is rejected |
+| U2 | Normalization | `IsNormalized(NormalizationForm.FormC)`; text that is not NFC is rejected (no silent normalization: what is reviewed, pinned and shown is the same text) |
+| U3 | Category allow-list (`Rune.GetUnicodeCategory`, internal .NET tables, not ICU) | allowed: `Lu Ll Lt Lm Lo Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So` and **only U+0020** among the `Zs`. Everything else is rejected: `Cc` (including TAB, CR, LF), `Cf` (bidi U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069; zero-width U+200B–U+200D, U+2060, U+FEFF; soft hyphen U+00AD; tags U+E0001, U+E0020–U+E007F), `Cs`, `Co`, `Cn`, `Zl`, `Zp`, other `Zs` (U+00A0, U+3000, …), `Mn`, `Mc`, `Me` (including variation selectors U+FE00–U+FE0F, U+E0100–U+E01EF, stacked combinations) |
+| U4 | Forbidden ASCII | `<` `>` `[` `]` `{` `}` `` ` `` `\|` `\` `"` |
+| U5 | Lengths and spaces | 1–256 UTF-16 units **and** ≤ 768 UTF-8 bytes; no leading or trailing space; no run of 2 or more spaces |
+| U6 | Forbidden content (on the NFKC-folded, `ToLowerInvariant` form) | substrings `runtime.`, `load_skill`, `read_skill_resource`, `run_skill_script`, `knowledge-index`, `skill-data`, `bops_tool_output`, `im_start`, `im_end`, `endoftext`; regex `(^|[^\p{L}\p{N}])(system|developer|user|assistant|tool|operator|human)\s*:` (role labels, also in fullwidth form thanks to NFKC) |
+| U7 | Skill name | unchanged `^[a-z0-9][a-z0-9-]{0,63}$` (ASCII; it cannot contain `.` or spaces) |
+| U8 | Resource path | unchanged `PackPathPolicy` at admission: segments `^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$` (no `..`, no empty segments), ≤ 128, reserved device names, links and reparse points rejected. In the index it is display only; resolution is by exact ordinal key in the pin or by ref; bOps never composes a path at run time |
+| U9 | Identifiers | `packId`, `version` and `publisher` are already shape-checked (`PackReference.IsPackId/IsVersion`, `KnowledgeTrustStore.IsIdentifier`) |
+| U10 | Other frontmatter fields | unchanged (`FrontmatterWithinBounds`); they are **never** rendered in the index, in the control text or in `discover` |
+
+The `query` argument of `discover` uses U1–U3 plus the allow-list "letters, digits, U+0020, `-`".
+
+Accepted limits (ADR-0057 §U.4): confusables across scripts (UTS #39) are not verified (a description confers no identity and names are ASCII); scripts that
+need combining marks (Devanagari, Thai, Arabic diacritics) are not admitted in descriptions in M1; `Rune.GetUnicodeCategory` is deterministic per .NET version
+while `IsNormalized` can depend on ICU for recent code points, mitigated by U3 (`Cn` rejected) and by tests on Windows and Linux.
+
+### Marker neutralization (§U.2)
+
+`[knowledge-index`, `[/knowledge-index`, `[knowledge-index-control` and `[/knowledge-index-control` are neutralized **case-insensitively** in `WrapToolOutput`
+(`AgentRunner`, which used `Ordinal` for the earlier markers: the new markers use `OrdinalIgnoreCase`) and in the bridge's `Neutralize`, which also applies to
+`discover` pages.
+
+## Globalization requirement (technical specification)
+
+*From ADR-0057 §U.5 (consolidated during the architecture consolidation, DOC-02; the M1 development scope is rule `C05-R13` and the remaining knowledge-engine mechanism is a pending decision, see
+`docs/architecture/current/05-interfaces-knowledge-and-hosts.md`).*
+
+Unicode normalization (NFC check of descriptions, NFKC fold of the forbidden-content test and of the lexical scoring) needs the .NET normalization
+support, which does not exist under `InvariantGlobalization=true` (`Normalize` returns the text unchanged and `IsNormalized` answers `true` even for
+non-normalized text). Availability is decided by the hosting process (runtimeconfig), not by the `bOps.Knowledge` library. The repository default
+(`Directory.Build.props`) stays invariant; `InvariantGlobalization=false` is set only in the hosts that run discovery (`bOps.Api`, `bOps.Cli`,
+`bOps.Knowledge.Tests`), with the invariant culture pinned so nothing else changes. On Linux the process needs `libicu`, and
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` overrides the runtimeconfig and returns the process to invariant mode. In invariant mode the policy
+closes safely: `KnowledgeTextPolicy.NormalizationAvailable` (probed once by normalizing U+212B and U+FF21) is `false`, every non-ASCII description or
+query is refused (`NormalizationUnavailable`), ASCII text is judged exactly, and the selector and the `discover` query raise
+`KnowledgeNormalizationUnavailableException` (code `KNOW-NORM-UNAVAILABLE`, a fixed message without text) before scoring; no fallback accepts
+unverified metadata and no degraded score is produced. The `sha256=` value in the index marker is the first 12 hex characters of the SHA-256 of the
+entry lines only, while `IndexHash` is the SHA-256 of the whole index text.

@@ -24,7 +24,7 @@ tracks cross-repository sequencing after it exists; it must not duplicate these 
 
 - Never start a later ordered task while an earlier dependency remains open.
 - Status checkboxes describe verified work only; do not check them prospectively.
-- A required ADR is written and accepted before the implementation it governs.
+- A required architectural decision is an operator-approved change to a current contract ([`docs/architecture/current/`](../../docs/architecture/current/)) made before the implementation it governs; ADRs are no longer written.
 - External mutations — repository creation, push, tag, publication or release — require explicit
   operator authorization at execution time.
 - Keep README, CHANGELOG, HANDOFF and the selected task aligned with validated results.
@@ -32,7 +32,7 @@ tracks cross-repository sequencing after it exists; it must not duplicate these 
 ## ADR-0052 Microsoft Agent Framework migration train
 
 AF-01 through AF-05 are an ordered architecture migration governed by
-[ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md). MAF adoption
+[C01-R01 (was ADR-0052)](../../docs/architecture/current/01-maf-agent-infrastructure.md#c01-r01--maf-is-infrastructure-never-operational-authority). MAF adoption
 is already decided (D-048): AF-05 benchmarks tune the implementation and authorize legacy cleanup,
 not a return to a custom agent framework. Execute AF-01 first; AF-04 may overlap AF-03 only after
 AF-02's shared context interfaces are stable. Each packet contains its own stop conditions and

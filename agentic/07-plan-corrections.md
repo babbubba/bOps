@@ -3,8 +3,8 @@
 `agentic/obsolete/plans/piano-bops.md` is a historical document: rich in rationale, valuable for
 understanding *why* bOps is shaped the way it is, and **not a specification**. It is excluded from
 normal agent bootstrap. Everything below is superseded by
-[`01-architecture-rules.md`](01-architecture-rules.md), [`06-decisions.md`](06-decisions.md) and
-the active consolidated roadmap.
+the [current architecture contracts](../docs/architecture/current/) and
+the active consolidated roadmap (`01-architecture-rules.md` and `06-decisions.md` are only compatibility indexes).
 
 An agent finding a conflict between the plan and these documents follows these documents, and
 does not need to ask.
