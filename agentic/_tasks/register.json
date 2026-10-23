@@ -5806,41 +5806,53 @@
    },
    "milestone": "MAF",
    "area": "MAF",
-   "status": "IN_PROGRESS",
+   "status": "VALIDATION",
    "priority": "P1",
    "effort": "medium",
    "authorized": true,
    "depends_on": [],
    "packet": "agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md",
    "spec": null,
-   "companion_docs": [],
+   "companion_docs": [
+    "docs/maintenance/af-turn-02-cli-host-parity-report-01.md"
+   ],
    "prs": [],
-   "commits": [],
+   "commits": [
+    "ba4b4e4b5fc1f95c26172233fb98fa4b42901aeb",
+    "d8dca20106e3feb385ccbbfd545234f3067f594d"
+   ],
    "validation": {
-    "achieved": [],
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
     "required": [
      "OFFLINE_TESTS",
      "CI_VERIFIED",
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Implementation, host-level parity tests and mode-switch/resume tests (offline).",
-     "PR, CI of the PR head and of the merge commit (not requested yet).",
-     "Operator approval of the delivery."
+     "PR, CI of the PR head on Windows and Linux, and of the merge commit (no push or PR was requested yet).",
+     "Operator approval of the delivery.",
+     "Not covered at host level: cancellation and timeout parity, process-level exit codes of Program.cs, any live model run (separate authorization)."
     ]
    },
-   "evidence": [],
+   "evidence": [
+    "Local, Windows 2026-10-23, branch codex/bops-0122-af-turn-02 at d8dca20: Release build of bOps.slnx 0 warnings 0 errors; Cli.Tests 217/217 (27 new in MafGovernedTurnHostTests), Architecture.Tests 210/210, AgentFramework.Tests 615 passed + 8 skipped, Runtime.Tests 2301/2301, Knowledge.Tests 308/308; validate_register.py 122 tasks 0 errors",
+    "Parity (default path vs MAF governed turn host, scripted model): requests, stored TaskState, audit trail, tool executions and accounting identical in 7 scenarios; 4 mode-switch combinations across interruption and resume identical to the all-default control; report docs/maintenance/af-turn-02-cli-host-parity-report-01.md",
+    "Full non-live solution run before the architecture guards were narrowed: failures only in Architecture (3 guards forbidding any composition, now narrowed to C01-R22 and green) and Filesystem (3 tests, reproduced on unchanged main code, unrelated)",
+    "Remote 2026-10-23: Issue #128 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDC87Q created as babbubba and read back (Status In Progress at creation, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)"
+   ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Operational wiring only of already implemented MAF code (MafGovernedTurnBroker, BopsContextProvider, ContextGate, GovernedChatClient); BOPS-0086/0087 stay DEFERRED and are not reopened. Contract 01 rule C01-R22 (decision D12). CLI goal and resume only, default off. PR #124 / BOPS-0111 excluded.",
-   "issue": null,
-   "project_item": null,
+   "note": "Operational wiring only of already implemented MAF code (MafGovernedTurnBroker, BopsContextProvider, ContextGate, GovernedChatClient); BOPS-0086/0087 stay DEFERRED and are not reopened. Contract 01 rule C01-R22 (decision D12). CLI goal and resume only, default off. PR #124 / BOPS-0111 excluded. Issue #127 was created by mistake under the company account (GITHUB_TOKEN not hidden for one call), closed as not planned and superseded by #128 (created as babbubba).",
+   "issue": 128,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDC87Q",
    "branch": "codex/bops-0122-af-turn-02",
-   "remote_kind": null,
-   "sync_pending": [
-    "Issue #127 (https://github.com/babbubba/bOps/issues/127) was created on 2026-10-23 by the company account fcavallari-italcom because GITHUB_TOKEN was not hidden for that call (CLAUDE.md rule). Operator decision needed: keep #127 (owner edits it as babbubba) or close it and recreate it as babbubba",
-    "Add the Issue to Project #6 as babbubba and set Status In Progress, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium; read back the item id; then set issue, project_item and remote_kind=issue in this entry"
-   ]
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-23T23:10:00+0200"
+   }
   }
  ],
  "known_divergences": [

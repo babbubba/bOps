@@ -4,7 +4,7 @@ Last updated: 2026-10-23 · `main` @ `2b54880` (squash merge of PR [#126](https:
 working branch `codex/bops-0122-af-turn-02` (local, worktree `bOps-turn02`; BOPS-0122 AF-TURN-02). The earlier documentation reconciliation lives on a different local branch (`codex/maf-resume-2026-10-23`) and is deliberately not mixed in.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0122 AF-TURN-02 (IN_PROGRESS)
+Current task: BOPS-0122 AF-TURN-02 (VALIDATION)
 Branch: codex/bops-0122-af-turn-02
 Ready: BOPS-0111
 Next number: BOPS-0123
@@ -29,7 +29,10 @@ Task state is never copied here; ask the register (`--summary`).
 - Current task of this branch: **BOPS-0122 AF-TURN-02** (P1, medium; operator decision D12 of 2026-10-23) — CLI opt-in, default-off MAF governed turn host
   (`MafGovernedTurnBroker` over the existing broker; Contract 01 rule C01-R22; CLI goal and resume only; refused with Knowledge). Authority stays in `AgentRunner`/bOps. Packet
   [`agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md`](agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md). D1 (general convergence, ADR-0053/0054) stays deferred; BOPS-0086/0087 stay `DEFERRED`.
-  Excluded: PR #124 / BOPS-0111, API host, live benchmarks, push/PR/merge (need separate authorization). Local commits only.
+  Excluded: PR #124 / BOPS-0111, API host, live benchmarks, push/PR/merge (need separate authorization). Local commits only (`ba4b4e4`, `d8dca20` and the bookkeeping commit after them).
+  **Implemented and in `VALIDATION`** (Issue #128, Project #6 item read back): CLI switch `Cli:Experimental:MafGovernedTurn`, 27 offline parity/mode-switch tests, narrowed architecture guards; report
+  [`docs/maintenance/af-turn-02-cli-host-parity-report-01.md`](docs/maintenance/af-turn-02-cli-host-parity-report-01.md). Open gates: PR, CI on Windows and Linux, operator approval. Three Filesystem tests fail on unchanged `main` (pre-existing, unrelated).
+  Next step: operator review; push/PR only on request. Extending to the API needs a separate decision.
 - BOPS-0121 DOC-CONSOL-01 (Issue #125, authorized at GATE-01 on 2026-10-22; PR #126 merged 2026-10-23, still `VALIDATION` in the register; its reconciliation is on the other local branch) — documentation-only consolidation of the ADRs,
   `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01, DOC-02, GATE-02 (approved 2026-10-22) and
   **DOC-03 (executed 2026-10-22 in one session, CP-03a and CP-03b PASS)** are done: the five contracts (105 binding rules) in `docs/architecture/current/` are **Current**; the 55 ADRs and the original `01`/`06`
