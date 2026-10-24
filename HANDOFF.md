@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-24 · `main` @ `2b54880` (squash merge of PR [#126](https://github.com/babbubba/bOps/pull/126), BOPS-0121) ·
-working branch `codex/vault-read-lock` (BOPS-0123, VaultStore read lock; worktree `bOps-vault`), **stacked on** `codex/bops-0122-af-turn-02` (PR #129, BOPS-0122): this branch contains the whole #129 branch and PR #132 targets it as its base.
+Last updated: 2026-10-24 · `main` @ `207b262` (PR [#129](https://github.com/babbubba/bOps/pull/129), BOPS-0122) ·
+working branch `codex/bops-maf-cli-ab-bench` (BOPS-0125, CLI A/B benchmark tooling; worktree `bOps-mafab`), cut from `main` @ `207b262`.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0123 VAULT-READ-LOCK-01 (VALIDATION)
-Branch: codex/vault-read-lock
+Current task: BOPS-0125 MAF-CLI-AB-01 (VALIDATION)
+Branch: codex/bops-maf-cli-ab-bench
 Ready: BOPS-0111
-Next number: BOPS-0125
+Next number: BOPS-0126
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -25,6 +25,10 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Milestone and task
 
+- Current task of this branch: **BOPS-0125 MAF-CLI-AB-01** (Issue #133, Project #6 Validation; authorized 2026-10-24 for **preparation only**) — serial A/B campaign of the real CLI with the MAF governed turn
+  host off/on (BOPS-0122, C01-R22). Tooling: `scripts/windows/run-maf-cli-benchmark.ps1`, `maf_cli_benchmark.py`, `maf_cli_analysis.py`; runbook
+  [`docs/maintenance/maf-cli-ab-benchmark-runbook-01.md`](docs/maintenance/maf-cli-ab-benchmark-runbook-01.md); packet `agentic/_tasks/2026-10-24-bops-0125-maf-cli-ab-benchmark.md`. 36 offline tests and a real
+  `-PreflightOnly` pass; uncommitted, nothing pushed. **Not authorized:** live runs, push, PR, merge, tag, OpenRouter. Next: operator runs the B01 pilot.
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
   `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet
