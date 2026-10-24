@@ -183,6 +183,93 @@ public sealed class VaultStoreTests : IDisposable
         Assert.Equal("sk-seed-value-0123456", store.Resolve("seed"));
     }
 
+    [Fact]
+    public async Task ReadsRunningAlongsideWrites_NeverFail_AndEveryWriteLands()
+    {
+        // On Windows an atomic replace fails while any reader holds the vault file open, so reads
+        // must be serialized with writes (BOPS-0123). Readers spin until the writer is finished.
+        const int writes = 150;
+        using var store = CreateStore();
+        store.Set("seed", "sk-seed-value-0123456", expectedVersion: 0);
+        var writerDone = false;
+
+        var readers = Enumerable.Range(0, 4).Select(reader => Task.Run(() =>
+        {
+            while (!Volatile.Read(ref writerDone))
+            {
+                _ = store.Version;
+                _ = store.List();
+                _ = store.Find("seed");
+                Assert.Equal("sk-seed-value-0123456", store.Resolve("seed"));
+            }
+        })).ToArray();
+
+        var writer = Task.Run(() =>
+        {
+            try
+            {
+                for (var i = 0; i < writes; i++)
+                {
+                    store.Set("openai", $"sk-openai-value-{i:D6}", store.Version);
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref writerDone, true);
+            }
+        });
+
+        await Task.WhenAll(readers.Append(writer)).WaitAsync(TimeSpan.FromSeconds(60));
+
+        Assert.Equal(writes + 1, store.Version);
+        Assert.Equal($"sk-openai-value-{writes - 1:D6}", store.Resolve("openai"));
+    }
+
+    [Fact]
+    public async Task MixedSetClearAndReads_FromManyThreads_CompleteWithoutDeadlock()
+    {
+        using var store = CreateStore();
+
+        async Task Worker(string providerId) => await Task.Run(() =>
+        {
+            for (var i = 0; i < 40; i++)
+            {
+                try
+                {
+                    var version = store.Set(providerId, $"sk-{providerId}-value-{i:D4}", store.Version);
+                    _ = store.Find(providerId);
+                    _ = store.Resolve(providerId);
+                    _ = store.List();
+                    store.Clear(providerId, version);
+                }
+                catch (VaultConcurrencyException)
+                {
+                    // Another worker won the version race; the next iteration re-reads and retries.
+                }
+            }
+        });
+
+        await Task.WhenAll(Worker("a"), Worker("b"), Worker("c"), Worker("d")).WaitAsync(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public async Task ARead_ThatThrows_ReleasesTheLock_SoLaterCallsAreNotBlocked()
+    {
+        await File.WriteAllTextAsync(VaultPath, "{ this is not valid json");
+        using var store = CreateStore();
+
+        Assert.Throws<VaultCorruptedException>(() => store.Version);
+        Assert.Throws<VaultCorruptedException>(() => store.List());
+        Assert.Throws<VaultCorruptedException>(() => store.Find("openai"));
+        Assert.Throws<VaultCorruptedException>(() => store.Resolve("openai"));
+
+        File.Delete(VaultPath);
+        // WaitAsync throws TimeoutException if a read that threw left the vault lock held.
+        var version = await Task.Run(() => store.Version).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, version);
+    }
+
     private static void RetryOnConflict(VaultStore store, string providerId, string plaintext)
     {
         while (true)

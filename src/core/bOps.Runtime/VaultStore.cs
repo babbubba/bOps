@@ -18,25 +18,25 @@ public sealed class VaultStore(string vaultFilePath, byte[] masterKey, TimeProvi
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>The vault's current optimistic-concurrency version token.</summary>
-    public int Version => LoadAll().Version;
+    public int Version => LoadAllSerialized().Version;
 
     /// <summary>Every stored provider's non-secret display metadata, ordered by provider id.</summary>
     public IReadOnlyList<VaultEntryInfo> List() =>
-        LoadAll().Entries
+        LoadAllSerialized().Entries
             .Select(pair => ToInfo(pair.Key, pair.Value))
             .OrderBy(entry => entry.ProviderId, StringComparer.Ordinal)
             .ToList();
 
     /// <summary>The stored provider's non-secret display metadata, or <c>null</c> if none is stored.</summary>
     public VaultEntryInfo? Find(string providerId) =>
-        LoadAll().Entries.TryGetValue(providerId, out var entry) ? ToInfo(providerId, entry) : null;
+        LoadAllSerialized().Entries.TryGetValue(providerId, out var entry) ? ToInfo(providerId, entry) : null;
 
     /// <summary>Decrypts and returns the stored plaintext for a provider, or <c>null</c> if none is stored.</summary>
     public string? Resolve(string providerId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
 
-        var file = LoadAll();
+        var file = LoadAllSerialized();
         if (!file.Entries.TryGetValue(providerId, out var entry))
         {
             return null;
@@ -123,6 +123,27 @@ public sealed class VaultStore(string vaultFilePath, byte[] masterKey, TimeProvi
     private static VaultEntryInfo ToInfo(string providerId, VaultEntry entry) =>
         new(providerId, entry.MaskPrefix, entry.MaskSuffix, entry.PlaintextLength, entry.CreatedUtc, entry.UpdatedUtc);
 
+    /// <summary>
+    /// Reads the vault under the same lock as writes. On Windows the atomic rename in
+    /// <see cref="SaveAll"/> fails with <see cref="UnauthorizedAccessException"/> while any reader
+    /// holds the file open, so a read must never overlap a write. <see cref="Set"/> and
+    /// <see cref="Clear"/> already hold the lock and call <see cref="LoadAll"/> directly
+    /// (<see cref="SemaphoreSlim"/> is not reentrant).
+    /// </summary>
+    private VaultFile LoadAllSerialized()
+    {
+        _gate.Wait();
+        try
+        {
+            return LoadAll();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Reads and validates the vault file. The caller must hold <c>_gate</c>.</summary>
     private VaultFile LoadAll()
     {
         if (!File.Exists(vaultFilePath))

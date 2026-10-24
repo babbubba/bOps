@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 122,
+  "next": 125,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -305,6 +305,17 @@
    "recommendation": "keep private until the board is populated",
    "status": "RESOLVED",
    "resolution": "PRIVATE, approved by the operator on 2026-10-21"
+  },
+  {
+   "id": "D12",
+   "title": "Scoped authorization of the CLI opt-in MAF governed turn host (Contract 01 C01-R22)",
+   "tasks": [
+    "BOPS-0122"
+   ],
+   "source": "operator decision 2026-10-23",
+   "recommendation": "approve the experiment, off by default, CLI goal and resume only",
+   "status": "RESOLVED",
+   "resolution": "Approved by the operator on 2026-10-23, with corrections: it authorizes exclusively C01-R22 and the MafGovernedTurnBroker experiment in the CLI; it does not accept ADR-0053/0054 as a whole (D1, the general architectural convergence, stays deferred) and does not reopen BOPS-0086/0087. Extension to the API needs a separate decision."
   }
  ],
  "tasks": [
@@ -5782,6 +5793,166 @@
     "Set Project #6 fields for Issue #125: Status In Progress, Area Documentation, bOps Milestone GOVERNANCE, Evidence Level None; Priority stays empty until the operator sets one",
     "Record the verified baseline in sync.status/verified_at after the read-back"
    ]
+  },
+  {
+   "id": "BOPS-0122",
+   "legacy_id": "AF-TURN-02",
+   "title": "AF-TURN-02 CLI opt-in MAF governed turn host",
+   "created": {
+    "at": "2026-10-23",
+    "basis": "document-date",
+    "source": "operator decision D12 2026-10-23",
+    "order_certainty": "conventional"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": "medium",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md",
+   "spec": null,
+   "companion_docs": [
+    "docs/maintenance/af-turn-02-cli-host-parity-report-01.md"
+   ],
+   "prs": [],
+   "commits": [
+    "ba4b4e4b5fc1f95c26172233fb98fa4b42901aeb",
+    "d8dca20106e3feb385ccbbfd545234f3067f594d"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "PR, CI of the PR head on Windows and Linux, and of the merge commit (no push or PR was requested yet).",
+     "Operator approval of the delivery.",
+     "Not covered at host level: cancellation and timeout parity, process-level exit codes of Program.cs, any live model run (separate authorization)."
+    ]
+   },
+   "evidence": [
+    "Local, Windows 2026-10-23, branch codex/bops-0122-af-turn-02 at d8dca20: Release build of bOps.slnx 0 warnings 0 errors; Cli.Tests 217/217 (27 new in MafGovernedTurnHostTests), Architecture.Tests 210/210, AgentFramework.Tests 615 passed + 8 skipped, Runtime.Tests 2301/2301, Knowledge.Tests 308/308; validate_register.py 122 tasks 0 errors",
+    "Parity (default path vs MAF governed turn host, scripted model): requests, stored TaskState, audit trail, tool executions and accounting identical in 7 scenarios; 4 mode-switch combinations across interruption and resume identical to the all-default control; report docs/maintenance/af-turn-02-cli-host-parity-report-01.md",
+    "Full non-live solution run before the architecture guards were narrowed: failures only in Architecture (3 guards forbidding any composition, now narrowed to C01-R22 and green) and Filesystem (3 tests, reproduced on unchanged main code, unrelated)",
+    "Remote 2026-10-23: Issue #128 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDC87Q created as babbubba and read back (Status In Progress at creation, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Operational wiring only of already implemented MAF code (MafGovernedTurnBroker, BopsContextProvider, ContextGate, GovernedChatClient); BOPS-0086/0087 stay DEFERRED and are not reopened. Contract 01 rule C01-R22 (decision D12). CLI goal and resume only, default off. PR #124 / BOPS-0111 excluded. Issue #127 was created by mistake under the company account (GITHUB_TOKEN not hidden for one call), closed as not planned and superseded by #128 (created as babbubba).",
+   "issue": 128,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDC87Q",
+   "branch": "codex/bops-0122-af-turn-02",
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-23T23:10:00+0200"
+   }
+  },
+  {
+   "milestone": "V1.3",
+   "area": "Runtime",
+   "authorized": true,
+   "depends_on": [],
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [
+    "ad09d8fe3a6c66ffed44c3fe4cbf38bc252f4de2"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Pre-existing defect on main, fixed separately from BOPS-0122 / PR #129 and PR #124. In-process only; multi-process concurrency is BOPS-0124. Stacked on the PR #129 branch (BOPS-0122): PR #132 targets codex/bops-0122-af-turn-02 so its diff is only this fix; #129 must reach main first, then #132 is retargeted to main.",
+   "remote_kind": "issue",
+   "id": "BOPS-0123",
+   "legacy_id": "VAULT-READ-LOCK-01",
+   "title": "VAULT-READ-LOCK-01 Serialize VaultStore reads with writes",
+   "created": {
+    "at": "2026-10-24",
+    "basis": "document-date",
+    "source": "operator authorization 2026-10-24",
+    "order_certainty": "conventional"
+   },
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": "small",
+   "packet": "agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md",
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Draft PR #132 (opened), CI of the PR head on Windows and Linux (including the VaultStore test that was red on main and on PR #129), and CI of the merge commit after #129 reaches main.",
+     "Operator approval of the delivery (no merge without it)."
+    ]
+   },
+   "evidence": [
+    "Reproduced 2026-10-24 on Windows: scratch harness, 4 reader threads + 1 writer, 10 s: 747 writer UnauthorizedAccessException and 520 reader errors before the fix, 0 and 0 after; File.Move(overwrite) throws UnauthorizedAccessException with any open handle on the destination (FileShare.Read, ReadWrite, ReadWrite|Delete); File.Replace succeeds only with FileShare.Delete readers (relevant to BOPS-0124)",
+    "The original ConcurrentSets test did not fail locally in 40 runs (race window too narrow) but failed on CI Windows: stack SaveAll -> File.Move at VaultStore.cs:169 (run 39989503982); unchanged on main (run 39911666984); VaultStore.cs and VaultStoreTests.cs identical between main and PR #129",
+    "Local 2026-10-24 on branch codex/vault-read-lock at ad09d8f: 3 new regression tests (1 red before the fix with UnauthorizedAccessException); VaultStoreTests 17/17, 30 repeats 0 failures on Windows and on Linux (WSL Ubuntu-24.04); Release build of bOps.slnx 0 warnings 0 errors; Runtime.Tests 2304, Api.Tests 560, Cli.Tests 189, Architecture.Tests 210 passed on Windows; Runtime.Tests 2304 and Architecture.Tests 208+2 skipped passed on Linux",
+    "Remote 2026-10-24: Issue #130 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDLKVw created as babbubba and read back (Status Validation, Priority P2, Area Runtime, bOps Milestone V1.3, Evidence Level Offline tests, Effort small)"
+   ],
+   "issue": 130,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDLKVw",
+   "branch": "codex/vault-read-lock",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-24T12:00:00+0200"
+   }
+  },
+  {
+   "milestone": "V1.3",
+   "area": "Runtime",
+   "authorized": null,
+   "depends_on": [],
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    132
+   ],
+   "commits": [],
+   "blocked_reason": null,
+   "reopen_condition": "Operator decision after the evaluation described in the packet (inter-process lock, optimistic concurrency across processes, atomicity, security).",
+   "note": "Residual risk of BOPS-0123: a reader in another process can still make the writer atomic replace fail on Windows. Needs an evaluation of inter-process locking and optimistic-concurrency guarantees, not only File.Replace, before any implementation.",
+   "remote_kind": "issue",
+   "id": "BOPS-0124",
+   "legacy_id": "VAULT-MULTIPROC-01",
+   "title": "VAULT-MULTIPROC-01 VaultStore multi-process concurrency (evaluation)",
+   "created": {
+    "at": "2026-10-24",
+    "basis": "document-date",
+    "source": "operator request 2026-10-24",
+    "order_certainty": "conventional"
+   },
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": "medium",
+   "packet": "agentic/_tasks/2026-10-24-bops-0124-vault-multiprocess-concurrency.md",
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [
+    "Remote 2026-10-24: Issue #131 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDLKW8 created as babbubba and read back (Status Deferred, Priority P3, Area Runtime, bOps Milestone V1.3, Evidence Level None, Effort medium)"
+   ],
+   "issue": 131,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDLKW8",
+   "branch": null,
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-24T12:00:00+0200"
+   }
   }
  ],
  "known_divergences": [

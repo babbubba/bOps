@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-22 · `main` @ `e0e9de7` (squash merge of PR [#123](https://github.com/babbubba/bOps/pull/123), BOPS-0120) ·
-working branch `docs/adr-consolidation-2026-10-22` (BOPS-0121, DOC-CONSOL-01 docs-only consolidation).
+Last updated: 2026-10-24 · `main` @ `2b54880` (squash merge of PR [#126](https://github.com/babbubba/bOps/pull/126), BOPS-0121) ·
+working branch `codex/vault-read-lock` (BOPS-0123, VaultStore read lock; worktree `bOps-vault`), **stacked on** `codex/bops-0122-af-turn-02` (PR #129, BOPS-0122): this branch contains the whole #129 branch and PR #132 targets it as its base.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0121 DOC-CONSOL-01 (VALIDATION)
-Branch: docs/adr-consolidation-2026-10-22
+Current task: BOPS-0123 VAULT-READ-LOCK-01 (VALIDATION)
+Branch: codex/vault-read-lock
 Ready: BOPS-0111
-Next number: BOPS-0122
+Next number: BOPS-0125
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -16,7 +16,7 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Where things are
 
-- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 121 tasks, BOPS-0001..BOPS-0121.
+- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 124 tasks, BOPS-0001..BOPS-0124 on this stacked branch (BOPS-0122 comes from PR #129).
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md).
 - Reconciliation of the real state (read-only audit, 2026-10-21): [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
 - Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>. Configured: 7 Status options, 5 custom fields (Priority, Area,
@@ -26,7 +26,19 @@ Task state is never copied here; ask the register (`--summary`).
 ## Milestone and task
 
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Current task of this branch: **BOPS-0121 DOC-CONSOL-01** (Issue #125, authorized at GATE-01 on 2026-10-22) — documentation-only consolidation of the ADRs,
+- Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
+  `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet
+  [`agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md`](agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md). Local Windows and Linux (WSL) runs are green; open gates: CI of the PR head, CI of the merge commit, operator approval.
+  **Stacked PRs:** PR #132 (this branch) has the #129 branch (`codex/bops-0122-af-turn-02`) as its base, so its diff is the VaultStore fix and its bookkeeping only. #129 must reach `main` first; then #132 is retargeted to `main`. No merge without operator authorization.
+  The multi-process variant is a separate deferred evaluation, **BOPS-0124** (Issue #131, packet `agentic/_tasks/2026-10-24-bops-0124-vault-multiprocess-concurrency.md`).
+- Base task of the stack (PR #129, not touched by this branch): **BOPS-0122 AF-TURN-02** (P1, medium; operator decision D12 of 2026-10-23) — CLI opt-in, default-off MAF governed turn host
+  (`MafGovernedTurnBroker` over the existing broker; Contract 01 rule C01-R22; CLI goal and resume only; refused with Knowledge). Authority stays in `AgentRunner`/bOps. Packet
+  [`agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md`](agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md). D1 (general convergence, ADR-0053/0054) stays deferred; BOPS-0086/0087 stay `DEFERRED`.
+  Excluded: API host, live benchmarks, merge (needs separate authorization). PR #124 was closed without merge and is no longer a dependency.
+  **Implemented and in `VALIDATION`** (Issue #128, Project #6 item read back): CLI switch `Cli:Experimental:MafGovernedTurn`, 27 offline parity/mode-switch tests, narrowed architecture guards; report
+  [`docs/maintenance/af-turn-02-cli-host-parity-report-01.md`](docs/maintenance/af-turn-02-cli-host-parity-report-01.md). Open gates: PR, CI on Windows and Linux, operator approval. Three Filesystem tests fail on unchanged `main` (pre-existing, unrelated).
+  Next step: operator review. Extending to the API needs a separate decision.
+- BOPS-0121 DOC-CONSOL-01 (Issue #125, authorized at GATE-01 on 2026-10-22; PR #126 merged 2026-10-23, still `VALIDATION` in the register; its reconciliation is on the other local branch) — documentation-only consolidation of the ADRs,
   `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01, DOC-02, GATE-02 (approved 2026-10-22) and
   **DOC-03 (executed 2026-10-22 in one session, CP-03a and CP-03b PASS)** are done: the five contracts (105 binding rules) in `docs/architecture/current/` are **Current**; the 55 ADRs and the original `01`/`06`
   are in `docs/architecture/archive/` (ZIP of 57 originals + external `MANIFEST.md`/`MANIFEST.csv`/`.sha256`); `docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md` and `agentic/06-decisions.md`
