@@ -5821,7 +5821,7 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Draft PR, CI of the PR head on Windows and Linux (the register validator step is expected red until BOPS-0122 / PR #129 is merged: it owns the missing BOPS-0122 id, see note), and CI of the merge commit.",
+     "Draft PR #132 (opened), CI of the PR head on Windows and Linux (the register validator step is expected red until BOPS-0122 / PR #129 is merged: it owns the missing BOPS-0122 id, see note), and CI of the merge commit.",
      "Operator approval of the delivery (no merge without it)."
     ]
    },
@@ -5846,7 +5846,9 @@
    "depends_on": [],
    "spec": null,
    "companion_docs": [],
-   "prs": [],
+   "prs": [
+    132
+   ],
    "commits": [],
    "blocked_reason": null,
    "reopen_condition": "Operator decision after the evaluation described in the packet (inter-process lock, optimistic concurrency across processes, atomicity, security).",
