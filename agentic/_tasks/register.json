@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 122,
+  "next": 125,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -5782,6 +5782,104 @@
     "Set Project #6 fields for Issue #125: Status In Progress, Area Documentation, bOps Milestone GOVERNANCE, Evidence Level None; Priority stays empty until the operator sets one",
     "Record the verified baseline in sync.status/verified_at after the read-back"
    ]
+  },
+  {
+   "milestone": "V1.3",
+   "area": "Runtime",
+   "authorized": true,
+   "depends_on": [],
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [
+    "ad09d8fe3a6c66ffed44c3fe4cbf38bc252f4de2"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Pre-existing defect on main, fixed separately from BOPS-0122 / PR #129 and PR #124. In-process only; multi-process concurrency is BOPS-0124. Numbering: BOPS-0122 is carried by PR #129 (not yet on main), so this branch has a gap at 0122 and validate_register.py reports non-contiguous ids until #129 is merged; the gap is not filled here on purpose.",
+   "remote_kind": "issue",
+   "id": "BOPS-0123",
+   "legacy_id": "VAULT-READ-LOCK-01",
+   "title": "VAULT-READ-LOCK-01 Serialize VaultStore reads with writes",
+   "created": {
+    "at": "2026-10-24",
+    "basis": "document-date",
+    "source": "operator authorization 2026-10-24",
+    "order_certainty": "conventional"
+   },
+   "status": "VALIDATION",
+   "priority": "P2",
+   "effort": "small",
+   "packet": "agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md",
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Draft PR, CI of the PR head on Windows and Linux (the register validator step is expected red until BOPS-0122 / PR #129 is merged: it owns the missing BOPS-0122 id, see note), and CI of the merge commit.",
+     "Operator approval of the delivery (no merge without it)."
+    ]
+   },
+   "evidence": [
+    "Reproduced 2026-10-24 on Windows: scratch harness, 4 reader threads + 1 writer, 10 s: 747 writer UnauthorizedAccessException and 520 reader errors before the fix, 0 and 0 after; File.Move(overwrite) throws UnauthorizedAccessException with any open handle on the destination (FileShare.Read, ReadWrite, ReadWrite|Delete); File.Replace succeeds only with FileShare.Delete readers (relevant to BOPS-0124)",
+    "The original ConcurrentSets test did not fail locally in 40 runs (race window too narrow) but failed on CI Windows: stack SaveAll -> File.Move at VaultStore.cs:169 (run 39989503982); unchanged on main (run 39911666984); VaultStore.cs and VaultStoreTests.cs identical between main and PR #129",
+    "Local 2026-10-24 on branch codex/vault-read-lock at ad09d8f: 3 new regression tests (1 red before the fix with UnauthorizedAccessException); VaultStoreTests 17/17, 30 repeats 0 failures on Windows and on Linux (WSL Ubuntu-24.04); Release build of bOps.slnx 0 warnings 0 errors; Runtime.Tests 2304, Api.Tests 560, Cli.Tests 189, Architecture.Tests 210 passed on Windows; Runtime.Tests 2304 and Architecture.Tests 208+2 skipped passed on Linux",
+    "Remote 2026-10-24: Issue #130 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDLKVw created as babbubba and read back (Status Validation, Priority P2, Area Runtime, bOps Milestone V1.3, Evidence Level Offline tests, Effort small)"
+   ],
+   "issue": 130,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDLKVw",
+   "branch": "codex/vault-read-lock",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-24T12:00:00+0200"
+   }
+  },
+  {
+   "milestone": "V1.3",
+   "area": "Runtime",
+   "authorized": null,
+   "depends_on": [],
+   "spec": null,
+   "companion_docs": [],
+   "prs": [],
+   "commits": [],
+   "blocked_reason": null,
+   "reopen_condition": "Operator decision after the evaluation described in the packet (inter-process lock, optimistic concurrency across processes, atomicity, security).",
+   "note": "Residual risk of BOPS-0123: a reader in another process can still make the writer atomic replace fail on Windows. Needs an evaluation of inter-process locking and optimistic-concurrency guarantees, not only File.Replace, before any implementation.",
+   "remote_kind": "issue",
+   "id": "BOPS-0124",
+   "legacy_id": "VAULT-MULTIPROC-01",
+   "title": "VAULT-MULTIPROC-01 VaultStore multi-process concurrency (evaluation)",
+   "created": {
+    "at": "2026-10-24",
+    "basis": "document-date",
+    "source": "operator request 2026-10-24",
+    "order_certainty": "conventional"
+   },
+   "status": "DEFERRED",
+   "priority": "P3",
+   "effort": "medium",
+   "packet": "agentic/_tasks/2026-10-24-bops-0124-vault-multiprocess-concurrency.md",
+   "validation": {
+    "achieved": [],
+    "required": [],
+    "open_gates": []
+   },
+   "evidence": [
+    "Remote 2026-10-24: Issue #131 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDLKW8 created as babbubba and read back (Status Deferred, Priority P3, Area Runtime, bOps Milestone V1.3, Evidence Level None, Effort medium)"
+   ],
+   "issue": 131,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDLKW8",
+   "branch": null,
+   "sync": {
+    "status": "Deferred",
+    "verified_at": "2026-10-24T12:00:00+0200"
+   }
   }
  ],
  "known_divergences": [
