@@ -65,6 +65,11 @@ jobs:
         # no provider credential) and run on both matrix OSes. The collector itself is never executed here.
         run: python -m unittest discover -s scripts/windows/tests -p "test_live_benchmark.py" -v
 
+      - name: MAF CLI A/B benchmark tests (Python, offline)
+        # BOPS-0125: maf_cli_benchmark.py / maf_cli_analysis.py are exercised against a fake CLI and a loopback stub only: no live model,
+        # no network beyond loopback, no credential. The campaign itself is never executed here.
+        run: python -m unittest discover -s scripts/windows/tests -p "test_maf_cli_benchmark.py" -v
+
       - name: Task register validation (Python, offline)
         # agentic/_tasks/register.json is the authoritative task state; this check and the synchronizer tests need no network, token or secret (sync_remote.py is never run against GitHub in CI).
         run: |

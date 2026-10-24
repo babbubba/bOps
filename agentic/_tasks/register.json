@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 125,
+  "next": 126,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -5753,12 +5753,12 @@
     "f5a390980f56334c7f2407c8b2bc84ac46f53336",
     "2cb98f6fb52864bcc43e47b19ab1aca0ebd19daf",
     "05e0678dc70e2e2acfc4dd5b7c66aa0499c34ac8",
-      "7665b3083de63049f3011f95cef984f49da9c794"
+    "7665b3083de63049f3011f95cef984f49da9c794"
    ],
    "validation": {
     "achieved": [
-        "CI_VERIFIED"
-      ],
+     "CI_VERIFIED"
+    ],
     "required": [
      "CI_VERIFIED",
      "OPERATOR_GATE"
@@ -5777,9 +5777,9 @@
     "PROCESS.md normative-change sentence aligned with current architecture contracts under explicit operator authorization, commit 05e0678",
     "Draft PR #126 (base main, head docs/adr-consolidation-2026-10-22) opened 2026-10-22 with Refs #125; no auto-merge; CI verified on 7665b30 (run 39851813804)",
     "CI_VERIFIED (docs-only, PROCESS.md section 4 'CI by category'): workflow CI run 39851813804 (run number 306, attempt 1, event pull_request) on PR head 7665b3083de63049f3011f95cef984f49da9c794, conclusion success, re-read from GitHub 2026-10-22; jobs build-and-test (ubuntu-latest) success, build-and-test (windows-latest) success, dependency-review success, quality-aggregate success; branch up to date with main e0e9de7 (unchanged), no incompatible change since. The operator's merge decision (OPERATOR_GATE) is NOT achieved",
-        "Accepted exception, limited to PR #126: commits 05e0678 and 7665b30 carry a 'Co-Authored-By: Claude Sonnet 5.5' trailer contrary to the commit instructions (author and committer are Fabio Cavallari); published history is not rewritten; the exception does not apply to future commits",
-        "Formatting exception: git diff --check origin/main...HEAD reports 910 trailing-whitespace lines (not PASS): 893 are empty trailing TSV fields (kept to preserve column counts), 6 are Markdown hard breaks (two spaces), 11 are single trailing spaces in migration-work reports (cosmetic, no functional effect); nothing normalized",
-        "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
+    "Accepted exception, limited to PR #126: commits 05e0678 and 7665b30 carry a 'Co-Authored-By: Claude Sonnet 5.5' trailer contrary to the commit instructions (author and committer are Fabio Cavallari); published history is not rewritten; the exception does not apply to future commits",
+    "Formatting exception: git diff --check origin/main...HEAD reports 910 trailing-whitespace lines (not PASS): 893 are empty trailing TSV fields (kept to preserve column counts), 6 are Markdown hard breaks (two spaces), 11 are single trailing spaces in migration-work reports (cosmetic, no functional effect); nothing normalized",
+    "GATE-02 (intermediate documentation gate, distinct from OPERATOR_GATE) approved by the operator on 2026-10-22, verified commit 207ad7d: five Candidate contracts (105 binding rules), traceability matrix, read-ledger, id maps and technical destinations of DOC-02 incl. corrections P1-P4; decisions G2-01..G2-05 recorded in plan section 7.3 (artifacts: docs/architecture/current/, docs/architecture/reference/, agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-02-*). Scope: documentation completeness for DOC-03 only; ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed, D1/D4/D5 stay open; not CI_VERIFIED, not OPERATOR_GATE; no PR, no merge"
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -5952,6 +5952,69 @@
    "sync": {
     "status": "Deferred",
     "verified_at": "2026-10-24T12:00:00+0200"
+   }
+  },
+  {
+   "id": "BOPS-0125",
+   "legacy_id": "MAF-CLI-AB-01",
+   "title": "MAF-CLI-AB-01 CLI A/B benchmark of the MAF governed turn host",
+   "created": {
+    "at": "2026-10-24",
+    "basis": "document-date",
+    "source": "operator request 2026-10-24 (MAF validation phase 2)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": "medium",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-24-bops-0125-maf-cli-ab-benchmark.md",
+   "spec": null,
+   "companion_docs": [
+    "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
+   ],
+   "prs": [
+    134
+   ],
+   "commits": [
+    "2d9fc17a6a4d7b977511f52ffa0a83c8cec1f9ef"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "LIVE_REAL_TOOLS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Operator-run live pilot of B01 (MAF off and on), then B01/B02/B03 A/B with a local Qwen/llama.cpp model; not authorized yet and never started by the tooling.",
+     "Blind grading of the diagnosis by a person: automatic metrics do not establish correctness.",
+     "CI of the PR head (Windows and Linux, including the new Python tests) and of the merge commit.",
+     "Operator approval of the delivery and of the conclusions drawn from the campaign."
+    ]
+   },
+   "evidence": [
+    "Local, Windows 2026-10-24, worktree bOps-mafab on branch codex/bops-maf-cli-ab-bench from main 207b262 (PR #129 merged): 41 offline tests (test_maf_cli_benchmark.py; 36 plus 5 for mandatory budgets/caps/timeouts and manifest hashes) pass, together with the 49 existing scripts/windows tests (90 in all).",
+    "Real preflight run through scripts/windows/run-maf-cli-benchmark.ps1 -PreflightOnly (Release build of bOps.Cli, bops.dll sha256 03a24c43...): target commit, read-only policy, Knowledge off and the mode probe passed; the real CLI reported the EXPERIMENTAL line for MAF ON only, against a loopback stub (HTTP 400, 2 requests), no model contacted. Endpoint listing skipped (no llama.cpp server running).",
+    "CI of the post-merge commit main 207b262 (run 40115236818) finished with conclusion success; the 'Quality finalize' run 40116952774 was still in progress at the last check.",
+    "Remote 2026-10-24: Issue #133 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDPgUA created as babbubba (Status In Progress at creation, then moved to Validation and read back; Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)."
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Harness only: no runtime, broker, API, CLI or .csproj change; reuses the BENCH-00 helpers of live_benchmark.py. Priority P1, effort medium and milestone MAF were mirrored from BOPS-0122 and confirmed by the operator on 2026-10-24. BENCH-00 is API-only and is not evidence for the CLI MAF host. The preflight mode probe leaves one throwaway task per variant in a probe-only store (the CLI persists a failed task); -SkipModeProbe avoids it.",
+   "issue": 133,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDPgUA",
+   "branch": "codex/bops-maf-cli-ab-bench",
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-24T13:00:00+0200"
    }
   }
  ],
