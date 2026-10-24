@@ -356,20 +356,55 @@ if (goal is not null || resumeTaskId is not null)
     }
 }
 
-var runner = CliRunnerComposition.Create(new CliRunnerInputs(
-    model,
-    toolRegistry,
-    policyEngine,
-    approvalProvider,
-    audit,
-    taskStore,
-    time,
-    logger,
-    runnerOptions,
-    skillRegistry,
-    host.Services.GetRequiredService<SqliteSystemMessageStore>(),
-    summarizerBroker,
-    knowledgeHost));
+// BOPS-0122 (C01-R22): the MAF governed turn host is an opt-in experiment of the CLI, off by default, for a goal or a resume only.
+// A delegation, a recovery and a reconciliation ignore it; it is refused when Knowledge is enabled.
+var mafGovernedTurn = false;
+try
+{
+    mafGovernedTurn = CliRunnerComposition.ReadMafGovernedTurn(builder.Configuration);
+}
+catch (InvalidOperationException ex)
+{
+    await Console.Error.WriteLineAsync(ex.Message);
+    return 2;
+}
+
+if (mafGovernedTurn && goal is null && resumeTaskId is null)
+{
+    await Console.Error.WriteLineAsync($"'{CliRunnerComposition.MafGovernedTurnKey}' is set but applies to a goal or a resume only; this command uses the default path.");
+    mafGovernedTurn = false;
+}
+
+if (mafGovernedTurn)
+{
+    await Console.Error.WriteLineAsync("EXPERIMENTAL: each model turn is hosted by a Microsoft Agent Framework agent (Cli:Experimental:MafGovernedTurn=true); bOps keeps all execution authority.");
+}
+
+AgentRunner runner;
+try
+{
+    runner = CliRunnerComposition.Create(new CliRunnerInputs(
+        model,
+        toolRegistry,
+        policyEngine,
+        approvalProvider,
+        audit,
+        taskStore,
+        time,
+        logger,
+        runnerOptions,
+        skillRegistry,
+        host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+        summarizerBroker,
+        knowledgeHost,
+        mafGovernedTurn));
+}
+catch (InvalidOperationException ex) when (mafGovernedTurn)
+{
+    // C01-R22: the experiment is refused with Knowledge enabled; fail closed rather than run either one degraded.
+    await Console.Error.WriteLineAsync(ex.Message);
+    return 2;
+}
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

@@ -50,6 +50,9 @@ internal sealed class CliKnowledgeWorld : IDisposable
 
     internal ConcurrentAuditSink Audit { get; } = new();
 
+    /// <summary>BOPS-0122: compose the runners of this world with the MAF governed turn host (C01-R22). Off, as in the product default.</summary>
+    internal bool MafGovernedTurn { get; set; }
+
     internal string Root => directory.Path;
 
     internal string PacksDirectory => directory.Sub("packs");
@@ -148,7 +151,7 @@ internal sealed class CliKnowledgeWorld : IDisposable
 
         var host = settings is null ? null : Host(settings);
         var store = new SqliteTaskStore(TasksFile);
-        var runner = CliRunnerComposition.Create(new CliRunnerInputs(
+        var (runner, broker) = CliRunnerComposition.Compose(new CliRunnerInputs(
             model,
             registry,
             policy ?? new PolicyEngine(PolicyConfig.SafeDefault),
@@ -161,8 +164,9 @@ internal sealed class CliKnowledgeWorld : IDisposable
             new SkillRegistry(),
             null,
             null,
-            host));
-        return new Rig(runner, model, registry, events, store, host);
+            host,
+            MafGovernedTurn));
+        return new Rig(runner, model, registry, events, store, host, broker);
     }
 
     public void Dispose()
@@ -176,7 +180,8 @@ internal sealed class CliKnowledgeWorld : IDisposable
     }
 
     internal sealed record Rig(
-        AgentRunner Runner, ScriptedModel Model, ToolRegistry Registry, EventsTool Events, SqliteTaskStore Store, IKnowledgeTaskHost? Host);
+        AgentRunner Runner, ScriptedModel Model, ToolRegistry Registry, EventsTool Events, SqliteTaskStore Store, IKnowledgeTaskHost? Host,
+        IModelInvocationBroker? Broker = null);
 }
 
 /// <summary>A Read tool with the name and manifest of the real Windows events tool and a canned answer: the diagnosis is exercised, the machine is not.</summary>

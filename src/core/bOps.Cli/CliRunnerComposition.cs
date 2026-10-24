@@ -4,6 +4,7 @@
 using bOps.Abstractions;
 using bOps.AgentFramework;
 using bOps.Runtime;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace bOps.Cli;
@@ -12,20 +13,59 @@ namespace bOps.Cli;
 /// The one place the CLI builds its operational runner: the governed model broker with the MAF context projector, and the
 /// <see cref="AgentRunner"/> over it (AF-01, ADR-0052). It is the composition <c>Program.cs</c> runs, extracted so a test can drive the same
 /// code with a scripted model; it adds nothing to the runner's authority. The knowledge host is the optional last input (ADR-0058): when it
-/// is <c>null</c> the runner is built exactly as it was before knowledge was composable.
+/// is <c>null</c> the runner is built exactly as it was before knowledge was composable. The last, optional input is the operator's
+/// opt-in to the MAF governed turn host (BOPS-0122, C01-R22): off by default, and then the composition is the one that ran before it existed.
 /// </summary>
 internal static class CliRunnerComposition
 {
+    /// <summary>The host configuration key that opts in to the MAF governed turn host. Absent or <c>false</c> is the default path.</summary>
+    internal const string MafGovernedTurnKey = "Cli:Experimental:MafGovernedTurn";
+
+    /// <summary>
+    /// Reads the opt-in. A missing or empty value is the default (off); anything but a boolean is refused, so a typo can never be read
+    /// as a silent "off" or "on".
+    /// </summary>
+    internal static bool ReadMafGovernedTurn(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var raw = configuration[MafGovernedTurnKey];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        return bool.TryParse(raw, out var enabled)
+            ? enabled
+            : throw new InvalidOperationException($"'{MafGovernedTurnKey}' must be 'true' or 'false' (found '{raw}').");
+    }
+
     /// <summary>Builds the runner of a goal, a resume, a recovery or a delegation.</summary>
-    internal static AgentRunner Create(CliRunnerInputs inputs)
+    internal static AgentRunner Create(CliRunnerInputs inputs) => Compose(inputs).Runner;
+
+    /// <summary>
+    /// Builds the runner and returns the model invocation broker it was given, so a test can tell which path was composed. When
+    /// <see cref="CliRunnerInputs.MafGovernedTurn"/> is set, every model call is one governed MAF turn in front of the same governed broker
+    /// (C01-R22); the broker still projects the context, retries, accounts and audits, and the runner is not told the difference.
+    /// </summary>
+    internal static (AgentRunner Runner, IModelInvocationBroker Broker) Compose(CliRunnerInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
-        var broker = new ModelInvocationBroker(
+        if (inputs.MafGovernedTurn && inputs.Knowledge is not null)
+        {
+            // C01-R22: no Knowledge or Skills content goes through the MAF turn host. Refuse rather than silently drop either one.
+            throw new InvalidOperationException(
+                $"'{MafGovernedTurnKey}' cannot be combined with Knowledge: the MAF governed turn host is refused when Knowledge is enabled (C01-R22).");
+        }
+
+        var governed = new ModelInvocationBroker(
             inputs.Model, inputs.Audit, inputs.Time, inputs.Logger, inputs.Options,
             contextProjector: new MafContextProjector(inputs.Options, inputs.Logger),
             dedicatedSummarizer: inputs.SummarizerBroker);
+        IModelInvocationBroker broker = inputs.MafGovernedTurn
+            ? new MafGovernedTurnBroker(governed, inputs.Audit, inputs.Time, MafContextAssembly.BopsProvider)
+            : governed;
 
-        return new AgentRunner(
+        var runner = new AgentRunner(
             inputs.Model,
             inputs.Tools,
             inputs.Policy,
@@ -39,6 +79,7 @@ internal static class CliRunnerComposition
             systemMessages: inputs.SystemMessages,
             invocationBroker: broker,
             knowledgeHost: inputs.Knowledge);
+        return (runner, broker);
     }
 }
 
@@ -56,4 +97,5 @@ internal sealed record CliRunnerInputs(
     ISkillRegistry Skills,
     ISystemMessageStore? SystemMessages,
     IModelInvocationBroker? SummarizerBroker,
-    IKnowledgeTaskHost? Knowledge);
+    IKnowledgeTaskHost? Knowledge,
+    bool MafGovernedTurn = false);

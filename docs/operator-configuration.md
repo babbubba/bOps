@@ -660,6 +660,25 @@ Unknown or misspelt keys are an error whether or not the section is enabled. The
 by publisher tooling outside the runtime. The full procedure (signing, installing, trying, reading the audit trail, what a refusal code
 means) is in [Knowledge in the CLI — Local Agent pilot](knowledge/local-agent-pilot.md).
 
+### 14.1 MAF governed turn host (CLI experiment, opt-in)
+
+*Binding rule: Contract 01 [C01-R22](architecture/current/01-maf-agent-infrastructure.md#c01-r22--experimental-maf-governed-turn-host-cli-opt-in) (BOPS-0122, decision D12).*
+
+With `Cli:Experimental:MafGovernedTurn` set to `true`, every model call of a CLI **goal** or **resume** is run as one turn of a stateless
+Microsoft Agent Framework agent in front of the same governed broker. bOps still projects the context, retries, falls back, accounts tokens,
+audits and executes tools; the agent has no tools it can run, no history and no session, and the request and response the runner sees are
+the ones of the default path. It is for evaluating the MAF integration, not for production.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Cli:Experimental:MafGovernedTurn` | absent = `false` | `true` or `false` only (case-insensitive); any other value stops the command (exit code 2). The shipped `appsettings.json` does not set it. Environment form: `Cli__Experimental__MafGovernedTurn`. |
+
+- A run in this mode prints an `EXPERIMENTAL` line on standard error at start.
+- It is refused (exit code 2) when `Knowledge:Enabled` is `true`: Knowledge and Skills content does not go through this host.
+- Any command that is not a goal or a resume (`bops delegate`, `recover`, `reconcile`) ignores the key and uses the default path.
+- Switching the key between runs is safe: a task started in one mode can be resumed in the other, also after a restart, and the stored task is the same.
+- The API host does not read this key.
+
 ## 15. Model-call timeouts, retry and failure reasons, and resuming from the CLI
 
 *Technical specification consolidated from ADR-0039 (§7, §10) and ADR-0017 during the architecture consolidation (DOC-02). The binding

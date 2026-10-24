@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="bOps.AgentFramework.Tests" />
+    <InternalsVisibleTo Include="bOps.Cli.Tests" />
   </ItemGroup>
 
   <ItemGroup>

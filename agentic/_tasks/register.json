@@ -305,6 +305,17 @@
    "recommendation": "keep private until the board is populated",
    "status": "RESOLVED",
    "resolution": "PRIVATE, approved by the operator on 2026-10-21"
+  },
+  {
+   "id": "D12",
+   "title": "Scoped authorization of the CLI opt-in MAF governed turn host (Contract 01 C01-R22)",
+   "tasks": [
+    "BOPS-0122"
+   ],
+   "source": "operator decision 2026-10-23",
+   "recommendation": "approve the experiment, off by default, CLI goal and resume only",
+   "status": "RESOLVED",
+   "resolution": "Approved by the operator on 2026-10-23, with corrections: it authorizes exclusively C01-R22 and the MafGovernedTurnBroker experiment in the CLI; it does not accept ADR-0053/0054 as a whole (D1, the general architectural convergence, stays deferred) and does not reopen BOPS-0086/0087. Extension to the API needs a separate decision."
   }
  ],
  "tasks": [
@@ -5784,6 +5795,66 @@
    ]
   },
   {
+   "id": "BOPS-0122",
+   "legacy_id": "AF-TURN-02",
+   "title": "AF-TURN-02 CLI opt-in MAF governed turn host",
+   "created": {
+    "at": "2026-10-23",
+    "basis": "document-date",
+    "source": "operator decision D12 2026-10-23",
+    "order_certainty": "conventional"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": "medium",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md",
+   "spec": null,
+   "companion_docs": [
+    "docs/maintenance/af-turn-02-cli-host-parity-report-01.md"
+   ],
+   "prs": [],
+   "commits": [
+    "ba4b4e4b5fc1f95c26172233fb98fa4b42901aeb",
+    "d8dca20106e3feb385ccbbfd545234f3067f594d"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "PR, CI of the PR head on Windows and Linux, and of the merge commit (no push or PR was requested yet).",
+     "Operator approval of the delivery.",
+     "Not covered at host level: cancellation and timeout parity, process-level exit codes of Program.cs, any live model run (separate authorization)."
+    ]
+   },
+   "evidence": [
+    "Local, Windows 2026-10-23, branch codex/bops-0122-af-turn-02 at d8dca20: Release build of bOps.slnx 0 warnings 0 errors; Cli.Tests 217/217 (27 new in MafGovernedTurnHostTests), Architecture.Tests 210/210, AgentFramework.Tests 615 passed + 8 skipped, Runtime.Tests 2301/2301, Knowledge.Tests 308/308; validate_register.py 122 tasks 0 errors",
+    "Parity (default path vs MAF governed turn host, scripted model): requests, stored TaskState, audit trail, tool executions and accounting identical in 7 scenarios; 4 mode-switch combinations across interruption and resume identical to the all-default control; report docs/maintenance/af-turn-02-cli-host-parity-report-01.md",
+    "Full non-live solution run before the architecture guards were narrowed: failures only in Architecture (3 guards forbidding any composition, now narrowed to C01-R22 and green) and Filesystem (3 tests, reproduced on unchanged main code, unrelated)",
+    "Remote 2026-10-23: Issue #128 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDC87Q created as babbubba and read back (Status In Progress at creation, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)"
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Operational wiring only of already implemented MAF code (MafGovernedTurnBroker, BopsContextProvider, ContextGate, GovernedChatClient); BOPS-0086/0087 stay DEFERRED and are not reopened. Contract 01 rule C01-R22 (decision D12). CLI goal and resume only, default off. PR #124 / BOPS-0111 excluded. Issue #127 was created by mistake under the company account (GITHUB_TOKEN not hidden for one call), closed as not planned and superseded by #128 (created as babbubba).",
+   "issue": 128,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDC87Q",
+   "branch": "codex/bops-0122-af-turn-02",
+   "remote_kind": "issue",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-23T23:10:00+0200"
+   }
+  },
+  {
    "milestone": "V1.3",
    "area": "Runtime",
    "authorized": true,
@@ -5796,7 +5867,7 @@
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Pre-existing defect on main, fixed separately from BOPS-0122 / PR #129 and PR #124. In-process only; multi-process concurrency is BOPS-0124. Numbering: BOPS-0122 is carried by PR #129 (not yet on main), so this branch has a gap at 0122 and validate_register.py reports non-contiguous ids until #129 is merged; the gap is not filled here on purpose.",
+   "note": "Pre-existing defect on main, fixed separately from BOPS-0122 / PR #129 and PR #124. In-process only; multi-process concurrency is BOPS-0124. Stacked on the PR #129 branch (BOPS-0122): PR #132 targets codex/bops-0122-af-turn-02 so its diff is only this fix; #129 must reach main first, then #132 is retargeted to main.",
    "remote_kind": "issue",
    "id": "BOPS-0123",
    "legacy_id": "VAULT-READ-LOCK-01",
@@ -5821,7 +5892,7 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Draft PR #132 (opened), CI of the PR head on Windows and Linux (the register validator step is expected red until BOPS-0122 / PR #129 is merged: it owns the missing BOPS-0122 id, see note), and CI of the merge commit.",
+     "Draft PR #132 (opened), CI of the PR head on Windows and Linux (including the VaultStore test that was red on main and on PR #129), and CI of the merge commit after #129 reaches main.",
      "Operator approval of the delivery (no merge without it)."
     ]
    },

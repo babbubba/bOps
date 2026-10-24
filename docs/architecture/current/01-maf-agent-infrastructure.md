@@ -6,7 +6,7 @@
 | **Date** | 2026-10-22 |
 | **Git base** | Consolidated at `21c10f6ef806bbb9ab649468197090aef77e64a9` (DOC-02, corrected at `207ad7d`); activated by DOC-03 from source commit `57990d26f362676624d203064b69d3ced9c3448f` on `docs/adr-consolidation-2026-10-22` |
 | **Task** | `BOPS-0121` / `DOC-CONSOL-01` (phases DOC-02 and DOC-03), plan `agentic/_plans/ADR-consolidation-2026-10-22.md` |
-| **Binding rules** | 21 (`C01-R01`…`C01-R21`) |
+| **Binding rules** | 22 (`C01-R01`…`C01-R22`); `C01-R22` added 2026-10-23 by operator decision D12 (`BOPS-0122`) |
 | **Language** | English |
 
 Rule text below consolidates the historical ADRs, architecture rules, security invariants and decision register entries listed under *Sources*. Decision status and implementation status are independent: a rule can be Accepted and Not implemented, or implemented without being a decision. Every `Implemented` claim carries `file:line` evidence located in the DOC-02 session. The evidence anchors the implementing symbol (and the architecture test that enforces the rule where one exists); it does not re-prove every clause of the rule, which the named tests do. Code line numbers move, so an anchor is a pointer to a symbol, not a frozen citation.
@@ -215,14 +215,23 @@ The shipped zero-cost bootstrap default is OpenRouter with the router alias open
 - **Implementation status:** Partially implemented — the router alias and actual-model audit field exist; the disclosure wording is documentation/UI and was not re-verified in this session
 - **Evidence:** `src/core/bOps.Abstractions/Audit.cs:705`
 
+### C01-R22 — Experimental MAF governed turn host (CLI, opt-in)
+
+A host may run each governed model call as one turn of a stateless Microsoft Agent Framework `ChatClientAgent` only when the operator enables it by host configuration; the default is off and the shipped configuration never enables it. The only wrapper is `MafGovernedTurnBroker` over the governed `IModelInvocationBroker`; the agent is created for the turn, hosts a fresh session, has no framework tool loop, no function-invocation layer, no history provider and no context provider other than the bOps-authored one, offers tools as declarations without a body, and its single leaf is `GovernedChatClient`. A turn reaches the broker exactly once; a different count, or a MAF response that differs from the broker response, is a controlled model failure (`InvalidRequest`) and executes nothing. The broker keeps sole ownership of context projection, retry, fallback, model-call audit and records, and token accounting; `AgentRunner` keeps all operational authority (C01-R01), TaskState, resume and fencing (C03), tool routing, validation, policy, approval and the mutation journal. Resume must not depend on any MAF session, and switching between the default and the experimental mode, also across a restart or during resume, must neither change nor corrupt the persisted state. The runner-visible request, response, audit, accounting and persisted state must be observably identical to the default path (the parity suite). The experiment covers the CLI goal and resume runs only and is refused when Knowledge is enabled; extending it to another host, run kind or content source requires a new operator decision. This rule authorizes only that experiment: it does not accept ADR-0053 or ADR-0054 and does not settle D1.
+
+- **Supersedes / consolidates:** nothing (new rule; scoped carve-out from C01-P02)
+- **Decision status:** Accepted for experiment (operator decision D12, 2026-10-23)
+- **Implementation status:** Implemented in the CLI (`BOPS-0122`, offline parity and mode-switch tests; not yet merged or CI-verified) — evidence below
+- **Evidence:** `src/core/bOps.Cli/CliRunnerComposition.cs:65` (the one composition, behind the switch); `src/core/bOps.Cli/CliRunnerComposition.cs:53` (refused with Knowledge); `src/core/bOps.Cli/CliRunnerComposition.cs:28` (strict switch); `tests/bOps.Cli.Tests/MafGovernedTurnHostTests.cs` (parity and mode switching); `tests/bOps.Architecture.Tests/AgentFrameworkBoundaryTests.cs` (single composition, no shipped configuration)
+
 ## 3. Pending decisions — non-binding
 
-**Status:** the two decisions below are not in force. Register decision **D1** (`BOPS-0074`, `BOPS-0075`, `BOPS-0086`, `BOPS-0087`; recommendation recorded in the register: keep Proposed) is open. Source code that resembles these proposals (for example a MAF `ChatClientAgent` host for a model turn at `src/core/bOps.AgentFramework/MafGovernedTurn.cs:14`) does not make them accepted and does not change any rule above.
+**Status:** the two decisions below are not in force, except the CLI experiment of C01-R22 (carved out by decision D12). Register decision **D1** (`BOPS-0074`, `BOPS-0075`, `BOPS-0086`, `BOPS-0087`; recommendation recorded in the register: keep Proposed) is open; the general architectural convergence stays deferred. Source code that resembles these proposals (for example a MAF `ChatClientAgent` host for a model turn at `src/core/bOps.AgentFramework/MafGovernedTurn.cs:14`) does not make them accepted and does not change any rule above.
 
 - **C01-P01 — ADR-0053 (Proposed 2026-10-12): MAF convergence and target ownership.** Proposes a target ownership matrix for eleven capabilities (planning and state machine, tool routing and step authority, argument validation, policy/entitlement/approval, mutation journal and fencing, audit/persistence/resume, provider fallback and grounding stay in bOps; context/compaction and governed inference are MAF over the broker), ten invariants I-1…I-10 for any MAF migration, a single open-source engine shared by the Local Agent and the Coordinator, and a rule that adoption depends on ARCH-02 evidence and ARCH-03 approval. It refines ADR-0052 without superseding it. Its §4.5 knowledge-engine contract is recorded in the Contract 05 pending section (D5).
-- **C01-P02 — ADR-0054 (Proposed 2026-10-12): "B+" hosting of each model turn.** Proposes that each model turn be hosted by a stateless MAF `ChatClientAgent` (no automatic tool-invocation loop, declaration-only tools, no session reuse, context through an `AIContextProvider` pipeline, leaf `GovernedChatClient` → broker), a classification of eighteen MAF capabilities (reject/adopt/conditional), and refinements to ADR-0053 rows 2, 4 and 11. Its G2 security gate and progressive-Skills contract are recorded in the Contract 05 pending section (D5). Evidence is offline and scripted; end-to-end equivalence with the current `AgentRunner` is explicitly not claimed.
+- **C01-P02 — ADR-0054 (Proposed 2026-10-12): "B+" hosting of each model turn.** Proposes that each model turn be hosted by a stateless MAF `ChatClientAgent` (no automatic tool-invocation loop, declaration-only tools, no session reuse, context through an `AIContextProvider` pipeline, leaf `GovernedChatClient` → broker), a classification of eighteen MAF capabilities (reject/adopt/conditional), and refinements to ADR-0053 rows 2, 4 and 11. Its G2 security gate and progressive-Skills contract are recorded in the Contract 05 pending section (D5). Evidence is offline and scripted; end-to-end equivalence with the current `AgentRunner` is explicitly not claimed. The CLI experiment of C01-R22 is the only part in force; the rest of this entry, including every other host, stays pending (D1).
 
-Nothing in these two entries is a requirement. Until the operator decides D1, the binding rules are C01-R01–C01-R21 only.
+Nothing else in these two entries is a requirement. Until the operator decides D1, the binding rules are C01-R01–C01-R22 only.
 
 ## 4. Technical references
 
@@ -260,3 +269,4 @@ Consolidated from (derived from the DOC-02 traceability matrix, `agentic/_plans/
 - **C01-R19** — ADR-0045 (Decision §13 validation and failure); 06-decisions.md (D-042)
 - **C01-R20** — ADR-0045 (Decision §14 audit and records); 06-decisions.md (D-042)
 - **C01-R21** — ADR-0045 (Decision §10 shipped bootstrap default); 06-decisions.md (D-042)
+- **C01-R22** — operator decision D12 (2026-10-23), scoped from ADR-0054 (Proposed) without accepting it; `BOPS-0122`
