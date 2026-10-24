@@ -5976,8 +5976,12 @@
    "companion_docs": [
     "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
    ],
-   "prs": [],
-   "commits": [],
+   "prs": [
+    134
+   ],
+   "commits": [
+    "2d9fc17a6a4d7b977511f52ffa0a83c8cec1f9ef"
+   ],
    "validation": {
     "achieved": [
      "OFFLINE_TESTS"
