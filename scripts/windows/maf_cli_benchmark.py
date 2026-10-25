@@ -677,7 +677,10 @@ def run_preflight(ctx: Context, directory: pathlib.Path, allow_remote: bool, all
     if ctx.profile["apiKeyEnv"] and not ctx.api_key:
         ok &= ctx.check("api-key-available", "fail", f"Environment variable {ctx.profile['apiKeyEnv']} is not set (value is never printed).")
     elif ctx.profile["apiKeyEnv"]:
-        ok &= ctx.check("api-key-available", "pass", "present (value not recorded)")
+        short = len(ctx.api_key) < SHORT_SECRET_LENGTH
+        ok &= ctx.check("api-key-available", "pass", "present (value not recorded)" + (
+            f"; shorter than {SHORT_SECRET_LENGTH} characters: the leak scan looks for it only in credential context "
+            "(Bearer/apiKey=...), and the mode is recorded per run as secretLeakScanMode=contextual" if short else ""))
     needs_knowledge = any(VARIANTS[v]["knowledge"] for v in ctx.variants)
     if needs_knowledge and ctx.knowledge is None:
         ok &= ctx.check("knowledge-pack", "fail", "Variants C/D need --knowledge-packs-dir, --knowledge-trust-store, --knowledge-pack-id and --knowledge-pack-version.")
@@ -788,16 +791,37 @@ def capture_run(run_dir: pathlib.Path, work: pathlib.Path) -> dict:
     return result
 
 
-def leak_scan(run_dir: pathlib.Path, secrets: set[str]) -> str:
+SHORT_SECRET_LENGTH = 16
+_CREDENTIAL_CONTEXT = rb"(?i:(?:bearer|basic)\s+|(?:api[_-]?key|authorization|secret|password|BOPS_MODEL_API_KEY)[\"']?\s*[:=]\s*[\"']?)"
+
+
+def split_secrets(secrets: set[str], api_key: str | None) -> tuple[set[str], set[str]]:
+    """(strong, short). Only the configured model API key can be short: a local server's placeholder key such as a four-letter word
+    occurs in ordinary text, so a substring search for it cannot tell a leak from a coincidence. Every other secret keeps the full search."""
+    short = {api_key} if api_key and len(api_key) < SHORT_SECRET_LENGTH else set()
+    return secrets - short, short
+
+
+def _short_patterns(short: set[str]) -> list:
+    # The value counts only when it is used as a credential (Bearer/Basic <value>, apiKey=<value>, "password": "<value>") and ends there.
+    return [re.compile(_CREDENTIAL_CONTEXT + re.escape(s.encode("utf-8")) + rb"(?![A-Za-z0-9_\-])") for s in short]
+
+
+def leak_scan(run_dir: pathlib.Path, secrets: set[str], api_key: str | None = None) -> dict:
+    """{result: n/a|clean|leak, mode: none|full|contextual|full+contextual, files: [run-relative paths]} - never the value itself."""
     if not secrets:
-        return "n/a"
-    needles = [s.encode("utf-8") for s in secrets]
-    for path in run_dir.rglob("*"):
+        return {"result": "n/a", "mode": "none", "files": []}
+    strong, short = split_secrets(secrets, api_key)
+    needles = [s.encode("utf-8") for s in strong]
+    patterns = _short_patterns(short)
+    mode = "+".join(name for name, present in (("full", strong), ("contextual", short)) if present)
+    files = []
+    for path in sorted(run_dir.rglob("*")):
         if path.is_file() and path.stat().st_size < 512 * 1024 * 1024:
             data = path.read_bytes()
-            if any(n in data for n in needles):
-                return "leak"
-    return "clean"
+            if any(n in data for n in needles) or any(p.search(data) for p in patterns):
+                files.append(path.relative_to(run_dir).as_posix())
+    return {"result": "leak" if files else "clean", "mode": mode, "files": files[:20]}
 
 
 def run_one(ctx: Context, entry: dict, timeout: float, campaign: pathlib.Path) -> dict:
@@ -810,7 +834,9 @@ def run_one(ctx: Context, entry: dict, timeout: float, campaign: pathlib.Path) -
     secrets = secret_values(env, ctx.api_key)
     host_before = host_snapshot()
     started = utc_now()
-    outcome = execute_cli(ctx.cli_command, GOALS[entry["scenario"]], work, env, secrets, run_dir / "stdout.txt", run_dir / "stderr.txt", timeout)
+    # Redaction rewrites every occurrence in the captured output; for a short placeholder key that would corrupt ordinary words of the
+    # diagnosis, so short values are left to the contextual leak scan below.
+    outcome = execute_cli(ctx.cli_command, GOALS[entry["scenario"]], work, env, split_secrets(secrets, ctx.api_key)[0], run_dir / "stdout.txt", run_dir / "stderr.txt", timeout)
     host_after = host_snapshot(0.2)
     captured = capture_run(run_dir, work)
     stderr = (run_dir / "stderr.txt").read_text(encoding="utf-8", errors="replace")
@@ -819,13 +845,13 @@ def run_one(ctx: Context, entry: dict, timeout: float, campaign: pathlib.Path) -
     knowledge_expected = VARIANTS[entry["variant"]]["knowledge"]
     admission = knowledge_admission(work / "audit.jsonl")
     knowledge_ok = admission["admitted"] if knowledge_expected else admission["events"] == 0
-    scan = leak_scan(run_dir, secrets)
+    scan = leak_scan(run_dir, secrets, ctx.api_key)
     info = {"schema": SCHEMA, **{k: entry[k] for k in ("ordinal", "round", "scenario", "variant", "runDir")},
             "startedAtUtc": started, "finishedAtUtc": utc_now(), **outcome, "hostBefore": host_before, "hostAfter": host_after,
             "variantLabel": VARIANTS[entry["variant"]]["label"], "mafExpected": expected, "mafMarkerSeen": mode_seen,
             "knowledgeExpected": knowledge_expected, "knowledgeAdmitted": admission["admitted"], "knowledgeAdmissionCodes": admission["codes"],
             "knowledgeVerified": knowledge_ok, "modeVerified": mode_seen == expected and outcome["exitCode"] != 2,
-            "secretLeakScan": scan, "capture": captured,
+            "secretLeakScan": scan["result"], "secretLeakScanMode": scan["mode"], "secretLeakFiles": scan["files"], "capture": captured,
             "configFingerprint": config_fingerprint(overlay, facts["policySha256"], facts["appsettingsSha256"], ctx.cli_sha),
             "environmentOverlay": {k: v for k, v in sorted(overlay.items())}, "scrubbedParentVariables": scrubbed,
             "command": [*ctx.cli_command[:-1], "<cli>"] if len(ctx.cli_command) > 1 else ["<cli>"], "goalSha256": entry["goalSha256"], **facts}

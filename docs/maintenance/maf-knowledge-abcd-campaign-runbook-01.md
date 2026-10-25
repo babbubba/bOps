@@ -19,7 +19,10 @@ quattro condizioni sono i due interruttori. Il confronto principale e quanto la 
    parte (il preflight fallisce) se il server non riporta 131072 / f16 / 32768.
 2. **Profilo** (non segreto, fuori dal repository): copia di `scripts/windows/maf-cli-benchmark-profile.qwen38-smart-128k.example.json` con l'URL reale
    e, come nei profili storici, `"apiKeyEnv": "BOPS_MODEL_API_KEY"` (solo il *nome* della variabile). Prima di preflight e campagna la variabile deve esistere nella
-   sessione PowerShell (`$env:BOPS_MODEL_API_KEY = '<qualsiasi valore>'` basta per un llama.cpp senza chiave); il valore non viene mai stampato né salvato.
+   sessione PowerShell **con il valore che il server accetta**: un llama.cpp avviato con `--api-key` risponde 401 a qualsiasi altro valore (il preflight lo segnala
+   come `endpoint-reachable`). Il valore non viene mai stampato né salvato. Se la chiave è più corta di 16 caratteri (tipico di una chiave locale), il controllo
+   anti-fuga non può cercarla come semplice sottostringa (comparirebbe in parole comuni): la cerca solo in contesto di credenziale (`Bearer`, `apiKey=`, `"password":`
+   ...), registra `secretLeakScanMode` e i nomi dei file in `run.json`, e non redige l'output; gli altri segreti dell'ambiente restano a ricerca completa.
 3. **Pack firmato** (chiavi private fuori dal repository, versione immutabile):
    `scripts\windows\prepare-knowledge-benchmark-pack.ps1` (richiede PowerShell 7 e i sorgenti delle skill committati).
 4. Il commit misurato e il `HEAD` del worktree: l'harness rifiuta modifiche non committate ai sorgenti runtime.

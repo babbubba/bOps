@@ -446,5 +446,66 @@ class Qwen38ProfileTests(Base):
         self.assertEqual((overlay["Knowledge__Budget__ContextShare"], overlay["Knowledge__Budget__MaxReads"]), ("0.35", "8"))
 
 
+class ShortKeyLeakScanTests(unittest.TestCase):
+    """A local llama.cpp placeholder key such as 'local' is a word of ordinary text: it must not stop a campaign, but a real use of it
+    as a credential must still be found. Long keys keep the full substring search."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.run_dir = pathlib.Path(self._tmp.name)
+
+    def write(self, name, text):
+        (self.run_dir / name).write_text(text, encoding="utf-8")
+
+    def test_the_word_in_ordinary_text_is_not_a_leak(self):
+        self.write("appsettings.json", '{"Docker": {"Volumes": {"Drivers": ["local"]}}}')
+        self.write("stdout.txt", "The local machine reported localhost and a local disk; locally cached.")
+        scan = mcb.leak_scan(self.run_dir, {"local"}, "local")
+        self.assertEqual((scan["result"], scan["mode"], scan["files"]), ("clean", "contextual", []))
+
+    def test_the_key_used_as_a_credential_is_found_and_only_the_file_name_is_reported(self):
+        self.write("clean.txt", "nothing to see")
+        self.write("stderr.txt", "request failed: Authorization: Bearer local")
+        self.write("env.txt", "BOPS_MODEL_API_KEY=local")
+        self.write("json.txt", '{"ApiKey": "local"}')
+        scan = mcb.leak_scan(self.run_dir, {"local"}, "local")
+        self.assertEqual(scan["result"], "leak")
+        self.assertEqual(scan["files"], ["env.txt", "json.txt", "stderr.txt"])
+
+    def test_a_longer_word_that_starts_with_the_key_is_not_a_credential(self):
+        self.write("a.txt", "Bearer localhost and apiKey=locally")
+        self.assertEqual(mcb.leak_scan(self.run_dir, {"local"}, "local")["result"], "clean")
+
+    def test_a_long_key_keeps_the_full_substring_search(self):
+        key = "0123456789abcdef0123456789abcdef"
+        self.write("anywhere.txt", f"prefix {key} suffix")
+        scan = mcb.leak_scan(self.run_dir, {key}, key)
+        self.assertEqual((scan["result"], scan["mode"], scan["files"]), ("leak", "full", ["anywhere.txt"]))
+
+    def test_another_short_environment_secret_is_not_downgraded(self):
+        self.write("x.txt", "token abcdefgh in a sentence")
+        scan = mcb.leak_scan(self.run_dir, {"local", "abcdefgh"}, "local")
+        self.assertEqual((scan["result"], scan["mode"]), ("leak", "full+contextual"))
+
+    def test_only_long_secrets_are_redacted_from_the_captured_output(self):
+        strong, short = mcb.split_secrets({"local", "0123456789abcdef0123456789abcdef"}, "local")
+        self.assertEqual((strong, short), ({"0123456789abcdef0123456789abcdef"}, {"local"}))
+        self.assertEqual(mcb.split_secrets({"abcdefgh"}, None), ({"abcdefgh"}, set()))
+
+
+class ShortKeyCampaignTests(Base):
+    def test_a_campaign_with_a_short_key_runs_on_and_records_the_contextual_mode(self):
+        profile = self.profile(apiKeyEnv="TEST_BENCH_KEY")
+        with unittest.mock.patch.dict("os.environ", {"TEST_BENCH_KEY": "local"}):
+            out, (code, *_) = self.run_campaign(self.script(state=with_audit(make_state())), "--allow-live", profile=profile)
+        self.assertEqual(code, 0)
+        first = json.loads((out / "campaign.json").read_text())["plannedRuns"][0]
+        info = json.loads((out / "runs" / first["runDir"] / "run.json").read_text())
+        self.assertEqual((info["secretLeakScan"], info["secretLeakFiles"]), ("clean", []))
+        self.assertIn("contextual", info["secretLeakScanMode"])  # other, longer secrets of the environment keep the full search
+
+
 if __name__ == "__main__":
     unittest.main()
