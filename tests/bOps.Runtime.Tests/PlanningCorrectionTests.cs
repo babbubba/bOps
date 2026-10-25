@@ -237,4 +237,103 @@ public sealed class PlanningCorrectionTests
         Assert.Contains(LimitProblem, LastUserTurn(model.Requests[3]), StringComparison.Ordinal);
         Assert.Equal(2, task.Plans.Count);
     }
+
+    // MAF A/B/C/D pilots (Qwen3.8): plans expected `mode: raw` with `sinceDays`, or both windows, which the tool refuses at
+    // execution. The step could then only be satisfied by a call the tool rejects, so the run replanned the same combination until
+    // it ran out of steps. The tool's declared relations now refuse such a plan, with the rule, before any step starts.
+    private const string ExclusiveRule = "Use either sinceMinutes or sinceDays, never both.";
+    private const string RawRule = "sinceDays is valid only with mode aggregate; with mode raw use sinceMinutes (up to 10080).";
+
+    private static RecordingReadTool CrashesTool() => new("test.crashes",
+        [
+            new ToolParameter("mode", ToolParameterType.Enum, "Output shape.", Required: false, AllowedValues: ["aggregate", "raw"]),
+            new ToolParameter("sinceMinutes", ToolParameterType.Integer, "Window in minutes.", Required: false) { Minimum = 1, Maximum = 10080 },
+            new ToolParameter("sinceDays", ToolParameterType.Integer, "Window in days.", Required: false) { Minimum = 1, Maximum = 180 },
+        ],
+        rules:
+        [
+            ToolArgumentRule.Exclusive("sinceMinutes", "sinceDays", ExclusiveRule),
+            ToolArgumentRule.ForbiddenWith("sinceDays", "mode", ["raw"], RawRule),
+        ]);
+
+    private static string CrashesPlan(JsonObject expected) => new JsonObject
+    {
+        ["rationale"] = "Read the recent crashes.",
+        ["steps"] = new JsonArray(new JsonObject
+        {
+            ["description"] = "Check crashes",
+            ["expectedTool"] = "test.crashes",
+            ["expectedArguments"] = expected,
+        }),
+    }.ToJsonString();
+
+    private static ModelResponse CrashesCall(JsonObject arguments) => new(null,
+        [new ModelToolCall("c1", "test.crashes", ToolArguments.FromJson(arguments))], false, new ModelUsage(100, 10, null));
+
+    [Theory]
+    [InlineData("""{"mode":"raw","sinceDays":14}""", RawRule)]
+    [InlineData("""{"sinceMinutes":60,"sinceDays":14}""", ExclusiveRule)]
+    public async Task APlanThatExpectsAnUnsatisfiableArgumentCombination_IsRefusedWithTheRule_AndTheCorrectedPlanRuns(
+        string invalid, string rule)
+    {
+        var tool = CrashesTool();
+        var corrected = new JsonObject { ["mode"] = "raw", ["sinceMinutes"] = 60 };
+        var model = new FakeChatModel(
+            Text(CrashesPlan(JsonNode.Parse(invalid)!.AsObject())), Text(CrashesPlan(corrected)),
+            CrashesCall((JsonObject)corrected.DeepClone()), Done());
+
+        var task = await Runner(model, tool).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Contains(rule, LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Contains("cannot be satisfied by any call of 'test.crashes'", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Equal(60, Assert.Single(task.Plans).Steps[0].ExpectedArguments!.ToJson()["sinceMinutes"]!.GetValue<int>());
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task APlanThatConstrainsOnlyTheDaysWindow_IsAccepted_BecauseTheCallMayStillChooseAggregate()
+    {
+        var tool = CrashesTool();
+        var model = new FakeChatModel(
+            Text(CrashesPlan(new JsonObject { ["sinceDays"] = 14 })),
+            CrashesCall(new JsonObject { ["sinceDays"] = 14, ["mode"] = "aggregate" }), Done());
+
+        var task = await Runner(model, tool).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Equal(3, model.Requests.Count);
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public void ThePlanningCatalog_StatesTheDeclaredRulesOfAToolBesideItsParameters()
+    {
+        var catalog = AgentRunner.DescribeToolCatalog([CrashesTool().Manifest]);
+
+        Assert.Contains($"Rules for expectedArguments: {ExclusiveRule} {RawRule}", catalog, StringComparison.Ordinal);
+        Assert.DoesNotContain("Rules for expectedArguments", AgentRunner.DescribeToolCatalog([EventsTool().Manifest]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARuntimeControlFunctionNamedAsAPlanStep_IsRefusedWithAnExplanationOfWhatAPlanStepIs()
+    {
+        var plan = new JsonObject
+        {
+            ["rationale"] = "Read the evidence.",
+            ["steps"] = new JsonArray(new JsonObject
+            {
+                ["description"] = "Read earlier evidence",
+                ["expectedTool"] = EvidenceRead.ControlFunctionName,
+                ["expectedArguments"] = new JsonObject(),
+            }),
+        }.ToJsonString();
+        var model = new FakeChatModel(Text(plan), Text(plan));
+
+        var task = await Runner(model, EventsTool()).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Failed, task.Status);
+        Assert.Contains("runtime control function, not a plan step", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Contains("only a tool from the tool list", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+    }
 }

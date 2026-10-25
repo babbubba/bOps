@@ -140,6 +140,47 @@ public sealed record ToolParameter
     public int? MaxItems { get; init; }
 }
 
+/// <summary>The relation a <see cref="ToolArgumentRule"/> declares between two parameters of one tool.</summary>
+public enum ToolArgumentRuleKind
+{
+    /// <summary>The two parameters may not both be supplied.</summary>
+    MutuallyExclusive = 0,
+
+    /// <summary>The first parameter may not be supplied while the second one has one of the listed values.</summary>
+    ForbiddenWithValue = 1,
+}
+
+/// <summary>
+/// A declared relation between two parameters of one tool, for a rule the per-parameter schema cannot express. The tool still
+/// enforces it when it runs; declaring it lets the runtime refuse a plan that constrains a call no execution could satisfy, and
+/// lets the planner be told. The runtime reads only the parameter names, values and the message, never the tool's identity.
+/// </summary>
+public sealed record ToolArgumentRule
+{
+    /// <summary>The kind of relation.</summary>
+    public required ToolArgumentRuleKind Kind { get; init; }
+
+    /// <summary>The first parameter. Under <see cref="ToolArgumentRuleKind.ForbiddenWithValue"/>, the one that is forbidden.</summary>
+    public required string Parameter { get; init; }
+
+    /// <summary>The second parameter. Under <see cref="ToolArgumentRuleKind.ForbiddenWithValue"/>, the one whose value decides.</summary>
+    public required string Other { get; init; }
+
+    /// <summary>For <see cref="ToolArgumentRuleKind.ForbiddenWithValue"/>, the values of <see cref="Other"/> that forbid <see cref="Parameter"/>.</summary>
+    public IReadOnlyList<string> OtherValues { get; init; } = [];
+
+    /// <summary>A short, model-readable statement of the rule that tells how to correct a call (shown to the planner and in a refusal).</summary>
+    public required string Message { get; init; }
+
+    /// <summary>Declares that <paramref name="first"/> and <paramref name="second"/> may not both be supplied.</summary>
+    public static ToolArgumentRule Exclusive(string first, string second, string message) =>
+        new() { Kind = ToolArgumentRuleKind.MutuallyExclusive, Parameter = first, Other = second, Message = message };
+
+    /// <summary>Declares that <paramref name="parameter"/> may not be supplied while <paramref name="other"/> is one of <paramref name="values"/>.</summary>
+    public static ToolArgumentRule ForbiddenWith(string parameter, string other, IReadOnlyList<string> values, string message) =>
+        new() { Kind = ToolArgumentRuleKind.ForbiddenWithValue, Parameter = parameter, Other = other, OtherValues = values, Message = message };
+}
+
 /// <summary>
 /// Declares how a non-<see cref="RiskLevel.Read"/> tool's effect is verified after execution.
 /// A tool with this risk must declare one and implement <see cref="IVerifiableTool"/>, or the
@@ -202,6 +243,15 @@ public sealed record ToolManifest
 
     /// <summary>The parameters this tool accepts.</summary>
     public required IReadOnlyList<ToolParameter> Parameters { get; init; }
+
+    /// <summary>
+    /// Relations between parameters that the per-parameter schema cannot express (for example two windows that exclude each other).
+    /// <c>null</c> (omitted from the serialized manifest) when the tool declares none. The tool remains the authority at execution;
+    /// the runtime uses these only to refuse a plan that could never run. A rule that names a parameter the manifest does not declare
+    /// (a manifest derived with fewer parameters) can never be broken and is ignored.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ToolArgumentRule>? ArgumentRules { get; init; }
 
     /// <summary>Required when <see cref="Risk"/> is not <see cref="RiskLevel.Read"/>. See agentic/01-architecture-rules.md, rule B3.</summary>
     public VerificationSpec? Verification { get; init; }

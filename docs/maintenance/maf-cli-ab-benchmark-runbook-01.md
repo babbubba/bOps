@@ -62,7 +62,7 @@ $commit = (git -C $repo rev-parse HEAD).Trim()
 ```
 
 It checks: target commit and clean runtime sources; output outside any Git work tree; profile and authorizations (a non-loopback endpoint fails unless `-AllowRemoteEndpoint`); builds the CLI in Release (the `bops.dll` hash is recorded); the read-only policy; the endpoint (`GET <baseUrl>/models` — a listing, never an inference request; `-SkipEndpointProbe` skips it); and the **mode probe**.
-The mode probe runs the real CLI once per variant against a **loopback stub that answers HTTP 400**: no model is contacted, the `EXPERIMENTAL` line must appear for B only. Because the CLI persists a failed task, the probe leaves one throwaway task per variant in `preflight\mode-probe-*\tasks.db`, never in a campaign. Use `-SkipModeProbe` if you want no task of any kind (the mode is then still verified on every real run, just not before).
+The mode probe runs the real CLI once per variant against a **loopback stub**: no model is contacted, the `EXPERIMENTAL` line must appear for B only. The stub holds the CLI's first model request and the probe **stops the process the moment it arrives** (`stoppedEarly: true` in `preflight.json`): the mode is decided at startup, and a CLI that never sees a model failure leaves no crash record in the Application log of the machine under diagnosis. The probe leaves one throwaway task per variant in `preflight\mode-probe-*\tasks.db`, never in a campaign. Use `-SkipModeProbe` if you want no task of any kind (the mode is then still verified on every real run, just not before).
 Exit code 0 = passed; the details are in `preflight.json`.
 
 ## 3. Pilot: B01, MAF OFF and ON, one round (live — your go-ahead)

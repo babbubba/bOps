@@ -268,6 +268,31 @@ public sealed partial class AgentRunner(
             : $"The runtime rejected that plan: {ProjectForPrompt(problem, MaxPlanProblemCharacters)} {PlanRetryInstructions}";
     }
 
+    private const int MaxSemanticMismatchArgumentCharacters = 400;
+
+    /// <summary>
+    /// The observation of a call whose arguments did not satisfy the current planned step. It keeps the original sentence and adds
+    /// what the step requires, so the one correction the model gets can name the argument it dropped or changed (an expected
+    /// argument is never sensitive, so naming it discloses nothing). The model's own plan is the source of the text.
+    /// </summary>
+    private static string SemanticMismatchMessage(ToolArguments? expected, string? bindingProblem)
+    {
+        const string Base = "The offered tool's arguments did not match the current planned step; the call was not executed.";
+        if (bindingProblem is not null)
+        {
+            return $"{Base} {ProjectForPrompt(bindingProblem, MaxSemanticMismatchArgumentCharacters)}";
+        }
+
+        if (expected is null || expected.ToJson().Count == 0)
+        {
+            return Base;
+        }
+
+        var required = ProjectForPrompt(expected.ToJson().ToJsonString(), MaxSemanticMismatchArgumentCharacters);
+        return $"{Base} The step requires these argument values exactly: {required}. Send every one of them unchanged; " +
+            "other optional arguments the tool accepts may be added.";
+    }
+
     private static bool IsOutputLimited(ModelResponse response) =>
         string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
 
@@ -1483,8 +1508,7 @@ public sealed partial class AgentRunner(
                     && (bindingProblem is not null
                         || !SemanticExpectedArguments.Matches(resolved.Tool.Manifest, expectedArguments, primaryCall)))
                 {
-                    var mismatch = ToolCallResult.Failure(
-                        "The offered tool's arguments did not match the current planned step; the call was not executed.")
+                    var mismatch = ToolCallResult.Failure(SemanticMismatchMessage(expectedArguments, bindingProblem))
                         with { FailureKind = ToolFailureKind.Validation };
                     ToolRoutingTelemetry.RecordRefused(resolved.Tool.Manifest.Name, "SemanticMismatch");
                     (step, observation) = await RecordAsync(
@@ -5226,6 +5250,12 @@ public sealed partial class AgentRunner(
                     : " Parameters: none permitted in planning. Omit expectedArguments or use {}.");
             }
 
+            // Relations between parameters that a call must respect (the tool refuses it otherwise): a plan step must not expect both.
+            if (ToolArgumentRules.Describe(manifest) is { } argumentRules)
+            {
+                builder.Append(" Rules for expectedArguments: ").Append(argumentRules);
+            }
+
             builder.Append('\n');
         }
 
@@ -5586,7 +5616,11 @@ public sealed partial class AgentRunner(
 
                         if (!manifests.TryGetValue(expectedTool, out var manifest))
                         {
-                            problem = $"Plan step {index} cannot constrain unavailable tool '{expectedTool}'.";
+                            problem = $"Plan step {index} cannot constrain unavailable tool '{expectedTool}'. A plan step may name only a " +
+                                "tool from the tool list" +
+                                (expectedTool.StartsWith(EvidenceRead.ControlNamespace, StringComparison.Ordinal)
+                                    ? $"; '{expectedTool}' is a runtime control function, not a plan step."
+                                    : ".");
                             return null;
                         }
 

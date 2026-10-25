@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from unittest.mock import patch
@@ -151,6 +152,28 @@ class PreflightTests(Base):
         probe = next(c for c in document["checks"] if c["name"] == "mode-probe")
         self.assertEqual({v: p["markerSeen"] for v, p in probe["probes"].items()}, {"A": False, "B": True})
         self.assertEqual(list(out.rglob("tasks.db")), [])  # the probe records nothing in a task store
+
+    def test_the_mode_probe_stops_the_cli_at_its_first_model_request_so_it_never_sees_a_failure(self):
+        # The pilots found the probe leaving crash records in the Application log of the diagnosed machine: the CLI reached its first
+        # model call, got HTTP 400 and failed. The stub now holds that request (60 s) and the probe kills the process when it arrives.
+        out = self.tmp / "pf"
+        started = time.monotonic()
+        code, stdout, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", out, "--skip-endpoint-probe",
+                                    *self.double(self.script(probeConnect=True)))
+        self.assertEqual(code, 0, stdout)
+        self.assertLess(time.monotonic() - started, 40)
+        probe = next(c for c in json.loads((out / "preflight.json").read_text())["checks"] if c["name"] == "mode-probe")
+        self.assertEqual(probe["stubRequests"], 2)
+        self.assertEqual({v: (p["stoppedEarly"], p["status"], p["markerSeen"]) for v, p in probe["probes"].items()},
+                         {"A": (True, "pass", False), "B": (True, "pass", True)})
+
+    def test_a_probe_that_ends_by_itself_is_not_reported_as_stopped(self):
+        out = self.tmp / "pf"
+        code, _, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", out, "--skip-endpoint-probe",
+                               *self.double(self.script()))
+        self.assertEqual(code, 0)
+        probe = next(c for c in json.loads((out / "preflight.json").read_text())["checks"] if c["name"] == "mode-probe")
+        self.assertFalse(any(p["stoppedEarly"] for p in probe["probes"].values()))
 
     def test_preflight_fails_when_mode_b_does_not_report_itself(self):
         code, stdout, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", self.tmp / "pf", "--skip-endpoint-probe",

@@ -67,6 +67,13 @@ public static class SystemToolManifests
             new ToolParameter("limit", ToolParameterType.Integer,
                 $"Maximum groups (aggregate) or rows (raw) (1-{SystemMaintenanceLimits.MaximumCrashes}, default {SystemMaintenanceLimits.DefaultCrashes}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumCrashes },
         ],
+        // The two cross-field rules EvidenceModes.TryReadHorizon enforces at execution (ADR-0032 HARDEN-7 amendment §2).
+        ArgumentRules =
+        [
+            ToolArgumentRule.Exclusive("sinceMinutes", "sinceDays", "Use either sinceMinutes or sinceDays, not both."),
+            ToolArgumentRule.ForbiddenWith("sinceDays", "mode", ["raw"],
+                $"sinceDays applies only to mode aggregate; raw mode is limited to sinceMinutes up to {SystemMaintenanceLimits.MaximumSinceMinutes} (7 days)."),
+        ],
     };
     public static ToolManifest Drivers(string platform) => Maintenance(platform, "system.drivers", [
         new ToolParameter("limit", ToolParameterType.Integer, $"Maximum rows (1-{SystemMaintenanceLimits.MaximumDrivers}, default {SystemMaintenanceLimits.DefaultDrivers}).", Required: false) { Minimum = 1, Maximum = SystemMaintenanceLimits.MaximumDrivers }]);
@@ -120,6 +127,13 @@ public static class SystemToolManifests
             },
             new ToolParameter("windowDays", ToolParameterType.Integer,
                 $"How many days back to look (1-{SystemEventsLimits.MaximumWindowDays}). Valid only with mode aggregate, and never together with windowMinutes.", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumWindowDays },
+        ],
+        // The two cross-field rules EvidenceModes.TryReadHorizon enforces at execution (ADR-0032 HARDEN-7 amendment §2).
+        ArgumentRules =
+        [
+            ToolArgumentRule.Exclusive("windowMinutes", "windowDays", "Use either windowMinutes or windowDays, not both."),
+            ToolArgumentRule.ForbiddenWith("windowDays", "mode", ["raw"],
+                $"windowDays applies only to mode aggregate; raw mode is limited to windowMinutes up to {SystemEventsLimits.MaximumWindowMinutes} (7 days)."),
         ],
     };
 

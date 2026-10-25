@@ -70,6 +70,11 @@ public sealed class ToolRegistry : IToolRegistry
             ValidateConstraints(manifest.Name, parameter);
         }
 
+        if (ToolArgumentRules.DescribeInvalid(manifest) is { } rulesProblem)
+        {
+            throw new ToolRegistrationException(manifest.Name, rulesProblem);
+        }
+
         if (manifest.RequestedExecutionTimeout is { } requestedTimeout
             && (requestedTimeout <= TimeSpan.Zero || requestedTimeout == TimeSpan.MaxValue))
         {
