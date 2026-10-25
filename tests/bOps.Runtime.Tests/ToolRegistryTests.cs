@@ -63,6 +63,78 @@ public sealed class ToolRegistryTests
         Assert.Null(registry.Resolve("test.read"));
     }
 
+    public static TheoryData<ToolArgumentRule> UnusableArgumentRules => new()
+    {
+        ToolArgumentRule.Exclusive("", "other", "Use one of them."),
+        ToolArgumentRule.Exclusive("name", "name", "Use it once."),
+        ToolArgumentRule.Exclusive("name", "other", " "),
+        ToolArgumentRule.ForbiddenWith("name", "other", [], "Not with that."),
+        ToolArgumentRule.ForbiddenWith("name", "count", ["x"], "A count has no text values."),
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableArgumentRules))]
+    public void Register_RejectsArgumentRulesThatAreMalformedOrUnbounded(ToolArgumentRule rule)
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters =
+            [
+                new ToolParameter("name", ToolParameterType.String, "Name.", Required: false),
+                new ToolParameter("other", ToolParameterType.String, "Other.", Required: false),
+                new ToolParameter("count", ToolParameterType.Integer, "Count.", Required: false),
+            ],
+            ArgumentRules = [rule],
+        };
+
+        var exception = Assert.Throws<ToolRegistrationException>(() =>
+            registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest)));
+
+        Assert.Equal("test.read", exception.ToolName);
+        Assert.Null(registry.Resolve("test.read"));
+    }
+
+    [Fact]
+    public void Register_AcceptsAManifestDerivedWithFewerParametersThatKeepsTheRulesOfTheOriginal()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters = [new ToolParameter("minutes", ToolParameterType.Integer, "Minutes.", Required: false)],
+            ArgumentRules = [ToolArgumentRule.Exclusive("days", "minutes", "Use one window.")],
+        };
+
+        registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest));
+
+        Assert.NotNull(registry.Resolve("test.read"));
+        Assert.DoesNotContain("Rules for expectedArguments", AgentRunner.DescribeToolCatalog([manifest]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Register_AcceptsArgumentRulesOverDeclaredParameters()
+    {
+        var registry = CreateRegistry();
+        var manifest = new FakeReadTool().Manifest with
+        {
+            Parameters =
+            [
+                new ToolParameter("mode", ToolParameterType.Enum, "Mode.", Required: false, AllowedValues: ["a", "b"]),
+                new ToolParameter("days", ToolParameterType.Integer, "Days.", Required: false),
+                new ToolParameter("minutes", ToolParameterType.Integer, "Minutes.", Required: false),
+            ],
+            ArgumentRules =
+            [
+                ToolArgumentRule.Exclusive("days", "minutes", "Use one window."),
+                ToolArgumentRule.ForbiddenWith("days", "mode", ["a"], "days needs mode b."),
+            ],
+        };
+
+        registry.Register(new PackageId("test.package"), new ManifestOverrideTool(manifest));
+
+        Assert.NotNull(registry.Resolve("test.read"));
+    }
+
     [Fact]
     public void Register_RejectsConstraintsThatDoNotMatchTheDeclaredParameterType()
     {

@@ -51,6 +51,13 @@ internal static class SemanticExpectedArguments
             }
         }
 
+        // A relation between parameters that the tool will enforce at execution (a window in minutes together with one in days; a
+        // days window in raw mode): a step that expects both can never run, and the model is told which rule it breaks.
+        if (ToolArgumentRules.Violation(manifest, expected) is { } rule)
+        {
+            return $"expectedArguments cannot be satisfied by any call of '{manifest.Name}': {rule}";
+        }
+
         return null;
     }
 

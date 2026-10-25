@@ -114,6 +114,20 @@ public sealed class SemanticPlannedStepTests
     }
 
     [Fact]
+    public async Task T2b_TheMismatchObservation_NamesTheArgumentValuesTheStepRequires()
+    {
+        var model = new FakeChatModel(
+            Plan((Events, Topic("B"))), Call(Events, Topic("C")), Call(Events, Topic("B")), Final());
+
+        var result = await Runner(model, new InMemoryTaskStore(), EventsTool()).RunAsync("diagnose", Actor);
+
+        var observation = result.Steps[0].Observation;
+        Assert.Contains("did not match the current planned step; the call was not executed.", observation, StringComparison.Ordinal);
+        Assert.Contains("""{"topic":"B"}""", observation, StringComparison.Ordinal);
+        Assert.Contains("Send every one of them unchanged", observation, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task T3_SecondSemanticMismatch_ReplansWithoutExecuting()
     {
         var tool = EventsTool();

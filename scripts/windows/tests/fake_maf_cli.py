@@ -4,7 +4,7 @@
 It reads the same environment keys the real CLI reads, prints the EXPERIMENTAL line on standard error when
 Cli__Experimental__MafGovernedTurn is "true" (unless the script says otherwise), writes the pack admission event first when
 Knowledge__Enabled is "true", and persists a task state plus a hash-chained audit file in the paths the harness configured.
-It never opens a network connection.
+It opens no network connection, except the one loopback request to ModelProvider__BaseUrl that a script asks for with probeConnect.
 """
 import hashlib
 import json
@@ -55,6 +55,15 @@ def main(argv):
     if goal.startswith("preflight mode probe") or script.get("noState") or not memory:
         if admission and os.environ.get("Audit__FilePath"):
             write_audit(os.environ["Audit__FilePath"], admission, "probe")
+        if goal.startswith("preflight mode probe") and script.get("probeConnect"):
+            # The real CLI reaches its first model request after startup; one request to the loopback stub stands in for it. The
+            # stub holds it, so the process waits here until the probe stops it.
+            import urllib.request
+            try:
+                urllib.request.urlopen(urllib.request.Request(
+                    os.environ["ModelProvider__BaseUrl"].rstrip("/") + "/chat/completions", data=b"{}", method="POST"), timeout=120)
+            except OSError:
+                pass
         return script.get("exitCode", 1)
     pre_existing = 0
     if os.path.exists(memory):

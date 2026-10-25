@@ -467,8 +467,9 @@ def kill_tree(process: subprocess.Popen) -> None:
 
 
 def execute_cli(command: list[str], goal: str, cwd: pathlib.Path, env: dict, secrets: set[str], stdout_path: pathlib.Path,
-                stderr_path: pathlib.Path, timeout: float) -> dict:
-    """Run the CLI with stdin closed (an approval prompt reads EOF and denies), redacted output files and a hard timeout."""
+                stderr_path: pathlib.Path, timeout: float, stop_when=None) -> dict:
+    """Run the CLI with stdin closed (an approval prompt reads EOF and denies), redacted output files and a hard timeout.
+    `stop_when`, when given, is polled while the process runs; once it returns true the process tree is killed and the result says so."""
     started = time.monotonic()
     process = subprocess.Popen([*command, goal], cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, start_new_session=(os.name != "nt"))
@@ -479,9 +480,23 @@ def execute_cli(command: list[str], goal: str, cwd: pathlib.Path, env: dict, sec
         thread = threading.Thread(target=lb._copy_redacted_output, args=(pipe, stream, secrets), daemon=True)
         thread.start()
         threads.append(thread)
-    timed_out = interrupted = False
+    timed_out = interrupted = stopped_early = False
     try:
-        process.wait(timeout=max(1.0, timeout))
+        if stop_when is None:
+            process.wait(timeout=max(1.0, timeout))
+        else:
+            deadline = started + max(1.0, timeout)
+            while True:
+                try:
+                    process.wait(timeout=max(0.05, min(0.2, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    if stop_when():
+                        stopped_early = True
+                        kill_tree(process)
+                        break
+                    if time.monotonic() >= deadline:
+                        raise
     except subprocess.TimeoutExpired:
         timed_out = True
         kill_tree(process)
@@ -493,7 +508,7 @@ def execute_cli(command: list[str], goal: str, cwd: pathlib.Path, env: dict, sec
     for stream in streams:
         stream.flush()
         stream.close()
-    return {"exitCode": process.returncode, "timedOut": timed_out, "interrupted": interrupted,
+    return {"exitCode": process.returncode, "timedOut": timed_out, "interrupted": interrupted, "stoppedEarly": stopped_early,
             "wallSeconds": round(time.monotonic() - started, 3)}
 
 
@@ -502,10 +517,14 @@ def execute_cli(command: list[str], goal: str, cwd: pathlib.Path, env: dict, sec
 # --------------------------------------------------------------------------------------------------------------------
 
 class StubModelServer:
-    """Loopback server that answers every request with HTTP 400 and counts it. Used only by the mode probe: no model is involved."""
+    """Loopback server that counts every request, holds it for up to `hold_seconds`, then answers HTTP 400. Used only by the mode probe:
+    no model is involved. The probe stops the CLI as soon as the first request arrives, so the process never sees a model failure (an
+    unhandled one would leave a crash record in the logs of the machine the benchmark diagnoses)."""
 
-    def __init__(self):
+    def __init__(self, hold_seconds: float = 60.0):
         self.requests = 0
+        self.hold_seconds = hold_seconds
+        self.release = threading.Event()
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -514,12 +533,16 @@ class StubModelServer:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length:
                     self.rfile.read(length)
+                outer.release.wait(outer.hold_seconds)
                 body = b'{"error":{"message":"preflight stub: no model is attached","type":"invalid_request_error"}}'
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except OSError:
+                    pass  # the probe already stopped the client
 
             do_GET = do_POST = _answer
 
@@ -538,6 +561,7 @@ class StubModelServer:
         return self
 
     def __exit__(self, *exc):
+        self.release.set()
         self.server.shutdown()
         self.server.server_close()
 
@@ -593,15 +617,19 @@ def prepare_work(work: pathlib.Path, appsettings_source: pathlib.Path | None) ->
     return {"policySha256": sha_file(work / "policy.yaml"), "appsettingsSha256": sha}
 
 
-def mode_probe(ctx: "Context", variant: str, stub_url: str, directory: pathlib.Path) -> dict:
-    """Run the real CLI once against a loopback stub (HTTP 400, no model) and read the mode back from standard error."""
+def mode_probe(ctx: "Context", variant: str, stub_url: str, directory: pathlib.Path, stub: "StubModelServer | None" = None) -> dict:
+    """Run the real CLI once against a loopback stub (no model) and read the mode back from standard error and the audit trail.
+    With the stub given, the CLI is stopped when its first model request arrives: the mode (the EXPERIMENTAL line, the pack admission)
+    is decided at startup, before any model call, and the process never sees a failure that would leave a crash record behind."""
     profile = {**ctx.profile, "baseUrl": stub_url, "apiKeyEnv": "STUB", "remote": False}
     work = directory / f"mode-probe-{variant}"
     facts = prepare_work(work, ctx.appsettings_source)
     overlay = build_overlay(profile, variant, work, ctx.knowledge)
     env, _ = child_environment(os.environ, overlay, "stub-key-not-a-real-credential")
+    baseline = stub.requests if stub is not None else 0
     result = execute_cli(ctx.cli_command, "preflight mode probe: no model is attached", work, env, {"stub-key-not-a-real-credential"},
-                         work / "stdout.txt", work / "stderr.txt", 120)
+                         work / "stdout.txt", work / "stderr.txt", 120,
+                         stop_when=(lambda: stub.requests > baseline) if stub is not None else None)
     stderr = (work / "stderr.txt").read_text(encoding="utf-8", errors="replace")
     seen = MARKER in stderr
     expected = VARIANTS[variant]["maf"]
@@ -610,7 +638,7 @@ def mode_probe(ctx: "Context", variant: str, stub_url: str, directory: pathlib.P
     knowledge_ok = admission["admitted"] if knowledge_expected else admission["events"] == 0
     return {"variant": variant, "expectedMaf": expected, "markerSeen": seen, "expectedKnowledge": knowledge_expected,
             "knowledgeAdmitted": admission["admitted"], "knowledgeAdmissionCodes": admission["codes"], "knowledgeVerified": knowledge_ok,
-            "exitCode": result["exitCode"], "timedOut": result["timedOut"],
+            "exitCode": result["exitCode"], "timedOut": result["timedOut"], "stoppedEarly": result["stoppedEarly"],
             "status": "pass" if seen == expected and knowledge_ok and not result["timedOut"] and result["exitCode"] != 2 else "fail", **facts}
 
 
@@ -734,7 +762,7 @@ def run_preflight(ctx: Context, directory: pathlib.Path, allow_remote: bool, all
         ctx.check("mode-probe", "skipped", "skipped by request, no CLI command, or the Knowledge pack is missing")
     else:
         with StubModelServer() as stub:
-            probes = {v: mode_probe(ctx, v, stub.base_url, directory) for v in ctx.variants}
+            probes = {v: mode_probe(ctx, v, stub.base_url, directory, stub) for v in ctx.variants}
             requests = stub.requests
         good = all(p["status"] == "pass" for p in probes.values())
         ok &= ctx.check("mode-probe", "pass" if good else "fail",
