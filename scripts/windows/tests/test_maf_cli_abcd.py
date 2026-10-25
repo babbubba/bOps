@@ -495,6 +495,33 @@ class ShortKeyLeakScanTests(unittest.TestCase):
         self.assertEqual(mcb.split_secrets({"abcdefgh"}, None), ({"abcdefgh"}, set()))
 
 
+class OverlayIsNotASecretTests(Base):
+    """The configuration the harness hands to the CLI names a secret by reference (ApiKeySecret__Name=BOPS_MODEL_API_KEY); those words are
+    ordinary text of appsettings.json and of the task state, and the run must not be stopped as a credential leak because of them."""
+
+    def test_the_real_cli_template_and_the_overlay_do_not_raise_a_leak(self):
+        template = pathlib.Path(__file__).resolve().parents[3] / "src" / "core" / "bOps.Cli" / "appsettings.json"
+        profile = mcb.load_profile(self.profile(apiKeyEnv="TEST_BENCH_KEY"))
+        work = self.tmp / "run" / "work"
+        work.mkdir(parents=True)
+        (work / "appsettings.json").write_bytes(template.read_bytes())
+        (work / "tasks.db").write_bytes(b"... environment ... BOPS_MODEL_API_KEY ...")
+        overlay = mcb.build_overlay(profile, "A", work, None)
+        env, _ = mcb.child_environment({"PATH": "x"}, overlay, "0123456789abcdef0123456789abcdef")
+        self.assertIn("ModelProvider__ApiKeySecret__Name", overlay)
+
+        secrets = mcb.secret_values({n: v for n, v in env.items() if n not in overlay}, "0123456789abcdef0123456789abcdef")
+        self.assertEqual(secrets, {"0123456789abcdef0123456789abcdef"})
+        self.assertEqual(mcb.leak_scan(self.tmp / "run", secrets, "0123456789abcdef0123456789abcdef")["result"], "clean")
+
+    def test_a_real_secret_inherited_from_the_user_environment_is_still_searched(self):
+        run = self.tmp / "run2"
+        run.mkdir()
+        (run / "out.txt").write_text("leaked: ghp_exampleExampleExample12345", encoding="utf-8")
+        secrets = mcb.secret_values({"GITHUB_TOKEN": "ghp_exampleExampleExample12345", "Plain": "x"}, None)
+        self.assertEqual(mcb.leak_scan(run, secrets, None)["files"], ["out.txt"])
+
+
 class ShortKeyCampaignTests(Base):
     def test_a_campaign_with_a_short_key_runs_on_and_records_the_contextual_mode(self):
         profile = self.profile(apiKeyEnv="TEST_BENCH_KEY")
