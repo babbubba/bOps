@@ -15,6 +15,9 @@ namespace bOps.Cli;
 /// code with a scripted model; it adds nothing to the runner's authority. The knowledge host is the optional last input (ADR-0058): when it
 /// is <c>null</c> the runner is built exactly as it was before knowledge was composable. The last, optional input is the operator's
 /// opt-in to the MAF governed turn host (BOPS-0122, C01-R22): off by default, and then the composition is the one that ran before it existed.
+/// The two switches are independent: Knowledge is served by the runner (the index, the control function, the audited reads), so with the
+/// MAF host on it reaches the model as exactly the protected context the runner authorised, and the final context gate compares it as
+/// it compares any other turn.
 /// </summary>
 internal static class CliRunnerComposition
 {
@@ -46,17 +49,11 @@ internal static class CliRunnerComposition
     /// Builds the runner and returns the model invocation broker it was given, so a test can tell which path was composed. When
     /// <see cref="CliRunnerInputs.MafGovernedTurn"/> is set, every model call is one governed MAF turn in front of the same governed broker
     /// (C01-R22); the broker still projects the context, retries, accounts and audits, and the runner is not told the difference.
+    /// Knowledge, when composed, is independent of that switch.
     /// </summary>
     internal static (AgentRunner Runner, IModelInvocationBroker Broker) Compose(CliRunnerInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
-        if (inputs.MafGovernedTurn && inputs.Knowledge is not null)
-        {
-            // C01-R22: no Knowledge or Skills content goes through the MAF turn host. Refuse rather than silently drop either one.
-            throw new InvalidOperationException(
-                $"'{MafGovernedTurnKey}' cannot be combined with Knowledge: the MAF governed turn host is refused when Knowledge is enabled (C01-R22).");
-        }
-
         var governed = new ModelInvocationBroker(
             inputs.Model, inputs.Audit, inputs.Time, inputs.Logger, inputs.Options,
             contextProjector: new MafContextProjector(inputs.Options, inputs.Logger),

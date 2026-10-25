@@ -5,6 +5,9 @@ Nothing here has been run live. Every step below that talks to a model needs `-A
 
 > BENCH-00 measured the **API**, which ignores this switch. Never quote an API measurement as evidence for the CLI MAF host.
 
+> The four-condition extension (A/B plus C/D with the signed Windows Knowledge pack, Qwen3.8 Smart 128K) is in
+> [`maf-knowledge-abcd-campaign-runbook-01.md`](maf-knowledge-abcd-campaign-runbook-01.md). A and B keep the meaning described here.
+
 ## What the tooling guarantees
 
 - Same build, profile, endpoint, parameters, tools, limits, prompts (the exact BENCH-00 B01/B02/B03), policy and effective configuration in both variants; the configuration fingerprint must match and the report says whether it did.
