@@ -831,7 +831,9 @@ def run_one(ctx: Context, entry: dict, timeout: float, campaign: pathlib.Path) -
     facts = prepare_work(work, ctx.appsettings_source)
     overlay = build_overlay(ctx.profile, entry["variant"], work, ctx.knowledge)
     env, scrubbed = child_environment(os.environ, overlay, ctx.api_key)
-    secrets = secret_values(env, ctx.api_key)
+    # The overlay is the harness's own non-secret configuration; its entries (ModelProvider__ApiKeySecret__Name=BOPS_MODEL_API_KEY, ...Provider=environment)
+    # have "KEY"/"SECRET" in their names and are ordinary text of appsettings.json, so they must not be searched for as credentials.
+    secrets = secret_values({name: value for name, value in env.items() if name not in overlay}, ctx.api_key)
     host_before = host_snapshot()
     started = utc_now()
     # Redaction rewrites every occurrence in the captured output; for a short placeholder key that would corrupt ordinary words of the
