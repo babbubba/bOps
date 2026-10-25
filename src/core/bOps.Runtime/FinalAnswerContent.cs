@@ -26,7 +26,7 @@ internal static class FinalAnswerContent
         foreach (var line in text.AsSpan().EnumerateLines())
         {
             var trimmed = line.Trim();
-            if (IsFenceDelimiter(trimmed))
+            if (IsFenceDelimiter(trimmed) || RuntimeContextMarkers.IsMarkerLine(trimmed))
             {
                 continue;
             }
@@ -37,6 +37,29 @@ internal static class FinalAnswerContent
                 {
                     return true;
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> is a reply made only of the runtime's own history markers (compaction header, call status
+    /// bullets), copied back as if it were the answer. Such a reply is not an answer, and it is told apart from the other content-free
+    /// replies only so the retry and the terminal text can say what was wrong. It is false for any reply with a real line, however short.
+    /// </summary>
+    internal static bool IsRuntimeContextEcho(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || HasContent(text))
+        {
+            return false;
+        }
+
+        foreach (var line in text.AsSpan().EnumerateLines())
+        {
+            if (RuntimeContextMarkers.IsMarkerLine(line.Trim()))
+            {
+                return true;
             }
         }
 

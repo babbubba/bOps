@@ -39,6 +39,8 @@ public sealed class MafTurnEquivalenceTests
         "empty-final-output",
         "finish-reason-length",
         "context-overflow-recovery",
+        "echoed-compaction-final",
+        "invented-count-attribution",
     ];
 
     [Theory]
@@ -148,6 +150,14 @@ public sealed class MafTurnEquivalenceTests
             case "context-overflow-recovery":
                 Assert.Contains(run.Audit, line => line.Contains($"\"FailureKind\":{(int)ModelFailureKind.ContextOverflow}", StringComparison.Ordinal));
                 break;
+            case "echoed-compaction-final":
+                // The campaign defect (03-B02-A-r1): the placeholder is never the answer; it is retried, then the real answer completes.
+                Assert.Contains(run.ProviderRequests, request => request.Contains("internal context markers", StringComparison.Ordinal));
+                break;
+            case "invented-count-attribution":
+                // The campaign defect (09-B02-B-r2): 196 events attributed to a step whose result has none; one correction, same on both paths.
+                Assert.Contains(run.ProviderRequests, request => request.Contains("EvidenceProvenanceCorrection/v1", StringComparison.Ordinal));
+                break;
             case "resume-from-persisted-state":
                 Assert.Contains("\"ExecutionAttempt\":2", run.State, StringComparison.Ordinal);
                 break;
@@ -232,6 +242,22 @@ public sealed class MafTurnEquivalenceTests
                     Plan(Step("test.read")), Call("call-1", "test.read"),
                     new ModelProtocolException("context too long") { FailureKind = ModelFailureKind.ContextOverflow },
                     Final("Done."),
+                ];
+                break;
+            case "echoed-compaction-final":
+                script =
+                [
+                    Plan(Step("test.read")), Call("call-1", "test.read"),
+                    Final("[Compacted tool interactions; persisted result data omitted]\n- test.read: result recorded"),
+                    Final("Done."),
+                ];
+                break;
+            case "invented-count-attribution":
+                script =
+                [
+                    Plan(Step("test.read")), Call("call-1", "test.read"),
+                    Final("Step 0 (test.read) ha trovato 196 eventi."),
+                    Final("Step 0 ha restituito ok, senza conteggi."),
                 ];
                 break;
             default:

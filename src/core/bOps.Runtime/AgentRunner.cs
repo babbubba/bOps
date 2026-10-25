@@ -179,6 +179,12 @@ public sealed partial class AgentRunner(
     private const string ContentFreeResponseRetryPrefix =
         "Your last reply had no answer content: it was only punctuation, symbols or formatting marks, and no tool call. ";
 
+    // MAF A/B campaign (03-B02-A-r1): the model copied the runtime's own history placeholder as its final reply. It is retried and
+    // terminated like any other unusable reply; only the wording differs so the model is told what was wrong.
+    private const string RuntimeContextEchoRetryPrefix =
+        "Your last reply only repeated internal context markers from the conversation history (such as a compaction note or a " +
+        "tool status list); it contained no answer and no tool call. ";
+
     private const string OutputLimitedRetryPrefix =
         "Your last reply reached the output limit while reasoning and had no text and no tool call. Do not deliberate further: ";
 
@@ -1382,27 +1388,49 @@ public sealed partial class AgentRunner(
                 // ADR-0042 PRE-5 amendment §5–§8: after disclosure, so the checked text is the persisted one unless corrected.
                 // At most one check and one correction; a contradiction the correction does not resolve fails the attempt.
                 var groundingOutcome = EvidenceGroundingOutcome.NotChecked;
-                if (!diagnostic
-                    && grounding is not null
-                    && DisclosureBudgetRemains(run, delegation))
-                {
-                    var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, stepIndex, stepCalls, ct);
-                    if (guarded.Failure is { } failure)
-                    {
-                        stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
-                        logger.LogError(
-                            "Task {TaskId} step {StepIndex}: the final answer contradicted persisted typed evidence and was not corrected",
-                            taskId, stepIndex);
-                        return await FailAsync(run, failure.Message, failure.Reason, stepCalls, ct);
-                    }
 
-                    (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
-                    stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
+                // MAF A/B campaign (09-B02-B-r2): counts or dates the answer itself attributes to a step whose result does not contain
+                // them. Deterministic and free of model calls; the model's own words are judged, not the appended section.
+                IReadOnlyList<UnsupportedClaim> claims = diagnostic
+                    ? []
+                    : AnswerClaimProvenance.Find(response.TextResponse, steps, timeProvider.GetUtcNow());
+                if (!diagnostic && (grounding is not null || claims.Count > 0))
+                {
+                    if (!DisclosureBudgetRemains(run, delegation))
                     {
-                        EvidenceGroundingOutcome.NoContradictionCited => "no_contradiction_cited",
-                        EvidenceGroundingOutcome.Corrected => "corrected",
-                        _ => "check_unavailable",
-                    });
+                        if (claims.Count > 0)
+                        {
+                            // A known-unsupported attribution is never persisted as a completed answer; with no budget for the one
+                            // correction the attempt ends here (the typed-fact check alone may still be declined, as before).
+                            stepActivity?.SetTag("bops.evidence_grounding", "claims_not_corrected");
+                            logger.LogError(
+                                "Task {TaskId} step {StepIndex}: the final answer attributed values to steps that do not contain them and no budget remained to correct it",
+                                taskId, stepIndex);
+                            return await FailAsync(run, $"{UncorrectedClaimsMessage} No budget remained for the correction.",
+                                (TaskTerminalKind.RuntimeFailure, null), stepCalls, ct);
+                        }
+                    }
+                    else
+                    {
+                        var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, claims, steps, stepIndex, stepCalls, ct);
+                        if (guarded.Failure is { } failure)
+                        {
+                            stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
+                            logger.LogError(
+                                "Task {TaskId} step {StepIndex}: the final answer contradicted persisted evidence and was not corrected",
+                                taskId, stepIndex);
+                            return await FailAsync(run, failure.Message, failure.Reason, stepCalls, ct);
+                        }
+
+                        (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
+                        stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
+                        {
+                            EvidenceGroundingOutcome.NoContradictionCited => "no_contradiction_cited",
+                            EvidenceGroundingOutcome.Corrected => "corrected",
+                            EvidenceGroundingOutcome.ClaimsCorrected => "claims_corrected",
+                            _ => "check_unavailable",
+                        });
+                    }
                 }
 
                 steps.Add(new PlanStep(stepIndex, FinalResponse.DescriptionFor(disclosure, groundingOutcome), null, null, finalText, plan.Revision)
@@ -3747,6 +3775,9 @@ public sealed partial class AgentRunner(
     private const string UncorrectedContradictionMessage =
         "The final answer contradicted persisted typed evidence and its one bounded correction did not resolve it; no answer was kept.";
 
+    private const string UncorrectedClaimsMessage =
+        "The final answer attributed counts or dates to tool results that do not contain them and its one bounded correction did not resolve it; no answer was kept.";
+
     /// <summary>
     /// The evidence-grounding guard (ADR-0042 PRE-5 amendment §5–§7): one check of <paramref name="candidate"/> against the shown
     /// observed facts and, only when the check cites a contradiction, one restatement. Both are the step's request plus the
@@ -3754,32 +3785,50 @@ public sealed partial class AgentRunner(
     /// counts against a step or replan budget, executes a tool or touches the plan cursor. A check that yields no usable
     /// verdict leaves the candidate unclassified and persisted; a cited contradiction is never persisted — the correction
     /// replaces it or the attempt fails. A genuine cancellation propagates as for every model call.
+    /// MAF A/B campaign (09-B02-B-r2): <paramref name="claims"/> are counts or dates the answer attributes to steps whose results do not
+    /// contain them (<see cref="AnswerClaimProvenance"/>). They need no typed fact, so the guard also runs when <paramref name="grounding"/>
+    /// is <c>null</c> (then without a check call), and they join the check's citations in the same single correction: one check and one
+    /// correction at most, whatever found the problem. The correction is accepted only if it is a real answer and no flagged value
+    /// survives; otherwise the attempt fails.
     /// </summary>
     private async Task<GroundingGuardResult> GuardGroundingAsync(
-        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding grounding,
+        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding? grounding,
+        IReadOnlyList<UnsupportedClaim> claims, IReadOnlyList<PlanStep> steps,
         int stepIndex, List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
-        GroundingVerdict verdict;
-        try
+        var verdict = GroundingVerdict.Unavailable;
+        if (grounding is not null)
         {
-            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
-                ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction, ContextProvenance.Runtime)), run.Delegation, stepCalls, ct);
-            run.TokensUsed += UsageTokens(check);
-            verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The attempts are recorded and audited; the guard has classified nothing, so the candidate stands.
-            logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding check failed; the answer is kept unclassified", run.TaskId, stepIndex);
-            verdict = GroundingVerdict.Unavailable;
+            try
+            {
+                var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                    ChatTurn.FromAssistantText(candidate),
+                    ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction, ContextProvenance.Runtime)), run.Delegation, stepCalls, ct);
+                run.TokensUsed += UsageTokens(check);
+                verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The attempts are recorded and audited; the guard has classified nothing, so the candidate stands.
+                logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding check failed; the answer is kept unclassified", run.TaskId, stepIndex);
+                verdict = GroundingVerdict.Unavailable;
+            }
         }
 
-        if (verdict.Kind != GroundingVerdictKind.Contradicted)
+        if (verdict.Kind != GroundingVerdictKind.Contradicted && claims.Count == 0)
         {
             return new GroundingGuardResult(candidate,
                 verdict.Kind == GroundingVerdictKind.NoContradictionCited ? EvidenceGroundingOutcome.NoContradictionCited : EvidenceGroundingOutcome.CheckUnavailable,
                 null);
+        }
+
+        var contradicted = verdict.Kind == GroundingVerdictKind.Contradicted;
+        var failureMessage = contradicted ? UncorrectedContradictionMessage : UncorrectedClaimsMessage;
+        var instruction = contradicted ? EvidenceGroundingLedger.CorrectionInstruction(grounding!, verdict.Contradictions) : null;
+        if (claims.Count > 0)
+        {
+            var provenance = AnswerClaimProvenance.CorrectionInstruction(claims, steps);
+            instruction = instruction is null ? provenance : $"{instruction}\n\n{provenance}";
         }
 
         ModelResponse correction;
@@ -3787,7 +3836,7 @@ public sealed partial class AgentRunner(
         {
             correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
                 ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions), ContextProvenance.Runtime)),
+                ChatTurn.FromUser(instruction!, ContextProvenance.Runtime)),
                 run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(correction);
         }
@@ -3795,7 +3844,7 @@ public sealed partial class AgentRunner(
         {
             logger.LogError(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding correction failed", run.TaskId, stepIndex);
             return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                ($"{UncorrectedContradictionMessage} {FailureReason(ex)}", FailureKindOf(ex)));
+                ($"{failureMessage} {FailureReason(ex)}", FailureKindOf(ex)));
         }
 
         var text = correction.TextResponse;
@@ -3804,18 +3853,21 @@ public sealed partial class AgentRunner(
         {
             var problem = string.IsNullOrWhiteSpace(text) ? "The correction was empty." : "The correction had no answer content.";
             return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                ($"{UncorrectedContradictionMessage} {problem}", (TaskTerminalKind.EmptyResponse, null)));
+                ($"{failureMessage} {problem}", (TaskTerminalKind.EmptyResponse, null)));
         }
 
         var accepted = correction.ToolCalls.Count == 0
             && !TerminalProtocolArtifact.IsArtifact(text)
             && !EvidenceGroundingLedger.IsCheckReplyShape(text)
             && !EvidenceGroundingLedger.RepeatsContradiction(text!, verdict.Contradictions)
-            && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text));
+            && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text))
+            && (claims.Count == 0 || AnswerClaimProvenance.Find(
+                text, steps, timeProvider.GetUtcNow(),
+                claims.Where(claim => claim.Kind == UnsupportedClaimKind.Count).Select(claim => claim.Token).ToHashSet(StringComparer.Ordinal)).Count == 0);
         return accepted
-            ? new GroundingGuardResult(text, EvidenceGroundingOutcome.Corrected, null)
+            ? new GroundingGuardResult(text, grounding is null ? EvidenceGroundingOutcome.ClaimsCorrected : EvidenceGroundingOutcome.Corrected, null)
             : new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                (UncorrectedContradictionMessage, (TaskTerminalKind.RuntimeFailure, null)));
+                (failureMessage, (TaskTerminalKind.RuntimeFailure, null)));
     }
 
     private static bool IsFinalProtocolArtifact(ModelResponse response) =>
@@ -3841,7 +3893,9 @@ public sealed partial class AgentRunner(
             return OutputLimitedRetryPrefix + (stepToolOffered ? RetryWithStepTool : RetryWithFinalAnswer);
         }
 
-        var prefix = string.IsNullOrWhiteSpace(response.TextResponse) ? EmptyResponseRetryPrefix : ContentFreeResponseRetryPrefix;
+        var prefix = string.IsNullOrWhiteSpace(response.TextResponse) ? EmptyResponseRetryPrefix
+            : FinalAnswerContent.IsRuntimeContextEcho(response.TextResponse) ? RuntimeContextEchoRetryPrefix
+            : ContentFreeResponseRetryPrefix;
         return prefix + (stepToolOffered ? "Call the operational tool offered for the current plan step now." : NoOperationalToolOffered + RetryWithFinalAnswer);
     }
 
@@ -3866,7 +3920,9 @@ public sealed partial class AgentRunner(
         // The content-free text itself is not echoed: it is model output, and the recorded reply body already holds it.
         var what = string.IsNullOrWhiteSpace(response.TextResponse)
             ? "an empty final response (no text and no tool call)"
-            : "a final response with no answer content (only punctuation, symbols or formatting marks, and no tool call)";
+            : FinalAnswerContent.IsRuntimeContextEcho(response.TextResponse)
+                ? "a final response with no answer content (only runtime-internal context markers copied from the conversation history, and no tool call)"
+                : "a final response with no answer content (only punctuation, symbols or formatting marks, and no tool call)";
         return $"The model returned {what} after {calls.Count} attempt(s) " +
                $"(model {served}{finish}{generated}). The recorded request and reply bodies show what it sent.";
     }

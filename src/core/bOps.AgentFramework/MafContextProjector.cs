@@ -356,14 +356,15 @@ public sealed class MafContextProjector : IModelContextProjector
         var results = group.Messages
             .SelectMany(message => message.Contents.OfType<FunctionResultContent>())
             .ToDictionary(result => result.CallId, StringComparer.Ordinal);
-        var lines = new List<string> { "[Compacted tool interactions; persisted result data omitted]" };
+        // The strings are shared with FinalAnswerContent, which refuses a final reply made only of them; the bytes are unchanged.
+        var lines = new List<string> { RuntimeContextMarkers.CompactionHeader };
         foreach (var call in calls)
         {
             var status = results.TryGetValue(call.CallId, out var result)
                 && ResultWasNotExecuted(result.Result)
-                    ? "not executed"
-                    : "result recorded";
-            lines.Add($"- {call.Name}: {status}");
+                    ? RuntimeContextMarkers.NotExecuted
+                    : RuntimeContextMarkers.ResultRecorded;
+            lines.Add(RuntimeContextMarkers.StatusLine(call.Name, status));
         }
 
         return string.Join('\n', lines);

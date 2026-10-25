@@ -227,6 +227,26 @@ public static class SystemCrashFormatting
             ["observedItems"] = inWindow.Length,
         };
 
+        // F3: the official name of each catalogued stop code present, so a live dump is never read as a restart. Absent when none is known.
+        var legend = new JsonObject();
+        foreach (var code in inWindow
+                     .Where(item => item.Kind is CrashKinds.KernelBugcheck or CrashKinds.KernelLiveDump)
+                     .Select(item => item.Code)
+                     .Where(code => code is not null)
+                     .Distinct(StringComparer.Ordinal)
+                     .Order(StringComparer.Ordinal))
+        {
+            if (KernelStopCodes.Lookup(code) is { } known)
+            {
+                legend[code!] = KernelStopCodes.Describe(known);
+            }
+        }
+
+        if (legend.Count > 0)
+        {
+            root["stopCodeLegend"] = legend;
+        }
+
         JsonArray entries;
         string returnedName;
         bool cut;
