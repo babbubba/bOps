@@ -316,6 +316,9 @@ public sealed partial class AgentRunner(
         persistPinnedProviderConfiguration);
     private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
 
+    /// <summary>The knowledge session of the execution attempt under way, so every model call can report the context it holds (observability only).</summary>
+    private readonly AsyncLocal<IKnowledgeReadSession?> activeKnowledge = new();
+
     /// <summary>
     /// Test seam: runs <paramref name="body"/> with <paramref name="budget"/> as the active attempt budget, exactly as a model-driven
     /// execution attempt does. No production entry point runs a delegated plan step under an attempt budget, so this is the only way
@@ -974,7 +977,9 @@ public sealed partial class AgentRunner(
     private async Task<TaskState> ExecuteGuardedAsync(ExecutionRun run, Func<Task<TaskState>> body, CancellationToken ct)
     {
         var priorBudget = activeAttemptBudget.Value;
+        var priorKnowledge = activeKnowledge.Value;
         activeAttemptBudget.Value = run.AttemptBudget;
+        activeKnowledge.Value = run.Knowledge;
         try
         {
             return await body();
@@ -1014,6 +1019,7 @@ public sealed partial class AgentRunner(
         finally
         {
             activeAttemptBudget.Value = priorBudget;
+            activeKnowledge.Value = priorKnowledge;
             run.AttemptBudget.Dispose();
             run.Knowledge?.Dispose();
             run.Knowledge = null;
@@ -3450,6 +3456,7 @@ public sealed partial class AgentRunner(
             Delegation = delegation?.Correlation,
             AccountTokens = delegation?.Meter is { } meter ? meter.AddTokens : null,
             MalformedResponse = malformedOutput,
+            KnowledgeContext = DescribeKnowledgeContext(request),
             ExecutionBudgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None,
             ExecutionBudgetExpired = () => activeAttemptBudget.Value?.IsExpired == true,
         };
@@ -3521,10 +3528,15 @@ public sealed partial class AgentRunner(
                     return (response, await StopForAttemptDurationAsync(run, calls));
                 }
 
-                var offered = requestFactory(logicalCall.Aggressive).AvailableTools.Select(tool => tool.Name).ToList();
+                var knowledgeRequest = requestFactory(logicalCall.Aggressive);
+                var offered = knowledgeRequest.AvailableTools.Select(tool => tool.Name).ToList();
+                // Dynamic knowledge budget: what this very request already holds, against the selected model's real window.
+                var allowance = knowledge.ContextShare is { } contextShare
+                    ? KnowledgeContextBudget.Allow(MeasureKnowledgeContext(knowledgeRequest, response), contextShare)
+                    : null;
                 var served = await knowledge.HandleAsync(
                     response,
-                    new KnowledgeReadAuthority(offered, expectedTool, Eligible: run.Delegation is null),
+                    new KnowledgeReadAuthority(offered, expectedTool, Eligible: run.Delegation is null, allowance),
                     new ModelInvocationContext(run.TaskId, stepIndex, run.Actor, calls) { Delegation = run.Delegation?.Correlation },
                     ct);
                 if (served.Handled)
@@ -5713,6 +5725,59 @@ public sealed partial class AgentRunner(
         IndexHash = view.Normal?.IndexHash,
         AggressiveIndexHash = view.Aggressive?.IndexHash,
     };
+
+    /// <summary>The turns of a request that carry reference knowledge (the index and the served reads), whatever their pack kind.</summary>
+    private static IEnumerable<ChatTurn> KnowledgeTurns(ModelContextRequest request) =>
+        request.ProtectedBeforeHistory.Concat(request.ProtectedAfterHistory)
+            .Where(turn => turn.Provenance?.Origin is ContextOrigin.Knowledge or ContextOrigin.Skill or ContextOrigin.Experience);
+
+    private static int EstimateRequestTokens(ModelContextRequest request) =>
+        ContextTokenEstimator.OfText(request.SystemPrompt)
+        + ContextTokenEstimator.OfTurns(request.ProtectedBeforeHistory)
+        + ContextTokenEstimator.OfTurns(request.HistoricalTurns)
+        + ContextTokenEstimator.OfTurns(request.ProtectedAfterHistory)
+        + ContextTokenEstimator.OfTools(request.AvailableTools);
+
+    /// <summary>Window minus output reserve minus safety reserve of the model the broker currently selects, or <c>null</c> when its capacity is not configured.</summary>
+    private int? InputBudgetOfSelectedModel() =>
+        options.Context.Resolve(modelInvocationBroker.Descriptor) is { MaxContextTokens: { } max, ReservedOutputTokens: { } reserved }
+            ? max - reserved - options.Context.SafetyReserveTokens
+            : null;
+
+    /// <summary>
+    /// What the request that produced <paramref name="reply"/> held. The provider's prompt tokens are the truth about what was sent
+    /// (projection may have compacted history), so they win when reported; otherwise the estimate of the unprojected request stands.
+    /// </summary>
+    private KnowledgeContextMeasure MeasureKnowledgeContext(ModelContextRequest request, ModelResponse reply)
+    {
+        var reported = reply.Usage?.PromptTokens;
+        var providerReported = reported is > 0;
+        return new KnowledgeContextMeasure(
+            InputBudgetOfSelectedModel(),
+            providerReported ? reported!.Value : EstimateRequestTokens(request),
+            providerReported,
+            ContextTokenEstimator.OfTurns(KnowledgeTurns(request)));
+    }
+
+    /// <summary>The knowledge share of the context one model call is about to send, for its audit event; <c>null</c> for a task without knowledge.</summary>
+    private ModelKnowledgeContext? DescribeKnowledgeContext(ModelContextRequest request)
+    {
+        if (activeKnowledge.Value is not { } session)
+        {
+            return null;
+        }
+
+        var knowledgeTurns = KnowledgeTurns(request).ToArray();
+        var tokens = ContextTokenEstimator.OfTurns(knowledgeTurns);
+        int? available = null;
+        if (session.ContextShare is { } share)
+        {
+            available = KnowledgeContextBudget.Allow(
+                new KnowledgeContextMeasure(InputBudgetOfSelectedModel(), EstimateRequestTokens(request), false, tokens), share).AllowedTokens;
+        }
+
+        return new ModelKnowledgeContext(tokens, knowledgeTurns.Count(turn => turn.Role == ChatRole.Tool), available);
+    }
 
     private sealed record ContinuedKnowledgeRead(int StepIndex, ModelToolCall Call, ChatTurn Result);
 

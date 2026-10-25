@@ -1,0 +1,37 @@
+{
+  "profileId": "qwen38-flash-next-smart-128k-f16",
+  "provider": "LlamaCpp",
+  "baseUrl": "http://dgx-host.example:8080/v1",
+  "model": "Qwen3.8-Flash-Next-Smart",
+  "supportsNativeToolCalling": true,
+  "requestTimeout": "00:50:00",
+  "agent": {
+    "MaxOutputTokens": 32768,
+    "MaxTotalTokens": 600000,
+    "MaxAttemptDuration": "02:15:00",
+    "ModelCallMaxAttempts": 2,
+    "ModelCallAttemptTimeout": "00:45:00",
+    "ModelCallBudget": "01:35:00"
+  },
+  "extraConfiguration": {
+    "Agent:Context:SafetyReserveTokens": 2048,
+    "Agent:Context:Profiles:0:Provider": "LlamaCpp",
+    "Agent:Context:Profiles:0:Model": "Qwen3.8-Flash-Next-Smart",
+    "Agent:Context:Profiles:0:MaxContextTokens": 131072,
+    "Agent:Context:Profiles:0:ReservedOutputTokens": 32768
+  },
+  "knowledge": {
+    "maxReads": 8,
+    "maxRejections": 4,
+    "maxCharactersPerRead": 12000,
+    "contextShare": 0.35
+  },
+  "expectedServer": {
+    "nCtx": 131072,
+    "nPredict": 32768,
+    "parallel": 1,
+    "cacheTypeK": "f16",
+    "cacheTypeV": "f16"
+  },
+  "pricing": { "promptUsdPerMTok": null, "completionUsdPerMTok": null }
+}

@@ -71,7 +71,7 @@ existing version, and writes `bops-pack.json` (the signed manifest), `bops-pack.
       { "PackId": "bsoft.windows-event-runbooks", "Version": "1.0.0", "Kind": "Knowledge" }
     ],
     "Binding": { "PackId": "bsoft.windows-event-runbooks", "Version": "1.0.0" },
-    "Budget": { "MaxReads": 4, "MaxRejections": 4, "MaxCharactersPerRead": 8000 }
+    "Budget": { "MaxReads": 4, "MaxRejections": 4, "MaxCharactersPerRead": 8000, "ContextShare": 0.35 }
   }
 }
 ```
@@ -84,13 +84,13 @@ existing version, and writes `bops-pack.json` (the signed manifest), `bops-pack.
 | `TrustStorePath` | JSON with public keys only. A file that contains a private key, or no key, is rejected. |
 | `Grants` | The exact versions the Local Agent may use. `Kind` must be `Knowledge`. There is no tenant key and no wildcard. |
 | `Binding` | The pack new tasks are bound to (one per task). It must also be granted, or the task is refused (`NotEntitled`). |
-| `Budget` | Per attempt. Ceilings: reads 8, rejections 8, characters per read 16000. |
+| `Budget` | Per attempt. Ceilings: reads 8, rejections 8, characters per read 16000. `ContextShare` (0.05–0.90, default 0.35) is the largest share of the input space left after the mandatory context that knowledge may take; the runtime applies it to the context profile of the model actually selected (`Agent:Context:Profiles`), refuses a read that does not fit as `ContextBudget` (never truncating it), and states the estimated and allowed tokens in the audit. With no profile for the model, only the fixed limits apply. |
 
 An unknown or misspelt key under `Knowledge` is an error even when `Enabled` is `false`.
 
 **What a refused read does (ADR-0059, Proposed).** A read is optional, so a refused one ends the *reading*, not the task. Mistakes about
 a ref, an argument, a page or a size, or a failure of the framework function (`Malformed`, `Unsupported`, `UnknownSkill`, `UnknownResource`,
-`OutOfRange`, `TooLarge`, `InfrastructureFailure`) are recoverable: each is audited and answered with an actionable sentence; after more than `MaxRejections` of
+`OutOfRange`, `TooLarge`, `ContextBudget`, `InfrastructureFailure`) are recoverable: each is audited and answered with an actionable sentence; after more than `MaxRejections` of
 them the function is **withdrawn for the rest of the attempt** (the audit event carries `Withdrawn: true`) and the step goes on with its
 operational tool. Calls to a function that is spent or withdrawn (`LimitExceeded`, `NotOffered`) are tolerated twice and the third ends
 the task. Security refusals (`NotAuthorized`, `SnapshotUnavailable`, a content that differs from the pin) are never recoverable: more than
@@ -136,6 +136,11 @@ On start the CLI logs `Knowledge is enabled for the Local Agent: tasks are bound
   `Agent:ModelCallBudget=00:08:00` (attempt < HTTP timeout is validated; the budget must cover two attempts at `ModelCallMaxAttempts`
   as you set it). The API's shipped profile (300 s / 360 s / 660 s) is already coherent. Retry behaviour and token limits are unchanged.
 * The index adds tokens to every step request even if nothing is read.
+
+**With the MAF governed turn host (`Cli:Experimental:MafGovernedTurn=true`).** Knowledge and the MAF host are independent switches and compose (the benchmark's
+condition D). The runner serves the index and the reads exactly as without MAF; the agent receives them as the protected context the runner authorised and the
+final context gate compares them like any other turn. The agent has no skills provider, runs no tool and no script. Resume and revocation behave as in the default
+path (a task interrupted in one mode resumes in the other; a revoked key refuses the resume before any model call).
 
 ## 7. Turning it off, and what is not here
 

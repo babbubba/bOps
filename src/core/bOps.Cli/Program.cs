@@ -357,7 +357,8 @@ if (goal is not null || resumeTaskId is not null)
 }
 
 // BOPS-0122 (C01-R22): the MAF governed turn host is an opt-in experiment of the CLI, off by default, for a goal or a resume only.
-// A delegation, a recovery and a reconciliation ignore it; it is refused when Knowledge is enabled.
+// A delegation, a recovery and a reconciliation ignore it. It composes with Knowledge: the runner serves the knowledge, and the MAF turn
+// receives it only as the protected context the runner authorised.
 var mafGovernedTurn = false;
 try
 {
@@ -380,31 +381,21 @@ if (mafGovernedTurn)
     await Console.Error.WriteLineAsync("EXPERIMENTAL: each model turn is hosted by a Microsoft Agent Framework agent (Cli:Experimental:MafGovernedTurn=true); bOps keeps all execution authority.");
 }
 
-AgentRunner runner;
-try
-{
-    runner = CliRunnerComposition.Create(new CliRunnerInputs(
-        model,
-        toolRegistry,
-        policyEngine,
-        approvalProvider,
-        audit,
-        taskStore,
-        time,
-        logger,
-        runnerOptions,
-        skillRegistry,
-        host.Services.GetRequiredService<SqliteSystemMessageStore>(),
-        summarizerBroker,
-        knowledgeHost,
-        mafGovernedTurn));
-}
-catch (InvalidOperationException ex) when (mafGovernedTurn)
-{
-    // C01-R22: the experiment is refused with Knowledge enabled; fail closed rather than run either one degraded.
-    await Console.Error.WriteLineAsync(ex.Message);
-    return 2;
-}
+var runner = CliRunnerComposition.Create(new CliRunnerInputs(
+    model,
+    toolRegistry,
+    policyEngine,
+    approvalProvider,
+    audit,
+    taskStore,
+    time,
+    logger,
+    runnerOptions,
+    skillRegistry,
+    host.Services.GetRequiredService<SqliteSystemMessageStore>(),
+    summarizerBroker,
+    knowledgeHost,
+    mafGovernedTurn));
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
 

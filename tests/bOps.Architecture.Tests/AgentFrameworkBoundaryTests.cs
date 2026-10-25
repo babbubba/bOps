@@ -156,7 +156,9 @@ public sealed class AgentFrameworkBoundaryTests
         Assert.Equal(["src/core/bOps.Cli/CliRunnerComposition.cs"], composed.Select(file => file.Path).ToArray());
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(composed[0].Text, @"new\s+MafGovernedTurnBroker\("));
         Assert.Contains("inputs.MafGovernedTurn", composed[0].Text, StringComparison.Ordinal);
-        Assert.Contains("inputs.MafGovernedTurn && inputs.Knowledge is not null", composed[0].Text, StringComparison.Ordinal);
+        // The Knowledge switch is independent of the MAF switch (condition D of the benchmark): the runner serves the knowledge and the
+        // MAF turn only carries the protected context it authorised, so the composition holds no refusal that ties the two together.
+        Assert.DoesNotContain("inputs.Knowledge", composed[0].Text.Replace("knowledgeHost: inputs.Knowledge", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
 
         var configuration = Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.json", SearchOption.AllDirectories)
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)

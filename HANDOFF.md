@@ -29,6 +29,10 @@ Task state is never copied here; ask the register (`--summary`).
   host off/on (BOPS-0122, C01-R22). Tooling: `scripts/windows/run-maf-cli-benchmark.ps1`, `maf_cli_benchmark.py`, `maf_cli_analysis.py`; runbook
   [`docs/maintenance/maf-cli-ab-benchmark-runbook-01.md`](docs/maintenance/maf-cli-ab-benchmark-runbook-01.md); packet `agentic/_tasks/2026-10-24-bops-0125-maf-cli-ab-benchmark.md`. 41 offline tests (wired into CI) and a real
   `-PreflightOnly` pass; **Draft PR [#134](https://github.com/babbubba/bOps/pull/134)** (`Refs #133`); live budgets enforced (mandatory `-TokenBudget`, `-PerRunTokenCap`). **Not authorized:** live runs, merge, tag, OpenRouter. Next: CI of the PR head, then the operator runs the B01 pilot.
+  **Extension, worktree `bOps-diagfix`, branch `codex/maf-ab-diagnostic-reliability` (from `4530ae0`, local only, no new register task):** conditions A/B/C/D (MAF × Knowledge; MAF governed turn now composes with Knowledge,
+  C01-R22), dynamic model-aware Knowledge context budget (`ContextBudget.cs`, `KnowledgeReadResultCode.ContextBudget`, C05-R13), `ModelContextObservation` audit, 8 specialist Windows Knowledge skills, Qwen3.8 Smart 128K/32K profile,
+  `prepare-knowledge-benchmark-pack.ps1`, A/B/C/D harness (`rotate`, `-Resume`, `-Review`, server-config check). Runbooks: [`maf-knowledge-abcd-campaign-runbook-01.md`](docs/maintenance/maf-knowledge-abcd-campaign-runbook-01.md),
+  [`dgx-qwen38-smart-128k-f16-01.md`](docs/maintenance/dgx-qwen38-smart-128k-f16-01.md). No live inference has run; the 36 runs need the operator's `-AllowLive`; the DGX `models.ini` diff is the operator's to apply.
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
   `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet

@@ -53,6 +53,9 @@ public sealed class ModelInvocationContext
     /// </summary>
     public Func<ModelResponse, string?>? MalformedResponse { get; init; }
 
+    /// <summary>The reference knowledge the request carries, when the task has knowledge; audited with the call, never content.</summary>
+    public ModelKnowledgeContext? KnowledgeContext { get; init; }
+
     internal CancellationToken ExecutionBudgetToken { get; init; }
 
     internal Func<bool>? ExecutionBudgetExpired { get; init; }
@@ -353,7 +356,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                         context, ModelCallOutcome.Failure, reason, response.Usage, descriptor,
                         response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
                         fallbackOrdinal, ModelFailureKind.MalformedResponse,
-                        ModelRetryDecision.NotRetryable, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output);
+                        ModelRetryDecision.NotRetryable, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output,
+                        ObserveContext(projected?.Stats, response.Usage, context));
                     return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
                 }
 
@@ -369,7 +373,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
                 await WriteModelCallAuditAsync(
                     context, ModelCallOutcome.Success, null, response.Usage, descriptor,
                     response.Details?.ActualModel, elapsedMs, modelAttempt, providerAttempt,
-                    fallbackOrdinal, null, null, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output);
+                    fallbackOrdinal, null, null, null, response.Details?.ProviderStatusCode, attemptRequest.History, ct, output,
+                    ObserveContext(projected?.Stats, response.Usage, context));
                 return AccountSummary(response, projected?.Stats, descriptor, summaryLedger, contextActivity);
             }
 
@@ -422,7 +427,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             await WriteModelCallAuditAsync(
                 context, ModelCallOutcome.Failure, failure.Message, null, descriptor,
                 failure.Details?.ActualModel, failedMs, modelAttempt, providerAttempt,
-                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, attemptRequest.History, ct, failureOutput);
+                fallbackOrdinal, failure.Kind, decision, delayMs, failure.StatusCode, attemptRequest.History, ct, failureOutput,
+                ObserveContext(projected?.Stats, null, context));
 
             if (executionBudgetInterrupted)
             {
@@ -794,6 +800,56 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         return $"{ModelFailureText.OperatorReason(failure.Kind)}{tried}{detail}";
     }
 
+    /// <summary>
+    /// The context facts of one attempt for its audit event: the projector's estimates, the provider's prompt tokens when it reported
+    /// them (kept apart from the estimates), and the share held by reference knowledge. Counts only; <c>null</c> without a projection.
+    /// </summary>
+    private static ModelContextObservation? ObserveContext(
+        ModelContextProjectionStats? stats, ModelUsage? usage, ModelInvocationContext context)
+    {
+        if (stats is null)
+        {
+            return null;
+        }
+
+        int? providerPrompt = usage is { PromptTokens: > 0 } ? usage.PromptTokens : null;
+        double? usagePercent = null;
+        bool? providerReported = null;
+        if (stats.MaxContextTokens is { } window and > 0)
+        {
+            var prompt = providerPrompt ?? stats.EstimatedPromptTokensAfter;
+            providerReported = providerPrompt is not null;
+            usagePercent = Math.Round(100.0 * prompt / window, 1);
+        }
+
+        // With a profile, EstimatedFixedTokens is protected + tools + the safety reserve, so the reserve is what is left of it; the
+        // input budget of the knowledge accounting is window - output reserve - safety reserve.
+        int? inputBudget = stats.InputBudgetTokens is { } capacity
+            ? capacity - (stats.EstimatedFixedTokens - stats.EstimatedProtectedTokens - stats.EstimatedToolTokens)
+            : null;
+        return new ModelContextObservation
+        {
+            ProfileSource = stats.ProfileSource,
+            MaxContextTokens = stats.MaxContextTokens,
+            ReservedOutputTokens = stats.ReservedOutputTokens,
+            InputBudgetTokens = inputBudget,
+            EstimatedProtectedTokens = stats.EstimatedProtectedTokens,
+            EstimatedToolTokens = stats.EstimatedToolTokens,
+            EstimatedHistoryTokensBefore = stats.EstimatedHistoryTokensBefore,
+            EstimatedHistoryTokensAfter = stats.EstimatedHistoryTokensAfter,
+            EstimatedPromptTokens = stats.EstimatedPromptTokensAfter,
+            ProviderPromptTokens = providerPrompt,
+            ContextUsagePercent = usagePercent,
+            UsageIsProviderReported = providerReported,
+            CompactedToolGroups = stats.CompactedToolGroups,
+            DroppedTurns = stats.DroppedTurns,
+            Aggressive = stats.Strategies.EndsWith("Aggressive", StringComparison.Ordinal),
+            KnowledgeTokensInContext = context.KnowledgeContext?.TokensInContext,
+            KnowledgeBudgetAvailableTokens = context.KnowledgeContext?.BudgetAvailableTokens,
+            KnowledgeReadsInContext = context.KnowledgeContext?.ReadsInContext,
+        };
+    }
+
     private Task WriteModelCallAuditAsync(
         ModelInvocationContext context,
         ModelCallOutcome outcome,
@@ -811,7 +867,8 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         int? statusCode,
         IReadOnlyList<ChatTurn> history,
         CancellationToken ct,
-        ModelOutputObservation? output = null)
+        ModelOutputObservation? output = null,
+        ModelContextObservation? contextObservation = null)
     {
         AuditEvent evt = new ModelCallAuditEvent
         {
@@ -840,6 +897,7 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
             PrimaryModel = pinnedProviderConfiguration?.Model,
             ContextProvenance = history.Count == 0 ? null : ContextProvenanceCount.Summarize(history),
             Output = output,
+            Context = contextObservation,
         };
         if (context.Delegation is not null)
         {

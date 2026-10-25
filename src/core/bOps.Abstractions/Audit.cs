@@ -206,6 +206,8 @@ public enum KnowledgeReadResultCode
     OutOfRange = 11,
     /// <summary>The framework function failed while reading a snapshot whose integrity was just verified (a fault of the host or the framework, not a hash mismatch); nothing was returned (ADR-0059).</summary>
     InfrastructureFailure = 12,
+    /// <summary>The verified content is valid but does not fit the context space the model's window leaves for reference data now; nothing was returned and no read was spent (ADR-0059, dynamic knowledge budget).</summary>
+    ContextBudget = 13,
 }
 
 /// <summary>
@@ -289,6 +291,20 @@ public sealed record KnowledgeReadAuditEvent : AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Withdrawn { get; init; }
+
+    /// <summary>
+    /// The estimated tokens of the content the read would have returned (the bytes/4 estimate bOps uses everywhere, never a provider
+    /// count); present on a served read and on a <see cref="KnowledgeReadResultCode.ContextBudget"/> refusal.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EstimatedTokens { get; init; }
+
+    /// <summary>
+    /// The tokens the dynamic knowledge budget allowed this read when it was decided, or <c>null</c> when the model's capacity is
+    /// unknown and only the fixed character limits applied. Together with <see cref="EstimatedTokens"/> it records why a read fitted or not.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AllowedTokens { get; init; }
 }
 
 /// <summary>Whether the knowledge index was published to the model on a step request (ADR-0057).</summary>
@@ -783,6 +799,14 @@ public sealed record ModelCallAuditEvent : AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ContextGateRejection { get; init; }
+
+    /// <summary>
+    /// The context window facts of this attempt: the configured capacity and reserves, the estimated parts of the prompt, the
+    /// provider-reported prompt tokens when there are any, the compactions applied and the share held by reference knowledge. Counts
+    /// only, never content. <c>null</c> (and omitted) for a call refused before projection and for an event written before it existed.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ModelContextObservation? Context { get; init; }
 }
 
 /// <summary>

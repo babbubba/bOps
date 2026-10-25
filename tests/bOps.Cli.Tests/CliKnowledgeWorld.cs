@@ -39,10 +39,10 @@ internal sealed class CliKnowledgeWorld : IDisposable
     private readonly TempDirectory directory = new();
     private readonly List<IDisposable> owned = [];
 
-    internal CliKnowledgeWorld()
+    internal CliKnowledgeWorld(string resource = DefaultResource)
     {
         Directory.CreateDirectory(PacksDirectory);
-        Install(EventTriagePack());
+        Install(EventTriagePack(resource: resource));
         WriteTrust(TestPublisher.Acme.Trusted());
     }
 
@@ -52,6 +52,9 @@ internal sealed class CliKnowledgeWorld : IDisposable
 
     /// <summary>BOPS-0122: compose the runners of this world with the MAF governed turn host (C01-R22). Off, as in the product default.</summary>
     internal bool MafGovernedTurn { get; set; }
+
+    /// <summary>The runner options of this world: the defaults, or a model context profile a test states.</summary>
+    internal AgentRunnerOptions Options { get; set; } = new();
 
     internal string Root => directory.Path;
 
@@ -160,7 +163,7 @@ internal sealed class CliKnowledgeWorld : IDisposable
             store,
             TimeProvider.System,
             NullLogger<AgentRunner>.Instance,
-            new AgentRunnerOptions(),
+            Options,
             new SkillRegistry(),
             null,
             null,

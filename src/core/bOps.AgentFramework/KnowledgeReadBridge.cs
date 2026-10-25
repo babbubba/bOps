@@ -55,8 +55,13 @@ internal sealed record PackPin(
     string? TenantId = null,
     string? Publisher = null);
 
-/// <summary>The read budget bOps enforces for one task.</summary>
-internal sealed record KnowledgeReadBudget(int MaxReads = 4, int MaxRejections = 4, int MaxCharactersPerRead = 8000);
+/// <summary>
+/// The read budget bOps enforces for one task. The fixed limits (reads, rejections, characters per read) are the protection that always
+/// applies; <paramref name="ContextShare"/> is the host's share of the input space left after the mandatory context that reference
+/// knowledge may take, applied by the runtime to the model's real capacity (<see cref="KnowledgeContextBudget"/>).
+/// </summary>
+internal sealed record KnowledgeReadBudget(
+    int MaxReads = 4, int MaxRejections = 4, int MaxCharactersPerRead = 8000, double ContextShare = KnowledgeContextBudget.DefaultShare);
 
 /// <summary>
 /// The explicit admission of an experimental knowledge provider by the host (ADR-0054 G2-3). It is created only by code that
@@ -489,6 +494,8 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             Ref = WellFormedRef(call),
             Repeat = repeat,
             Withdrawn = withdrewNow ? true : null,
+            EstimatedTokens = result.EstimatedTokens,
+            AllowedTokens = result.AllowedTokens,
         }, ct);
 
         // ADR-0038 first-call-wins, as for the evidence read: the control call is answered and nothing else of the reply runs. Every
@@ -526,6 +533,9 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
 
     /// <inheritdoc />
     public int? ReadsRemaining => withdrawn ? 0 : Math.Max(0, budget.MaxReads - reads);
+
+    /// <inheritdoc />
+    public double? ContextShare => budget.ContextShare;
 
     /// <summary>
     /// Describes the index of what this task may read (ADR-0057, T5). The authority in force is asked first, on every call and before
@@ -629,6 +639,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     {
         KnowledgeReadResultCode.Malformed or KnowledgeReadResultCode.Unsupported or KnowledgeReadResultCode.UnknownSkill
             or KnowledgeReadResultCode.UnknownResource or KnowledgeReadResultCode.OutOfRange or KnowledgeReadResultCode.TooLarge
+            or KnowledgeReadResultCode.ContextBudget
             => RefusalClass.Recoverable,
         KnowledgeReadResultCode.LimitExceeded or KnowledgeReadResultCode.NotOffered => RefusalClass.Unavailable,
         // The framework function failing is an infrastructure fault, audited under its own code; a content that is not the pinned content
@@ -667,6 +678,8 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             "No such item is available. Use a ref exactly as it is listed in the knowledge index, or operation discover.",
         KnowledgeReadResultCode.OutOfRange => "That page does not exist. Ask for a page within the pages the last discover reply reported.",
         KnowledgeReadResultCode.TooLarge => "That item is too large to return. Choose another item.",
+        KnowledgeReadResultCode.ContextBudget =>
+            "That item does not fit in the context space left for reference data. Ask for a smaller or more specific item (a single resource instead of a whole skill), or continue without it.",
         KnowledgeReadResultCode.Unsupported => $"Only {PublicToolName} can be called; the framework's own function names are not available.",
         _ => "That item could not be read now and nothing was returned.",
     };
@@ -735,7 +748,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
 
         if (operation == Discover)
         {
-            return await DiscoverAsync(request, referenced, ct);
+            return await DiscoverAsync(request, referenced, authority.Allowance, ct);
         }
 
         if (request.ResourceRef is { } resourceRef)
@@ -758,7 +771,7 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         {
             return await VerifiedAsync(
                 operation, skillName, null, skillPin.LoadHash, () => InvokeAsync(AgentSkillsProvider.LoadSkillToolName, skillName, null, ct),
-                skillPin.LoadHash, ct);
+                skillPin.LoadHash, authority.Allowance, ct);
         }
 
         if (resourceName is null || !skillPin.ResourceHashes.TryGetValue(resourceName, out var resourceHash))
@@ -768,14 +781,15 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
 
         return await VerifiedAsync(
             operation, skillName, resourceName, resourceHash,
-            () => InvokeAsync(AgentSkillsProvider.ReadSkillResourceToolName, skillName, resourceName, ct), resourceHash, ct);
+            () => InvokeAsync(AgentSkillsProvider.ReadSkillResourceToolName, skillName, resourceName, ct), resourceHash, authority.Allowance, ct);
     }
 
     /// <summary>
     /// One page of the governed discovery (ADR-0057 S.5): the same entries and the same renderer as the index, so there is no second
     /// selection. A page beyond the last is refused as <see cref="KnowledgeReadResultCode.OutOfRange"/> and no read is spent.
     /// </summary>
-    private async Task<ReadResult> DiscoverAsync(ReadRequest request, KnowledgeIndexCandidate? referenced, CancellationToken ct)
+    private async Task<ReadResult> DiscoverAsync(
+        ReadRequest request, KnowledgeIndexCandidate? referenced, KnowledgeReadAllowance? allowance, CancellationToken ct)
     {
         var mode = referenced is not null ? KnowledgeDiscoverMode.Resources : request.Query is not null ? KnowledgeDiscoverMode.Query : KnowledgeDiscoverMode.All;
         KnowledgeDiscoverPage page;
@@ -800,14 +814,15 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
             case KnowledgeDiscoverPageStatus.OutOfRange:
                 return ReadResult.Refused(Discover, KnowledgeReadResultCode.OutOfRange);
             case KnowledgeDiscoverPageStatus.Ok:
-                return await VerifiedAsync(Discover, null, null, pin.ManifestHash, () => Task.FromResult(page.Text), expectedHash: null, ct);
+                return await VerifiedAsync(Discover, null, null, pin.ManifestHash, () => Task.FromResult(page.Text), expectedHash: null, allowance, ct);
             default:
                 return ReadResult.Refused(Discover, KnowledgeReadResultCode.TooLarge);
         }
     }
 
     private async Task<ReadResult> VerifiedAsync(
-        string operation, string? skill, string? resource, string auditedHash, Func<Task<string>> read, string? expectedHash, CancellationToken ct)
+        string operation, string? skill, string? resource, string auditedHash, Func<Task<string>> read, string? expectedHash,
+        KnowledgeReadAllowance? allowance, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         string content;
@@ -836,7 +851,24 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
         }
 
         var framed = Frame(operation, skill, resource, actual, content);
-        return new ReadResult(KnowledgeReadResultCode.Success, operation, skill, resource, actual, framed, true);
+
+        // Dynamic knowledge budget: the content is valid and within the fixed limits, but the model's window may not have room for it
+        // next to what the request already holds. Nothing is truncated (a procedure cut short loses its exceptions and its limits);
+        // the read is refused whole, audited with both figures, and the model is told to ask for something more specific.
+        var estimated = ContextTokenEstimator.OfTurn(ChatTurn.FromToolResult("estimate", framed));
+        var allowed = allowance?.AllowedTokens;
+        if (allowed is { } cap && estimated > cap)
+        {
+            return ReadResult.Refused(operation, KnowledgeReadResultCode.ContextBudget, skill, resource) with
+            {
+                EstimatedTokens = estimated, AllowedTokens = cap,
+            };
+        }
+
+        return new ReadResult(KnowledgeReadResultCode.Success, operation, skill, resource, actual, framed, true)
+        {
+            EstimatedTokens = estimated, AllowedTokens = allowed,
+        };
     }
 
     private string Frame(string operation, string? skill, string? resource, string hash, string content) =>
@@ -1230,6 +1262,12 @@ internal sealed partial class KnowledgeReadBridge : IKnowledgeReadSession
     {
         /// <summary>For a refused read, why the current authority or the snapshot refused it.</summary>
         internal KnowledgeAdmissionCode? Cause { get; init; }
+
+        /// <summary>The estimated tokens of the content that was, or would have been, returned.</summary>
+        internal int? EstimatedTokens { get; init; }
+
+        /// <summary>The tokens the dynamic budget allowed when the read was decided; <c>null</c> when the capacity is unknown.</summary>
+        internal int? AllowedTokens { get; init; }
 
         internal static ReadResult Refused(string? operation, KnowledgeReadResultCode code, string? skill = null, string? resource = null) =>
             new(code, operation, skill, resource, null, string.Empty, skill is not null);
