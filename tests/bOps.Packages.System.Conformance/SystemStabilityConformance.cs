@@ -300,11 +300,19 @@ public static partial class SystemToolConformance
         var root = JsonNode.Parse(output)!.AsObject();
         Assert.Equal(2, root["schemaVersion"]!.GetValue<int>());
         var mode = root["mode"]!.GetValue<string>();
+        // stopCodeLegend is optional (present only when a catalogued stop code is in the result) and sits right after observedItems.
+        if (root["stopCodeLegend"] is { } legend)
+        {
+            var entries = Assert.IsType<JsonObject>(legend);
+            Assert.NotEmpty(entries);
+            Assert.All(entries, pair => Assert.False(string.IsNullOrWhiteSpace(pair.Value!.GetValue<string>())));
+        }
+
         Assert.Equal(
             mode == "raw"
                 ? ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "returnedItems", "catalogAge", "sources", "warnings", "items"]
                 : ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "catalogAge", "sources", "warnings", "observedGroups", "returnedGroups", "groups"],
-            root.Select(pair => pair.Key).ToArray());
+            root.Select(pair => pair.Key).Where(key => key != "stopCodeLegend").ToArray());
         var status = root["status"]!.GetValue<string>();
         Assert.Contains(status, MaintenanceStatuses);
         var coverageState = AssertCoverage(root);

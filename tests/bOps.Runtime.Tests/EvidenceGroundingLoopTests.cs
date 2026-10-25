@@ -558,6 +558,147 @@ public sealed class EvidenceGroundingLoopTests
         Assert.Equal(liveBlock, BlockOf(resumedModel.Requests[0].SystemPrompt));
     }
 
+    // --- MAF A/B campaign 09-B02-B-r2: counts and dates invented for an empty query ------------------------------------------------
+    // The tool returned an empty window in 2026 and, by contract, no typed fact (absence is never a fact), so the grounding check has
+    // nothing to contradict. The answer attributes 196 events and 2025 dates to that very step.
+
+    private const string EmptyQueryOutput =
+        """{"schemaVersion":2,"mode":"raw","status":"complete","complete":true,"window":{"fromUtc":"2026-10-21T23:34:57Z","toUtc":"2026-10-24T23:34:57Z"},"observedEvents":0,"returnedEvents":0,"events":[]}""";
+
+    private const string InventedAnswer =
+        "Lo step 0 (test.events) ha trovato 196 eventi WHEA tra il 28/10/2025 e il 02/11/2025: l'hardware è la causa.";
+
+    private const string HonestAnswer =
+        "Lo step 0 (test.events) ha restituito 0 eventi nella finestra richiesta; zero corrispondenze non dimostra che il sistema non " +
+        "abbia mai registrato eventi WHEA. La causa resta da stabilire.";
+
+    private static ToolCallResult EmptyQuery() =>
+        ToolCallResult.Success(EmptyQueryOutput) with { Completeness = ToolResultCompleteness.Complete };
+
+    [Fact]
+    public async Task EmptyQuery_InventedCountAndDates_AreCorrectedOnce_WithoutACheckCall_AndNeverPersistedAsTheAnswer()
+    {
+        var (state, model, tool) = await RunAsync(EmptyQuery(), Options(),
+            Final(InventedAnswer, new ModelUsage(100, 10, null)), Final(HonestAnswer, new ModelUsage(120, 20, null)));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(1, tool.ExecutionCount);
+        Assert.Equal(4, model.Requests.Count); // plan, tool, final, correction: no typed fact, so no check call
+        var final = state.Steps[^1];
+        Assert.Equal(HonestAnswer, final.Observation);
+        Assert.Equal("Final response; evidence claims corrected", final.Description);
+        Assert.Equal(EvidenceGroundingOutcome.ClaimsCorrected, FinalResponse.GroundingOf(final));
+        AssertNeverPersistedAsAnswer(state, "196 eventi");
+        Assert.Equal(
+            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceGroundingCorrection],
+            FinalResponse.LogicalCalls(final).Select(call => call.Role));
+
+        var correction = LastUserTurn(model.Requests[3]);
+        Assert.StartsWith("EvidenceProvenanceCorrection/v1.", correction, StringComparison.Ordinal);
+        Assert.Contains("196", correction, StringComparison.Ordinal);
+        Assert.Contains("28/10/2025", correction, StringComparison.Ordinal);
+        Assert.Contains("step 0 test.events", correction, StringComparison.Ordinal);
+        Assert.DoesNotContain("l'hardware è la causa", correction, StringComparison.Ordinal); // the model's words are never echoed back
+    }
+
+    [Fact]
+    public async Task EmptyQuery_CorrectionAccounting_CountsBothAnswerCalls()
+    {
+        var (state, _, _) = await RunAsync(EmptyQuery(), Options(),
+            Final(InventedAnswer, new ModelUsage(100, 10, null)), Final(HonestAnswer, new ModelUsage(120, 20, null)));
+
+        Assert.Equal(250, state.Accounting!.TokensUsed);
+        Assert.Equal(2, state.Steps[^1].ModelCalls!.Count);
+    }
+
+    [Fact]
+    public async Task EmptyQuery_WhenTheCorrectionKeepsTheAttribution_TheTaskNeverCompletes()
+    {
+        var (state, model, _) = await RunAsync(EmptyQuery(), Options(), Final(InventedAnswer), Final(InventedAnswer));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.RuntimeFailure, state.TerminalReason?.Kind);
+        Assert.Contains("attributed counts or dates to tool results that do not contain them", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(4, model.Requests.Count); // exactly one correction: never a second
+        AssertNeverPersistedAsAnswer(state, "196");
+        Assert.DoesNotContain(state.Steps, FinalResponse.IsFinalStep);
+    }
+
+    [Fact]
+    public async Task EmptyQuery_WhenTheCorrectionKeepsTheCountWithoutAnAttribution_ItIsStillRefused()
+    {
+        var (state, _, _) = await RunAsync(EmptyQuery(), Options(),
+            Final(InventedAnswer), Final("Nel complesso sono stati rilevati 196 eventi WHEA, quindi la causa è l'hardware."));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.RuntimeFailure, state.TerminalReason?.Kind);
+        AssertNeverPersistedAsAnswer(state, "196");
+    }
+
+    [Fact]
+    public async Task EmptyQuery_AnHonestAnswer_IsNotQuestioned_AndCostsNoExtraCall()
+    {
+        var (state, model, _) = await RunAsync(EmptyQuery(), Options(), Final(HonestAnswer));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(3, model.Requests.Count); // plan, tool, final
+        Assert.Equal(HonestAnswer, state.Steps[^1].Observation);
+        Assert.Equal(FinalResponse.Marker, state.Steps[^1].Description);
+        Assert.Equal(EvidenceGroundingOutcome.NotChecked, FinalResponse.GroundingOf(state.Steps[^1]));
+    }
+
+    [Theory]
+    [InlineData("Le evidenze raccolte non bastano per indicare una causa: l'ipotesi più probabile è un problema di alimentazione, da confermare con misure elettriche e l'analisi dei dump.")]
+    [InlineData("Nessun evento è stato osservato dallo step 0 nella finestra richiesta; questo non esclude eventi in altre fonti o periodi.")]
+    [InlineData("Lo step 0 non ha dati: la finestra copre gli ultimi 3 giorni e 0 eventi corrispondono al filtro.")]
+    public async Task EmptyQuery_UncertainOrNegativeAnswers_AreAcceptedAsGiven(string answer)
+    {
+        var (state, model, _) = await RunAsync(EmptyQuery(), Options(), Final(answer));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(3, model.Requests.Count);
+        Assert.Equal(answer, state.Steps[^1].Observation);
+    }
+
+    [Fact]
+    public async Task WithTypedFacts_TheProvenanceFindingJoinsTheCheck_InTheSameSingleCorrection()
+    {
+        // A positive typed fact exists (3 WHEA events), so the check runs; the model's attribution of 196 to the same step is unsupported.
+        const string answer = "Lo step 0 ha trovato 196 eventi WHEA, il filtro ne mostra 3.";
+        var (state, model, _) = await RunAsync(Final(answer), Verdict(), Final(CorrectedAnswer));
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(5, model.Requests.Count); // plan, tool, final, check, one correction
+        Assert.Equal(EvidenceGroundingOutcome.Corrected, FinalResponse.GroundingOf(state.Steps[^1]));
+        Assert.Equal(
+            [LogicalModelCallRole.Answer, LogicalModelCallRole.EvidenceGroundingCheck, LogicalModelCallRole.EvidenceGroundingCorrection],
+            FinalResponse.LogicalCalls(state.Steps[^1]).Select(call => call.Role));
+        Assert.StartsWith("EvidenceProvenanceCorrection/v1.", LastUserTurn(model.Requests[4]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WithTypedFacts_ASupportedAttribution_NeedsNoCorrection()
+    {
+        var (state, model, _) = await RunAsync(Final("Lo step 0 ha osservato 3 eventi WHEA corretti; è un'ipotesi, non una causa."), Verdict());
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(4, model.Requests.Count); // plan, tool, final, check
+        Assert.Equal(EvidenceGroundingOutcome.NoContradictionCited, FinalResponse.GroundingOf(state.Steps[^1]));
+    }
+
+    [Fact]
+    public async Task EmptyQuery_WithNoBudgetLeftForTheCorrection_FailsInsteadOfPersistingTheInventedAnswer()
+    {
+        var (state, model, _) = await RunAsync(EmptyQuery(), new AgentRunnerOptions { ModelCallMaxAttempts = 1, MaxTotalTokens = 1000 },
+            Final(InventedAnswer, new ModelUsage(900, 200, null)));
+
+        Assert.Equal(AgentTaskStatus.Failed, state.Status);
+        Assert.Equal(TaskTerminalKind.RuntimeFailure, state.TerminalReason?.Kind);
+        Assert.Contains("No budget remained for the correction", state.Steps[^1].Observation, StringComparison.Ordinal);
+        Assert.Equal(3, model.Requests.Count); // no paid correction past the budget
+        AssertNeverPersistedAsAnswer(state, "196");
+    }
+
     private static string BlockOf(string systemPrompt)
     {
         var start = systemPrompt.IndexOf(EvidenceGroundingLedger.OpenMarker, StringComparison.Ordinal);

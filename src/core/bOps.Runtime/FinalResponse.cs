@@ -50,7 +50,7 @@ internal sealed record LogicalModelCall(LogicalModelCallRole Role, IReadOnlyList
 /// <summary>
 /// The persisted final-response step: the fixed <see cref="PlanStep.Description"/> markers, the one shared predicate that
 /// recognizes a final-response step, and the reconstruction of its logical model calls (ADR-0042 §13, PRE-5 amendment §9). A
-/// marker is <see cref="Marker"/>, an optional disclosure suffix and an optional grounding suffix — sixteen fixed strings. No
+/// marker is <see cref="Marker"/>, an optional disclosure suffix and an optional grounding suffix — twenty fixed strings. No
 /// model-call kind is stored; the persisted order, <see cref="ModelCallRecord.ModelAttempt"/> and the marker are enough.
 /// </summary>
 internal static class FinalResponse
@@ -76,6 +76,9 @@ internal static class FinalResponse
     /// <summary>The grounding suffix: the check produced no usable verdict; the answer was persisted unclassified.</summary>
     internal const string GroundingCheckUnavailableSuffix = "; evidence grounding check unavailable";
 
+    /// <summary>The grounding suffix: no typed fact existed, a provenance finding was corrected, and no check call was made.</summary>
+    internal const string GroundingClaimsCorrectedSuffix = "; evidence claims corrected";
+
     private static readonly Dictionary<string, (EvidenceDisclosureOutcome Disclosure, EvidenceGroundingOutcome Grounding)> Markers =
         BuildMarkers();
 
@@ -98,6 +101,7 @@ internal static class FinalResponse
             EvidenceGroundingOutcome.NoContradictionCited => GroundingNoContradictionCitedSuffix,
             EvidenceGroundingOutcome.Corrected => GroundingCorrectedSuffix,
             EvidenceGroundingOutcome.CheckUnavailable => GroundingCheckUnavailableSuffix,
+            EvidenceGroundingOutcome.ClaimsCorrected => GroundingClaimsCorrectedSuffix,
             _ => string.Empty,
         };
     }
@@ -153,12 +157,13 @@ internal static class FinalResponse
 
         var trailing = new List<LogicalModelCallRole>(3);
         var grounding = GroundingOf(step);
-        if (grounding == EvidenceGroundingOutcome.Corrected)
+        if (grounding is EvidenceGroundingOutcome.Corrected or EvidenceGroundingOutcome.ClaimsCorrected)
         {
             trailing.Add(LogicalModelCallRole.EvidenceGroundingCorrection);
         }
 
-        if (grounding != EvidenceGroundingOutcome.NotChecked)
+        // A claims-only correction had no typed fact to check against, so no check call precedes its correction.
+        if (grounding is not (EvidenceGroundingOutcome.NotChecked or EvidenceGroundingOutcome.ClaimsCorrected))
         {
             trailing.Add(LogicalModelCallRole.EvidenceGroundingCheck);
         }
