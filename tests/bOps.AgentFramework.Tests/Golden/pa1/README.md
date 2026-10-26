@@ -17,6 +17,10 @@ model is sent changed" and needs a decision: change these files in the same comm
 system prompts gained one paragraph stating the attempt's step budget (`This execution attempt has N steps left. …`, from
 `PlanStepBudget`), between the instructions and the tool catalog. Removing that paragraph from the new capture gives the previous bytes;
 every other scenario is unchanged.
+**BOPS-0125 (2026-10-26, Knowledge wording) re-captured PA1-05 on purpose:** the description of the knowledge control function in the
+step prompt is neutral (`Read a listed entry when it applies to what you must do or explain, …; when no listed entry applies, do not
+read.`) instead of `Using it is never required … otherwise ignore it`. Substituting the old sentence with the new one in the previous
+files gives the new bytes (two occurrences per file); every other scenario is unchanged.
 
 | Scenario | Frozen requests |
 |---|---|

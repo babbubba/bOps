@@ -29,10 +29,15 @@ public sealed class KnowledgeStepPromptTests
         "must read", "must use", "always read", "always use", "before every", "first read", "you should read", "you must consult", "required to read",
     ];
 
+    // MAF A/B/C/D pilot B02: "Using it is never required … otherwise ignore it" leaned the model away from reading even when the index
+    // listed the entry its step depended on. The wording is neutral: a read when an entry applies, none when nothing does. (The index's
+    // own control text, ADR-0057 section C.5, is a separate fixed wording and is not part of this sentence.)
+    private static readonly string[] Discouragements = ["never required", "ignore it"];
+
     [Theory]
     [InlineData(false, false)] // a step with its operational tool
     [InlineData(true, true)]   // the final step: the plan is complete, no operational tool is offered
-    public void TheKnowledgeInstruction_IsOptional_AndResolvesItsPrecedenceOverTheOperationalCallAndTheFinalAnswer(bool exhausted, bool noStepTool)
+    public void TheKnowledgeInstruction_IsConditionalAndNeutral_AndResolvesItsPrecedenceOverTheOperationalCallAndTheFinalAnswer(bool exhausted, bool noStepTool)
     {
         var prompt = AgentRunner.BuildStepSystemPrompt(
             OnePlannedStep, null, noStepTool ? [] : [StepTool], false, false,
@@ -40,17 +45,15 @@ public sealed class KnowledgeStepPromptTests
 
         // Exactly one statement about the function, so there is nothing to contradict.
         Assert.Equal(1, Count(prompt, "The native function runtime.knowledge_read"));
-        // Optional by contract, and never an obligation.
-        Assert.Contains("only if useful", prompt, StringComparison.Ordinal);
-        Assert.Contains("never required", prompt, StringComparison.Ordinal);
+        // Conditional on an entry applying, never an unconditional obligation, and not leaning against the read either.
+        Assert.Contains("Read a listed entry when it applies to what you must do or explain", prompt, StringComparison.Ordinal);
+        Assert.Contains("when no listed entry applies, do not read", prompt, StringComparison.Ordinal);
         Assert.All(Obligations, phrase => Assert.DoesNotContain(phrase, prompt, StringComparison.OrdinalIgnoreCase));
+        Assert.All(Discouragements, phrase => Assert.DoesNotContain(phrase, prompt, StringComparison.OrdinalIgnoreCase));
         // Precedence: it never replaces what the step must do, and it says how a read and the operational call are ordered.
         Assert.Contains("never replaces the operational tool or the final answer", prompt, StringComparison.Ordinal);
         Assert.Contains("send the read by itself", prompt, StringComparison.Ordinal);
         Assert.Contains("an operational call in the same reply is not executed", prompt, StringComparison.Ordinal);
-        // Applicable only when pertinent; otherwise ignorable. This is what keeps the instruction from being read as a prohibition either.
-        Assert.Contains("plainly applies", prompt, StringComparison.Ordinal);
-        Assert.Contains("otherwise ignore it", prompt, StringComparison.Ordinal);
         // The imperative that the step must still do is present beside it: the operational call, or the final answer.
         Assert.Contains(
             noStepTool ? "Give your final answer now" : "Invoke the operational tool at most once",

@@ -105,7 +105,15 @@ public static class SystemToolManifests
                 AllowedValues: SystemEventsArguments.SeverityNames),
             new ToolParameter("source", ToolParameterType.String,
                 "Exact, case-insensitive source: the Windows provider name, or the Linux syslog identifier or systemd unit (for example nginx or nginx.service). "
-                + "Use the exact, full name; an abbreviated or guessed name matches nothing, and zero events then says nothing about the subject (see sourceFilter in the result).", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.SourceCharacters },
+                + "Use the exact, full name; an abbreviated or guessed name matches nothing, and zero events then says nothing about the subject (see sourceFilter in the result).", Required: false)
+            {
+                MinLength = 1,
+                MaxLength = SystemEventsLimits.SourceCharacters,
+                // The planner sees only this, not the description above (C03-R24): pilot B02-D planned "Kernel-Power" and matched nothing.
+                PlanningGuidance = "Matches the full registered name exactly (Windows provider such as Microsoft-Windows-Kernel-Power, "
+                    + "Microsoft-Windows-WHEA-Logger or EventLog; Linux syslog identifier or unit). A short or guessed name such as "
+                    + "Kernel-Power matches nothing, and zero events then says nothing about the subject.",
+            },
             new ToolParameter("eventId", ToolParameterType.String,
                 "Exact event id: a number on Windows, the 32-digit hexadecimal MESSAGE_ID on Linux.", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.EventIdCharacters },
             new ToolParameter("channel", ToolParameterType.String,
@@ -113,7 +121,12 @@ public static class SystemToolManifests
             new ToolParameter("text", ToolParameterType.String,
                 $"Case-insensitive text the message must contain (up to {SystemEventsLimits.TextCharacters} characters).", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.TextCharacters },
             new ToolParameter("excludeSources", ToolParameterType.String,
-                $"Comma-separated sources to leave out: at most {SystemEventsLimits.MaximumExcludedSources} names of at most {SystemEventsLimits.ExcludedSourceCharacters} characters each, in the character set of source, whole value at most {SystemEventsLimits.ExcludeSourcesCharacters} characters. Each name is matched exactly and case-insensitively against the source value shown in the result (the Windows provider, or the Linux syslog identifier else unit else command name), so a Linux unit is excluded only when it is the source shown. No duplicates, no empty entry, and none equal to source. The accepted names are echoed in the result as excludeSources. An excluded source was not looked at: leaving it out is not evidence of absence.", Required: false) { MinLength = 1, MaxLength = SystemEventsLimits.ExcludeSourcesCharacters },
+                $"Comma-separated sources to leave out: at most {SystemEventsLimits.MaximumExcludedSources} names of at most {SystemEventsLimits.ExcludedSourceCharacters} characters each, in the character set of source, whole value at most {SystemEventsLimits.ExcludeSourcesCharacters} characters. Each name is matched exactly and case-insensitively against the source value shown in the result (the Windows provider, or the Linux syslog identifier else unit else command name), so a Linux unit is excluded only when it is the source shown. No duplicates, no empty entry, and none equal to source. The accepted names are echoed in the result as excludeSources. An excluded source was not looked at: leaving it out is not evidence of absence.", Required: false)
+            {
+                MinLength = 1,
+                MaxLength = SystemEventsLimits.ExcludeSourcesCharacters,
+                PlanningGuidance = "Names are matched exactly like source: a short name such as Kernel-Power excludes nothing.",
+            },
             new ToolParameter("limit", ToolParameterType.Integer,
                 $"Maximum events to return (1-{SystemEventsLimits.MaximumEvents}, default {SystemEventsLimits.DefaultEvents}).", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumEvents },
             new ToolParameter("maxOutputBytes", ToolParameterType.Integer,

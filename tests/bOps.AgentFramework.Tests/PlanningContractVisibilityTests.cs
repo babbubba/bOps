@@ -56,7 +56,8 @@ public sealed class PlanningContractVisibilityTests
         var events = bOps.Packages.Sys.Core.SystemToolManifests.Events("windows");
         var withoutGuidance = events with
         {
-            Parameters = [.. events.Parameters.Select(parameter => parameter with { PlanningGuidance = null })],
+            Parameters = [.. events.Parameters.Select(parameter =>
+                parameter.Name == "mode" ? parameter with { PlanningGuidance = null } : parameter)],
         };
 
         var line = Assert.Single(AgentRunner.DescribeToolCatalog([events]).Split('\n'), l => l.StartsWith("- system.events", StringComparison.Ordinal));
@@ -68,6 +69,24 @@ public sealed class PlanningContractVisibilityTests
         Assert.Contains("complete=false or truncated=true is not complete evidence", line, StringComparison.Ordinal);
         Assert.DoesNotContain("must use aggregate", line, StringComparison.OrdinalIgnoreCase);
         Assert.InRange(line.Length - before.Length, 1, 330);
+    }
+
+    // MAF A/B/C/D pilot B02-D: the planner wrote source "Kernel-Power" and "WHEA-Logger". The tool matches the registered provider
+    // name exactly, so both steps matched nothing; the step model knew the full names from the parameter description, which the
+    // planning catalog never shows, and its corrected call was refused as a mismatch with the plan.
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("linux")]
+    public void ScopedCatalog_TellsThePlannerThatSourceNamesMatchExactly(string platform)
+    {
+        var line = Assert.Single(
+            AgentRunner.DescribeToolCatalog([bOps.Packages.Sys.Core.SystemToolManifests.Events(platform)]).Split('\n'),
+            l => l.StartsWith("- system.events", StringComparison.Ordinal));
+
+        Assert.Contains("source:String optional minLength=1 maxLength=128 (Matches the full registered name exactly", line, StringComparison.Ordinal);
+        Assert.Contains("Microsoft-Windows-Kernel-Power, Microsoft-Windows-WHEA-Logger or EventLog", line, StringComparison.Ordinal);
+        Assert.Contains("A short or guessed name such as Kernel-Power matches nothing", line, StringComparison.Ordinal);
+        Assert.Contains("(Names are matched exactly like source: a short name such as Kernel-Power excludes nothing", line, StringComparison.Ordinal);
     }
 
     [Fact]

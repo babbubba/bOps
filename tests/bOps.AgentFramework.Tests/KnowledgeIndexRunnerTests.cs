@@ -605,7 +605,7 @@ public sealed class KnowledgeIndexRunnerTests
         };
     }
 
-    private const int NormalLimit = 4000;
+    private const int NormalLimit = 10000;
 
     /// <summary>Answers the host's opening with the same binding and a session wrapped by the test.</summary>
     private sealed class DecoratingHost(IKnowledgeTaskHost inner, Func<IKnowledgeReadSession, IKnowledgeReadSession> wrap) : IKnowledgeTaskHost

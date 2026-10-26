@@ -45,6 +45,34 @@ public sealed partial class WindowsKnowledgePackContentTests
         Assert.Empty(required.Except(skills));
     }
 
+    // MAF A/B/C/D pilot B02: the index listed 4 of the 8 skills because the normal rendering was capped at 4000 characters, and the
+    // skill left out was windows-event-log-sources, the one naming the exact providers the run needed. Counting entries is not enough:
+    // the rendered text must hold every skill with every resource under the default limits.
+    [Fact]
+    public void TheDefaultIndex_ListsEverySkillWithEveryResource()
+    {
+        var skills = Directory.EnumerateDirectories(SourceDirectory).Select(path => Path.GetFileName(path)!).Order(StringComparer.Ordinal).ToArray();
+        var candidates = skills.Select((skill, index) =>
+        {
+            var directory = Path.Combine(SourceDirectory, skill);
+            var body = File.ReadAllText(Path.Combine(directory, "SKILL.md"));
+            var resources = Directory.EnumerateFiles(Path.Combine(directory, "references")).Order(StringComparer.Ordinal)
+                .Select((path, resource) => (resource + 1, "references/" + Path.GetFileName(path), File.ReadAllText(path).Length)).ToArray();
+            return new KnowledgeIndexCandidate(index + 1, skill, Frontmatter(body).Description, body.Length, resources);
+        }).ToArray();
+
+        var limits = KnowledgeIndexLimits.Default;
+        var data = KnowledgeIndexRenderer.Render(
+            new KnowledgeIndexPackLabel("bsoft.windows-event-runbooks", "2.0.0", "bsoft", PackKind.Skill),
+            KnowledgeIndexSelector.Select(candidates, "Analizza gli eventi di sistema delle ultime 24 ore", limits), limits, aggressive: false);
+
+        Assert.Equal(KnowledgeIndexRenderStatus.Rendered, data.Status);
+        Assert.Equal(0, data.Omitted);
+        Assert.Equal(skills, data.Listed.Select(listing => listing.Skill).Order(StringComparer.Ordinal));
+        Assert.All(data.Listed, listing => Assert.Equal(
+            Math.Min(candidates.Single(candidate => candidate.Skill == listing.Skill).Resources.Count, limits.ResourcesPerEntry), listing.Resources));
+    }
+
     [Theory]
     [MemberData(nameof(Skills))]
     public void ASkill_IsAdvertisedByAValidName_AndADescriptionTheAdmissionPolicyAccepts(string skill)
