@@ -85,9 +85,9 @@ public sealed class PromptRoutingFinalizationTests
             Assert.DoesNotContain("or give your final answer", system, StringComparison.Ordinal);
         }
 
-        // The knowledge instruction sends the next reply to the pending operational call, and keeps its own optionality.
+        // The knowledge instruction sends the next reply to the pending operational call, and keeps the read conditional.
         Assert.Contains("make the current step's operational call in your next reply", withKnowledge, StringComparison.Ordinal);
-        Assert.Contains("Using it is never required", withKnowledge, StringComparison.Ordinal);
+        Assert.Contains("when no listed entry applies, do not read", withKnowledge, StringComparison.Ordinal);
         Assert.Equal(["test.read", "test.other"], PaInvariants.PlanTools(withKnowledge)); // two steps pending, one tool offered
     }
 

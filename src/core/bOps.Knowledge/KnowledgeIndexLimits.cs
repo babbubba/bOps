@@ -9,7 +9,10 @@ namespace bOps.Knowledge;
 /// </summary>
 /// <param name="Entries">How many skills a normal rendering lists at most.</param>
 /// <param name="ResourcesPerEntry">How many resources a normal rendering lists per skill; the rest are counted in <c>more</c>.</param>
-/// <param name="MaxDataChars">The most UTF-16 code units the whole data text may have in a normal rendering.</param>
+/// <param name="MaxDataChars">
+/// The most UTF-16 code units the whole data text may have in a normal rendering: room for <paramref name="Entries"/> entries with their
+/// resources (BOPS-0125: at 4000 a pack of eight skills was cut to four, and the omitted skill was the one the run needed).
+/// </param>
 /// <param name="AggressiveEntries">How many skills the reduced rendering of a request retried after a context overflow lists at most.</param>
 /// <param name="AggressiveResources">How many resources per skill the reduced rendering lists.</param>
 /// <param name="AggressiveMaxDataChars">The most UTF-16 code units the reduced rendering may have.</param>
@@ -17,7 +20,7 @@ namespace bOps.Knowledge;
 public sealed record KnowledgeIndexLimits(
     int Entries = 8,
     int ResourcesPerEntry = 6,
-    int MaxDataChars = 4000,
+    int MaxDataChars = 10000,
     int AggressiveEntries = 3,
     int AggressiveResources = 2,
     int AggressiveMaxDataChars = 1500,
