@@ -4,6 +4,7 @@
 // CA2000: ownership of every world and process passes to the test, which disposes it.
 #pragma warning disable CA2000
 
+using System.Text.Json.Nodes;
 using bOps.Abstractions;
 using bOps.Knowledge;
 using bOps.Knowledge.Tests;
@@ -52,8 +53,15 @@ public sealed class KnowledgeStepPromptTests
         Assert.All(Discouragements, phrase => Assert.DoesNotContain(phrase, prompt, StringComparison.OrdinalIgnoreCase));
         // Precedence: it never replaces what the step must do, and it says how a read and the operational call are ordered.
         Assert.Contains("never replaces the operational tool or the final answer", prompt, StringComparison.Ordinal);
-        Assert.Contains("send the read by itself", prompt, StringComparison.Ordinal);
-        Assert.Contains("an operational call in the same reply is not executed", prompt, StringComparison.Ordinal);
+        Assert.Contains("send the read by itself, one read per reply", prompt, StringComparison.Ordinal);
+        // The B02 rerun model put a read off "to save steps": a read uses none (the runner tests below count the steps).
+        Assert.Contains("A read is answered on its own and uses none of the attempt's steps", prompt, StringComparison.Ordinal);
+        // What the runner does (first call wins): the read is served and nothing else of the reply, not even another read.
+        Assert.Contains("nothing else in the same reply is executed, neither an operational call nor another read", prompt, StringComparison.Ordinal);
+        // A read put off to a later step must still be possible where the answer is written; that turn says so, only for an entry that applies.
+        Assert.Equal(
+            noStepTool,
+            prompt.Contains("Your answer is written in this turn, so a read it needs is made here: if a listed entry applies", StringComparison.Ordinal));
         // The imperative that the step must still do is present beside it: the operational call, or the final answer.
         Assert.Contains(
             noStepTool ? "Give your final answer now" : "Invoke the operational tool at most once",
@@ -102,6 +110,7 @@ public sealed class KnowledgeStepPromptTests
         Assert.Equal(1, rig.Read.ExecutionCount); // the operational tool ran, once
         Assert.Equal([KnowledgeReadResultCode.Success], world.Events.OfType<KnowledgeReadAuditEvent>().Select(read => read.ResultCode));
         Assert.Equal(4, rig.Model.Requests.Count); // plan, read, tool, answer: no extra model call for the read
+        Assert.Equal(2, final.Steps.Count); // the tool step and the answer: the read used no step, as the instruction says
     }
 
     [Fact]
@@ -118,6 +127,53 @@ public sealed class KnowledgeStepPromptTests
         Assert.Equal("diagnosis", final.Steps[^1].Observation);
         Assert.Equal(1, rig.Read.ExecutionCount);
         Assert.Single(world.Events.OfType<KnowledgeReadAuditEvent>());
+    }
+
+    // ---- one read per reply, as the instruction says (MAF B02 rerun: a second read in the same reply was dropped and never resent) ----
+
+    [Fact]
+    public async Task TwoKnowledgeReadsInOneReply_OnlyTheFirstIsServed_AndTheSecondIsAnsweredNotExecuted()
+    {
+        using var world = new KnowledgeRunnerWorld();
+        using var process = Boot(world);
+        var rig = process.Runner(
+        [
+            Script.Plan("test.read"), Script.Tool("c1", "test.read"),
+            Script.Calls(
+                Script.KnowledgeCall("k1", "load", "nginx-triage"),
+                Script.KnowledgeCall("k2", "read_resource", "nginx-triage", "references/checklist.md")),
+            Script.Final("diagnosis"),
+        ]);
+
+        var final = await rig.Runner.RunAsync(Goal, KnowledgeRunnerWorld.ActorA);
+
+        Assert.Equal(AgentTaskStatus.Completed, final.Status);
+        Assert.Equal("nginx-triage", Assert.Single(world.Events.OfType<KnowledgeReadAuditEvent>()).Skill);
+        var dropped = Assert.Single(rig.Model.Requests[^1].History, turn => turn.Role == ChatRole.Tool && turn.ToolCallId == "k2");
+        Assert.StartsWith("Not executed", dropped.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnEvidenceReadAndAKnowledgeReadInOneReply_ServeOnlyTheEvidenceRead_SoTheKnowledgeReadMustBeSentAlone()
+    {
+        using var world = new KnowledgeRunnerWorld();
+        using var process = Boot(world);
+        var evidence = new ModelToolCall("e1", EvidenceRead.ControlFunctionName, ToolArguments.FromJson(
+            new JsonObject { ["step"] = 0, ["source"] = "result", ["offset"] = 0, ["length"] = 100 }));
+        var rig = process.Runner(
+        [
+            Script.Plan("test.read"), Script.Tool("c1", "test.read"),
+            Script.Calls(evidence, Script.KnowledgeCall("k1", "load", "nginx-triage")),
+            Script.Final("diagnosis"),
+        ]);
+
+        var final = await rig.Runner.RunAsync(Goal, KnowledgeRunnerWorld.ActorA);
+
+        Assert.Equal(AgentTaskStatus.Completed, final.Status);
+        Assert.Single(world.Events.OfType<EvidenceReadAuditEvent>());
+        Assert.DoesNotContain(world.Events, evt => evt is KnowledgeReadAuditEvent);
+        var dropped = Assert.Single(rig.Model.Requests[^1].History, turn => turn.Role == ChatRole.Tool && turn.ToolCallId == "k1");
+        Assert.StartsWith("Not executed", dropped.Content, StringComparison.Ordinal);
     }
 
     private static int Count(string text, string value)

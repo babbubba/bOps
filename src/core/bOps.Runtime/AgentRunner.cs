@@ -305,14 +305,24 @@ public sealed partial class AgentRunner(
     /// KNOW-FIX-01: the description of the offered knowledge control function, parallel to <see cref="EvidenceControlInstruction"/>. It
     /// asks for a read only when a listed entry applies, never unconditionally, and adds no authority to what is read; the name is the
     /// session manifest's, never a literal. BOPS-0125: the wording is neutral; "never required … otherwise ignore it" leaned the model
-    /// away from an entry its step depended on (MAF A/B/C/D pilot B02).
+    /// away from an entry its step depended on (MAF A/B/C/D pilot B02). The B02 rerun showed two more ways a wanted read was lost: a
+    /// read sent in the same reply as another runtime read was answered "Not executed" (first call wins) and never sent again, and a
+    /// read the model put off to "later" or "to save steps" was never made, because its reasoning does not reach the final turn. So the
+    /// sentence states that a read uses no step, that a reply serves one read and nothing else, and, in the final turn, that a read its
+    /// answer needs is made there, still only for an entry that applies.
     /// </summary>
     private static string KnowledgeControlInstruction(string functionName, bool operationalToolOffered) =>
         $"The native function {functionName} is a runtime control function, not an operational tool: it reads reference data " +
         "from the task's pinned knowledge. Read a listed entry when it applies to what you must do or explain, such as the exact " +
-        "names, codes or meanings that the current step or your answer depends on; when no listed entry applies, do not read. A " +
-        "read never replaces the operational tool or the final answer. A read is answered on its own: it does not complete the " +
-        "step, and an operational call in the same reply is not executed, so send the read by itself and " +
+        "names, codes or meanings that the current step or your answer depends on; when no listed entry applies, do not read. " +
+        (operationalToolOffered
+            ? string.Empty
+            : "Your answer is written in this turn, so a read it needs is made here: if a listed entry applies to explaining the " +
+              "collected evidence and is not yet in this conversation, read it now, before the answer; if none applies, answer " +
+              "without reading. ") +
+        "A read never replaces the operational tool or the final answer. A read is answered on its own and uses none of the " +
+        "attempt's steps: it does not complete the step, and nothing else in the same reply is executed, neither an operational call nor another read, so send the read by " +
+        "itself, one read per reply, and " +
         // PRA-R3: while a step's tool is offered the next reply is that call; the final answer is offered only once none is.
         (operationalToolOffered
             ? "make the current step's operational call in your next reply. "
