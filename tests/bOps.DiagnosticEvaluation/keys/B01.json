@@ -1,0 +1,16 @@
+{
+  "schema": "bops.diagnostic-evaluation-key/1",
+  "scenarios": [ "B01" ],
+  "about": "B01 (current CPU and memory state): no crash or event families; only completion and Knowledge pertinence are scored.",
+  "families": [],
+  "crashWords": [],
+  "negations": [ "non ", "nessun", "senza", "not ", "no " ],
+  "limitationWords": [ "troncat", "parzial", "non dispon", "limitazion", "limiti", "incomplet", "partial", "unavailable", "limitation", "incomplete" ],
+  "identifierContext": [ "step", "passo" ],
+  "windowFacts": [],
+  "knowledge": {
+    "entries": [
+      { "skill": "windows-cpu-memory-and-reporting", "always": true }
+    ]
+  }
+}

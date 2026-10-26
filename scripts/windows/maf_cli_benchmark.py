@@ -58,7 +58,8 @@ AGENT_KEYS = {"MaxSteps", "MaxLifetimeSteps", "MaxReplans", "MaxLifetimeReplans"
               "ModelCallAttemptTimeout", "ModelCallBudget", "EmptyFinalResponseRetries", "EvidenceDisclosureEnabled",
               "MaxModelPayloadCharacters", "MaxConsecutivePolicyDenials"}
 DEFAULT_PER_RUN_TOKEN_CAP = 350_000  # shipped Agent:MaxTotalTokens
-EVIDENCE_EXCLUDED = {"report", "evaluation", "integrity.json", "campaign-state.json"}
+# Derived after the campaign, not evidence: reports, the blind sheets and the BOPS-0126 automatic evaluation (tests/bOps.DiagnosticEvaluation).
+EVIDENCE_EXCLUDED = {"report", "evaluation", "auto-evaluation", "integrity.json", "campaign-state.json"}
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 README = ("PRIVATE - POTENTIALLY SENSITIVE MATERIAL\n\nThis directory holds complete, unredacted task state, model request/response payloads, "
           "tool results and audit records of this PC. Known credential values are redacted from captured process output and the "
