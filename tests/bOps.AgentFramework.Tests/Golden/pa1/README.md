@@ -20,7 +20,12 @@ every other scenario is unchanged.
 **BOPS-0125 (2026-10-26, Knowledge wording) re-captured PA1-05 on purpose:** the description of the knowledge control function in the
 step prompt is neutral (`Read a listed entry when it applies to what you must do or explain, …; when no listed entry applies, do not
 read.`) instead of `Using it is never required … otherwise ignore it`. Substituting the old sentence with the new one in the previous
-files gives the new bytes (two occurrences per file); every other scenario is unchanged.
+files gives the new bytes (two occurrences per file); every other scenario is unchanged. A second re-capture of PA1-05 the same day
+states what the runner does with a read (`A read is answered on its own and uses none of the attempt's steps: it does not complete the
+step, and nothing else in the same reply is executed, neither an operational call nor another read, so send the read by itself, one
+read per reply, and …` instead of `A read is answered on its own: it does not complete the step, and an operational call in the same
+reply is not executed, so send the read by itself and …`); the same substitution gives the new bytes (two occurrences per file).
+PA1-05 has no final-answer turn, so the sentence that turn adds is pinned by `KnowledgeStepPromptTests`, not here.
 
 | Scenario | Frozen requests |
 |---|---|
