@@ -4,10 +4,10 @@ Last updated: 2026-10-24 · `main` @ `207b262` (PR [#129](https://github.com/bab
 working branch `codex/bops-maf-cli-ab-bench` (BOPS-0125, CLI A/B benchmark tooling; worktree `bOps-mafab`), cut from `main` @ `207b262`.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0125 MAF-CLI-AB-01 (VALIDATION)
-Branch: codex/bops-maf-cli-ab-bench
+Current task: BOPS-0126 MAF-DIAG-EVAL-01 (IN_PROGRESS)
+Branch: codex/maf-ab-diagnostic-reliability
 Ready: BOPS-0111
-Next number: BOPS-0126
+Next number: BOPS-0127
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -38,6 +38,12 @@ Task state is never copied here; ask the register (`--summary`).
   B02 Knowledge (MAF on and off send the same request): the index limit is 10000 characters (was 4000, which listed 4 of 8 skills), the knowledge function's wording is neutral, and the planner sees that `system.events` source names match exactly (C05-P04 amendment, `PlanningGuidance`).
   Live rerun 2026-10-26 at 69d504c (B02 × C,D × 3, server temp 1.0 seed 4242): 6/6 Completed, index 8 of 8, plans of 8 steps with no correction, no refused call; plan and step-0 replies identical with MAF on and off, runs diverge only from step 1 on real tool output. Knowledge read in C 2/3, D 0/3 (noise at n=3, not MAF). Blind quality sheets pending.
   Forensics of the skipped reads (pilot D and rerun): `runtime.knowledge_read` was offered on every step and final request and the index was published every time; reads happen only in the first steps or not at all. In all 6 rerun runs the model weighed a read at step 1; in 4 it put it off "for later" or "to save steps" (a read uses no step); its reasoning does not reach the final turn, which in all 6 runs spent 4 evidence reads and then answered (0 knowledge reads there, once citing K4 while noting it was not loaded). In two C pilots a read sent in the same reply as another runtime read was answered "Not executed" (first call wins) and never resent. Fix: the knowledge description states that a read uses no step, one read per reply, nothing else executed, and in the answer turn that a read the answer needs is made there, only for an entry that applies (C05-P04 amendment, PA1-05 re-captured). Not changed, operator decisions: the planner does not see the index (ADR-0057 H3) and the §C.5 control text still says "may be called, only if useful". Live rerun needed to measure the effect.
+- Current task of this branch (operator, 2026-10-26): **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress, rides PR #135 — no new branch or worktree) — automatic,
+  offline evaluation of diagnostic quality with the MAF evaluation framework (`EvalItem`, `LocalEvaluator`, `FunctionEvaluator`, already in `Microsoft.Agents.AI` 1.24.0).
+  Authorized: phase **P1** only (deterministic, no model judge). `tests/bOps.DiagnosticEvaluation` scores M1 crash/live-dump classification, M2 counts, M3 undisclosed
+  limitations, M4 Knowledge pertinence, M5 finalization against each run's typed facts, audit and scenario keys (`keys/*.json`) and writes `auto-evaluation/<blindCode>.json`;
+  `maf_cli_analysis.py` adds the `auto*` rows. Run on the captured campaigns: the flagged count/classification errors read as real ones (live dumps given as kernel crashes,
+  invented counts at fa933f8). Next: operator review of P1 results, then the calibration sheets **filled together with the operator**; P2 (model judge) needs a new authorization.
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
   `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet

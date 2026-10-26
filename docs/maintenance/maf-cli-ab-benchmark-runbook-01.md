@@ -96,6 +96,32 @@ Same command with `-Rounds 3` and the budgets of the 18-run row above (for examp
 & $bench -Verify  <campaign dir>     # re-hashes the evidence; grading and reports are excluded from the hashes
 ```
 
+### Automatic evaluation (BOPS-0126, phase P1: deterministic, no model)
+
+Run it **before** `-Analyze`, so the report picks it up. It reads the campaign and writes only `auto-evaluation\` (excluded from the
+integrity hashes like `evaluation\` and `report\`); it calls no model and copies no evidence or answer text.
+
+```powershell
+dotnet run --project "$repo\tests\bOps.DiagnosticEvaluation" -c Release -- --campaign <campaign dir>
+& $bench -Analyze <campaign dir>
+```
+
+Each run gets `auto-evaluation\Rnn.json` (blind code, never the variant), built with the Microsoft Agent Framework evaluation framework
+(`EvalItem`, `LocalEvaluator`, `FunctionEvaluator`), and the report gains the `auto*` rows:
+
+| Metric | What it measures | Ground truth |
+|---|---|---|
+| M1 `autoLiveDumpAsCrash`, `autoCrashAsLiveDump` | a live dump called a crash (sentence, or the live-dump count given as BSODs) and the reverse | the run's typed facts (`system.crashes`, `system.stability`, `system.events`) |
+| M2 `autoCountAccuracy`, `autoCountsWrongFamily`, `autoCountsUnverified` | each number of the answer against the family named next to it | typed facts first, then the tool output (`inEvidence`, not scored) |
+| M3 `autoLimitationsUndisclosed` | partial sources without limitation wording | `Completeness` of the tool results |
+| M4 `autoKnowledgeRecallListed`, `autoKnowledgePrecision`, `autoKnowledgeCitedNotLoaded`, `autoKnowledgeReadsAnswerTurn` | whether the applicable entries were read, and an entry cited but never loaded | the audit (`knowledgeIndex`, `knowledgeRead`) and the scenario key |
+| M5 `autoFinalized`, `autoChecksFailed` | completed with a final answer; plan within the step budget; MAF checks failed | persisted state and audit |
+
+What applies to which scenario lives in `tests\bOps.DiagnosticEvaluation\keys\*.json` (fact selectors, wording, Knowledge applicability);
+its hash is in every result. A run with no final answer gets M4 and M5 only (`notApplicable`, never 0). These are heuristics (H) or certain
+counts (C), checked against the evidence the run acquired, **not** a judgement of the diagnosis: the blind sheets above stay the reference,
+and they are filled together with the operator (calibration). A model judge (P2) is not part of this phase.
+
 ## Results: location and format
 
 `%USERPROFILE%\Documents\bOps-MafBenchmarks\<name>\` (private ACL, outside the repository, not uploaded):
@@ -109,6 +135,7 @@ Same command with `-Rounds 3` and the budgets of the 18-run row above (for examp
 | `runs\…\capture\`, `audit-full.jsonl` | full task state, model calls, tool output, mutation journal, audit (unredacted evidence) |
 | `runs\…\stdout.txt`, `stderr.txt` | process output, credentials redacted |
 | `evaluation\Rnn.json` | blind grading sheets |
+| `auto-evaluation\Rnn.json`, `manifest.json` | automatic evaluation (BOPS-0126): scores, check results and reasons; counts, fact keys and sentence indexes only |
 | `report\ab-report.json / .csv / .md` | comparison; contains counts and ids only, never evidence text |
 | `integrity.json` | SHA-256 of all evidence files |
 
@@ -137,3 +164,9 @@ python -I -m unittest discover -s "$repo\scripts\windows\tests" -p "test_maf_cli
 ```
 
 They use a scripted stand-in for the CLI (a test double, labelled as such in any report it produces) and touch neither a model nor the network beyond loopback.
+
+The automatic evaluation has its own offline suite over synthetic captures with known defects (part of `bOps.slnx`, so CI runs it):
+
+```powershell
+dotnet test "$repo\tests\bOps.DiagnosticEvaluation.Tests"
+```

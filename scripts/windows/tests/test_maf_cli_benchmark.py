@@ -408,6 +408,22 @@ class CampaignTests(Base):
         victim.write_text(victim.read_text() + " ")
         self.assertEqual(self.main("verify", "--campaign-dir", out)[0], 1)
 
+    def test_auto_evaluation_joins_the_report_by_blind_code_and_never_breaks_integrity(self):
+        # BOPS-0126: tests/bOps.DiagnosticEvaluation writes auto-evaluation/<blindCode>.json after the campaign; the report joins it.
+        out, (code, *_) = self.run_campaign(self.script(state=with_audit(make_state())), "--allow-live")
+        self.assertEqual(code, 0)
+        planned = json.loads((out / "campaign.json").read_text())["plannedRuns"]
+        scored = next(p for p in planned if p["variant"] == "B")
+        (out / an.AUTO_EVALUATION_DIR).mkdir()
+        (out / an.AUTO_EVALUATION_DIR / f"{scored['blindCode']}.json").write_text(json.dumps(auto_document()))
+        report = an.write_report(out)
+        cells = report["matrix"]["B01"]
+        self.assertEqual(cells["B"]["metrics"]["autoCountAccuracy"]["mean"], 0.75)
+        self.assertEqual(cells["B"]["metrics"]["autoChecksFailed"]["mean"], 2)
+        self.assertIsNone(cells["A"]["metrics"]["autoCountAccuracy"])  # not evaluated: no value, never 0
+        self.assertIn("autoCountAccuracy", (out / "report" / "abcd-report.md").read_text())
+        self.assertEqual(mcb.verify_integrity(out), [])
+
     def test_scenario_prompts_are_the_exact_bench00_prompts(self):
         self.assertEqual(mcb.GOALS, {s["id"]: s["goal"] for s in mcb.lb.SCENARIOS})
         self.assertEqual(mcb.SCENARIO_IDS, ["B01", "B02", "B03"])
@@ -416,6 +432,49 @@ class CampaignTests(Base):
         self.assertEqual(code, 0)
         planned = json.loads((out / "campaign.json").read_text())["plannedRuns"]
         self.assertEqual([p["scenario"] for p in planned], ["B03", "B03", "B01", "B01"])  # operator order is kept
+
+
+def auto_document(**overrides):
+    """A synthetic auto-evaluation document in the shape tests/bOps.DiagnosticEvaluation writes (schema bops.diagnostic-evaluation/1)."""
+    document = {
+        "schema": an.AUTO_EVALUATION_SCHEMA, "blindCode": "R01", "scenario": "B01", "notApplicable": None,
+        "m1Classification": {"liveDumpSentencesAsCrash": [3], "liveDumpCountAsCrash": 1, "crashCountAsLiveDump": 0},
+        "m2Counts": {"exact": 3, "wrongFamily": 1, "unverified": 0, "inEvidence": 2, "unattributed": 4, "accuracy": 0.75, "findings": []},
+        "m3Support": {"partialSources": 1, "limitationWording": False, "partialSourcesUndisclosed": True, "unverifiedCounts": 0},
+        "m4Knowledge": {"precision": 1.0, "recallListed": 0.5, "readsInAnswerTurn": 1, "readsNotExecuted": 1,
+                        "citedNotLoaded": ["windows-crash-classification"]},
+        "m5Completion": {"status": "Completed", "finalized": True},
+        "checks": [{"evaluator": "bops-diagnosis", "name": "counts-consistent", "passed": False, "reason": "exact 3, wrong family 1"},
+                   {"evaluator": "bops-diagnosis", "name": "live-dump-kept-distinct", "passed": False, "reason": "1"},
+                   {"evaluator": "bops-completion", "name": "finalized", "passed": True, "reason": "ok"}],
+    }
+    document.update(overrides)
+    return document
+
+
+class AutoEvaluationTests(unittest.TestCase):
+    def test_absent_or_foreign_documents_give_no_values(self):
+        for document in (None, {"schema": "something-else"}):
+            values = an.auto_evaluation_metrics(document)
+            self.assertTrue(values)
+            self.assertTrue(all(v is None for v in values.values()))
+            self.assertEqual(set(values), {name for name in an.METRICS if name.startswith("auto")})
+
+    def test_metrics_are_read_from_the_document(self):
+        m = an.auto_evaluation_metrics(auto_document())
+        self.assertEqual((m["autoEvaluated"], m["autoChecksFailed"], m["autoFinalized"]), (1, 2, True))
+        self.assertEqual((m["autoCountAccuracy"], m["autoCountsExact"], m["autoCountsWrongFamily"], m["autoCountsUnverified"]), (0.75, 3, 1, 0))
+        self.assertEqual((m["autoLiveDumpAsCrash"], m["autoCrashAsLiveDump"], m["autoLimitationsUndisclosed"]), (2, 0, True))
+        self.assertEqual((m["autoKnowledgePrecision"], m["autoKnowledgeRecallListed"], m["autoKnowledgeReadsAnswerTurn"],
+                          m["autoKnowledgeReadsNotExecuted"], m["autoKnowledgeCitedNotLoaded"]), (1.0, 0.5, 1, 1, 1))
+
+    def test_a_run_without_an_answer_or_knowledge_keeps_those_metrics_empty(self):
+        m = an.auto_evaluation_metrics(auto_document(notApplicable="no final answer", m1Classification=None, m2Counts=None, m3Support=None,
+                                                     m4Knowledge=None, m5Completion={"status": "MaxStepsReached", "finalized": False}))
+        self.assertEqual((m["autoEvaluated"], m["autoFinalized"]), (1, False))
+        self.assertIsNone(m["autoCountAccuracy"])
+        self.assertIsNone(m["autoLiveDumpAsCrash"])
+        self.assertIsNone(m["autoKnowledgeRecallListed"])
 
 
 class MetricTests(unittest.TestCase):

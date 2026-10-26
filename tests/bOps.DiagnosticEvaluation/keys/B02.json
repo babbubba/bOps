@@ -1,0 +1,111 @@
+{
+  "schema": "bops.diagnostic-evaluation-key/1",
+  "scenarios": [ "B02", "B03" ],
+  "about": "What the typed facts of a B02/B03 run mean, for the deterministic scorers of BOPS-0126. Fact selectors and wording only: no evidence text. Terms are matched case-insensitively as substrings of one answer sentence (or one table row).",
+  "families": [
+    {
+      "id": "bugcheck",
+      "label": "real bugchecks (BSOD)",
+      "crashLike": true,
+      "confusableWith": [ "liveDump", "unexpectedShutdown", "applicationCrash" ],
+      "facts": [
+        { "type": "system.crashes.kind-count", "key": "kernel-bugcheck" },
+        { "type": "system.crashes.kernel-code-count", "keyPrefix": "kind=kernel-bugcheck;" },
+        { "type": "system.stability.category-count", "key": "kernelCrash" },
+        { "type": "system.events.matched-count", "key": "source=Microsoft-Windows-WER-SystemErrorReporting;eventId=1001" }
+      ],
+      "terms": [ "bsod", "bugcheck", "bug check", "schermata blu", "schermate blu", "blue screen", "stop code", "kernel crash", "crash del kernel", "crash kernel", "crash di sistema" ]
+    },
+    {
+      "id": "liveDump",
+      "label": "kernel live dumps",
+      "liveDump": true,
+      "confusableWith": [ "bugcheck" ],
+      "facts": [
+        { "type": "system.crashes.kind-count", "key": "kernel-live-dump" },
+        { "type": "system.crashes.kernel-code-count", "keyPrefix": "kind=kernel-live-dump;" }
+      ],
+      "terms": [ "live dump", "livedump", "live kernel", "livekernelevent", "dump live", "0x193", "dxgkrnl" ]
+    },
+    {
+      "id": "displayFault",
+      "label": "display faults",
+      "facts": [ { "type": "system.stability.category-count", "key": "displayFault" } ],
+      "terms": [ "display", "video", "gpu", "grafic", "scheda video", "tdr", "0x116", "0x141" ]
+    },
+    {
+      "id": "unexpectedShutdown",
+      "label": "unexpected shutdowns",
+      "confusableWith": [ "bugcheck" ],
+      "facts": [
+        { "type": "system.stability.category-count", "key": "unexpectedShutdown" },
+        { "type": "system.events.matched-count", "key": "source=Microsoft-Windows-Kernel-Power;eventId=41" },
+        { "type": "system.events.matched-count", "key": "source=EventLog;eventId=6008" }
+      ],
+      "terms": [ "kernel-power", "kernel power", "6008", "arresto imprevisto", "arresti imprevisti", "arresto inatteso", "arresti inattesi", "spegnimento imprevisto", "spegnimenti imprevisti", "spegnimenti anomali", "spegnimenti inaspettati", "spegnimento inaspettato", "arresti inaspettati", "inaspettat", "riavvi", "non pulit", "unclean", "shutdown", "unexpected shutdown", "riavvi anomal", "riavvii anomal", "arresti anomali", "arresto anomalo", "shutdown imprevist" ]
+    },
+    {
+      "id": "hardwareError",
+      "label": "hardware errors (WHEA)",
+      "facts": [
+        { "type": "system.stability.category-count", "key": "hardwareError" },
+        { "type": "system.events.matched-count", "keyPrefix": "source=Microsoft-Windows-WHEA-Logger;" }
+      ],
+      "terms": [ "whea", "errore hardware", "errori hardware", "hardware error" ]
+    },
+    {
+      "id": "dumps",
+      "label": "dump files",
+      "facts": [
+        { "type": "system.stability.category-count", "key": "minidump" },
+        { "type": "system.crashes.dump-reference-count", "key": "all" }
+      ],
+      "terms": [ "minidump", "file di dump", "dump file", ".dmp", "riferimenti a dump", "riferimenti dump" ]
+    },
+    {
+      "id": "applicationCrash",
+      "label": "application crashes and hangs",
+      "facts": [
+        { "type": "system.crashes.kind-count", "key": "application-crash" },
+        { "type": "system.crashes.kind-count", "key": "application-hang" },
+        { "type": "system.crashes.kind-count", "key": "wer" },
+        { "type": "system.events.matched-count", "keyPrefix": "source=.NET Runtime;" },
+        { "type": "system.events.matched-count", "keyPrefix": "source=Application Error;" }
+      ],
+      "terms": [ "applicazion", "application", "app crash", "wer", ".net runtime", "hang", "blocchi applicativi" ]
+    },
+    {
+      "id": "allCrashes",
+      "label": "all crash records and groups",
+      "facts": [
+        { "type": "system.crashes.observed-count", "key": "all" },
+        { "type": "system.crashes.group-count", "key": "groups" }
+      ],
+      "terms": [ "crash totali", "crash osservati", "crash complessivi", "totale dei crash", "total crashes", "in totale", "gruppi", "groups" ]
+    }
+  ],
+  "crashWords": [ "bsod", "schermata blu", "schermate blu", "blue screen", "riavvio", "riavvii", "reboot", "restart", "crash di sistema", "system crash", "arresto del sistema" ],
+  "negations": [ "non ", "nessun", "senza", "not ", "no ", "n't", "distint", "distinct", "separat", "differen", "divers", "invece", "anziché", "rather than" ],
+  "limitationWords": [ "troncat", "parzial", "non dispon", "non è stato possibile", "limitazion", "limiti", "incomplet", "non verificabil", "non ho potuto", "truncat", "partial", "unavailable", "not available", "limitation", "could not", "unable to", "incomplete" ],
+  "identifierContext": [ "id ", "id:", "evento", "eventi", "event", "codice", "code", "kernel-power", "kernel power", "eventlog", "logger", "wer-", "sorgente", "source", "step", "passo" ],
+  "windowFacts": [ { "type": "system.stability.window-days" } ],
+  "knowledge": {
+    "entries": [
+      { "skill": "windows-event-triage", "always": true },
+      { "skill": "windows-cpu-memory-and-reporting", "always": true },
+      { "skill": "windows-crash-classification", "anyFamily": [ "bugcheck", "liveDump", "unexpectedShutdown" ] },
+      { "skill": "windows-display-bugchecks", "anyFamily": [ "liveDump", "displayFault" ] },
+      { "skill": "windows-event-log-sources", "anyFamily": [ "unexpectedShutdown", "hardwareError" ] },
+      { "skill": "windows-hardware-troubleshooting", "anyFamily": [ "hardwareError" ] },
+      { "skill": "windows-incident-correlation", "minFamilies": 2 },
+      {
+        "skill": "windows-bugcheck-codes-core",
+        "anyFact": [
+          { "type": "system.crashes.kernel-code-count", "key": "kind=kernel-bugcheck;code=0x101" },
+          { "type": "system.crashes.kernel-code-count", "key": "kind=kernel-bugcheck;code=0x124" },
+          { "type": "system.crashes.kernel-code-count", "key": "kind=kernel-bugcheck;code=0x50" }
+        ]
+      }
+    ]
+  }
+}

@@ -129,6 +129,23 @@ METRICS = {
     "wheaIdsEquated": ("H", "Sentences that present different WHEA IDs as the same thing"),
     "eventsAsIndependentFailures": ("H", "Event counts presented as independent failures although no episode/cluster is mentioned"),
     "diagnosticFlags": ("H", "Total of the heuristic diagnostic flags above"),
+    # BOPS-0126 P1: the deterministic MAF evaluation written by tests/bOps.DiagnosticEvaluation to auto-evaluation/<blindCode>.json.
+    # None when the campaign was not evaluated, or when the run has no final answer (M1-M3) or no Knowledge (M4): never a 0.
+    "autoEvaluated": ("C", "1 when the run was scored by tests/bOps.DiagnosticEvaluation (auto-evaluation/<blindCode>.json)"),
+    "autoChecksFailed": ("H", "MAF checks failed: finalized, plan-within-budget, knowledge-pertinent, live-dump-kept-distinct, counts-consistent, limitations-disclosed"),
+    "autoFinalized": ("C", "M5: Completed with a persisted final answer"),
+    "autoCountAccuracy": ("H", "M2: exact counts / (exact + wrong family + unverified), against the run's typed facts"),
+    "autoCountsExact": ("H", "M2: numbers equal to a typed count of the family named next to them"),
+    "autoCountsWrongFamily": ("H", "M2: numbers equal to the headline count of a family the named one is confused with"),
+    "autoCountsUnverified": ("H", "M2: numbers attributed to a family that no fact or tool output holds"),
+    "autoLiveDumpAsCrash": ("H", "M1: sentences equating live dumps with crashes, plus live-dump counts given as crashes"),
+    "autoCrashAsLiveDump": ("H", "M1: crash counts given as live dumps"),
+    "autoLimitationsUndisclosed": ("H", "M3: partial sources exist and the answer has no limitation wording"),
+    "autoKnowledgePrecision": ("C", "M4: applicable entries read / entries read"),
+    "autoKnowledgeRecallListed": ("C", "M4: applicable entries read / applicable entries the index listed"),
+    "autoKnowledgeReadsAnswerTurn": ("C", "M4: Knowledge reads served in the answer turn"),
+    "autoKnowledgeReadsNotExecuted": ("C", "M4: Knowledge calls answered 'Not executed' (first call wins)"),
+    "autoKnowledgeCitedNotLoaded": ("H", "M4: listed entries the answer cites (Kn or skill name) but never read"),
 }
 
 NOT_AVAILABLE = [
@@ -527,6 +544,39 @@ def _stats(values):
             "stdev": round(statistics.stdev(values), 3) if len(values) > 1 else None}
 
 
+AUTO_EVALUATION_DIR = "auto-evaluation"
+AUTO_EVALUATION_SCHEMA = "bops.diagnostic-evaluation/1"
+
+
+def auto_evaluation_metrics(document: dict | None) -> dict:
+    """The BOPS-0126 metrics of one run from its auto-evaluation document (None or another schema: every metric None)."""
+    out = {name: None for name in METRICS if name.startswith("auto")}
+    if not document or document.get("schema") != AUTO_EVALUATION_SCHEMA:
+        return out
+    checks = document.get("checks") or []
+    completion = document.get("m5Completion") or {}
+    out.update({"autoEvaluated": 1, "autoChecksFailed": sum(1 for c in checks if c.get("passed") is False),
+                "autoFinalized": completion.get("finalized")})
+    counts = document.get("m2Counts")
+    if counts:
+        out.update({"autoCountAccuracy": counts.get("accuracy"), "autoCountsExact": counts.get("exact"),
+                    "autoCountsWrongFamily": counts.get("wrongFamily"), "autoCountsUnverified": counts.get("unverified")})
+    classification = document.get("m1Classification")
+    if classification:
+        out["autoLiveDumpAsCrash"] = len(classification.get("liveDumpSentencesAsCrash") or []) + (classification.get("liveDumpCountAsCrash") or 0)
+        out["autoCrashAsLiveDump"] = classification.get("crashCountAsLiveDump")
+    support = document.get("m3Support")
+    if support:
+        out["autoLimitationsUndisclosed"] = support.get("partialSourcesUndisclosed")
+    knowledge = document.get("m4Knowledge")
+    if knowledge:
+        out.update({"autoKnowledgePrecision": knowledge.get("precision"), "autoKnowledgeRecallListed": knowledge.get("recallListed"),
+                    "autoKnowledgeReadsAnswerTurn": knowledge.get("readsInAnswerTurn"),
+                    "autoKnowledgeReadsNotExecuted": knowledge.get("readsNotExecuted"),
+                    "autoKnowledgeCitedNotLoaded": len(knowledge.get("citedNotLoaded") or [])})
+    return out
+
+
 def load_campaign(campaign_dir: pathlib.Path):
     manifest = _read_json(campaign_dir / "campaign.json")
     runs = []
@@ -540,6 +590,8 @@ def load_campaign(campaign_dir: pathlib.Path):
         state, task_id = load_task_state(run_dir / "capture")
         events, chain = load_audit(run_dir / "audit-full.jsonl")
         metrics = compute_metrics(state, events, chain, info, manifest.get("pricing"))
+        auto_path = campaign_dir / AUTO_EVALUATION_DIR / f"{entry['blindCode']}.json"
+        metrics.update(auto_evaluation_metrics(_read_json(auto_path) if auto_path.is_file() else None))
         sheet_path = campaign_dir / "evaluation" / f"{entry['blindCode']}.json"
         sheet = _read_json(sheet_path) if sheet_path.is_file() else None
         runs.append({**entry, "info": info, "metrics": metrics, "executed": True, "taskId": task_id,
@@ -652,7 +704,10 @@ def _signed(value, suffix=""):
 HEADLINE_METRICS = ["terminalStatus", "outcomeClass", "wallSeconds", "accountedTokens", "promptTokens", "completionTokens", "reasoningTokens",
                     "modelCalls", "replans", "knowledgeIndexPublished", "knowledgeReadsServed", "knowledgeDistinctResources",
                     "knowledgeReadsContextBudget", "maxContextUsagePercent", "contextOverflows", "timeoutFailures", "protocolErrors",
-                    "truncatedResponses", "diagnosticFlags", "answerNumbersNotInEvidence"]
+                    "truncatedResponses", "diagnosticFlags", "answerNumbersNotInEvidence",
+                    "autoChecksFailed", "autoFinalized", "autoCountAccuracy", "autoCountsWrongFamily", "autoCountsUnverified",
+                    "autoLiveDumpAsCrash", "autoCrashAsLiveDump", "autoKnowledgeRecallListed", "autoKnowledgePrecision",
+                    "autoKnowledgeReadsAnswerTurn", "autoKnowledgeCitedNotLoaded"]
 
 
 def _dispersion(stat):
@@ -730,6 +785,8 @@ def render_markdown(report: dict) -> str:
               "- `Completed` is a runtime outcome, not a statement that the diagnosis is correct. Judge the blind evaluation sheets, not the status.",
               "- Host load before each run is recorded in the JSON (`hostBeforeEachRun`); the live Windows tools read a real machine whose state can change between runs.",
               "- The heuristic diagnostic flags (class H) point at sentences to read; they decide nothing.",
+              "- `auto*` metrics come from the deterministic MAF evaluation (BOPS-0126 P1, `tests/bOps.DiagnosticEvaluation`): counts and classes are"
+              " checked against the run's own typed facts, not the machine's true state, and are empty until the evaluator has been run on the campaign.",
               "- BENCH-00 measured the API; this campaign measures the CLI. The two are not interchangeable evidence for BOPS-0122.", ""]
     return "\n".join(lines)
 
