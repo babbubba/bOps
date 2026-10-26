@@ -97,9 +97,11 @@ public sealed partial class HardenEightE2ETests
     {
         // Each plan step is discriminated by the tool call index (ADR-0050); the call that proposes the replan is never executed,
         // so every replan's indices skip it.
-        // The initial plan and each replan are sized so that the call proposed once the current plan is spent is the 9th, 19th and
-        // 39th executed tool step: AgentRunner then replans on its own (ADR-0014 rule C8: a call proposed after every planned step was attempted).
-        private static readonly int[] PlanSizes = [8, 9, 19, 10];
+        // The initial plan and each replan are sized so that a call is proposed once the current plan is spent (calls 8, 14 and
+        // 29): AgentRunner then replans on its own (ADR-0014 rule C8: a call proposed after every planned step was attempted).
+        // Every plan fits its step budget less the final answer (C03-R09): 8 of 14, then 5 of the 5 left in the first attempt;
+        // the replans at calls 14 and 29 take the attempt's last step, so they are sized for the resume that runs them (14).
+        private static readonly int[] PlanSizes = [8, 5, 14, 14];
 
         private int toolsIssued;
         private int plansIssued;
