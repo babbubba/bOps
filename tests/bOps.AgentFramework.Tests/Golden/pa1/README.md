@@ -13,6 +13,10 @@ and 10 changed (plan-end paragraph, one-tool explanation, step routing tail, ear
 byte-identical to the baseline. The intended differences are listed in `docs/benchmarks/prompt-routing-finalization.md`. They are not a
 statement of what a prompt should say. A difference means "what the
 model is sent changed" and needs a decision: change these files in the same commit as the prompt, never to silence a failure.
+**BOPS-0125 (2026-10-26, C03-R09 amendment) re-captured PA1-01, PA1-02A, PA1-02B and PA1-09 on purpose:** the planning and replanning
+system prompts gained one paragraph stating the attempt's step budget (`This execution attempt has N steps left. …`, from
+`PlanStepBudget`), between the instructions and the tool catalog. Removing that paragraph from the new capture gives the previous bytes;
+every other scenario is unchanged.
 
 | Scenario | Frozen requests |
 |---|---|

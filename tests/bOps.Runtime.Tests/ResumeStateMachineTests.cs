@@ -722,11 +722,14 @@ public sealed class ResumeStateMachineTests
     {
         var store = new InMemoryTaskStore();
         var audit = new RecordingAuditSink();
-        var first = await Runner(new FakeChatModel(PlanningTestSupport.PlanResponse(), Read()), store, audit,
-            new AgentRunnerOptions { MaxSteps = 1 }).RunAsync("check", Operator);
+        // C03-R09: the one-step plan fits two steps with the final answer; a refused call (a tool not offered, corrected in place)
+        // spends the step the answer needed, so the attempt ends at its step limit and the resume answers.
+        var notOffered = new ModelResponse(null, [new ModelToolCall("u1", "test.not_offered", ToolArguments.Empty)], false, null);
+        var first = await Runner(new FakeChatModel(PlanningTestSupport.PlanResponse(), notOffered, Read()), store, audit,
+            new AgentRunnerOptions { MaxSteps = 2 }).RunAsync("check", Operator);
         Assert.Equal(AgentTaskStatus.MaxStepsReached, first.Status);
 
-        await Runner(new FakeChatModel(Final()), store, audit, new AgentRunnerOptions { MaxSteps = 1 }).ResumeAsync(first, Resumer);
+        await Runner(new FakeChatModel(Final()), store, audit, new AgentRunnerOptions { MaxSteps = 2 }).ResumeAsync(first, Resumer);
 
         Assert.Equal(
             [

@@ -144,6 +144,8 @@ Steps already completed do not need to be repeated. List only what remains; use 
 Completed checks of this task (their evidence is persisted; plan one again only to sample live state that may have changed):
 - task step 0 test.read {}
 
+This execution attempt has 13 steps left. Every tool call the runtime executes or refuses, and the final answer, uses one step, so a plan may list at most 12 steps (conditional steps included); a longer plan is refused.
+
 Tools available in later steps. Name one in "expectedTool" only if it fits; you cannot call a tool in this reply.
 Only the listed parameters may appear in expectedArguments; unknown names, sensitive parameters and null values are forbidden. Required/optional describes execution arguments; expectedArguments remains an optional equality-only subset. Use JSON strings for String, Path, Duration and Enum, integers for Integer, numbers for Number, booleans for Boolean, and arrays of strings for PathList. Values and enum membership are exact, without coercion. minimum/maximum are inclusive; minLength/maxLength count characters; minItems/maxItems count array items. expectedArguments allows at most 8 properties and 1024 serialized UTF-8 bytes.
 - test.other [Read]: Reads the synthetic disk usage. Parameters: limit:Integer optional minimum=1 maximum=100

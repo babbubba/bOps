@@ -10,6 +10,11 @@ re-captured: the single-tool routing line gained the one-tool explanation, the s
 the runtime re-evaluate the plan, and the replan after a rejected early final has its own lead. Everything else is still the bytes of
 `d3da032`; the knowledge-free and unbound requests are still byte-identical to each other.
 
+**Decision of 2026-10-26 (BOPS-0125, C03-R09 amendment).** The planning and replanning prompts state the attempt's step budget: one
+paragraph, `This execution attempt has N steps left. …`, between the instructions and the tool catalog (`PlanStepBudget`). The planning
+and replan requests of the three files gained exactly that paragraph (verified by removing it from a capture of the current tree and
+comparing the rest byte for byte); step requests are unchanged.
+
 | File | Content |
 |---|---|
 | `legacy-nohost.json` | all five requests of the scenario, runner without a knowledge host |

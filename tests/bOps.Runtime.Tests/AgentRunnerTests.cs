@@ -377,10 +377,13 @@ public sealed class AgentRunnerTests
     [Fact]
     public async Task RunAsync_EndsAsMaxStepsReached_WhenTheModelNeverReportsCompletion()
     {
+        // C03-R09: a plan fits the attempt less the final answer (2 of 3 steps), so the step limit is reached by a call the
+        // runtime refuses (a tool that is not offered is corrected in place, and still spends a step) instead of by the plan.
         var model = new FakeChatModel([
-            PlanningTestSupport.PlanResponseIndexed("test.read", 10), // never exhausted within MaxSteps
+            PlanningTestSupport.PlanResponseIndexed("test.read", 2),
             .. Enumerable.Range(0, 10).Select(i => new ModelResponse(
-                null, [new ModelToolCall("call-1", "test.read", new ToolArguments(PlanningTestSupport.IndexArguments(i)))], false, null)),
+                null, [new ModelToolCall("call-1", i == 1 ? "test.not_offered" : "test.read",
+                    new ToolArguments(PlanningTestSupport.IndexArguments(i == 0 ? 0 : 1)))], false, null)),
         ]);
         var registry = CreateRegistryWith(new FakeReadTool(parameters: [PlanningTestSupport.CallIndexParameter]));
         var audit = new RecordingAuditSink();
