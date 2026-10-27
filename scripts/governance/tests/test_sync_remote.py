@@ -39,7 +39,7 @@ def remote_of(reg):
         items.append({"id": t["project_item"], "title": vr.task_title(t), "kind": "Issue" if t["remote_kind"] == "issue" else "DraftIssue",
                       "issue": t["issue"], **{k: want.get(k) for k in ("status", "priority", "area", "milestone", "evidence", "effort")}})
         if t["remote_kind"] == "issue":
-            issues.append({"number": t["issue"], "title": vr.task_title(t), "state": "open",
+            issues.append({"number": t["issue"], "title": vr.task_title(t), "state": "closed" if t["status"] == "DONE" else "open",
                            "body": f"**Status in the register:** X (`{t['status']}`)"})
     return {"items": items, "issues": issues}
 
@@ -115,10 +115,10 @@ class Planner(PlannerBase):
         self.assertEqual([], p["updates"])
 
     def test_a_done_task_is_closed_only_when_asked(self):
-        t = task(self.reg, "PROJECT-GOVERNANCE-01")
+        t = task(self.reg, "F-26")
         t.update(status="DONE")
         t["validation"].update(achieved=t["validation"]["required"], open_gates=[])
-        self.item("PROJECT-GOVERNANCE-01")["status"] = "Validation"
+        self.item("F-26")["status"] = "Validation"
         p = self.plan()
         self.assertEqual("Status", p["updates"][0]["field"])
         self.assertEqual("pending-close", next(r["kind"] for r in p["reports"] if r["kind"] == "pending-close"))
@@ -335,16 +335,16 @@ class Hardening(RunsBase):
 class Identity(PlannerBase):
     def setUp(self):
         super().setUp()
-        self.t = task(self.reg, "PROJECT-GOVERNANCE-01")
+        self.t = task(self.reg, "F-26")
         self.t.update(status="DONE")
         self.t["validation"].update(achieved=self.t["validation"]["required"], open_gates=[])
-        self.item("PROJECT-GOVERNANCE-01")["status"] = "Validation"
+        self.item("F-26")["status"] = "Validation"
 
     def mine(self, p):
         return [u for u in p["updates"] if u["task"] == self.t["id"]]
 
     def test_a_project_item_linked_to_a_different_issue_blocks_every_mutation_for_the_task(self):
-        self.item("PROJECT-GOVERNANCE-01")["issue"] = 9999
+        self.item("F-26")["issue"] = 9999
         p = self.plan(close_done=True)
         self.assertEqual("identity", p["conflicts"][0]["what"])
         self.assertEqual([], self.mine(p))
@@ -356,7 +356,7 @@ class Identity(PlannerBase):
         self.assertEqual([], self.mine(p))
 
     def test_closing_is_never_planned_when_the_remote_status_conflicts(self):
-        self.item("PROJECT-GOVERNANCE-01")["status"] = "Deferred"
+        self.item("F-26")["status"] = "Deferred"
         p = self.plan(close_done=True)
         self.assertEqual("Status", p["conflicts"][0]["what"])
         self.assertNotIn("IssueState", [u["field"] for u in p["updates"]])
@@ -374,7 +374,7 @@ class Identity(PlannerBase):
         sr.apply_updates(c, {"updates": [u]}, ledger)
         self.assertEqual("deferred", ledger[0]["state"])
         self.assertEqual([], c.writes)
-        self.item("PROJECT-GOVERNANCE-01")["status"] = "Done"
+        self.item("F-26")["status"] = "Done"
         ledger = [{"op": "close", "state": "pending"}]
         sr.apply_updates(c, {"updates": [u]}, ledger)
         self.assertEqual("done", ledger[0]["state"])
