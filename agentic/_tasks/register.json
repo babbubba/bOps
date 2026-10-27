@@ -6214,7 +6214,9 @@
    "companion_docs": [
     "docs/maf-troubleshooting-workflow.md"
    ],
-   "prs": [],
+   "prs": [
+    141
+   ],
    "commits": [
     "7a82b092230761653f68a03de692ed07f96c1397",
     "b5ffbdfec94c79de05c2e2cabae89f071a515b00",
@@ -6230,25 +6232,28 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Local commits only: no push, PR or merge without the operator.",
-     "CI of the PR on Windows and Linux (the PR is not requested yet).",
+     "PR #141 opened 2026-10-27 (base main, Refs BOPS-0129, no auto-merge); merge only with the operator.",
+     "CI of PR #141 on Windows and Linux: queued at 2026-10-27T20:57Z, not yet verified.",
      "Operator approval of C01-R23 as merged, and of the delivery. Any live model run needs its own authorization."
     ]
    },
    "evidence": [
     "Local, Windows 2026-10-27, branch feat/maf-multiagent-troubleshooting cut from main 20b66c8 (local commits only, nothing pushed): Release build of bOps.slnx 0 warnings 0 errors, locked-mode restore ok; non-live suites of the whole solution green (Runtime 2383 unchanged, AgentFramework 677 + 8 skipped, Cli 292, Architecture 217, Api 560, Policy 308, Knowledge 308, plus the package suites); register validator 129 tasks 0 errors, governance unit tests 70.",
     "New offline tests: 36 workflow tests in AgentFramework.Tests (end-to-end slowdowns-and-restarts with a reviewer follow-up round; System + PostgreSQL through fake tools proven concurrent; gateway refusals, policy and approval; limits; cancellation; failures; audit and accounting), 21 in Cli.Tests (arguments, opt-in, command output, process-level refusal), 8 architecture guards (MafWorkflowBoundaryTests) and the widened C01-R22 guard. The demo run printed the real sequence triage -> system x3 -> review -> system x2 -> review with 3 tool calls and one audit event per call; it exposed and fixed a specialist evidence-count defect before commit.",
-    "Not done: Windows and Linux CI (no PR yet), any live model run, Issue and Project #6 item (sync_pending), Linux validation."
+    "Operator approved C01-R23 with the corrected clause 7 on 2026-10-27; PR #141 opened as babbubba; Issue #142 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhEA0os created and read back (Status In Progress, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort 5-8 days).",
+    "Not done: Windows and Linux CI result of PR #141, any live model run, Linux validation."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
    "note": "Read-only first increment. No checkpoint or resume in this version (C01-R23 clause 7, an implementation limit; C03-R23 is not extended to workflows); checkpoint/resume, effectful operations and an API host are outside C01-R23 and need new explicit decisions. No PostgreSQL package exists in this repository.",
    "branch": "feat/maf-multiagent-troubleshooting",
-   "remote_kind": null,
-   "sync_pending": [
-    "create Issue \"BOPS-0129 | MAF-TROUBLESHOOT-01 — MAF multi-agent troubleshooting workflow (read-only, CLI)\"",
-    "add it to Project #6 with Status In Progress and the fields Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort 5-8 days"
-   ]
+   "remote_kind": "issue",
+   "issue": 142,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhEA0os",
+   "sync": {
+    "status": "In Progress",
+    "verified_at": "2026-10-27T21:59:05+0100"
+   }
   }
  ],
  "known_divergences": [

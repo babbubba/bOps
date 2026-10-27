@@ -1,7 +1,7 @@
 # Handoff
 
 Last updated: 2026-10-27 · `main` @ `20b66c8` (PR [#140](https://github.com/babbubba/bOps/pull/140) consolidation merged) ·
-working branch `feat/maf-multiagent-troubleshooting`, cut from `main` @ `20b66c8`, local commits only (nothing pushed; PR only on operator request). The consolidation worktree `bOps-consol` and its branch still exist: not deleted, operator go-ahead owed.
+working branch `feat/maf-multiagent-troubleshooting`, cut from `main` @ `20b66c8`, pushed, PR [#141](https://github.com/babbubba/bOps/pull/141) open (base `main`, Refs BOPS-0129, CI Windows/Linux pending, merge only on operator request). The consolidation worktree `bOps-consol` and its branch still exist: not deleted, operator go-ahead owed.
 
 <!-- register-sync:begin -->
 Current task: BOPS-0129 MAF-TROUBLESHOOT-01 (IN_PROGRESS)
@@ -37,7 +37,7 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 
 ## Milestone and task
 
-- Current task of this branch: **BOPS-0129 MAF-TROUBLESHOOT-01** (IN_PROGRESS, authorized by the operator mandate of 2026-10-27; Issue and Project #6 item owed, see `sync_pending`) — the read-only MAF multi-agent troubleshooting workflow, Contract 01 `C01-R23`, [reference](docs/maf-troubleshooting-workflow.md). Local commits only; push, PR and merge need the operator.
+- Current task of this branch: **BOPS-0129 MAF-TROUBLESHOOT-01** (IN_PROGRESS, authorized by the operator mandate of 2026-10-27; Issue #142, Project #6 In Progress) — the read-only MAF multi-agent troubleshooting workflow, Contract 01 `C01-R23`, [reference](docs/maf-troubleshooting-workflow.md). PR #141 open; CI result and merge are the open gates.
 - Task of the consolidation branch (not this one): **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress) — offline evaluation of diagnostic quality, phase **P1** only (deterministic, no model judge).
   2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen (manifest sha256 `2ea60ce8…`). Next: blind calibration of the R02–R06 sample with the operator. P2 needs a new authorization.
 - In validation, operator gate open: BOPS-0125 MAF-CLI-AB-01 (live pilot not authorized), BOPS-0128 DIAG-EVIDENCE-02 (slices A+B delivered by #137; slice C not authorized), BOPS-0122, BOPS-0123, BOPS-0118..0121.
