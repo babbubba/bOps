@@ -74,6 +74,11 @@ public sealed class Bops0128ReplayTests(ITestOutputHelper output)
                 $"summary observed {summary["observedEntries"]} listed {summary["listedEntries"]} omitted {summary["omittedEntries"]} " +
                 $"({Encoding.UTF8.GetByteCount(summary.ToJsonString())} bytes, summary starts at char {result.Output.IndexOf("\"groupSummary\"", StringComparison.Ordinal)} and groups at char {result.Output.IndexOf("\"groups\"", StringComparison.Ordinal)}); " +
                 $"selection and coverage facts {string.Join(", ", result.Facts.Where(f => f.Type is SystemEvidenceMetadata.CrashesSelectionType or SystemEvidenceMetadata.CrashesCoverageType).Select(f => f.Key + "=" + f.Value))}; captured coverage state {captured["coverage"]!["state"]}");
+            // Visibility after compaction (the model of the R01 capture saw about the first 6 500 characters): how many groups are named in the head, before and after.
+            var identities = captured["groups"]!.AsArray();
+            output.WriteLine(
+                $"{run.Name} crashes visibility: groups named in the first {VisibilityHead} chars {VisibleGroups(step.Output, identities)}/{identities.Count} before, {VisibleGroups(result.Output, identities)}/{identities.Count} after; " +
+                $"kernel codes named {VisibleGroups(step.Output, KernelOnly(identities))}/{KernelOnly(identities).Count} before, {VisibleGroups(result.Output, KernelOnly(identities))}/{KernelOnly(identities).Count} after");
             Assert.Equal(summary["observedEntries"]!.GetValue<int>(), summary["listedEntries"]!.GetValue<int>() + summary["omittedEntries"]!.GetValue<int>());
             Assert.True(result.Output.IndexOf("\"groupSummary\"", StringComparison.Ordinal) < result.Output.IndexOf("\"groups\"", StringComparison.Ordinal));
             Assert.True(JsonSerializer.SerializeToUtf8Bytes(result.Facts).Length <= EvidenceFactBounds.MaximumSerializedBytes);
@@ -287,6 +292,23 @@ public sealed class Bops0128ReplayTests(ITestOutputHelper output)
             store["oldestAvailableUtc"] is { } oldest ? Time(oldest) : null,
             store["logMaximumBytes"]?.GetValue<long>(),
             sourceNames))];
+
+    private const int VisibilityHead = 6_500;
+
+    private static readonly string[] IdentityFields = ["kind", "code", "application"];
+
+    private static JsonArray KernelOnly(JsonArray groups) =>
+        [.. groups.Where(group => group!["kind"]!.GetValue<string>() is CrashKinds.KernelBugcheck or CrashKinds.KernelLiveDump).Select(group => group!.DeepClone())];
+
+    /// <summary>An approximation: a group counts as named when its kind and its code or application each appear as a value in the head of the output.</summary>
+    private static int VisibleGroups(string text, JsonArray groups)
+    {
+        var head = text[..Math.Min(text.Length, VisibilityHead)];
+        return groups.Count(group => IdentityFields
+            .Select(name => group![name])
+            .Where(value => value is not null)
+            .All(value => head.Contains(value!.ToJsonString(), StringComparison.Ordinal)));
+    }
 
     private static readonly string[] GroupKeyFields =
         ["kind", "eventName", "code", "application", "module", "count", "firstSeenUtc", "lastSeenUtc", "dumpReferenceCount", "uncorrelatedCount"];
