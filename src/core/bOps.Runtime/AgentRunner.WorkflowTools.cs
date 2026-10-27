@@ -26,7 +26,7 @@ public sealed partial class AgentRunner
     private async Task<WorkflowToolResult> ExecuteWorkflowToolCallAsync(
         WorkflowToolSession session, WorkflowAgentHandle agent, ModelToolCall call, int sequence, CancellationToken ct)
     {
-        var evidenceId = $"ev1:{session.RunId}:{sequence}";
+        var evidenceId = $"wf1:{session.RunId}:{sequence}";
         using var scope = WorkflowStepScope.Begin(new WorkflowCorrelation(session.RunId, agent.Name, agent.InstanceId, call.Id));
 
         // A name the adapter could not map, or one that is not registered, is the ordinary unknown-tool path: audited, nothing resolved.

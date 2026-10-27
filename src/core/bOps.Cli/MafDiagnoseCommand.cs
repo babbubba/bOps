@@ -130,7 +130,7 @@ internal sealed class MafDiagnoseCommand(
         await output.WriteLineAsync();
         await output.WriteLineAsync($"=== Diagnosis (run {report.RunId}) — {report.Outcome}{(report.LimitCode is null ? string.Empty : $", limit: {report.LimitCode}")} ===");
         await output.WriteLineAsync(report.Diagnosis);
-        await Section("Facts (supported by evidence)", [.. report.Facts.Select(claim => $"{claim.Text}  [{string.Join(", ", claim.EvidenceIds)}]")]);
+        await Section("Observations citing run evidence (citations checked, content not verified)", [.. report.CitedObservations.Select(claim => $"{claim.Text}  [{string.Join(", ", claim.EvidenceIds)}]")]);
         await Section("Hypotheses (not proven)", [.. report.Hypotheses.Select(claim => claim.EvidenceIds.Count == 0 ? claim.Text : $"{claim.Text}  [{string.Join(", ", claim.EvidenceIds)}]")]);
         await Section("Contradictions", report.Contradictions);
         await Section("Unsupported interpretations", report.Unsupported);

@@ -34,7 +34,7 @@ public sealed class MafWorkflowGatewayTests
         var result = await agent.ExecuteAsync("call-7", "fake.sys.events", new ToolArguments());
 
         Assert.Equal(WorkflowToolStatus.Executed, result.Status);
-        Assert.Equal($"ev1:{session.RunId}:0", result.EvidenceId);
+        Assert.Equal($"wf1:{session.RunId}:0", result.EvidenceId);
         Assert.Equal("specialist-system", result.AgentName);
         Assert.Equal("call-7", result.InvocationId);
         Assert.Equal("Kernel-Power 41 at 03:12; LiveKernelEvent 141 (display driver).", result.OriginalOutput);
@@ -214,7 +214,7 @@ public sealed class MafWorkflowGatewayTests
         Assert.NotEqual(firstSession.RunId, secondSession.RunId);
         Assert.Equal(WorkflowToolStatus.BudgetExhausted, firstOverBudget.Status);
         Assert.Equal(1, secondSession.ToolCallsMade);
-        Assert.All(firstSession.Ledger, entry => Assert.StartsWith($"ev1:{firstSession.RunId}:", entry.EvidenceId, StringComparison.Ordinal));
+        Assert.All(firstSession.Ledger, entry => Assert.StartsWith($"wf1:{firstSession.RunId}:", entry.EvidenceId, StringComparison.Ordinal));
         Assert.All(ToolEvents(world, secondSession.RunId), evt => Assert.Equal("b1", evt.Workflow!.InvocationId));
     }
 

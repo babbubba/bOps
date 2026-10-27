@@ -35,7 +35,7 @@ public enum WorkflowToolStatus
 /// bounded, and wrapped as untrusted tool output. <see cref="Original"/> is the tool's own result, preserved unmodified for the
 /// evidence of the run and never rewritten by anything downstream.
 /// </summary>
-/// <param name="EvidenceId">The stable identifier of this call's evidence in the run (<c>ev1:&lt;run&gt;:&lt;sequence&gt;</c>).</param>
+/// <param name="EvidenceId">The stable identifier of this call's evidence in the run (<c>wf1:&lt;run&gt;:&lt;sequence&gt;</c>; not the persisted <c>ev1</c> namespace of <c>EvidenceRead</c>, which this temporary id never resolves through).</param>
 /// <param name="Sequence">The call's position in the run's tool calls (0-based); also its <see cref="AuditEvent.StepIndex"/>.</param>
 /// <param name="AgentName">The registered agent that asked for the call.</param>
 /// <param name="InvocationId">The call id the model assigned.</param>

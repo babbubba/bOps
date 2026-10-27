@@ -62,8 +62,8 @@ public sealed class MafTroubleshootingWorkflowTests(ITestOutputHelper log)
         Assert.Equal(3, report.ToolCalls);
         Assert.Equal([1, 1, 1], [world.Executions("fake.sys.events"), world.Executions("fake.sys.services"), world.Executions("fake.sys.dumps")]);
         Assert.All(report.Evidence, entry => Assert.Equal(WorkflowToolStatus.Executed, entry.Status));
-        // Facts cite real evidence; hypotheses stay hypotheses; the reviewer's unsupported claim and missing data are carried through.
-        var fact = Assert.Single(report.Facts);
+        // Observations cite real evidence of calls that ran; hypotheses stay hypotheses; the reviewer's unsupported claim and missing data are carried through.
+        var fact = Assert.Single(report.CitedObservations);
         Assert.All(fact.EvidenceIds, id => Assert.Contains(report.Evidence, entry => entry.EvidenceId == id));
         Assert.Contains(report.Hypotheses, claim => claim.Text.Contains("display driver", StringComparison.Ordinal));
         Assert.Contains(report.Unsupported, text => text.Contains("power supply", StringComparison.Ordinal));

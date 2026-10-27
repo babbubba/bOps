@@ -102,12 +102,12 @@ internal sealed class MafWorkflowWorld
     internal static string[] EvidenceIds(ModelRequest request) =>
         [.. Regex.Matches(
                 string.Join('\n', request.History.Where(turn => turn.Role == bOps.Abstractions.ChatRole.Tool).Select(turn => turn.Content)),
-                @"ev1:[0-9a-f\-]+:\d+")
+                @"wf1:[0-9a-f\-]+:\d+")
             .Select(match => match.Value).Distinct()];
 
     /// <summary>Every evidence id the request names anywhere in its history (a reviewer sees the run's whole evidence list).</summary>
     internal static string[] AllEvidenceIds(ModelRequest request) =>
-        [.. Regex.Matches(string.Join('\n', request.History.Select(turn => turn.Content)), @"ev1:[0-9a-f\-]+:\d+")
+        [.. Regex.Matches(string.Join('\n', request.History.Select(turn => turn.Content)), @"wf1:[0-9a-f\-]+:\d+")
             .Select(match => match.Value).Distinct()];
 
     internal static string TriagePlan(params (string Specialist, string Objective)[] assignments) =>

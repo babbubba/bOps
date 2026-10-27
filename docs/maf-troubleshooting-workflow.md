@@ -33,7 +33,7 @@ bops diagnose ──► MAF workflow (Microsoft.Agents.AI.Workflows 1.24.0, in-p
 - **Specialists** are MAF agents whose function tools are the gateway adapter. Each decides which of its allowed tools to call and follows up on results.
   A specialist with no assignment in a round reports `NotAssigned` without a model call.
 - **Reviewer** compares the reports, flags contradictions and unsupported claims, separates facts from hypotheses and either concludes or asks a registered specialist for a follow-up round.
-- **Report**: facts (evidence ids verified against what the run collected), hypotheses, contradictions, unsupported, missing, next checks, an *advisory* intervention plan, the evidence list, limits and consumption.
+- **Report**: cited observations (the evidence ids they cite are checked against the calls that ran; the content is not verified), hypotheses, contradictions, unsupported, missing, next checks, an *advisory* intervention plan, the evidence list, limits and consumption.
 
 ## Authority
 

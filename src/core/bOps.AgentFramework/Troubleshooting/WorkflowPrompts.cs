@@ -87,7 +87,7 @@ internal static class WorkflowPrompts
         "contradictions": ["..."], "unsupported": ["..."], "missing": ["..."],
         "followUps": [{"{"}"specialist": "<registered name>", "objective": "what to establish"{"}"}],
         "nextChecks": ["verifications worth doing next"], "interventionPlan": ["advisory steps; nothing here is executed"]{"}"}
-        A fact cites at least one evidence id that exists in the evidence list. Do not invent ids.
+        A fact cites at least one evidence id of a call in the evidence list that ran (not a refused one). Do not invent ids.
         """;
 
     /// <summary>Neutralizes any marker of this workflow inside text that came from outside (the goal, a report, an excerpt).</summary>

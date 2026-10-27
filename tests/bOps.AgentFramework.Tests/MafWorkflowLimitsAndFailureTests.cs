@@ -260,21 +260,57 @@ public sealed class MafWorkflowLimitsAndFailureTests
         Assert.Equal(["system"], first.SelectedSpecialists);
         Assert.Equal(["postgresql"], second.SelectedSpecialists);
         Assert.Equal(1, second.ToolCalls);
-        Assert.All(second.Evidence, entry => Assert.StartsWith($"ev1:{second.RunId}:", entry.EvidenceId, StringComparison.Ordinal));
+        Assert.All(second.Evidence, entry => Assert.StartsWith($"wf1:{second.RunId}:", entry.EvidenceId, StringComparison.Ordinal));
         Assert.DoesNotContain(world.Audit.Events.Where(evt => evt.TaskId == second.RunId).OfType<ToolCallAuditEvent>(), evt => evt.Tool.StartsWith("fake.sys.", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task UnsupportedClaims_AreNeverReportedAsFacts_TheyAreMovedToTheUnsupportedList()
+    public async Task UncitedClaims_AreNeverReportedAsObservations_TheyAreMovedToTheUnsupportedList()
     {
         var world = Create();
         ScriptOneSpecialistRun(world, Call("c1", "fake.sys.events"), Text(request => SpecialistReply("one", EvidenceIds(request))));
-        world.Model.Script("reviewer", Text(_ => ReviewReply(true, "The power supply failed.", ["ev1:00000000-0000-0000-0000-000000000000:9"])));
+        world.Model.Script("reviewer", Text(_ => ReviewReply(true, "The power supply failed.", ["wf1:00000000-0000-0000-0000-000000000000:9"])));
 
         var report = await world.Workflow.RunAsync("The host restarts", Actor);
 
-        Assert.Empty(report.Facts);
-        Assert.Contains(report.Unsupported, text => text.Contains("citing no evidence the run holds", StringComparison.Ordinal));
+        Assert.Empty(report.CitedObservations);
+        Assert.Contains(report.Unsupported, text => text.Contains("citing no evidence from a tool call that ran", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ARefusedCall_IsNotEvidence_AClaimCitingOnlyIt_IsUnsupported()
+    {
+        var world = Create(limits: new MafWorkflowLimits { MaxToolCalls = 1 });
+        ScriptOneSpecialistRun(
+            world, Call("c1", "fake.sys.events"), Call("c2", "fake.sys.services"), Text(request => SpecialistReply("partial", [RefusedEvidenceId(request)])));
+        // The specialist and the reviewer both cite only the call the budget refused.
+        world.Model.Script("reviewer", Text(request => ReviewReply(true, "Partial.", [RefusedEvidenceId(request)])));
+
+        var report = await world.Workflow.RunAsync("The host restarts", Actor);
+
+        var refused = Assert.Single(report.Evidence, entry => entry.Status == WorkflowToolStatus.BudgetExhausted);
+        Assert.DoesNotContain(refused.EvidenceId, report.CitedObservations.SelectMany(claim => claim.EvidenceIds));
+        Assert.Empty(report.CitedObservations);
+        Assert.Contains(report.Unsupported, text => text.Contains("citing no evidence from a tool call that ran", StringComparison.Ordinal));
+    }
+
+    /// <summary>The id of the second call of the run (sequence 1), the one a one-call budget refuses.</summary>
+    private static string RefusedEvidenceId(ModelRequest request) =>
+        System.Text.RegularExpressions.Regex.Match(string.Join('\n', request.History.Select(turn => turn.Content)), @"wf1:[0-9a-f\-]+:1\b").Value;
+
+    [Fact]
+    public async Task ACitedObservation_KeepsOnlyTheCitationsOfCallsThatRan()
+    {
+        var world = Create(limits: new MafWorkflowLimits { MaxToolCalls = 1 });
+        ScriptOneSpecialistRun(
+            world, Call("c1", "fake.sys.events"), Call("c2", "fake.sys.services"), Text(request => SpecialistReply("partial", EvidenceIds(request))));
+        world.Model.Script("reviewer", Text(request => ReviewReply(true, "Partial.", AllEvidenceIds(request))));
+
+        var report = await world.Workflow.RunAsync("The host restarts", Actor);
+
+        var ran = Assert.Single(report.Evidence, entry => entry.Status == WorkflowToolStatus.Executed);
+        var observation = Assert.Single(report.CitedObservations);
+        Assert.Equal([ran.EvidenceId], observation.EvidenceIds);
     }
 
     [Fact]

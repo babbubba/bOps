@@ -16,7 +16,7 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Where things are
 
-- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 128 tasks, BOPS-0001..BOPS-0128.
+- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 129 tasks, BOPS-0001..BOPS-0129.
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md). Real-state audit: [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
 - Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>.
 - Previous HANDOFFs (verbatim, history only): [`docs/handoff-archive/`](docs/handoff-archive/) — the one replaced today is `HANDOFF-until-2026-10-27.md`.

@@ -233,7 +233,7 @@ public sealed class MafDiagnoseCommandTests(ITestOutputHelper log) : IDisposable
         public Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct = default)
         {
             var usage = new ModelUsage(100, 20, null);
-            var evidence = Regex.Match(string.Join('\n', request.History.Select(turn => turn.Content)), @"ev1:[0-9a-f\-]+:\d+").Value;
+            var evidence = Regex.Match(string.Join('\n', request.History.Select(turn => turn.Content)), @"wf1:[0-9a-f\-]+:\d+").Value;
             if (request.SystemPrompt.Contains("the triage agent", StringComparison.Ordinal))
             {
                 return Task.FromResult(new ModelResponse(

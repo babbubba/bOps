@@ -18,9 +18,9 @@ public enum MafWorkflowOutcome
     NothingInvestigated,
 }
 
-/// <summary>A statement with the evidence ids that support it, every one of them verified against the run's evidence.</summary>
-/// <param name="Text">The statement.</param>
-/// <param name="EvidenceIds">The ids of the run's evidence that it cites; never an id the run does not hold.</param>
+/// <summary>A statement with the evidence ids it cites, every one of them the id of a tool call that ran in the run.</summary>
+/// <param name="Text">The statement, as the agent made it. Whether the cited output says this is not verified.</param>
+/// <param name="EvidenceIds">The ids of the run's evidence that it cites; never an id the run does not hold or a call that never ran.</param>
 public sealed record MafClaim(string Text, IReadOnlyList<string> EvidenceIds);
 
 /// <summary>One tool call of the run, as the evidence list of the report shows it.</summary>
@@ -32,7 +32,7 @@ public sealed record MafClaim(string Text, IReadOnlyList<string> EvidenceIds);
 public sealed record MafEvidenceEntry(string EvidenceId, string Agent, string Tool, WorkflowToolStatus Status, string Completeness);
 
 /// <summary>
-/// The result of a MAF troubleshooting run (C01-R23). It separates what the tools observed (<see cref="Facts"/>) from what is only
+/// The result of a MAF troubleshooting run (C01-R23). It separates the observations that cite what the tools returned (<see cref="CitedObservations"/>) from what is only
 /// suspected (<see cref="Hypotheses"/>), lists what contradicts, what is unsupported and what is missing, and gives an advisory
 /// intervention plan that nothing in bOps executes.
 /// </summary>
@@ -59,8 +59,11 @@ public sealed record MafDiagnosticReport
     /// <summary>The reasoned diagnosis, or what the evidence allows to be said when it could not be completed.</summary>
     public string Diagnosis { get; init; } = string.Empty;
 
-    /// <summary>Observations the evidence supports.</summary>
-    public IReadOnlyList<MafClaim> Facts { get; init; } = [];
+    /// <summary>
+    /// Observations that cite evidence of a call that ran. Only the citation is checked; that the cited output supports the statement
+    /// is not, so these are cited, not verified. The verified content of a report is <see cref="Evidence"/> and the tools' own outputs.
+    /// </summary>
+    public IReadOnlyList<MafClaim> CitedObservations { get; init; } = [];
 
     /// <summary>Hypotheses that are not proven by the evidence.</summary>
     public IReadOnlyList<MafClaim> Hypotheses { get; init; } = [];
@@ -83,7 +86,7 @@ public sealed record MafDiagnosticReport
     /// <summary>Limitations of the run, as short text.</summary>
     public IReadOnlyList<string> Limitations { get; init; } = [];
 
-    /// <summary>Every tool call of the run in call order.</summary>
+    /// <summary>Every tool call of the run in call order, refused ones included with their status; only a call that ran is evidence a claim can cite.</summary>
     public IReadOnlyList<MafEvidenceEntry> Evidence { get; init; } = [];
 
     /// <summary>The tool calls the run attempted.</summary>

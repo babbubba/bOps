@@ -4,9 +4,11 @@
 namespace bOps.AgentFramework.Troubleshooting;
 
 /// <summary>
-/// Builds the final report of a run. It is the one place a claim becomes "supported": every evidence id a claim cites is checked
-/// against what the run really collected, and a fact that cites nothing real is moved to the unsupported list, never reported as
-/// established. The reviewer and the specialists can state what they like; they cannot make an unsupported claim a fact here.
+/// Builds the final report of a run. It is the one place a claim is checked, and what it checks is the citation, not the content:
+/// every evidence id a claim cites must be the id of a tool call that really ran in this run. A claim that cites none is moved to the
+/// unsupported list; a claim that does is reported as a cited observation, which says the citation holds and nothing more. That the
+/// cited output says what the claim says is not verified here (no evaluator is run), so the evidence list and the tools' own outputs
+/// stay the only verified content of a report. A refused call (denied, unknown, invalid, over budget) produced no evidence and is never citable.
 /// </summary>
 internal static class ReportAssembler
 {
@@ -22,7 +24,7 @@ internal static class ReportAssembler
         MafRun run, WorkflowMessages.Review review, MafWorkflowOutcome outcome, string? limitCode, int rounds)
     {
         var known = KnownEvidence(run);
-        var (facts, unsupportedFacts) = Verify(review.Facts, known);
+        var (cited, uncited) = Verify(review.Facts, known);
         var limitations = Limitations(run);
         if (limitCode == "max_investigation_rounds")
         {
@@ -32,10 +34,10 @@ internal static class ReportAssembler
         return Base(run, outcome, limitCode, rounds) with
         {
             Diagnosis = review.Diagnosis,
-            Facts = facts,
+            CitedObservations = cited,
             Hypotheses = [.. review.Hypotheses.Select(claim => new MafClaim(claim.Text, [.. claim.EvidenceIds.Where(known.Contains)]))],
             Contradictions = review.Contradictions,
-            Unsupported = [.. review.Unsupported, .. unsupportedFacts],
+            Unsupported = [.. review.Unsupported, .. uncited],
             Missing = review.Missing,
             NextChecks = review.NextChecks,
             InterventionPlan = review.InterventionPlan,
@@ -48,7 +50,7 @@ internal static class ReportAssembler
     {
         var known = KnownEvidence(run);
         var claimed = run.Reports.SelectMany(report => report.Observations).ToArray();
-        var (facts, unsupported) = Verify(claimed, known);
+        var (cited, unsupported) = Verify(claimed, known);
         var hypotheses = run.Reports
             .SelectMany(report => report.Hypotheses)
             .Select(claim => new MafClaim(claim.Text, [.. claim.EvidenceIds.Where(known.Contains)]))
@@ -65,7 +67,7 @@ internal static class ReportAssembler
         return Base(run, outcome, limitCode, rounds) with
         {
             Diagnosis = "No reviewed diagnosis: " + (limitCode is null ? "the review did not conclude" : $"the run ended on a limit ({limitCode})") + ".",
-            Facts = facts,
+            CitedObservations = cited,
             Hypotheses = hypotheses,
             Unsupported = unsupported,
             Limitations = limitations,
@@ -103,28 +105,32 @@ internal static class ReportAssembler
             Tokens = run.Budget.Tokens,
         };
 
+    /// <summary>The ids of the calls that ran. A call refused at the boundary produced no evidence, so its id can be cited by nothing.</summary>
     private static HashSet<string> KnownEvidence(MafRun run) =>
-        run.Session.Ledger.Select(entry => entry.EvidenceId).ToHashSet(StringComparer.Ordinal);
+        run.Session.Ledger
+            .Where(entry => entry.Status is Runtime.WorkflowToolStatus.Executed or Runtime.WorkflowToolStatus.Failed or Runtime.WorkflowToolStatus.TimedOut)
+            .Select(entry => entry.EvidenceId)
+            .ToHashSet(StringComparer.Ordinal);
 
-    private static (IReadOnlyList<MafClaim> Supported, IReadOnlyList<string> Unsupported) Verify(
+    private static (IReadOnlyList<MafClaim> Cited, IReadOnlyList<string> Uncited) Verify(
         IEnumerable<WorkflowMessages.Claim> claims, HashSet<string> known)
     {
-        var supported = new List<MafClaim>();
-        var unsupported = new List<string>();
+        var cited = new List<MafClaim>();
+        var uncited = new List<string>();
         foreach (var claim in claims)
         {
             var valid = claim.EvidenceIds.Where(known.Contains).ToArray();
             if (valid.Length > 0)
             {
-                supported.Add(new MafClaim(claim.Text, valid));
+                cited.Add(new MafClaim(claim.Text, valid));
             }
             else
             {
-                unsupported.Add($"Stated as an observation but citing no evidence the run holds: {claim.Text}");
+                uncited.Add($"Stated as an observation but citing no evidence from a tool call that ran: {claim.Text}");
             }
         }
 
-        return (supported, unsupported);
+        return (cited, uncited);
     }
 
     private static List<string> Limitations(MafRun run)
