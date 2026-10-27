@@ -6151,7 +6151,8 @@
    "depends_on": [],
    "packet": "agentic/_tasks/2026-10-27-bops-0128-diag-evidence-02.md",
    "companion_docs": [
-    "docs/maintenance/roadmap-reconciliation-01.md"
+    "docs/maintenance/roadmap-reconciliation-01.md",
+    "docs/maintenance/bops-0111-differential-01.md"
    ],
    "validation": {
     "achieved": [],

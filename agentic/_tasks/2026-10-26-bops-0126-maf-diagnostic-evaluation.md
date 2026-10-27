@@ -142,3 +142,11 @@ Task state lives only in the register; this section records evidence as it is pr
     - the four dimensions recorded apart.
   - Private sample list: `calibration-sample-R02-R06.json` (sha256 `7e0e9b09…`).
 - 2026-10-27 — Follow-ups formalized, **not authorized**: BOPS-0127 (evaluator V2), BOPS-0128 (runtime/tool evidence). See their packets.
+- 2026-10-27 — **Calibration protocol rev. b (operator).** It supersedes the sample above.
+  - **Datasets:** R01 development and regression (not an independent test); R02–R04 calibration; R05–R06 holdout, graded later and never used to set a rule.
+  - **Random set:** stratified, with per-stratum inclusion probabilities p = n/N from 0.27 to 1.0 and weights 1/p. Population estimates are weighted; an unweighted share is not representative.
+  - **Targeted set:** every remaining causal and recommendation claim, reported separately.
+  - **Sizes:** R02–R04 random 105 + targeted 24; R05–R06 random 61 + targeted 15. These are the sizes of revision c, which removed the arrow "→" (used by the agent as a list separator) from the causal stratum before any R02–R06 grading. The revision-b sample is kept but not used.
+  - **Rules:** no automatic result decides a human verdict.
+  - **Archive:** sample `calibration-sample-v3.json` (sha256 `1b3b509c…`). The protocol, the R01 sheet, the report and the scripts are archived privately with a manifest (`Documents\bOps-MafBenchmarks\calibration\diag-eval-20261027\MANIFEST.json`), outside the repository and the session scratchpad.
+  - **R01 independence:** block C01–C20 was graded with the automatic findings visible, at the operator's request; from C21 on they were hidden.
