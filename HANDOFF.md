@@ -1,7 +1,7 @@
 # Handoff
 
 Last updated: 2026-10-27 · `main` @ `ea557c1` (PR [#137](https://github.com/babbubba/bOps/pull/137), BOPS-0128 A+B; PR [#138](https://github.com/babbubba/bOps/pull/138), BOPS-0122 parity tests) ·
-working branch `codex/bops-consolidation-20261027` (worktree `bOps-consol`), cut from `main` @ `ea557c1`. Not pushed; no PR yet.
+working branch `codex/bops-consolidation-20261027` (worktree `bOps-consol`), cut from `main` @ `ea557c1`. Pushed; PR [#140](https://github.com/babbubba/bOps/pull/140) open (replaces #135, which stays open until review).
 
 <!-- register-sync:begin -->
 Current task: BOPS-0126 MAF-DIAG-EVAL-01 (IN_PROGRESS)
@@ -47,14 +47,14 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 ## Quality gates
 
 - Local evidence of this branch: see the BOPS-0126 register entry (Release build, .NET suites, Python suites, register validation).
-- CI of the consolidation PR head and of its merge commit: not run yet (no push).
+- CI of the PR #140 head and of its merge commit: pending.
 - Governance: `python scripts/governance/validate_register.py`; `python -m unittest discover -s scripts/governance/tests`.
 
 ## Blockers and owed remote updates
 
 - BOPS-0127: Issue and Project #6 item not created (`sync_pending` in the register).
 - BOPS-0121: Issue #125 is not yet a Project #6 item (`sync_pending`).
-- BOPS-0126 Issue #136: record that the work moved from PR #135 to the consolidation PR once that PR exists.
+- BOPS-0126 Issue #136: record that the work moved from PR #135 to PR #140 (comment not posted yet).
 - Decisions: BOPS-0095 (D3), BOPS-0074/0075 (D1).
 
 ## Decisions waiting for the operator

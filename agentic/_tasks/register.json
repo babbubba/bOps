@@ -5981,7 +5981,8 @@
     "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
    ],
    "prs": [
-    134
+    134,
+    140
    ],
    "commits": [
     "2d9fc17a6a4d7b977511f52ffa0a83c8cec1f9ef"
@@ -6044,7 +6045,8 @@
     "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
    ],
    "prs": [
-    135
+    135,
+    140
    ],
    "commits": [],
    "validation": {
@@ -6057,7 +6059,7 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "CI of the head of the consolidation PR (branch codex/bops-consolidation-20261027, replaces PR #135; not opened yet) and of the merge commit.",
+     "CI of the head of the consolidation PR (branch codex/bops-consolidation-20261027, PR #140, replaces PR #135) and of the merge commit.",
      "Operator review of the P1 results on the campaigns already captured, then the calibration session with the operator (blind sheets filled together, condition 2 of the authorization)."
     ]
    },
@@ -6066,7 +6068,7 @@
     "Local, Windows 2026-10-26, worktree bOps-diagfix on codex/maf-ab-diagnostic-reliability: Release build of bOps.slnx 0 warnings 0 errors; bOps.DiagnosticEvaluation.Tests 15/15, bOps.Architecture.Tests 210/210, scripts/windows test_maf_cli_benchmark.py 47/47 and test_live_benchmark.py 49/49; a mutation of the wrong-family rule fails its test. Evaluator run on the captured campaigns (outputs private, not uploaded): two executions give identical bytes, verify stays OK, and the run flagged with 7 unverified counts is 09-B02-B-r2, the P0-2 case found by hand in the fa933f8 campaign.",
     "Calibration 2026-10-27 (private, with the operator): R01 of the B02 C/D rerun at cd00e81, 118 claims = 108 judged + 10 excluded. The P1 evaluator emitted no negative result (detection precision undefined); it missed a numeric error (C100) and an impossible recommendation (C113) and could not classify two contradictions (C05, C63); 34 of 118 claims had any number scored. Report and verdicts stay private.",
     "Baseline frozen 2026-10-27 before any rule change: P1 evaluations of R01-R06 at keys cd00e81 and 8f6c204, each reproduced twice byte-identical, the second equal to the campaign's auto-evaluation; integrity OK. Private manifest sha256 2ea60ce8debd741af9c1a83fd38352fb634ac7aaf47f718be69bc23e9c031097. Next blind calibration: stratified seeded sample of 172 of 448 R02-R06 claims (private list sha256 7e0e9b09...). Follow-ups formalized as BOPS-0127 (evaluator V2) and BOPS-0128 (runtime/tool evidence), both not authorized.",
-    "Consolidation 2026-10-27 (operator-approved matrix), local Windows, worktree bOps-consol on codex/bops-consolidation-20261027 from main ea557c1: the 14 PR #135 commits cherry-picked unchanged (code tree identical to the tested local branch at fb00497; 4530ae0..1204fee are BOPS-0125 pilot fixes), ADR links of 48766e4, ambient-credential scrub of e64926a. Release build of bOps.slnx 0 warnings 0 errors; dotnet test bOps.slnx -c Release: 37 test assemblies, 6828 passed, 0 failed, 173 skipped (live/OS-gated); scripts/windows tests 138/138, scripts/governance tests 70/70; validate_register.py 128 tasks 0 errors. Not pushed; CI not run."
+    "Consolidation 2026-10-27 (operator-approved matrix), local Windows, worktree bOps-consol on codex/bops-consolidation-20261027 from main ea557c1: the 14 PR #135 commits cherry-picked unchanged (code tree identical to the tested local branch at fb00497; 4530ae0..1204fee are BOPS-0125 pilot fixes), ADR links of 48766e4, ambient-credential scrub of e64926a. Release build of bOps.slnx 0 warnings 0 errors; dotnet test bOps.slnx -c Release: 37 test assemblies, 6828 passed, 0 failed, 173 skipped (live/OS-gated); scripts/windows tests 138/138, scripts/governance tests 70/70; validate_register.py 128 tasks 0 errors. Pushed 2026-10-27 as babbubba, PR #140 opened (Refs, base main); CI pending."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
