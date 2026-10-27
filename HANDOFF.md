@@ -1,11 +1,11 @@
 # Handoff
 
-Last updated: 2026-10-24 · `main` @ `207b262` (PR [#129](https://github.com/babbubba/bOps/pull/129), BOPS-0122) ·
-working branch `codex/bops-maf-cli-ab-bench` (BOPS-0125, CLI A/B benchmark tooling; worktree `bOps-mafab`), cut from `main` @ `207b262`.
+Last updated: 2026-10-27 · `main` @ `ea557c1` (PR [#137](https://github.com/babbubba/bOps/pull/137), BOPS-0128 A+B; PR [#138](https://github.com/babbubba/bOps/pull/138), BOPS-0122 parity tests) ·
+working branch `codex/bops-consolidation-20261027` (worktree `bOps-consol`), cut from `main` @ `ea557c1`. Not pushed; no PR yet.
 
 <!-- register-sync:begin -->
 Current task: BOPS-0126 MAF-DIAG-EVAL-01 (IN_PROGRESS)
-Branch: codex/maf-ab-diagnostic-reliability
+Branch: codex/bops-consolidation-20261027
 Ready: BOPS-0111
 Next number: BOPS-0129
 <!-- register-sync:end -->
@@ -16,108 +16,58 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Where things are
 
-- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 124 tasks, BOPS-0001..BOPS-0124 on this stacked branch (BOPS-0122 comes from PR #129).
-- Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md).
-- Reconciliation of the real state (read-only audit, 2026-10-21): [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
-- Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>. Configured: 7 Status options, 5 custom fields (Priority, Area,
-  bOps Milestone, Evidence Level, Effort), 3 views (Kanban, Backlog, Milestones). **Populated (19 items):** 11 public Issues (#109–#119) and 8 private draft items, each read back and matching the register (`remote_sync`, per-task `sync`). Sorting/grouping of the table views is set in the web UI.
-- Previous HANDOFF and task index (verbatim): [`docs/handoff-archive/`](docs/handoff-archive/).
+- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 128 tasks, BOPS-0001..BOPS-0128.
+- Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md). Real-state audit: [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
+- Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>.
+- Previous HANDOFFs (verbatim, history only): [`docs/handoff-archive/`](docs/handoff-archive/) — the one replaced today is `HANDOFF-until-2026-10-27.md`.
+
+## Consolidation (operator, 2026-10-27)
+
+One branch replaces the parallel branches and worktrees. Recovered from `origin/main` @ `ea557c1` after an inventory of every worktree and branch:
+
+- the 14 commits of PR [#135](https://github.com/babbubba/bOps/pull/135) (`codex/maf-ab-diagnostic-reliability`, two of them never pushed), cherry-picked unchanged; the code tree equals the
+  tested local branch `codex/bops-0128-diag-evidence-02` (`fb00497`). Content: P0 runtime-marker finals and unsupported attributed claims (`4530ae0`, attributed to BOPS-0125),
+  MAF × Knowledge A/B/C/D and `ContextBudget` (C01-R22, C05-R13), plan-time refusal of impossible argument combinations and over-budget plans (C03-R24, C03-R09),
+  Knowledge wording (C05-P04), the benchmark leak scanner, the BOPS-0126 P1 evaluator (`tests/bOps.DiagnosticEvaluation`), packets BOPS-0126/0127/0128. Contract amendments approved by the operator with the consolidation matrix;
+- the ADR-link repair of the unpublished `48766e4` (links and two status notes only);
+- from the unpublished `e64926a`, only the scrub of ambient credentials from the measured CLI's environment.
+
+Excluded: decision D1 "keep deferred" and its drafts (superseded by PR #129; tag `archive/maf-resume-d1-168078c`), BOPS-0111 code (task set aside, PR #124 closed; branch kept on the remote).
+Local-only commits are preserved by tags `backup/20261027/*`. Branches and worktrees are deleted only on the operator's go-ahead.
 
 ## Milestone and task
 
-- Current task of this branch: **BOPS-0125 MAF-CLI-AB-01** (Issue #133, Project #6 Validation; authorized 2026-10-24 for **preparation only**) — serial A/B campaign of the real CLI with the MAF governed turn
-  host off/on (BOPS-0122, C01-R22). Tooling: `scripts/windows/run-maf-cli-benchmark.ps1`, `maf_cli_benchmark.py`, `maf_cli_analysis.py`; runbook
-  [`docs/maintenance/maf-cli-ab-benchmark-runbook-01.md`](docs/maintenance/maf-cli-ab-benchmark-runbook-01.md); packet `agentic/_tasks/2026-10-24-bops-0125-maf-cli-ab-benchmark.md`. 41 offline tests (wired into CI) and a real
-  `-PreflightOnly` pass; **Draft PR [#134](https://github.com/babbubba/bOps/pull/134)** (`Refs #133`); live budgets enforced (mandatory `-TokenBudget`, `-PerRunTokenCap`). **Not authorized:** live runs, merge, tag, OpenRouter. Next: CI of the PR head, then the operator runs the B01 pilot.
-  **Extension, worktree `bOps-diagfix`, branch `codex/maf-ab-diagnostic-reliability` (from `4530ae0`, local only, no new register task):** conditions A/B/C/D (MAF × Knowledge; MAF governed turn now composes with Knowledge,
-  C01-R22), dynamic model-aware Knowledge context budget (`ContextBudget.cs`, `KnowledgeReadResultCode.ContextBudget`, C05-R13), `ModelContextObservation` audit, 8 specialist Windows Knowledge skills, Qwen3.8 Smart 128K/32K profile,
-  `prepare-knowledge-benchmark-pack.ps1`, A/B/C/D harness (`rotate`, `-Resume`, `-Review`, server-config check). Runbooks: [`maf-knowledge-abcd-campaign-runbook-01.md`](docs/maintenance/maf-knowledge-abcd-campaign-runbook-01.md),
-  [`dgx-qwen38-smart-128k-f16-01.md`](docs/maintenance/dgx-qwen38-smart-128k-f16-01.md). No live inference has run; the 36 runs need the operator's `-AllowLive`; the DGX `models.ini` diff is the operator's to apply.
-  Pilot findings fixed on this branch: a plan that expects an argument combination the tool refuses (`raw` + `sinceDays`, both windows) is refused at plan time from the tool's declared `ToolManifest.ArgumentRules` (C03-R24 amendment; the operator may still ask for an ADR), the semantic-mismatch observation names the required argument values, and the mode probe stops the CLI at its first model request.
-  Pilot B02 A/B/C/D (2026-10-26): D ended MaxStepsReached because its plan had 17 steps under MaxSteps 15; plans and replans are now refused when longer than the attempt's steps left less the final answer, and the planning prompt states that budget (C03-R09 amendment, `PlanStepBudget`).
-  B02 Knowledge (MAF on and off send the same request): the index limit is 10000 characters (was 4000, which listed 4 of 8 skills), the knowledge function's wording is neutral, and the planner sees that `system.events` source names match exactly (C05-P04 amendment, `PlanningGuidance`).
-  Live rerun 2026-10-26 at 69d504c (B02 × C,D × 3, server temp 1.0 seed 4242): 6/6 Completed, index 8 of 8, plans of 8 steps with no correction, no refused call; plan and step-0 replies identical with MAF on and off, runs diverge only from step 1 on real tool output. Knowledge read in C 2/3, D 0/3 (noise at n=3, not MAF). Blind quality sheets pending.
-  Forensics of the skipped reads (pilot D and rerun): `runtime.knowledge_read` was offered on every step and final request and the index was published every time; reads happen only in the first steps or not at all. In all 6 rerun runs the model weighed a read at step 1; in 4 it put it off "for later" or "to save steps" (a read uses no step); its reasoning does not reach the final turn, which in all 6 runs spent 4 evidence reads and then answered (0 knowledge reads there, once citing K4 while noting it was not loaded). In two C pilots a read sent in the same reply as another runtime read was answered "Not executed" (first call wins) and never resent. Fix: the knowledge description states that a read uses no step, one read per reply, nothing else executed, and in the answer turn that a read the answer needs is made there, only for an entry that applies (C05-P04 amendment, PA1-05 re-captured). Not changed, operator decisions: the planner does not see the index (ADR-0057 H3) and the §C.5 control text still says "may be called, only if useful". Live rerun needed to measure the effect.
-  Live rerun 2026-10-26 at cd00e81 (with 1204fee; B02 × C,D × 3, temp 1.0 seed 4242): 6/6 Completed, no "Not executed" read, counts exact in all 6 (BOPS-0126 evaluator).
-  Knowledge reads C 0,0,0 / D 2,1,5 (was C 2,2,0 / D 0,0,0); reads in the answer turn appear for the first time (D: 1 and 5); recall of the applicable listed entries
-  C 0 / D 0.238 (was 0.095 / 0). More reads overall, but the C/D split flipped with identical requests: n=3 noise, not a MAF effect. Two C runs ended early and took the
-  early-final replan (plan of 0 steps). The campaign process sat 9 h after the last run on a console in selection mode (QuickEdit), not in bOps.
-- Current task of this branch (operator, 2026-10-26): **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress, rides PR #135 — no new branch or worktree) — automatic,
-  offline evaluation of diagnostic quality with the MAF evaluation framework (`EvalItem`, `LocalEvaluator`, `FunctionEvaluator`, already in `Microsoft.Agents.AI` 1.24.0).
-  Authorized: phase **P1** only (deterministic, no model judge). `tests/bOps.DiagnosticEvaluation` scores M1 crash/live-dump classification, M2 counts, M3 undisclosed
-  limitations, M4 Knowledge pertinence, M5 finalization against each run's typed facts, audit and scenario keys (`keys/*.json`) and writes `auto-evaluation/<blindCode>.json`;
-  `maf_cli_analysis.py` adds the `auto*` rows. Run on the captured campaigns: the flagged count/classification errors read as real ones (live dumps given as kernel crashes,
-  invented counts at fa933f8). Next: operator review of P1 results, then the calibration sheets **filled together with the operator**; P2 (model judge) needs a new authorization.
-  2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen and reproduced (manifest sha256 `2ea60ce8…`); formalized, **not authorized**: BOPS-0127 (evaluator V2),
-  BOPS-0128 (evidence completeness, query metadata, recommendation labels); Issues owed. Details in the 0126 packet log. Next: blind calibration of the R02–R06 sample with the operator.
-- Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
-- Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
-  `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet
-  [`agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md`](agentic/_tasks/2026-10-24-bops-0123-vault-read-lock.md). Local Windows and Linux (WSL) runs are green; open gates: CI of the PR head, CI of the merge commit, operator approval.
-  **Stacked PRs:** PR #132 (this branch) has the #129 branch (`codex/bops-0122-af-turn-02`) as its base, so its diff is the VaultStore fix and its bookkeeping only. #129 must reach `main` first; then #132 is retargeted to `main`. No merge without operator authorization.
-  The multi-process variant is a separate deferred evaluation, **BOPS-0124** (Issue #131, packet `agentic/_tasks/2026-10-24-bops-0124-vault-multiprocess-concurrency.md`).
-- Base task of the stack (PR #129, not touched by this branch): **BOPS-0122 AF-TURN-02** (P1, medium; operator decision D12 of 2026-10-23) — CLI opt-in, default-off MAF governed turn host
-  (`MafGovernedTurnBroker` over the existing broker; Contract 01 rule C01-R22; CLI goal and resume only; refused with Knowledge). Authority stays in `AgentRunner`/bOps. Packet
-  [`agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md`](agentic/_tasks/2026-10-23-bops-0122-af-turn-02-cli-host.md). D1 (general convergence, ADR-0053/0054) stays deferred; BOPS-0086/0087 stay `DEFERRED`.
-  Excluded: API host, live benchmarks, merge (needs separate authorization). PR #124 was closed without merge and is no longer a dependency.
-  **Implemented and in `VALIDATION`** (Issue #128, Project #6 item read back): CLI switch `Cli:Experimental:MafGovernedTurn`, 27 offline parity/mode-switch tests, narrowed architecture guards; report
-  [`docs/maintenance/af-turn-02-cli-host-parity-report-01.md`](docs/maintenance/af-turn-02-cli-host-parity-report-01.md). Open gates: PR, CI on Windows and Linux, operator approval. Three Filesystem tests fail on unchanged `main` (pre-existing, unrelated).
-  Next step: operator review. Extending to the API needs a separate decision.
-- BOPS-0121 DOC-CONSOL-01 (Issue #125, authorized at GATE-01 on 2026-10-22; PR #126 merged 2026-10-23, still `VALIDATION` in the register; its reconciliation is on the other local branch) — documentation-only consolidation of the ADRs,
-  `06-decisions.md` and `01-architecture-rules.md`; plan [`agentic/_plans/ADR-consolidation-2026-10-22.md`](agentic/_plans/ADR-consolidation-2026-10-22.md). DOC-01, GATE-01, DOC-02, GATE-02 (approved 2026-10-22) and
-  **DOC-03 (executed 2026-10-22 in one session, CP-03a and CP-03b PASS)** are done: the five contracts (105 binding rules) in `docs/architecture/current/` are **Current**; the 55 ADRs and the original `01`/`06`
-  are in `docs/architecture/archive/` (ZIP of 57 originals + external `MANIFEST.md`/`MANIFEST.csv`/`.sha256`); `docs/architecture/adr/README.md`, `agentic/01-architecture-rules.md`, `agentic/03-security-rules.md` and `agentic/06-decisions.md`
-  are non-normative compatibility indexes; the single bootstrap is `agentic/00-bootstrap.md` (`CLAUDE.md` and `AGENTS.md` are routers). Evidence: `agentic/_plans/_migration-work/ADR-consolidation-2026-10-22/DOC-03-verification-report.md`.
-  **DOC-04 (static acceptance, CP-04 smoke, P5 readability of nine rule paragraphs) was executed on 2026-10-22: verdict PASS** (`DOC-04-static-acceptance.md`, same folder). CI and the operator's final approval are **not** claimed.
-  **Draft PR [#126](https://github.com/babbubba/bOps/pull/126) opened 2026-10-22** (base `main`, head this branch, `Refs #125`, no auto-merge); the operator-authorized one-sentence correction of `PROCESS.md` is commit `05e0678`. Final pre-PR checks re-ran CP-03a and CP-03b (PASS) and the register validator.
-  **Next step: operator review of PR #126 (Ready for review; read the PR checks of the final head); merge only on separate explicit operator authorization.** BOPS-0121 is `VALIDATION`.
-  CI_VERIFIED recorded for head `7665b30` (CI run 39851813804 / #306, success on all four jobs; docs-only rule); PR #126 moved to Ready for review. Open gates: operator approval of the delivery PR, Issue #125 / Project #6 synchronization (`sync_pending` in the register: the Project item is not yet created, so `issue`/`project_item` stay unset).
-  ADRs 0050/0053/0054/0055/0056/0058/0059 stay Proposed (D1, D4, D5 open).
-- BOPS-0120 F-26 (Issue #122): PR #123 is merged into `main` (`e0e9de7`); its register entry was not reconciled on this branch — the published `bOps.Api` serves the compiled Angular SPA; packet
-  [`agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md`](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md), operator guide `docs/deployment.md`. This branch also carries the approved bookkeeping (BOPS-0061/0062 dependency fix, F-25 evidence in its packet, BOPS-0119 baseline).
-- In validation: **BOPS-0119 PROJECT-GOVERNANCE-02** (draft item, no Issue) — `scripts/governance/sync_remote.py` + offline tests + policy in `PROCESS.md` §4b; spec
-  [`agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md`](agentic/_tasks/2026-10-21-bops-0119-project-governance-02-sync.md). Open gate: CI of the PR head and merge commit. Read-only run on Project #6 done: 18 of 19 items in sync, 2 pending updates for BOPS-0119, 0 conflicts (a secondary rate limit refused GraphQL earlier; the tool classified and aborted, then succeeded).
-- In validation: **BOPS-0118 PROJECT-GOVERNANCE-01** (Issue #109) — PRs #108 and #120 merged. Open gate: operator approval to close; DONE is recorded in the BOPS-0119 PR once approved.
-- Last completed: **BOPS-0110 ROADMAP-RECONCILIATION-01** (2026-10-21, read-only audit).
+- Current task: **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress) — offline evaluation of diagnostic quality, phase **P1** only (deterministic, no model judge).
+  2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen (manifest sha256 `2ea60ce8…`). Next: blind calibration of the R02–R06 sample with the operator. P2 needs a new authorization.
+- In validation, operator gate open: BOPS-0125 MAF-CLI-AB-01 (live pilot not authorized), BOPS-0128 DIAG-EVIDENCE-02 (slices A+B delivered by #137; slice C not authorized), BOPS-0122, BOPS-0123, BOPS-0118..0121.
+- Formalized, **not authorized**: BOPS-0127 MAF-DIAG-EVAL-02 (evaluator V2). Not to be started in this phase: evaluator V2, the multi-agent MAF workflow, any new diagnostic benchmark.
+- Next after the consolidation PR: the multi-agent MAF workflow, on one main worktree and one active branch at a time (needs its own task and authorization).
+- Formal milestone: **V1.3** (stable gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 
-## Quality gates (verified 2026-10-21)
+## Quality gates
 
-- CI: PRs #108 and #120 heads were green on Windows and Linux including "Task register validation". CI of `main` @ `9aa2a70`: running when written.
-- Offline suites run during the reconciliation (Debug, `Category!=LiveModel`): Architecture 210/210, Runtime 2301/2301, Knowledge 308/308,
-  AgentFramework 615 passed + 8 ignored (live/operator only), System.Core 481/481. Not run: full suite, Linux/WSL, Packages.* on Windows, Api, UI.
-- Governance: `python scripts/governance/validate_register.py` and `python -m unittest discover -s scripts/governance/tests` (validator and synchronizer tests, offline).
-- Remote sync (read-only by default): `python scripts/governance/sync_remote.py`; remote writes need `--apply` and operator approval.
-- `agentic/_quality/active-milestone.json` still points at V1.3-H, and `known-failures.json` lists different Filesystem tests than the old HANDOFF did
-  (BOPS-0117 QUALITY-GATE-DOCS).
+- Local evidence of this branch: see the BOPS-0126 register entry (Release build, .NET suites, Python suites, register validation).
+- CI of the consolidation PR head and of its merge commit: not run yet (no push).
+- Governance: `python scripts/governance/validate_register.py`; `python -m unittest discover -s scripts/governance/tests`.
 
-## Next READY task
+## Blockers and owed remote updates
 
-- **BOPS-0111 DIAG-ASSURE-01** — evidence assurance projection (P0, 2.5–4 days). Spec: reconciliation report §6. **Not authorized**: needs decision D10
-  (and a task packet) before any work. Nothing else is READY.
-- Candidates after it (PLANNED, dependencies in the register): PLAN-FIDELITY-01 (BOPS-0112), HOST-SATURATION-01 (0113), LIVE-GATE-01 (0114), DIAG-CLAIMS-01 (0115).
-
-## Blockers
-
-- BOPS-0121 remote sync owed: Issue #125 exists but is not yet a Project #6 item (no Project access from the session that created it); see `sync_pending`
-  in the register. Run `sync_remote.py` or add it in the web UI, then record `issue`/`project_item`.
-- No other governance blocker. Project #6: the five workflows that could move task status (`Item closed`, `Pull request merged`, `Auto-close issue`, `Pull request linked to issue`,
-  `Auto-add sub-issues to project`) are disabled (verified via API); only `Item added to project` is on. Remote writes beyond configuration (Issues, items) are not authorized yet.
-- BOPS-0095 LIVE-01 (decision D3), BOPS-0074/0075 ARCH-01/ARCH-03 (decision D1).
+- BOPS-0127: Issue and Project #6 item not created (`sync_pending` in the register).
+- BOPS-0121: Issue #125 is not yet a Project #6 item (`sync_pending`).
+- BOPS-0126 Issue #136: record that the work moved from PR #135 to the consolidation PR once that PR exists.
+- Decisions: BOPS-0095 (D3), BOPS-0074/0075 (D1).
 
 ## Decisions waiting for the operator
 
 D1 ADR-0053/0054 (MAF B+) · D2 reference model/timeouts · D3 `MaxObservationCharacters` default · D4 ADR-0050 acceptance · D5 Knowledge ADR statuses ·
-D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D10 authorize DIAG-ASSURE-01.
-Resolved: D9 (mapping **FROZEN**, 82 of 119 progressives conventional order, accepted) and D11 (Project #6 is PRIVATE). Details and recommendations: `register.json` `decisions`. No ADR status was changed.
+D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BOPS-0061, BOPS-0062) · D10 authorize DIAG-ASSURE-01. Details: `register.json` `decisions`.
 
 ## Local state not to touch
 
-- `src/core/bOps.Api/appsettings.json` has a pre-existing uncommitted edit (model-call timeouts); it is not part of any slice.
-- The local know-bench worktree (branch `codex/know-bench-01a`) and the untracked local audits in `docs/maintenance/` other than the
-  reconciliation report are unrelated to governance and were left as they were. Private data and backups live outside the repository.
+- `src/core/bOps.Api/appsettings.json` in the `bOps` worktree has an uncommitted operator edit (model-call timeouts); it belongs to no task.
+- Private campaign data, calibration verdicts and backups live outside the repository (`bOps-backups`).
 
 ## Resume instructions for the next session
 
-1. `python scripts/governance/validate_register.py --summary`; read the register entry of the task you are told to do. On this branch: BOPS-0121 —
-   DOC-01…DOC-04 and both gates are closed, do not redo them. Verify branch/HEAD/working tree (fast-forward only) and set the local Git identity. The only open step is the operator's
-   review and, if the operator explicitly authorizes it, the docs-only PR (`Refs #125`, never `Closes`; no merge). Start from `agentic/00-bootstrap.md`; do not read the archive or the migration artifacts except those the plan names.
+1. `python scripts/governance/validate_register.py --summary`; verify branch `codex/bops-consolidation-20261027`, HEAD and a clean tree; set the repository-local Git identity.
+2. Push, PR (`Refs`, never `Closes`) and the closing of PR #135 only on explicit operator authorization; then delete obsolete branches and worktrees on the operator's go-ahead.

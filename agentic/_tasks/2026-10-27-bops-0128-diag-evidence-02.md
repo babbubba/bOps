@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Task | `BOPS-0128` (register: `agentic/_tasks/register.json`); Issue and Project #6 item **owed** (`sync_pending`) |
-| Status | `PLANNED`, **not authorized** (operator decision 2026-10-27: analysis and formalization only, no runtime change) |
+| Task | `BOPS-0128` (register: `agentic/_tasks/register.json`); Issue #139 and Project #6 item synchronized |
+| Status | `VALIDATION`; delivered by PR #137 (`ea557c1`), Issue #139; **slices A and B authorized** by the operator on 2026-10-27 (including `distinctMessages`), local branch `codex/bops-0128-diag-evidence-02`, not pushed. **Slice C is not authorized.** See the implementation record at the end |
 | Priority / effort | P1 / 4–7 days (slices A–B 2.5–4; slice C 1.5–3 plus the normative decision) |
 | Depends on | none in the register. Slice C needs a normative decision (see Gates). |
 | Milestone / area | DIAG-QUALITY / Tools (slices A–B), Runtime (slice C) |
@@ -92,3 +92,13 @@ The human calibration of R01 (B02 rerun at cd00e81) found diagnosis defects that
 | BOPS-0080 amendment and BOPS-0103 reopening | separate decisions |
 | `LIVE_REAL_TOOLS` | if the operator wants the effect measured live |
 | `CI_VERIFIED`, `OPERATOR_GATE` | as usual |
+
+## Implementation record (slices A and B, 2026-10-27)
+
+Package-side only (`bOps.Packages.System.Core`); no change to the core, to the 16-fact / 4096-byte limits, to policy, approval, authority, tool execution, journal or resume.
+
+- **A, kernel codes:** `system.crashes` emits `system.crashes.kernel-codes` (key = kind, value `0x1e:9,0x7f:2,…` ordered by count then code, cut only at an entry boundary past 256 characters) and, when it cuts, `system.crashes.kernel-codes-omitted`. The four partial `kernel-code-count` facts remain and are the first to leave when the 16 facts run out.
+- **A, group summary:** `groupSummary` precedes `groups` in aggregate results (basis, observedEntries, listedEntries, omittedEntries, omittedCount, entries). Events: severity first, then the group order; each entry has `distinctMessages` (≥ 1, never 0, independent of the message-distribution allowance). Crashes: kernel groups first. Allowance: events `min(6144, budget/6)`, crashes 8192. Under pressure the groups give way first, then the summary entry by entry (declared), and the summary leaves only before the budget would be refused. No summary when there is no group.
+- **B, selection and coverage:** `system.events.selection/applied` (one fact: min-severity, text-filter, source-filter, event-id-filter, channel, excluded-sources; `none`/`present`, never the text; a channel is copied only if ≤ 64 characters without `;`), `system.crashes.selection/window-minutes`, and `coverage` facts (`state`, `oldest-retained:<store>` for up to 2 stores, `stores-omitted`) equal to the result's `coverage` fields. Events: counts first (positions unchanged), metadata last, counts sized to leave the room. The `minSeverity` description states that a floor excludes warning-level events.
+- **Tests changed:** `HighDensityFactsTests` (no count facts when nothing was observed, only call metadata), `HardenSevenContractTests` (key order; the "exactly fits" budget is now the fixed point of the summary share), `SystemEventsAgentCasesTests`, `HighDensityFactsActivationTests` and `SystemStabilityConformance` (key order). Added: `Bops0128EvidenceTests` (16), `Bops0128ReplayTests` (2, env-gated `BOPS_REPLAY_CAMPAIGN`, read-only).
+- **Residual limits:** an events summary lists about 30 groups (≈ 6 KB), so a result of 82 groups still omits 51 (declared); the crashes summary adds ≈ 8 KB to a ≈ 20 KB result; two events facts fewer than before are available for (source, event id) pairs (the unlisted count says how many); the captures of older campaigns that were cut by a limit cannot be replayed whole.
