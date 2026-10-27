@@ -300,10 +300,14 @@ public static partial class SystemToolConformance
         var root = JsonNode.Parse(output)!.AsObject();
         Assert.Equal(2, root["schemaVersion"]!.GetValue<int>());
         var mode = root["mode"]!.GetValue<string>();
+        // BOPS-0128: the compact group summary sits right before the groups, and only when there is a group to summarize.
+        var aggregateKeys = root["observedGroups"]?.GetValue<int>() > 0
+            ? new[] { "schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "catalogAge", "sources", "warnings", "observedGroups", "returnedGroups", "groupSummary", "groups" }
+            : ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "catalogAge", "sources", "warnings", "observedGroups", "returnedGroups", "groups"];
         Assert.Equal(
             mode == "raw"
                 ? ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "returnedItems", "catalogAge", "sources", "warnings", "items"]
-                : ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "catalogAge", "sources", "warnings", "observedGroups", "returnedGroups", "groups"],
+                : aggregateKeys,
             root.Select(pair => pair.Key).ToArray());
         var status = root["status"]!.GetValue<string>();
         Assert.Contains(status, MaintenanceStatuses);

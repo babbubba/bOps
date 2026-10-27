@@ -201,7 +201,11 @@ public sealed class SystemEventsAgentCasesTests
         var facts = ToolStep(task).Result!.Facts;
         Assert.Equal((SystemEventFacts.MatchedCountType, $"source={source};eventId=19", ToolParameterType.Integer, 1),
             (facts[0].Type, facts[0].Key, facts[0].ValueType, facts[0].Value.GetValue<int>()));
-        Assert.Equal((SystemEventFacts.UnlistedGroupsType, 21 - 11), (facts[^1].Type, facts[^1].Value.GetValue<int>()));
+        // BOPS-0128 slice B reserves room for the selection and coverage facts, so fewer pairs are listed; the unlisted ones are counted.
+        var unlisted = Assert.Single(facts, fact => fact.Type == SystemEventFacts.UnlistedGroupsType);
+        Assert.Equal(21 - facts.Count(fact => fact.Type == SystemEventFacts.MatchedCountType), unlisted.Value.GetValue<int>());
+        Assert.Contains(facts, fact => fact.Type == "system.events.selection" && fact.Key == "applied");
+        Assert.Contains(facts, fact => fact.Type == "system.events.coverage" && fact.Key == "state");
         Assert.Contains(
             "- F0.1 step 0 system.events: type \"system.events.matched-count\" key \"source=Microsoft-Windows-WHEA-Logger;eventId=19\" = Integer 1 (from partial evidence)",
             model.Requests[2].SystemPrompt, StringComparison.Ordinal);

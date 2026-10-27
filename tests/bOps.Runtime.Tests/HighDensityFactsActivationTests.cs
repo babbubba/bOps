@@ -82,7 +82,12 @@ public sealed class HighDensityFactsActivationTests
 
         Assert.Equal(AgentTaskStatus.Completed, result.Status);
         Assert.Equal(2, result.Plans[0].Steps.Count);
-        Assert.Empty(result.Steps[0].Result!.Facts);
+        // BOPS-0128 slice B: an unavailable collection still states the window applied and that its coverage is unknown; what it never
+        // emits is a fact of observation, which is what an activation reads.
+        Assert.All(result.Steps[0].Result!.Facts, fact => Assert.True(
+            fact.Type is "system.crashes.selection" or "system.crashes.coverage", $"{fact.Type} is a fact of observation."));
+        Assert.DoesNotContain(result.Steps[0].Result!.Facts, fact => fact.Type == SystemCrashFacts.ObservedCountType);
+        Assert.DoesNotContain(result.Steps[0].Result!.Facts, fact => fact.Type == "system.crashes.coverage" && fact.Value.GetValue<string>() == "complete");
         Assert.Equal(0, dump.Executions);
     }
 

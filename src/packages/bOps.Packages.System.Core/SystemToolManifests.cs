@@ -91,7 +91,7 @@ public static class SystemToolManifests
             new ToolParameter("windowMinutes", ToolParameterType.Integer,
                 $"How many minutes back to look (1-{SystemEventsLimits.MaximumWindowMinutes}, default {SystemEventsLimits.DefaultWindowMinutes}), in either mode. Never together with windowDays.", Required: false) { Minimum = 1, Maximum = SystemEventsLimits.MaximumWindowMinutes },
             new ToolParameter("minSeverity", ToolParameterType.Enum,
-                "Only events at least this severe. Omit for every severity.", Required: false,
+                "Only events at least this severe. Omit for every severity. A floor of error or higher excludes warning-level events (for example display driver timeouts and corrected hardware errors).", Required: false,
                 AllowedValues: SystemEventsArguments.SeverityNames),
             new ToolParameter("source", ToolParameterType.String,
                 "Exact, case-insensitive source: the Windows provider name, or the Linux syslog identifier or systemd unit (for example nginx or nginx.service). "
