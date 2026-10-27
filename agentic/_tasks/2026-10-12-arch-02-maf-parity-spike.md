@@ -1,6 +1,6 @@
 # ARCH-02 — MAF parity spike (plan only; not started)
 
-Status: **Planned — blocked on operator go-ahead.** Defined by ADR-0053 (ARCH-01). Feeds ARCH-03.
+Status: this packet is the plan of the spike; task state lives only in the register. BOPS-0085 ARCH-02 is `DONE` (offline spike executed; report `docs/architecture/arch-02s-maf-bplus-conformance.md`). Defined by ADR-0053 (ARCH-01). Feeds ARCH-03 (BOPS-0075, blocked on decision D1).
 Branch: new, off the then-current mainline; **throwaway spike code never merges**. Only the evidence report does.
 
 ## Scope and rules
