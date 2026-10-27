@@ -54,6 +54,7 @@ public enum AuthorizationKind
 [JsonDerivedType(typeof(KnowledgeReadAuditEvent), "knowledgeRead")]
 [JsonDerivedType(typeof(KnowledgePackAdmissionAuditEvent), "knowledgePackAdmission")]
 [JsonDerivedType(typeof(KnowledgeIndexAuditEvent), "knowledgeIndex")]
+[JsonDerivedType(typeof(WorkflowRunAuditEvent), "workflowRun")]
 public abstract record AuditEvent
 {
     /// <summary>When this event occurred, in UTC.</summary>
@@ -103,6 +104,14 @@ public abstract record AuditEvent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DelegationCorrelation? Delegation { get; init; }
+
+    /// <summary>
+    /// Which MAF troubleshooting workflow run, agent and invocation this event belongs to (C01-R23). <c>null</c> for every event that
+    /// is not part of such a run, and then omitted from the serialized event, so it is byte-identical to one written before workflow
+    /// runs existed. Stamped by the runtime, never by a model or a package.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WorkflowCorrelation? Workflow { get; init; }
 }
 
 /// <summary>The closed outcome domain of one attempted internal <c>EvidenceRead/v1</c> directive (ADR-0014 HARDEN-8).</summary>

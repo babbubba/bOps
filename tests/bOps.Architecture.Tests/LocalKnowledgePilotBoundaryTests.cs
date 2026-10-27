@@ -42,7 +42,8 @@ public sealed class LocalKnowledgePilotBoundaryTests
         Assert.Equal(1, Regex.Count(program, @"CliKnowledge\.CreateHost\("));
         var guard = program.IndexOf("if (goal is not null || resumeTaskId is not null)", StringComparison.Ordinal);
         var call = program.IndexOf("CliKnowledge.CreateHost(", StringComparison.Ordinal);
-        var runnerBuild = program.IndexOf("CliRunnerComposition.Create(", StringComparison.Ordinal);
+        // The composition builds the host before the runner; the call is `Compose` since the diagnose command needs the governed broker too.
+        var runnerBuild = program.IndexOf("CliRunnerComposition.Compose(", StringComparison.Ordinal);
         Assert.True(guard >= 0 && call > guard && runnerBuild > call, "The host is built inside the goal/resume guard, before the runner.");
 
         // A misconfigured section ends the command before it runs: exit code 2, never a continued run without the knowledge asked for.

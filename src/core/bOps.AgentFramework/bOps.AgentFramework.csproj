@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" Version="[1.24.0]" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="[1.24.0]" />
   </ItemGroup>
 
 </Project>

@@ -2792,8 +2792,19 @@ public sealed partial class AgentRunner(
     /// written without the run, the agent and the envelope hash. For a run that is not delegated the event is
     /// written exactly as built, which keeps it byte-identical to one written before delegation existed.
     /// </summary>
-    private Task WriteAuditAsync(AuditEvent evt, DelegatedExecutionScope? delegation, CancellationToken ct) =>
-        audit.WriteAsync(delegation is null ? evt : evt with { Delegation = delegation.Correlation }, ct);
+    private Task WriteAuditAsync(AuditEvent evt, DelegatedExecutionScope? delegation, CancellationToken ct)
+    {
+        var stamped = delegation is null ? evt : evt with { Delegation = delegation.Correlation };
+
+        // C01-R23: a step run for a MAF troubleshooting workflow (WorkflowToolSession) carries the run, agent and invocation, stamped
+        // here for the same reason as the delegation block: a call site cannot forget it. Absent outside such a step.
+        if (WorkflowStepScope.Current is { } workflow && stamped.Workflow is null)
+        {
+            stamped = stamped with { Workflow = workflow };
+        }
+
+        return audit.WriteAsync(stamped, ct);
+    }
 
     /// <summary>
     /// Persists the execution attempt's terminal state, fenced (ADR-0040 §4.4), audits it as

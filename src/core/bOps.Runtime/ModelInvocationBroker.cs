@@ -43,6 +43,9 @@ public sealed class ModelInvocationContext
     /// <summary>Delegation correlation stamped on attempt audit events, when applicable.</summary>
     public DelegationCorrelation? Delegation { get; init; }
 
+    /// <summary>Workflow-run correlation stamped on attempt audit events (C01-R23), <c>null</c> for a call that is not part of a workflow run.</summary>
+    public WorkflowCorrelation? Workflow { get; init; }
+
     /// <summary>Accounts successful response usage against the task or role's cumulative token budget.</summary>
     public Action<int>? AccountTokens { get; init; }
 
@@ -73,6 +76,7 @@ public sealed class ModelInvocationContext
     internal ModelInvocationContext ForSummarization(ModelCallDeadline parentDeadline) => new(TaskId, StepIndex, Actor, Calls)
     {
         Delegation = Delegation,
+        Workflow = Workflow,
         AccountTokens = AccountTokens,
         ExecutionBudgetToken = ExecutionBudgetToken,
         ExecutionBudgetExpired = ExecutionBudgetExpired,
@@ -902,6 +906,11 @@ public sealed class ModelInvocationBroker : IModelInvocationBroker
         if (context.Delegation is not null)
         {
             evt = evt with { Delegation = context.Delegation };
+        }
+
+        if (context.Workflow is not null)
+        {
+            evt = evt with { Workflow = context.Workflow };
         }
 
         return audit.WriteAsync(evt, ct);

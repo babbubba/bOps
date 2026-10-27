@@ -202,7 +202,7 @@ public sealed class GovernedChatClient : IChatClient
     /// <inheritdoc />
     public void Dispose() => disposed = true;
 
-    private static ChatResponse MapResponse(ModelResponse response)
+    internal static ChatResponse MapResponse(ModelResponse response)
     {
         var contents = new List<AIContent>();
         if (response.TextResponse is not null)

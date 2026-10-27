@@ -4,6 +4,13 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- MAF multi-agent troubleshooting workflow (`BOPS-0129`, Contract 01 `C01-R23`): `bops diagnose "<goal>" --workflow maf`, opt-in (`Cli:Experimental:MafWorkflow`, off by default) and
+  read-only. A Microsoft Agent Framework workflow (triage → concurrent specialist agents → diagnostic reviewer with a bounded follow-up loop) whose agents call tools only
+  through a bOps gateway session that runs the unchanged step pipeline; every audit event of a run carries the run, agent and invocation. No checkpoint or resume in this version; an interrupted run is incomplete, never completed.
+  See `docs/maf-troubleshooting-workflow.md`.
+
 ### Released
 
 - `v1.2.0-preview.8` (commit `5cd9046`): V1.2 multi-agent delegation preview. The release workflow passed on Windows and Linux (run

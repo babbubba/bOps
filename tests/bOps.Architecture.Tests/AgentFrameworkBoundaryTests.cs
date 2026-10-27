@@ -108,11 +108,15 @@ public sealed class AgentFrameworkBoundaryTests
     [Fact]
     public void TheMafAgent_IsBuiltInOnePlace_StatelessAndWithoutAFrameworkToolLoop()
     {
-        // AF-TURN-01A: the one construction point of a ChatClientAgent is MafGovernedTurn; behavioural guards exercise that very code.
+        // AF-TURN-01A: the one construction point of a ChatClientAgent for a model turn is MafGovernedTurn; behavioural guards exercise that
+        // very code. C01-R23 adds exactly one more, the troubleshooting workflow's agent turn (MafRun), which is the only place a framework
+        // tool loop is allowed; MafGovernedTurn itself stays free of one.
         var production = ProductionSources().ToList();
         var constructors = production.Where(file => file.Text.Contains("ChatClientAgent", StringComparison.Ordinal))
             .Select(file => file.Path).ToArray();
-        Assert.Equal(["src/core/bOps.AgentFramework/MafGovernedTurn.cs"], constructors);
+        Assert.Equal(
+            ["src/core/bOps.AgentFramework/MafGovernedTurn.cs", "src/core/bOps.AgentFramework/Troubleshooting/MafRun.cs"],
+            constructors.Order(StringComparer.Ordinal));
 
         var turn = production.Single(file => file.Path == "src/core/bOps.AgentFramework/MafGovernedTurn.cs").Text;
         Assert.Contains("UseProvidedChatClientAsIs = true", turn, StringComparison.Ordinal);
@@ -125,9 +129,12 @@ public sealed class AgentFrameworkBoundaryTests
             Assert.DoesNotContain(forbidden, turn.Replace("CreateSessionAsync", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
         }
 
+        // C01-R23: the framework tool loop exists only in the workflow's agent turn and in the one function it calls (the gateway adapter).
         var loops = production.Where(file => file.Text.Contains("FunctionInvokingChatClient", StringComparison.Ordinal)
             || file.Text.Contains("UseFunctionInvocation", StringComparison.Ordinal)).Select(file => file.Path).ToArray();
-        Assert.Empty(loops);
+        Assert.Equal(
+            ["src/core/bOps.AgentFramework/Troubleshooting/GovernedToolFunction.cs", "src/core/bOps.AgentFramework/Troubleshooting/MafRun.cs"],
+            loops.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -139,6 +146,7 @@ public sealed class AgentFrameworkBoundaryTests
             .Select(file => file.Path)
             .Where(path => path is not "src/core/bOps.AgentFramework/GovernedChatClient.cs"
                 and not "src/core/bOps.AgentFramework/GovernedSummarizationChatClient.cs"
+                and not "src/core/bOps.AgentFramework/Troubleshooting/WorkflowGovernedChatClient.cs" // C01-R23: the workflow agents' one governed leaf
                 and not "src/core/bOps.AgentFramework/KnowledgeReadBridge.cs") // invokes framework AIFunctions, never a broker (see the bridge test)
             .ToArray();
         Assert.True(offenders.Length == 0, $"A broker call that does not pass the context gate: {string.Join(", ", offenders)}");
