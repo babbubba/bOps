@@ -507,10 +507,11 @@ class OverlayIsNotASecretTests(Base):
         (work / "appsettings.json").write_bytes(template.read_bytes())
         (work / "tasks.db").write_bytes(b"... environment ... BOPS_MODEL_API_KEY ...")
         overlay = mcb.build_overlay(profile, "A", work, None)
-        env, _ = mcb.child_environment({"PATH": "x"}, overlay, "0123456789abcdef0123456789abcdef")
+        parent = {"PATH": "x"}
+        env, _ = mcb.child_environment(parent, overlay, "0123456789abcdef0123456789abcdef")
         self.assertIn("ModelProvider__ApiKeySecret__Name", overlay)
 
-        secrets = mcb.secret_values({n: v for n, v in env.items() if n not in overlay}, "0123456789abcdef0123456789abcdef")
+        secrets = mcb.secret_values(parent, "0123456789abcdef0123456789abcdef")
         self.assertEqual(secrets, {"0123456789abcdef0123456789abcdef"})
         self.assertEqual(mcb.leak_scan(self.tmp / "run", secrets, "0123456789abcdef0123456789abcdef")["result"], "clean")
 
@@ -520,6 +521,22 @@ class OverlayIsNotASecretTests(Base):
         (run / "out.txt").write_text("leaked: ghp_exampleExampleExample12345", encoding="utf-8")
         secrets = mcb.secret_values({"GITHUB_TOKEN": "ghp_exampleExampleExample12345", "Plain": "x"}, None)
         self.assertEqual(mcb.leak_scan(run, secrets, None)["files"], ["out.txt"])
+
+    def test_inherited_credentials_do_not_reach_the_child_but_are_still_searched(self):
+        parent = {"PATH": "p", "GITHUB_TOKEN": "ghp_0123456789", "BOPS_API_KEY": "abcd", "Some_Password": "hunter2hunter2",
+                  "ModelProvider__ApiKeySecret__Name": "ambient-reference", "BOPS_MODEL_API_KEY": "stale-ambient-model-key"}
+        env, scrubbed = mcb.child_environment(parent, {"Knowledge__Enabled": "false"}, "model-key-value")
+        self.assertEqual(env["PATH"], "p")
+        for name in ("GITHUB_TOKEN", "BOPS_API_KEY", "Some_Password", "ModelProvider__ApiKeySecret__Name"):
+            self.assertNotIn(name, env)
+            self.assertIn(name, scrubbed)
+        self.assertEqual(env["BOPS_MODEL_API_KEY"], "model-key-value")  # the one key the run needs
+
+        secrets = mcb.secret_values(parent, "model-key-value")
+        self.assertIn("model-key-value", secrets)
+        self.assertIn("ghp_0123456789", secrets)
+        self.assertIn("hunter2hunter2", secrets)
+        self.assertNotIn("ambient-reference", secrets)  # bOps configuration holds references, not credentials
 
 
 class ShortKeyCampaignTests(Base):

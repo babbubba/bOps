@@ -53,6 +53,7 @@ SCRUB_PREFIXES = ("CLI__", "KNOWLEDGE__", "AGENT__", "MODELPROVIDER__", "POLICY_
                   "DOCKER__", "WEB__", "DELEGATION__", "SYSTEMMESSAGES__", "PREREQUISITES__", "LOGGING__", "OTEL_", "ASPNETCORE_",
                   "BROWSERSESSION__", "SETTINGS__", "VAULT__")
 SCRUB_EXACT = {API_KEY_ENV, "DOTNET_ENVIRONMENT"}
+SECRET_NAME_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")
 AGENT_KEYS = {"MaxSteps", "MaxLifetimeSteps", "MaxReplans", "MaxLifetimeReplans", "MaxTotalTokens", "MaxAttemptDuration",
               "DefaultToolTimeout", "MaxToolTimeout", "MaxObservationCharacters", "MaxOutputTokens", "ModelCallMaxAttempts",
               "ModelCallAttemptTimeout", "ModelCallBudget", "EmptyFinalResponseRetries", "EvidenceDisclosureEnabled",
@@ -226,7 +227,7 @@ def child_environment(parent: dict, overlay: dict, api_key: str | None):
     env, scrubbed = {}, []
     for key, value in parent.items():
         upper = key.upper()
-        if upper in SCRUB_EXACT or upper.startswith(SCRUB_PREFIXES):
+        if upper in SCRUB_EXACT or upper.startswith(SCRUB_PREFIXES) or is_secret_name(upper):
             scrubbed.append(key)
             continue
         env[key] = value
@@ -236,10 +237,17 @@ def child_environment(parent: dict, overlay: dict, api_key: str | None):
     return env, sorted(scrubbed)
 
 
-def secret_values(env: dict, api_key: str | None) -> set[str]:
+def is_secret_name(upper_name: str) -> bool:
+    """Ambient credential variables, not bOps configuration (those are scrubbed by prefix and hold references, not secrets)."""
+    return not upper_name.startswith(SCRUB_PREFIXES) and any(m in upper_name for m in SECRET_NAME_MARKERS)
+
+
+def secret_values(parent: dict, api_key: str | None) -> set[str]:
+    """Credentials that must never appear in evidence: the model key plus the ambient secrets of the parent environment.
+    They are taken from the parent because child_environment scrubs them from the child; the overlay holds references, not secrets."""
     values = {api_key} if api_key else set()
-    for name, value in env.items():
-        if any(m in name.upper() for m in ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")) and isinstance(value, str) and len(value) >= 8:
+    for name, value in parent.items():
+        if is_secret_name(name.upper()) and isinstance(value, str) and len(value) >= 8:
             values.add(value)
     return {v for v in values if v}
 
@@ -862,7 +870,8 @@ def run_one(ctx: Context, entry: dict, timeout: float, campaign: pathlib.Path) -
     env, scrubbed = child_environment(os.environ, overlay, ctx.api_key)
     # The overlay is the harness's own non-secret configuration; its entries (ModelProvider__ApiKeySecret__Name=BOPS_MODEL_API_KEY, ...Provider=environment)
     # have "KEY"/"SECRET" in their names and are ordinary text of appsettings.json, so they must not be searched for as credentials.
-    secrets = secret_values({name: value for name, value in env.items() if name not in overlay}, ctx.api_key)
+    # Ambient credentials are scrubbed from the child but still searched for, so they are read from the parent environment.
+    secrets = secret_values(os.environ, ctx.api_key)
     host_before = host_snapshot()
     started = utc_now()
     # Redaction rewrites every occurrence in the captured output; for a short placeholder key that would corrupt ordinary words of the
