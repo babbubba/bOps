@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 127,
+  "next": 129,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -6059,7 +6059,9 @@
    },
    "evidence": [
     "Remote 2026-10-26: Issue #136 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDn-7c created as babbubba; Status In Progress, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium set and read back.",
-    "Local, Windows 2026-10-26, worktree bOps-diagfix on codex/maf-ab-diagnostic-reliability: Release build of bOps.slnx 0 warnings 0 errors; bOps.DiagnosticEvaluation.Tests 15/15, bOps.Architecture.Tests 210/210, scripts/windows test_maf_cli_benchmark.py 47/47 and test_live_benchmark.py 49/49; a mutation of the wrong-family rule fails its test. Evaluator run on the captured campaigns (outputs private, not uploaded): two executions give identical bytes, verify stays OK, and the run flagged with 7 unverified counts is 09-B02-B-r2, the P0-2 case found by hand in the fa933f8 campaign."
+    "Local, Windows 2026-10-26, worktree bOps-diagfix on codex/maf-ab-diagnostic-reliability: Release build of bOps.slnx 0 warnings 0 errors; bOps.DiagnosticEvaluation.Tests 15/15, bOps.Architecture.Tests 210/210, scripts/windows test_maf_cli_benchmark.py 47/47 and test_live_benchmark.py 49/49; a mutation of the wrong-family rule fails its test. Evaluator run on the captured campaigns (outputs private, not uploaded): two executions give identical bytes, verify stays OK, and the run flagged with 7 unverified counts is 09-B02-B-r2, the P0-2 case found by hand in the fa933f8 campaign.",
+    "Calibration 2026-10-27 (private, with the operator): R01 of the B02 C/D rerun at cd00e81, 118 claims = 108 judged + 10 excluded. The P1 evaluator emitted no negative result (detection precision undefined); it missed a numeric error (C100) and an impossible recommendation (C113) and could not classify two contradictions (C05, C63); 34 of 118 claims had any number scored. Report and verdicts stay private.",
+    "Baseline frozen 2026-10-27 before any rule change: P1 evaluations of R01-R06 at keys cd00e81 and 8f6c204, each reproduced twice byte-identical, the second equal to the campaign's auto-evaluation; integrity OK. Private manifest sha256 2ea60ce8debd741af9c1a83fd38352fb634ac7aaf47f718be69bc23e9c031097. Next blind calibration: stratified seeded sample of 172 of 448 R02-R06 claims (private list sha256 7e0e9b09...). Follow-ups formalized as BOPS-0127 (evaluator V2) and BOPS-0128 (runtime/tool evidence), both not authorized."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -6072,6 +6074,103 @@
     "status": "In Progress",
     "verified_at": "2026-10-26T17:00:00+0100"
    }
+  },
+  {
+   "spec": null,
+   "prs": [],
+   "commits": [],
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "branch": null,
+   "remote_kind": null,
+   "id": "BOPS-0127",
+   "legacy_id": "MAF-DIAG-EVAL-02",
+   "title": "MAF-DIAG-EVAL-02 Deterministic diagnostic evaluator V2",
+   "created": {
+    "at": "2026-10-27",
+    "basis": "document-date",
+    "source": "operator request 2026-10-27 (formalization after the R01 human calibration)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "5-8 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0126"
+   ],
+   "packet": "agentic/_tasks/2026-10-27-bops-0127-diag-eval-v2.md",
+   "companion_docs": [
+    "docs/maintenance/roadmap-reconciliation-01.md"
+   ],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Operator authorization before any code (2026-10-27: formalization only).",
+     "Thresholds of A4 set by the operator after the R02-R06 calibration, before V2 is used for decisions."
+    ]
+   },
+   "note": "Test-side evaluator V2: value/unit/scale, binding to the right typed fact, source completeness, time window, cross-source deduplication, sample vs group, model visibility, recommendation feasibility, read-only vs mutating operations, hypotheses apart from facts; retrospective comparison with the frozen P1 baseline (private manifest sha256 2ea60ce8...). No model judge, no runtime change. Complements BOPS-0115 (runtime claim contract), does not replace it.",
+   "sync_pending": [
+    "create Issue 'BOPS-0127 | MAF-DIAG-EVAL-02 — …'",
+    "add it to Project #6 with Status Backlog and the fields Priority P1, Area Quality, bOps Milestone DIAG-QUALITY, Evidence Level None, Effort 5-8 days"
+   ]
+  },
+  {
+   "spec": null,
+   "prs": [],
+   "commits": [],
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "branch": null,
+   "remote_kind": null,
+   "id": "BOPS-0128",
+   "legacy_id": "DIAG-EVIDENCE-02",
+   "title": "DIAG-EVIDENCE-02 Evidence completeness, query selection and recommendation hygiene",
+   "created": {
+    "at": "2026-10-27",
+    "basis": "document-date",
+    "source": "operator request 2026-10-27 (runtime reconciliation after the R01 human calibration)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "4-7 days",
+   "authorized": false,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-27-bops-0128-diag-evidence-02.md",
+   "companion_docs": [
+    "docs/maintenance/roadmap-reconciliation-01.md"
+   ],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Operator authorization before any code (2026-10-27: formalization only).",
+     "Normative decision before slice C (final-answer recommendation labels).",
+     "Separate decisions proposed: BOPS-0080 scope amendment (group-addressable EvidenceRead) and reopening BOPS-0103 LIVE-04B (new proof: sample-message generalisation)."
+    ]
+   },
+   "note": "Slices: A complete bugcheck/live-dump code facts within the existing 16-fact/4096-byte bounds; B query selection and coverage metadata as typed facts; C recommendation labels in the final answer (normative gate). Recommendation feasibility enforcement waits for BOPS-0115. Reconciled with BOPS-0111 (implemented on an unmerged, closed-PR branch: divergence to reconcile), BOPS-0080, BOPS-0068, BOPS-0103, BOPS-0113, BOPS-0072; nothing duplicated.",
+   "sync_pending": [
+    "create Issue 'BOPS-0128 | DIAG-EVIDENCE-02 — …'",
+    "add it to Project #6 with Status Backlog and the fields Priority P1, Area Tools, bOps Milestone DIAG-QUALITY, Evidence Level None, Effort 4-7 days"
+   ]
   }
  ],
  "known_divergences": [

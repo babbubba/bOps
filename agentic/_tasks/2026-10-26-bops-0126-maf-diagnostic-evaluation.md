@@ -112,3 +112,33 @@ Task state lives only in the register; this section records evidence as it is pr
 - 2026-10-27 — First use on a new campaign (B02 C/D × 3 at cd00e81): one false wrong-family finding ("10 kernelcrash", written without a space) fixed in
   `keys/B02.json` (terms `kernelcrash`, `kernel-crash`, commit 8f6c204); after it every count of the 6 answers is exact and no live dump is called a crash. The
   report shows the Knowledge change the BOPS-0125 fix aimed at (reads in the answer turn, recall) without reading the answers.
+- 2026-10-27 — Human calibration of R01 with the operator, recorded privately (claim texts and verdicts never enter the repository):
+
+  | | |
+  |---|---|
+  | Claims | 118 = 108 judged + 10 excluded headings/formatting |
+  | Human verdicts | 52 supported, 22 partially-supported, 4 contradicted, 15 limitation-disclosed, 5 hypothesis-flagged, 10 n/a (recommendations) |
+  | P1 output | no negative result, so its detection precision is **undefined**, not demonstrated |
+  | P1 misses | a numeric error (C100, accepted because the number occurs elsewhere in the output); an impossible recommendation (C113) |
+  | Not classified by P1 | two contradictions (C05 no number; C63 units skipped) |
+  | P1 coverage | any number scored in 34 of 118 claims |
+  | P1 defect | `plan-within-budget` reads the last plan revision (an empty early-final replan) |
+
+  The dimensions are kept apart: numeric value, claim grounding, evaluator coverage, diagnostic correctness, recommendation feasibility. No aggregate is built across incompatible categories.
+- 2026-10-27 — **Baseline frozen before any rule change.**
+  - The P1 evaluations of R01–R06 were rebuilt for both key revisions (cd00e81, 8f6c204) on fresh copies of the evidence, twice each: byte-identical. The 8f6c204 output equals the campaign's `auto-evaluation/`, and the two revisions differ only in R02, R04 and R05 (`kernelcrash` term). Campaign integrity OK.
+  - Private manifest: `Documents\bOps-MafBenchmarks\baselines\diag-eval-v1-20261027\manifest.json`, sha256 `2ea60ce8debd741af9c1a83fd38352fb634ac7aaf47f718be69bc23e9c031097`.
+  - The R01 human verdicts were not used to alter any automatic evaluation.
+- 2026-10-27 — **Next blind calibration (R02–R06), prepared, not started.**
+  - Strata come from the claim text only, never from an automatic verdict, by priority: recommendation > causal > absence/negation > coverage > aggregate count > other. Formatting is excluded.
+  - Sampling rates 1.0 / 0.4 / 0.3 / 0.5 / 0.3 / 0.15, at least 3 per stratum, seed `bops-0127-calibration-2026-10-27`: 172 of 448 claims (31–37 per run).
+  - On R01 the same design would have sampled 11 of its 26 problem claims. The problems are spread across strata, so the sample is representative and the estimates carry design weights.
+  - Protocol:
+    - automatic results hidden until the human verdicts are given;
+    - formatting excluded;
+    - repeated claims grouped with their ids;
+    - no implicit `supported`;
+    - claims to verify recorded as such;
+    - the four dimensions recorded apart.
+  - Private sample list: `calibration-sample-R02-R06.json` (sha256 `7e0e9b09…`).
+- 2026-10-27 — Follow-ups formalized, **not authorized**: BOPS-0127 (evaluator V2), BOPS-0128 (runtime/tool evidence). See their packets.

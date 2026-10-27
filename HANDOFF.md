@@ -7,7 +7,7 @@ working branch `codex/bops-maf-cli-ab-bench` (BOPS-0125, CLI A/B benchmark tooli
 Current task: BOPS-0126 MAF-DIAG-EVAL-01 (IN_PROGRESS)
 Branch: codex/maf-ab-diagnostic-reliability
 Ready: BOPS-0111
-Next number: BOPS-0127
+Next number: BOPS-0129
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -48,6 +48,8 @@ Task state is never copied here; ask the register (`--summary`).
   limitations, M4 Knowledge pertinence, M5 finalization against each run's typed facts, audit and scenario keys (`keys/*.json`) and writes `auto-evaluation/<blindCode>.json`;
   `maf_cli_analysis.py` adds the `auto*` rows. Run on the captured campaigns: the flagged count/classification errors read as real ones (live dumps given as kernel crashes,
   invented counts at fa933f8). Next: operator review of P1 results, then the calibration sheets **filled together with the operator**; P2 (model judge) needs a new authorization.
+  2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen and reproduced (manifest sha256 `2ea60ce8…`); formalized, **not authorized**: BOPS-0127 (evaluator V2),
+  BOPS-0128 (evidence completeness, query metadata, recommendation labels); Issues owed. Details in the 0126 packet log. Next: blind calibration of the R02–R06 sample with the operator.
 - Formal milestone: **V1.3** (A–M merged; stable V1.3 gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 - Current task of this branch: **BOPS-0123 VAULT-READ-LOCK-01** (Issue #130, PR #132, authorized 2026-10-24) — fixes the red Windows test `VaultStoreTests.ConcurrentSets_ForDifferentProviders_...` that was already red on `main`:
   `VaultStore` reads now take the write lock because Windows `File.Move(overwrite)` fails while a reader holds the vault file. Packet
