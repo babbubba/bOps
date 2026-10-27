@@ -679,6 +679,20 @@ the ones of the default path. It is for evaluating the MAF integration, not for 
 - Switching the key between runs is safe: a task started in one mode can be resumed in the other, also after a restart, and the stored task is the same.
 - The API host does not read this key.
 
+### 14.2 MAF multi-agent troubleshooting workflow (CLI, opt-in, read-only)
+
+*Binding rule: Contract 01 [C01-R23](architecture/current/01-maf-agent-infrastructure.md#c01-r23--maf-multi-agent-troubleshooting-workflow-cli-opt-in-read-only) (BOPS-0129). Reference: [MAF troubleshooting workflow](maf-troubleshooting-workflow.md).*
+
+`bops diagnose "<goal>" --workflow maf` runs a triage agent, specialist agents and a diagnostic reviewer under Microsoft Agent Framework. Every tool
+call goes through the runner's governed step pipeline (validation, policy, approval, entitlement, audit) and only read-only tools can run; every model call goes
+through the governed broker. This version has no checkpoint and no resume: an interrupted run is incomplete and a retry is a new run.
+
+| Key | Default | Notes |
+|---|---|---|
+| `Cli:Experimental:MafWorkflow` | absent = `false` | `true` or `false` only; any other value stops the command (exit code 2), and `false` refuses the command (exit code 2). The shipped `appsettings.json` does not set it. Environment form: `Cli__Experimental__MafWorkflow`. |
+
+Limits are command options (`--max-rounds`, `--max-tool-calls`, `--max-tokens`, `--timeout-minutes`), each bounded by a hard maximum.
+
 ## 15. Model-call timeouts, retry and failure reasons, and resuming from the CLI
 
 *Technical specification consolidated from ADR-0039 (§7, §10) and ADR-0017 during the architecture consolidation (DOC-02). The binding

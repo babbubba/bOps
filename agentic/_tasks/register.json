@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 129,
+  "next": 130,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -6191,6 +6191,64 @@
     "status": "Validation",
     "verified_at": "2026-10-27T18:00:00+0100"
    }
+  },
+  {
+   "id": "BOPS-0129",
+   "legacy_id": "MAF-TROUBLESHOOT-01",
+   "title": "MAF-TROUBLESHOOT-01 MAF multi-agent troubleshooting workflow (read-only, CLI)",
+   "created": {
+    "at": "2026-10-27",
+    "basis": "document-date",
+    "source": "operator mandate 2026-10-27 (multi-agent MAF troubleshooting, C01-R23)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "IN_PROGRESS",
+   "priority": "P1",
+   "effort": "5-8 days",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-27-bops-0129-maf-troubleshoot-01.md",
+   "spec": null,
+   "companion_docs": [
+    "docs/maf-troubleshooting-workflow.md"
+   ],
+   "prs": [],
+   "commits": [
+    "7a82b092230761653f68a03de692ed07f96c1397",
+    "b5ffbdfec94c79de05c2e2cabae89f071a515b00",
+    "17c9e8d1982c48796b728d683199658719405b2c"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Local commits only: no push, PR or merge without the operator.",
+     "CI of the PR on Windows and Linux (the PR is not requested yet).",
+     "Operator approval of C01-R23 as merged, and of the delivery. Any live model run needs its own authorization."
+    ]
+   },
+   "evidence": [
+    "Local, Windows 2026-10-27, branch feat/maf-multiagent-troubleshooting cut from main 20b66c8 (local commits only, nothing pushed): Release build of bOps.slnx 0 warnings 0 errors, locked-mode restore ok; non-live suites of the whole solution green (Runtime 2383 unchanged, AgentFramework 677 + 8 skipped, Cli 292, Architecture 217, Api 560, Policy 308, Knowledge 308, plus the package suites); register validator 129 tasks 0 errors, governance unit tests 70.",
+    "New offline tests: 36 workflow tests in AgentFramework.Tests (end-to-end slowdowns-and-restarts with a reviewer follow-up round; System + PostgreSQL through fake tools proven concurrent; gateway refusals, policy and approval; limits; cancellation; failures; audit and accounting), 21 in Cli.Tests (arguments, opt-in, command output, process-level refusal), 8 architecture guards (MafWorkflowBoundaryTests) and the widened C01-R22 guard. The demo run printed the real sequence triage -> system x3 -> review -> system x2 -> review with 3 tool calls and one audit event per call; it exposed and fixed a specialist evidence-count defect before commit.",
+    "Not done: Windows and Linux CI (no PR yet), any live model run, Issue and Project #6 item (sync_pending), Linux validation."
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Read-only first increment. No checkpoint or resume in this version (C01-R23 clause 7, an implementation limit; C03-R23 is not extended to workflows); checkpoint/resume, effectful operations and an API host are outside C01-R23 and need new explicit decisions. No PostgreSQL package exists in this repository.",
+   "branch": "feat/maf-multiagent-troubleshooting",
+   "remote_kind": null,
+   "sync_pending": [
+    "create Issue \"BOPS-0129 | MAF-TROUBLESHOOT-01 — MAF multi-agent troubleshooting workflow (read-only, CLI)\"",
+    "add it to Project #6 with Status In Progress and the fields Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort 5-8 days"
+   ]
   }
  ],
  "known_divergences": [

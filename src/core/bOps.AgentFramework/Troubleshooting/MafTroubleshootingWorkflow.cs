@@ -17,8 +17,9 @@ namespace bOps.AgentFramework.Troubleshooting;
 /// advice that nothing here executes.
 /// </summary>
 /// <remarks>
-/// A run is terminal and non-resumable (C03-R23 applies by analogy): its identity is a task id generated for it, its operational record
-/// is the audit chain, it is not written to the task store, and a retry is a new run. The framework's own state is transient.
+/// This version has no checkpoint and no resume (C01-R23 clause 7, an implementation limit, not a prohibition): the run's identity is a
+/// task id generated for it, its operational record is the audit chain, it is not written to the task store, an interrupted run is
+/// incomplete and never reported as completed, and a retry is a new run. The framework's own state and the evidence are in memory only.
 /// </remarks>
 public sealed class MafTroubleshootingWorkflow
 {

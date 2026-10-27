@@ -11,8 +11,8 @@ public sealed partial class AgentRunner
     /// Opens the tool session of one MAF troubleshooting workflow run (C01-R23). The session is the only way the run's agents reach a
     /// tool, and every call it carries goes through <c>ExecuteStepAsync</c>, the one place a tool call is validated, put to policy,
     /// approval and entitlement, timed, executed and audited. The run is identified by <paramref name="runId"/>, a task id the host
-    /// generated for it; like a Skill run it is terminal and non-resumable and is not written to the task store (C03-R23): a retry is a
-    /// new run.
+    /// generated for it; in this version the run has no checkpoint and no resume and is not written to the task store (C01-R23 clause 7):
+    /// a retry is a new run and no tool is re-executed automatically.
     /// </summary>
     /// <param name="runId">The task id of the workflow run. Not empty.</param>
     /// <param name="actor">The operator on whose authority the run executes.</param>
