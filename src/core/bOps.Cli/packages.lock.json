@@ -114,6 +114,25 @@
           "Microsoft.Extensions.AI.Abstractions": "10.10.1"
         }
       },
+      "Microsoft.Agents.AI.Workflows": {
+        "type": "Transitive",
+        "resolved": "1.24.0",
+        "contentHash": "T9HVVpQP4rKiVvdqyKd+oGDKjnmvEZF2n6FApJwD9NMOw46RIFybkq8GoH+869q6psEMOjcQduGJfd8ZizZIOw==",
+        "dependencies": {
+          "Microsoft.Agents.AI": "1.24.0",
+          "Microsoft.Agents.AI.Abstractions": "1.24.0",
+          "Microsoft.Extensions.AI": "10.10.0",
+          "Microsoft.Extensions.AI.Abstractions": "10.10.1",
+          "Microsoft.Extensions.AI.Evaluation": "10.10.0",
+          "Microsoft.Extensions.Compliance.Abstractions": "10.10.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
+          "Microsoft.Extensions.FileSystemGlobbing": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.VectorData.Abstractions": "10.10.0",
+          "Microsoft.ML.Tokenizers": "2.0.0",
+          "OpenTelemetry.Api": "1.18.0"
+        }
+      },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
         "resolved": "10.0.401",
@@ -598,6 +617,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Agents.AI": "[1.24.0, 1.24.0]",
+          "Microsoft.Agents.AI.Workflows": "[1.24.0, 1.24.0]",
           "bOps.Abstractions": "[1.3.0-preview.4, )",
           "bOps.Knowledge": "[1.0.0, )",
           "bOps.Runtime": "[1.0.0, )"

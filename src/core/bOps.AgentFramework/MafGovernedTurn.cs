@@ -88,7 +88,7 @@ internal static class MafGovernedTurn
         new($"Governed MAF turn integrity violation: {detail}.") { FailureKind = ModelFailureKind.InvalidRequest };
 
     /// <summary>A plain function declaration of one allow-listed manifest. It carries no body, so the framework cannot invoke it.</summary>
-    private static AITool Declare(ToolManifest manifest)
+    internal static AITool Declare(ToolManifest manifest)
     {
         var properties = new JsonObject();
         var required = new JsonArray();
