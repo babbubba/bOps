@@ -109,3 +109,6 @@ Task state lives only in the register; this section records evidence as it is pr
   `09-B02-B-r2`, the P0-2 case found by hand in that campaign (PR #135), found here blind and without a model. B02 rerun at 69d504c: counts
   exact in all 6 runs (accuracy 1.0), no live dump called a crash; Knowledge recall of the applicable listed entries 0.095 in C and 0 in D.
   Two executions give identical bytes; `verify` stays OK on an evaluated campaign.
+- 2026-10-27 — First use on a new campaign (B02 C/D × 3 at cd00e81): one false wrong-family finding ("10 kernelcrash", written without a space) fixed in
+  `keys/B02.json` (terms `kernelcrash`, `kernel-crash`, commit 8f6c204); after it every count of the 6 answers is exact and no live dump is called a crash. The
+  report shows the Knowledge change the BOPS-0125 fix aimed at (reads in the answer turn, recall) without reading the answers.
