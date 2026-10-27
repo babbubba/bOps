@@ -33,7 +33,7 @@ using OpenTelemetry.Trace;
 HostCulture.PinInvariant();
 
 const string UsageMessage = """
-    Usage: bops "<goal>" | bops resume <task-id> | bops recover <task-id> --attempt <N> | bops reconcile <task-id> verify|accept|abandon [--note <text>] | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
+    Usage: bops "<goal>" | bops diagnose "<goal>" --workflow maf [--max-rounds <N>] [--max-tool-calls <N>] [--max-tokens <N>] [--timeout-minutes <N>] | bops resume <task-id> | bops recover <task-id> --attempt <N> | bops reconcile <task-id> verify|accept|abandon [--note <text>] | bops delegate "<objective>" | bops delegate status|resume|cancel <run-id> | bops delegate reconcile <run-id> --accept|--abandon | bops delegate readiness [--remediation] | bops delegate profiles init --read-only [--write [--overwrite]] | bops delegate profiles check | bops audit verify [file] | bops plugin <install|list|enable|disable|remove|validate|sign> ... | bops vault rotate-key <new-master-key-environment-variable>
     """;
 
 if (args.Length == 0)
@@ -71,6 +71,7 @@ Guid? resumeTaskId = null;
 (Guid TaskId, int Attempt)? recoverInvocation = null;
 (Guid TaskId, TaskReconcileAction Action, string? Note)? reconcileInvocation = null;
 DelegateInvocation? delegateInvocation = null;
+DiagnoseInvocation? diagnoseInvocation = null;
 
 // V1.2 (ADR-0030 section 9): "delegate" runs an objective through the fixed Discovery, Diagnostic, Remediation and Verification
 // pipeline, or reads, resumes, cancels or reconciles a stored run. It shares the composition below and adds a store, a role-profile
@@ -86,6 +87,20 @@ if (string.Equals(args[0], "delegate", StringComparison.OrdinalIgnoreCase))
     }
 
     delegateInvocation = parsedInvocation;
+}
+else if (string.Equals(args[0], "diagnose", StringComparison.OrdinalIgnoreCase))
+{
+    // C01-R23: the MAF multi-agent troubleshooting workflow. It names its workflow, so `bops "<goal>"` keeps running the ordinary runner
+    // unchanged, and it is a read-only, terminal, non-resumable run (it has no task to resume).
+    var (parsedDiagnose, diagnoseError) = DiagnoseArguments.Parse(args[1..]);
+    if (parsedDiagnose is null)
+    {
+        await Console.Error.WriteLineAsync(diagnoseError);
+        await Console.Error.WriteLineAsync(DiagnoseArguments.Usage);
+        return 1;
+    }
+
+    diagnoseInvocation = parsedDiagnose;
 }
 else if (string.Equals(args[0], "resume", StringComparison.OrdinalIgnoreCase))
 {
@@ -141,6 +156,25 @@ else
 
 var builder = Host.CreateApplicationBuilder();
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
+
+// C01-R23: the MAF workflow is off unless the host enables it; the shipped configuration never does. Refused before anything is composed.
+if (diagnoseInvocation is not null)
+{
+    try
+    {
+        if (!MafDiagnoseCommand.ReadEnabled(builder.Configuration))
+        {
+            await Console.Error.WriteLineAsync($"The MAF troubleshooting workflow is disabled. Set '{MafDiagnoseCommand.EnabledKey}' to 'true' in the host configuration to opt in (environment variable Cli__Experimental__MafWorkflow=true).");
+            return 2;
+        }
+    }
+    catch (InvalidOperationException ex)
+    {
+        await Console.Error.WriteLineAsync(ex.Message);
+        return 2;
+    }
+}
+
 if (delegateInvocation is { NeedsNoModel: true })
 {
     // ADR-0044 section 10.1: standard output carries only the generated YAML or the report, so it can be redirected to a file;
@@ -381,7 +415,7 @@ if (mafGovernedTurn)
     await Console.Error.WriteLineAsync("EXPERIMENTAL: each model turn is hosted by a Microsoft Agent Framework agent (Cli:Experimental:MafGovernedTurn=true); bOps keeps all execution authority.");
 }
 
-var runner = CliRunnerComposition.Create(new CliRunnerInputs(
+var (runner, governedBroker) = CliRunnerComposition.Compose(new CliRunnerInputs(
     model,
     toolRegistry,
     policyEngine,
@@ -398,6 +432,21 @@ var runner = CliRunnerComposition.Create(new CliRunnerInputs(
     mafGovernedTurn));
 
 var actor = ActorIdentity.FromOperatingSystemUser(Environment.UserName);
+
+if (diagnoseInvocation is not null)
+{
+    // The workflow reaches models only through the governed broker the runner was composed with, and tools only through the runner's
+    // gateway session. Ctrl+C cancels the run under way; the run then ends as cancelled and cannot be resumed.
+    using var diagnoseInterrupt = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        diagnoseInterrupt.Cancel();
+    };
+
+    return await new MafDiagnoseCommand(runner, governedBroker, audit, time, logger, Console.Out, Console.Error)
+        .RunAsync(diagnoseInvocation, actor, diagnoseInterrupt.Token);
+}
 
 if (recoverInvocation is { } recover)
 {
