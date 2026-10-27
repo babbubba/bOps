@@ -14,7 +14,7 @@
         { "type": "system.stability.category-count", "key": "kernelCrash" },
         { "type": "system.events.matched-count", "key": "source=Microsoft-Windows-WER-SystemErrorReporting;eventId=1001" }
       ],
-      "terms": [ "bsod", "bugcheck", "bug check", "schermata blu", "schermate blu", "blue screen", "stop code", "kernel crash", "crash del kernel", "crash kernel", "crash di sistema" ]
+      "terms": [ "bsod", "bugcheck", "bug check", "schermata blu", "schermate blu", "blue screen", "stop code", "kernel crash", "kernelcrash", "kernel-crash", "crash del kernel", "crash kernel", "crash di sistema" ]
     },
     {
       "id": "liveDump",
