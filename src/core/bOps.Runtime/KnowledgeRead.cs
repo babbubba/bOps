@@ -13,7 +13,12 @@ namespace bOps.Runtime;
 /// <param name="OfferedTools">The tool names offered to the model on the request that produced the reply.</param>
 /// <param name="ExpectedTool">The planned step's expected tool, if any. A knowledge read never completes it.</param>
 /// <param name="Eligible">Whether the runtime says this step may read knowledge.</param>
-public sealed record KnowledgeReadAuthority(IReadOnlyList<string> OfferedTools, string? ExpectedTool, bool Eligible);
+/// <param name="Allowance">
+/// How many tokens a read may add to the context of this very request, from the selected model's real capacity and what the request
+/// already holds; <c>null</c> when the runtime has no budget to state, in which case only the session's fixed limits apply.
+/// </param>
+public sealed record KnowledgeReadAuthority(
+    IReadOnlyList<string> OfferedTools, string? ExpectedTool, bool Eligible, KnowledgeReadAllowance? Allowance = null);
 
 /// <summary>What a knowledge session did with one model reply.</summary>
 /// <param name="Handled">
@@ -105,6 +110,13 @@ public interface IKnowledgeReadSession : IDisposable
     /// offered as before (ADR-0057).
     /// </summary>
     int? ReadsRemaining => null;
+
+    /// <summary>
+    /// The largest share of the input space left after the mandatory context that reference knowledge may take, as configured by the
+    /// host (see <see cref="KnowledgeContextBudget"/>), or <c>null</c> when the session states none and the runner applies no dynamic
+    /// budget. It is host policy, never data from a pack.
+    /// </summary>
+    double? ContextShare => null;
 
     /// <summary>Handles one model reply: serves or refuses a call of this session, or reports that the reply is not its.</summary>
     Task<KnowledgeReadOutcome> HandleAsync(

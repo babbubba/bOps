@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
+| Governing ADR | [ADR-0052](../../docs/architecture/adr/README.md#adr-0052), D-048 |
 | Status | **Implemented; branch pushed to `origin/feat/af-05-maf-regression-tuning-cleanup`, not merged. Two review findings (evidence addressability, grounding diversity) closed by AF-05G on `fix/af-05g-evidence-addressability-grounding`. The premature-completion and disclosure-drift live regressions closed by AF-05H ([packet](2026-10-11-af-05h-live-regression-hardening.md)). Live-provider runs and Windows/Linux CI NOT RUN** |
 | Depends on | AF-01, AF-02, AF-03, AF-04 complete |
 | Effort | **medium** |

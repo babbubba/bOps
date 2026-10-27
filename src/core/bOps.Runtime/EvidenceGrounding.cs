@@ -27,6 +27,13 @@ internal enum EvidenceGroundingOutcome
 
     /// <summary>The check produced no usable verdict; the guard did not classify the answer, which is persisted unchanged.</summary>
     CheckUnavailable,
+
+    /// <summary>
+    /// No typed fact existed to check against, but the deterministic provenance check found counts or dates the answer attributed to
+    /// steps whose results do not contain them, and the one correction was accepted; the persisted answer is the correction. No check
+    /// call was made (<see cref="AnswerClaimProvenance"/>).
+    /// </summary>
+    ClaimsCorrected,
 }
 
 /// <summary>One shown observed fact: its stable id and its rendered ledger entry.</summary>

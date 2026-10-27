@@ -16,7 +16,7 @@ namespace bOps.Runtime;
 internal static class KnowledgeIndexPublication
 {
     /// <summary>The size ceiling of a normal rendering, mirrored from the host's default limits (ADR-0057 section B.4).</summary>
-    internal const int MaxNormalCharacters = 4000;
+    internal const int MaxNormalCharacters = 10000;
 
     /// <summary>The size ceiling of an aggressive rendering, mirrored from the host's default limits (ADR-0057 section B.4).</summary>
     internal const int MaxAggressiveCharacters = 1500;

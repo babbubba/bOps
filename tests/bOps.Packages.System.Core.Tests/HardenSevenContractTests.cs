@@ -67,6 +67,42 @@ public sealed class HardenSevenContractTests
         Assert.Equal((EvidenceMode.Raw, Now.AddMinutes(-1440)), (query!.Mode, query.FromUtc));
     }
 
+    // The runtime refuses a plan that expects an argument combination the tool will refuse (ToolManifest.ArgumentRules). Those
+    // declarations must not drift from the reader the tool really runs: each one, turned into arguments that break it, is refused
+    // by that reader with the declared message.
+    [Fact]
+    public void TheDeclaredArgumentRules_AreExactlyWhatTheEventAndCrashReadersRefuse()
+    {
+        foreach (var (manifest, refused) in new (ToolManifest, Func<ToolArguments, string?>)[]
+        {
+            (SystemToolManifests.Events("x"),
+                arguments => SystemEventsArguments.TryRead(arguments, Now, out _, out _, out _, out _, out var error) ? null : error),
+            (SystemToolManifests.Crashes("x"),
+                arguments => SystemCrashesArguments.TryRead(arguments, Now, out _, out var error) ? null : error),
+        })
+        {
+            var rules = Assert.IsAssignableFrom<IReadOnlyList<ToolArgumentRule>>(manifest.ArgumentRules);
+            Assert.Equal(2, rules.Count);
+            foreach (var rule in rules)
+            {
+                // A rule over a name the manifest does not declare would be inert: a typo must not silently disable it.
+                Assert.Contains(manifest.Parameters, p => p.Name == rule.Parameter);
+                Assert.Contains(manifest.Parameters, p => p.Name == rule.Other);
+                var json = new JsonObject { [rule.Parameter] = 1 };
+                if (rule.Kind == ToolArgumentRuleKind.MutuallyExclusive)
+                {
+                    json[rule.Other] = 1;
+                }
+                else
+                {
+                    json[rule.Other] = rule.OtherValues[0];
+                }
+
+                Assert.Equal(rule.Message, refused(ToolArguments.FromJson(json)));
+            }
+        }
+    }
+
     [Fact]
     public void TheManifests_CarryEveryNumericBound_AsATypedConstraint()
     {

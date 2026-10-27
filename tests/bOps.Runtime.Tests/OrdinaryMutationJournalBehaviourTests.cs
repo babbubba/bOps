@@ -324,11 +324,21 @@ public sealed class OrdinaryMutationJournalBehaviourTests
     [Fact]
     public async Task AForbiddenMutation_NeverHasAnIntent_BeforeOrAfterAResume()
     {
-        var f = new Fixture { Policy = PolicyMode.Forbidden, Options = new AgentRunnerOptions { MaxSteps = 1 } };
-        var first = await f.NewRunner(new JournalScriptModel { Replan = ["test.mutate"] }).RunAsync(Goal, Operator, f.TaskId);
+        // C03-R09: a plan fits the attempt less the final answer, so each attempt first spends a step on a refused call (a tool
+        // not offered, corrected in place) and the forbidden mutation is its last step; the replan then sizes for the resume.
+        var f = new Fixture { Policy = PolicyMode.Forbidden, Options = new AgentRunnerOptions { MaxSteps = 2 } };
+        JournalScriptModel Model() => new()
+        {
+            Plan = ["test.mutate"],
+            Replan = ["test.mutate"],
+            Step = (n, _) => n == 1
+                ? new ModelResponse(null, [new ModelToolCall("u1", "test.not_offered", ToolArguments.Empty)], false, null)
+                : null,
+        };
+        var first = await f.NewRunner(Model()).RunAsync(Goal, Operator, f.TaskId);
         Assert.Equal(AgentTaskStatus.MaxStepsReached, first.Status);
 
-        await f.NewRunner(new JournalScriptModel { Replan = ["test.mutate"] }).ResumeAsync(first, Operator);
+        await f.NewRunner(Model()).ResumeAsync(first, Operator);
 
         Assert.Empty(f.Journal);
         Assert.Equal(0, f.Mutate.Executions);

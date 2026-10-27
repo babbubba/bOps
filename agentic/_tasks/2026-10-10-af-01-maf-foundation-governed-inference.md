@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), Accepted 2026-10-10, D-048 |
+| Governing ADR | [ADR-0052](../../docs/architecture/adr/README.md#adr-0052), Accepted 2026-10-10, D-048 |
 | Status | **Completed** |
 | Depends on | ADR-0052/docs branch merged |
 | Blocks | AF-02, AF-03 |

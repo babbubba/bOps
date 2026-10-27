@@ -1081,9 +1081,11 @@ public sealed partial class DelegationRunnerTests
     [Fact]
     public async Task Start_EndsAsBudgetExceeded_WhenAModelLoopUsesItsWholeStepLimit()
     {
+        // C03-R09: the one-step plan fits two steps with the final answer; the refused call (a tool not offered, corrected in
+        // place) spends the step the answer needed.
         var h = Create(
-            [PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.info")],
-            options: new AgentRunnerOptions { MaxSteps = 1, MaxObservationCharacters = 1024 });
+            [PlanningTestSupport.PlanResponse(expectedTool: "host.info"), Call("host.not_offered"), Call("host.info")],
+            options: new AgentRunnerOptions { MaxSteps = 2, MaxObservationCharacters = 1024 });
 
         var run = await h.Runner.StartAsync(Request(), Operator);
 

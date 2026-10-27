@@ -237,4 +237,244 @@ public sealed class PlanningCorrectionTests
         Assert.Contains(LimitProblem, LastUserTurn(model.Requests[3]), StringComparison.Ordinal);
         Assert.Equal(2, task.Plans.Count);
     }
+
+    // MAF A/B/C/D pilots (Qwen3.8): plans expected `mode: raw` with `sinceDays`, or both windows, which the tool refuses at
+    // execution. The step could then only be satisfied by a call the tool rejects, so the run replanned the same combination until
+    // it ran out of steps. The tool's declared relations now refuse such a plan, with the rule, before any step starts.
+    private const string ExclusiveRule = "Use either sinceMinutes or sinceDays, never both.";
+    private const string RawRule = "sinceDays is valid only with mode aggregate; with mode raw use sinceMinutes (up to 10080).";
+
+    private static RecordingReadTool CrashesTool() => new("test.crashes",
+        [
+            new ToolParameter("mode", ToolParameterType.Enum, "Output shape.", Required: false, AllowedValues: ["aggregate", "raw"]),
+            new ToolParameter("sinceMinutes", ToolParameterType.Integer, "Window in minutes.", Required: false) { Minimum = 1, Maximum = 10080 },
+            new ToolParameter("sinceDays", ToolParameterType.Integer, "Window in days.", Required: false) { Minimum = 1, Maximum = 180 },
+        ],
+        rules:
+        [
+            ToolArgumentRule.Exclusive("sinceMinutes", "sinceDays", ExclusiveRule),
+            ToolArgumentRule.ForbiddenWith("sinceDays", "mode", ["raw"], RawRule),
+        ]);
+
+    private static string CrashesPlan(JsonObject expected) => new JsonObject
+    {
+        ["rationale"] = "Read the recent crashes.",
+        ["steps"] = new JsonArray(new JsonObject
+        {
+            ["description"] = "Check crashes",
+            ["expectedTool"] = "test.crashes",
+            ["expectedArguments"] = expected,
+        }),
+    }.ToJsonString();
+
+    private static ModelResponse CrashesCall(JsonObject arguments) => new(null,
+        [new ModelToolCall("c1", "test.crashes", ToolArguments.FromJson(arguments))], false, new ModelUsage(100, 10, null));
+
+    [Theory]
+    [InlineData("""{"mode":"raw","sinceDays":14}""", RawRule)]
+    [InlineData("""{"sinceMinutes":60,"sinceDays":14}""", ExclusiveRule)]
+    public async Task APlanThatExpectsAnUnsatisfiableArgumentCombination_IsRefusedWithTheRule_AndTheCorrectedPlanRuns(
+        string invalid, string rule)
+    {
+        var tool = CrashesTool();
+        var corrected = new JsonObject { ["mode"] = "raw", ["sinceMinutes"] = 60 };
+        var model = new FakeChatModel(
+            Text(CrashesPlan(JsonNode.Parse(invalid)!.AsObject())), Text(CrashesPlan(corrected)),
+            CrashesCall((JsonObject)corrected.DeepClone()), Done());
+
+        var task = await Runner(model, tool).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Contains(rule, LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Contains("cannot be satisfied by any call of 'test.crashes'", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Equal(60, Assert.Single(task.Plans).Steps[0].ExpectedArguments!.ToJson()["sinceMinutes"]!.GetValue<int>());
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task APlanThatConstrainsOnlyTheDaysWindow_IsAccepted_BecauseTheCallMayStillChooseAggregate()
+    {
+        var tool = CrashesTool();
+        var model = new FakeChatModel(
+            Text(CrashesPlan(new JsonObject { ["sinceDays"] = 14 })),
+            CrashesCall(new JsonObject { ["sinceDays"] = 14, ["mode"] = "aggregate" }), Done());
+
+        var task = await Runner(model, tool).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Equal(3, model.Requests.Count);
+        Assert.Equal(1, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public void ThePlanningCatalog_StatesTheDeclaredRulesOfAToolBesideItsParameters()
+    {
+        var catalog = AgentRunner.DescribeToolCatalog([CrashesTool().Manifest]);
+
+        Assert.Contains($"Rules for expectedArguments: {ExclusiveRule} {RawRule}", catalog, StringComparison.Ordinal);
+        Assert.DoesNotContain("Rules for expectedArguments", AgentRunner.DescribeToolCatalog([EventsTool().Manifest]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARuntimeControlFunctionNamedAsAPlanStep_IsRefusedWithAnExplanationOfWhatAPlanStepIs()
+    {
+        var plan = new JsonObject
+        {
+            ["rationale"] = "Read the evidence.",
+            ["steps"] = new JsonArray(new JsonObject
+            {
+                ["description"] = "Read earlier evidence",
+                ["expectedTool"] = EvidenceRead.ControlFunctionName,
+                ["expectedArguments"] = new JsonObject(),
+            }),
+        }.ToJsonString();
+        var model = new FakeChatModel(Text(plan), Text(plan));
+
+        var task = await Runner(model, EventsTool()).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Failed, task.Status);
+        Assert.Contains("runtime control function, not a plan step", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Contains("only a tool from the tool list", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+    }
+
+    // MAF A/B/C/D pilot B02-D (Qwen3.8): a 17-step plan under Agent:MaxSteps 15. The plan could never finish in the attempt, so
+    // the run spent every step and ended MaxStepsReached without an answer. A plan now fits the attempt's remaining steps, one
+    // of which is kept for the final answer, and the planner is told that budget.
+    private static string EventsPlanOf(int steps) => new JsonObject
+    {
+        ["rationale"] = "Read the system events in several slices.",
+        ["steps"] = new JsonArray([.. Enumerable.Range(1, steps).Select(limit => (JsonNode)new JsonObject
+        {
+            ["description"] = $"Check slice {limit}",
+            ["expectedTool"] = "system.events",
+            ["expectedArguments"] = new JsonObject { ["windowDays"] = 180, ["limit"] = limit },
+        })]),
+    }.ToJsonString();
+
+    [Fact]
+    public async Task B02_APlanLongerThanTheAttemptBudget_IsRefusedWithTheBudget_AndTheCorrectedPlanRuns()
+    {
+        var tool = EventsTool();
+        var audit = new RecordingAuditSink();
+        var model = new FakeChatModel(Text(EventsPlanOf(3)), Text(EventsPlanOf(2)), EventsCall(1), EventsCall(2), Done());
+
+        var task = await Runner(model, tool, audit, new AgentRunnerOptions { MaxSteps = 3 }).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Contains("The plan lists 3 steps", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        Assert.Contains("a plan may list at most 2", LastUserTurn(model.Requests[1]), StringComparison.Ordinal);
+        var plan = Assert.Single(task.Plans);
+        Assert.Equal(2, plan.Steps.Count);
+        Assert.Equal([ModelCallOutcome.Failure, ModelCallOutcome.Success], plan.ModelCalls!.Select(call => call.Outcome));
+        Assert.Equal(1, audit.Events.OfType<ModelCallAuditEvent>()
+            .Count(e => e is { StepIndex: -1, FailureKind: ModelFailureKind.MalformedResponse }));
+        Assert.Equal(2, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task APlanThatStillExceedsTheAttemptBudget_FailsThePlanning_BeforeAnyStepIsSpent()
+    {
+        var tool = EventsTool();
+        var model = new FakeChatModel(Text(EventsPlanOf(15)), Text(EventsPlanOf(15)));
+
+        var task = await Runner(model, tool).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Failed, task.Status);
+        Assert.Equal((TaskTerminalKind.ModelFailure, ModelFailureKind.MalformedResponse),
+            (task.TerminalReason!.Kind, task.TerminalReason.FailureKind!.Value));
+        Assert.Equal(2, model.Requests.Count);
+        Assert.Empty(task.Plans);
+        Assert.Contains("a plan may list at most 14", Assert.Single(task.Steps).Observation, StringComparison.Ordinal);
+        Assert.Equal(0, task.Accounting!.LifetimeSteps);
+        Assert.Equal(0, tool.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task APlanThatFillsTheAttemptBudget_LessTheFinalAnswer_IsAccepted_AndCompletes()
+    {
+        var tool = EventsTool();
+        var model = new FakeChatModel(Text(EventsPlanOf(2)), EventsCall(1), EventsCall(2), Done());
+
+        var task = await Runner(model, tool, options: new AgentRunnerOptions { MaxSteps = 3 }).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Equal(3, task.Accounting!.LifetimeSteps);
+        Assert.Equal(ModelCallOutcome.Success, Assert.Single(task.Plans[0].ModelCalls!).Outcome);
+    }
+
+    [Fact]
+    public async Task ThePlanningPrompt_StatesTheAttemptStepBudget()
+    {
+        var model = new FakeChatModel(Text(EventsPlanOf(1)), EventsCall(1), Done());
+
+        await Runner(model, EventsTool()).RunAsync("diagnose", Actor);
+
+        Assert.Contains(
+            "This execution attempt has 15 steps left. Every tool call the runtime executes or refuses, and the final answer, " +
+            "uses one step, so a plan may list at most 14 steps (conditional steps included); a longer plan is refused.",
+            model.Requests[0].SystemPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AReplanLongerThanTheStepsLeft_IsRefusedWithTheBudget_AndTheCorrectedReplanIsAccepted()
+    {
+        var unknown = new ModelToolCall("c0", "does.not.exist", ToolArguments.Empty);
+        var model = new FakeChatModel(
+            PlanningTestSupport.PlanResponse(expectedTool: "does.not.exist"),
+            new ModelResponse(null, [unknown], false, null),
+            Text(EventsPlanOf(3)),
+            Text(PlanningTestSupport.PlanResponse(stepCount: 0).TextResponse),
+            Done());
+
+        var task = await Runner(model, EventsTool(), options: new AgentRunnerOptions { MaxSteps = 4 }).RunAsync("diagnose", Actor);
+
+        Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Contains("This execution attempt has 3 steps left", model.Requests[2].SystemPrompt, StringComparison.Ordinal);
+        Assert.Contains("a plan may list at most 2", LastUserTurn(model.Requests[3]), StringComparison.Ordinal);
+        Assert.Equal(2, task.Plans.Count);
+    }
+
+    [Theory]
+    [InlineData(15, 60, 0, 0, 15)]
+    [InlineData(15, 60, 4, 4, 11)]
+    [InlineData(15, 60, 0, 50, 10)]
+    [InlineData(15, 60, 0, 60, 0)]
+    [InlineData(1, 60, 0, 0, 1)]
+    public void TheStepsLeft_AreTheAttemptsOwn_CappedByTheLifetimeBudget(
+        int maxSteps, int maxLifetimeSteps, int attemptSteps, int lifetimeSteps, int expected)
+    {
+        var budget = PlanStepBudget.For(
+            new AgentRunnerOptions { MaxSteps = maxSteps, MaxLifetimeSteps = maxLifetimeSteps }, attemptSteps, lifetimeSteps);
+
+        Assert.Equal(expected, budget.StepsLeft);
+        Assert.Equal(Math.Max(0, expected - 1), budget.MaxPlanSteps);
+    }
+
+    [Fact]
+    public void WithOneStepLeft_OnlyAnEmptyPlanFits_AndThePromptSaysSo()
+    {
+        var budget = PlanStepBudget.For(new AgentRunnerOptions { MaxSteps = 1 }, 0, 0);
+
+        Assert.Null(budget.Problem(0));
+        Assert.NotNull(budget.Problem(1));
+        Assert.Contains("return an empty \"steps\" array", budget.Instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AReplanAfterTheAttemptsLastStep_IsSizedForTheResumeThatRunsIt_AndSaysSo()
+    {
+        var options = new AgentRunnerOptions { MaxSteps = 15, MaxLifetimeSteps = 60 };
+
+        var within = PlanStepBudget.ForReplan(options, attemptSteps: 9, lifetimeSteps: 9);
+        var after = PlanStepBudget.ForReplan(options, attemptSteps: 15, lifetimeSteps: 15);
+        var lifetimeSpent = PlanStepBudget.ForReplan(options, attemptSteps: 15, lifetimeSteps: 60);
+
+        Assert.Equal((6, false), (within.StepsLeft, within.NextAttempt));
+        Assert.Equal((15, true, 14), (after.StepsLeft, after.NextAttempt, after.MaxPlanSteps));
+        Assert.StartsWith(
+            "This execution attempt has no step left: this plan runs in the next execution attempt, which has 15 steps.",
+            after.Instructions, StringComparison.Ordinal);
+        Assert.Contains("the next execution attempt has 15 steps and", after.Problem(15), StringComparison.Ordinal);
+        Assert.Equal(0, lifetimeSpent.MaxPlanSteps);
+    }
 }

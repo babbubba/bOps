@@ -12,6 +12,19 @@ All notable changes to bOps are documented here. Versions follow Semantic Versio
 - `v1.1.0-preview.2` (commit `c81ffab`): first tag whose release workflow passed on Windows and
   Linux, with attested runtime archives, SDK package, SBOMs and checksums (run `35383901325`).
 
+### Fixed
+
+- Diagnostic reliability anomalies from the MAF CLI A/B campaign (maintenance, no new task). A final reply made only of the runtime's own
+  history markers (the compaction placeholder and its tool status bullets) is no longer a `Completed` answer: it takes the existing bounded
+  empty-reply retry and then fails as `EmptyResponse`, in both the standard and the MAF path, with the same audit and accounting
+  (`FinalAnswerContent`, `RuntimeContextMarkers`). Counts and dates that a final answer attributes to a step by number or tool name
+  (`step 6`, `system.events`) are checked against that step's own result and arguments (`AnswerClaimProvenance`): a count a failed or empty
+  step cannot carry, or a date whose year no cited step contains, joins the grounding check's citations in the same single correction, and the
+  attempt fails if the correction keeps it (new persisted marker `evidence claims corrected` when no typed fact existed). Zero results are
+  still never typed facts. `system.crashes` adds a `stopCodeLegend` (official names, live dump versus bugcheck) for the few catalogued stop
+  codes present, and the `system.crashes` / `system.events` descriptions state what a live dump, Kernel-Power 41, a WHEA record and bOps's own
+  records do and do not prove.
+
 ### Added
 
 - Production hosting of the web UI (F-26, BOPS-0120). The published `bOps.Api` serves the compiled Angular app and the API from one

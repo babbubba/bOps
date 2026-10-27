@@ -653,7 +653,7 @@ model asks for. It is an experimental pilot ([ADR-0058](architecture/adr/README.
 | `Knowledge:TrustStorePath` | — | Required. Public keys only (`schemaVersion`, `keys[]`, `revokedPublishers[]`); a private key or an empty list is rejected. |
 | `Knowledge:Grants` | — | Required, at least one `{ PackId, Version, Kind: "Knowledge" }`. No tenant key exists; the tenant is always the Local Agent. |
 | `Knowledge:Binding` | — | Required `{ PackId, Version }`: the pack new tasks use. It must also be granted, or the task is refused. |
-| `Knowledge:Budget` | `MaxReads` 4, `MaxRejections` 4, `MaxCharactersPerRead` 8000 | Ceilings 8 / 8 / 16000. |
+| `Knowledge:Budget` | `MaxReads` 4, `MaxRejections` 4, `MaxCharactersPerRead` 8000, `ContextShare` 0.35 | Ceilings 8 / 8 / 16000; `ContextShare` 0.05–0.90. The three counts are fixed protections; `ContextShare` is the largest share of the input space left after the mandatory context that knowledge may hold, computed per request on the model's configured `Agent:Context:Profiles` entry (see below). A read that does not fit is refused whole (`ContextBudget`), never truncated. |
 
 Unknown or misspelt keys are an error whether or not the section is enabled. The shipped `appsettings.json` contains only
 `"Knowledge": { "Enabled": false }`: no pack path and no key. Never put a signing key anywhere in bOps configuration; packs are signed
@@ -674,7 +674,7 @@ the ones of the default path. It is for evaluating the MAF integration, not for 
 | `Cli:Experimental:MafGovernedTurn` | absent = `false` | `true` or `false` only (case-insensitive); any other value stops the command (exit code 2). The shipped `appsettings.json` does not set it. Environment form: `Cli__Experimental__MafGovernedTurn`. |
 
 - A run in this mode prints an `EXPERIMENTAL` line on standard error at start.
-- It is refused (exit code 2) when `Knowledge:Enabled` is `true`: Knowledge and Skills content does not go through this host.
+- It composes with `Knowledge:Enabled` (the benchmark's condition D): the runner still serves the knowledge, and the agent receives it only as the protected context the runner authorised. The framework skills provider is not given to the agent; it runs nothing.
 - Any command that is not a goal or a resume (`bops delegate`, `recover`, `reconcile`) ignores the key and uses the default path.
 - Switching the key between runs is safe: a task started in one mode can be resumed in the other, also after a restart, and the stored task is the same.
 - The API host does not read this key.

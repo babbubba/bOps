@@ -5,6 +5,9 @@ Nothing here has been run live. Every step below that talks to a model needs `-A
 
 > BENCH-00 measured the **API**, which ignores this switch. Never quote an API measurement as evidence for the CLI MAF host.
 
+> The four-condition extension (A/B plus C/D with the signed Windows Knowledge pack, Qwen3.8 Smart 128K) is in
+> [`maf-knowledge-abcd-campaign-runbook-01.md`](maf-knowledge-abcd-campaign-runbook-01.md). A and B keep the meaning described here.
+
 ## What the tooling guarantees
 
 - Same build, profile, endpoint, parameters, tools, limits, prompts (the exact BENCH-00 B01/B02/B03), policy and effective configuration in both variants; the configuration fingerprint must match and the report says whether it did.
@@ -59,7 +62,7 @@ $commit = (git -C $repo rev-parse HEAD).Trim()
 ```
 
 It checks: target commit and clean runtime sources; output outside any Git work tree; profile and authorizations (a non-loopback endpoint fails unless `-AllowRemoteEndpoint`); builds the CLI in Release (the `bops.dll` hash is recorded); the read-only policy; the endpoint (`GET <baseUrl>/models` — a listing, never an inference request; `-SkipEndpointProbe` skips it); and the **mode probe**.
-The mode probe runs the real CLI once per variant against a **loopback stub that answers HTTP 400**: no model is contacted, the `EXPERIMENTAL` line must appear for B only. Because the CLI persists a failed task, the probe leaves one throwaway task per variant in `preflight\mode-probe-*\tasks.db`, never in a campaign. Use `-SkipModeProbe` if you want no task of any kind (the mode is then still verified on every real run, just not before).
+The mode probe runs the real CLI once per variant against a **loopback stub**: no model is contacted, the `EXPERIMENTAL` line must appear for B only. The stub holds the CLI's first model request and the probe **stops the process the moment it arrives** (`stoppedEarly: true` in `preflight.json`): the mode is decided at startup, and a CLI that never sees a model failure leaves no crash record in the Application log of the machine under diagnosis. The probe leaves one throwaway task per variant in `preflight\mode-probe-*\tasks.db`, never in a campaign. Use `-SkipModeProbe` if you want no task of any kind (the mode is then still verified on every real run, just not before).
 Exit code 0 = passed; the details are in `preflight.json`.
 
 ## 3. Pilot: B01, MAF OFF and ON, one round (live — your go-ahead)
@@ -93,6 +96,32 @@ Same command with `-Rounds 3` and the budgets of the 18-run row above (for examp
 & $bench -Verify  <campaign dir>     # re-hashes the evidence; grading and reports are excluded from the hashes
 ```
 
+### Automatic evaluation (BOPS-0126, phase P1: deterministic, no model)
+
+Run it **before** `-Analyze`, so the report picks it up. It reads the campaign and writes only `auto-evaluation\` (excluded from the
+integrity hashes like `evaluation\` and `report\`); it calls no model and copies no evidence or answer text.
+
+```powershell
+dotnet run --project "$repo\tests\bOps.DiagnosticEvaluation" -c Release -- --campaign <campaign dir>
+& $bench -Analyze <campaign dir>
+```
+
+Each run gets `auto-evaluation\Rnn.json` (blind code, never the variant), built with the Microsoft Agent Framework evaluation framework
+(`EvalItem`, `LocalEvaluator`, `FunctionEvaluator`), and the report gains the `auto*` rows:
+
+| Metric | What it measures | Ground truth |
+|---|---|---|
+| M1 `autoLiveDumpAsCrash`, `autoCrashAsLiveDump` | a live dump called a crash (sentence, or the live-dump count given as BSODs) and the reverse | the run's typed facts (`system.crashes`, `system.stability`, `system.events`) |
+| M2 `autoCountAccuracy`, `autoCountsWrongFamily`, `autoCountsUnverified` | each number of the answer against the family named next to it | typed facts first, then the tool output (`inEvidence`, not scored) |
+| M3 `autoLimitationsUndisclosed` | partial sources without limitation wording | `Completeness` of the tool results |
+| M4 `autoKnowledgeRecallListed`, `autoKnowledgePrecision`, `autoKnowledgeCitedNotLoaded`, `autoKnowledgeReadsAnswerTurn` | whether the applicable entries were read, and an entry cited but never loaded | the audit (`knowledgeIndex`, `knowledgeRead`) and the scenario key |
+| M5 `autoFinalized`, `autoChecksFailed` | completed with a final answer; plan within the step budget; MAF checks failed | persisted state and audit |
+
+What applies to which scenario lives in `tests\bOps.DiagnosticEvaluation\keys\*.json` (fact selectors, wording, Knowledge applicability);
+its hash is in every result. A run with no final answer gets M4 and M5 only (`notApplicable`, never 0). These are heuristics (H) or certain
+counts (C), checked against the evidence the run acquired, **not** a judgement of the diagnosis: the blind sheets above stay the reference,
+and they are filled together with the operator (calibration). A model judge (P2) is not part of this phase.
+
 ## Results: location and format
 
 `%USERPROFILE%\Documents\bOps-MafBenchmarks\<name>\` (private ACL, outside the repository, not uploaded):
@@ -106,6 +135,7 @@ Same command with `-Rounds 3` and the budgets of the 18-run row above (for examp
 | `runs\…\capture\`, `audit-full.jsonl` | full task state, model calls, tool output, mutation journal, audit (unredacted evidence) |
 | `runs\…\stdout.txt`, `stderr.txt` | process output, credentials redacted |
 | `evaluation\Rnn.json` | blind grading sheets |
+| `auto-evaluation\Rnn.json`, `manifest.json` | automatic evaluation (BOPS-0126): scores, check results and reasons; counts, fact keys and sentence indexes only |
 | `report\ab-report.json / .csv / .md` | comparison; contains counts and ids only, never evidence text |
 | `integrity.json` | SHA-256 of all evidence files |
 
@@ -134,3 +164,9 @@ python -I -m unittest discover -s "$repo\scripts\windows\tests" -p "test_maf_cli
 ```
 
 They use a scripted stand-in for the CLI (a test double, labelled as such in any report it produces) and touch neither a model nor the network beyond loopback.
+
+The automatic evaluation has its own offline suite over synthetic captures with known defects (part of `bOps.slnx`, so CI runs it):
+
+```powershell
+dotnet test "$repo\tests\bOps.DiagnosticEvaluation.Tests"
+```

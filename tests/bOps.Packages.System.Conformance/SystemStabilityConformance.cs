@@ -300,6 +300,14 @@ public static partial class SystemToolConformance
         var root = JsonNode.Parse(output)!.AsObject();
         Assert.Equal(2, root["schemaVersion"]!.GetValue<int>());
         var mode = root["mode"]!.GetValue<string>();
+        // stopCodeLegend is optional (present only when a catalogued stop code is in the result) and sits right after observedItems.
+        if (root["stopCodeLegend"] is { } legend)
+        {
+            var entries = Assert.IsType<JsonObject>(legend);
+            Assert.NotEmpty(entries);
+            Assert.All(entries, pair => Assert.False(string.IsNullOrWhiteSpace(pair.Value!.GetValue<string>())));
+        }
+
         // BOPS-0128: the compact group summary sits right before the groups, and only when there is a group to summarize.
         var aggregateKeys = root["observedGroups"]?.GetValue<int>() > 0
             ? new[] { "schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "catalogAge", "sources", "warnings", "observedGroups", "returnedGroups", "groupSummary", "groups" }
@@ -308,7 +316,7 @@ public static partial class SystemToolConformance
             mode == "raw"
                 ? ["schemaVersion", "mode", "status", "complete", "truncated", "window", "coverage", "observedItems", "returnedItems", "catalogAge", "sources", "warnings", "items"]
                 : aggregateKeys,
-            root.Select(pair => pair.Key).ToArray());
+            root.Select(pair => pair.Key).Where(key => key != "stopCodeLegend").ToArray());
         var status = root["status"]!.GetValue<string>();
         Assert.Contains(status, MaintenanceStatuses);
         var coverageState = AssertCoverage(root);

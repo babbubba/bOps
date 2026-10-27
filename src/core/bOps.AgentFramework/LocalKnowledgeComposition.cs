@@ -39,8 +39,15 @@ public sealed class LocalKnowledgeBudget
     /// <summary>How many refused reads end the task as a control-protocol failure.</summary>
     public int MaxRejections { get; init; } = DefaultMaxRejections;
 
-    /// <summary>The most characters one read may return.</summary>
+    /// <summary>The most characters one read may return. A fixed protection that applies whatever the model's window is.</summary>
     public int MaxCharactersPerRead { get; init; } = DefaultMaxCharactersPerRead;
+
+    /// <summary>
+    /// The largest share of the input space that is left after the mandatory context (instructions, goal, tool schemas, evidence, history)
+    /// that reference knowledge may take, applied to the real window of the model selected for each request. It limits the knowledge a
+    /// task may hold, never the evidence it needs, and it only acts when the model's capacity is configured.
+    /// </summary>
+    public double ContextShare { get; init; } = KnowledgeContextBudget.DefaultShare;
 
     /// <summary>The documented default of <see cref="MaxReads"/>.</summary>
     public const int DefaultMaxReads = 4;
@@ -298,7 +305,13 @@ public static class LocalKnowledgeComposition
         Within(budget.MaxReads, 1, MaxReadsCeiling, "MaxReads");
         Within(budget.MaxRejections, 1, MaxRejectionsCeiling, "MaxRejections");
         Within(budget.MaxCharactersPerRead, 500, MaxCharactersCeiling, "MaxCharactersPerRead");
-        return new KnowledgeReadBudget(budget.MaxReads, budget.MaxRejections, budget.MaxCharactersPerRead);
+        if (double.IsNaN(budget.ContextShare) || budget.ContextShare < KnowledgeContextBudget.MinimumShare || budget.ContextShare > KnowledgeContextBudget.MaximumShare)
+        {
+            throw Invalid(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"'Knowledge:Budget:ContextShare' must be between {KnowledgeContextBudget.MinimumShare} and {KnowledgeContextBudget.MaximumShare} (it is {budget.ContextShare})."));
+        }
+
+        return new KnowledgeReadBudget(budget.MaxReads, budget.MaxRejections, budget.MaxCharactersPerRead, budget.ContextShare);
     }
 
     private static void Within(int value, int minimum, int maximum, string key)

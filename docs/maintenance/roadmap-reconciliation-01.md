@@ -297,3 +297,29 @@ Priorità: **P0** difetto che invalida la fiducia nelle diagnosi o la sicurezza 
 ## Appendice B — Non verificato
 
 CI remota (dichiarata verde dall'operatore); suite completa e Linux/WSL; `PROMPT-RUNTIME-AUDIT-01-report.md` e `RELEASE-VALIDATION-01-report.md` (citati tramite il master); artefatti grezzi delle campagne in la cartella dei backup privati (fuori repo); qualsiasi comportamento live. Le affermazioni segnate [DOC]/[MASTER] ereditano i limiti dei documenti sorgente (revisore singolo, n piccolo, replay). Le stime di effort sono giudizi, non misure.
+
+---
+
+## Addendum 2026-10-27 — valutazione diagnostica e prove (BOPS-0126 → BOPS-0127, BOPS-0128)
+
+Il backlog del §5 è integrato; nessuno stato esistente è cambiato. I nuovi task sono `PLANNED` e **non autorizzati**: l'operatore ha autorizzato solo analisi, congelamento delle baseline e formalizzazione. Il registro resta l'autorità.
+
+| ID | Attività | P | Effort | Dipendenze | Gate |
+|---|---|---|---|---|---|
+| BOPS-0127 MAF-DIAG-EVAL-02 | Valutatore deterministico V2 (lato test), confrontabile con la baseline P1 congelata. Misura: valore + unità + scala, legame al fatto giusto, completezza e finestra della fonte, deduplicazione, campione vs gruppo, visibilità, fattibilità e natura delle raccomandazioni, ipotesi separate dai fatti. Nessun giudice LLM | P1 | 5–8 | BOPS-0126 | autorizzazione; soglie decise dopo la calibrazione R02–R06 |
+| BOPS-0128 DIAG-EVIDENCE-02 | Fatti tipizzati completi dei bugcheck entro i limiti esistenti; metadati di selezione e copertura delle query; etichette delle azioni consigliate nella risposta finale | P1 | 4–7 | — | autorizzazione; decisione normativa per la parte sulle raccomandazioni |
+
+**Decisioni proposte** (nessuna applicata):
+- emendare il perimetro di BOPS-0080 per un EvidenceRead indirizzabile per gruppo o chiave;
+- riaprire BOPS-0103 LIVE-04B, perché c'è una nuova prova di generalizzazione dei messaggi d'esempio;
+- riconciliare BOPS-0111, implementato su `codex/bops-0111-diagnostic-assurance` ma con la PR #124 chiusa senza merge, mentre questo registro lo dà `READY` e non autorizzato.
+
+La validazione della fattibilità delle raccomandazioni a runtime resta subordinata all'esito di BOPS-0115 DIAG-CLAIMS-01.
+
+**Ordine consigliato:**
+1. calibrazione cieca R02–R06 (BOPS-0126, con l'operatore);
+2. BOPS-0127 (slice R11 → R2/R1 → R3/R4 → R7 → R5/R6 → R10/R8/R9);
+3. BOPS-0128, slice B e A;
+4. decisioni su BOPS-0080, BOPS-0103 e BOPS-0111;
+5. BOPS-0128, slice C dopo la decisione normativa;
+6. BOPS-0115, quando le sue dipendenze lo permettono.

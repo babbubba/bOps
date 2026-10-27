@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 126,
+  "next": 129,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -5816,10 +5816,14 @@
    "companion_docs": [
     "docs/maintenance/af-turn-02-cli-host-parity-report-01.md"
    ],
-   "prs": [],
+   "prs": [
+    129,
+    138
+   ],
    "commits": [
     "ba4b4e4b5fc1f95c26172233fb98fa4b42901aeb",
-    "d8dca20106e3feb385ccbbfd545234f3067f594d"
+    "d8dca20106e3feb385ccbbfd545234f3067f594d",
+    "3dbfbd86bf2abd653e683c410e76b273c4b5f509"
    ],
    "validation": {
     "achieved": [
@@ -5831,16 +5835,16 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "PR, CI of the PR head on Windows and Linux, and of the merge commit (no push or PR was requested yet).",
-     "Operator approval of the delivery.",
-     "Not covered at host level: cancellation and timeout parity, process-level exit codes of Program.cs, any live model run (separate authorization)."
+     "CI of the merge commit of PR #129 is not recorded here; operator approval of the delivery.",
+     "Host-level parity tests merged by PR #138 (3dbfbd8): CI of the PR head and of main green on Windows and Linux. Any live model run remains a separate authorization."
     ]
    },
    "evidence": [
     "Local, Windows 2026-10-23, branch codex/bops-0122-af-turn-02 at d8dca20: Release build of bOps.slnx 0 warnings 0 errors; Cli.Tests 217/217 (27 new in MafGovernedTurnHostTests), Architecture.Tests 210/210, AgentFramework.Tests 615 passed + 8 skipped, Runtime.Tests 2301/2301, Knowledge.Tests 308/308; validate_register.py 122 tasks 0 errors",
     "Parity (default path vs MAF governed turn host, scripted model): requests, stored TaskState, audit trail, tool executions and accounting identical in 7 scenarios; 4 mode-switch combinations across interruption and resume identical to the all-default control; report docs/maintenance/af-turn-02-cli-host-parity-report-01.md",
     "Full non-live solution run before the architecture guards were narrowed: failures only in Architecture (3 guards forbidding any composition, now narrowed to C01-R22 and green) and Filesystem (3 tests, reproduced on unchanged main code, unrelated)",
-    "Remote 2026-10-23: Issue #128 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDC87Q created as babbubba and read back (Status In Progress at creation, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)"
+    "Remote 2026-10-23: Issue #128 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDC87Q created as babbubba and read back (Status In Progress at creation, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium)",
+    "PR #138 (squash 3dbfbd8): MafTurnCancellationParityTests (caller cancellation, attempt timeout, attempt duration budget) and MafCliProcessTests (Program.cs exit codes) pass; CI of the PR head 436b8e0 and of main green on Windows and Linux."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -5977,7 +5981,8 @@
     "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
    ],
    "prs": [
-    134
+    134,
+    140
    ],
    "commits": [
     "2d9fc17a6a4d7b977511f52ffa0a83c8cec1f9ef"
@@ -6015,6 +6020,176 @@
    "sync": {
     "status": "Validation",
     "verified_at": "2026-10-24T13:00:00+0200"
+   }
+  },
+  {
+   "id": "BOPS-0126",
+   "legacy_id": "MAF-DIAG-EVAL-01",
+   "title": "MAF-DIAG-EVAL-01 MAF evaluation of diagnostic quality in the A/B/C/D benchmark",
+   "created": {
+    "at": "2026-10-26",
+    "basis": "document-date",
+    "source": "operator request 2026-10-26 (MAF Evaluation before multi-agent work)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "MAF",
+   "area": "MAF",
+   "status": "IN_PROGRESS",
+   "priority": "P1",
+   "effort": "medium",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-26-bops-0126-maf-diagnostic-evaluation.md",
+   "spec": null,
+   "companion_docs": [
+    "docs/maintenance/maf-cli-ab-benchmark-runbook-01.md"
+   ],
+   "prs": [
+    135,
+    140
+   ],
+   "commits": [],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "CI of the head of the consolidation PR (branch codex/bops-consolidation-20261027, PR #140, replaces PR #135) and of the merge commit.",
+     "Operator review of the P1 results on the campaigns already captured, then the calibration session with the operator (blind sheets filled together, condition 2 of the authorization)."
+    ]
+   },
+   "evidence": [
+    "Remote 2026-10-26: Issue #136 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhDn-7c created as babbubba; Status In Progress, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort medium set and read back.",
+    "Local, Windows 2026-10-26, worktree bOps-diagfix on codex/maf-ab-diagnostic-reliability: Release build of bOps.slnx 0 warnings 0 errors; bOps.DiagnosticEvaluation.Tests 15/15, bOps.Architecture.Tests 210/210, scripts/windows test_maf_cli_benchmark.py 47/47 and test_live_benchmark.py 49/49; a mutation of the wrong-family rule fails its test. Evaluator run on the captured campaigns (outputs private, not uploaded): two executions give identical bytes, verify stays OK, and the run flagged with 7 unverified counts is 09-B02-B-r2, the P0-2 case found by hand in the fa933f8 campaign.",
+    "Calibration 2026-10-27 (private, with the operator): R01 of the B02 C/D rerun at cd00e81, 118 claims = 108 judged + 10 excluded. The P1 evaluator emitted no negative result (detection precision undefined); it missed a numeric error (C100) and an impossible recommendation (C113) and could not classify two contradictions (C05, C63); 34 of 118 claims had any number scored. Report and verdicts stay private.",
+    "Baseline frozen 2026-10-27 before any rule change: P1 evaluations of R01-R06 at keys cd00e81 and 8f6c204, each reproduced twice byte-identical, the second equal to the campaign's auto-evaluation; integrity OK. Private manifest sha256 2ea60ce8debd741af9c1a83fd38352fb634ac7aaf47f718be69bc23e9c031097. Next blind calibration: stratified seeded sample of 172 of 448 R02-R06 claims (private list sha256 7e0e9b09...). Follow-ups formalized as BOPS-0127 (evaluator V2) and BOPS-0128 (runtime/tool evidence), both not authorized.",
+    "Consolidation 2026-10-27 (operator-approved matrix), local Windows, worktree bOps-consol on codex/bops-consolidation-20261027 from main ea557c1: the 14 PR #135 commits cherry-picked unchanged (code tree identical to the tested local branch at fb00497; 4530ae0..1204fee are BOPS-0125 pilot fixes), ADR links of 48766e4, ambient-credential scrub of e64926a. Release build of bOps.slnx 0 warnings 0 errors; dotnet test bOps.slnx -c Release: 37 test assemblies, 6828 passed, 0 failed, 173 skipped (live/OS-gated); scripts/windows tests 138/138, scripts/governance tests 70/70; validate_register.py 128 tasks 0 errors. Pushed 2026-10-27 as babbubba, PR #140 opened (Refs, base main); CI pending."
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "note": "Authorized 2026-10-26 for registration and phase P1 only (deterministic evaluators, no model judge). Operator conditions: no new worktree or branch, the work rides the open PR #135 on codex/maf-ab-diagnostic-reliability; the calibration sheets are filled together with the operator. P2 (model judge, MEAI Quality/Reporting packages, judge endpoint) needs a new authorization; a remote judge would send private evidence. Priority P1, effort medium and milestone MAF mirrored from BOPS-0125, to be confirmed by the operator. Test-side harness only, never shipped (C01-R02 reading recorded in the packet). 2026-10-27, operator: the work moves to the single consolidation branch codex/bops-consolidation-20261027 (cut from main ea557c1, PR #135 commits cherry-picked unchanged); PR #135 stays open until the consolidation PR replaces it.",
+   "branch": "codex/bops-consolidation-20261027",
+   "remote_kind": "issue",
+   "issue": 136,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDn-7c",
+   "sync": {
+    "status": "In Progress",
+    "verified_at": "2026-10-26T17:00:00+0100"
+   }
+  },
+  {
+   "spec": null,
+   "prs": [],
+   "commits": [],
+   "evidence": [],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "branch": null,
+   "remote_kind": null,
+   "id": "BOPS-0127",
+   "legacy_id": "MAF-DIAG-EVAL-02",
+   "title": "MAF-DIAG-EVAL-02 Deterministic diagnostic evaluator V2",
+   "created": {
+    "at": "2026-10-27",
+    "basis": "document-date",
+    "source": "operator request 2026-10-27 (formalization after the R01 human calibration)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Quality",
+   "status": "PLANNED",
+   "priority": "P1",
+   "effort": "5-8 days",
+   "authorized": false,
+   "depends_on": [
+    "BOPS-0126"
+   ],
+   "packet": "agentic/_tasks/2026-10-27-bops-0127-diag-eval-v2.md",
+   "companion_docs": [
+    "docs/maintenance/roadmap-reconciliation-01.md"
+   ],
+   "validation": {
+    "achieved": [],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "Operator authorization before any code (2026-10-27: formalization only).",
+     "Thresholds of A4 set by the operator after the R02-R06 calibration, before V2 is used for decisions."
+    ]
+   },
+   "note": "Test-side evaluator V2: value/unit/scale, binding to the right typed fact, source completeness, time window, cross-source deduplication, sample vs group, model visibility, recommendation feasibility, read-only vs mutating operations, hypotheses apart from facts; retrospective comparison with the frozen P1 baseline (private manifest sha256 2ea60ce8...). No model judge, no runtime change. Complements BOPS-0115 (runtime claim contract), does not replace it.",
+   "sync_pending": [
+    "create Issue 'BOPS-0127 | MAF-DIAG-EVAL-02 — …'",
+    "add it to Project #6 with Status Backlog and the fields Priority P1, Area Quality, bOps Milestone DIAG-QUALITY, Evidence Level None, Effort 5-8 days"
+   ]
+  },
+  {
+   "spec": null,
+   "prs": [
+    137
+   ],
+   "commits": [
+    "ea557c11048a83d151eee6d381aca21339d833dc"
+   ],
+   "evidence": [
+    "Local, Windows 2026-10-27, worktree bOps-diagfix on local branch codex/bops-0128-diag-evidence-02 (cut from codex/maf-ab-diagnostic-reliability @ 412da2c, not pushed), slices A and B only: Release solution build 0 warnings; System.Core 505, System.Windows 338 (3 skipped), System.Linux 183 (80 skipped), Runtime 2383, AgentFramework 638 (8 skipped), Architecture 210, DiagnosticEvaluation 15, Cli 263 tests pass. 16 new synthetic tests (Bops0128EvidenceTests) and an env-gated offline replay (Bops0128ReplayTests, read-only) of the captured results of three campaigns: 20 system.crashes and 19 system.events results replayed, with every kernel code (7 bugcheck and 2 live-dump in the R01 capture) listed in the typed facts and a group summary ahead of the groups. No change to policy, approval, authority, tool execution, journal or resume, and none to the 16-fact/4096-byte limits.",
+    "PR #137 (squash ea557c1), CI of the PR head 32b3483 and of main green on Windows and Linux; cost and visibility of groupSummary measured offline in docs/maintenance/bops-0128-groupsummary-cost-01.md (crashes output 20 532 -> 28 016 chars, groups named in the first 6 500 chars 25/51 -> 36/51, kernel codes 6/9 -> 9/9)."
+   ],
+   "blocked_reason": null,
+   "reopen_condition": null,
+   "branch": "codex/bops-0128-diag-evidence-02",
+   "remote_kind": "issue",
+   "id": "BOPS-0128",
+   "legacy_id": "DIAG-EVIDENCE-02",
+   "title": "DIAG-EVIDENCE-02 Evidence completeness, query selection and recommendation hygiene",
+   "created": {
+    "at": "2026-10-27",
+    "basis": "document-date",
+    "source": "operator request 2026-10-27 (runtime reconciliation after the R01 human calibration)",
+    "order_certainty": "conventional"
+   },
+   "milestone": "DIAG-QUALITY",
+   "area": "Tools",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": "4-7 days",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-10-27-bops-0128-diag-evidence-02.md",
+   "companion_docs": [
+    "docs/maintenance/roadmap-reconciliation-01.md",
+    "docs/maintenance/bops-0111-differential-01.md"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED",
+     "OPERATOR_GATE"
+    ],
+    "open_gates": [
+     "OPERATOR_GATE: operator approval of the delivery (PR #137 merged 2026-10-27 as ea557c1; CI of the PR head 32b3483 and of main ea557c1 green on Windows and Linux).",
+     "Slice C (final-answer recommendation labels) is NOT authorized and not started; it needs the normative decision.",
+     "No live campaign without a new authorization. Separate decisions proposed: BOPS-0080 scope amendment and reopening BOPS-0103."
+    ]
+   },
+   "note": "Slices: A complete bugcheck/live-dump code facts within the existing 16-fact/4096-byte bounds; B query selection and coverage metadata as typed facts; C recommendation labels in the final answer (normative gate). Recommendation feasibility enforcement waits for BOPS-0115. Reconciled with BOPS-0111 (implemented on an unmerged, closed-PR branch: divergence to reconcile), BOPS-0080, BOPS-0068, BOPS-0103, BOPS-0113, BOPS-0072; nothing duplicated.",
+   "issue": 139,
+   "project_item": "PVTI_lAHOAP3b6c4BoBRpzhD71AU",
+   "sync": {
+    "status": "Validation",
+    "verified_at": "2026-10-27T18:00:00+0100"
    }
   }
  ],

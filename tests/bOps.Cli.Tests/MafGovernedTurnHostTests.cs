@@ -130,15 +130,19 @@ public sealed class MafGovernedTurnHostTests
     }
 
     [Fact]
-    public void WithKnowledgeEnabled_TheExperimentIsRefused_AndNothingIsComposed()
+    public async Task WithKnowledgeEnabled_TheExperimentIsComposed_AndTheKnowledgeStillReachesTheModel()
     {
         using var world = new CliKnowledgeWorld { MafGovernedTurn = true };
 
-        var refusal = Assert.Throws<InvalidOperationException>(() => world.Runner(Script("plan-tool-final"), world.Settings()));
+        var rig = world.Runner(
+            [CliScript.Plan("system.events"), CliScript.Read("k1", "read_resource", "K1.R1"), CliScript.Tool("c1", "system.events"), CliScript.Final("diagnosis")],
+            world.Settings());
+        var state = await rig.Runner.RunAsync(Goal, Operator);
 
-        Assert.Contains("Knowledge", refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("C01-R22", refusal.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(world.Events, evt => evt is ModelCallAuditEvent);
+        Assert.NotNull(rig.Host);
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.True(Assert.IsType<MafGovernedTurnBroker>(rig.Broker).ComposedTurns > 0);
+        Assert.Contains(world.Events, evt => evt is KnowledgeReadAuditEvent { ResultCode: KnowledgeReadResultCode.Success });
     }
 
     [Fact]

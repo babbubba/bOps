@@ -182,7 +182,7 @@ public sealed class KnowledgeCliProcessTests
         var messages = step["messages"]!.AsArray();
         var system = messages[0]!["content"]!.GetValue<string>();
         Assert.Contains("[knowledge-index-control v1]", system, StringComparison.Ordinal);
-        Assert.Contains("never required", system, StringComparison.Ordinal);
+        Assert.Contains("when no listed entry applies, do not read", system, StringComparison.Ordinal);
         Assert.Contains("send the read by itself", system, StringComparison.Ordinal);
         Assert.StartsWith("[knowledge-index v1", messages[1]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.Equal(Goal, messages[2]!["content"]!.GetValue<string>());

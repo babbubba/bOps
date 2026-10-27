@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Packet | [AF-05](2026-10-10-af-05-maf-regression-tuning-cleanup.md) |
-| Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
+| Governing ADR | [ADR-0052](../../docs/architecture/adr/README.md#adr-0052), D-048 |
 | Branch | `feat/af-05-maf-regression-tuning-cleanup` |
 | Harness | `tests/bOps.AgentFramework.Tests/Regression/` |
 | Regenerate | `BOPS_BENCHMARK_OUT=<file> dotnet test tests/bOps.AgentFramework.Tests --configuration Release --filter "FullyQualifiedName~Regression"` |

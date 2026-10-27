@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from unittest.mock import patch
@@ -151,6 +152,28 @@ class PreflightTests(Base):
         probe = next(c for c in document["checks"] if c["name"] == "mode-probe")
         self.assertEqual({v: p["markerSeen"] for v, p in probe["probes"].items()}, {"A": False, "B": True})
         self.assertEqual(list(out.rglob("tasks.db")), [])  # the probe records nothing in a task store
+
+    def test_the_mode_probe_stops_the_cli_at_its_first_model_request_so_it_never_sees_a_failure(self):
+        # The pilots found the probe leaving crash records in the Application log of the diagnosed machine: the CLI reached its first
+        # model call, got HTTP 400 and failed. The stub now holds that request (60 s) and the probe kills the process when it arrives.
+        out = self.tmp / "pf"
+        started = time.monotonic()
+        code, stdout, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", out, "--skip-endpoint-probe",
+                                    *self.double(self.script(probeConnect=True)))
+        self.assertEqual(code, 0, stdout)
+        self.assertLess(time.monotonic() - started, 40)
+        probe = next(c for c in json.loads((out / "preflight.json").read_text())["checks"] if c["name"] == "mode-probe")
+        self.assertEqual(probe["stubRequests"], 2)
+        self.assertEqual({v: (p["stoppedEarly"], p["status"], p["markerSeen"]) for v, p in probe["probes"].items()},
+                         {"A": (True, "pass", False), "B": (True, "pass", True)})
+
+    def test_a_probe_that_ends_by_itself_is_not_reported_as_stopped(self):
+        out = self.tmp / "pf"
+        code, _, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", out, "--skip-endpoint-probe",
+                               *self.double(self.script()))
+        self.assertEqual(code, 0)
+        probe = next(c for c in json.loads((out / "preflight.json").read_text())["checks"] if c["name"] == "mode-probe")
+        self.assertFalse(any(p["stoppedEarly"] for p in probe["probes"].values()))
 
     def test_preflight_fails_when_mode_b_does_not_report_itself(self):
         code, stdout, _ = self.main("preflight", "--model-profile", self.profile(), "--output-root", self.tmp / "pf", "--skip-endpoint-probe",
@@ -385,6 +408,22 @@ class CampaignTests(Base):
         victim.write_text(victim.read_text() + " ")
         self.assertEqual(self.main("verify", "--campaign-dir", out)[0], 1)
 
+    def test_auto_evaluation_joins_the_report_by_blind_code_and_never_breaks_integrity(self):
+        # BOPS-0126: tests/bOps.DiagnosticEvaluation writes auto-evaluation/<blindCode>.json after the campaign; the report joins it.
+        out, (code, *_) = self.run_campaign(self.script(state=with_audit(make_state())), "--allow-live")
+        self.assertEqual(code, 0)
+        planned = json.loads((out / "campaign.json").read_text())["plannedRuns"]
+        scored = next(p for p in planned if p["variant"] == "B")
+        (out / an.AUTO_EVALUATION_DIR).mkdir()
+        (out / an.AUTO_EVALUATION_DIR / f"{scored['blindCode']}.json").write_text(json.dumps(auto_document()))
+        report = an.write_report(out)
+        cells = report["matrix"]["B01"]
+        self.assertEqual(cells["B"]["metrics"]["autoCountAccuracy"]["mean"], 0.75)
+        self.assertEqual(cells["B"]["metrics"]["autoChecksFailed"]["mean"], 2)
+        self.assertIsNone(cells["A"]["metrics"]["autoCountAccuracy"])  # not evaluated: no value, never 0
+        self.assertIn("autoCountAccuracy", (out / "report" / "abcd-report.md").read_text())
+        self.assertEqual(mcb.verify_integrity(out), [])
+
     def test_scenario_prompts_are_the_exact_bench00_prompts(self):
         self.assertEqual(mcb.GOALS, {s["id"]: s["goal"] for s in mcb.lb.SCENARIOS})
         self.assertEqual(mcb.SCENARIO_IDS, ["B01", "B02", "B03"])
@@ -393,6 +432,49 @@ class CampaignTests(Base):
         self.assertEqual(code, 0)
         planned = json.loads((out / "campaign.json").read_text())["plannedRuns"]
         self.assertEqual([p["scenario"] for p in planned], ["B03", "B03", "B01", "B01"])  # operator order is kept
+
+
+def auto_document(**overrides):
+    """A synthetic auto-evaluation document in the shape tests/bOps.DiagnosticEvaluation writes (schema bops.diagnostic-evaluation/1)."""
+    document = {
+        "schema": an.AUTO_EVALUATION_SCHEMA, "blindCode": "R01", "scenario": "B01", "notApplicable": None,
+        "m1Classification": {"liveDumpSentencesAsCrash": [3], "liveDumpCountAsCrash": 1, "crashCountAsLiveDump": 0},
+        "m2Counts": {"exact": 3, "wrongFamily": 1, "unverified": 0, "inEvidence": 2, "unattributed": 4, "accuracy": 0.75, "findings": []},
+        "m3Support": {"partialSources": 1, "limitationWording": False, "partialSourcesUndisclosed": True, "unverifiedCounts": 0},
+        "m4Knowledge": {"precision": 1.0, "recallListed": 0.5, "readsInAnswerTurn": 1, "readsNotExecuted": 1,
+                        "citedNotLoaded": ["windows-crash-classification"]},
+        "m5Completion": {"status": "Completed", "finalized": True},
+        "checks": [{"evaluator": "bops-diagnosis", "name": "counts-consistent", "passed": False, "reason": "exact 3, wrong family 1"},
+                   {"evaluator": "bops-diagnosis", "name": "live-dump-kept-distinct", "passed": False, "reason": "1"},
+                   {"evaluator": "bops-completion", "name": "finalized", "passed": True, "reason": "ok"}],
+    }
+    document.update(overrides)
+    return document
+
+
+class AutoEvaluationTests(unittest.TestCase):
+    def test_absent_or_foreign_documents_give_no_values(self):
+        for document in (None, {"schema": "something-else"}):
+            values = an.auto_evaluation_metrics(document)
+            self.assertTrue(values)
+            self.assertTrue(all(v is None for v in values.values()))
+            self.assertEqual(set(values), {name for name in an.METRICS if name.startswith("auto")})
+
+    def test_metrics_are_read_from_the_document(self):
+        m = an.auto_evaluation_metrics(auto_document())
+        self.assertEqual((m["autoEvaluated"], m["autoChecksFailed"], m["autoFinalized"]), (1, 2, True))
+        self.assertEqual((m["autoCountAccuracy"], m["autoCountsExact"], m["autoCountsWrongFamily"], m["autoCountsUnverified"]), (0.75, 3, 1, 0))
+        self.assertEqual((m["autoLiveDumpAsCrash"], m["autoCrashAsLiveDump"], m["autoLimitationsUndisclosed"]), (2, 0, True))
+        self.assertEqual((m["autoKnowledgePrecision"], m["autoKnowledgeRecallListed"], m["autoKnowledgeReadsAnswerTurn"],
+                          m["autoKnowledgeReadsNotExecuted"], m["autoKnowledgeCitedNotLoaded"]), (1.0, 0.5, 1, 1, 1))
+
+    def test_a_run_without_an_answer_or_knowledge_keeps_those_metrics_empty(self):
+        m = an.auto_evaluation_metrics(auto_document(notApplicable="no final answer", m1Classification=None, m2Counts=None, m3Support=None,
+                                                     m4Knowledge=None, m5Completion={"status": "MaxStepsReached", "finalized": False}))
+        self.assertEqual((m["autoEvaluated"], m["autoFinalized"]), (1, False))
+        self.assertIsNone(m["autoCountAccuracy"])
+        self.assertIsNone(m["autoLiveDumpAsCrash"])
+        self.assertIsNone(m["autoKnowledgeRecallListed"])
 
 
 class MetricTests(unittest.TestCase):

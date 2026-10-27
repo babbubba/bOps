@@ -322,8 +322,10 @@ public sealed class EarlyFinalReplanTests
     public async Task Resume_AfterAPrematureFinalWhoseReplanWasNotMade_ReplansFirst_WithTheSameDirective()
     {
         var store = new InMemoryTaskStore();
-        var (live, _, _) = Build(new FakeChatModel(Plan(A, B), Call(A), Final(PrematureText)), store,
-            new AgentRunnerOptions { MaxSteps = 2, MaxLifetimeSteps = 10 });
+        // C03-R09: the two-step plan fits three steps with the final answer; a refused call (a tool not offered, corrected in
+        // place) spends the second, so the premature final takes the attempt's last step and its replan is owed to the resume.
+        var (live, _, _) = Build(new FakeChatModel(Plan(A, B), Call(A), Call("diag.not_offered"), Final(PrematureText)), store,
+            new AgentRunnerOptions { MaxSteps = 3, MaxLifetimeSteps = 10 });
         var interrupted = await live.RunAsync("diagnose", Actor);
         Assert.Equal(AgentTaskStatus.MaxStepsReached, interrupted.Status);
         Assert.True(PrematureFinal.IsStep(interrupted.Steps[^1]));

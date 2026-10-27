@@ -179,6 +179,12 @@ public sealed partial class AgentRunner(
     private const string ContentFreeResponseRetryPrefix =
         "Your last reply had no answer content: it was only punctuation, symbols or formatting marks, and no tool call. ";
 
+    // MAF A/B campaign (03-B02-A-r1): the model copied the runtime's own history placeholder as its final reply. It is retried and
+    // terminated like any other unusable reply; only the wording differs so the model is told what was wrong.
+    private const string RuntimeContextEchoRetryPrefix =
+        "Your last reply only repeated internal context markers from the conversation history (such as a compaction note or a " +
+        "tool status list); it contained no answer and no tool call. ";
+
     private const string OutputLimitedRetryPrefix =
         "Your last reply reached the output limit while reasoning and had no text and no tool call. Do not deliberate further: ";
 
@@ -262,6 +268,31 @@ public sealed partial class AgentRunner(
             : $"The runtime rejected that plan: {ProjectForPrompt(problem, MaxPlanProblemCharacters)} {PlanRetryInstructions}";
     }
 
+    private const int MaxSemanticMismatchArgumentCharacters = 400;
+
+    /// <summary>
+    /// The observation of a call whose arguments did not satisfy the current planned step. It keeps the original sentence and adds
+    /// what the step requires, so the one correction the model gets can name the argument it dropped or changed (an expected
+    /// argument is never sensitive, so naming it discloses nothing). The model's own plan is the source of the text.
+    /// </summary>
+    private static string SemanticMismatchMessage(ToolArguments? expected, string? bindingProblem)
+    {
+        const string Base = "The offered tool's arguments did not match the current planned step; the call was not executed.";
+        if (bindingProblem is not null)
+        {
+            return $"{Base} {ProjectForPrompt(bindingProblem, MaxSemanticMismatchArgumentCharacters)}";
+        }
+
+        if (expected is null || expected.ToJson().Count == 0)
+        {
+            return Base;
+        }
+
+        var required = ProjectForPrompt(expected.ToJson().ToJsonString(), MaxSemanticMismatchArgumentCharacters);
+        return $"{Base} The step requires these argument values exactly: {required}. Send every one of them unchanged; " +
+            "other optional arguments the tool accepts may be added.";
+    }
+
     private static bool IsOutputLimited(ModelResponse response) =>
         string.Equals(response.Details?.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
 
@@ -272,14 +303,26 @@ public sealed partial class AgentRunner(
 
     /// <summary>
     /// KNOW-FIX-01: the description of the offered knowledge control function, parallel to <see cref="EvidenceControlInstruction"/>. It
-    /// adds no obligation to read and no authority to what is read; the name is the session manifest's, never a literal.
+    /// asks for a read only when a listed entry applies, never unconditionally, and adds no authority to what is read; the name is the
+    /// session manifest's, never a literal. BOPS-0125: the wording is neutral; "never required … otherwise ignore it" leaned the model
+    /// away from an entry its step depended on (MAF A/B/C/D pilot B02). The B02 rerun showed two more ways a wanted read was lost: a
+    /// read sent in the same reply as another runtime read was answered "Not executed" (first call wins) and never sent again, and a
+    /// read the model put off to "later" or "to save steps" was never made, because its reasoning does not reach the final turn. So the
+    /// sentence states that a read uses no step, that a reply serves one read and nothing else, and, in the final turn, that a read its
+    /// answer needs is made there, still only for an entry that applies.
     /// </summary>
     private static string KnowledgeControlInstruction(string functionName, bool operationalToolOffered) =>
-        $"The native function {functionName} is a runtime control function, not an operational tool: it may be used, only if " +
-        "useful, to read reference data from the task's pinned knowledge. Using it is never required and never replaces the " +
-        "operational tool or the final answer; read only when a listed entry plainly applies to what you must do or explain, and " +
-        "otherwise ignore it. A read is answered on its own: it does not complete the step, and an operational call in the same " +
-        "reply is not executed, so send the read by itself and " +
+        $"The native function {functionName} is a runtime control function, not an operational tool: it reads reference data " +
+        "from the task's pinned knowledge. Read a listed entry when it applies to what you must do or explain, such as the exact " +
+        "names, codes or meanings that the current step or your answer depends on; when no listed entry applies, do not read. " +
+        (operationalToolOffered
+            ? string.Empty
+            : "Your answer is written in this turn, so a read it needs is made here: if a listed entry applies to explaining the " +
+              "collected evidence and is not yet in this conversation, read it now, before the answer; if none applies, answer " +
+              "without reading. ") +
+        "A read never replaces the operational tool or the final answer. A read is answered on its own and uses none of the " +
+        "attempt's steps: it does not complete the step, and nothing else in the same reply is executed, neither an operational call nor another read, so send the read by " +
+        "itself, one read per reply, and " +
         // PRA-R3: while a step's tool is offered the next reply is that call; the final answer is offered only once none is.
         (operationalToolOffered
             ? "make the current step's operational call in your next reply. "
@@ -309,6 +352,9 @@ public sealed partial class AgentRunner(
         pinnedProviderConfiguration,
         persistPinnedProviderConfiguration);
     private readonly AsyncLocal<ActiveAttemptBudget?> activeAttemptBudget = new();
+
+    /// <summary>The knowledge session of the execution attempt under way, so every model call can report the context it holds (observability only).</summary>
+    private readonly AsyncLocal<IKnowledgeReadSession?> activeKnowledge = new();
 
     /// <summary>
     /// Test seam: runs <paramref name="body"/> with <paramref name="budget"/> as the active attempt budget, exactly as a model-driven
@@ -549,7 +595,8 @@ public sealed partial class AgentRunner(
         try
         {
             var (createdPlan, planTokens) = await CreatePlanAsync(
-                run.TaskId, run.Actor, run.Goal, run.Delegation, planCalls, run.TokensUsed, ct);
+                run.TaskId, run.Actor, run.Goal, run.Delegation, planCalls, run.TokensUsed,
+                PlanStepBudget.For(options, run.AttemptSteps, run.LifetimeSteps), ct);
             plan = createdPlan;
             run.TokensUsed += planTokens;
             if (TokenBudgetExceeded(run))
@@ -968,7 +1015,9 @@ public sealed partial class AgentRunner(
     private async Task<TaskState> ExecuteGuardedAsync(ExecutionRun run, Func<Task<TaskState>> body, CancellationToken ct)
     {
         var priorBudget = activeAttemptBudget.Value;
+        var priorKnowledge = activeKnowledge.Value;
         activeAttemptBudget.Value = run.AttemptBudget;
+        activeKnowledge.Value = run.Knowledge;
         try
         {
             return await body();
@@ -1008,6 +1057,7 @@ public sealed partial class AgentRunner(
         finally
         {
             activeAttemptBudget.Value = priorBudget;
+            activeKnowledge.Value = priorKnowledge;
             run.AttemptBudget.Dispose();
             run.Knowledge?.Dispose();
             run.Knowledge = null;
@@ -1382,27 +1432,49 @@ public sealed partial class AgentRunner(
                 // ADR-0042 PRE-5 amendment §5–§8: after disclosure, so the checked text is the persisted one unless corrected.
                 // At most one check and one correction; a contradiction the correction does not resolve fails the attempt.
                 var groundingOutcome = EvidenceGroundingOutcome.NotChecked;
-                if (!diagnostic
-                    && grounding is not null
-                    && DisclosureBudgetRemains(run, delegation))
-                {
-                    var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, stepIndex, stepCalls, ct);
-                    if (guarded.Failure is { } failure)
-                    {
-                        stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
-                        logger.LogError(
-                            "Task {TaskId} step {StepIndex}: the final answer contradicted persisted typed evidence and was not corrected",
-                            taskId, stepIndex);
-                        return await FailAsync(run, failure.Message, failure.Reason, stepCalls, ct);
-                    }
 
-                    (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
-                    stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
+                // MAF A/B campaign (09-B02-B-r2): counts or dates the answer itself attributes to a step whose result does not contain
+                // them. Deterministic and free of model calls; the model's own words are judged, not the appended section.
+                IReadOnlyList<UnsupportedClaim> claims = diagnostic
+                    ? []
+                    : AnswerClaimProvenance.Find(response.TextResponse, steps, timeProvider.GetUtcNow());
+                if (!diagnostic && (grounding is not null || claims.Count > 0))
+                {
+                    if (!DisclosureBudgetRemains(run, delegation))
                     {
-                        EvidenceGroundingOutcome.NoContradictionCited => "no_contradiction_cited",
-                        EvidenceGroundingOutcome.Corrected => "corrected",
-                        _ => "check_unavailable",
-                    });
+                        if (claims.Count > 0)
+                        {
+                            // A known-unsupported attribution is never persisted as a completed answer; with no budget for the one
+                            // correction the attempt ends here (the typed-fact check alone may still be declined, as before).
+                            stepActivity?.SetTag("bops.evidence_grounding", "claims_not_corrected");
+                            logger.LogError(
+                                "Task {TaskId} step {StepIndex}: the final answer attributed values to steps that do not contain them and no budget remained to correct it",
+                                taskId, stepIndex);
+                            return await FailAsync(run, $"{UncorrectedClaimsMessage} No budget remained for the correction.",
+                                (TaskTerminalKind.RuntimeFailure, null), stepCalls, ct);
+                        }
+                    }
+                    else
+                    {
+                        var guarded = await GuardGroundingAsync(run, request, finalText!, grounding, claims, steps, stepIndex, stepCalls, ct);
+                        if (guarded.Failure is { } failure)
+                        {
+                            stepActivity?.SetTag("bops.evidence_grounding", "contradiction_not_corrected");
+                            logger.LogError(
+                                "Task {TaskId} step {StepIndex}: the final answer contradicted persisted evidence and was not corrected",
+                                taskId, stepIndex);
+                            return await FailAsync(run, failure.Message, failure.Reason, stepCalls, ct);
+                        }
+
+                        (finalText, groundingOutcome) = (guarded.Text, guarded.Outcome);
+                        stepActivity?.SetTag("bops.evidence_grounding", groundingOutcome switch
+                        {
+                            EvidenceGroundingOutcome.NoContradictionCited => "no_contradiction_cited",
+                            EvidenceGroundingOutcome.Corrected => "corrected",
+                            EvidenceGroundingOutcome.ClaimsCorrected => "claims_corrected",
+                            _ => "check_unavailable",
+                        });
+                    }
                 }
 
                 steps.Add(new PlanStep(stepIndex, FinalResponse.DescriptionFor(disclosure, groundingOutcome), null, null, finalText, plan.Revision)
@@ -1449,8 +1521,7 @@ public sealed partial class AgentRunner(
                     && (bindingProblem is not null
                         || !SemanticExpectedArguments.Matches(resolved.Tool.Manifest, expectedArguments, primaryCall)))
                 {
-                    var mismatch = ToolCallResult.Failure(
-                        "The offered tool's arguments did not match the current planned step; the call was not executed.")
+                    var mismatch = ToolCallResult.Failure(SemanticMismatchMessage(expectedArguments, bindingProblem))
                         with { FailureKind = ToolFailureKind.Validation };
                     ToolRoutingTelemetry.RecordRefused(resolved.Tool.Manifest.Name, "SemanticMismatch");
                     (step, observation) = await RecordAsync(
@@ -1734,7 +1805,8 @@ public sealed partial class AgentRunner(
         {
             (accepted, _) = await ReplanAsync(
                 run.TaskId, run.Actor, run.Goal, plan, run.Steps, observation, stepIndex, run.Delegation, replanCalls,
-                run.TokensUsed, trigger, earlyFinal ? CheckpointAsync : null, ct);
+                run.TokensUsed, trigger, PlanStepBudget.ForReplan(options, run.AttemptSteps, run.LifetimeSteps),
+                earlyFinal ? CheckpointAsync : null, ct);
         }
         catch (TokenBudgetCrossedException)
         {
@@ -3078,11 +3150,11 @@ public sealed partial class AgentRunner(
     /// <summary>PLAN: one dedicated, non-tool-calling model call producing the initial <see cref="AgentPlan"/> (revision 0), with one bounded retry on a malformed reply.</summary>
     private async Task<(AgentPlan Plan, int Tokens)> CreatePlanAsync(
         Guid taskId, ActorIdentity actor, string goal, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
-        long tokensBefore, CancellationToken ct)
+        long tokensBefore, PlanStepBudget budget, CancellationToken ct)
     {
         var planningHistory = new List<ChatTurn> { ChatTurn.FromUser(goal, ContextProvenance.Task) };
         var planningTools = ToolViewFor(delegation);
-        var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools);
+        var systemPrompt = BuildPlanningSystemPrompt(PlanningInstructions, planningTools, budget);
         var tokens = 0;
         var logicalCall = new LogicalCallState();
         ModelContextRequest BuildPlanningRequest(bool aggressive)
@@ -3094,7 +3166,7 @@ public sealed partial class AgentRunner(
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
             BuildPlanningRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
+            MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools, budget));
         tokens += UsageTokens(response);
         if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
         {
@@ -3102,7 +3174,7 @@ public sealed partial class AgentRunner(
         }
 
         await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
-        if (InitialPlanOf(response, planningTools, out var problem) is { } plan)
+        if (InitialPlanOf(response, planningTools, budget, out var problem) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -3121,7 +3193,7 @@ public sealed partial class AgentRunner(
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, -1, actor,
                 BuildPlanningRequest, delegation, calls, logicalCall, ct,
-                MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools));
+                MalformedPlanUnlessRuntimeDirective(revision: 0, planningTools, budget));
             tokens += UsageTokens(response);
             if (options.MaxTotalTokens is { } retryTokenCap && tokensBefore + tokens > retryTokenCap)
             {
@@ -3130,7 +3202,7 @@ public sealed partial class AgentRunner(
 
             await AuditInitialPlanningDirectiveAsync(taskId, actor, delegation, response, ct);
             var previousProblem = problem;
-            if (InitialPlanOf(response, planningTools, out problem) is { } correctedPlan)
+            if (InitialPlanOf(response, planningTools, budget, out problem) is { } correctedPlan)
             {
                 return (correctedPlan with { ModelCalls = calls }, tokens);
             }
@@ -3153,7 +3225,8 @@ public sealed partial class AgentRunner(
     }
 
     /// <summary>The initial plan in <paramref name="response"/>, or <c>null</c> with why it is not one; a runtime directive is never a plan here.</summary>
-    private static AgentPlan? InitialPlanOf(ModelResponse response, IReadOnlyList<ToolManifest> tools, out string? problem)
+    private static AgentPlan? InitialPlanOf(
+        ModelResponse response, IReadOnlyList<ToolManifest> tools, PlanStepBudget budget, out string? problem)
     {
         if (EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None)
         {
@@ -3161,14 +3234,14 @@ public sealed partial class AgentRunner(
             return null;
         }
 
-        return TryParsePlan(response.TextResponse, revision: 0, tools, out problem);
+        return TryParsePlan(response.TextResponse, revision: 0, tools, out problem, budget);
     }
 
     /// <summary>REPLAN: rule C8. Produces the next <see cref="AgentPlan"/> revision from the goal, the plan that stopped fitting, and what has happened since — same bounded-retry parsing as <see cref="CreatePlanAsync"/>.</summary>
     private async Task<(AgentPlan? Plan, int Tokens)> ReplanAsync(
         Guid taskId, ActorIdentity actor, string goal, AgentPlan previousPlan, IReadOnlyList<PlanStep> stepsSoFar,
         string latestObservation, int triggeringStepIndex, DelegatedExecutionScope? delegation, List<ModelCallRecord> calls,
-        long tokensBefore, ReplanTrigger trigger, Func<bool, Task>? checkpoint, CancellationToken ct)
+        long tokensBefore, ReplanTrigger trigger, PlanStepBudget budget, Func<bool, Task>? checkpoint, CancellationToken ct)
     {
         var planningTools = ToolViewFor(delegation);
         var logicalCall = new LogicalCallState();
@@ -3185,7 +3258,7 @@ public sealed partial class AgentRunner(
             var instructions = ReplanningInstructions(logicalCall.Evidence.Exhausted, earlyFinalReplan)
                 + (completedSection is null ? string.Empty : $"\n\n{completedSection}");
             var systemPrompt = BuildPlanningSystemPrompt(
-                instructions, planningTools,
+                instructions, planningTools, budget,
                 logicalCall.Evidence.Exhausted ? null : EvidenceIndex.Build(taskId, stepsSoFar));
             var protectedAfter = ReconciliationTurns(stepsSoFar);
             var trigger = stepsSoFar.FirstOrDefault(step => step.Index == triggeringStepIndex);
@@ -3218,13 +3291,13 @@ public sealed partial class AgentRunner(
 
         var response = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools, budget));
         tokens += UsageTokens(response);
         (response, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, ct);
+            logicalCall, BuildReplanRequest, response, tokensBefore, tokens, planningTools, budget, ct);
 
-        if (TryParsePlan(response.TextResponse, revision, planningTools, out var replanProblem) is { } plan)
+        if (TryParsePlan(response.TextResponse, revision, planningTools, out var replanProblem, budget) is { } plan)
         {
             return (plan with { ModelCalls = calls }, tokens);
         }
@@ -3251,13 +3324,13 @@ public sealed partial class AgentRunner(
 
         var retryResponse = await CallModelWithOverflowRecoveryAsync(taskId, triggeringStepIndex, actor,
             BuildReplanRequest, delegation, calls, logicalCall, ct,
-            MalformedPlanUnlessRuntimeDirective(revision, planningTools));
+            MalformedPlanUnlessRuntimeDirective(revision, planningTools, budget));
         tokens += UsageTokens(retryResponse);
         (retryResponse, tokens) = await ResolveReplanEvidenceReadsAsync(
             taskId, actor, stepsSoFar, triggeringStepIndex, previousPlan.Revision + 1, delegation, calls,
-            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, ct);
+            logicalCall, BuildReplanRequest, retryResponse, tokensBefore, tokens, planningTools, budget, ct);
 
-        if (TryParsePlan(retryResponse.TextResponse, revision, planningTools) is { } retryPlan)
+        if (TryParsePlan(retryResponse.TextResponse, revision, planningTools, budget) is { } retryPlan)
         {
             return (retryPlan with { ModelCalls = calls }, tokens);
         }
@@ -3310,6 +3383,7 @@ public sealed partial class AgentRunner(
         long tokensBefore,
         int initialTokens,
         IReadOnlyList<ToolManifest> planningTools,
+        PlanStepBudget budget,
         CancellationToken ct)
     {
         var response = initialResponse;
@@ -3358,7 +3432,7 @@ public sealed partial class AgentRunner(
                 recognition.Kind == RuntimeDirectiveRecognitionKind.Valid ? ContextProvenance.ToolResult : ContextProvenance.Runtime));
 
             response = await CallModelWithOverflowRecoveryAsync(taskId, stepIndex, actor, requestFactory,
-                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools));
+                delegation, calls, logicalCall, ct, MalformedPlanUnlessRuntimeDirective(planRevision, planningTools, budget));
             tokens += UsageTokens(response);
             if (options.MaxTotalTokens is { } tokenCap && tokensBefore + tokens > tokenCap)
             {
@@ -3422,6 +3496,7 @@ public sealed partial class AgentRunner(
             Delegation = delegation?.Correlation,
             AccountTokens = delegation?.Meter is { } meter ? meter.AddTokens : null,
             MalformedResponse = malformedOutput,
+            KnowledgeContext = DescribeKnowledgeContext(request),
             ExecutionBudgetToken = activeAttemptBudget.Value?.Token ?? CancellationToken.None,
             ExecutionBudgetExpired = () => activeAttemptBudget.Value?.IsExpired == true,
         };
@@ -3493,10 +3568,15 @@ public sealed partial class AgentRunner(
                     return (response, await StopForAttemptDurationAsync(run, calls));
                 }
 
-                var offered = requestFactory(logicalCall.Aggressive).AvailableTools.Select(tool => tool.Name).ToList();
+                var knowledgeRequest = requestFactory(logicalCall.Aggressive);
+                var offered = knowledgeRequest.AvailableTools.Select(tool => tool.Name).ToList();
+                // Dynamic knowledge budget: what this very request already holds, against the selected model's real window.
+                var allowance = knowledge.ContextShare is { } contextShare
+                    ? KnowledgeContextBudget.Allow(MeasureKnowledgeContext(knowledgeRequest, response), contextShare)
+                    : null;
                 var served = await knowledge.HandleAsync(
                     response,
-                    new KnowledgeReadAuthority(offered, expectedTool, Eligible: run.Delegation is null),
+                    new KnowledgeReadAuthority(offered, expectedTool, Eligible: run.Delegation is null, allowance),
                     new ModelInvocationContext(run.TaskId, stepIndex, run.Actor, calls) { Delegation = run.Delegation?.Correlation },
                     ct);
                 if (served.Handled)
@@ -3747,6 +3827,9 @@ public sealed partial class AgentRunner(
     private const string UncorrectedContradictionMessage =
         "The final answer contradicted persisted typed evidence and its one bounded correction did not resolve it; no answer was kept.";
 
+    private const string UncorrectedClaimsMessage =
+        "The final answer attributed counts or dates to tool results that do not contain them and its one bounded correction did not resolve it; no answer was kept.";
+
     /// <summary>
     /// The evidence-grounding guard (ADR-0042 PRE-5 amendment §5–§7): one check of <paramref name="candidate"/> against the shown
     /// observed facts and, only when the check cites a contradiction, one restatement. Both are the step's request plus the
@@ -3754,32 +3837,50 @@ public sealed partial class AgentRunner(
     /// counts against a step or replan budget, executes a tool or touches the plan cursor. A check that yields no usable
     /// verdict leaves the candidate unclassified and persisted; a cited contradiction is never persisted — the correction
     /// replaces it or the attempt fails. A genuine cancellation propagates as for every model call.
+    /// MAF A/B campaign (09-B02-B-r2): <paramref name="claims"/> are counts or dates the answer attributes to steps whose results do not
+    /// contain them (<see cref="AnswerClaimProvenance"/>). They need no typed fact, so the guard also runs when <paramref name="grounding"/>
+    /// is <c>null</c> (then without a check call), and they join the check's citations in the same single correction: one check and one
+    /// correction at most, whatever found the problem. The correction is accepted only if it is a real answer and no flagged value
+    /// survives; otherwise the attempt fails.
     /// </summary>
     private async Task<GroundingGuardResult> GuardGroundingAsync(
-        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding grounding,
+        ExecutionRun run, ModelContextRequest request, string candidate, EvidenceGrounding? grounding,
+        IReadOnlyList<UnsupportedClaim> claims, IReadOnlyList<PlanStep> steps,
         int stepIndex, List<ModelCallRecord> stepCalls, CancellationToken ct)
     {
-        GroundingVerdict verdict;
-        try
+        var verdict = GroundingVerdict.Unavailable;
+        if (grounding is not null)
         {
-            var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
-                ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction, ContextProvenance.Runtime)), run.Delegation, stepCalls, ct);
-            run.TokensUsed += UsageTokens(check);
-            verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The attempts are recorded and audited; the guard has classified nothing, so the candidate stands.
-            logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding check failed; the answer is kept unclassified", run.TaskId, stepIndex);
-            verdict = GroundingVerdict.Unavailable;
+            try
+            {
+                var check = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
+                    ChatTurn.FromAssistantText(candidate),
+                    ChatTurn.FromUser(EvidenceGroundingLedger.CheckInstruction, ContextProvenance.Runtime)), run.Delegation, stepCalls, ct);
+                run.TokensUsed += UsageTokens(check);
+                verdict = EvidenceGroundingLedger.ParseVerdict(check, candidate, grounding);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The attempts are recorded and audited; the guard has classified nothing, so the candidate stands.
+                logger.LogWarning(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding check failed; the answer is kept unclassified", run.TaskId, stepIndex);
+                verdict = GroundingVerdict.Unavailable;
+            }
         }
 
-        if (verdict.Kind != GroundingVerdictKind.Contradicted)
+        if (verdict.Kind != GroundingVerdictKind.Contradicted && claims.Count == 0)
         {
             return new GroundingGuardResult(candidate,
                 verdict.Kind == GroundingVerdictKind.NoContradictionCited ? EvidenceGroundingOutcome.NoContradictionCited : EvidenceGroundingOutcome.CheckUnavailable,
                 null);
+        }
+
+        var contradicted = verdict.Kind == GroundingVerdictKind.Contradicted;
+        var failureMessage = contradicted ? UncorrectedContradictionMessage : UncorrectedClaimsMessage;
+        var instruction = contradicted ? EvidenceGroundingLedger.CorrectionInstruction(grounding!, verdict.Contradictions) : null;
+        if (claims.Count > 0)
+        {
+            var provenance = AnswerClaimProvenance.CorrectionInstruction(claims, steps);
+            instruction = instruction is null ? provenance : $"{instruction}\n\n{provenance}";
         }
 
         ModelResponse correction;
@@ -3787,7 +3888,7 @@ public sealed partial class AgentRunner(
         {
             correction = await CallModelAsync(run.TaskId, stepIndex, run.Actor, request.AppendProtected(
                 ChatTurn.FromAssistantText(candidate),
-                ChatTurn.FromUser(EvidenceGroundingLedger.CorrectionInstruction(grounding, verdict.Contradictions), ContextProvenance.Runtime)),
+                ChatTurn.FromUser(instruction!, ContextProvenance.Runtime)),
                 run.Delegation, stepCalls, ct);
             run.TokensUsed += UsageTokens(correction);
         }
@@ -3795,7 +3896,7 @@ public sealed partial class AgentRunner(
         {
             logger.LogError(ex, "Task {TaskId} step {StepIndex}: the evidence-grounding correction failed", run.TaskId, stepIndex);
             return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                ($"{UncorrectedContradictionMessage} {FailureReason(ex)}", FailureKindOf(ex)));
+                ($"{failureMessage} {FailureReason(ex)}", FailureKindOf(ex)));
         }
 
         var text = correction.TextResponse;
@@ -3804,18 +3905,21 @@ public sealed partial class AgentRunner(
         {
             var problem = string.IsNullOrWhiteSpace(text) ? "The correction was empty." : "The correction had no answer content.";
             return new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                ($"{UncorrectedContradictionMessage} {problem}", (TaskTerminalKind.EmptyResponse, null)));
+                ($"{failureMessage} {problem}", (TaskTerminalKind.EmptyResponse, null)));
         }
 
         var accepted = correction.ToolCalls.Count == 0
             && !TerminalProtocolArtifact.IsArtifact(text)
             && !EvidenceGroundingLedger.IsCheckReplyShape(text)
             && !EvidenceGroundingLedger.RepeatsContradiction(text!, verdict.Contradictions)
-            && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text));
+            && (!EvidenceDisclosure.HasHeading(candidate) || EvidenceDisclosure.HasHeading(text))
+            && (claims.Count == 0 || AnswerClaimProvenance.Find(
+                text, steps, timeProvider.GetUtcNow(),
+                claims.Where(claim => claim.Kind == UnsupportedClaimKind.Count).Select(claim => claim.Token).ToHashSet(StringComparer.Ordinal)).Count == 0);
         return accepted
-            ? new GroundingGuardResult(text, EvidenceGroundingOutcome.Corrected, null)
+            ? new GroundingGuardResult(text, grounding is null ? EvidenceGroundingOutcome.ClaimsCorrected : EvidenceGroundingOutcome.Corrected, null)
             : new GroundingGuardResult(null, EvidenceGroundingOutcome.NotChecked,
-                (UncorrectedContradictionMessage, (TaskTerminalKind.RuntimeFailure, null)));
+                (failureMessage, (TaskTerminalKind.RuntimeFailure, null)));
     }
 
     private static bool IsFinalProtocolArtifact(ModelResponse response) =>
@@ -3841,7 +3945,9 @@ public sealed partial class AgentRunner(
             return OutputLimitedRetryPrefix + (stepToolOffered ? RetryWithStepTool : RetryWithFinalAnswer);
         }
 
-        var prefix = string.IsNullOrWhiteSpace(response.TextResponse) ? EmptyResponseRetryPrefix : ContentFreeResponseRetryPrefix;
+        var prefix = string.IsNullOrWhiteSpace(response.TextResponse) ? EmptyResponseRetryPrefix
+            : FinalAnswerContent.IsRuntimeContextEcho(response.TextResponse) ? RuntimeContextEchoRetryPrefix
+            : ContentFreeResponseRetryPrefix;
         return prefix + (stepToolOffered ? "Call the operational tool offered for the current plan step now." : NoOperationalToolOffered + RetryWithFinalAnswer);
     }
 
@@ -3866,7 +3972,9 @@ public sealed partial class AgentRunner(
         // The content-free text itself is not echoed: it is model output, and the recorded reply body already holds it.
         var what = string.IsNullOrWhiteSpace(response.TextResponse)
             ? "an empty final response (no text and no tool call)"
-            : "a final response with no answer content (only punctuation, symbols or formatting marks, and no tool call)";
+            : FinalAnswerContent.IsRuntimeContextEcho(response.TextResponse)
+                ? "a final response with no answer content (only runtime-internal context markers copied from the conversation history, and no tool call)"
+                : "a final response with no answer content (only punctuation, symbols or formatting marks, and no tool call)";
         return $"The model returned {what} after {calls.Count} attempt(s) " +
                $"(model {served}{finish}{generated}). The recorded request and reply bodies show what it sent.";
     }
@@ -5088,8 +5196,9 @@ public sealed partial class AgentRunner(
     private const int MaxCatalogGuidanceCharacters = 320;
 
     /// <summary>The system prompt of a plan or replan call: the standing prompt, the plan format, and a text catalog of what the task may use.</summary>
-    private static string BuildPlanningSystemPrompt(string instructions, IReadOnlyList<ToolManifest> tools, string? evidenceIndex = null) =>
-        $"{SystemPrompt}\n\n{instructions}\n\n{DescribeToolCatalog(tools)}"
+    private static string BuildPlanningSystemPrompt(
+        string instructions, IReadOnlyList<ToolManifest> tools, PlanStepBudget budget, string? evidenceIndex = null) =>
+        $"{SystemPrompt}\n\n{instructions}\n\n{budget.Instructions}\n\n{DescribeToolCatalog(tools)}"
         + (evidenceIndex is null ? string.Empty : $"\n\n{evidenceIndex}");
 
     /// <summary>
@@ -5156,6 +5265,12 @@ public sealed partial class AgentRunner(
                 builder.Append(manifest.Parameters.Count == 0
                     ? " Parameters: none (no execution arguments). Omit expectedArguments or use {}."
                     : " Parameters: none permitted in planning. Omit expectedArguments or use {}.");
+            }
+
+            // Relations between parameters that a call must respect (the tool refuses it otherwise): a plan step must not expect both.
+            if (ToolArgumentRules.Describe(manifest) is { } argumentRules)
+            {
+                builder.Append(" Rules for expectedArguments: ").Append(argumentRules);
             }
 
             builder.Append('\n');
@@ -5325,20 +5440,22 @@ public sealed partial class AgentRunner(
     /// (rule C1), never a reason to crash the task.
     /// </summary>
     private static AgentPlan? TryParsePlan(
-        string? text, int revision, IReadOnlyList<ToolManifest> tools) => TryParsePlan(text, revision, tools, out _);
+        string? text, int revision, IReadOnlyList<ToolManifest> tools, PlanStepBudget budget) =>
+        TryParsePlan(text, revision, tools, out _, budget);
 
     /// <summary>
     /// The plan and replan calls' output check (ADR-0039 §8): why a reply is not a usable plan, or <c>null</c>. The caller's
     /// model call records and audits an unusable reply as <see cref="ModelFailureKind.MalformedResponse"/>.
     /// </summary>
-    private static Func<ModelResponse, string?> MalformedPlan(int revision, IReadOnlyList<ToolManifest> tools) =>
-        response => TryParsePlan(response.TextResponse, revision, tools, out var problem) is null ? problem : null;
+    private static Func<ModelResponse, string?> MalformedPlan(
+        int revision, IReadOnlyList<ToolManifest> tools, PlanStepBudget budget) =>
+        response => TryParsePlan(response.TextResponse, revision, tools, out var problem, budget) is null ? problem : null;
 
     private static Func<ModelResponse, string?> MalformedPlanUnlessRuntimeDirective(
-        int revision, IReadOnlyList<ToolManifest> tools) =>
+        int revision, IReadOnlyList<ToolManifest> tools, PlanStepBudget budget) =>
         response => EvidenceRead.Recognize(response).Kind != RuntimeDirectiveRecognitionKind.None
             ? null
-            : MalformedPlan(revision, tools)(response);
+            : MalformedPlan(revision, tools, budget)(response);
 
     internal static string ProjectForPrompt(string value, int maximum)
     {
@@ -5457,7 +5574,7 @@ public sealed partial class AgentRunner(
     }
 
     private static AgentPlan? TryParsePlan(
-        string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem)
+        string? text, int revision, IReadOnlyList<ToolManifest> tools, out string? problem, PlanStepBudget budget)
     {
         problem = null;
         if (string.IsNullOrWhiteSpace(text))
@@ -5518,7 +5635,11 @@ public sealed partial class AgentRunner(
 
                         if (!manifests.TryGetValue(expectedTool, out var manifest))
                         {
-                            problem = $"Plan step {index} cannot constrain unavailable tool '{expectedTool}'.";
+                            problem = $"Plan step {index} cannot constrain unavailable tool '{expectedTool}'. A plan step may name only a " +
+                                "tool from the tool list" +
+                                (expectedTool.StartsWith(EvidenceRead.ControlNamespace, StringComparison.Ordinal)
+                                    ? $"; '{expectedTool}' is a runtime control function, not a plan step."
+                                    : ".");
                             return null;
                         }
 
@@ -5577,6 +5698,14 @@ public sealed partial class AgentRunner(
                         }
                     }
                 }
+            }
+
+            // C03-R09: a plan that cannot finish inside the attempt's remaining steps is refused here, so the bounded correction
+            // names the budget instead of the attempt ending MaxStepsReached without an answer.
+            if (budget.Problem(steps.Count) is { } overBudget)
+            {
+                problem = overBudget;
+                return null;
             }
 
             return new AgentPlan(revision, rationale, steps) { SemanticContractVersion = 1 };
@@ -5657,6 +5786,59 @@ public sealed partial class AgentRunner(
         IndexHash = view.Normal?.IndexHash,
         AggressiveIndexHash = view.Aggressive?.IndexHash,
     };
+
+    /// <summary>The turns of a request that carry reference knowledge (the index and the served reads), whatever their pack kind.</summary>
+    private static IEnumerable<ChatTurn> KnowledgeTurns(ModelContextRequest request) =>
+        request.ProtectedBeforeHistory.Concat(request.ProtectedAfterHistory)
+            .Where(turn => turn.Provenance?.Origin is ContextOrigin.Knowledge or ContextOrigin.Skill or ContextOrigin.Experience);
+
+    private static int EstimateRequestTokens(ModelContextRequest request) =>
+        ContextTokenEstimator.OfText(request.SystemPrompt)
+        + ContextTokenEstimator.OfTurns(request.ProtectedBeforeHistory)
+        + ContextTokenEstimator.OfTurns(request.HistoricalTurns)
+        + ContextTokenEstimator.OfTurns(request.ProtectedAfterHistory)
+        + ContextTokenEstimator.OfTools(request.AvailableTools);
+
+    /// <summary>Window minus output reserve minus safety reserve of the model the broker currently selects, or <c>null</c> when its capacity is not configured.</summary>
+    private int? InputBudgetOfSelectedModel() =>
+        options.Context.Resolve(modelInvocationBroker.Descriptor) is { MaxContextTokens: { } max, ReservedOutputTokens: { } reserved }
+            ? max - reserved - options.Context.SafetyReserveTokens
+            : null;
+
+    /// <summary>
+    /// What the request that produced <paramref name="reply"/> held. The provider's prompt tokens are the truth about what was sent
+    /// (projection may have compacted history), so they win when reported; otherwise the estimate of the unprojected request stands.
+    /// </summary>
+    private KnowledgeContextMeasure MeasureKnowledgeContext(ModelContextRequest request, ModelResponse reply)
+    {
+        var reported = reply.Usage?.PromptTokens;
+        var providerReported = reported is > 0;
+        return new KnowledgeContextMeasure(
+            InputBudgetOfSelectedModel(),
+            providerReported ? reported!.Value : EstimateRequestTokens(request),
+            providerReported,
+            ContextTokenEstimator.OfTurns(KnowledgeTurns(request)));
+    }
+
+    /// <summary>The knowledge share of the context one model call is about to send, for its audit event; <c>null</c> for a task without knowledge.</summary>
+    private ModelKnowledgeContext? DescribeKnowledgeContext(ModelContextRequest request)
+    {
+        if (activeKnowledge.Value is not { } session)
+        {
+            return null;
+        }
+
+        var knowledgeTurns = KnowledgeTurns(request).ToArray();
+        var tokens = ContextTokenEstimator.OfTurns(knowledgeTurns);
+        int? available = null;
+        if (session.ContextShare is { } share)
+        {
+            available = KnowledgeContextBudget.Allow(
+                new KnowledgeContextMeasure(InputBudgetOfSelectedModel(), EstimateRequestTokens(request), false, tokens), share).AllowedTokens;
+        }
+
+        return new ModelKnowledgeContext(tokens, knowledgeTurns.Count(turn => turn.Role == ChatRole.Tool), available);
+    }
 
     private sealed record ContinuedKnowledgeRead(int StepIndex, ModelToolCall Call, ChatTurn Result);
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Governing ADR | [ADR-0052](../../docs/architecture/adr/0052-microsoft-agent-framework-bops-boundary.md), D-048 |
+| Governing ADR | [ADR-0052](../../docs/architecture/adr/README.md#adr-0052), D-048 |
 | Status | **Implemented locally** (branch `feat/af-03-governed-summarization`) |
 | Depends on | AF-01 and AF-02 complete |
 | Blocks | AF-05 |

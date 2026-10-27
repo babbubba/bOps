@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Governing ADRs | [ADR-0046](../../docs/architecture/adr/0046-step-scoped-tool-routing-and-transactional-replanning.md) "a premature final replans", [ADR-0042](../../docs/architecture/adr/0042-evidence-reasoning-and-limitation-disclosure.md) "deterministic evidence disclosure" |
+| Governing ADRs | [ADR-0046](../../docs/architecture/adr/README.md#adr-0046) "a premature final replans", [ADR-0042](../../docs/architecture/adr/README.md#adr-0042) "deterministic evidence disclosure" |
 | Status | **H2 and H4 implemented on `fix/af-05h-live-regression-hardening`** (base `97507aa`, AF-05G). Deterministic-fixture evidence only. Not merged |
 | Scope decision (operator, 2026-10-11) | Only the two blockers H2 and H4 in this phase. **H1** (context operating range) is kept isolated on `feat/af-05h-h1-context-operating-range` so it can be left out of a merge while current behaviour is measured and MAF is evaluated as orchestrator. **H3** (correction-class conflict) and **H5** (EvidenceRead guidance) are **not part of this phase**; their implementation is preserved, unmerged, on `backup/af-05h-h1-h5-full` |
 | Depends on | AF-05, AF-05G |

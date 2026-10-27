@@ -345,6 +345,127 @@ public sealed class FinalAnswerUsabilityTests
         Assert.Single(state.Plans);
     }
 
+    // --- Runtime-authored context echoed as the answer (MAF A/B campaign, 03-B02-A-r1) --------------------------------------------
+
+    // The reply the model gave in the campaign run: the history compaction placeholder and a status bullet, finish reason 'stop'.
+    private const string EchoedCompaction =
+        "[Compacted tool interactions; persisted result data omitted]\n- runtime_evidence_read (step 2): result recorded";
+
+    public static TheoryData<string> RuntimeContextEchoes => new()
+    {
+        RuntimeContextMarkers.CompactionHeader,
+        EchoedCompaction,
+        $"{RuntimeContextMarkers.CompactionHeader}\n- system.events: result recorded\n- system.crashes: not executed",
+        $"{RuntimeContextMarkers.CompactionHeader}\r\n- runtime_evidence_read: result recorded\r\n",
+        $"```\n{EchoedCompaction}\n```",
+        $"> {RuntimeContextMarkers.CompactionHeader}",
+        "[compacted tool interactions; persisted result data omitted]",
+        "- runtime_evidence_read (step 4): result recorded",
+        "* storage.health: not executed",
+    };
+
+    [Theory]
+    [MemberData(nameof(RuntimeContextEchoes))]
+    public void AReplyThatOnlyEchoesRuntimeContextMarkers_HasNoContent(string text)
+    {
+        Assert.False(FinalAnswerContent.HasContent(text));
+        Assert.True(FinalAnswerContent.IsRuntimeContextEcho(text));
+    }
+
+    [Theory]
+    [InlineData("OK")]
+    [InlineData("No.")]
+    [InlineData("0")]
+    [InlineData("Nessuna evidenza di instabilità nei dati disponibili.")]
+    [InlineData("Non è possibile stabilirlo: le fonti sono parziali.")]
+    [InlineData("[Compacted tool interactions; persisted result data omitted]\nNo crash was observed in the readable sources.")]
+    [InlineData("- system.events: result recorded, but it matched no record")]
+    [InlineData("- system.events: result recorded in 3 steps")]
+    [InlineData("Result recorded.")]
+    [InlineData("The step was not executed.")]
+    public void ARealAnswer_IsNeverTakenForARuntimeContextEcho(string text)
+    {
+        Assert.True(FinalAnswerContent.HasContent(text));
+        Assert.False(FinalAnswerContent.IsRuntimeContextEcho(text));
+    }
+
+    [Fact]
+    public async Task AFinalThatOnlyEchoesTheCompactionPlaceholder_WithNoRetryLeft_FailsAsEmptyResponse_NeverCompleted()
+    {
+        var (state, model, audit, store) = await RunAsync(
+            [PlanningTestSupport.PlanResponse(stepCount: 0), Reply(EchoedCompaction, new ModelUsage(100, 28, null))],
+            new AgentRunnerOptions { EmptyFinalResponseRetries = 0 });
+
+        AssertFailedAsUnusable(state);
+        Assert.Equal(2, model.Requests.Count); // the plan and the one step call: no grounding check was made on the placeholder
+        var failure = state.Steps[^1];
+        Assert.Contains("runtime-internal context markers", failure.Observation, StringComparison.Ordinal);
+        Assert.DoesNotContain("Compacted", failure.Observation!, StringComparison.Ordinal);
+        Assert.DoesNotContain(state.Steps, FinalResponse.IsFinalStep);
+        Assert.Single(failure.ModelCalls!);
+
+        var persisted = await store.LoadAsync(state.Id);
+        Assert.Equal(AgentTaskStatus.Failed, persisted!.Status);
+        Assert.Equal(TaskTerminalKind.EmptyResponse, persisted.TerminalReason?.Kind);
+        var terminal = Assert.Single(audit.Events.OfType<TaskLifecycleAuditEvent>(),
+            evt => evt.Stage == TaskLifecycleStage.ExecutionTerminal);
+        Assert.Equal((AgentTaskStatus.Failed, TaskTerminalKind.EmptyResponse), (terminal.Status, terminal.TerminalKind));
+        Assert.Equal(2, audit.Events.OfType<ModelCallAuditEvent>().Count());
+    }
+
+    [Fact]
+    public async Task AFinalThatOnlyEchoesTheCompactionPlaceholder_IsAskedAgainOnce_AndARealAnswerCompletes()
+    {
+        var (state, model, _, _) = await RunAsync(
+            [PlanningTestSupport.PlanResponse(stepCount: 0), Reply(EchoedCompaction), Reply("No instability was observed in the readable sources.")]);
+
+        Assert.Equal(AgentTaskStatus.Completed, state.Status);
+        Assert.Equal(3, model.Requests.Count);
+        var final = Assert.Single(state.Steps);
+        Assert.Equal("No instability was observed in the readable sources.", final.Observation);
+        Assert.Equal(
+            [LogicalModelCallRole.Answer, LogicalModelCallRole.EmptyAnswerRetry],
+            FinalResponse.LogicalCalls(final).Select(call => call.Role));
+
+        var retry = model.Requests[^1];
+        Assert.Contains("internal context markers", retry.History[^1].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain(retry.History, turn => turn.Role == ChatRole.Assistant); // the echo is not kept in the conversation
+    }
+
+    [Fact]
+    public async Task AnEchoedPlaceholder_ThatStaysAPlaceholder_FailsAfterTheConfiguredRetries()
+    {
+        var (state, model, _, _) = await RunAsync(
+            [PlanningTestSupport.PlanResponse(stepCount: 0), Reply(EchoedCompaction), Reply(EchoedCompaction)]);
+
+        AssertFailedAsUnusable(state);
+        Assert.Equal(3, model.Requests.Count); // plan, answer, the single default retry: never a third answer call
+        Assert.Contains("2 attempt(s)", state.Steps[^1].Observation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnderListedLimitations_AnEchoedPlaceholder_IsNotMadeAnAnswerByTheAppendedSection()
+    {
+        var (state, model, _, _) = await RunAsync(
+            [Plan(PartialTool), Call(PartialTool), Reply(EchoedCompaction), Reply(EchoedCompaction)], tools: new ResultTool(PartialTool, Partial()));
+
+        AssertFailedAsUnusable(state);
+        Assert.Equal(4, model.Requests.Count);
+        Assert.DoesNotContain(state.Steps, step => step.Description == FinalResponse.AppendedMarker);
+        Assert.DoesNotContain(state.Steps, step => EvidenceDisclosure.HasHeading(step.Observation));
+    }
+
+    [Fact]
+    public async Task AnEchoedPlaceholder_ThatCrossesTheTokenBudget_StopsTheAttempt_InsteadOfBeingCompleted()
+    {
+        var (state, _, _, _) = await RunAsync(
+            [PlanningTestSupport.PlanResponse(stepCount: 0), Reply(EchoedCompaction, new ModelUsage(400, 700, null))],
+            new AgentRunnerOptions { MaxTotalTokens = 1000 });
+
+        Assert.Equal(AgentTaskStatus.BudgetExceeded, state.Status);
+        Assert.DoesNotContain(state.Steps, FinalResponse.IsFinalStep);
+    }
+
     // --- Tool calls are never judged by the final-answer guard ---------------------------------------------------------------
 
     [Theory]
