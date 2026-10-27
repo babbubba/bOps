@@ -64,7 +64,7 @@ public abstract class SystemEventsToolBase : IToolAuditSummaryProvider
         ct.ThrowIfCancellationRequested();
         var snapshot = await CollectAsync(query, ct);
         return EvidenceCompleteness.Success(SystemEventFormatting.Format(snapshot, query, mode, limit, maxOutputBytes))
-            with { Facts = SystemEventFacts.From(snapshot, query) };
+            with { Facts = SystemEventFacts.WithMetadata(snapshot, query) };
     }
 
     /// <inheritdoc />

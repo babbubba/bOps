@@ -27,6 +27,12 @@ public static class SystemCrashFacts
     /// <summary>The fact type: kernel crashes of one canonical code. The key is <c>kind=&lt;kind&gt;;code=&lt;code&gt;</c>.</summary>
     public const string KernelCodeCountType = "system.crashes.kernel-code-count";
 
+    /// <summary>The fact type: every canonical code of one kernel kind with its count, <c>code:count</c> joined by commas. The key is the kind.</summary>
+    public const string KernelCodesType = "system.crashes.kernel-codes";
+
+    /// <summary>The fact type: kernel codes of one kind that <see cref="KernelCodesType"/> could not list within its value bound. The key is the kind.</summary>
+    public const string KernelCodesOmittedType = "system.crashes.kernel-codes-omitted";
+
     /// <summary>The fact type: crashes that carry a dump reference (a path the collector recorded, not a verified file). The one key is <see cref="AllKey"/>.</summary>
     public const string DumpReferenceCountType = "system.crashes.dump-reference-count";
 
@@ -72,6 +78,12 @@ public static class SystemCrashFacts
             .ThenBy(group => group.Key, StringComparer.Ordinal)
             .Select(group => Integer(KindCountType, group.Key, group.Count())));
 
+        // BOPS-0128 slice A: every code of a kernel kind, one list per kind, before the partial per-code counts below.
+        foreach (var kind in new[] { CrashKinds.KernelBugcheck, CrashKinds.KernelLiveDump })
+        {
+            facts.AddRange(KernelCodes(crashes, kind));
+        }
+
         facts.AddRange(crashes
             .Where(item => item.Kind is CrashKinds.KernelBugcheck or CrashKinds.KernelLiveDump && item.Code is not null)
             .GroupBy(item => $"kind={item.Kind};code={item.Code}", StringComparer.Ordinal)
@@ -97,6 +109,66 @@ public static class SystemCrashFacts
         }
 
         return EvidenceFactBounds.Fit(facts);
+    }
+
+    /// <summary>
+    /// The facts of the tool call: the selection and coverage metadata (BOPS-0128 slice B) first, then the crash facts in the room the
+    /// runtime's 16 facts and 4096 bytes leave. The metadata is never cut; the crash facts are fitted after it, last first.
+    /// </summary>
+    internal static IReadOnlyList<EvidenceFact> WithMetadata(CrashEvidenceSnapshot snapshot, CrashesQuery query)
+    {
+        var metadata = SystemEvidenceMetadata.ForCrashes(snapshot, query);
+        var crashes = From(snapshot, query);
+
+        // The per-code counts are the only facts the complete kernel-codes lists make redundant, so when the room runs out they are
+        // the ones left out: they go after the metadata, and Fit drops from the end.
+        var partial = crashes.Where(fact => fact.Type == KernelCodeCountType);
+        return EvidenceFactBounds.Fit([.. crashes.Where(fact => fact.Type != KernelCodeCountType), .. metadata, .. partial]);
+    }
+
+    /// <summary>
+    /// Every canonical code of one kernel <paramref name="kind"/> with its count, ordered by count then code, as one list value
+    /// (<c>0x1e:9,0xa:2</c>). It is cut only at an entry boundary past the value bound, and then a count fact says how many codes are
+    /// not listed; a kind without codes yields nothing.
+    /// </summary>
+    private static IEnumerable<EvidenceFact> KernelCodes(CrashEvidence[] crashes, string kind)
+    {
+        var codes = crashes
+            .Where(item => item.Kind == kind && !string.IsNullOrEmpty(item.Code))
+            .GroupBy(item => item.Code!, StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => $"{group.Key}:{group.Count()}")
+            .ToList();
+        if (codes.Count == 0)
+        {
+            yield break;
+        }
+
+        var listed = 0;
+        var length = 0;
+        foreach (var entry in codes)
+        {
+            var next = length + entry.Length + (listed == 0 ? 0 : 1);
+            if (next > EvidenceFactBounds.MaximumValueCharacters)
+            {
+                break;
+            }
+
+            length = next;
+            listed++;
+        }
+
+        if (listed == 0)
+        {
+            yield break;
+        }
+
+        yield return new EvidenceFact(KernelCodesType, kind, ToolParameterType.String, JsonValue.Create(string.Join(',', codes.Take(listed)))!);
+        if (listed < codes.Count)
+        {
+            yield return Integer(KernelCodesOmittedType, kind, codes.Count - listed);
+        }
     }
 
     private static EvidenceFact Integer(string type, string key, int value) =>

@@ -135,16 +135,25 @@ public sealed class HighDensityFactsTests
     }
 
     [Fact]
-    public async Task Crashes_NoneInWindow_OrUnavailableSources_EmitNoFacts()
+    public async Task Crashes_NoneInWindow_OrUnavailableSources_EmitNoCountFacts_OnlyTheCallMetadata()
     {
+        // BOPS-0128 slice B: the call metadata (the window applied and the coverage of the stores) is stated even when nothing was
+        // observed; what stays forbidden is any fact of observation, so every fact left must be of the selection or coverage types.
         var old = Crashes(Crash(60 * 24 * 365, CrashKinds.KernelBugcheck, bugcheck: "0x124"));
-        Assert.Empty((await new CrashesTool(old).ExecuteAsync(ToolArguments.Empty)).Facts);
+        var none = await new CrashesTool(old).ExecuteAsync(ToolArguments.Empty);
+        Assert.All(none.Facts, fact => Assert.True(IsCallMetadata(fact), $"{fact.Type} is a fact of observation."));
+        Assert.Contains(none.Facts, fact => fact.Type == "system.crashes.selection" && fact.Key == "window-minutes");
+        Assert.Contains(none.Facts, fact => fact.Type == "system.crashes.coverage" && fact.Key == "state");
 
         var unavailable = new CrashEvidenceSnapshot([], [new MaintenanceSource("wer", InventorySourceStatus.Unavailable, "denied")]);
         var result = await new CrashesTool(unavailable).ExecuteAsync(ToolArguments.Empty);
         Assert.Equal(ToolResultCompleteness.Unavailable, result.Completeness);
-        Assert.Empty(result.Facts);
+        Assert.All(result.Facts, fact => Assert.True(IsCallMetadata(fact), $"{fact.Type} is a fact of observation."));
+        // An unavailable result never reports its coverage as complete.
+        Assert.DoesNotContain(result.Facts, fact => fact.Type == "system.crashes.coverage" && fact.Key == "state" && fact.Value.GetValue<string>() == "complete");
     }
+
+    private static bool IsCallMetadata(EvidenceFact fact) => fact.Type is "system.crashes.selection" or "system.crashes.coverage";
 
     [Fact]
     public async Task Crashes_PartialSource_StillEmitsObservedCounts_UnderAPartialResult()

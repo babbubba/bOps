@@ -107,7 +107,7 @@ public sealed class HardenSevenContractTests
         var json = JsonNode.Parse(SystemEventFormatting.Format(Snapshot(events), query, EvidenceMode.Aggregate, 50, 32_768))!.AsObject();
 
         Assert.Equal(
-            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "sourceFilter", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "messageDistribution", "groups"],
+            ["schemaVersion", "mode", "status", "complete", "truncated", "window", "excludeSources", "sourceFilter", "coverage", "observedEvents", "sources", "observedGroups", "returnedGroups", "sampleMessageSemantics", "messageDistribution", "groupSummary", "groups"],
             json.Select(pair => pair.Key).ToArray());
         Assert.Equal(SystemEventFormatting.SampleMessageSemantics, json["sampleMessageSemantics"]!.GetValue<string>());
         Assert.Equal(2, json["schemaVersion"]!.GetValue<int>());
@@ -286,7 +286,22 @@ public sealed class HardenSevenContractTests
             .SelectMany(group => Repeated(Name(group), "m", 2, 1))
             .Concat(Repeated(Name(0), "n", 1, 5))
             .ToArray();
-        var exact = Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(Snapshot(events), DayQuery, EvidenceMode.Aggregate, 500, 32_768, describeMessages: false));
+        // The group summary takes a share of the budget (BOPS-0128), so the size of the result without details depends on the budget it
+        // is given: the budget that "exactly fits" is the fixed point of that dependency.
+        var exact = 32_768;
+        for (var step = 0; step < 16; step++)
+        {
+            var size = Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(Snapshot(events), DayQuery, EvidenceMode.Aggregate, 500, exact, describeMessages: false));
+            if (size == exact)
+            {
+                break;
+            }
+
+            exact = size;
+        }
+
+        Assert.Equal(exact, Encoding.UTF8.GetByteCount(SystemEventFormatting.Format(Snapshot(events), DayQuery, EvidenceMode.Aggregate, 500, exact, describeMessages: false)));
+        Assert.True(exact >= SystemEventsLimits.MinimumOutputBytes, "The sweep must reach the budget at which the assertion below is made.");
 
         var json = Aggregated(events, Math.Max(exact, SystemEventsLimits.MinimumOutputBytes));
 

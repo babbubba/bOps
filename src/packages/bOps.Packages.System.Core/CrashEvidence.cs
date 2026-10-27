@@ -230,6 +230,7 @@ public static class SystemCrashFormatting
         JsonArray entries;
         string returnedName;
         bool cut;
+        GroupSummary? summary = null;
         if (query.Mode == EvidenceMode.Aggregate)
         {
             var groups = Aggregate(inWindow);
@@ -239,6 +240,12 @@ public static class SystemCrashFormatting
             root["warnings"] = new JsonArray(warnings.Select(warning => (JsonNode?)JsonValue.Create(warning)).ToArray());
             root["observedGroups"] = groups.Count;
             root["returnedGroups"] = selected.Length;
+            // BOPS-0128 slice A: every observed group, compactly, ahead of the groups the limit and the budget may cut.
+            if (groups.Count > 0)
+            {
+                root["groupSummary"] = (summary = Summarize(groups)).Node;
+            }
+
             root["groups"] = entries = new JsonArray(selected.Select(group => (JsonNode)group).ToArray());
             returnedName = "returnedGroups";
             cut = selected.Length < groups.Count;
@@ -266,6 +273,19 @@ public static class SystemCrashFormatting
             output = root.ToJsonString();
         }
 
+        // The groups go first; then the summary gives way entry by entry, declaring what it no longer lists, and only as the last
+        // resort before refusing the budget does it leave the result.
+        while (summary is not null && Encoding.UTF8.GetByteCount(output) > SystemMaintenanceLimits.CrashOutputBytes && summary.TrimLast())
+        {
+            output = root.ToJsonString();
+        }
+
+        if (summary is not null && Encoding.UTF8.GetByteCount(output) > SystemMaintenanceLimits.CrashOutputBytes)
+        {
+            root.Remove("groupSummary");
+            output = root.ToJsonString();
+        }
+
         if (Encoding.UTF8.GetByteCount(output) > SystemMaintenanceLimits.CrashOutputBytes)
         {
             throw new InvalidOperationException("Crash evidence metadata exceeds the fixed output budget.");
@@ -273,6 +293,36 @@ public static class SystemCrashFormatting
 
         return output;
     }
+
+    /// <summary>The most serialized bytes the group summary of a crash result may take.</summary>
+    private const int SummaryAllowanceBytes = 8192;
+
+    /// <summary>The longest application name a summary entry carries; the group itself keeps the bounded full value.</summary>
+    private const int SummaryApplicationCharacters = 64;
+
+    /// <summary>
+    /// The compact summary of every observed group (BOPS-0128 slice A): kind, code, application, count, first and last seen. The
+    /// summary never carries a distinct-message count, a crash group has no messages to compare. Kernel groups (bugchecks and live
+    /// dumps) are listed first, in the groups' own order, then the others: the codes that are rare are the ones a count ranking would
+    /// push past the allowance, and the <c>basis</c> says so.
+    /// </summary>
+    private static GroupSummary Summarize(IReadOnlyList<JsonObject> groups) =>
+        GroupSummary.Create(
+            "aggregate-groups-kernel-first",
+            [.. groups
+                .OrderBy(group => group["kind"]?.GetValue<string>() is CrashKinds.KernelBugcheck or CrashKinds.KernelLiveDump ? 0 : 1)
+                .Select(group => (
+                new JsonObject
+                {
+                    ["kind"] = group["kind"]?.DeepClone(),
+                    ["code"] = group["code"]?.DeepClone(),
+                    ["application"] = SystemInventoryFormatting.Bounded(group["application"]?.GetValue<string>(), SummaryApplicationCharacters),
+                    ["count"] = group["count"]!.GetValue<int>(),
+                    ["firstSeenUtc"] = group["firstSeenUtc"]?.DeepClone(),
+                    ["lastSeenUtc"] = group["lastSeenUtc"]?.DeepClone(),
+                },
+                group["count"]!.GetValue<int>()))],
+            SummaryAllowanceBytes);
 
     /// <summary>The raw row: every schema-1 field, in the schema-1 order, followed by the schema-2 fields.</summary>
     internal static JsonObject Row(CrashEvidence item) => new()

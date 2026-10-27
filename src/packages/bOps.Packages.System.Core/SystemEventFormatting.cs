@@ -104,6 +104,7 @@ public static class SystemEventFormatting
         string returnedName;
         bool cut;
         AggregateGroup[] aggregated = [];
+        GroupSummary? summary = null;
         if (mode == EvidenceMode.Aggregate)
         {
             var groups = Aggregate(observed);
@@ -112,6 +113,12 @@ public static class SystemEventFormatting
             root["returnedGroups"] = aggregated.Length;
             root["sampleMessageSemantics"] = SampleMessageSemantics;
             root["messageDistribution"] = MessageDistribution(aggregated.Length, 0);
+            // BOPS-0128 slice A: every observed group, compactly, ahead of the groups the limit and the budget may cut.
+            if (groups.Length > 0)
+            {
+                root["groupSummary"] = (summary = Summarize(groups, maxOutputBytes)).Node;
+            }
+
             root["groups"] = entries = new JsonArray(aggregated.Select(group => (JsonNode)group.Entry).ToArray());
             returnedName = "returnedGroups";
             cut = aggregated.Length < groups.Length;
@@ -137,6 +144,19 @@ public static class SystemEventFormatting
             output = root.ToJsonString();
         }
 
+        // The groups go first (they are the larger part); then the summary gives way entry by entry, declaring what it no longer lists,
+        // and only as the last resort before refusing the budget does it leave the result.
+        while (summary is not null && Encoding.UTF8.GetByteCount(output) > maxOutputBytes && summary.TrimLast())
+        {
+            output = root.ToJsonString();
+        }
+
+        if (summary is not null && Encoding.UTF8.GetByteCount(output) > maxOutputBytes)
+        {
+            root.Remove("groupSummary");
+            output = root.ToJsonString();
+        }
+
         if (Encoding.UTF8.GetByteCount(output) > maxOutputBytes)
         {
             throw new InvalidOperationException(
@@ -147,6 +167,37 @@ public static class SystemEventFormatting
             ? DescribeMessages(root, entries, aggregated, maxOutputBytes)
             : output;
     }
+
+    /// <summary>
+    /// The compact summary of every observed group (BOPS-0128 slice A): source, event id, severity, count, first and last seen and
+    /// <c>distinctMessages</c>: the number of distinct original messages among the records the call observed for the group, so at least 1
+    /// and never 0 (a group has at least one record). Unlike the per-group message details it is not subject to the message-distribution
+    /// allowance, so it is the same whether or not those details fit. A group with no records does not exist, so a missing value is
+    /// never reported as a count; the summary is not created for a result without groups. The most severe groups are listed first, in
+    /// the groups' own order within a severity (the <c>basis</c> says so): a rare critical event is the one a count ranking would push
+    /// past the allowance.
+    /// </summary>
+    private static GroupSummary Summarize(AggregateGroup[] groups, int maxOutputBytes) =>
+        GroupSummary.Create(
+            "aggregate-groups-severity-first",
+            [.. groups
+                .OrderBy(group => group.Members[0].Severity)
+                .Select(group => (
+                new JsonObject
+                {
+                    ["source"] = group.Entry["source"]?.DeepClone(),
+                    ["eventId"] = group.Entry["eventId"]?.DeepClone(),
+                    ["severity"] = group.Entry["severity"]?.DeepClone(),
+                    ["count"] = group.Members.Length,
+                    ["firstSeenUtc"] = group.Entry["firstSeenUtc"]?.DeepClone(),
+                    ["lastSeenUtc"] = group.Entry["lastSeenUtc"]?.DeepClone(),
+                    ["distinctMessages"] = group.Members.Select(record => record.Message).Distinct(StringComparer.Ordinal).Count(),
+                },
+                group.Members.Length))],
+            Math.Min(SummaryAllowanceBytes, maxOutputBytes / 6));
+
+    /// <summary>The most serialized bytes the group summary of an event result may take before the output budget is divided.</summary>
+    private const int SummaryAllowanceBytes = 6144;
 
     /// <summary>One aggregate group: the entry the result carries, and the records it counts (newest first).</summary>
     private sealed record AggregateGroup(JsonObject Entry, SystemEventRecord[] Members);

@@ -44,10 +44,27 @@ public static class SystemEventFacts
     /// source or id is ranked by name. The first representable pairs are listed within <see cref="MaximumFacts"/> and
     /// <see cref="MaximumSerializedBytes"/>; when any matched pair is left out, the last fact says how many.
     /// </summary>
-    public static IReadOnlyList<EvidenceFact> From(SystemEventSnapshot snapshot, SystemEventQuery query)
+    public static IReadOnlyList<EvidenceFact> From(SystemEventSnapshot snapshot, SystemEventQuery query) =>
+        From(snapshot, query, 0, 0);
+
+    /// <summary>
+    /// The facts of the tool call: the counts in the room the runtime's 16 facts and 4096 bytes leave once the selection and coverage
+    /// metadata (BOPS-0128 slice B) is reserved, then that metadata. The metadata is never cut for the counts, and the counts keep their
+    /// positions; the counts say how many pairs are unlisted.
+    /// </summary>
+    internal static IReadOnlyList<EvidenceFact> WithMetadata(SystemEventSnapshot snapshot, SystemEventQuery query)
+    {
+        var metadata = SystemEvidenceMetadata.ForEvents(snapshot, query);
+        var counts = From(snapshot, query, metadata.Count, SystemEvidenceMetadata.SerializedBytes(metadata));
+        return [.. counts, .. metadata];
+    }
+
+    private static List<EvidenceFact> From(SystemEventSnapshot snapshot, SystemEventQuery query, int reservedFacts, int reservedBytes)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(query);
+        var maximumFacts = Math.Min(MaximumFacts, EvidenceFactBounds.MaximumFacts - reservedFacts);
+        var maximumBytes = MaximumSerializedBytes - reservedBytes;
 
         var groups = SystemEventFormatting.Matched(snapshot, query)
             .GroupBy(record => KeyOf(record.Source, record.EventId), StringComparer.Ordinal)
@@ -61,7 +78,7 @@ public static class SystemEventFacts
             .ThenByDescending(group => group.Count)
             .ThenByDescending(group => group.Newest)
             .ThenBy(group => group.Key, StringComparer.Ordinal)
-            .Take(MaximumFacts)
+            .Take(maximumFacts)
             .Select(group => new EvidenceFact(MatchedCountType, group.Key, ToolParameterType.Integer, JsonValue.Create(group.Count)))
             .ToList();
 
@@ -72,7 +89,7 @@ public static class SystemEventFacts
                 ? [.. listed, new EvidenceFact(UnlistedGroupsType, UnlistedGroupsKey, ToolParameterType.Integer, JsonValue.Create(unlisted))]
                 : listed;
             if (listed.Count == 0
-                || (facts.Count <= MaximumFacts && JsonSerializer.SerializeToUtf8Bytes(facts).Length <= MaximumSerializedBytes))
+                || (facts.Count <= maximumFacts && JsonSerializer.SerializeToUtf8Bytes(facts).Length <= maximumBytes))
             {
                 return facts;
             }
