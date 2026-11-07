@@ -22,4 +22,6 @@ audit fields. Use the launcher's execution state and the existing bounded poll.
 - Preserve production task-state, approval and audit behavior.
 - Verify Windows and Linux CI on the integrated fix before closing the task.
 
+Track the Windows and Linux head checks on [PR #145](https://github.com/babbubba/bOps/pull/145/checks). The closure gate uses the CI run on the merge commit.
+
 This task is part of the [V1.3 stabilization plan](2026-10-08-v1.3-pre-release-stabilization.md).

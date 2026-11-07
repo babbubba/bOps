@@ -37,11 +37,11 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 
 ## Milestone and task
 
-- BOPS-0130 synchronizes the approval endpoint tests with the final audit write. See [Issue #144](https://github.com/babbubba/bOps/issues/144) and the [task packet](agentic/_tasks/2026-11-07-bops-0130-api-audit-test-synchronization.md).
+- BOPS-0130 synchronizes the approval endpoint tests with the final audit write. See [Issue #144](https://github.com/babbubba/bOps/issues/144), [PR #145](https://github.com/babbubba/bOps/pull/145) and the [task packet](agentic/_tasks/2026-11-07-bops-0130-api-audit-test-synchronization.md).
 - [PR #141](https://github.com/babbubba/bOps/pull/141) merged as `de769be` with green Windows/Linux CI. See BOPS-0129 for the remaining acceptance gate.
 - Task of the consolidation branch (not this one): **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress) — offline evaluation of diagnostic quality, phase **P1** only (deterministic, no model judge).
   2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen (manifest sha256 `2ea60ce8…`). Next: blind calibration of the R02–R06 sample with the operator. P2 needs a new authorization.
-- In validation (2026-10-27 reconciliation): BOPS-0061 (PRE-6, PRE-7, F-26 closure, stable tag), BOPS-0120 (real Nginx/IIS check, first release-workflow run), BOPS-0125 (live A/B campaign not concluded; only B01 pilots). BOPS-0118, 0119, 0121, 0122, 0123, 0062 and 0128 (slices A+B; slice C unauthorized) are DONE. BOPS-0111 (board Validation vs register READY) and BOPS-0117 (Issue #119 closed, register PLANNED) await an operator decision.
+- In validation (2026-10-27 reconciliation): BOPS-0061 (PRE-6, PRE-7, F-26 closure, stable tag), BOPS-0120 (IIS host check, first release-workflow run), BOPS-0125 (live A/B campaign not concluded; only B01 pilots). BOPS-0118, 0119, 0121, 0122, 0123, 0062 and 0128 (slices A+B; slice C unauthorized) are DONE. BOPS-0111 (board Validation vs register READY) and BOPS-0117 (Issue #119 closed, register PLANNED) await an operator decision.
 - Formalized, **not authorized**: BOPS-0127 MAF-DIAG-EVAL-02 (evaluator V2). Not to be started in this phase: evaluator V2, any new diagnostic benchmark. (The multi-agent MAF workflow is BOPS-0129, started by operator mandate on 2026-10-27.)
 - Formal milestone: **V1.3** (stable gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 
@@ -50,15 +50,15 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 - Locked restore and Release build of `a180fbd` passed locally with no warnings or errors.
 - Workspace pin candidate `de769be` passed locked restore and Release build. It includes the MessagePack 2.5.307 update from `946e230`. The prior pin `e30c8f8` fails locked restore with NU1902.
 - PR #140 head checks and CI of merge commit `20b66c8` passed on Windows and Linux.
-- The focused approval endpoint class passed 18 tests on Windows after the synchronization change. The Windows/Linux CI matrix remains the integration gate.
-- BOPS-0120 records the Windows artifact smoke and the Nginx HTTPS smoke with the Linux artifact. IIS and the release-workflow run still need evidence.
+- The focused approval endpoint class passed 18 tests on Windows after the synchronization change. See [PR #145 checks](https://github.com/babbubba/bOps/pull/145/checks) for head CI. Verify Windows and Linux CI on the merge commit to close the integration gate.
+- BOPS-0120 records the Windows artifact smoke and the Nginx HTTPS smoke with the Linux artifact. The available Windows host has IIS disabled. The [task packet](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md) records the preflight and the ARR / URL Rewrite smoke to run on a test host.
 
 ## Blockers and owed remote updates
 
 - BOPS-0127: Issue and Project #6 item not created (`sync_pending` in the register).
 - BOPS-0121: Issue #125 is not yet a Project #6 item (`sync_pending`).
 - BOPS-0126 and BOPS-0129 have outstanding Issue or Project #6 updates recorded in `sync_pending`.
-- BOPS-0130: Issue #144 is open. The active GitHub CLI token lacks project access, so its Project #6 item still needs verification.
+- BOPS-0130: [Project #6 item](https://github.com/users/babbubba/projects/6?pane=issue&itemId=297181431) verified in the web UI. The register still needs the GraphQL item ID and Project #6 has no `API` Area option. See `sync_pending`.
 - Decisions: BOPS-0095 (D3), BOPS-0074/0075 (D1).
 
 ## Decisions waiting for the operator
@@ -73,5 +73,5 @@ D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BO
 
 ## Resume instructions for the next session
 
-1. Run `python scripts/governance/validate_register.py --summary` and review the BOPS-0130 diff and focused test evidence.
-2. Verify the fix in integrated CI before advancing the workspace pin beyond `de769be`. Continue with the open F-26 and PRE-6/PRE-7 checks before stable release acceptance.
+1. Review the BOPS-0130 checks on PR #145. After an operator-authorized merge, verify the merge commit in Windows and Linux CI before closing the task or advancing the workspace pin beyond `de769be`.
+2. Resume BOPS-0120 on an IIS test host with ARR and URL Rewrite. Record the HTTPS and event-stream results in the task before advancing the F-26 gate.

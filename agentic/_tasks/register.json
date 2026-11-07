@@ -5724,7 +5724,8 @@
     "CI of merge commit e0e9de7 (PR #123, run 39662849964): success on Windows and Linux, verified read-only 2026-10-27; the 'CI of the merge commit' gate is achieved.",
     "2026-11-07: Angular production build and self-contained win-x64 and linux-x64 publishes passed. Test-PublishedArtifact.ps1 passed on Windows without Node on the application PATH.",
     "2026-11-07: The repository Nginx sample passed nginx -t and 11 HTTPS and HTTP checks with Nginx 1.30.6 and the published Linux artifact in Docker. The checks covered health, redirect, routing, cache, headers, authentication and reserved files.",
-    "2026-11-07: npm audit --omit=dev reported four moderate Angular package entries (common, forms, platform-browser and router), zero high or critical."
+    "2026-11-07: npm audit --omit=dev reported four moderate Angular package entries (common, forms, platform-browser and router), zero high or critical.",
+    "2026-11-07 IIS preflight: the sample web.config parsed as XML. The available Windows host has IIS Web Server disabled, no W3SVC or WAS, and no URL Rewrite or ARR module binaries in the IIS directory. The session is not elevated and Docker is using Linux containers. HTTPS reverse proxy and event streaming still require an IIS test host."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -6311,6 +6312,14 @@
    "authorized": true,
    "depends_on": [],
    "packet": "agentic/_tasks/2026-11-07-bops-0130-api-audit-test-synchronization.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    145
+   ],
+   "commits": [
+    "eb4f60ae9c7a3e71e1d66df3c9d0f517511ee20b"
+   ],
    "validation": {
     "achieved": [
      "OFFLINE_TESTS"
@@ -6326,12 +6335,15 @@
    "evidence": [
     "Windows CI run 40598988483 on a180fbd reported one API test failure, a sharing violation on audit.jsonl. Ubuntu passed.",
     "Windows local verification on 2026-11-07: both affected tests passed in isolation before the patch; after the patch the complete AgentsAndApprovalsEndpointsTests class passed (18 passed, 0 failed, 0 skipped).",
-    "The existing launcher tracks the attempt until the terminal audit write finishes. Both tests now wait for that completion before reading the log. Only test code changed."
+    "The existing launcher tracks the attempt until the terminal audit write finishes. Both tests now wait for that completion before reading the log. Only test code changed.",
+    "PR #145 targets main and references Issue #144. Windows and Linux head checks are tracked at https://github.com/babbubba/bOps/pull/145/checks.",
+    "Initial PR CI run 42413301318 passed the Linux .NET tests and exposed two missing register fields, spec and companion_docs, in the governance test fixture setup. The task entry now includes those fields."
    ],
    "branch": "fix/windows-audit-test",
    "remote_kind": null,
    "sync_pending": [
-    "Issue #144 is open. Find or add its item in Project #6, verify the Validation status, and record both IDs. The active GitHub CLI token lacks project access."
+    "Issue #144 is open and Project #6 item 297181431 was verified in the web UI in Validation with P1, V1.3, Offline tests and 0.5-1 day. Read the Project item's GraphQL ID with a project-scoped token to record the structured Issue/Project links.",
+    "Project #6 has no API option for its Area field. The register and Issue identify the area as API."
    ]
   }
  ],

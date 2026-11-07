@@ -44,6 +44,21 @@ startable on Windows and Linux with one ASP.NET Core process, without Node.js, t
 7. The published artifact starts and serves the UI without Node.js (smoke test, CI on Windows and Linux).
 8. Operator documentation for local install and TLS reverse proxy (IIS / Nginx), with sample configuration.
 
+## IIS validation
+
+2026-11-07 preflight: the sample `web.config` parsed as XML. The available Windows host has the IIS Web Server role disabled.
+The W3SVC and WAS services and the URL Rewrite and ARR module binaries in the IIS directory were absent.
+The session lacked elevation and Docker was running Linux containers. The HTTPS smoke needs a Windows test host with IIS,
+ARR proxying enabled and URL Rewrite installed. See the [Microsoft IIS reverse-proxy walkthrough](https://learn.microsoft.com/en-us/iis/extensions/url-rewrite-module/reverse-proxy-with-url-rewrite-v2-and-application-request-routing).
+
+On that host, use the [deployment guide](../../docs/deployment.md) and the published `win-x64` artifact. Record the artifact revision,
+IIS and module versions, and the results of these checks through the HTTPS endpoint:
+
+- SPA root, deep link and hashed asset cache headers.
+- Health, protected and unknown API routes, and reserved file paths.
+- Sign-in, session cookie attributes, rejection of a foreign Origin, CSRF and logout.
+- Incremental delivery of live task events before the stream closes.
+
 ## Out of scope
 
 Docker packaging, a new web server, changing the authentication model, CORS, release tagging.
