@@ -6337,9 +6337,10 @@
    "evidence": [
     "Windows CI run 40598988483 on a180fbd reported one API test failure, a sharing violation on audit.jsonl. Ubuntu passed.",
     "Windows local verification on 2026-11-07: both affected tests passed in isolation before the patch; after the patch the complete AgentsAndApprovalsEndpointsTests class passed (18 passed, 0 failed, 0 skipped).",
-    "The existing launcher tracks the attempt until the terminal audit write finishes. Both tests now wait for that completion before reading the log. Only test code changed.",
+    "The existing launcher tracks the attempt until the terminal audit write finishes. The approval audit tests wait for that completion before reading the log. Only test code changed.",
     "PR #145 targets main and references Issue #144. Windows and Linux head checks are tracked at https://github.com/babbubba/bOps/pull/145/checks.",
-    "Initial PR CI run 42413301318 passed the Linux .NET tests and exposed two missing register fields, spec and companion_docs, in the governance test fixture setup. The task entry now includes those fields."
+    "Initial PR CI run 42413301318 passed the Windows and Linux .NET tests and exposed two missing register fields, spec and companion_docs, in the governance test fixture setup. The task entry now includes those fields. Run 42413853574 passed the full matrix and quality aggregate.",
+    "Windows run 42414628077 reported the same audit.jsonl sharing violation in the fallback execution tests. The fallback and release-gate fixtures now check that the launcher has finished before reading audit.jsonl. Focused Windows Release verification passed 29/29 across FallbackExecutionTests, V11ReleaseGateTests and V12ReleaseGateTests."
    ],
    "branch": "fix/windows-audit-test",
    "remote_kind": null,

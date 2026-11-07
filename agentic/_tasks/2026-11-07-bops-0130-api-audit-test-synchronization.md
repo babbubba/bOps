@@ -12,13 +12,20 @@ reported a sharing violation on `audit.jsonl` in
 lifecycle audit write. An API client can therefore observe the terminal state while the
 launcher still owns the attempt and the file may still be open for writing.
 
-Synchronize the approval tests that inspect the audit file with completion of the
-detached attempt. Keep the existing assertions for the actor and permanent deletion
-audit fields. Use the launcher's execution state and the existing bounded poll.
+Synchronize the API tests that inspect the audit file with completion of the detached
+attempt. Keep the existing assertions for the actor and permanent deletion audit fields.
+Use the launcher's execution state and the existing bounded polls.
+
+[Windows CI run 42414628077](https://github.com/babbubba/bOps/actions/runs/42414628077)
+reported the same sharing violation in the ordinary-task fallback audit assertion.
+The fallback and V1.1/V1.2 release-gate fixtures now also wait for the host to finish
+the relevant ordinary task or delegation before inspecting the audit file.
+The three changed test classes passed 29 tests on Windows in Release, with zero failures or skips.
 
 ## Acceptance
 
 - Run the approval endpoint test class on Windows, including both audit assertions.
+- Run the fallback and release-gate API test classes on Windows.
 - Preserve production task-state, approval and audit behavior.
 - Verify Windows and Linux CI on the integrated fix before closing the task.
 

@@ -295,17 +295,19 @@ public sealed class FallbackExecutionTests
         var response = await host.Client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("test"));
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
-        return await WaitTerminal(host.Tasks, body!.TaskId);
+        return await WaitTerminal(host, body!.TaskId);
     }
 
-    private static async Task<TaskState> WaitTerminal(ITaskStore store, Guid id)
+    private static async Task<TaskState> WaitTerminal(Host host, Guid id)
     {
+        var launcher = host.Services.GetRequiredService<AgentTaskLauncher>();
         using var timeout = new CancellationTokenSource(PollTimeout);
         while (true)
         {
             timeout.Token.ThrowIfCancellationRequested();
-            var task = await store.LoadAsync(id, timeout.Token);
-            if (task is { Status: not AgentTaskStatus.Running }) return task;
+            var task = await host.Tasks.LoadAsync(id, timeout.Token);
+            // The terminal snapshot can be visible before the last audit write.
+            if (task is { Status: not AgentTaskStatus.Running } && !launcher.IsExecuting(id)) return task;
             await Task.Delay(20, timeout.Token);
         }
     }
@@ -446,7 +448,7 @@ public sealed class FallbackExecutionTests
         var response = await host.Client.PostAsync(new Uri($"/api/agents/tasks/{seeded.Id}/resume", UriKind.Relative), null);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        var completed = await WaitTerminal(host.Tasks, seeded.Id);
+        var completed = await WaitTerminal(host, seeded.Id);
         Assert.Equal(AgentTaskStatus.Completed, completed.Status);
         Assert.Equal(0, book.CallsTo(Primary));
         Assert.Equal(1, book.CallsTo(Secondary));
@@ -575,7 +577,7 @@ public sealed class FallbackExecutionTests
 
         // 6-7. Task B starts under the new effective configuration while A is still in flight.
         var idB = await StartOnly(host);
-        var taskB = await WaitTerminal(host.Tasks, idB);
+        var taskB = await WaitTerminal(host, idB);
         Assert.Equal(AgentTaskStatus.Completed, taskB.Status);
         var pinB = Assert.IsType<PinnedProviderConfiguration>(taskB.PinnedProviderConfiguration);
         Assert.Equal(("Anthropic", "sonnet-y", "https://api.anthropic.test"), (pinB.ProviderId, pinB.Model, pinB.BaseUrl));
@@ -585,7 +587,7 @@ public sealed class FallbackExecutionTests
 
         // 8. Task A resumes its own work after the change and still runs on A/X.
         release.Set();
-        var taskA = await WaitTerminal(host.Tasks, idA);
+        var taskA = await WaitTerminal(host, idA);
         Assert.Equal(AgentTaskStatus.Completed, taskA.Status);
         var finalPinA = Assert.IsType<PinnedProviderConfiguration>(taskA.PinnedProviderConfiguration);
         Assert.Equal(
@@ -686,7 +688,7 @@ public sealed class FallbackExecutionTests
         var decided = await host.Client.PostAsJsonAsync(
             $"/api/delegations/{id}/approval", new RespondToPlanApprovalRequest(pending.PlanHash, true, null));
         Assert.Equal(HttpStatusCode.NoContent, decided.StatusCode);
-        await WaitForAsync(host.Client, id, view => view.Status == nameof(DelegationStatus.Completed));
+        await WaitForAsync(host.Client, id, view => view.Status == nameof(DelegationStatus.Completed) && !view.RunningInThisHost);
 
         Assert.Equal(2, book.CallsTo(Primary));
         var done = (await host.Delegations.LoadAsync(id))!;
