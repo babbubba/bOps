@@ -51,7 +51,7 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 - Workspace pin candidate `de769be` passed locked restore and Release build. It includes the MessagePack 2.5.307 update from `946e230`. The prior pin `e30c8f8` fails locked restore with NU1902.
 - PR #140 head checks and CI of merge commit `20b66c8` passed on Windows and Linux.
 - The focused approval endpoint class passed 18 tests on Windows after the synchronization change. See [PR #145 checks](https://github.com/babbubba/bOps/pull/145/checks) for head CI. Verify Windows and Linux CI on the merge commit to close the integration gate.
-- BOPS-0120 records the Windows artifact smoke and the Nginx HTTPS smoke with the Linux artifact. The available Windows host has IIS disabled. The [task packet](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md) records the preflight and the ARR / URL Rewrite smoke to run on a test host.
+- BOPS-0120 records the Windows artifact smoke and the Nginx HTTPS smoke with the Linux artifact. The IIS gate is blocked pending a Windows test host with ARR and URL Rewrite. See the [test checklist](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation).
 
 ## Blockers and owed remote updates
 

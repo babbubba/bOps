@@ -496,7 +496,7 @@ The [pre-release stabilization plan](../_tasks/2026-10-08-v1.3-pre-release-stabi
 governs this gate. Verify Windows and Linux CI on the release candidate, validate the
 production SPA artifact and supported reverse-proxy configurations, and record real-model
 dump analysis, installation, upgrade and soak evidence before release acceptance.
-The next reverse-proxy check is [IIS with ARR and URL Rewrite](../_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation).
+The next reverse-proxy check is [IIS with ARR and URL Rewrite](../_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation), once an isolated Windows test host is available.
 Use the [task register](../_tasks/register.json) for evidence and outstanding work under
 BOPS-0061, BOPS-0120 and BOPS-0130.
 

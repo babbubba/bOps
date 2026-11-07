@@ -5711,7 +5711,7 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Verify the IIS sample on an IIS host with ARR and URL Rewrite. The Nginx sample passed an isolated Linux-container HTTPS smoke; target service setup and event streaming were outside that run.",
+     "IIS gate BLOCKED / NOT_RUN: no Windows test host with IIS, ARR and URL Rewrite is available. Run the HTTPS and event-stream checklist in the F-26 packet. The Nginx container smoke did not exercise target service setup or event streaming.",
      "First run of the release workflow additions (bops-api-<rid>.zip, tag or dispatch only), to be authorized by the operator.",
      "Operator acceptance of the delivery after the two checks above."
     ]
@@ -5725,7 +5725,8 @@
     "2026-11-07: Angular production build and self-contained win-x64 and linux-x64 publishes passed. Test-PublishedArtifact.ps1 passed on Windows without Node on the application PATH.",
     "2026-11-07: The repository Nginx sample passed nginx -t and 11 HTTPS and HTTP checks with Nginx 1.30.6 and the published Linux artifact in Docker. The checks covered health, redirect, routing, cache, headers, authentication and reserved files.",
     "2026-11-07: npm audit --omit=dev reported four moderate Angular package entries (common, forms, platform-browser and router), zero high or critical.",
-    "2026-11-07 IIS preflight: the sample web.config parsed as XML. The available Windows host has IIS Web Server disabled, no W3SVC or WAS, and no URL Rewrite or ARR module binaries in the IIS directory. The session is not elevated and Docker is using Linux containers. HTTPS reverse proxy and event streaming still require an IIS test host."
+    "2026-11-07 IIS preflight: the sample web.config passed static assertions for path capture, loopback rewrite target, forwarded variables, request size and HSTS. The available Windows host has IIS Web Server disabled, no W3SVC or WAS, and no URL Rewrite or ARR module binaries in the IIS directory. The session is not elevated and Docker is using Linux containers.",
+    "2026-11-07 focused Windows validation: 188/188 API hosting, proxy settings and browser-session tests, 2/2 SSE fixture tests, 43/43 Angular authentication and task-session tests, and Chrome browser-session E2E-8 passed. The MSBuild publish guard rejected both missing and incomplete SPA fixtures. Self-contained win-x64 publish and direct loopback smoke passed without Node on the application PATH."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -6318,7 +6319,8 @@
     145
    ],
    "commits": [
-    "eb4f60ae9c7a3e71e1d66df3c9d0f517511ee20b"
+    "eb4f60ae9c7a3e71e1d66df3c9d0f517511ee20b",
+    "170b9d98bfe996905cca66971e5218bc417163e8"
    ],
    "validation": {
     "achieved": [
