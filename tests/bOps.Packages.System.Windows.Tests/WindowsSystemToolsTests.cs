@@ -3,6 +3,8 @@
 
 using bOps.Packages.Sys.Conformance;
 using bOps.Packages.Sys.Windows;
+using System.Globalization;
+using System.Management;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
 
@@ -55,6 +57,40 @@ public sealed class WindowsSystemToolsTests
     [WindowsOnlyFact]
     public Task Swap_Conforms() =>
         SystemToolConformance.AssertSwapUsageConformsAsync(new WindowsSwapUsageTool(), "windows");
+
+    [WindowsOnlyFact]
+    public async Task Swap_ReportsPageFileAllocationAndCurrentUsage()
+    {
+        var before = ReadPageFileUsage();
+        var result = await new WindowsSwapUsageTool().ExecuteAsync(ToolArguments.Empty);
+        var after = ReadPageFileUsage();
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var fields = result.Output!.Split(' ');
+        var used = long.Parse(fields[1], CultureInfo.InvariantCulture);
+        var total = long.Parse(fields[5], CultureInfo.InvariantCulture);
+        Assert.InRange(total, Math.Min(before.Total, after.Total), Math.Max(before.Total, after.Total));
+        // The independent snapshots can differ while Windows updates the page file.
+        Assert.InRange(used, Math.Max(0, Math.Min(before.Used, after.Used) - 64), Math.Max(before.Used, after.Used) + 64);
+    }
+
+    private static (long Total, long Used) ReadPageFileUsage()
+    {
+        using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PageFileUsage");
+        using var files = searcher.Get();
+        long total = 0;
+        long used = 0;
+        foreach (var file in files)
+        {
+            using (file)
+            {
+                total += Assert.IsType<uint>(file["AllocatedBaseSize"]);
+                used += Assert.IsType<uint>(file["CurrentUsage"]);
+            }
+        }
+
+        return (total, used);
+    }
 
     [WindowsOnlyFact]
     public Task Io_Conforms() =>

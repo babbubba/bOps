@@ -1,35 +1,54 @@
 // Copyright 2026 Fabio Cavallari
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Management;
 using System.Runtime.InteropServices;
+using bOps.Abstractions;
 using bOps.Packages.Sys.Core;
 
 namespace bOps.Packages.Sys.Windows;
 
-/// <summary>
-/// Collects <c>system.swap</c> data on Windows via <c>GlobalMemoryStatusEx</c>'s page-file
-/// fields — Windows' commit-limit accounting, the same figures Task Manager's "Committed" chart
-/// is built from, not a literal read of <c>pagefile.sys</c>'s current byte usage. Reading the
-/// real per-file page-file usage would need WMI (<c>Win32_PageFileUsage</c>), a new dependency
-/// this tool does not need for the conventional, already-available figure.
-/// </summary>
+/// <summary>Collects current page file occupancy from <c>Win32_PageFileUsage</c>.</summary>
 public sealed class WindowsSwapUsageTool() : SwapUsageToolBase("windows")
 {
-    protected override Task<SwapUsageResult> CollectAsync(CancellationToken ct)
+    public override async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default)
     {
-        var status = new NativeMethods.MemoryStatusEx
+        try
         {
-            Length = (uint)Marshal.SizeOf<NativeMethods.MemoryStatusEx>(),
-        };
+            return await base.ExecuteAsync(arguments, ct);
+        }
+        catch (Exception ex) when (ex is ManagementException or COMException or UnauthorizedAccessException
+            or InvalidOperationException or InvalidDataException or NotSupportedException)
+        {
+            ct.ThrowIfCancellationRequested();
+            return ToolCallResult.Failure("Page file usage is unavailable from Win32_PageFileUsage.") with
+            {
+                FailureKind = ToolFailureKind.Environment,
+                Completeness = ToolResultCompleteness.Unavailable,
+            };
+        }
+    }
 
-        if (!NativeMethods.GlobalMemoryStatusEx(ref status))
+    protected override Task<SwapUsageResult> CollectAsync(CancellationToken ct) => Task.Run(() =>
+    {
+        using var searcher = new ManagementObjectSearcher("SELECT AllocatedBaseSize, CurrentUsage FROM Win32_PageFileUsage");
+        using var pageFiles = searcher.Get();
+        long totalMb = 0;
+        long usedMb = 0;
+        foreach (var pageFile in pageFiles)
         {
-            throw new InvalidOperationException("GlobalMemoryStatusEx failed.");
+            using (pageFile)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (pageFile["AllocatedBaseSize"] is not uint total || pageFile["CurrentUsage"] is not uint used || used > total)
+                    throw new InvalidDataException("Win32_PageFileUsage returned invalid or missing size data.");
+
+                totalMb += total;
+                usedMb += used;
+            }
         }
 
-        const int BytesPerMb = 1024 * 1024;
-        var totalMb = (long)(status.TotalPageFileBytes / BytesPerMb);
-        var availableMb = (long)(status.AvailablePageFileBytes / BytesPerMb);
-        return Task.FromResult(new SwapUsageResult(totalMb, totalMb - availableMb));
-    }
+        ct.ThrowIfCancellationRequested();
+        return new SwapUsageResult(totalMb, usedMb);
+    }, ct).WaitAsync(ct);
 }

@@ -47,6 +47,49 @@ public sealed class AgentsAndApprovalsEndpointsTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("fs.mkdir")]
+    [InlineData("fs.write")]
+    public async Task PreviewPolicy_AllowsReadAndDeniesMutationBeforeApproval(string tool)
+    {
+        using var factory = new TestAppFactory { Roles = ["viewer", "operator"] };
+        var policy = Path.GetFullPath("../../../../../samples/deployment/preview-read-only.yaml", AppContext.BaseDirectory);
+        File.Copy(policy, Path.Combine(factory.TempDirectory, "policy.yaml"));
+        var marker = Path.Combine(factory.TempDirectory, "preview-marker.txt");
+        var newDirectory = Path.Combine(factory.TempDirectory, "preview-mutation");
+        await File.WriteAllTextAsync(marker, "original");
+        var arguments = tool == "fs.mkdir"
+            ? new JsonObject { ["path"] = newDirectory }
+            : new JsonObject { ["path"] = marker, ["content"] = "changed" };
+        factory.ChatModel = new QueueChatModel(
+            QueueChatModel.PlanResponse("Check the marker", "fs.stat"),
+            QueueChatModel.ToolCall("fs.stat", new JsonObject { ["path"] = marker }),
+            QueueChatModel.Final("Read finished."),
+            QueueChatModel.PlanResponse("Try a mutation", tool),
+            QueueChatModel.ToolCall(tool, arguments),
+            QueueChatModel.PlanResponse(),
+            QueueChatModel.Final("Write refused."));
+        using var client = factory.CreateClient();
+
+        var readResponse = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("Read the marker"));
+        Assert.Equal(HttpStatusCode.Accepted, readResponse.StatusCode);
+        var read = (await readResponse.Content.ReadFromJsonAsync<TaskAcceptedResponse>())!;
+        var readTask = await PollUntilTerminalAsync(client, read.TaskId);
+        Assert.Equal(AgentTaskStatus.Completed, readTask.Status);
+        Assert.Contains(readTask.Steps, step => step.ToolCall?.ToolName == "fs.stat" && step.Result?.Outcome == ToolOutcome.Success);
+
+        var writeResponse = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("Try a mutation"));
+        Assert.Equal(HttpStatusCode.Accepted, writeResponse.StatusCode);
+        var write = (await writeResponse.Content.ReadFromJsonAsync<TaskAcceptedResponse>())!;
+        var writeTask = await PollUntilTerminalAsync(client, write.TaskId);
+        var denied = Assert.Single(writeTask.Steps, step => step.ToolCall?.ToolName == tool);
+        Assert.Equal(ToolFailureKind.Authorization, denied.Result?.FailureKind);
+        Assert.Contains("policy.yaml's default", denied.Result?.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Equal("original", await File.ReadAllTextAsync(marker));
+        Assert.False(Directory.Exists(newDirectory));
+        Assert.Empty(factory.Services.GetRequiredService<ApiApprovalProvider>().ListPending());
+    }
+
     [Fact]
     public async Task StartTask_Returns400_WhenGoalIsMissing()
     {
