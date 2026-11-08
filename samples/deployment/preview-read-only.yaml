@@ -1,0 +1,9 @@
+# Copyright 2026 Fabio Cavallari
+# SPDX-License-Identifier: Apache-2.0
+
+defaults:
+  read: automatic
+  low: forbidden
+  medium: forbidden
+  high: forbidden
+  critical: forbidden

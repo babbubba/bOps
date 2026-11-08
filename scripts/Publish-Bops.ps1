@@ -61,6 +61,13 @@ if (-not $SkipUiBuild) {
 # Fail here, with the reason, rather than ship (or let dotnet publish trip over) a missing or partial frontend.
 & (Join-Path $PSScriptRoot 'Test-PublishedArtifact.ps1') -UiDirectory $uiBuild -StructureOnly
 
+# These helpers are built by explicit MSBuild targets, outside the API's restore graph.
+# Restore them without the API's RID, matching the framework-dependent helper build.
+Write-Host '== Restore Windows helpers'
+foreach ($helper in 'bOps.Packages.Firewall.Windows.Helper', 'bOps.Packages.System.Windows.Updates.Helper') {
+    Invoke-Native 'dotnet' @('restore', "src/packages/$helper/$helper.csproj", '-p:Configuration=Release') $root
+}
+
 Write-Host "== dotnet publish ($Runtime)"
 if (Test-Path -LiteralPath $Output) { Remove-Item -LiteralPath $Output -Recurse -Force }
 $selfContained = if ($FrameworkDependent) { 'false' } else { 'true' }

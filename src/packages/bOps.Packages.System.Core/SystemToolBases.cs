@@ -321,7 +321,7 @@ public abstract class SwapUsageToolBase(string platform) : ITool
     protected abstract Task<SwapUsageResult> CollectAsync(CancellationToken ct);
 
     /// <inheritdoc />
-    public async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
+    public virtual async Task<ToolCallResult> ExecuteAsync(ToolArguments arguments, CancellationToken ct = default) =>
         ToolCallResult.Success(SystemToolFormatting.Format(await CollectAsync(ct)));
 }
 
