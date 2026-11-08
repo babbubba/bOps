@@ -302,7 +302,7 @@ public sealed class V12ReleaseGateTests
         Assert.False(File.Exists(host.Marker));
 
         var id = await StartChangeAsync(host.Client);
-        var done = await ApproveUntilAsync(host.Client, id, run => run.Status != nameof(DelegationStatus.Running));
+        var done = await ApproveUntilAsync(host.Client, id, run => run.Status != nameof(DelegationStatus.Running) && !run.RunningInThisHost);
 
         Assert.True(done.Status == nameof(DelegationStatus.Completed), Describe(done));
         Assert.Equal(Content, await File.ReadAllTextAsync(host.Marker));
@@ -356,7 +356,7 @@ public sealed class V12ReleaseGateTests
 
         var resumed = await second.Client.PostAsync(new Uri($"/api/delegations/{id}/resume", UriKind.Relative), null);
         Assert.Equal(HttpStatusCode.Accepted, resumed.StatusCode);
-        var done = await ApproveUntilAsync(second.Client, id, run => run.Status != nameof(DelegationStatus.Running));
+        var done = await ApproveUntilAsync(second.Client, id, run => run.Status != nameof(DelegationStatus.Running) && !run.RunningInThisHost);
 
         Assert.True(done.Status == nameof(DelegationStatus.Completed), Describe(done));
         Assert.Equal(1, done.ResumeCount);

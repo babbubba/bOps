@@ -105,6 +105,16 @@ Samples (adapt names, certificates and paths). CI checks the published applicati
 | Windows, IIS (URL Rewrite + ARR) | [`samples/deployment/windows/iis-web.config`](../samples/deployment/windows/iis-web.config) — **not verified on an IIS host**; test before relying on it |
 | Both | [`samples/deployment/bops.env.example`](../samples/deployment/bops.env.example) (environment file), [`samples/deployment/windows/Start-Bops.ps1`](../samples/deployment/windows/Start-Bops.ps1) (start script for Windows) |
 
+For IIS, use the [HTTPS and event-stream checks](../agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation)
+with ARR proxying enabled and URL Rewrite installed.
+
+The Nginx sample passed a local HTTPS smoke test with Nginx 1.30.6 and the published
+`linux-x64` artifact on Docker's Linux engine. The proxy and Kestrel shared a network
+namespace so the sample could reach Kestrel on loopback. The checks covered redirect,
+SPA routes, asset caching, security headers, authentication, login, logout and isolation
+of configuration files. Validate the certificate, service setup and event streaming on
+the target deployment.
+
 ## 5. Reverse proxy and forwarded headers
 
 By default bOps **ignores** `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`: they are request headers any client can

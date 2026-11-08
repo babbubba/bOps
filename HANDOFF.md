@@ -1,13 +1,13 @@
 # Handoff
 
-Last updated: 2026-10-27 · `main` @ `20b66c8` (PR [#140](https://github.com/babbubba/bOps/pull/140) consolidation merged) ·
-working branch `feat/maf-multiagent-troubleshooting`, cut from `main` @ `20b66c8`, pushed, PR [#141](https://github.com/babbubba/bOps/pull/141) open (base `main`, Refs BOPS-0129, CI Windows/Linux pending, merge only on operator request). The consolidation worktree `bOps-consol` and its branch still exist: not deleted, operator go-ahead owed.
+Last updated 2026-11-07 · branch `fix/windows-audit-test` from `origin/main` @ `a180fbd`.
+The local checkout uses a separate worktree from the workspace's pinned public submodule.
 
 <!-- register-sync:begin -->
-Current task: BOPS-0129 MAF-TROUBLESHOOT-01 (IN_PROGRESS)
-Branch: feat/maf-multiagent-troubleshooting
+Current task: BOPS-0130 API-AUDIT-TEST-01
+Branch: fix/windows-audit-test
 Ready: BOPS-0111
-Next number: BOPS-0130
+Next number: BOPS-0131
 <!-- register-sync:end -->
 
 The lines above (the *current task of this branch/session*; other authorized tasks may run in parallel on other branches) are machine-checked against [`register.json`](agentic/_tasks/register.json) by
@@ -16,7 +16,7 @@ Task state is never copied here; ask the register (`--summary`).
 
 ## Where things are
 
-- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json) — 129 tasks, BOPS-0001..BOPS-0129.
+- Register (authoritative task state): [`agentic/_tasks/register.json`](agentic/_tasks/register.json).
 - Roadmap: [`agentic/_plans/2026-09-16-consolidated-roadmap.md`](agentic/_plans/2026-09-16-consolidated-roadmap.md). Real-state audit: [`docs/maintenance/roadmap-reconciliation-01.md`](docs/maintenance/roadmap-reconciliation-01.md).
 - Kanban: GitHub Project #6 (`DEV Plan`, private) — <https://github.com/users/babbubba/projects/6>.
 - Previous HANDOFFs (verbatim, history only): [`docs/handoff-archive/`](docs/handoff-archive/) — the one replaced today is `HANDOFF-until-2026-10-27.md`.
@@ -37,25 +37,28 @@ Local-only commits are preserved by tags `backup/20261027/*`. Branches and workt
 
 ## Milestone and task
 
-- Current task of this branch: **BOPS-0129 MAF-TROUBLESHOOT-01** (IN_PROGRESS, authorized by the operator mandate of 2026-10-27; Issue #142, Project #6 In Progress) — the read-only MAF multi-agent troubleshooting workflow, Contract 01 `C01-R23`, [reference](docs/maf-troubleshooting-workflow.md). PR #141 open; CI result and merge are the open gates.
+- BOPS-0130 synchronizes API approval, fallback and release-gate audit reads with the final audit write. See [Issue #144](https://github.com/babbubba/bOps/issues/144), [PR #145](https://github.com/babbubba/bOps/pull/145) and the [task packet](agentic/_tasks/2026-11-07-bops-0130-api-audit-test-synchronization.md).
+- [PR #141](https://github.com/babbubba/bOps/pull/141) merged as `de769be` with green Windows/Linux CI. See BOPS-0129 for the remaining acceptance gate.
 - Task of the consolidation branch (not this one): **BOPS-0126 MAF-DIAG-EVAL-01** (Issue #136, Project #6 In Progress) — offline evaluation of diagnostic quality, phase **P1** only (deterministic, no model judge).
   2026-10-27: R01 calibrated (private); P1 baseline R01–R06 frozen (manifest sha256 `2ea60ce8…`). Next: blind calibration of the R02–R06 sample with the operator. P2 needs a new authorization.
-- In validation (2026-10-27 reconciliation): BOPS-0061 (PRE-6, PRE-7, F-26 closure, stable tag), BOPS-0120 (real Nginx/IIS check, first release-workflow run), BOPS-0125 (live A/B campaign not concluded; only B01 pilots). BOPS-0118, 0119, 0121, 0122, 0123, 0062 and 0128 (slices A+B; slice C unauthorized) are DONE. BOPS-0111 (board Validation vs register READY) and BOPS-0117 (Issue #119 closed, register PLANNED) await an operator decision.
+- In validation (2026-10-27 reconciliation): BOPS-0061 (PRE-6, PRE-7, F-26 closure, stable tag), BOPS-0120 (IIS host check, first release-workflow run), BOPS-0125 (live A/B campaign not concluded; only B01 pilots). BOPS-0118, 0119, 0121, 0122, 0123, 0062 and 0128 (slices A+B; slice C unauthorized) are DONE. BOPS-0111 (board Validation vs register READY) and BOPS-0117 (Issue #119 closed, register PLANNED) await an operator decision.
 - Formalized, **not authorized**: BOPS-0127 MAF-DIAG-EVAL-02 (evaluator V2). Not to be started in this phase: evaluator V2, any new diagnostic benchmark. (The multi-agent MAF workflow is BOPS-0129, started by operator mandate on 2026-10-27.)
-- The multi-agent MAF workflow was the next step after the consolidation PR: it is BOPS-0129, on its own branch `feat/maf-multiagent-troubleshooting`.
 - Formal milestone: **V1.3** (stable gate not closed). Candidate focus DIAG-QUALITY awaits decision D7.
 
 ## Quality gates
 
-- Local evidence of this branch: see the BOPS-0126 register entry (Release build, .NET suites, Python suites, register validation).
-- CI of the PR #140 head and of its merge commit: pending.
-- Governance: `python scripts/governance/validate_register.py`; `python -m unittest discover -s scripts/governance/tests`.
+- Locked restore and Release build of `a180fbd` passed locally with no warnings or errors.
+- Workspace pin candidate `de769be` passed locked restore and Release build. It includes the MessagePack 2.5.307 update from `946e230`. The prior pin `e30c8f8` fails locked restore with NU1902.
+- PR #140 head checks and CI of merge commit `20b66c8` passed on Windows and Linux.
+- The approval endpoint class passed 18 tests on Windows. The fallback and release-gate classes passed another 29 after the follow-up synchronization change. See [PR #145 checks](https://github.com/babbubba/bOps/pull/145/checks) for head CI. Verify Windows and Linux CI on the merge commit to close the integration gate.
+- BOPS-0120 records the Windows artifact smoke and the Nginx HTTPS smoke with the Linux artifact. The IIS gate is blocked pending a Windows test host with ARR and URL Rewrite. See the [test checklist](agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation).
 
 ## Blockers and owed remote updates
 
 - BOPS-0127: Issue and Project #6 item not created (`sync_pending` in the register).
 - BOPS-0121: Issue #125 is not yet a Project #6 item (`sync_pending`).
-- BOPS-0126 Issue #136: record that the work moved from PR #135 to PR #140 (comment not posted yet).
+- BOPS-0126 and BOPS-0129 have outstanding Issue or Project #6 updates recorded in `sync_pending`.
+- BOPS-0130: [Project #6 item](https://github.com/users/babbubba/projects/6?pane=issue&itemId=297181431) verified in the web UI. The register still needs the GraphQL item ID and Project #6 has no `API` Area option. See `sync_pending`.
 - Decisions: BOPS-0095 (D3), BOPS-0074/0075 (D1).
 
 ## Decisions waiting for the operator
@@ -70,5 +73,5 @@ D6 live-campaign authorization · D7 active milestone · D8 stable V1.3 gate (BO
 
 ## Resume instructions for the next session
 
-1. `python scripts/governance/validate_register.py --summary`; verify branch `feat/maf-multiagent-troubleshooting`, HEAD and a clean tree (the operator's uncommitted `src/core/bOps.Api/appsettings.json` edit is not part of this task); set the repository-local Git identity.
-2. Push, PR (`Refs`, never `Closes`) and the closing of PR #135 only on explicit operator authorization; then delete obsolete branches and worktrees on the operator's go-ahead.
+1. Review the BOPS-0130 checks on PR #145. After an operator-authorized merge, verify the merge commit in Windows and Linux CI before closing the task or advancing the workspace pin beyond `de769be`.
+2. Resume BOPS-0120 on an IIS test host with ARR and URL Rewrite. Record the HTTPS and event-stream results in the task before advancing the F-26 gate.

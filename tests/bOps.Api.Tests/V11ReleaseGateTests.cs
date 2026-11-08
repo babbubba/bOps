@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using bOps.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace bOps.Api.Tests;
 
@@ -97,7 +98,8 @@ public sealed class V11ReleaseGateTests
 
         var accepted = await client.PostAsJsonAsync("/api/agents/tasks", new StartTaskRequest("diagnose, then research"));
         var started = await accepted.Content.ReadFromJsonAsync<TaskAcceptedResponse>();
-        var task = await PollUntilTerminalAsync(client, started!.TaskId);
+        var launcher = factory.Services.GetRequiredService<AgentTaskLauncher>();
+        var task = await PollUntilTerminalAsync(client, launcher, started!.TaskId);
 
         Assert.Equal(AgentTaskStatus.Completed, task.Status);
         var systemStep = Assert.Single(task.Steps, step => step.ToolCall?.ToolName == "system.info");
@@ -114,7 +116,7 @@ public sealed class V11ReleaseGateTests
         Assert.NotEqual((int)ToolOutcome.Success, toolEvents["web.fetch"]);
     }
 
-    private static async Task<TaskState> PollUntilTerminalAsync(HttpClient client, Guid taskId)
+    private static async Task<TaskState> PollUntilTerminalAsync(HttpClient client, AgentTaskLauncher launcher, Guid taskId)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (true)
@@ -123,7 +125,7 @@ public sealed class V11ReleaseGateTests
             if (response.IsSuccessStatusCode)
             {
                 var task = await response.Content.ReadFromJsonAsync<TaskState>(ResponseJsonOptions, timeout.Token);
-                if (task is not null && task.Status != AgentTaskStatus.Running)
+                if (task is not null && task.Status != AgentTaskStatus.Running && !launcher.IsExecuting(taskId))
                 {
                     return task;
                 }

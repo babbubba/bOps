@@ -44,7 +44,7 @@
   "SUPERSEDED": null
  },
  "numbering": {
-  "next": 130,
+  "next": 131,
   "state": "FROZEN",
   "through": "BOPS-0119",
   "mapping_sha256": "468a4538b595fbc74cfd2d491596eed388adbaa62a8855fd75c4c8b2feff0608",
@@ -3034,8 +3034,9 @@
     ],
     "open_gates": [
      "PRE-6: real KD/LLM run with the shipped timeouts, not recorded.",
-     "PRE-7: install, upgrade and soak run, not recorded.",
+     "PRE-7: clean artifact smoke evidence is recorded under BOPS-0120. Fresh-machine installation, upgrade from the published preview and soak remain open.",
      "F-26 closure: BOPS-0120 real-host verification and first release-workflow run (open gates there).",
+     "Verify green Windows and Linux CI on the release candidate after the API audit-test synchronization fix (BOPS-0130).",
      "Operator closure of the stable V1.3 gate and the stable tag (none exists; latest tag v1.2.0-preview.8)."
     ]
    },
@@ -5710,7 +5711,7 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "Real-host verification of the Nginx and IIS sample configurations (not exercised by CI; the IIS sample is unverified).",
+     "IIS gate BLOCKED / NOT_RUN: no Windows test host with IIS, ARR and URL Rewrite is available. Run the HTTPS and event-stream checklist in the F-26 packet. The Nginx container smoke did not exercise target service setup or event streaming.",
      "First run of the release workflow additions (bops-api-<rid>.zip, tag or dispatch only), to be authorized by the operator.",
      "Operator acceptance of the delivery after the two checks above."
     ]
@@ -5720,11 +5721,16 @@
     "Local, Windows 2026-10-21: Api.Tests 559/559 (47 new WebUi tests), Architecture 210/210, Runtime 2301/2301, Memory 101/101, Angular 489/489 + i18n, governance validator and unit tests",
     "Published win-x64 artifact: Test-PublishedArtifact.ps1 passes (SPA, deep links, assets and cache, API 401/404, reserved files, login/cookie/CSRF/foreign origin/logout, no Node on PATH); two publishes identical (482 files); real browser check of login, deep-link refresh, lazy route, no CSP violation",
     "Linux artifact first exercised by CI run 39653049529 (WSL has no dotnet)",
-    "CI of merge commit e0e9de7 (PR #123, run 39662849964): success on Windows and Linux, verified read-only 2026-10-27; the 'CI of the merge commit' gate is achieved."
+    "CI of merge commit e0e9de7 (PR #123, run 39662849964): success on Windows and Linux, verified read-only 2026-10-27; the 'CI of the merge commit' gate is achieved.",
+    "2026-11-07: Angular production build and self-contained win-x64 and linux-x64 publishes passed. Test-PublishedArtifact.ps1 passed on Windows without Node on the application PATH.",
+    "2026-11-07: The repository Nginx sample passed nginx -t and 11 HTTPS and HTTP checks with Nginx 1.30.6 and the published Linux artifact in Docker. The checks covered health, redirect, routing, cache, headers, authentication and reserved files.",
+    "2026-11-07: npm audit --omit=dev reported four moderate Angular package entries (common, forms, platform-browser and router), zero high or critical.",
+    "2026-11-07 IIS preflight: the sample web.config passed static assertions for path capture, loopback rewrite target, forwarded variables, request size and HSTS. The available Windows host has IIS Web Server disabled, no W3SVC or WAS, and no URL Rewrite or ARR module binaries in the IIS directory. The session is not elevated and Docker is using Linux containers.",
+    "2026-11-07 focused Windows validation: 188/188 API hosting, proxy settings and browser-session tests, 2/2 SSE fixture tests, 43/43 Angular authentication and task-session tests, and Chrome browser-session E2E-8 passed. The MSBuild publish guard rejected both missing and incomplete SPA fixtures. Self-contained win-x64 publish and direct loopback smoke passed without Node on the application PATH."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
-   "note": "Merged by PR #123; merge-commit CI green. Open gates: real Nginx/IIS verification, first release-workflow run, operator acceptance. Windows start at boot is a Scheduled Task (no native service wrapper, out of scope).",
+   "note": "Merged by PR #123; see validation for outstanding target checks and release evidence. Windows start at boot is a Scheduled Task (no native service wrapper, out of scope).",
    "issue": 122,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhCe0Zo",
    "branch": "feat/bops-0120-f26-spa-hosting",
@@ -6072,10 +6078,13 @@
     135,
     140
    ],
-   "commits": [],
+   "commits": [
+    "20b66c847616bd5fde87b31832da09b116362584"
+   ],
    "validation": {
     "achieved": [
-     "OFFLINE_TESTS"
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
     ],
     "required": [
      "OFFLINE_TESTS",
@@ -6083,7 +6092,6 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "CI of the head of the consolidation PR (branch codex/bops-consolidation-20261027, PR #140, replaces PR #135) and of the merge commit.",
      "Operator review of the P1 results on the campaigns already captured, then the calibration session with the operator (blind sheets filled together, condition 2 of the authorization)."
     ]
    },
@@ -6092,7 +6100,8 @@
     "Local, Windows 2026-10-26, worktree bOps-diagfix on codex/maf-ab-diagnostic-reliability: Release build of bOps.slnx 0 warnings 0 errors; bOps.DiagnosticEvaluation.Tests 15/15, bOps.Architecture.Tests 210/210, scripts/windows test_maf_cli_benchmark.py 47/47 and test_live_benchmark.py 49/49; a mutation of the wrong-family rule fails its test. Evaluator run on the captured campaigns (outputs private, not uploaded): two executions give identical bytes, verify stays OK, and the run flagged with 7 unverified counts is 09-B02-B-r2, the P0-2 case found by hand in the fa933f8 campaign.",
     "Calibration 2026-10-27 (private, with the operator): R01 of the B02 C/D rerun at cd00e81, 118 claims = 108 judged + 10 excluded. The P1 evaluator emitted no negative result (detection precision undefined); it missed a numeric error (C100) and an impossible recommendation (C113) and could not classify two contradictions (C05, C63); 34 of 118 claims had any number scored. Report and verdicts stay private.",
     "Baseline frozen 2026-10-27 before any rule change: P1 evaluations of R01-R06 at keys cd00e81 and 8f6c204, each reproduced twice byte-identical, the second equal to the campaign's auto-evaluation; integrity OK. Private manifest sha256 2ea60ce8debd741af9c1a83fd38352fb634ac7aaf47f718be69bc23e9c031097. Next blind calibration: stratified seeded sample of 172 of 448 R02-R06 claims (private list sha256 7e0e9b09...). Follow-ups formalized as BOPS-0127 (evaluator V2) and BOPS-0128 (runtime/tool evidence), both not authorized.",
-    "Consolidation 2026-10-27 (operator-approved matrix), local Windows, worktree bOps-consol on codex/bops-consolidation-20261027 from main ea557c1: the 14 PR #135 commits cherry-picked unchanged (code tree identical to the tested local branch at fb00497; 4530ae0..1204fee are BOPS-0125 pilot fixes), ADR links of 48766e4, ambient-credential scrub of e64926a. Release build of bOps.slnx 0 warnings 0 errors; dotnet test bOps.slnx -c Release: 37 test assemblies, 6828 passed, 0 failed, 173 skipped (live/OS-gated); scripts/windows tests 138/138, scripts/governance tests 70/70; validate_register.py 128 tasks 0 errors. Pushed 2026-10-27 as babbubba, PR #140 opened (Refs, base main); CI pending."
+    "Consolidation 2026-10-27 (operator-approved matrix), local Windows, worktree bOps-consol on codex/bops-consolidation-20261027 from main ea557c1: the 14 PR #135 commits cherry-picked unchanged (code tree identical to the tested local branch at fb00497; 4530ae0..1204fee are BOPS-0125 pilot fixes), ADR links of 48766e4, ambient-credential scrub of e64926a. Release build of bOps.slnx 0 warnings 0 errors; dotnet test bOps.slnx -c Release: 37 test assemblies, 6828 passed, 0 failed, 173 skipped (live/OS-gated); scripts/windows tests 138/138, scripts/governance tests 70/70; validate_register.py 128 tasks 0 errors.",
+    "Verified 2026-11-07: PR #140 head checks and merge commit 20b66c8 CI (run 40554675110) passed on Windows and Linux."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -6101,6 +6110,9 @@
    "remote_kind": "issue",
    "issue": 136,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhDn-7c",
+   "sync_pending": [
+    "Record the PR #140 merge and verified CI on Issue #136."
+   ],
    "sync": {
     "status": "In Progress",
     "verified_at": "2026-10-26T17:00:00+0100"
@@ -6228,7 +6240,7 @@
    },
    "milestone": "MAF",
    "area": "MAF",
-   "status": "IN_PROGRESS",
+   "status": "VALIDATION",
    "priority": "P1",
    "effort": "5-8 days",
    "authorized": true,
@@ -6244,11 +6256,13 @@
    "commits": [
     "7a82b092230761653f68a03de692ed07f96c1397",
     "b5ffbdfec94c79de05c2e2cabae89f071a515b00",
-    "17c9e8d1982c48796b728d683199658719405b2c"
+    "17c9e8d1982c48796b728d683199658719405b2c",
+    "de769bee098c10a4cbda519e88ed64c6a3a895b3"
    ],
    "validation": {
     "achieved": [
-     "OFFLINE_TESTS"
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
     ],
     "required": [
      "OFFLINE_TESTS",
@@ -6256,8 +6270,6 @@
      "OPERATOR_GATE"
     ],
     "open_gates": [
-     "PR #141 opened 2026-10-27 (base main, Refs BOPS-0129, no auto-merge); merge only with the operator.",
-     "CI of PR #141 on Windows and Linux: queued at 2026-10-27T20:57Z, not yet verified.",
      "Operator approval of C01-R23 as merged, and of the delivery. Any live model run needs its own authorization."
     ]
    },
@@ -6265,7 +6277,7 @@
     "Local, Windows 2026-10-27, branch feat/maf-multiagent-troubleshooting cut from main 20b66c8 (local commits only, nothing pushed): Release build of bOps.slnx 0 warnings 0 errors, locked-mode restore ok; non-live suites of the whole solution green (Runtime 2383 unchanged, AgentFramework 677 + 8 skipped, Cli 292, Architecture 217, Api 560, Policy 308, Knowledge 308, plus the package suites); register validator 129 tasks 0 errors, governance unit tests 70.",
     "New offline tests: 36 workflow tests in AgentFramework.Tests (end-to-end slowdowns-and-restarts with a reviewer follow-up round; System + PostgreSQL through fake tools proven concurrent; gateway refusals, policy and approval; limits; cancellation; failures; audit and accounting), 21 in Cli.Tests (arguments, opt-in, command output, process-level refusal), 8 architecture guards (MafWorkflowBoundaryTests) and the widened C01-R22 guard. The demo run printed the real sequence triage -> system x3 -> review -> system x2 -> review with 3 tool calls and one audit event per call; it exposed and fixed a specialist evidence-count defect before commit.",
     "Operator approved C01-R23 with the corrected clause 7 on 2026-10-27; PR #141 opened as babbubba; Issue #142 and Project #6 item PVTI_lAHOAP3b6c4BoBRpzhEA0os created and read back (Status In Progress, Priority P1, Area MAF, bOps Milestone MAF, Evidence Level None, Effort 5-8 days).",
-    "Not done: Windows and Linux CI result of PR #141, any live model run, Linux validation."
+    "Verified 2026-11-07: PR #141 head checks and merge commit de769be CI (run 40593365850) passed on Windows and Linux."
    ],
    "blocked_reason": null,
    "reopen_condition": null,
@@ -6274,10 +6286,68 @@
    "remote_kind": "issue",
    "issue": 142,
    "project_item": "PVTI_lAHOAP3b6c4BoBRpzhEA0os",
+   "sync_pending": [
+    "Record the PR #141 merge and verified CI on Issue #142.",
+    "Move the Project #6 item to Validation and verify the status."
+   ],
    "sync": {
     "status": "In Progress",
     "verified_at": "2026-10-27T21:59:05+0100"
    }
+  },
+  {
+   "id": "BOPS-0130",
+   "legacy_id": "API-AUDIT-TEST-01",
+   "title": "API-AUDIT-TEST-01 Synchronize approval tests with audit completion",
+   "created": {
+    "at": "2026-11-07",
+    "basis": "document-date",
+    "source": "operator mandate 2026-11-07 to implement the next development tasks with focused verification",
+    "order_certainty": "conventional"
+   },
+   "milestone": "V1.3",
+   "area": "API",
+   "status": "VALIDATION",
+   "priority": "P1",
+   "effort": "0.5-1 day",
+   "authorized": true,
+   "depends_on": [],
+   "packet": "agentic/_tasks/2026-11-07-bops-0130-api-audit-test-synchronization.md",
+   "spec": null,
+   "companion_docs": [],
+   "prs": [
+    145
+   ],
+   "commits": [
+    "eb4f60ae9c7a3e71e1d66df3c9d0f517511ee20b",
+    "170b9d98bfe996905cca66971e5218bc417163e8"
+   ],
+   "validation": {
+    "achieved": [
+     "OFFLINE_TESTS"
+    ],
+    "required": [
+     "OFFLINE_TESTS",
+     "CI_VERIFIED"
+    ],
+    "open_gates": [
+     "Verify Windows and Linux CI on the merge commit."
+    ]
+   },
+   "evidence": [
+    "Windows CI run 40598988483 on a180fbd reported one API test failure, a sharing violation on audit.jsonl. Ubuntu passed.",
+    "Windows local verification on 2026-11-07: both affected tests passed in isolation before the patch; after the patch the complete AgentsAndApprovalsEndpointsTests class passed (18 passed, 0 failed, 0 skipped).",
+    "The existing launcher tracks the attempt until the terminal audit write finishes. The approval audit tests wait for that completion before reading the log. Only test code changed.",
+    "PR #145 targets main and references Issue #144. Windows and Linux head checks are tracked at https://github.com/babbubba/bOps/pull/145/checks.",
+    "Initial PR CI run 42413301318 passed the Windows and Linux .NET tests and exposed two missing register fields, spec and companion_docs, in the governance test fixture setup. The task entry now includes those fields. Run 42413853574 passed the full matrix and quality aggregate.",
+    "Windows run 42414628077 reported the same audit.jsonl sharing violation in the fallback execution tests. The fallback and release-gate fixtures now check that the launcher has finished before reading audit.jsonl. Focused Windows Release verification passed 29/29 across FallbackExecutionTests, V11ReleaseGateTests and V12ReleaseGateTests."
+   ],
+   "branch": "fix/windows-audit-test",
+   "remote_kind": null,
+   "sync_pending": [
+    "Issue #144 is open and Project #6 item 297181431 was verified in the web UI in Validation with P1, V1.3, Offline tests and 0.5-1 day. Read the Project item's GraphQL ID with a project-scoped token to record the structured Issue/Project links.",
+    "Project #6 has no API option for its Area field. The register and Issue identify the area as API."
+   ]
   }
  ],
  "known_divergences": [

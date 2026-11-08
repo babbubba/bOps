@@ -335,6 +335,7 @@ public sealed class AgentsAndApprovalsEndpointsTests
         var stillPending = await client.GetFromJsonAsync<List<PendingApproval>>("/api/approvals/pending");
         Assert.Empty(stillPending!);
 
+        await WaitForAuditWritesAsync(factory, started.TaskId);
         var audit = await File.ReadAllTextAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
         Assert.Contains("test-user", audit, StringComparison.Ordinal);
         Assert.DoesNotContain("anonymous", audit, StringComparison.Ordinal);
@@ -402,6 +403,7 @@ public sealed class AgentsAndApprovalsEndpointsTests
         Assert.Contains(finalTask.Steps, step => step.ToolCall?.ToolName == "fs.delete_tree"
             && step.Observation!.Contains("Verification: Confirmed", StringComparison.Ordinal));
 
+        await WaitForAuditWritesAsync(factory, started.TaskId);
         var audit = await File.ReadAllLinesAsync(Path.Combine(factory.TempDirectory, "audit.jsonl"));
         var deletionEvent = audit
             .Select(line => JsonDocument.Parse(line))
@@ -492,6 +494,13 @@ public sealed class AgentsAndApprovalsEndpointsTests
             () => client.GetFromJsonAsync<TaskState>($"/api/agents/tasks/{taskId}"),
             t => t is not null && t.Status != AgentTaskStatus.Running);
         return task!;
+    }
+
+    private static Task<bool> WaitForAuditWritesAsync(TestAppFactory factory, Guid taskId)
+    {
+        // The terminal snapshot is persisted before the terminal audit event.
+        var launcher = factory.Services.GetRequiredService<AgentTaskLauncher>();
+        return PollUntilAsync(() => Task.FromResult(!launcher.IsExecuting(taskId)), finished => finished);
     }
 
     private static async Task<T?> PollUntilAsync<T>(Func<Task<T?>> fetch, Func<T?, bool> isDone)
