@@ -105,15 +105,50 @@ Samples (adapt names, certificates and paths). CI checks the published applicati
 | Windows, IIS (URL Rewrite + ARR) | [`samples/deployment/windows/iis-web.config`](../samples/deployment/windows/iis-web.config) — **not verified on an IIS host**; test before relying on it |
 | Both | [`samples/deployment/bops.env.example`](../samples/deployment/bops.env.example) (environment file), [`samples/deployment/windows/Start-Bops.ps1`](../samples/deployment/windows/Start-Bops.ps1) (start script for Windows) |
 
-For IIS, use the [HTTPS and event-stream checks](../agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation)
-with ARR proxying enabled and URL Rewrite installed.
+### Nginx sample smoke
 
-The Nginx sample passed a local HTTPS smoke test with Nginx 1.30.6 and the published
+On 2026-11-07 the Nginx sample passed a local HTTPS smoke test with Nginx 1.30.6 and the published
 `linux-x64` artifact on Docker's Linux engine. The proxy and Kestrel shared a network
 namespace so the sample could reach Kestrel on loopback. The checks covered redirect,
 SPA routes, asset caching, security headers, authentication, login, logout and isolation
 of configuration files. Validate the certificate, service setup and event streaming on
-the target deployment.
+the target deployment. This historical smoke applies to the Nginx sample and artifact exercised that day.
+
+The [supervised V1.3 preview](preview-02.md) supports direct ASP.NET Core on loopback on Windows x64 and Linux x64.
+IIS remains **BLOCKED / NOT_RUN** on a real host and is outside that preview profile.
+
+### Manual IIS validation
+
+After operator authorization, use a fresh, disposable Windows Server 2025 x64 VM. The local
+`bOps-iis-validation` worktree holds the validation plan and runner. Use an approved checkout that includes
+that kit and record the exact revision and artifact it exercises. Open an elevated PowerShell 7.4+ session.
+Install Git, the .NET SDK selected by `global.json` and Node.js 22. The runner needs network access for build
+dependencies, Chromium and the signed, hash-pinned Microsoft URL Rewrite and ARR installers. Ports 5080,
+5081 and 5443 must be free.
+
+```powershell
+pwsh -NoProfile -File ./scripts/windows/Invoke-BopsIisValidation.ps1 -RunLive
+```
+
+The runner installs IIS and its modules, applies server-level ARR settings and serves the unmodified
+versioned sample on loopback HTTPS. It adds a temporary localhost certificate to the test trust store
+and starts the app from the extracted ZIP with a separate data directory. Keep the ZIP and the sanitized
+`summary.json` from the printed `artifacts/iis-validation` run directory, then discard the VM.
+
+- **TLS/SPA** checks trust and hostname, rejection without test trust or with a wrong hostname, HSTS and SPA headers,
+  root and deep links, bundle types and immutable caching, plus revalidation for the shell and a non-hashed asset.
+- **Routing/isolation** checks health, authentication, API and asset 404s, SPA fallback boundaries, reserved files
+  and traversal denials.
+- **Session/CSRF** checks Chromium login and navigation over HTTPS, the hardened cookie, Origin and request intent,
+  spoofed headers and Bearer precedence, logout and rejection of the revoked cookie. This profile uses empty
+  KnownProxies and KnownNetworks in bOps. Trusted forwarding and per-client rate partitions are outside its coverage.
+  The versioned IIS rewrite rules still run.
+- **SSE** checks that the client receives Running while the fixture holds the model response, aborts the stream,
+  sees the same task still running after reconnecting, then receives Completed and clean EOF after model release.
+  Client abort measures the client-side behavior. Upstream connection release timing is outside this check.
+
+The runner's `-SelfTest` exercises offline result parsing. Live PASS requires all four scenarios through IIS.
+Record the evidence in the [BOPS-0120 checklist](../agentic/_tasks/2026-10-21-bops-0120-f26-production-spa-hosting.md#iis-validation).
 
 ## 5. Reverse proxy and forwarded headers
 

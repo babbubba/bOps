@@ -56,11 +56,18 @@ Static assertions on the IIS sample covered path capture, the loopback rewrite t
 The self-contained `win-x64` artifact built from `170b9d9` passed the structure and direct loopback smoke checks without Node.js on the application PATH.
 These checks provide evidence for the application and configuration sample. The live IIS gate has its own outcome below.
 
+The local IIS runner's result parser also passed its offline self-test with a complete fixture and seven fail-closed
+cases. That evidence belongs to the runner in the local `bOps-iis-validation` worktree. The [Nginx sample smoke](../../docs/deployment.md#nginx-sample-smoke)
+is separate historical evidence for the Nginx profile.
+
 ### Live gate
 
 **Gate outcome — BLOCKED / NOT_RUN (2026-11-07).** The available Windows host has IIS Web Server disabled.
 W3SVC, WAS and the URL Rewrite and ARR module binaries in the IIS directory were absent. The session lacked elevation and
 Docker was running Linux containers. The operator confirmed that no prepared IIS test host was available.
+
+This gate stays open for BOPS-0120. The [supervised V1.3 preview](../../docs/preview-02.md) uses direct ASP.NET Core
+on loopback as its supported deployment profile. The first release-workflow run and operator acceptance are separate gates.
 
 ### Reference test environment
 
@@ -72,7 +79,7 @@ Docker was running Linux containers. The operator confirmed that no prepared IIS
 - Use the published self-contained `win-x64` artifact from the revision under test, a scratch data directory and test-only keys.
   Bind Kestrel to `http://127.0.0.1:5080` and set `BrowserSession__Origins` to the exact HTTPS test origin.
   Use a dedicated IIS site with the sample `web.config` and a test certificate trusted by the probe client.
-  [Deployment guide](../../docs/deployment.md).
+  [Manual IIS validation and four-scenario runbook](../../docs/deployment.md#manual-iis-validation).
 
 ### Live checks and expected results
 
@@ -81,11 +88,12 @@ Docker was running Linux containers. The operator confirmed that no prepared IIS
 | TLS and SPA | The client validates the certificate and sees HSTS. `/` and a direct deep link return the SPA shell with `no-cache` and CSP. Hashed assets return `200` with the expected media type and immutable caching. |
 | Routing and isolation | `/healthz` returns `200` and `ok`. An unauthenticated protected endpoint returns `401` and an unknown API path returns `404` without the SPA shell. Configuration, database, audit, vault and policy paths return no file contents. |
 | Session and CSRF | Sign-in from the configured Origin with `X-bOps-Request` succeeds. The cookie is `__Host-bops_session`, Secure, HttpOnly, SameSite=Strict, Path=/ and has no Domain attribute. A foreign Origin or missing request header returns `403`. An authenticated session works and returns `401` after logout. |
-| Event streaming | Run a controlled, delayed task and read `/api/agents/tasks/{id}/events` without client-side buffering. The response is `text/event-stream`. At least one snapshot arrives while the task and connection are still active, followed by a terminal snapshot and stream closure. |
+| Event streaming | Run a controlled task with the model fixture held and read `/api/agents/tasks/{id}/events` without client-side buffering. The response is `text/event-stream`. Observe Running before model release, abort the client stream, and reconnect to the same running task. After releasing the fixture, observe Completed and clean EOF. |
 
-Capture the tested commit and artifact SHA-256, Windows build, IIS and module versions, sanitized site and ARR settings, and the certificate
-subject and thumbprint. Record each probe's status and relevant headers and the arrival times of the first and terminal events.
-Save sanitized IIS or Failed Request Tracing output for failures. Remove cookies, keys and secrets from all evidence.
+All four scenarios must pass. Keep the runner summary with the tested commit, package version and SHA-256,
+Windows build, IIS and module versions, deployed sample digest, effective ARR settings, certificate metadata,
+scenario results and SSE milestone timings. Record relevant sanitized headers and keep sanitized IIS or Failed
+Request Tracing output for failures. Remove cookies, keys and secrets from all evidence.
 
 ## Out of scope
 
